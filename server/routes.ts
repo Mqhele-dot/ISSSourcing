@@ -16,9 +16,12 @@ import {
   insertAppSettingsSchema,
   insertSupplierLogoSchema,
   appSettingsFormSchema,
+  insertReorderRequestSchema,
+  reorderRequestFormSchema,
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
+  ReorderRequestStatus,
   type DocumentType,
   type ReportType
 } from "@shared/schema";
@@ -990,7 +993,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const reportType = req.params.reportType as ReportType;
       const format = req.params.format as DocumentType;
       
-      if (!['inventory', 'low-stock', 'value', 'purchase-orders', 'purchase-requisitions', 'suppliers'].includes(reportType)) {
+      // Get optional date range parameters
+      const startDateParam = req.query.startDate as string;
+      const endDateParam = req.query.endDate as string;
+      
+      let startDate: Date | undefined;
+      let endDate: Date | undefined;
+      
+      // If both date parameters are provided, parse them
+      if (startDateParam && endDateParam) {
+        startDate = new Date(startDateParam);
+        endDate = new Date(endDateParam);
+        
+        // Set end date to end of day
+        endDate.setHours(23, 59, 59, 999);
+        
+        // Validate dates
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          return res.status(400).json({ message: "Invalid date format. Please use ISO format (YYYY-MM-DD)." });
+        }
+      }
+      
+      // All report types should be defined in the ReportType type in schema.ts
+      const reportTypes: ReportType[] = ['inventory', 'low-stock', 'value', 'purchase-orders', 'purchase-requisitions', 'suppliers', 'reorder-requests'];
+      if (!reportTypes.includes(reportType)) {
         return res.status(400).json({ message: "Invalid report type" });
       }
       
@@ -1000,31 +1026,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       let items;
       let title;
+      let dateRangeText = startDate && endDate ? ` (${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]})` : '';
       
       switch (reportType) {
         case 'inventory':
           items = await storage.getAllInventoryItems();
-          title = 'Inventory Report';
+          title = 'Inventory Report' + dateRangeText;
           break;
         case 'low-stock':
           items = await storage.getLowStockItems();
-          title = 'Low Stock Items Report';
+          title = 'Low Stock Items Report' + dateRangeText;
           break;
         case 'value':
           items = await storage.getAllInventoryItems();
-          title = 'Inventory Value Report';
+          title = 'Inventory Value Report' + dateRangeText;
           break;
         case 'purchase-orders':
-          items = await storage.getAllPurchaseOrders();
-          title = 'Purchase Orders Report';
+          if (startDate && endDate) {
+            // Get orders within date range (based on createdAt)
+            items = (await storage.getAllPurchaseOrders()).filter(order => 
+              order.createdAt >= startDate! && order.createdAt <= endDate!
+            );
+          } else {
+            items = await storage.getAllPurchaseOrders();
+          }
+          title = 'Purchase Orders Report' + dateRangeText;
           break;
         case 'purchase-requisitions':
-          items = await storage.getAllPurchaseRequisitions();
-          title = 'Purchase Requisitions Report';
+          if (startDate && endDate) {
+            // Get requisitions within date range (based on createdAt)
+            items = (await storage.getAllPurchaseRequisitions()).filter(req => 
+              req.createdAt >= startDate! && req.createdAt <= endDate!
+            );
+          } else {
+            items = await storage.getAllPurchaseRequisitions();
+          }
+          title = 'Purchase Requisitions Report' + dateRangeText;
           break;
         case 'suppliers':
           items = await storage.getAllSuppliers();
-          title = 'Suppliers Report';
+          title = 'Suppliers Report' + dateRangeText;
+          break;
+        case 'reorder-requests':
+          if (startDate && endDate) {
+            items = await storage.getReorderRequestsByDateRange(startDate, endDate);
+          } else {
+            items = await storage.getAllReorderRequests();
+          }
+          title = 'Reorder Requests Report' + dateRangeText;
           break;
       }
       
@@ -1067,6 +1116,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             pdf: generateSuppliersPdfReport,
             csv: generateSuppliersCsvReport,
             excel: generateSuppliersExcelReport
+          };
+          break;
+        case 'reorder-requests':
+          generator = {
+            pdf: generatePurchaseRequisitionsPdfReport, // Reuse requisition generator for now
+            csv: generatePurchaseRequisitionsCsvReport, // Reuse requisition generator for now
+            excel: generatePurchaseRequisitionsExcelReport // Reuse requisition generator for now
           };
           break;
       }
@@ -1219,6 +1275,198 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting supplier logo:", error);
       res.status(500).json({ message: "Failed to delete supplier logo" });
+    }
+  });
+
+  // Reorder request endpoints
+  app.get("/api/reorder-requests", async (req: Request, res: Response) => {
+    try {
+      const startDateParam = req.query.startDate as string;
+      const endDateParam = req.query.endDate as string;
+      
+      if (startDateParam && endDateParam) {
+        const startDate = new Date(startDateParam);
+        const endDate = new Date(endDateParam);
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          return res.status(400).json({ message: "Invalid date format" });
+        }
+        
+        const requests = await storage.getReorderRequestsByDateRange(startDate, endDate);
+        return res.json(requests);
+      }
+      
+      const requests = await storage.getAllReorderRequests();
+      res.json(requests);
+    } catch (error) {
+      console.error("Error fetching reorder requests:", error);
+      res.status(500).json({ message: "Failed to fetch reorder requests" });
+    }
+  });
+  
+  app.get("/api/reorder-requests/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reorder request ID" });
+      }
+      
+      const request = await storage.getReorderRequestWithDetails(id);
+      
+      if (!request) {
+        return res.status(404).json({ message: "Reorder request not found" });
+      }
+      
+      res.json(request);
+    } catch (error) {
+      console.error("Error fetching reorder request:", error);
+      res.status(500).json({ message: "Failed to fetch reorder request" });
+    }
+  });
+  
+  app.post("/api/reorder-requests", async (req: Request, res: Response) => {
+    try {
+      const validatedData = reorderRequestFormSchema.parse(req.body);
+      
+      // Set status to PENDING if not specified
+      if (!validatedData.status) {
+        validatedData.status = ReorderRequestStatus.PENDING;
+      }
+      
+      // Generate request number if not provided
+      if (!validatedData.requestNumber) {
+        const date = new Date();
+        const year = date.getFullYear().toString();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        validatedData.requestNumber = `RO-${year}${month}${day}-${random}`;
+      }
+      
+      const newRequest = await storage.createReorderRequest(validatedData);
+      res.status(201).json(newRequest);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error creating reorder request:", error);
+        res.status(500).json({ message: "Failed to create reorder request" });
+      }
+    }
+  });
+  
+  app.put("/api/reorder-requests/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reorder request ID" });
+      }
+      
+      const validatedData = reorderRequestFormSchema.partial().parse(req.body);
+      const updatedRequest = await storage.updateReorderRequest(id, validatedData);
+      
+      if (!updatedRequest) {
+        return res.status(404).json({ message: "Reorder request not found" });
+      }
+      
+      res.json(updatedRequest);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating reorder request:", error);
+        res.status(500).json({ message: "Failed to update reorder request" });
+      }
+    }
+  });
+  
+  app.delete("/api/reorder-requests/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reorder request ID" });
+      }
+      
+      const success = await storage.deleteReorderRequest(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Reorder request not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting reorder request:", error);
+      res.status(500).json({ message: "Failed to delete reorder request" });
+    }
+  });
+  
+  app.post("/api/reorder-requests/:id/approve", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reorder request ID" });
+      }
+      
+      // In a real application, we would get the current user ID from authentication
+      const approverId = req.body.approverId || 1; // Using default admin user ID
+      
+      const approvedRequest = await storage.approveReorderRequest(id, approverId);
+      
+      if (!approvedRequest) {
+        return res.status(404).json({ message: "Reorder request not found" });
+      }
+      
+      res.json(approvedRequest);
+    } catch (error) {
+      console.error("Error approving reorder request:", error);
+      res.status(500).json({ message: "Failed to approve reorder request" });
+    }
+  });
+  
+  app.post("/api/reorder-requests/:id/reject", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reorder request ID" });
+      }
+      
+      const { approverId = 1, reason } = req.body;
+      
+      if (!reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
+      
+      const rejectedRequest = await storage.rejectReorderRequest(id, approverId, reason);
+      
+      if (!rejectedRequest) {
+        return res.status(404).json({ message: "Reorder request not found" });
+      }
+      
+      res.json(rejectedRequest);
+    } catch (error) {
+      console.error("Error rejecting reorder request:", error);
+      res.status(500).json({ message: "Failed to reject reorder request" });
+    }
+  });
+  
+  app.post("/api/reorder-requests/:id/convert", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reorder request ID" });
+      }
+      
+      const requisition = await storage.convertReorderRequestToRequisition(id);
+      
+      if (!requisition) {
+        return res.status(404).json({ message: "Reorder request not found or cannot be converted" });
+      }
+      
+      res.json(requisition);
+    } catch (error) {
+      console.error("Error converting reorder request to requisition:", error);
+      res.status(500).json({ message: "Failed to convert reorder request to requisition" });
     }
   });
 

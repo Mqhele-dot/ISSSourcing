@@ -11,8 +11,9 @@ import {
   appSettings, type AppSettings, type InsertAppSettings,
   supplierLogos, type SupplierLogo, type InsertSupplierLogo,
   vatRates, type VatRate, type InsertVatRate,
+  reorderRequests, type ReorderRequest, type InsertReorderRequest,
   type InventoryStats, ItemStatus, type BulkImportInventory,
-  PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus,
+  PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus, ReorderRequestStatus,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -36,6 +37,23 @@ export interface IStorage {
   createSupplier(supplier: InsertSupplier): Promise<Supplier>;
   updateSupplier(id: number, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined>;
   deleteSupplier(id: number): Promise<boolean>;
+  
+  // Reorder request methods
+  getAllReorderRequests(): Promise<ReorderRequest[]>;
+  getReorderRequestsByDateRange(startDate: Date, endDate: Date): Promise<ReorderRequest[]>;
+  getReorderRequest(id: number): Promise<ReorderRequest | undefined>;
+  getReorderRequestByNumber(requestNumber: string): Promise<ReorderRequest | undefined>;
+  createReorderRequest(request: InsertReorderRequest): Promise<ReorderRequest>;
+  updateReorderRequest(id: number, request: Partial<InsertReorderRequest>): Promise<ReorderRequest | undefined>;
+  deleteReorderRequest(id: number): Promise<boolean>;
+  approveReorderRequest(id: number, approverId: number): Promise<ReorderRequest | undefined>;
+  rejectReorderRequest(id: number, approverId: number, reason: string): Promise<ReorderRequest | undefined>;
+  convertReorderRequestToRequisition(id: number): Promise<PurchaseRequisition | undefined>;
+  getReorderRequestWithDetails(id: number): Promise<(ReorderRequest & { 
+    item: InventoryItem,
+    requestor?: User,
+    approver?: User,
+  }) | undefined>;
   
   // Settings methods
   getAppSettings(): Promise<AppSettings | undefined>;
@@ -99,6 +117,23 @@ export interface IStorage {
   getAllActivityLogs(limit?: number): Promise<ActivityLog[]>;
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
   
+  // ReorderRequest methods
+  getAllReorderRequests(): Promise<ReorderRequest[]>;
+  getReorderRequestsByDateRange(startDate: Date, endDate: Date): Promise<ReorderRequest[]>;
+  getReorderRequest(id: number): Promise<ReorderRequest | undefined>;
+  getReorderRequestByNumber(requestNumber: string): Promise<ReorderRequest | undefined>;
+  createReorderRequest(insertRequest: InsertReorderRequest): Promise<ReorderRequest>;
+  updateReorderRequest(id: number, updateData: Partial<InsertReorderRequest>): Promise<ReorderRequest | undefined>;
+  deleteReorderRequest(id: number): Promise<boolean>;
+  approveReorderRequest(id: number, approverId: number): Promise<ReorderRequest | undefined>;
+  rejectReorderRequest(id: number, approverId: number, reason: string): Promise<ReorderRequest | undefined>;
+  convertReorderRequestToRequisition(id: number): Promise<PurchaseRequisition | undefined>;
+  getReorderRequestWithDetails(id: number): Promise<(ReorderRequest & { 
+    item: InventoryItem,
+    requestor?: User,
+    approver?: User,
+  }) | undefined>;
+
   // VAT rate methods
   getAllVatRates(): Promise<VatRate[]>;
   getVatRate(id: number): Promise<VatRate | undefined>;
@@ -147,6 +182,7 @@ export class MemStorage implements IStorage {
   private appSettings: Map<number, AppSettings>;
   private supplierLogos: Map<number, SupplierLogo>;
   private vatRates: Map<number, VatRate>;
+  private reorderRequests: Map<number, ReorderRequest>;
   
   private userCurrentId: number;
   private categoryCurrentId: number;
@@ -160,6 +196,7 @@ export class MemStorage implements IStorage {
   private settingsCurrentId: number;
   private supplierLogoCurrentId: number;
   private vatRateCurrentId: number;
+  private reorderRequestCurrentId: number;
   
   constructor() {
     this.users = new Map();
@@ -174,6 +211,7 @@ export class MemStorage implements IStorage {
     this.appSettings = new Map();
     this.supplierLogos = new Map();
     this.vatRates = new Map();
+    this.reorderRequests = new Map();
     
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
@@ -187,6 +225,7 @@ export class MemStorage implements IStorage {
     this.settingsCurrentId = 1;
     this.supplierLogoCurrentId = 1;
     this.vatRateCurrentId = 1;
+    this.reorderRequestCurrentId = 1;
     
     // Add default data
     this.initializeDefaultData();
@@ -1705,6 +1744,241 @@ export class MemStorage implements IStorage {
     });
     
     return this.supplierLogos.delete(logo.id);
+  }
+  
+  // Reorder request methods
+  async getAllReorderRequests(): Promise<ReorderRequest[]> {
+    return Array.from(this.reorderRequests.values());
+  }
+  
+  async getReorderRequestsByDateRange(startDate: Date, endDate: Date): Promise<ReorderRequest[]> {
+    return Array.from(this.reorderRequests.values()).filter(request => {
+      return request.createdAt >= startDate && request.createdAt <= endDate;
+    });
+  }
+  
+  async getReorderRequest(id: number): Promise<ReorderRequest | undefined> {
+    return this.reorderRequests.get(id);
+  }
+  
+  async getReorderRequestByNumber(requestNumber: string): Promise<ReorderRequest | undefined> {
+    return Array.from(this.reorderRequests.values()).find(
+      (request) => request.requestNumber === requestNumber
+    );
+  }
+  
+  async createReorderRequest(insertRequest: InsertReorderRequest): Promise<ReorderRequest> {
+    const id = this.reorderRequestCurrentId++;
+    const now = new Date();
+    
+    // Generate a request number if not provided
+    const requestNumber = insertRequest.requestNumber || `RO-${new Date().getFullYear()}-${id.toString().padStart(3, '0')}`;
+    
+    const request: ReorderRequest = {
+      ...insertRequest,
+      id,
+      requestNumber,
+      createdAt: now,
+      updatedAt: now,
+      status: insertRequest.status || ReorderRequestStatus.PENDING,
+      notes: insertRequest.notes || null,
+      requestorId: insertRequest.requestorId || null,
+      approverId: insertRequest.approverId || null,
+      approvalDate: insertRequest.approvalDate || null,
+      rejectionReason: insertRequest.rejectionReason || null,
+      convertedToRequisition: insertRequest.convertedToRequisition || false,
+      requisitionId: insertRequest.requisitionId || null
+    };
+    
+    this.reorderRequests.set(id, request);
+    
+    // Create activity log for new reorder request
+    await this.createActivityLog({
+      action: "Reorder Request Created",
+      description: `Created reorder request ${request.requestNumber} for item ID: ${request.itemId}`,
+      referenceType: "reorder_request",
+      referenceId: request.id,
+      userId: request.requestorId || undefined
+    });
+    
+    return request;
+  }
+  
+  async updateReorderRequest(id: number, updateData: Partial<InsertReorderRequest>): Promise<ReorderRequest | undefined> {
+    const existingRequest = this.reorderRequests.get(id);
+    if (!existingRequest) return undefined;
+    
+    const updatedRequest = {
+      ...existingRequest,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    
+    this.reorderRequests.set(id, updatedRequest);
+    
+    // Create activity log for update
+    await this.createActivityLog({
+      action: "Reorder Request Updated",
+      description: `Updated reorder request ${updatedRequest.requestNumber}`,
+      referenceType: "reorder_request",
+      referenceId: id,
+      userId: updateData.requestorId || existingRequest.requestorId || undefined
+    });
+    
+    return updatedRequest;
+  }
+  
+  async deleteReorderRequest(id: number): Promise<boolean> {
+    const request = this.reorderRequests.get(id);
+    if (!request) return false;
+    
+    // Create activity log for deletion
+    await this.createActivityLog({
+      action: "Reorder Request Deleted",
+      description: `Deleted reorder request ${request.requestNumber}`,
+      referenceType: "reorder_request",
+      referenceId: id
+    });
+    
+    return this.reorderRequests.delete(id);
+  }
+  
+  async approveReorderRequest(id: number, approverId: number): Promise<ReorderRequest | undefined> {
+    const request = this.reorderRequests.get(id);
+    if (!request) return undefined;
+    
+    const now = new Date();
+    const updatedRequest: ReorderRequest = {
+      ...request,
+      status: ReorderRequestStatus.APPROVED,
+      approverId,
+      approvalDate: now,
+      updatedAt: now
+    };
+    
+    this.reorderRequests.set(id, updatedRequest);
+    
+    // Create activity log for approval
+    await this.createActivityLog({
+      action: "Reorder Request Approved",
+      description: `Approved reorder request ${updatedRequest.requestNumber}`,
+      referenceType: "reorder_request",
+      referenceId: id,
+      userId: approverId
+    });
+    
+    return updatedRequest;
+  }
+  
+  async rejectReorderRequest(id: number, approverId: number, reason: string): Promise<ReorderRequest | undefined> {
+    const request = this.reorderRequests.get(id);
+    if (!request) return undefined;
+    
+    const now = new Date();
+    const updatedRequest: ReorderRequest = {
+      ...request,
+      status: ReorderRequestStatus.REJECTED,
+      approverId,
+      rejectionReason: reason,
+      updatedAt: now
+    };
+    
+    this.reorderRequests.set(id, updatedRequest);
+    
+    // Create activity log for rejection
+    await this.createActivityLog({
+      action: "Reorder Request Rejected",
+      description: `Rejected reorder request ${updatedRequest.requestNumber}: ${reason}`,
+      referenceType: "reorder_request",
+      referenceId: id,
+      userId: approverId
+    });
+    
+    return updatedRequest;
+  }
+  
+  async convertReorderRequestToRequisition(id: number): Promise<PurchaseRequisition | undefined> {
+    const request = this.reorderRequests.get(id);
+    if (!request) return undefined;
+    
+    // Get the item details
+    const item = await this.getInventoryItem(request.itemId);
+    if (!item) return undefined;
+    
+    // Create a new purchase requisition
+    const requisitionData: InsertPurchaseRequisition = {
+      requisitionNumber: `REQ-${new Date().getFullYear()}-${this.requisitionCurrentId.toString().padStart(3, '0')}`,
+      requestorId: request.requestorId,
+      status: PurchaseRequisitionStatus.PENDING,
+      notes: `Created from reorder request ${request.requestNumber}. ${request.notes || ''}`,
+      supplierId: item.supplierId,
+      totalAmount: (item.cost || item.price) * request.quantity
+    };
+    
+    // Create requisition item
+    const requisitionItemData: Omit<InsertPurchaseRequisitionItem, "requisitionId"> = {
+      itemId: request.itemId,
+      quantity: request.quantity,
+      unitPrice: item.cost || item.price,
+      totalPrice: (item.cost || item.price) * request.quantity,
+      notes: `From reorder request ${request.requestNumber}`
+    };
+    
+    // Create the purchase requisition with the item
+    const requisition = await this.createPurchaseRequisition(requisitionData, [requisitionItemData]);
+    
+    // Update the reorder request to mark it as converted
+    const now = new Date();
+    const updatedRequest: ReorderRequest = {
+      ...request,
+      status: ReorderRequestStatus.CONVERTED,
+      convertedToRequisition: true,
+      requisitionId: requisition.id,
+      updatedAt: now
+    };
+    
+    this.reorderRequests.set(id, updatedRequest);
+    
+    // Create activity log for conversion
+    await this.createActivityLog({
+      action: "Reorder Request Converted",
+      description: `Converted reorder request ${request.requestNumber} to purchase requisition ${requisition.requisitionNumber}`,
+      referenceType: "reorder_request",
+      referenceId: id,
+      userId: request.requestorId || undefined
+    });
+    
+    return requisition;
+  }
+  
+  async getReorderRequestWithDetails(id: number): Promise<(ReorderRequest & { 
+    item: InventoryItem,
+    requestor?: User,
+    approver?: User,
+  }) | undefined> {
+    const request = this.reorderRequests.get(id);
+    if (!request) return undefined;
+    
+    const item = await this.getInventoryItem(request.itemId);
+    if (!item) return undefined;
+    
+    let requestor: User | undefined;
+    let approver: User | undefined;
+    
+    if (request.requestorId) {
+      requestor = await this.getUser(request.requestorId);
+    }
+    
+    if (request.approverId) {
+      approver = await this.getUser(request.approverId);
+    }
+    
+    return {
+      ...request,
+      item,
+      requestor,
+      approver
+    };
   }
   
   // VAT rate methods

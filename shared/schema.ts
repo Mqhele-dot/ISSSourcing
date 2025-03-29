@@ -296,7 +296,7 @@ export enum ItemStatus {
 
 // Export types for document generation
 export type DocumentType = "pdf" | "csv" | "excel";
-export type ReportType = "inventory" | "low-stock" | "value" | "purchase-orders" | "purchase-requisitions" | "suppliers";
+export type ReportType = "inventory" | "low-stock" | "value" | "purchase-orders" | "purchase-requisitions" | "suppliers" | "reorder-requests";
 
 // Purchase Requisition Status
 export enum PurchaseRequisitionStatus {
@@ -324,6 +324,36 @@ export enum PaymentStatus {
   PARTIALLY_PAID = "PARTIALLY_PAID",
   PAID = "PAID"
 }
+
+// Reorder Request schema
+export const reorderRequests = pgTable("reorder_requests", {
+  id: serial("id").primaryKey(),
+  requestNumber: text("request_number").notNull().unique(),
+  itemId: integer("item_id").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  requestorId: integer("requestor_id"),
+  approverId: integer("approver_id"),
+  status: text("status").notNull().default("PENDING"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  approvalDate: timestamp("approval_date"),
+  rejectionReason: text("rejection_reason"),
+  convertedToRequisition: boolean("converted_to_requisition").default(false),
+  requisitionId: integer("requisition_id")
+});
+
+export const insertReorderRequestSchema = createInsertSchema(reorderRequests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  approvalDate: true,
+});
+
+export const reorderRequestFormSchema = insertReorderRequestSchema.extend({
+  itemId: z.number().int().positive("Item ID must be a positive number"),
+  quantity: z.number().int().min(1, "Quantity must be at least 1"),
+});
 
 // App Settings schema
 export const appSettings = pgTable("app_settings", {
@@ -408,3 +438,16 @@ export type VatRateForm = z.infer<typeof vatRateFormSchema>;
 
 export type SupplierLogo = typeof supplierLogos.$inferSelect;
 export type InsertSupplierLogo = z.infer<typeof insertSupplierLogoSchema>;
+
+// Reorder Request Types
+export type ReorderRequest = typeof reorderRequests.$inferSelect;
+export type InsertReorderRequest = z.infer<typeof insertReorderRequestSchema>;
+export type ReorderRequestForm = z.infer<typeof reorderRequestFormSchema>;
+
+// Reorder Request Status Enum
+export enum ReorderRequestStatus {
+  PENDING = "PENDING",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+  CONVERTED = "CONVERTED"
+}
