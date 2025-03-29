@@ -3,6 +3,11 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
+import {
+  generateReorderRequestsPdfReport,
+  generateReorderRequestsCsvReport,
+  generateReorderRequestsExcelReport
+} from "./reorder-request-generators";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -1120,9 +1125,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           break;
         case 'reorder-requests':
           generator = {
-            pdf: generatePurchaseRequisitionsPdfReport, // Reuse requisition generator for now
-            csv: generatePurchaseRequisitionsCsvReport, // Reuse requisition generator for now
-            excel: generatePurchaseRequisitionsExcelReport // Reuse requisition generator for now
+            pdf: generateReorderRequestsPdfReport,
+            csv: generateReorderRequestsCsvReport,
+            excel: generateReorderRequestsExcelReport
           };
           break;
       }
