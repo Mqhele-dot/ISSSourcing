@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import { ShepherdJourneyProvider } from 'react-shepherd';
+import { ShepherdJourneyProvider } from "react-shepherd";
 import { TutorialProvider } from "./contexts/TutorialContext";
 
 // Shepherd tour options
@@ -18,6 +18,8 @@ const tourOptions = {
 
 createRoot(document.getElementById("root")!).render(
   <ShepherdJourneyProvider config={tourOptions}>
-    <App />
+    <TutorialProvider>
+      <App />
+    </TutorialProvider>
   </ShepherdJourneyProvider>
 );

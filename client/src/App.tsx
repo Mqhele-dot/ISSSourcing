@@ -5,7 +5,10 @@ import { Toaster } from "@/components/ui/toaster";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Inventory from "@/pages/inventory";
+import OrdersPage from "@/pages/orders";
+import SuppliersPage from "@/pages/suppliers";
 import Reports from "@/pages/reports";
+import SettingsPage from "@/pages/settings";
 import { ThemeProvider } from "@/components/theme-provider";
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
@@ -17,7 +20,10 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/inventory" component={Inventory} />
+      <Route path="/orders" component={OrdersPage} />
+      <Route path="/suppliers" component={SuppliersPage} />
       <Route path="/reports" component={Reports} />
+      <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>
   );

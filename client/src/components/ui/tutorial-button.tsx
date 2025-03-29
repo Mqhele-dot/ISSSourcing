@@ -1,35 +1,26 @@
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { HelpCircle } from 'lucide-react';
-import { useTutorial } from '@/contexts/TutorialContext';
+import { Button } from "@/components/ui/button";
+import { useTutorial } from "@/contexts/TutorialContext";
+import { HelpCircle } from "lucide-react";
 
-interface TutorialButtonProps {
-  pageName: string;
+interface TutorialStepProps {
+  page?: string;
+  pageName?: string;
   className?: string;
 }
 
-export const TutorialButton: React.FC<TutorialButtonProps> = ({ 
-  pageName,
-  className 
-}) => {
-  const { startTutorial, isTutorialActive } = useTutorial();
-
-  const handleStartTutorial = () => {
-    startTutorial(pageName);
-  };
-
+export default function TutorialStep({ page, pageName, className = "" }: TutorialStepProps) {
+  const { startTutorial } = useTutorial();
+  const tutorialPage = page || pageName || "dashboard";
+  
   return (
     <Button
       variant="outline"
       size="sm"
-      className={`tutorial-button items-center ${className || ''}`}
-      onClick={handleStartTutorial}
-      disabled={isTutorialActive}
+      onClick={() => startTutorial(tutorialPage)}
+      className={`gap-1 ${className}`}
     >
-      <HelpCircle className="h-4 w-4 mr-2" />
+      <HelpCircle className="h-4 w-4" />
       <span>Tutorial</span>
     </Button>
   );
-};
-
-export default TutorialButton;
+}

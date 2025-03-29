@@ -1,463 +1,445 @@
-import React, { createContext, useContext, useState } from 'react';
-import { useShepherd } from 'react-shepherd';
-import 'shepherd.js/dist/css/shepherd.css';
+import React, { createContext, useContext, useState } from "react";
+import { useShepherd } from "react-shepherd";
 
-// Custom type for Shepherd Tour
-interface ShepherdTour {
-  addSteps: (steps: any[]) => void;
-  start: () => void;
-  once: (event: string, callback: () => void) => void;
-  steps: {
-    id: string;
-  }[];
-  removeStep: (id: string) => void;
-}
-
+// Tour context type
 type TutorialContextType = {
+  activePage: string | null;
   startTutorial: (page: string) => void;
-  isTutorialActive: boolean;
+  endTutorial: () => void;
 };
 
-const TutorialContext = createContext<TutorialContextType | undefined>(undefined);
+// Create the context
+const TutorialContext = createContext<TutorialContextType>({
+  activePage: null,
+  startTutorial: () => {},
+  endTutorial: () => {},
+});
 
-// Define tutorial steps for each page
-const tutorialSteps = {
+// Create the tour steps for each page
+const tourSteps = {
   dashboard: [
     {
-      id: 'dashboard-welcome',
-      title: 'Welcome to the Dashboard',
-      text: 'This is the main dashboard where you can see an overview of your inventory.',
-      attachTo: { element: '.dashboard-stats', on: 'bottom' },
+      id: "dashboard-welcome",
+      text: "Welcome to the Dashboard! This is where you can see an overview of your inventory.",
+      attachTo: { element: ".dashboard-stats", on: "bottom" },
       buttons: [
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'dashboard-low-stock',
-      title: 'Low Stock Items',
-      text: 'Here you can quickly see items that are running low and need to be reordered.',
-      attachTo: { element: '.low-stock-section', on: 'bottom' },
+      id: "dashboard-low-stock",
+      text: "Here you can see items that are running low on stock and need attention.",
+      attachTo: { element: ".low-stock-items", on: "left" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'dashboard-recent-activity',
-      title: 'Recent Activity',
-      text: 'Track recent changes and activities in your inventory system here.',
-      attachTo: { element: '.activity-log-section', on: 'top' },
+      id: "dashboard-add-item",
+      text: "Click here to add a new inventory item quickly.",
+      attachTo: { element: ".add-item-button", on: "left" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.complete();
+          action: () => {
+            return (window as any).shepherdTour.complete();
           },
-          text: 'Finish'
-        }
-      ]
-    }
+          text: "Finish",
+        },
+      ],
+    },
   ],
   inventory: [
     {
-      id: 'inventory-welcome',
-      title: 'Inventory Management',
-      text: 'This is where you manage all your inventory items.',
-      attachTo: { element: '.inventory-header', on: 'bottom' },
+      id: "inventory-welcome",
+      text: "Welcome to the Inventory page! Here you can manage all your inventory items.",
+      attachTo: { element: ".inventory-header", on: "bottom" },
       buttons: [
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'inventory-add-item',
-      title: 'Add New Items',
-      text: 'Click here to add new items to your inventory.',
-      attachTo: { element: '.add-item-button', on: 'bottom' },
+      id: "inventory-table",
+      text: "This table shows all your inventory items with key information.",
+      attachTo: { element: ".inventory-table", on: "top" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'inventory-search',
-      title: 'Search Inventory',
-      text: 'Quickly find items using the search feature.',
-      attachTo: { element: '.search-input', on: 'bottom' },
+      id: "inventory-search",
+      text: "You can search for items by name, SKU, or other properties.",
+      attachTo: { element: ".inventory-search", on: "bottom" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'inventory-table',
-      title: 'Inventory Table',
-      text: 'View all your items here with details like quantity, price, and more.',
-      attachTo: { element: '.inventory-table', on: 'top' },
+      id: "inventory-filters",
+      text: "Filter your inventory by category, stock level, or other criteria.",
+      attachTo: { element: ".inventory-filters", on: "left" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.complete();
+          action: () => {
+            return (window as any).shepherdTour.complete();
           },
-          text: 'Finish'
-        }
-      ]
-    }
+          text: "Finish",
+        },
+      ],
+    },
   ],
-  reports: [
+  orders: [
     {
-      id: 'reports-welcome',
-      title: 'Reports Section',
-      text: 'Generate various reports about your inventory and orders here.',
-      attachTo: { element: '.reports-header', on: 'bottom' },
+      id: "orders-welcome",
+      text: "Welcome to the Orders page! Here you can manage purchase requisitions and orders.",
+      attachTo: { element: ".orders-tabs", on: "bottom" },
       buttons: [
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'reports-type-selection',
-      title: 'Report Type',
-      text: 'Select the type of report you want to generate.',
-      attachTo: { element: '.report-type-selector', on: 'bottom' },
+      id: "orders-requisitions",
+      text: "Purchase requisitions are internal requests to purchase items.",
+      attachTo: { element: ".requisitions-table", on: "top" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'reports-format-selection',
-      title: 'Report Format',
-      text: 'Choose the format for your report (PDF, CSV, or Excel).',
-      attachTo: { element: '.report-format-selector', on: 'bottom' },
+      id: "orders-purchase-orders",
+      text: "Purchase orders are formal documents sent to suppliers to order goods.",
+      attachTo: { element: ".purchase-orders-table", on: "top" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'reports-generate',
-      title: 'Generate Report',
-      text: 'Click here to generate your report with the selected options.',
-      attachTo: { element: '.generate-report-button', on: 'left' },
+      id: "orders-create-button",
+      text: "Use this button to create a new requisition or purchase order.",
+      attachTo: { element: ".create-order-button", on: "left" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.complete();
+          action: () => {
+            return (window as any).shepherdTour.complete();
           },
-          text: 'Finish'
-        }
-      ]
-    }
-  ],
-  purchaseRequisitions: [
-    {
-      id: 'requisitions-welcome',
-      title: 'Purchase Requisitions',
-      text: 'Manage your purchase requisitions from this page.',
-      attachTo: { element: '.requisitions-header', on: 'bottom' },
-      buttons: [
-        {
-          action: function() {
-            return this.next();
-          },
-          text: 'Next'
-        }
-      ]
+          text: "Finish",
+        },
+      ],
     },
-    {
-      id: 'requisitions-create',
-      title: 'Create Requisition',
-      text: 'Start a new purchase requisition by clicking here.',
-      attachTo: { element: '.create-requisition-button', on: 'bottom' },
-      buttons: [
-        {
-          action: function() {
-            return this.back();
-          },
-          text: 'Back'
-        },
-        {
-          action: function() {
-            return this.next();
-          },
-          text: 'Next'
-        }
-      ]
-    },
-    {
-      id: 'requisitions-table',
-      title: 'Requisitions Table',
-      text: 'View and manage all your requisitions from this table.',
-      attachTo: { element: '.requisitions-table', on: 'top' },
-      buttons: [
-        {
-          action: function() {
-            return this.back();
-          },
-          text: 'Back'
-        },
-        {
-          action: function() {
-            return this.complete();
-          },
-          text: 'Finish'
-        }
-      ]
-    }
-  ],
-  purchaseOrders: [
-    {
-      id: 'orders-welcome',
-      title: 'Purchase Orders',
-      text: 'Manage your purchase orders from this page.',
-      attachTo: { element: '.orders-header', on: 'bottom' },
-      buttons: [
-        {
-          action: function() {
-            return this.next();
-          },
-          text: 'Next'
-        }
-      ]
-    },
-    {
-      id: 'orders-create',
-      title: 'Create Order',
-      text: 'Create a new purchase order by clicking here.',
-      attachTo: { element: '.create-order-button', on: 'bottom' },
-      buttons: [
-        {
-          action: function() {
-            return this.back();
-          },
-          text: 'Back'
-        },
-        {
-          action: function() {
-            return this.next();
-          },
-          text: 'Next'
-        }
-      ]
-    },
-    {
-      id: 'orders-table',
-      title: 'Orders Table',
-      text: 'View and manage all your purchase orders from this table.',
-      attachTo: { element: '.orders-table', on: 'top' },
-      buttons: [
-        {
-          action: function() {
-            return this.back();
-          },
-          text: 'Back'
-        },
-        {
-          action: function() {
-            return this.complete();
-          },
-          text: 'Finish'
-        }
-      ]
-    }
   ],
   suppliers: [
     {
-      id: 'suppliers-welcome',
-      title: 'Suppliers Management',
-      text: 'Manage your suppliers from this page.',
-      attachTo: { element: '.suppliers-header', on: 'bottom' },
+      id: "suppliers-welcome",
+      text: "Welcome to the Suppliers page! Here you can manage your supplier information.",
+      attachTo: { element: ".suppliers-header", on: "bottom" },
       buttons: [
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'suppliers-add',
-      title: 'Add Supplier',
-      text: 'Add a new supplier by clicking here.',
-      attachTo: { element: '.add-supplier-button', on: 'bottom' },
+      id: "suppliers-list",
+      text: "This list shows all your suppliers with their contact information.",
+      attachTo: { element: ".suppliers-list", on: "right" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.next();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Next'
-        }
-      ]
+          text: "Next",
+        },
+      ],
     },
     {
-      id: 'suppliers-table',
-      title: 'Suppliers Table',
-      text: 'View and manage all your suppliers from this table.',
-      attachTo: { element: '.suppliers-table', on: 'top' },
+      id: "suppliers-form",
+      text: "Use this form to add a new supplier or edit an existing one.",
+      attachTo: { element: ".supplier-form", on: "left" },
       buttons: [
         {
-          action: function() {
-            return this.back();
+          action: () => {
+            return (window as any).shepherdTour.back();
           },
-          text: 'Back'
+          text: "Back",
         },
         {
-          action: function() {
-            return this.complete();
+          action: () => {
+            return (window as any).shepherdTour.next();
           },
-          text: 'Finish'
-        }
-      ]
-    }
+          text: "Next",
+        },
+      ],
+    },
+    {
+      id: "suppliers-logo",
+      text: "You can add or update a logo for each supplier to easily identify them.",
+      attachTo: { element: ".supplier-logo-btn", on: "bottom" },
+      buttons: [
+        {
+          action: () => {
+            return (window as any).shepherdTour.back();
+          },
+          text: "Back",
+        },
+        {
+          action: () => {
+            return (window as any).shepherdTour.complete();
+          },
+          text: "Finish",
+        },
+      ],
+    },
+  ],
+  settings: [
+    {
+      id: "settings-welcome",
+      text: "Welcome to the Settings page! Here you can customize your application.",
+      attachTo: { element: ".settings-header", on: "bottom" },
+      buttons: [
+        {
+          action: () => {
+            return (window as any).shepherdTour.next();
+          },
+          text: "Next",
+        },
+      ],
+    },
+    {
+      id: "settings-tabs",
+      text: "Use these tabs to navigate between different categories of settings.",
+      attachTo: { element: ".settings-tabs", on: "bottom" },
+      buttons: [
+        {
+          action: () => {
+            return (window as any).shepherdTour.back();
+          },
+          text: "Back",
+        },
+        {
+          action: () => {
+            return (window as any).shepherdTour.next();
+          },
+          text: "Next",
+        },
+      ],
+    },
+    {
+      id: "settings-company",
+      text: "Set your company information which will be used in the application and documents.",
+      attachTo: { element: ".company-settings", on: "top" },
+      buttons: [
+        {
+          action: () => {
+            return (window as any).shepherdTour.back();
+          },
+          text: "Back",
+        },
+        {
+          action: () => {
+            return (window as any).shepherdTour.next();
+          },
+          text: "Next",
+        },
+      ],
+    },
+    {
+      id: "settings-appearance",
+      text: "Customize the appearance of your application with colors and themes.",
+      attachTo: { element: ".appearance-settings", on: "top" },
+      buttons: [
+        {
+          action: () => {
+            return (window as any).shepherdTour.back();
+          },
+          text: "Back",
+        },
+        {
+          action: () => {
+            return (window as any).shepherdTour.next();
+          },
+          text: "Next",
+        },
+      ],
+    },
+    {
+      id: "settings-inventory",
+      text: "Configure how inventory items are managed and displayed.",
+      attachTo: { element: ".inventory-settings", on: "top" },
+      buttons: [
+        {
+          action: () => {
+            return (window as any).shepherdTour.back();
+          },
+          text: "Back",
+        },
+        {
+          action: () => {
+            return (window as any).shepherdTour.complete();
+          },
+          text: "Finish",
+        },
+      ],
+    },
   ],
 };
 
+// Tour config
+const tourConfig = {
+  defaultStepOptions: {
+    cancelIcon: {
+      enabled: true,
+    },
+    classes: "shepherd-theme-custom",
+    scrollTo: true,
+  },
+  useModalOverlay: true,
+};
+
+// Provider component
 export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isTutorialActive, setIsTutorialActive] = useState<boolean>(false);
-  const shepherd = useShepherd() as unknown as ShepherdTour;
+  const [activePage, setActivePage] = useState<string | null>(null);
+  const shepherd = useShepherd();
 
+  // Start the tutorial for a specific page
   const startTutorial = (page: string) => {
-    if (!tutorialSteps[page as keyof typeof tutorialSteps]) {
-      console.error(`No tutorial steps found for page: ${page}`);
-      return;
-    }
-
-    // Configure the tour
-    if (shepherd.addSteps) {
-      shepherd.addSteps(tutorialSteps[page as keyof typeof tutorialSteps]);
+    setActivePage(page);
+    
+    // Get the steps for this page
+    const steps = tourSteps[page as keyof typeof tourSteps] || [];
+    
+    // Add steps to the tour and start it
+    if (shepherd && steps.length > 0) {
+      // Clear previous steps
+      if (shepherd.Tour?.steps && shepherd.Tour.steps.length > 0) {
+        shepherd.Tour.steps.forEach((step: any) => {
+          if (step && step.id) {
+            shepherd.Tour?.removeStep(step.id);
+          }
+        });
+      }
       
-      // Set tutorial as active
-      setIsTutorialActive(true);
+      // Add new steps
+      steps.forEach((step) => {
+        shepherd.Tour?.addStep(step);
+      });
       
       // Start the tour
-      shepherd.start();
-      
-      // When tour completes or is canceled
-      shepherd.once('complete', () => {
-        setIsTutorialActive(false);
-        if (shepherd.steps) {
-          shepherd.steps.forEach((step: any) => {
-            if (step.id && shepherd.removeStep) {
-              shepherd.removeStep(step.id);
-            }
-          });
-        }
-      });
-      
-      shepherd.once('cancel', () => {
-        setIsTutorialActive(false);
-        if (shepherd.steps) {
-          shepherd.steps.forEach((step: any) => {
-            if (step.id && shepherd.removeStep) {
-              shepherd.removeStep(step.id);
-            }
-          });
-        }
-      });
+      setTimeout(() => {
+        shepherd.Tour?.start();
+      }, 100);
     }
   };
 
-  const value = { startTutorial, isTutorialActive };
+  // End the tutorial
+  const endTutorial = () => {
+    if (shepherd && shepherd.Tour) {
+      shepherd.Tour.complete();
+    }
+    setActivePage(null);
+  };
 
   return (
-    <TutorialContext.Provider value={value}>
+    <TutorialContext.Provider value={{ activePage, startTutorial, endTutorial }}>
       {children}
     </TutorialContext.Provider>
   );
 };
 
-export const useTutorial = () => {
-  const context = useContext(TutorialContext);
-  if (context === undefined) {
-    throw new Error('useTutorial must be used within a TutorialProvider');
-  }
-  return context;
-};
+// Hook for using tutorial context
+export const useTutorial = () => useContext(TutorialContext);
