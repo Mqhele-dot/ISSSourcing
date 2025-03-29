@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
-import { Archive, BarChart3, ChevronRight, FileText, Home, Moon, Settings, ShoppingCart, Sun, Users, X, LayoutDashboard } from "lucide-react";
+import { Archive, BarChart3, ChevronRight, FileText, Home, Moon, Settings, ShoppingCart, Sun, Users, X, LayoutDashboard, RefreshCw } from "lucide-react";
 
 interface SidebarProps {
   open: boolean;
@@ -90,6 +90,10 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             
             <NavItem path="/orders" icon={<ShoppingCart className="mr-3 h-5 w-5" />}>
               Orders
+            </NavItem>
+            
+            <NavItem path="/reorder" icon={<RefreshCw className="mr-3 h-5 w-5" />}>
+              Reorder Requests
             </NavItem>
             
             <NavItem path="/suppliers" icon={<Users className="mr-3 h-5 w-5" />}>

@@ -10,6 +10,7 @@ import SuppliersPage from "@/pages/suppliers";
 import Reports from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
 import Home from "@/pages/home";
+import ReorderPage from "@/pages/reorder";
 import { ThemeProvider } from "@/components/theme-provider";
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
@@ -25,6 +26,7 @@ function Router() {
       <Route path="/orders" component={OrdersPage} />
       <Route path="/suppliers" component={SuppliersPage} />
       <Route path="/reports" component={Reports} />
+      <Route path="/reorder" component={ReorderPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>

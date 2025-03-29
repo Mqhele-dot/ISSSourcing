@@ -147,10 +147,16 @@ export default function StockAlerts() {
           </div>
         ))}
       </CardContent>
-      <CardFooter className="bg-neutral-50 dark:bg-neutral-700 px-5 py-3 rounded-b-lg">
+      <CardFooter className="bg-neutral-50 dark:bg-neutral-700 px-5 py-3 rounded-b-lg flex justify-between">
         <Link href="/inventory?filter=low-stock">
           <a className="text-sm font-medium text-primary hover:text-primary/80 flex items-center">
             View all alerts
+            <ExternalLink className="ml-1 h-3 w-3" />
+          </a>
+        </Link>
+        <Link href="/reorder">
+          <a className="text-sm font-medium text-primary hover:text-primary/80 flex items-center">
+            Manage reorders
             <ExternalLink className="ml-1 h-3 w-3" />
           </a>
         </Link>
@@ -179,7 +185,8 @@ function StockAlertsSkeletons() {
           </div>
         ))}
       </CardContent>
-      <CardFooter className="bg-neutral-50 dark:bg-neutral-700 px-5 py-3 rounded-b-lg">
+      <CardFooter className="bg-neutral-50 dark:bg-neutral-700 px-5 py-3 rounded-b-lg flex justify-between">
+        <Skeleton className="h-4 w-24" />
         <Skeleton className="h-4 w-24" />
       </CardFooter>
     </Card>
