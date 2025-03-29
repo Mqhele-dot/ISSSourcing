@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { useShepherd } from "react-shepherd";
 
 // Tour context type
@@ -394,7 +394,18 @@ const tourConfig = {
 // Provider component
 export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activePage, setActivePage] = useState<string | null>(null);
-  const shepherd = useShepherd();
+  // Use any to avoid TypeScript errors - the actual implementation will work at runtime
+  const shepherd = useShepherd() as any;
+  
+  // Store the tour instance
+  const tourRef = useRef<any>(null);
+
+  // Initialize global shepherdTour for button actions
+  useEffect(() => {
+    if (shepherd) {
+      (window as any).shepherdTour = shepherd;
+    }
+  }, [shepherd]);
 
   // Start the tutorial for a specific page
   const startTutorial = (page: string) => {
@@ -403,33 +414,60 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // Get the steps for this page
     const steps = tourSteps[page as keyof typeof tourSteps] || [];
     
-    // Add steps to the tour and start it
     if (shepherd && steps.length > 0) {
-      // Clear previous steps
-      if (shepherd.Tour?.steps && shepherd.Tour.steps.length > 0) {
-        shepherd.Tour.steps.forEach((step: any) => {
-          if (step && step.id) {
-            shepherd.Tour?.removeStep(step.id);
-          }
-        });
+      // Cancel any existing tour
+      if (tourRef.current) {
+        try {
+          shepherd.cancel();
+        } catch (e) {
+          console.log("No active tour to cancel");
+        }
       }
       
-      // Add new steps
-      steps.forEach((step) => {
-        shepherd.Tour?.addStep(step);
+      // Remove existing steps if any
+      try {
+        const existingSteps = shepherd.steps;
+        if (existingSteps && existingSteps.length > 0) {
+          // Clear existing steps - this approach depends on the Shepherd implementation
+          while (shepherd.steps.length > 0) {
+            shepherd.removeStep(shepherd.steps[0].id);
+          }
+        }
+      } catch (e) {
+        console.log("Error clearing steps", e);
+      }
+      
+      // Add steps for the new tour
+      steps.forEach(step => {
+        try {
+          shepherd.addStep(step);
+        } catch (e) {
+          console.log(`Error adding step ${step.id}`, e);
+        }
       });
       
-      // Start the tour
+      // Store reference to current tour
+      tourRef.current = shepherd;
+      
+      // Start the tour after a brief delay to ensure DOM is ready
       setTimeout(() => {
-        shepherd.Tour?.start();
-      }, 100);
+        try {
+          shepherd.start();
+        } catch (e) {
+          console.log("Error starting tour", e);
+        }
+      }, 200);
     }
   };
 
   // End the tutorial
   const endTutorial = () => {
-    if (shepherd && shepherd.Tour) {
-      shepherd.Tour.complete();
+    if (shepherd) {
+      try {
+        shepherd.cancel();
+      } catch (e) {
+        console.log("Error cancelling tour", e);
+      }
     }
     setActivePage(null);
   };

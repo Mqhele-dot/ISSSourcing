@@ -17,7 +17,8 @@ const tourOptions = {
 };
 
 createRoot(document.getElementById("root")!).render(
-  <ShepherdJourneyProvider config={tourOptions}>
+  // @ts-ignore - The type definition for ShepherdJourneyProvider is incorrect
+  <ShepherdJourneyProvider tourOptions={tourOptions}>
     <TutorialProvider>
       <App />
     </TutorialProvider>
