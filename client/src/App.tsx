@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
 import { useState } from "react";
+import { TutorialProvider } from "./contexts/TutorialContext";
 
 function Router() {
   return (
@@ -42,10 +43,12 @@ function App() {
   return (
     <ThemeProvider defaultTheme="light" storageKey="invtrack-theme">
       <QueryClientProvider client={queryClient}>
-        <AppLayout>
-          <Router />
-        </AppLayout>
-        <Toaster />
+        <TutorialProvider>
+          <AppLayout>
+            <Router />
+          </AppLayout>
+          <Toaster />
+        </TutorialProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

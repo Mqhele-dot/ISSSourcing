@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import ItemForm from "@/components/inventory/item-form";
 import { apiRequest } from "@/lib/queryClient";
 import { type InventoryItem, type Category, type DocumentType } from "@shared/schema";
+import TutorialButton from "@/components/ui/tutorial-button";
 
 export default function Inventory() {
   const [location, setLocation] = useLocation();
@@ -342,17 +343,22 @@ export default function Inventory() {
         </div>
         
         <div className="mt-4 md:mt-0 flex space-x-3">
-          <Button onClick={() => {
-            setSelectedItem(null);
-            setShowItemForm(true);
-          }}>
+          <TutorialButton pageName="inventory" className="mr-2" />
+          
+          <Button 
+            onClick={() => {
+              setSelectedItem(null);
+              setShowItemForm(true);
+            }}
+            className="add-item-button"
+          >
             <Plus className="mr-2 h-4 w-4" />
             Add Item
           </Button>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" className="export-button">
                 <FileDown className="mr-2 h-4 w-4" />
                 Export
               </Button>
@@ -372,7 +378,7 @@ export default function Inventory() {
         </div>
       </div>
       
-      <Card>
+      <Card className="inventory-table-card">
         <CardHeader className="pb-2 pt-4 px-6">
           <CardTitle className="text-lg">Inventory Items</CardTitle>
         </CardHeader>
@@ -381,11 +387,11 @@ export default function Inventory() {
             <Tabs 
               value={currentTab} 
               onValueChange={setCurrentTab}
-              className="w-full md:w-auto"
+              className="w-full md:w-auto inventory-tabs"
             >
               <TabsList>
-                <TabsTrigger value="all">All Items</TabsTrigger>
-                <TabsTrigger value="low-stock">
+                <TabsTrigger value="all" className="all-items-tab">All Items</TabsTrigger>
+                <TabsTrigger value="low-stock" className="low-stock-tab">
                   Low Stock
                   {lowStockItems && lowStockItems.length > 0 && (
                     <span className="ml-2 bg-warning/20 text-warning text-xs px-2 py-0.5 rounded-full">
@@ -393,7 +399,7 @@ export default function Inventory() {
                     </span>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="out-of-stock">
+                <TabsTrigger value="out-of-stock" className="out-of-stock-tab">
                   Out of Stock
                   {outOfStockItems && outOfStockItems.length > 0 && (
                     <span className="ml-2 bg-error/20 text-error text-xs px-2 py-0.5 rounded-full">
@@ -404,42 +410,46 @@ export default function Inventory() {
               </TabsList>
             </Tabs>
             
-            <div className="flex space-x-2">
-              <form onSubmit={handleSearch} className="relative">
+            <div className="flex space-x-2 inventory-filters">
+              <form onSubmit={handleSearch} className="relative search-form">
                 <Input
                   type="search"
                   placeholder="Search inventory..."
-                  className="md:w-60"
+                  className="md:w-60 search-input"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </form>
               
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="All Categories" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories?.map((category) => (
-                    <SelectItem key={category.id} value={String(category.id)}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="category-filter">
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {categories?.map((category) => (
+                      <SelectItem key={category.id} value={String(category.id)}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               
-              <Button variant="outline" size="icon">
+              <Button variant="outline" size="icon" className="filter-button">
                 <Filter className="h-4 w-4" />
               </Button>
             </div>
           </div>
           
-          <DataTable
-            columns={columns}
-            data={getInventoryItems()}
-            searchable={false}
-          />
+          <div className="inventory-data-table">
+            <DataTable
+              columns={columns}
+              data={getInventoryItems()}
+              searchable={false}
+            />
+          </div>
         </CardContent>
       </Card>
 

@@ -14,6 +14,7 @@ import { formatCurrency, getItemStatus, getStatusColor } from "@/lib/utils";
 import { downloadFile } from "@/lib/utils";
 import { type InventoryItem, type InventoryStats, type Category, type DocumentType } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import TutorialButton from "@/components/ui/tutorial-button";
 
 export default function Dashboard() {
   const [showItemForm, setShowItemForm] = useState(false);
@@ -189,7 +190,9 @@ export default function Dashboard() {
         </div>
         
         <div className="mt-4 md:mt-0 flex space-x-3">
-          <Button onClick={() => setShowItemForm(true)}>
+          <TutorialButton pageName="dashboard" className="mr-2" />
+          
+          <Button onClick={() => setShowItemForm(true)} className="add-item-button">
             <Plus className="mr-2 h-4 w-4" />
             Add Item
           </Button>
@@ -217,7 +220,7 @@ export default function Dashboard() {
       </div>
       
       {/* Stats Overview Cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6 dashboard-stats">
         <StatsCard
           title="Total Items"
           value={stats?.totalItems ?? 0}
@@ -257,7 +260,7 @@ export default function Dashboard() {
       
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Inventory Overview Section */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 inventory-table-section">
           <Card>
             <div className="px-5 py-4 border-b border-neutral-200 dark:border-neutral-700 flex justify-between items-center">
               <h3 className="text-lg font-medium text-neutral-900 dark:text-white">
@@ -265,7 +268,7 @@ export default function Dashboard() {
               </h3>
               
               <div className="flex space-x-2">
-                <div className="relative">
+                <div className="relative category-filter">
                   <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                     <SelectTrigger className="w-[180px]">
                       <SelectValue placeholder="All Categories" />
@@ -281,7 +284,7 @@ export default function Dashboard() {
                   </Select>
                 </div>
                 
-                <Button variant="outline" size="icon">
+                <Button variant="outline" size="icon" className="filter-button">
                   <Filter className="h-4 w-4" />
                 </Button>
               </div>
@@ -301,8 +304,12 @@ export default function Dashboard() {
         
         {/* Stock Alerts & Recent Activity */}
         <div className="space-y-6">
-          <StockAlerts />
-          <RecentActivity />
+          <div className="low-stock-section">
+            <StockAlerts />
+          </div>
+          <div className="activity-log-section">
+            <RecentActivity />
+          </div>
         </div>
       </div>
 

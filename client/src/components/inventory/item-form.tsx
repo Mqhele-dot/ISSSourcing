@@ -128,12 +128,12 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg inventory-item-form">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="inventory-form-title">
             {initialData ? "Edit Inventory Item" : "Add New Inventory Item"}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="inventory-form-description">
             {initialData 
               ? "Update the details of the existing inventory item." 
               : "Fill in the details below to add a new item to your inventory."}
@@ -141,15 +141,15 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 inventory-form">
             <FormField
               control={form.control}
               name="name"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="item-name-field">
                   <FormLabel>Item Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter item name" {...field} />
+                    <Input placeholder="Enter item name" {...field} className="item-name-input" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -160,10 +160,10 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
               control={form.control}
               name="sku"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="item-sku-field">
                   <FormLabel>SKU</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter SKU" {...field} />
+                    <Input placeholder="Enter SKU" {...field} className="item-sku-input" />
                   </FormControl>
                   <FormDescription>
                     Stock Keeping Unit - unique identifier for this item
@@ -177,14 +177,15 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
               control={form.control}
               name="categoryId"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="item-category-field">
                   <FormLabel>Category</FormLabel>
-                  <Select
-                    onValueChange={(value) => field.onChange(Number(value))}
-                    defaultValue={field.value ? String(field.value) : undefined}
-                  >
+                  <div className="item-category-select">
+                    <Select
+                      onValueChange={(value) => field.onChange(Number(value))}
+                      defaultValue={field.value ? String(field.value) : undefined}
+                    >
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className="item-category-trigger">
                         <SelectValue placeholder="Select a category" />
                       </SelectTrigger>
                     </FormControl>
@@ -196,17 +197,18 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                       ))}
                     </SelectContent>
                   </Select>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 item-price-quantity-row">
               <FormField
                 control={form.control}
                 name="price"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="item-price-field">
                     <FormLabel>Price</FormLabel>
                     <FormControl>
                       <div className="relative rounded-md shadow-sm">
@@ -217,7 +219,7 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                           type="number"
                           step="0.01"
                           placeholder="0.00"
-                          className="pl-7"
+                          className="pl-7 item-price-input"
                           {...field}
                           onChange={(e) =>
                             field.onChange(
@@ -236,12 +238,13 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                 control={form.control}
                 name="quantity"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="item-quantity-field">
                     <FormLabel>Quantity</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
                         placeholder="0"
+                        className="item-quantity-input"
                         {...field}
                         onChange={(e) =>
                           field.onChange(
@@ -256,12 +259,12 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 item-cost-threshold-row">
               <FormField
                 control={form.control}
                 name="cost"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="item-cost-field">
                     <FormLabel>Cost (Optional)</FormLabel>
                     <FormControl>
                       <div className="relative rounded-md shadow-sm">
@@ -272,7 +275,7 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                           type="number"
                           step="0.01"
                           placeholder="0.00"
-                          className="pl-7"
+                          className="pl-7 item-cost-input"
                           {...field}
                           onChange={(e) =>
                             field.onChange(
@@ -292,12 +295,13 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                 control={form.control}
                 name="lowStockThreshold"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="item-threshold-field">
                     <FormLabel>Low Stock Threshold</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
                         placeholder="10"
+                        className="item-threshold-input"
                         {...field}
                         onChange={(e) =>
                           field.onChange(
@@ -317,10 +321,14 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
               control={form.control}
               name="location"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="item-location-field">
                   <FormLabel>Storage Location (Optional)</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Warehouse A, Shelf B5" {...field} />
+                    <Input 
+                      placeholder="e.g., Warehouse A, Shelf B5" 
+                      {...field} 
+                      className="item-location-input" 
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -331,12 +339,12 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
               control={form.control}
               name="description"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="item-description-field">
                   <FormLabel>Description (Optional)</FormLabel>
                   <FormControl>
                     <Textarea
                       placeholder="Enter item description"
-                      className="resize-none"
+                      className="resize-none item-description-input"
                       {...field}
                     />
                   </FormControl>
@@ -345,16 +353,21 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
               )}
             />
 
-            <DialogFooter>
+            <DialogFooter className="inventory-form-footer">
               <Button 
                 type="button" 
                 variant="outline" 
                 onClick={() => setOpen(false)}
                 disabled={loading}
+                className="cancel-button"
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={loading}>
+              <Button 
+                type="submit" 
+                disabled={loading} 
+                className="submit-button"
+              >
                 {loading ? "Saving..." : initialData ? "Update Item" : "Add Item"}
               </Button>
             </DialogFooter>
