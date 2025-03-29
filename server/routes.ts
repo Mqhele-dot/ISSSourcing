@@ -7,6 +7,15 @@ import {
   insertInventoryItemSchema, 
   insertCategorySchema, 
   insertActivityLogSchema,
+  insertSupplierSchema,
+  insertPurchaseRequisitionSchema,
+  insertPurchaseRequisitionItemSchema,
+  insertPurchaseOrderSchema,
+  insertPurchaseOrderItemSchema,
+  bulkImportInventorySchema,
+  PurchaseRequisitionStatus,
+  PurchaseOrderStatus,
+  PaymentStatus,
   type DocumentType,
   type ReportType
 } from "@shared/schema";
@@ -264,13 +273,721 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Supplier endpoints
+  app.get("/api/suppliers", async (_req: Request, res: Response) => {
+    try {
+      const suppliers = await storage.getAllSuppliers();
+      res.json(suppliers);
+    } catch (error) {
+      console.error("Error fetching suppliers:", error);
+      res.status(500).json({ message: "Failed to fetch suppliers" });
+    }
+  });
+
+  app.get("/api/suppliers/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid supplier ID" });
+      }
+      
+      const supplier = await storage.getSupplier(id);
+      
+      if (!supplier) {
+        return res.status(404).json({ message: "Supplier not found" });
+      }
+      
+      res.json(supplier);
+    } catch (error) {
+      console.error("Error fetching supplier:", error);
+      res.status(500).json({ message: "Failed to fetch supplier" });
+    }
+  });
+
+  app.post("/api/suppliers", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertSupplierSchema.parse(req.body);
+      
+      // Check if supplier with this name already exists
+      const existingSupplier = await storage.getSupplierByName(validatedData.name);
+      if (existingSupplier) {
+        return res.status(400).json({ message: "Supplier with this name already exists" });
+      }
+      
+      const newSupplier = await storage.createSupplier(validatedData);
+      res.status(201).json(newSupplier);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error creating supplier:", error);
+        res.status(500).json({ message: "Failed to create supplier" });
+      }
+    }
+  });
+
+  app.put("/api/suppliers/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid supplier ID" });
+      }
+      
+      const validatedData = insertSupplierSchema.partial().parse(req.body);
+      const updatedSupplier = await storage.updateSupplier(id, validatedData);
+      
+      if (!updatedSupplier) {
+        return res.status(404).json({ message: "Supplier not found" });
+      }
+      
+      res.json(updatedSupplier);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating supplier:", error);
+        res.status(500).json({ message: "Failed to update supplier" });
+      }
+    }
+  });
+
+  app.delete("/api/suppliers/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid supplier ID" });
+      }
+      
+      const success = await storage.deleteSupplier(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Supplier not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting supplier:", error);
+      res.status(500).json({ message: "Failed to delete supplier" });
+    }
+  });
+
+  // Bulk import inventory items
+  app.post("/api/inventory/bulk-import", async (req: Request, res: Response) => {
+    try {
+      const validatedData = bulkImportInventorySchema.parse(req.body);
+      const result = await storage.bulkImportInventory(validatedData);
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error bulk importing inventory:", error);
+        res.status(500).json({ message: "Failed to bulk import inventory" });
+      }
+    }
+  });
+
+  // Purchase Requisition endpoints
+  app.get("/api/purchase-requisitions", async (_req: Request, res: Response) => {
+    try {
+      const requisitions = await storage.getAllPurchaseRequisitions();
+      res.json(requisitions);
+    } catch (error) {
+      console.error("Error fetching purchase requisitions:", error);
+      res.status(500).json({ message: "Failed to fetch purchase requisitions" });
+    }
+  });
+
+  app.get("/api/purchase-requisitions/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      }
+      
+      const requisition = await storage.getRequisitionWithDetails(id);
+      
+      if (!requisition) {
+        return res.status(404).json({ message: "Purchase requisition not found" });
+      }
+      
+      res.json(requisition);
+    } catch (error) {
+      console.error("Error fetching purchase requisition:", error);
+      res.status(500).json({ message: "Failed to fetch purchase requisition" });
+    }
+  });
+
+  app.post("/api/purchase-requisitions", async (req: Request, res: Response) => {
+    try {
+      if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
+        return res.status(400).json({ message: "At least one item is required" });
+      }
+      
+      const validatedReqData = insertPurchaseRequisitionSchema.parse(req.body);
+      const validatedItemsData = req.body.items.map((item: any) => 
+        insertPurchaseRequisitionItemSchema.omit({ requisitionId: true }).parse(item)
+      );
+      
+      // Generate a unique requisition number
+      if (!validatedReqData.requisitionNumber) {
+        const date = new Date();
+        const year = date.getFullYear().toString().substr(-2);
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        validatedReqData.requisitionNumber = `REQ-${year}${month}-${random}`;
+      }
+      
+      // Set default status if not provided
+      if (!validatedReqData.status) {
+        validatedReqData.status = PurchaseRequisitionStatus.DRAFT;
+      }
+      
+      const newRequisition = await storage.createPurchaseRequisition(
+        validatedReqData, 
+        validatedItemsData
+      );
+      
+      res.status(201).json(newRequisition);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error creating purchase requisition:", error);
+        res.status(500).json({ message: "Failed to create purchase requisition" });
+      }
+    }
+  });
+
+  app.put("/api/purchase-requisitions/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      }
+      
+      const validatedData = insertPurchaseRequisitionSchema.partial().parse(req.body);
+      const updatedRequisition = await storage.updatePurchaseRequisition(id, validatedData);
+      
+      if (!updatedRequisition) {
+        return res.status(404).json({ message: "Purchase requisition not found" });
+      }
+      
+      res.json(updatedRequisition);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating purchase requisition:", error);
+        res.status(500).json({ message: "Failed to update purchase requisition" });
+      }
+    }
+  });
+
+  app.delete("/api/purchase-requisitions/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      }
+      
+      const success = await storage.deletePurchaseRequisition(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Purchase requisition not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting purchase requisition:", error);
+      res.status(500).json({ message: "Failed to delete purchase requisition" });
+    }
+  });
+
+  app.post("/api/purchase-requisitions/:id/approve", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      }
+      
+      const { approverId } = req.body;
+      if (!approverId) {
+        return res.status(400).json({ message: "Approver ID is required" });
+      }
+      
+      const updatedRequisition = await storage.approvePurchaseRequisition(id, approverId);
+      
+      if (!updatedRequisition) {
+        return res.status(404).json({ message: "Purchase requisition not found" });
+      }
+      
+      res.json(updatedRequisition);
+    } catch (error) {
+      console.error("Error approving purchase requisition:", error);
+      res.status(500).json({ message: "Failed to approve purchase requisition" });
+    }
+  });
+
+  app.post("/api/purchase-requisitions/:id/reject", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      }
+      
+      const { approverId, reason } = req.body;
+      if (!approverId) {
+        return res.status(400).json({ message: "Approver ID is required" });
+      }
+      
+      if (!reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
+      
+      const updatedRequisition = await storage.rejectPurchaseRequisition(id, approverId, reason);
+      
+      if (!updatedRequisition) {
+        return res.status(404).json({ message: "Purchase requisition not found" });
+      }
+      
+      res.json(updatedRequisition);
+    } catch (error) {
+      console.error("Error rejecting purchase requisition:", error);
+      res.status(500).json({ message: "Failed to reject purchase requisition" });
+    }
+  });
+
+  app.post("/api/purchase-requisitions/:id/convert", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      }
+      
+      const purchaseOrder = await storage.createPurchaseOrderFromRequisition(id);
+      
+      if (!purchaseOrder) {
+        return res.status(404).json({ 
+          message: "Failed to convert requisition to purchase order. Make sure the requisition exists and is approved." 
+        });
+      }
+      
+      res.status(201).json(purchaseOrder);
+    } catch (error) {
+      console.error("Error converting requisition to purchase order:", error);
+      res.status(500).json({ message: "Failed to convert requisition to purchase order" });
+    }
+  });
+
+  // Purchase Requisition Items endpoints
+  app.get("/api/purchase-requisitions/:reqId/items", async (req: Request, res: Response) => {
+    try {
+      const reqId = Number(req.params.reqId);
+      if (isNaN(reqId)) {
+        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      }
+      
+      const items = await storage.getPurchaseRequisitionItems(reqId);
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching purchase requisition items:", error);
+      res.status(500).json({ message: "Failed to fetch purchase requisition items" });
+    }
+  });
+
+  app.post("/api/purchase-requisitions/:reqId/items", async (req: Request, res: Response) => {
+    try {
+      const reqId = Number(req.params.reqId);
+      if (isNaN(reqId)) {
+        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      }
+      
+      const validatedData = insertPurchaseRequisitionItemSchema.parse({
+        ...req.body,
+        requisitionId: reqId
+      });
+      
+      const newItem = await storage.addPurchaseRequisitionItem(validatedData);
+      res.status(201).json(newItem);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error adding purchase requisition item:", error);
+        res.status(500).json({ message: "Failed to add purchase requisition item" });
+      }
+    }
+  });
+
+  app.put("/api/purchase-requisitions-items/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase requisition item ID" });
+      }
+      
+      const validatedData = insertPurchaseRequisitionItemSchema.partial().parse(req.body);
+      const updatedItem = await storage.updatePurchaseRequisitionItem(id, validatedData);
+      
+      if (!updatedItem) {
+        return res.status(404).json({ message: "Purchase requisition item not found" });
+      }
+      
+      res.json(updatedItem);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating purchase requisition item:", error);
+        res.status(500).json({ message: "Failed to update purchase requisition item" });
+      }
+    }
+  });
+
+  app.delete("/api/purchase-requisitions-items/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase requisition item ID" });
+      }
+      
+      const success = await storage.deletePurchaseRequisitionItem(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Purchase requisition item not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting purchase requisition item:", error);
+      res.status(500).json({ message: "Failed to delete purchase requisition item" });
+    }
+  });
+
+  // Purchase Order endpoints
+  app.get("/api/purchase-orders", async (_req: Request, res: Response) => {
+    try {
+      const orders = await storage.getAllPurchaseOrders();
+      res.json(orders);
+    } catch (error) {
+      console.error("Error fetching purchase orders:", error);
+      res.status(500).json({ message: "Failed to fetch purchase orders" });
+    }
+  });
+
+  app.get("/api/purchase-orders/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order ID" });
+      }
+      
+      const order = await storage.getPurchaseOrderWithDetails(id);
+      
+      if (!order) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+      
+      res.json(order);
+    } catch (error) {
+      console.error("Error fetching purchase order:", error);
+      res.status(500).json({ message: "Failed to fetch purchase order" });
+    }
+  });
+
+  app.post("/api/purchase-orders", async (req: Request, res: Response) => {
+    try {
+      if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
+        return res.status(400).json({ message: "At least one item is required" });
+      }
+      
+      const validatedOrderData = insertPurchaseOrderSchema.parse(req.body);
+      const validatedItemsData = req.body.items.map((item: any) => 
+        insertPurchaseOrderItemSchema.omit({ orderId: true }).parse(item)
+      );
+      
+      // Generate a unique order number
+      if (!validatedOrderData.orderNumber) {
+        const date = new Date();
+        const year = date.getFullYear().toString().substr(-2);
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        validatedOrderData.orderNumber = `PO-${year}${month}-${random}`;
+      }
+      
+      // Set default status if not provided
+      if (!validatedOrderData.status) {
+        validatedOrderData.status = PurchaseOrderStatus.DRAFT;
+      }
+      
+      const newOrder = await storage.createPurchaseOrder(
+        validatedOrderData, 
+        validatedItemsData
+      );
+      
+      res.status(201).json(newOrder);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error creating purchase order:", error);
+        res.status(500).json({ message: "Failed to create purchase order" });
+      }
+    }
+  });
+
+  app.put("/api/purchase-orders/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order ID" });
+      }
+      
+      const validatedData = insertPurchaseOrderSchema.partial().parse(req.body);
+      const updatedOrder = await storage.updatePurchaseOrder(id, validatedData);
+      
+      if (!updatedOrder) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+      
+      res.json(updatedOrder);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating purchase order:", error);
+        res.status(500).json({ message: "Failed to update purchase order" });
+      }
+    }
+  });
+
+  app.delete("/api/purchase-orders/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order ID" });
+      }
+      
+      const success = await storage.deletePurchaseOrder(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting purchase order:", error);
+      res.status(500).json({ message: "Failed to delete purchase order" });
+    }
+  });
+
+  app.post("/api/purchase-orders/:id/update-status", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order ID" });
+      }
+      
+      const { status } = req.body;
+      if (!status || !Object.values(PurchaseOrderStatus).includes(status as PurchaseOrderStatus)) {
+        return res.status(400).json({ message: "Valid status is required" });
+      }
+      
+      const updatedOrder = await storage.updatePurchaseOrderStatus(id, status);
+      
+      if (!updatedOrder) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+      
+      res.json(updatedOrder);
+    } catch (error) {
+      console.error("Error updating purchase order status:", error);
+      res.status(500).json({ message: "Failed to update purchase order status" });
+    }
+  });
+
+  app.post("/api/purchase-orders/:id/update-payment", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order ID" });
+      }
+      
+      const { paymentStatus, reference } = req.body;
+      if (!paymentStatus || !Object.values(PaymentStatus).includes(paymentStatus as PaymentStatus)) {
+        return res.status(400).json({ message: "Valid payment status is required" });
+      }
+      
+      const updatedOrder = await storage.updatePurchaseOrderPaymentStatus(id, paymentStatus, reference);
+      
+      if (!updatedOrder) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+      
+      res.json(updatedOrder);
+    } catch (error) {
+      console.error("Error updating purchase order payment status:", error);
+      res.status(500).json({ message: "Failed to update purchase order payment status" });
+    }
+  });
+
+  app.post("/api/purchase-orders/:id/send-email", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order ID" });
+      }
+      
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Recipient email is required" });
+      }
+      
+      const success = await storage.sendPurchaseOrderEmail(id, email);
+      
+      if (!success) {
+        return res.status(500).json({ message: "Failed to send purchase order email" });
+      }
+      
+      // Update the order status to SENT if successful
+      await storage.updatePurchaseOrderStatus(id, PurchaseOrderStatus.SENT);
+      
+      res.json({ message: "Purchase order email sent successfully" });
+    } catch (error) {
+      console.error("Error sending purchase order email:", error);
+      res.status(500).json({ message: "Failed to send purchase order email" });
+    }
+  });
+
+  // Purchase Order Items endpoints
+  app.get("/api/purchase-orders/:orderId/items", async (req: Request, res: Response) => {
+    try {
+      const orderId = Number(req.params.orderId);
+      if (isNaN(orderId)) {
+        return res.status(400).json({ message: "Invalid purchase order ID" });
+      }
+      
+      const items = await storage.getPurchaseOrderItems(orderId);
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching purchase order items:", error);
+      res.status(500).json({ message: "Failed to fetch purchase order items" });
+    }
+  });
+
+  app.post("/api/purchase-orders/:orderId/items", async (req: Request, res: Response) => {
+    try {
+      const orderId = Number(req.params.orderId);
+      if (isNaN(orderId)) {
+        return res.status(400).json({ message: "Invalid purchase order ID" });
+      }
+      
+      const validatedData = insertPurchaseOrderItemSchema.parse({
+        ...req.body,
+        orderId
+      });
+      
+      const newItem = await storage.addPurchaseOrderItem(validatedData);
+      res.status(201).json(newItem);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error adding purchase order item:", error);
+        res.status(500).json({ message: "Failed to add purchase order item" });
+      }
+    }
+  });
+
+  app.put("/api/purchase-order-items/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order item ID" });
+      }
+      
+      const validatedData = insertPurchaseOrderItemSchema.partial().parse(req.body);
+      const updatedItem = await storage.updatePurchaseOrderItem(id, validatedData);
+      
+      if (!updatedItem) {
+        return res.status(404).json({ message: "Purchase order item not found" });
+      }
+      
+      res.json(updatedItem);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating purchase order item:", error);
+        res.status(500).json({ message: "Failed to update purchase order item" });
+      }
+    }
+  });
+
+  app.delete("/api/purchase-order-items/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order item ID" });
+      }
+      
+      const success = await storage.deletePurchaseOrderItem(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Purchase order item not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting purchase order item:", error);
+      res.status(500).json({ message: "Failed to delete purchase order item" });
+    }
+  });
+
+  app.post("/api/purchase-order-items/:id/receive", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order item ID" });
+      }
+      
+      const { receivedQuantity } = req.body;
+      if (receivedQuantity === undefined || isNaN(Number(receivedQuantity)) || Number(receivedQuantity) < 0) {
+        return res.status(400).json({ message: "Valid received quantity is required" });
+      }
+      
+      const updatedItem = await storage.recordPurchaseOrderItemReceived(id, Number(receivedQuantity));
+      
+      if (!updatedItem) {
+        return res.status(404).json({ message: "Purchase order item not found" });
+      }
+      
+      res.json(updatedItem);
+    } catch (error) {
+      console.error("Error recording received quantity:", error);
+      res.status(500).json({ message: "Failed to record received quantity" });
+    }
+  });
+
   // Document generation endpoints
   app.get("/api/export/:reportType/:format", async (req: Request, res: Response) => {
     try {
       const reportType = req.params.reportType as ReportType;
       const format = req.params.format as DocumentType;
       
-      if (!['inventory', 'low-stock', 'value'].includes(reportType)) {
+      if (!['inventory', 'low-stock', 'value', 'purchase-orders', 'purchase-requisitions', 'suppliers'].includes(reportType)) {
         return res.status(400).json({ message: "Invalid report type" });
       }
       
@@ -294,23 +1011,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
           items = await storage.getAllInventoryItems();
           title = 'Inventory Value Report';
           break;
+        case 'purchase-orders':
+          items = await storage.getAllPurchaseOrders();
+          title = 'Purchase Orders Report';
+          break;
+        case 'purchase-requisitions':
+          items = await storage.getAllPurchaseRequisitions();
+          title = 'Purchase Requisitions Report';
+          break;
+        case 'suppliers':
+          items = await storage.getAllSuppliers();
+          title = 'Suppliers Report';
+          break;
       }
       
       let buffer;
       
+      // Make sure we have items and a title
+      if (!items || !title) {
+        return res.status(404).json({ message: "No data found for report" });
+      }
+      
+      // Determine which generator to use based on report type
+      let generator;
+      
+      switch (reportType) {
+        case 'inventory':
+        case 'low-stock':
+        case 'value':
+          generator = {
+            pdf: generateInventoryPdfReport,
+            csv: generateInventoryCsvReport,
+            excel: generateInventoryExcelReport
+          };
+          break;
+        case 'purchase-orders':
+          generator = {
+            pdf: generatePurchaseOrdersPdfReport,
+            csv: generatePurchaseOrdersCsvReport,
+            excel: generatePurchaseOrdersExcelReport
+          };
+          break;
+        case 'purchase-requisitions':
+          generator = {
+            pdf: generatePurchaseRequisitionsPdfReport,
+            csv: generatePurchaseRequisitionsCsvReport,
+            excel: generatePurchaseRequisitionsExcelReport
+          };
+          break;
+        case 'suppliers':
+          generator = {
+            pdf: generateSuppliersPdfReport,
+            csv: generateSuppliersCsvReport,
+            excel: generateSuppliersExcelReport
+          };
+          break;
+      }
+      
+      // Generate the report
       switch (format) {
         case 'pdf':
-          buffer = await generatePdfReport(items, title);
+          buffer = await generator.pdf(items, title);
           res.setHeader('Content-Type', 'application/pdf');
           res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '-').toLowerCase()}.pdf"`);
           break;
         case 'csv':
-          buffer = await generateCsvReport(items, title);
+          buffer = await generator.csv(items, title);
           res.setHeader('Content-Type', 'text/csv');
           res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '-').toLowerCase()}.csv"`);
           break;
         case 'excel':
-          buffer = await generateExcelReport(items, title);
+          buffer = await generator.excel(items, title);
           res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
           res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '-').toLowerCase()}.xlsx"`);
           break;
@@ -328,7 +1099,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 }
 
 // Document generation functions
-async function generatePdfReport(items: any[], title: string): Promise<Buffer> {
+// Inventory reports
+async function generateInventoryPdfReport(items: any[], title: string): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -514,7 +1286,7 @@ async function generatePdfReport(items: any[], title: string): Promise<Buffer> {
   return Buffer.from(await pdfDoc.save());
 }
 
-async function generateCsvReport(items: any[], title: string): Promise<Buffer> {
+async function generateInventoryCsvReport(items: any[], title: string): Promise<Buffer> {
   const categories = await storage.getAllCategories();
   const categoryMap = new Map(categories.map(c => [c.id, c.name]));
   
@@ -558,7 +1330,7 @@ async function generateCsvReport(items: any[], title: string): Promise<Buffer> {
   return buffer;
 }
 
-async function generateExcelReport(items: any[], title: string): Promise<Buffer> {
+async function generateInventoryExcelReport(items: any[], title: string): Promise<Buffer> {
   const categories = await storage.getAllCategories();
   const categoryMap = new Map(categories.map(c => [c.id, c.name]));
   
@@ -620,6 +1392,869 @@ async function generateExcelReport(items: any[], title: string): Promise<Buffer>
   const totalRow = worksheet.getRow(totalRowIndex);
   totalRow.getCell(1).value = 'Total';
   totalRow.getCell(6).value = { formula: `SUM(F4:F${totalRowIndex - 1})` };
+  totalRow.font = { bold: true };
+  
+  // Add a border to the total row
+  totalRow.eachCell(cell => {
+    cell.border = {
+      top: { style: 'thin' }
+    };
+  });
+  
+  // Write to buffer
+  return await workbook.xlsx.writeBuffer();
+}
+
+// Purchase Orders Reports
+async function generatePurchaseOrdersPdfReport(items: any[], title: string): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  
+  const page = pdfDoc.addPage([612, 792]); // Letter size
+  const { width, height } = page.getSize();
+  
+  // Add title
+  page.drawText(title, {
+    x: 50,
+    y: height - 50,
+    size: 20,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
+  
+  // Add date
+  const dateStr = new Date().toLocaleDateString();
+  page.drawText(`Generated on: ${dateStr}`, {
+    x: 50,
+    y: height - 75,
+    size: 10,
+    font,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+  
+  // Add headers
+  const headers = ['Order #', 'Supplier', 'Status', 'Total Amount', 'Date Created'];
+  const colWidths = [90, 180, 80, 100, 100];
+  let yPos = height - 100;
+  let xPos = 50;
+  
+  headers.forEach((header, i) => {
+    page.drawText(header, {
+      x: xPos,
+      y: yPos,
+      size: 10,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[i];
+  });
+  
+  // Draw a line
+  page.drawLine({
+    start: { x: 50, y: yPos - 5 },
+    end: { x: width - 50, y: yPos - 5 },
+    thickness: 1,
+    color: rgb(0, 0, 0),
+  });
+  
+  // Add data rows
+  yPos -= 20;
+  const suppliers = await storage.getAllSuppliers();
+  const supplierMap = new Map(suppliers.map(s => [s.id, s.name]));
+  
+  for (const order of items) {
+    if (yPos < 50) {
+      // Add a new page if we're running out of space
+      const newPage = pdfDoc.addPage([612, 792]);
+      yPos = height - 50;
+      
+      // Add headers to new page
+      xPos = 50;
+      headers.forEach((header, i) => {
+        newPage.drawText(header, {
+          x: xPos,
+          y: yPos,
+          size: 10,
+          font: boldFont,
+          color: rgb(0, 0, 0),
+        });
+        xPos += colWidths[i];
+      });
+      
+      // Draw a line
+      newPage.drawLine({
+        start: { x: 50, y: yPos - 5 },
+        end: { x: width - 50, y: yPos - 5 },
+        thickness: 1,
+        color: rgb(0, 0, 0),
+      });
+      
+      yPos -= 20;
+    }
+    
+    const supplierName = order.supplierId ? supplierMap.get(order.supplierId) || 'None' : 'None';
+    const amount = `$${order.totalAmount.toFixed(2)}`;
+    const created = new Date(order.createdAt).toLocaleDateString();
+    const currentPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
+    
+    xPos = 50;
+    
+    currentPage.drawText(order.orderNumber, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[0];
+    
+    currentPage.drawText(supplierName, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[1];
+    
+    currentPage.drawText(order.status, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[2];
+    
+    currentPage.drawText(amount, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[3];
+    
+    currentPage.drawText(created, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    
+    yPos -= 15;
+  }
+  
+  // Add totals
+  const lastPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
+  const totalAmount = items.reduce((sum, order) => sum + order.totalAmount, 0);
+  const totalOrders = items.length;
+  
+  lastPage.drawLine({
+    start: { x: 50, y: yPos + 5 },
+    end: { x: width - 50, y: yPos + 5 },
+    thickness: 1,
+    color: rgb(0, 0, 0),
+  });
+  
+  lastPage.drawText(`Total Orders: ${totalOrders}`, {
+    x: 50,
+    y: yPos - 10,
+    size: 10,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
+  
+  lastPage.drawText(`Total Value: $${totalAmount.toFixed(2)}`, {
+    x: width - 150,
+    y: yPos - 10,
+    size: 10,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
+  
+  return Buffer.from(await pdfDoc.save());
+}
+
+async function generatePurchaseOrdersCsvReport(items: any[], title: string): Promise<Buffer> {
+  const suppliers = await storage.getAllSuppliers();
+  const supplierMap = new Map(suppliers.map(s => [s.id, s.name]));
+  
+  // Create a temporary file path
+  const tmpDir = path.join(process.cwd(), 'tmp');
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir);
+  }
+  
+  const filePath = path.join(tmpDir, `${title.replace(/\s+/g, '-').toLowerCase()}.csv`);
+  
+  const csvWriter = createObjectCsvWriter({
+    path: filePath,
+    header: [
+      {id: 'orderNumber', title: 'Order #'},
+      {id: 'supplier', title: 'Supplier'},
+      {id: 'status', title: 'Status'},
+      {id: 'totalAmount', title: 'Total Amount'},
+      {id: 'date', title: 'Date Created'},
+      {id: 'paymentStatus', title: 'Payment Status'}
+    ]
+  });
+  
+  const records = items.map(order => ({
+    orderNumber: order.orderNumber,
+    supplier: order.supplierId ? supplierMap.get(order.supplierId) || 'None' : 'None',
+    status: order.status,
+    totalAmount: `$${order.totalAmount.toFixed(2)}`,
+    date: new Date(order.createdAt).toLocaleDateString(),
+    paymentStatus: order.paymentStatus || 'UNPAID'
+  }));
+  
+  await csvWriter.writeRecords(records);
+  
+  // Read the file and return as buffer
+  const buffer = fs.readFileSync(filePath);
+  
+  // Clean up the temporary file
+  fs.unlinkSync(filePath);
+  
+  return buffer;
+}
+
+async function generatePurchaseOrdersExcelReport(items: any[], title: string): Promise<Buffer> {
+  const suppliers = await storage.getAllSuppliers();
+  const supplierMap = new Map(suppliers.map(s => [s.id, s.name]));
+  
+  const workbook = new Excel.Workbook();
+  const worksheet = workbook.addWorksheet(title);
+  
+  // Add title row
+  worksheet.mergeCells('A1:F1');
+  const titleCell = worksheet.getCell('A1');
+  titleCell.value = title;
+  titleCell.font = {
+    size: 16,
+    bold: true
+  };
+  titleCell.alignment = { horizontal: 'center' };
+  
+  // Add date row
+  worksheet.mergeCells('A2:F2');
+  const dateCell = worksheet.getCell('A2');
+  dateCell.value = `Generated on: ${new Date().toLocaleDateString()}`;
+  dateCell.font = {
+    size: 10,
+    italic: true
+  };
+  dateCell.alignment = { horizontal: 'center' };
+  
+  // Add headers
+  worksheet.columns = [
+    { header: 'Order #', key: 'orderNumber', width: 15 },
+    { header: 'Supplier', key: 'supplier', width: 30 },
+    { header: 'Status', key: 'status', width: 15 },
+    { header: 'Total Amount', key: 'totalAmount', width: 15 },
+    { header: 'Date Created', key: 'date', width: 15 },
+    { header: 'Payment Status', key: 'paymentStatus', width: 15 }
+  ];
+  
+  // Style the header row
+  worksheet.getRow(3).font = { bold: true };
+  worksheet.getRow(3).alignment = { horizontal: 'center' };
+  
+  // Add data
+  items.forEach(order => {
+    worksheet.addRow({
+      orderNumber: order.orderNumber,
+      supplier: order.supplierId ? supplierMap.get(order.supplierId) || 'None' : 'None',
+      status: order.status,
+      totalAmount: order.totalAmount,
+      date: new Date(order.createdAt),
+      paymentStatus: order.paymentStatus || 'UNPAID'
+    });
+  });
+  
+  // Format columns
+  worksheet.getColumn('totalAmount').numFmt = '$#,##0.00';
+  worksheet.getColumn('date').numFmt = 'mm/dd/yyyy';
+  
+  // Add totals row
+  const totalRowIndex = items.length + 4;
+  const totalRow = worksheet.getRow(totalRowIndex);
+  totalRow.getCell(1).value = 'Total';
+  totalRow.getCell(4).value = { formula: `SUM(D4:D${totalRowIndex - 1})` };
+  totalRow.font = { bold: true };
+  
+  // Add a border to the total row
+  totalRow.eachCell(cell => {
+    cell.border = {
+      top: { style: 'thin' }
+    };
+  });
+  
+  // Write to buffer
+  return await workbook.xlsx.writeBuffer();
+}
+
+// Purchase Requisitions Reports
+async function generatePurchaseRequisitionsPdfReport(items: any[], title: string): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  
+  const page = pdfDoc.addPage([612, 792]); // Letter size
+  const { width, height } = page.getSize();
+  
+  // Add title
+  page.drawText(title, {
+    x: 50,
+    y: height - 50,
+    size: 20,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
+  
+  // Add date
+  const dateStr = new Date().toLocaleDateString();
+  page.drawText(`Generated on: ${dateStr}`, {
+    x: 50,
+    y: height - 75,
+    size: 10,
+    font,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+  
+  // Add headers
+  const headers = ['Req #', 'Supplier', 'Status', 'Total Amount', 'Date Created'];
+  const colWidths = [90, 180, 80, 100, 100];
+  let yPos = height - 100;
+  let xPos = 50;
+  
+  headers.forEach((header, i) => {
+    page.drawText(header, {
+      x: xPos,
+      y: yPos,
+      size: 10,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[i];
+  });
+  
+  // Draw a line
+  page.drawLine({
+    start: { x: 50, y: yPos - 5 },
+    end: { x: width - 50, y: yPos - 5 },
+    thickness: 1,
+    color: rgb(0, 0, 0),
+  });
+  
+  // Add data rows
+  yPos -= 20;
+  const suppliers = await storage.getAllSuppliers();
+  const supplierMap = new Map(suppliers.map(s => [s.id, s.name]));
+  
+  for (const req of items) {
+    if (yPos < 50) {
+      // Add a new page if we're running out of space
+      const newPage = pdfDoc.addPage([612, 792]);
+      yPos = height - 50;
+      
+      // Add headers to new page
+      xPos = 50;
+      headers.forEach((header, i) => {
+        newPage.drawText(header, {
+          x: xPos,
+          y: yPos,
+          size: 10,
+          font: boldFont,
+          color: rgb(0, 0, 0),
+        });
+        xPos += colWidths[i];
+      });
+      
+      // Draw a line
+      newPage.drawLine({
+        start: { x: 50, y: yPos - 5 },
+        end: { x: width - 50, y: yPos - 5 },
+        thickness: 1,
+        color: rgb(0, 0, 0),
+      });
+      
+      yPos -= 20;
+    }
+    
+    const supplierName = req.supplierId ? supplierMap.get(req.supplierId) || 'None' : 'None';
+    const amount = `$${req.totalAmount.toFixed(2)}`;
+    const created = new Date(req.createdAt).toLocaleDateString();
+    const currentPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
+    
+    xPos = 50;
+    
+    currentPage.drawText(req.requisitionNumber, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[0];
+    
+    currentPage.drawText(supplierName, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[1];
+    
+    currentPage.drawText(req.status, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[2];
+    
+    currentPage.drawText(amount, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[3];
+    
+    currentPage.drawText(created, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    
+    yPos -= 15;
+  }
+  
+  // Add totals
+  const lastPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
+  const totalAmount = items.reduce((sum, req) => sum + req.totalAmount, 0);
+  const totalReqs = items.length;
+  
+  lastPage.drawLine({
+    start: { x: 50, y: yPos + 5 },
+    end: { x: width - 50, y: yPos + 5 },
+    thickness: 1,
+    color: rgb(0, 0, 0),
+  });
+  
+  lastPage.drawText(`Total Requisitions: ${totalReqs}`, {
+    x: 50,
+    y: yPos - 10,
+    size: 10,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
+  
+  lastPage.drawText(`Total Value: $${totalAmount.toFixed(2)}`, {
+    x: width - 150,
+    y: yPos - 10,
+    size: 10,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
+  
+  return Buffer.from(await pdfDoc.save());
+}
+
+async function generatePurchaseRequisitionsCsvReport(items: any[], title: string): Promise<Buffer> {
+  const suppliers = await storage.getAllSuppliers();
+  const supplierMap = new Map(suppliers.map(s => [s.id, s.name]));
+  
+  // Create a temporary file path
+  const tmpDir = path.join(process.cwd(), 'tmp');
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir);
+  }
+  
+  const filePath = path.join(tmpDir, `${title.replace(/\s+/g, '-').toLowerCase()}.csv`);
+  
+  const csvWriter = createObjectCsvWriter({
+    path: filePath,
+    header: [
+      {id: 'requisitionNumber', title: 'Req #'},
+      {id: 'supplier', title: 'Supplier'},
+      {id: 'status', title: 'Status'},
+      {id: 'totalAmount', title: 'Total Amount'},
+      {id: 'date', title: 'Date Created'},
+      {id: 'requiredDate', title: 'Required Date'}
+    ]
+  });
+  
+  const records = items.map(req => ({
+    requisitionNumber: req.requisitionNumber,
+    supplier: req.supplierId ? supplierMap.get(req.supplierId) || 'None' : 'None',
+    status: req.status,
+    totalAmount: `$${req.totalAmount.toFixed(2)}`,
+    date: new Date(req.createdAt).toLocaleDateString(),
+    requiredDate: req.requiredDate ? new Date(req.requiredDate).toLocaleDateString() : 'N/A'
+  }));
+  
+  await csvWriter.writeRecords(records);
+  
+  // Read the file and return as buffer
+  const buffer = fs.readFileSync(filePath);
+  
+  // Clean up the temporary file
+  fs.unlinkSync(filePath);
+  
+  return buffer;
+}
+
+async function generatePurchaseRequisitionsExcelReport(items: any[], title: string): Promise<Buffer> {
+  const suppliers = await storage.getAllSuppliers();
+  const supplierMap = new Map(suppliers.map(s => [s.id, s.name]));
+  
+  const workbook = new Excel.Workbook();
+  const worksheet = workbook.addWorksheet(title);
+  
+  // Add title row
+  worksheet.mergeCells('A1:F1');
+  const titleCell = worksheet.getCell('A1');
+  titleCell.value = title;
+  titleCell.font = {
+    size: 16,
+    bold: true
+  };
+  titleCell.alignment = { horizontal: 'center' };
+  
+  // Add date row
+  worksheet.mergeCells('A2:F2');
+  const dateCell = worksheet.getCell('A2');
+  dateCell.value = `Generated on: ${new Date().toLocaleDateString()}`;
+  dateCell.font = {
+    size: 10,
+    italic: true
+  };
+  dateCell.alignment = { horizontal: 'center' };
+  
+  // Add headers
+  worksheet.columns = [
+    { header: 'Req #', key: 'requisitionNumber', width: 15 },
+    { header: 'Supplier', key: 'supplier', width: 30 },
+    { header: 'Status', key: 'status', width: 15 },
+    { header: 'Total Amount', key: 'totalAmount', width: 15 },
+    { header: 'Date Created', key: 'date', width: 15 },
+    { header: 'Required Date', key: 'requiredDate', width: 15 }
+  ];
+  
+  // Style the header row
+  worksheet.getRow(3).font = { bold: true };
+  worksheet.getRow(3).alignment = { horizontal: 'center' };
+  
+  // Add data
+  items.forEach(req => {
+    worksheet.addRow({
+      requisitionNumber: req.requisitionNumber,
+      supplier: req.supplierId ? supplierMap.get(req.supplierId) || 'None' : 'None',
+      status: req.status,
+      totalAmount: req.totalAmount,
+      date: new Date(req.createdAt),
+      requiredDate: req.requiredDate ? new Date(req.requiredDate) : null
+    });
+  });
+  
+  // Format columns
+  worksheet.getColumn('totalAmount').numFmt = '$#,##0.00';
+  worksheet.getColumn('date').numFmt = 'mm/dd/yyyy';
+  worksheet.getColumn('requiredDate').numFmt = 'mm/dd/yyyy';
+  
+  // Add totals row
+  const totalRowIndex = items.length + 4;
+  const totalRow = worksheet.getRow(totalRowIndex);
+  totalRow.getCell(1).value = 'Total';
+  totalRow.getCell(4).value = { formula: `SUM(D4:D${totalRowIndex - 1})` };
+  totalRow.font = { bold: true };
+  
+  // Add a border to the total row
+  totalRow.eachCell(cell => {
+    cell.border = {
+      top: { style: 'thin' }
+    };
+  });
+  
+  // Write to buffer
+  return await workbook.xlsx.writeBuffer();
+}
+
+// Suppliers Reports
+async function generateSuppliersPdfReport(items: any[], title: string): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  
+  const page = pdfDoc.addPage([612, 792]); // Letter size
+  const { width, height } = page.getSize();
+  
+  // Add title
+  page.drawText(title, {
+    x: 50,
+    y: height - 50,
+    size: 20,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
+  
+  // Add date
+  const dateStr = new Date().toLocaleDateString();
+  page.drawText(`Generated on: ${dateStr}`, {
+    x: 50,
+    y: height - 75,
+    size: 10,
+    font,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+  
+  // Add headers
+  const headers = ['Name', 'Contact', 'Email', 'Phone', 'Address'];
+  const colWidths = [150, 100, 120, 100, 130];
+  let yPos = height - 100;
+  let xPos = 50;
+  
+  headers.forEach((header, i) => {
+    page.drawText(header, {
+      x: xPos,
+      y: yPos,
+      size: 10,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[i];
+  });
+  
+  // Draw a line
+  page.drawLine({
+    start: { x: 50, y: yPos - 5 },
+    end: { x: width - 50, y: yPos - 5 },
+    thickness: 1,
+    color: rgb(0, 0, 0),
+  });
+  
+  // Add data rows
+  yPos -= 20;
+  
+  for (const supplier of items) {
+    if (yPos < 50) {
+      // Add a new page if we're running out of space
+      const newPage = pdfDoc.addPage([612, 792]);
+      yPos = height - 50;
+      
+      // Add headers to new page
+      xPos = 50;
+      headers.forEach((header, i) => {
+        newPage.drawText(header, {
+          x: xPos,
+          y: yPos,
+          size: 10,
+          font: boldFont,
+          color: rgb(0, 0, 0),
+        });
+        xPos += colWidths[i];
+      });
+      
+      // Draw a line
+      newPage.drawLine({
+        start: { x: 50, y: yPos - 5 },
+        end: { x: width - 50, y: yPos - 5 },
+        thickness: 1,
+        color: rgb(0, 0, 0),
+      });
+      
+      yPos -= 20;
+    }
+    
+    const currentPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
+    
+    xPos = 50;
+    
+    // Truncate name if too long
+    let supplierName = supplier.name;
+    if (supplierName.length > 20) {
+      supplierName = supplierName.substring(0, 17) + '...';
+    }
+    
+    currentPage.drawText(supplierName, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[0];
+    
+    currentPage.drawText(supplier.contactName || 'N/A', {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[1];
+    
+    currentPage.drawText(supplier.email || 'N/A', {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[2];
+    
+    currentPage.drawText(supplier.phone || 'N/A', {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    xPos += colWidths[3];
+    
+    let address = supplier.address || 'N/A';
+    if (address.length > 15) {
+      address = address.substring(0, 12) + '...';
+    }
+    
+    currentPage.drawText(address, {
+      x: xPos,
+      y: yPos,
+      size: 9,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    
+    yPos -= 15;
+  }
+  
+  // Add totals
+  const lastPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
+  const totalSuppliers = items.length;
+  
+  lastPage.drawLine({
+    start: { x: 50, y: yPos + 5 },
+    end: { x: width - 50, y: yPos + 5 },
+    thickness: 1,
+    color: rgb(0, 0, 0),
+  });
+  
+  lastPage.drawText(`Total Suppliers: ${totalSuppliers}`, {
+    x: 50,
+    y: yPos - 10,
+    size: 10,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
+  
+  return Buffer.from(await pdfDoc.save());
+}
+
+async function generateSuppliersCsvReport(items: any[], title: string): Promise<Buffer> {
+  // Create a temporary file path
+  const tmpDir = path.join(process.cwd(), 'tmp');
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir);
+  }
+  
+  const filePath = path.join(tmpDir, `${title.replace(/\s+/g, '-').toLowerCase()}.csv`);
+  
+  const csvWriter = createObjectCsvWriter({
+    path: filePath,
+    header: [
+      {id: 'name', title: 'Name'},
+      {id: 'contactName', title: 'Contact Name'},
+      {id: 'email', title: 'Email'},
+      {id: 'phone', title: 'Phone'},
+      {id: 'address', title: 'Address'},
+      {id: 'notes', title: 'Notes'}
+    ]
+  });
+  
+  const records = items.map(supplier => ({
+    name: supplier.name,
+    contactName: supplier.contactName || 'N/A',
+    email: supplier.email || 'N/A',
+    phone: supplier.phone || 'N/A',
+    address: supplier.address || 'N/A',
+    notes: supplier.notes || ''
+  }));
+  
+  await csvWriter.writeRecords(records);
+  
+  // Read the file and return as buffer
+  const buffer = fs.readFileSync(filePath);
+  
+  // Clean up the temporary file
+  fs.unlinkSync(filePath);
+  
+  return buffer;
+}
+
+async function generateSuppliersExcelReport(items: any[], title: string): Promise<Buffer> {
+  const workbook = new Excel.Workbook();
+  const worksheet = workbook.addWorksheet(title);
+  
+  // Add title row
+  worksheet.mergeCells('A1:F1');
+  const titleCell = worksheet.getCell('A1');
+  titleCell.value = title;
+  titleCell.font = {
+    size: 16,
+    bold: true
+  };
+  titleCell.alignment = { horizontal: 'center' };
+  
+  // Add date row
+  worksheet.mergeCells('A2:F2');
+  const dateCell = worksheet.getCell('A2');
+  dateCell.value = `Generated on: ${new Date().toLocaleDateString()}`;
+  dateCell.font = {
+    size: 10,
+    italic: true
+  };
+  dateCell.alignment = { horizontal: 'center' };
+  
+  // Add headers
+  worksheet.columns = [
+    { header: 'Name', key: 'name', width: 30 },
+    { header: 'Contact Name', key: 'contactName', width: 20 },
+    { header: 'Email', key: 'email', width: 30 },
+    { header: 'Phone', key: 'phone', width: 15 },
+    { header: 'Address', key: 'address', width: 40 },
+    { header: 'Notes', key: 'notes', width: 40 }
+  ];
+  
+  // Style the header row
+  worksheet.getRow(3).font = { bold: true };
+  worksheet.getRow(3).alignment = { horizontal: 'center' };
+  
+  // Add data
+  items.forEach(supplier => {
+    worksheet.addRow({
+      name: supplier.name,
+      contactName: supplier.contactName,
+      email: supplier.email,
+      phone: supplier.phone,
+      address: supplier.address,
+      notes: supplier.notes
+    });
+  });
+  
+  // Add totals row
+  const totalRowIndex = items.length + 4;
+  const totalRow = worksheet.getRow(totalRowIndex);
+  totalRow.getCell(1).value = `Total Suppliers: ${items.length}`;
   totalRow.font = { bold: true };
   
   // Add a border to the total row

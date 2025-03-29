@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, real, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, real, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -7,11 +7,15 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  email: text("email"),
+  role: text("role").default("user"),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
+  email: true,
+  role: true,
 });
 
 // Category schema for organizing inventory
@@ -26,6 +30,25 @@ export const insertCategorySchema = createInsertSchema(categories).pick({
   description: true,
 });
 
+// Supplier schema
+export const suppliers = pgTable("suppliers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  contactName: text("contact_name"),
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Inventory item schema
 export const inventoryItems = pgTable("inventory_items", {
   id: serial("id").primaryKey(),
@@ -38,6 +61,7 @@ export const inventoryItems = pgTable("inventory_items", {
   cost: real("cost"),
   lowStockThreshold: integer("low_stock_threshold").default(10),
   location: text("location"),
+  supplierId: integer("supplier_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -48,6 +72,107 @@ export const insertInventoryItemSchema = createInsertSchema(inventoryItems).omit
   updatedAt: true,
 });
 
+// Purchase Requisition Status enum
+export const purchaseRequisitionStatusEnum = pgEnum("purchase_requisition_status", [
+  "DRAFT",
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+  "CONVERTED"
+]);
+
+// Purchase Requisition schema
+export const purchaseRequisitions = pgTable("purchase_requisitions", {
+  id: serial("id").primaryKey(),
+  requisitionNumber: text("requisition_number").notNull().unique(),
+  requestorId: integer("requestor_id"),
+  status: text("status").notNull().default("DRAFT"),
+  notes: text("notes"),
+  requiredDate: timestamp("required_date"),
+  supplierId: integer("supplier_id"),
+  totalAmount: real("total_amount").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  approverId: integer("approver_id"),
+  approvalDate: timestamp("approval_date"),
+  rejectionReason: text("rejection_reason"),
+});
+
+export const insertPurchaseRequisitionSchema = createInsertSchema(purchaseRequisitions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Purchase Requisition Item schema
+export const purchaseRequisitionItems = pgTable("purchase_requisition_items", {
+  id: serial("id").primaryKey(),
+  requisitionId: integer("requisition_id").notNull(),
+  itemId: integer("item_id").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: real("unit_price").notNull(),
+  totalPrice: real("total_price").notNull(),
+  notes: text("notes"),
+});
+
+export const insertPurchaseRequisitionItemSchema = createInsertSchema(purchaseRequisitionItems).omit({
+  id: true,
+});
+
+// Purchase Order Status enum
+export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [
+  "DRAFT",
+  "SENT",
+  "ACKNOWLEDGED",
+  "PARTIALLY_RECEIVED",
+  "RECEIVED",
+  "CANCELLED",
+  "COMPLETED"
+]);
+
+// Purchase Order schema
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: serial("id").primaryKey(),
+  orderNumber: text("order_number").notNull().unique(),
+  supplierId: integer("supplier_id").notNull(),
+  requisitionId: integer("requisition_id"),
+  status: text("status").notNull().default("DRAFT"),
+  orderDate: timestamp("order_date").defaultNow().notNull(),
+  expectedDeliveryDate: timestamp("expected_delivery_date"),
+  deliveryAddress: text("delivery_address"),
+  totalAmount: real("total_amount").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  paymentStatus: text("payment_status").default("UNPAID"),
+  paymentDate: timestamp("payment_date"),
+  paymentReference: text("payment_reference"),
+  emailSent: boolean("email_sent").default(false),
+  emailSentDate: timestamp("email_sent_date"),
+});
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Purchase Order Item schema
+export const purchaseOrderItems = pgTable("purchase_order_items", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull(),
+  itemId: integer("item_id").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: real("unit_price").notNull(),
+  totalPrice: real("total_price").notNull(),
+  receivedQuantity: integer("received_quantity").default(0),
+  notes: text("notes"),
+});
+
+export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({
+  id: true,
+});
+
 // Activity log schema for tracking changes
 export const activityLogs = pgTable("activity_logs", {
   id: serial("id").primaryKey(),
@@ -55,6 +180,9 @@ export const activityLogs = pgTable("activity_logs", {
   description: text("description").notNull(),
   itemId: integer("item_id"),
   timestamp: timestamp("timestamp").defaultNow().notNull(),
+  userId: integer("user_id"),
+  referenceType: text("reference_type"),
+  referenceId: integer("reference_id"),
 });
 
 export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({
@@ -71,6 +199,52 @@ export const inventoryItemFormSchema = insertInventoryItemSchema.extend({
   lowStockThreshold: z.coerce.number().int().min(0).optional(),
 });
 
+export const supplierFormSchema = insertSupplierSchema.extend({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email("Invalid email address").optional().nullable(),
+  phone: z.string().optional().nullable(),
+});
+
+export const purchaseRequisitionFormSchema = insertPurchaseRequisitionSchema.extend({
+  supplierId: z.number().optional(),
+  items: z.array(
+    z.object({
+      itemId: z.number(),
+      quantity: z.number().int().min(1, "Quantity must be at least 1"),
+      unitPrice: z.number().min(0, "Unit price must be a positive number"),
+      notes: z.string().optional(),
+    })
+  ),
+});
+
+export const purchaseOrderFormSchema = insertPurchaseOrderSchema.extend({
+  supplierId: z.number(),
+  items: z.array(
+    z.object({
+      itemId: z.number(),
+      quantity: z.number().int().min(1, "Quantity must be at least 1"),
+      unitPrice: z.number().min(0, "Unit price must be a positive number"),
+      notes: z.string().optional(),
+    })
+  ),
+});
+
+// Bulk import schema for inventory items
+export const bulkImportInventorySchema = z.array(
+  z.object({
+    sku: z.string().min(2, "SKU must be at least 2 characters"),
+    name: z.string().min(3, "Name must be at least 3 characters"),
+    description: z.string().optional(),
+    category: z.string().optional(),
+    quantity: z.number().int().min(0, "Quantity must be a positive number"),
+    price: z.number().min(0, "Price must be a positive number"),
+    cost: z.number().optional(),
+    lowStockThreshold: z.number().int().min(0).optional(),
+    location: z.string().optional(),
+    supplier: z.string().optional(),
+  })
+);
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -82,8 +256,28 @@ export type InventoryItem = typeof inventoryItems.$inferSelect;
 export type InsertInventoryItem = z.infer<typeof insertInventoryItemSchema>;
 export type InventoryItemForm = z.infer<typeof inventoryItemFormSchema>;
 
+export type Supplier = typeof suppliers.$inferSelect;
+export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+export type SupplierForm = z.infer<typeof supplierFormSchema>;
+
+export type PurchaseRequisition = typeof purchaseRequisitions.$inferSelect;
+export type InsertPurchaseRequisition = z.infer<typeof insertPurchaseRequisitionSchema>;
+export type PurchaseRequisitionForm = z.infer<typeof purchaseRequisitionFormSchema>;
+
+export type PurchaseRequisitionItem = typeof purchaseRequisitionItems.$inferSelect;
+export type InsertPurchaseRequisitionItem = z.infer<typeof insertPurchaseRequisitionItemSchema>;
+
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrderForm = z.infer<typeof purchaseOrderFormSchema>;
+
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
+export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
+
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+
+export type BulkImportInventory = z.infer<typeof bulkImportInventorySchema>;
 
 // Inventory stats type for dashboard
 export type InventoryStats = {
@@ -102,4 +296,31 @@ export enum ItemStatus {
 
 // Export types for document generation
 export type DocumentType = "pdf" | "csv" | "excel";
-export type ReportType = "inventory" | "low-stock" | "value";
+export type ReportType = "inventory" | "low-stock" | "value" | "purchase-orders" | "purchase-requisitions" | "suppliers";
+
+// Purchase Requisition Status
+export enum PurchaseRequisitionStatus {
+  DRAFT = "DRAFT",
+  PENDING = "PENDING",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+  CONVERTED = "CONVERTED"
+}
+
+// Purchase Order Status
+export enum PurchaseOrderStatus {
+  DRAFT = "DRAFT",
+  SENT = "SENT",
+  ACKNOWLEDGED = "ACKNOWLEDGED",
+  PARTIALLY_RECEIVED = "PARTIALLY_RECEIVED",
+  RECEIVED = "RECEIVED",
+  CANCELLED = "CANCELLED",
+  COMPLETED = "COMPLETED"
+}
+
+// Payment Status
+export enum PaymentStatus {
+  UNPAID = "UNPAID",
+  PARTIALLY_PAID = "PARTIALLY_PAID",
+  PAID = "PAID"
+}
