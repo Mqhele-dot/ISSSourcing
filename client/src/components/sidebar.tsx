@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
-import { Archive, BarChart3, ChevronRight, FileText, Home, Moon, Settings, ShoppingCart, Sun, Users, X } from "lucide-react";
+import { Archive, BarChart3, ChevronRight, FileText, Home, Moon, Settings, ShoppingCart, Sun, Users, X, LayoutDashboard } from "lucide-react";
 
 interface SidebarProps {
   open: boolean;
@@ -20,9 +20,9 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
   const NavItem = ({ path, icon, children }: { path: string, icon: React.ReactNode, children: React.ReactNode }) => {
     return (
       <Link href={path}>
-        <a
+        <div
           className={cn(
-            "flex items-center px-4 py-2.5 text-sm font-medium rounded-md",
+            "flex items-center px-4 py-2.5 text-sm font-medium rounded-md cursor-pointer",
             isActive(path)
               ? "bg-primary text-white hover:bg-primary/90"
               : "text-neutral-800 dark:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-700"
@@ -30,7 +30,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
         >
           {icon}
           {children}
-        </a>
+        </div>
       </Link>
     );
   };
@@ -77,6 +77,10 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
         <nav className="flex-1 px-2 py-4 overflow-y-auto">
           <div className="space-y-2">
             <NavItem path="/" icon={<Home className="mr-3 h-5 w-5" />}>
+              Home
+            </NavItem>
+            
+            <NavItem path="/dashboard" icon={<LayoutDashboard className="mr-3 h-5 w-5" />}>
               Dashboard
             </NavItem>
             

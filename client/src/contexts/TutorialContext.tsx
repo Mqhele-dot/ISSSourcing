@@ -17,6 +17,59 @@ const TutorialContext = createContext<TutorialContextType>({
 
 // Create the tour steps for each page
 const tourSteps = {
+  home: [
+    {
+      id: "home-welcome",
+      text: "Welcome to the Home page! Here you can see visual analytics of your inventory data.",
+      attachTo: { element: "h2", on: "bottom" },
+      buttons: [
+        {
+          action: () => {
+            return (window as any).shepherdTour.next();
+          },
+          text: "Next",
+        },
+      ],
+    },
+    {
+      id: "home-tabs",
+      text: "Use these tabs to switch between different analytics views.",
+      attachTo: { element: ".space-y-6 > div", on: "bottom" },
+      buttons: [
+        {
+          action: () => {
+            return (window as any).shepherdTour.back();
+          },
+          text: "Back",
+        },
+        {
+          action: () => {
+            return (window as any).shepherdTour.next();
+          },
+          text: "Next",
+        },
+      ],
+    },
+    {
+      id: "home-charts",
+      text: "These charts provide visual insights into your inventory data, including stock status, item distribution, and more.",
+      attachTo: { element: ".space-y-6 > div", on: "top" },
+      buttons: [
+        {
+          action: () => {
+            return (window as any).shepherdTour.back();
+          },
+          text: "Back",
+        },
+        {
+          action: () => {
+            return (window as any).shepherdTour.complete();
+          },
+          text: "Finish",
+        },
+      ],
+    },
+  ],
   dashboard: [
     {
       id: "dashboard-welcome",

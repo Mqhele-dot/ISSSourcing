@@ -9,6 +9,7 @@ import OrdersPage from "@/pages/orders";
 import SuppliersPage from "@/pages/suppliers";
 import Reports from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
+import Home from "@/pages/home";
 import { ThemeProvider } from "@/components/theme-provider";
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
@@ -18,7 +19,8 @@ import { TutorialProvider } from "./contexts/TutorialContext";
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
+      <Route path="/" component={Home} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/inventory" component={Inventory} />
       <Route path="/orders" component={OrdersPage} />
       <Route path="/suppliers" component={SuppliersPage} />
