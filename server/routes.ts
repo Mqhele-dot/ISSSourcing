@@ -13,6 +13,9 @@ import {
   insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema,
   bulkImportInventorySchema,
+  insertAppSettingsSchema,
+  insertSupplierLogoSchema,
+  appSettingsFormSchema,
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
@@ -1091,6 +1094,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error(`Error generating ${req.params.format} report:`, error);
       res.status(500).json({ message: `Failed to generate ${req.params.format} report` });
+    }
+  });
+
+  // App Settings endpoints
+  app.get("/api/settings", async (_req: Request, res: Response) => {
+    try {
+      const settings = await storage.getAppSettings();
+      if (!settings) {
+        // Return default settings if none exist
+        const defaultSettings = await storage.updateAppSettings({});
+        return res.json(defaultSettings);
+      }
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching app settings:", error);
+      res.status(500).json({ message: "Failed to fetch app settings" });
+    }
+  });
+
+  app.put("/api/settings", async (req: Request, res: Response) => {
+    try {
+      const validatedData = appSettingsFormSchema.parse(req.body);
+      const updatedSettings = await storage.updateAppSettings(validatedData);
+      res.json(updatedSettings);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating app settings:", error);
+        res.status(500).json({ message: "Failed to update app settings" });
+      }
+    }
+  });
+
+  // Supplier Logo endpoints
+  app.get("/api/suppliers/:id/logo", async (req: Request, res: Response) => {
+    try {
+      const supplierId = Number(req.params.id);
+      if (isNaN(supplierId)) {
+        return res.status(400).json({ message: "Invalid supplier ID" });
+      }
+      
+      const logo = await storage.getSupplierLogo(supplierId);
+      if (!logo) {
+        return res.status(404).json({ message: "Supplier logo not found" });
+      }
+      
+      res.json(logo);
+    } catch (error) {
+      console.error("Error fetching supplier logo:", error);
+      res.status(500).json({ message: "Failed to fetch supplier logo" });
+    }
+  });
+
+  app.post("/api/suppliers/:id/logo", async (req: Request, res: Response) => {
+    try {
+      const supplierId = Number(req.params.id);
+      if (isNaN(supplierId)) {
+        return res.status(400).json({ message: "Invalid supplier ID" });
+      }
+      
+      // Check if the supplier exists
+      const supplier = await storage.getSupplier(supplierId);
+      if (!supplier) {
+        return res.status(404).json({ message: "Supplier not found" });
+      }
+      
+      const validatedData = insertSupplierLogoSchema.parse({
+        ...req.body,
+        supplierId
+      });
+      
+      const logo = await storage.createSupplierLogo(validatedData);
+      res.status(201).json(logo);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error creating supplier logo:", error);
+        res.status(500).json({ message: "Failed to create supplier logo" });
+      }
+    }
+  });
+
+  app.put("/api/suppliers/:id/logo", async (req: Request, res: Response) => {
+    try {
+      const supplierId = Number(req.params.id);
+      if (isNaN(supplierId)) {
+        return res.status(400).json({ message: "Invalid supplier ID" });
+      }
+      
+      if (!req.body.logoUrl) {
+        return res.status(400).json({ message: "Logo URL is required" });
+      }
+      
+      const updatedLogo = await storage.updateSupplierLogo(supplierId, req.body.logoUrl);
+      if (!updatedLogo) {
+        return res.status(404).json({ message: "Supplier logo not found" });
+      }
+      
+      res.json(updatedLogo);
+    } catch (error) {
+      console.error("Error updating supplier logo:", error);
+      res.status(500).json({ message: "Failed to update supplier logo" });
+    }
+  });
+
+  app.delete("/api/suppliers/:id/logo", async (req: Request, res: Response) => {
+    try {
+      const supplierId = Number(req.params.id);
+      if (isNaN(supplierId)) {
+        return res.status(400).json({ message: "Invalid supplier ID" });
+      }
+      
+      const success = await storage.deleteSupplierLogo(supplierId);
+      if (!success) {
+        return res.status(404).json({ message: "Supplier logo not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting supplier logo:", error);
+      res.status(500).json({ message: "Failed to delete supplier logo" });
     }
   });
 

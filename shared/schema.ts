@@ -324,3 +324,49 @@ export enum PaymentStatus {
   PARTIALLY_PAID = "PARTIALLY_PAID",
   PAID = "PAID"
 }
+
+// App Settings schema
+export const appSettings = pgTable("app_settings", {
+  id: serial("id").primaryKey(),
+  companyName: text("company_name").notNull().default("InvTrack"),
+  companyLogo: text("company_logo"),
+  primaryColor: text("primary_color").default("#0F172A"),
+  dateFormat: text("date_format").default("YYYY-MM-DD"),
+  timeFormat: text("time_format").default("HH:mm"),
+  currencySymbol: text("currency_symbol").default("$"),
+  lowStockDefaultThreshold: integer("low_stock_default_threshold").default(10),
+  allowNegativeInventory: boolean("allow_negative_inventory").default(false),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertAppSettingsSchema = createInsertSchema(appSettings).omit({
+  id: true,
+  updatedAt: true
+});
+
+export const appSettingsFormSchema = insertAppSettingsSchema.extend({
+  companyName: z.string().min(2, "Company name must be at least 2 characters"),
+  companyLogo: z.string().optional().nullable(),
+  primaryColor: z.string().regex(/^#[0-9A-F]{6}$/i, "Must be a valid hex color"),
+});
+
+// Supplier Logo schema to store supplier logos
+export const supplierLogos = pgTable("supplier_logos", {
+  id: serial("id").primaryKey(),
+  supplierId: integer("supplier_id").notNull().unique(),
+  logoUrl: text("logo_url").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertSupplierLogoSchema = createInsertSchema(supplierLogos).omit({
+  id: true,
+  updatedAt: true
+});
+
+// Types for settings
+export type AppSettings = typeof appSettings.$inferSelect;
+export type InsertAppSettings = z.infer<typeof insertAppSettingsSchema>;
+export type AppSettingsForm = z.infer<typeof appSettingsFormSchema>;
+
+export type SupplierLogo = typeof supplierLogos.$inferSelect;
+export type InsertSupplierLogo = z.infer<typeof insertSupplierLogoSchema>;

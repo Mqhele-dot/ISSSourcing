@@ -8,6 +8,8 @@ import {
   purchaseOrders, type PurchaseOrder, type InsertPurchaseOrder,
   purchaseOrderItems, type PurchaseOrderItem, type InsertPurchaseOrderItem,
   activityLogs, type ActivityLog, type InsertActivityLog,
+  appSettings, type AppSettings, type InsertAppSettings,
+  supplierLogos, type SupplierLogo, type InsertSupplierLogo,
   type InventoryStats, ItemStatus, type BulkImportInventory,
   PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus,
 } from "@shared/schema";
@@ -33,6 +35,16 @@ export interface IStorage {
   createSupplier(supplier: InsertSupplier): Promise<Supplier>;
   updateSupplier(id: number, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined>;
   deleteSupplier(id: number): Promise<boolean>;
+  
+  // Settings methods
+  getAppSettings(): Promise<AppSettings | undefined>;
+  updateAppSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings>;
+  
+  // Supplier Logo methods
+  getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined>;
+  createSupplierLogo(logo: InsertSupplierLogo): Promise<SupplierLogo>;
+  updateSupplierLogo(supplierId: number, logoUrl: string): Promise<SupplierLogo | undefined>;
+  deleteSupplierLogo(supplierId: number): Promise<boolean>;
   
   // Inventory item methods
   getAllInventoryItems(): Promise<InventoryItem[]>;
@@ -114,6 +126,8 @@ export class MemStorage implements IStorage {
   private purchaseRequisitionItems: Map<number, PurchaseRequisitionItem>;
   private purchaseOrders: Map<number, PurchaseOrder>;
   private purchaseOrderItems: Map<number, PurchaseOrderItem>;
+  private appSettings: Map<number, AppSettings>;
+  private supplierLogos: Map<number, SupplierLogo>;
   
   private userCurrentId: number;
   private categoryCurrentId: number;
@@ -124,6 +138,8 @@ export class MemStorage implements IStorage {
   private requisitionItemCurrentId: number;
   private orderCurrentId: number;
   private orderItemCurrentId: number;
+  private settingsCurrentId: number;
+  private supplierLogoCurrentId: number;
   
   constructor() {
     this.users = new Map();
@@ -135,6 +151,8 @@ export class MemStorage implements IStorage {
     this.purchaseRequisitionItems = new Map();
     this.purchaseOrders = new Map();
     this.purchaseOrderItems = new Map();
+    this.appSettings = new Map();
+    this.supplierLogos = new Map();
     
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
@@ -145,6 +163,8 @@ export class MemStorage implements IStorage {
     this.requisitionItemCurrentId = 1;
     this.orderCurrentId = 1;
     this.orderItemCurrentId = 1;
+    this.settingsCurrentId = 1;
+    this.supplierLogoCurrentId = 1;
     
     // Add default data
     this.initializeDefaultData();
@@ -1493,6 +1513,140 @@ export class MemStorage implements IStorage {
     
     this.activityLogs.set(id, log);
     return log;
+  }
+
+  // App Settings methods
+  async getAppSettings(): Promise<AppSettings | undefined> {
+    // Since there should be only one settings record, return the first one
+    const settings = Array.from(this.appSettings.values());
+    return settings.length > 0 ? settings[0] : undefined;
+  }
+
+  async updateAppSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings> {
+    const existingSettings = await this.getAppSettings();
+    const now = new Date();
+    
+    if (existingSettings) {
+      // Update existing settings
+      const updatedSettings: AppSettings = {
+        ...existingSettings,
+        ...settings,
+        updatedAt: now
+      };
+      this.appSettings.set(existingSettings.id, updatedSettings);
+      
+      // Create activity log
+      await this.createActivityLog({
+        action: "Settings Updated",
+        description: "Application settings were updated",
+        referenceType: "settings",
+        referenceId: existingSettings.id
+      });
+      
+      return updatedSettings;
+    } else {
+      // Create new settings record
+      const id = this.settingsCurrentId++;
+      const newSettings: AppSettings = {
+        id,
+        companyName: settings.companyName || "InvTrack",
+        companyLogo: settings.companyLogo || null,
+        primaryColor: settings.primaryColor || "#0F172A",
+        dateFormat: settings.dateFormat || "YYYY-MM-DD",
+        timeFormat: settings.timeFormat || "HH:mm",
+        currencySymbol: settings.currencySymbol || "$",
+        lowStockDefaultThreshold: settings.lowStockDefaultThreshold || 10,
+        allowNegativeInventory: settings.allowNegativeInventory || false,
+        updatedAt: now
+      };
+      
+      this.appSettings.set(id, newSettings);
+      
+      // Create activity log
+      await this.createActivityLog({
+        action: "Settings Created",
+        description: "Initial application settings were created",
+        referenceType: "settings",
+        referenceId: id
+      });
+      
+      return newSettings;
+    }
+  }
+  
+  // Supplier Logo methods
+  async getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined> {
+    return Array.from(this.supplierLogos.values())
+      .find(logo => logo.supplierId === supplierId);
+  }
+  
+  async createSupplierLogo(logo: InsertSupplierLogo): Promise<SupplierLogo> {
+    const id = this.supplierLogoCurrentId++;
+    const now = new Date();
+    
+    const newLogo: SupplierLogo = {
+      ...logo,
+      id,
+      updatedAt: now
+    };
+    
+    this.supplierLogos.set(id, newLogo);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Supplier Logo Added",
+      description: `Logo was added for supplier ID ${logo.supplierId}`,
+      referenceType: "supplier",
+      referenceId: logo.supplierId
+    });
+    
+    return newLogo;
+  }
+  
+  async updateSupplierLogo(supplierId: number, logoUrl: string): Promise<SupplierLogo | undefined> {
+    const existingLogo = await this.getSupplierLogo(supplierId);
+    
+    if (existingLogo) {
+      // Update existing logo
+      const updatedLogo: SupplierLogo = {
+        ...existingLogo,
+        logoUrl,
+        updatedAt: new Date()
+      };
+      
+      this.supplierLogos.set(existingLogo.id, updatedLogo);
+      
+      // Create activity log
+      await this.createActivityLog({
+        action: "Supplier Logo Updated",
+        description: `Logo was updated for supplier ID ${supplierId}`,
+        referenceType: "supplier",
+        referenceId: supplierId
+      });
+      
+      return updatedLogo;
+    } else {
+      // Create new logo if it doesn't exist
+      return this.createSupplierLogo({
+        supplierId,
+        logoUrl
+      });
+    }
+  }
+  
+  async deleteSupplierLogo(supplierId: number): Promise<boolean> {
+    const logo = await this.getSupplierLogo(supplierId);
+    if (!logo) return false;
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Supplier Logo Removed",
+      description: `Logo was removed for supplier ID ${supplierId}`,
+      referenceType: "supplier",
+      referenceId: supplierId
+    });
+    
+    return this.supplierLogos.delete(logo.id);
   }
 }
 
