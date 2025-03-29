@@ -23,6 +23,13 @@ import {
   appSettingsFormSchema,
   insertReorderRequestSchema,
   reorderRequestFormSchema,
+  insertBarcodeSchema,
+  barcodeFormSchema,
+  insertWarehouseSchema,
+  warehouseFormSchema,
+  insertWarehouseInventorySchema,
+  insertStockMovementSchema,
+  stockMovementFormSchema,
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
@@ -1285,6 +1292,518 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting supplier logo:", error);
       res.status(500).json({ message: "Failed to delete supplier logo" });
+    }
+  });
+
+  // Warehouse endpoints
+  app.get("/api/warehouses", async (_req: Request, res: Response) => {
+    try {
+      const warehouses = await storage.getAllWarehouses();
+      res.json(warehouses);
+    } catch (error) {
+      console.error("Error fetching warehouses:", error);
+      res.status(500).json({ message: "Failed to fetch warehouses" });
+    }
+  });
+
+  app.get("/api/warehouses/default", async (_req: Request, res: Response) => {
+    try {
+      const warehouse = await storage.getDefaultWarehouse();
+      if (!warehouse) {
+        return res.status(404).json({ message: "No default warehouse found" });
+      }
+      res.json(warehouse);
+    } catch (error) {
+      console.error("Error fetching default warehouse:", error);
+      res.status(500).json({ message: "Failed to fetch default warehouse" });
+    }
+  });
+
+  app.get("/api/warehouses/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid warehouse ID" });
+      }
+      
+      const warehouse = await storage.getWarehouse(id);
+      
+      if (!warehouse) {
+        return res.status(404).json({ message: "Warehouse not found" });
+      }
+      
+      res.json(warehouse);
+    } catch (error) {
+      console.error("Error fetching warehouse:", error);
+      res.status(500).json({ message: "Failed to fetch warehouse" });
+    }
+  });
+
+  app.post("/api/warehouses", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertWarehouseSchema.parse(req.body);
+      const newWarehouse = await storage.createWarehouse(validatedData);
+      res.status(201).json(newWarehouse);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error creating warehouse:", error);
+        res.status(500).json({ message: "Failed to create warehouse" });
+      }
+    }
+  });
+
+  app.put("/api/warehouses/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid warehouse ID" });
+      }
+      
+      const validatedData = insertWarehouseSchema.partial().parse(req.body);
+      const updatedWarehouse = await storage.updateWarehouse(id, validatedData);
+      
+      if (!updatedWarehouse) {
+        return res.status(404).json({ message: "Warehouse not found" });
+      }
+      
+      res.json(updatedWarehouse);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating warehouse:", error);
+        res.status(500).json({ message: "Failed to update warehouse" });
+      }
+    }
+  });
+
+  app.delete("/api/warehouses/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid warehouse ID" });
+      }
+      
+      const success = await storage.deleteWarehouse(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Warehouse not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting warehouse:", error);
+      res.status(500).json({ message: "Failed to delete warehouse" });
+    }
+  });
+
+  app.put("/api/warehouses/:id/set-default", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid warehouse ID" });
+      }
+      
+      const warehouse = await storage.setDefaultWarehouse(id);
+      
+      if (!warehouse) {
+        return res.status(404).json({ message: "Warehouse not found" });
+      }
+      
+      res.json(warehouse);
+    } catch (error) {
+      console.error("Error setting default warehouse:", error);
+      res.status(500).json({ message: "Failed to set default warehouse" });
+    }
+  });
+
+  // Warehouse inventory endpoints
+  app.get("/api/warehouse-inventory/:warehouseId", async (req: Request, res: Response) => {
+    try {
+      const warehouseId = Number(req.params.warehouseId);
+      if (isNaN(warehouseId)) {
+        return res.status(400).json({ message: "Invalid warehouse ID" });
+      }
+      
+      const inventory = await storage.getWarehouseInventory(warehouseId);
+      res.json(inventory);
+    } catch (error) {
+      console.error("Error fetching warehouse inventory:", error);
+      res.status(500).json({ message: "Failed to fetch warehouse inventory" });
+    }
+  });
+
+  app.get("/api/warehouse-inventory/:warehouseId/:itemId", async (req: Request, res: Response) => {
+    try {
+      const warehouseId = Number(req.params.warehouseId);
+      const itemId = Number(req.params.itemId);
+      if (isNaN(warehouseId) || isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid warehouse or item ID" });
+      }
+      
+      const inventoryItem = await storage.getWarehouseInventoryItem(warehouseId, itemId);
+      
+      if (!inventoryItem) {
+        return res.status(404).json({ message: "Warehouse inventory item not found" });
+      }
+      
+      res.json(inventoryItem);
+    } catch (error) {
+      console.error("Error fetching warehouse inventory item:", error);
+      res.status(500).json({ message: "Failed to fetch warehouse inventory item" });
+    }
+  });
+
+  app.post("/api/warehouse-inventory", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertWarehouseInventorySchema.parse(req.body);
+      const newInventoryItem = await storage.createWarehouseInventory(validatedData);
+      res.status(201).json(newInventoryItem);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error creating warehouse inventory item:", error);
+        res.status(500).json({ message: "Failed to create warehouse inventory item" });
+      }
+    }
+  });
+
+  app.put("/api/warehouse-inventory/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid inventory item ID" });
+      }
+      
+      const validatedData = insertWarehouseInventorySchema.partial().parse(req.body);
+      const updatedItem = await storage.updateWarehouseInventory(id, validatedData);
+      
+      if (!updatedItem) {
+        return res.status(404).json({ message: "Warehouse inventory item not found" });
+      }
+      
+      res.json(updatedItem);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating warehouse inventory item:", error);
+        res.status(500).json({ message: "Failed to update warehouse inventory item" });
+      }
+    }
+  });
+
+  app.delete("/api/warehouse-inventory/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid inventory item ID" });
+      }
+      
+      const success = await storage.deleteWarehouseInventory(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Warehouse inventory item not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting warehouse inventory item:", error);
+      res.status(500).json({ message: "Failed to delete warehouse inventory item" });
+    }
+  });
+
+  // Stock movement endpoints
+  app.get("/api/stock-movements", async (_req: Request, res: Response) => {
+    try {
+      const movements = await storage.getAllStockMovements();
+      res.json(movements);
+    } catch (error) {
+      console.error("Error fetching stock movements:", error);
+      res.status(500).json({ message: "Failed to fetch stock movements" });
+    }
+  });
+
+  app.get("/api/stock-movements/item/:itemId", async (req: Request, res: Response) => {
+    try {
+      const itemId = Number(req.params.itemId);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+      
+      const movements = await storage.getStockMovementsByItemId(itemId);
+      res.json(movements);
+    } catch (error) {
+      console.error("Error fetching stock movements for item:", error);
+      res.status(500).json({ message: "Failed to fetch stock movements for item" });
+    }
+  });
+
+  app.get("/api/stock-movements/warehouse/:warehouseId", async (req: Request, res: Response) => {
+    try {
+      const warehouseId = Number(req.params.warehouseId);
+      if (isNaN(warehouseId)) {
+        return res.status(400).json({ message: "Invalid warehouse ID" });
+      }
+      
+      const movements = await storage.getStockMovementsByWarehouseId(warehouseId);
+      res.json(movements);
+    } catch (error) {
+      console.error("Error fetching stock movements for warehouse:", error);
+      res.status(500).json({ message: "Failed to fetch stock movements for warehouse" });
+    }
+  });
+
+  app.post("/api/stock-movements", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertStockMovementSchema.parse(req.body);
+      const movement = await storage.createStockMovement(validatedData);
+      res.status(201).json(movement);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error creating stock movement:", error);
+        res.status(500).json({ message: "Failed to create stock movement" });
+      }
+    }
+  });
+
+  app.post("/api/stock-movements/transfer", async (req: Request, res: Response) => {
+    try {
+      const { sourceWarehouseId, destinationWarehouseId, itemId, quantity, userId } = req.body;
+      
+      if (!sourceWarehouseId || !destinationWarehouseId || !itemId || !quantity) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      if (sourceWarehouseId === destinationWarehouseId) {
+        return res.status(400).json({ message: "Source and destination warehouses must be different" });
+      }
+      
+      const movement = await storage.transferStock(
+        Number(sourceWarehouseId),
+        Number(destinationWarehouseId),
+        Number(itemId),
+        Number(quantity),
+        userId ? Number(userId) : undefined
+      );
+      
+      res.status(201).json(movement);
+    } catch (error) {
+      console.error("Error transferring stock:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to transfer stock" });
+    }
+  });
+  
+  // Stock receipt endpoint - for receiving goods into a warehouse
+  app.post("/api/stock-movements/receipt", async (req: Request, res: Response) => {
+    try {
+      const { warehouseId, itemId, quantity, referenceId, referenceType, notes, userId, unitCost } = req.body;
+      
+      if (!warehouseId || !itemId || !quantity) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      if (quantity <= 0) {
+        return res.status(400).json({ message: "Quantity must be positive for receipt" });
+      }
+      
+      const movement = await storage.createStockMovement({
+        itemId: Number(itemId),
+        quantity: Number(quantity),
+        type: "RECEIPT",
+        warehouseId: null,
+        destinationWarehouseId: Number(warehouseId),
+        sourceWarehouseId: null,
+        referenceId: referenceId ? Number(referenceId) : null,
+        referenceType: referenceType || null,
+        notes: notes || null,
+        userId: userId ? Number(userId) : null,
+        unitCost: unitCost ? Number(unitCost) : null
+      });
+      
+      res.status(201).json(movement);
+    } catch (error) {
+      console.error("Error recording stock receipt:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to record stock receipt" });
+    }
+  });
+  
+  // Stock issue endpoint - for removing goods from a warehouse
+  app.post("/api/stock-movements/issue", async (req: Request, res: Response) => {
+    try {
+      const { warehouseId, itemId, quantity, referenceId, referenceType, notes, userId } = req.body;
+      
+      if (!warehouseId || !itemId || !quantity) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      if (quantity <= 0) {
+        return res.status(400).json({ message: "Quantity must be positive for issue" });
+      }
+      
+      const movement = await storage.createStockMovement({
+        itemId: Number(itemId),
+        quantity: Number(quantity),
+        type: "ISSUE",
+        warehouseId: null,
+        sourceWarehouseId: Number(warehouseId),
+        destinationWarehouseId: null,
+        referenceId: referenceId ? Number(referenceId) : null,
+        referenceType: referenceType || null,
+        notes: notes || null,
+        userId: userId ? Number(userId) : null
+      });
+      
+      res.status(201).json(movement);
+    } catch (error) {
+      console.error("Error issuing stock:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to issue stock" });
+    }
+  });
+
+  // Barcode endpoints
+  app.get("/api/barcodes", async (_req: Request, res: Response) => {
+    try {
+      const barcodes = await storage.getAllBarcodes();
+      res.json(barcodes);
+    } catch (error) {
+      console.error("Error fetching barcodes:", error);
+      res.status(500).json({ message: "Failed to fetch barcodes" });
+    }
+  });
+
+  app.get("/api/barcodes/item/:itemId", async (req: Request, res: Response) => {
+    try {
+      const itemId = Number(req.params.itemId);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+      
+      const barcodes = await storage.getBarcodesByItemId(itemId);
+      res.json(barcodes);
+    } catch (error) {
+      console.error("Error fetching barcodes for item:", error);
+      res.status(500).json({ message: "Failed to fetch barcodes for item" });
+    }
+  });
+
+  app.get("/api/barcodes/value/:value", async (req: Request, res: Response) => {
+    try {
+      const value = req.params.value;
+      const barcode = await storage.getBarcodeByValue(value);
+      
+      if (!barcode) {
+        return res.status(404).json({ message: "Barcode not found" });
+      }
+      
+      res.json(barcode);
+    } catch (error) {
+      console.error("Error fetching barcode by value:", error);
+      res.status(500).json({ message: "Failed to fetch barcode by value" });
+    }
+  });
+
+  app.get("/api/inventory/find-by-barcode/:value", async (req: Request, res: Response) => {
+    try {
+      const value = req.params.value;
+      const item = await storage.findItemByBarcode(value);
+      
+      if (!item) {
+        return res.status(404).json({ message: "No item found with the provided barcode" });
+      }
+      
+      res.json(item);
+    } catch (error) {
+      console.error("Error finding item by barcode:", error);
+      res.status(500).json({ message: "Failed to find item by barcode" });
+    }
+  });
+
+  app.post("/api/barcodes", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertBarcodeSchema.parse(req.body);
+      
+      // Check if barcode with this value already exists
+      const existingBarcode = await storage.getBarcodeByValue(validatedData.value);
+      if (existingBarcode) {
+        return res.status(400).json({ message: "Barcode value already exists" });
+      }
+      
+      const newBarcode = await storage.createBarcode(validatedData);
+      res.status(201).json(newBarcode);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error creating barcode:", error);
+        res.status(500).json({ message: "Failed to create barcode" });
+      }
+    }
+  });
+
+  app.put("/api/barcodes/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid barcode ID" });
+      }
+      
+      const validatedData = insertBarcodeSchema.partial().parse(req.body);
+      
+      // Check if updating the value and if it already exists
+      if (validatedData.value) {
+        const existingBarcode = await storage.getBarcodeByValue(validatedData.value);
+        if (existingBarcode && existingBarcode.id !== id) {
+          return res.status(400).json({ message: "Barcode value already exists" });
+        }
+      }
+      
+      const updatedBarcode = await storage.updateBarcode(id, validatedData);
+      
+      if (!updatedBarcode) {
+        return res.status(404).json({ message: "Barcode not found" });
+      }
+      
+      res.json(updatedBarcode);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating barcode:", error);
+        res.status(500).json({ message: "Failed to update barcode" });
+      }
+    }
+  });
+
+  app.delete("/api/barcodes/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid barcode ID" });
+      }
+      
+      const success = await storage.deleteBarcode(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Barcode not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting barcode:", error);
+      res.status(500).json({ message: "Failed to delete barcode" });
     }
   });
 

@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Inventory from "@/pages/inventory";
+import InventoryItemDetail from "@/pages/inventory-item";
 import OrdersPage from "@/pages/orders";
 import SuppliersPage from "@/pages/suppliers";
 import Reports from "@/pages/reports";
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/inventory" component={Inventory} />
+      <Route path="/inventory/:id" component={InventoryItemDetail} />
       <Route path="/orders" component={OrdersPage} />
       <Route path="/suppliers" component={SuppliersPage} />
       <Route path="/reports" component={Reports} />

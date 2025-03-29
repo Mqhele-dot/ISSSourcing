@@ -12,8 +12,17 @@ import {
   supplierLogos, type SupplierLogo, type InsertSupplierLogo,
   vatRates, type VatRate, type InsertVatRate,
   reorderRequests, type ReorderRequest, type InsertReorderRequest,
+  warehouses, type Warehouse, type InsertWarehouse,
+  stockMovements, type StockMovement, type InsertStockMovement,
+  warehouseInventory, type WarehouseInventory, type InsertWarehouseInventory,
+  barcodes, type Barcode, type InsertBarcode,
+  demandForecasts, type DemandForecast, type InsertDemandForecast,
+  externalIntegrations, type ExternalIntegration, type InsertExternalIntegration,
+  auditLogs, type AuditLog, type InsertAuditLog,
+  userPreferences, type UserPreference, type InsertUserPreference,
   type InventoryStats, ItemStatus, type BulkImportInventory,
   PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus, ReorderRequestStatus,
+  stockMovementTypeEnum, UserRoleEnum,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -21,6 +30,9 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
+  getUserPreferences(userId: number): Promise<UserPreference | undefined>;
+  updateUserPreferences(userId: number, preferences: Partial<InsertUserPreference>): Promise<UserPreference | undefined>;
   
   // Category methods
   getAllCategories(): Promise<Category[]>;
@@ -37,6 +49,40 @@ export interface IStorage {
   createSupplier(supplier: InsertSupplier): Promise<Supplier>;
   updateSupplier(id: number, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined>;
   deleteSupplier(id: number): Promise<boolean>;
+  
+  // Barcode methods
+  getAllBarcodes(): Promise<Barcode[]>;
+  getBarcode(id: number): Promise<Barcode | undefined>;
+  getBarcodesByItemId(itemId: number): Promise<Barcode[]>;
+  getBarcodeByValue(value: string): Promise<Barcode | undefined>;
+  createBarcode(barcode: InsertBarcode): Promise<Barcode>;
+  updateBarcode(id: number, barcode: Partial<InsertBarcode>): Promise<Barcode | undefined>;
+  deleteBarcode(id: number): Promise<boolean>;
+  findItemByBarcode(barcodeValue: string): Promise<InventoryItem | undefined>;
+  
+  // Warehouse methods
+  getAllWarehouses(): Promise<Warehouse[]>;
+  getWarehouse(id: number): Promise<Warehouse | undefined>;
+  getDefaultWarehouse(): Promise<Warehouse | undefined>;
+  createWarehouse(warehouse: InsertWarehouse): Promise<Warehouse>;
+  updateWarehouse(id: number, warehouse: Partial<InsertWarehouse>): Promise<Warehouse | undefined>;
+  deleteWarehouse(id: number): Promise<boolean>;
+  setDefaultWarehouse(id: number): Promise<Warehouse | undefined>;
+  
+  // Warehouse inventory methods
+  getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]>;
+  getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined>;
+  createWarehouseInventory(warehouseInventory: InsertWarehouseInventory): Promise<WarehouseInventory>;
+  updateWarehouseInventory(id: number, warehouseInventory: Partial<InsertWarehouseInventory>): Promise<WarehouseInventory | undefined>;
+  deleteWarehouseInventory(id: number): Promise<boolean>;
+  
+  // Stock movement methods
+  getAllStockMovements(): Promise<StockMovement[]>;
+  getStockMovement(id: number): Promise<StockMovement | undefined>;
+  getStockMovementsByItemId(itemId: number): Promise<StockMovement[]>;
+  getStockMovementsByWarehouseId(warehouseId: number): Promise<StockMovement[]>;
+  createStockMovement(movement: InsertStockMovement): Promise<StockMovement>;
+  transferStock(sourceWarehouseId: number, destinationWarehouseId: number, itemId: number, quantity: number, userId?: number): Promise<StockMovement>;
   
   // Reorder request methods
   getAllReorderRequests(): Promise<ReorderRequest[]>;
@@ -183,6 +229,14 @@ export class MemStorage implements IStorage {
   private supplierLogos: Map<number, SupplierLogo>;
   private vatRates: Map<number, VatRate>;
   private reorderRequests: Map<number, ReorderRequest>;
+  private warehouses: Map<number, Warehouse>;
+  private stockMovements: Map<number, StockMovement>;
+  private warehouseInventory: Map<number, WarehouseInventory>;
+  private barcodes: Map<number, Barcode>;
+  private demandForecasts: Map<number, DemandForecast>;
+  private externalIntegrations: Map<number, ExternalIntegration>;
+  private auditLogs: Map<number, AuditLog>;
+  private userPreferences: Map<number, UserPreference>;
   
   private userCurrentId: number;
   private categoryCurrentId: number;
@@ -197,6 +251,14 @@ export class MemStorage implements IStorage {
   private supplierLogoCurrentId: number;
   private vatRateCurrentId: number;
   private reorderRequestCurrentId: number;
+  private warehouseCurrentId: number;
+  private stockMovementCurrentId: number;
+  private warehouseInventoryCurrentId: number;
+  private barcodeCurrentId: number;
+  private demandForecastCurrentId: number;
+  private externalIntegrationCurrentId: number;
+  private auditLogCurrentId: number;
+  private userPreferenceCurrentId: number;
   
   constructor() {
     this.users = new Map();
@@ -212,6 +274,14 @@ export class MemStorage implements IStorage {
     this.supplierLogos = new Map();
     this.vatRates = new Map();
     this.reorderRequests = new Map();
+    this.warehouses = new Map();
+    this.stockMovements = new Map();
+    this.warehouseInventory = new Map();
+    this.barcodes = new Map();
+    this.demandForecasts = new Map();
+    this.externalIntegrations = new Map();
+    this.auditLogs = new Map();
+    this.userPreferences = new Map();
     
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
@@ -226,6 +296,14 @@ export class MemStorage implements IStorage {
     this.supplierLogoCurrentId = 1;
     this.vatRateCurrentId = 1;
     this.reorderRequestCurrentId = 1;
+    this.warehouseCurrentId = 1;
+    this.stockMovementCurrentId = 1;
+    this.warehouseInventoryCurrentId = 1;
+    this.barcodeCurrentId = 1;
+    this.demandForecastCurrentId = 1;
+    this.externalIntegrationCurrentId = 1;
+    this.auditLogCurrentId = 1;
+    this.userPreferenceCurrentId = 1;
     
     // Add default data
     this.initializeDefaultData();
@@ -484,14 +562,71 @@ export class MemStorage implements IStorage {
   
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.userCurrentId++;
+    const now = new Date();
     const user: User = { 
       ...insertUser, 
       id,
+      createdAt: now,
+      updatedAt: now,
       email: insertUser.email || null,
-      role: insertUser.role || null
+      role: insertUser.role || null,
+      warehouseId: null,
+      lastLogin: null,
+      profilePicture: null,
+      preferences: {}
     };
     this.users.set(id, user);
     return user;
+  }
+  
+  async updateUser(id: number, updateData: Partial<InsertUser>): Promise<User | undefined> {
+    const existingUser = this.users.get(id);
+    if (!existingUser) return undefined;
+    
+    const updatedUser = { 
+      ...existingUser, 
+      ...updateData,
+      updatedAt: new Date()
+    };
+    this.users.set(id, updatedUser);
+    
+    return updatedUser;
+  }
+  
+  async getUserPreferences(userId: number): Promise<UserPreference | undefined> {
+    return Array.from(this.userPreferences.values()).find(
+      (pref) => pref.userId === userId
+    );
+  }
+  
+  async updateUserPreferences(userId: number, preferences: Partial<InsertUserPreference>): Promise<UserPreference | undefined> {
+    let userPref = await this.getUserPreferences(userId);
+    
+    if (!userPref) {
+      // Create new preferences if they don't exist
+      const id = this.userPreferenceCurrentId++;
+      const now = new Date();
+      userPref = {
+        id,
+        userId,
+        theme: preferences.theme || 'light',
+        language: preferences.language || 'en',
+        notifications: preferences.notifications || false,
+        dashboardLayout: preferences.dashboardLayout || {},
+        updatedAt: now
+      };
+      this.userPreferences.set(id, userPref);
+    } else {
+      // Update existing preferences
+      userPref = {
+        ...userPref,
+        ...preferences,
+        updatedAt: new Date()
+      };
+      this.userPreferences.set(userPref.id, userPref);
+    }
+    
+    return userPref;
   }
   
   // Category methods
@@ -546,6 +681,605 @@ export class MemStorage implements IStorage {
     return Array.from(this.suppliers.values()).find(
       (supplier) => supplier.name.toLowerCase() === name.toLowerCase()
     );
+  }
+  
+  // Warehouse methods
+  async getAllWarehouses(): Promise<Warehouse[]> {
+    return Array.from(this.warehouses.values());
+  }
+  
+  async getWarehouse(id: number): Promise<Warehouse | undefined> {
+    return this.warehouses.get(id);
+  }
+  
+  async getDefaultWarehouse(): Promise<Warehouse | undefined> {
+    return Array.from(this.warehouses.values()).find(warehouse => warehouse.isDefault);
+  }
+  
+  async createWarehouse(insertWarehouse: InsertWarehouse): Promise<Warehouse> {
+    const id = this.warehouseCurrentId++;
+    const now = new Date();
+    const warehouse: Warehouse = {
+      ...insertWarehouse,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      address: insertWarehouse.address || null,
+      phone: insertWarehouse.phone || null,
+      contactName: insertWarehouse.contactName || null,
+      isDefault: insertWarehouse.isDefault || false,
+      notes: insertWarehouse.notes || null
+    };
+    
+    // If this is marked as default, update other warehouses
+    if (warehouse.isDefault) {
+      for (const [wId, w] of this.warehouses.entries()) {
+        if (w.isDefault) {
+          this.warehouses.set(wId, { ...w, isDefault: false });
+        }
+      }
+    }
+    
+    this.warehouses.set(id, warehouse);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Warehouse Created",
+      description: `Added warehouse: ${warehouse.name}`,
+      referenceType: "warehouse",
+      referenceId: warehouse.id
+    });
+    
+    return warehouse;
+  }
+  
+  async updateWarehouse(id: number, updateData: Partial<InsertWarehouse>): Promise<Warehouse | undefined> {
+    const existingWarehouse = this.warehouses.get(id);
+    if (!existingWarehouse) return undefined;
+    
+    const updatedWarehouse = {
+      ...existingWarehouse,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    
+    // If this is being marked as default, update other warehouses
+    if (updateData.isDefault) {
+      for (const [wId, w] of this.warehouses.entries()) {
+        if (wId !== id && w.isDefault) {
+          this.warehouses.set(wId, { ...w, isDefault: false });
+        }
+      }
+    }
+    
+    this.warehouses.set(id, updatedWarehouse);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Warehouse Updated",
+      description: `Updated warehouse: ${updatedWarehouse.name}`,
+      referenceType: "warehouse",
+      referenceId: updatedWarehouse.id
+    });
+    
+    return updatedWarehouse;
+  }
+  
+  async deleteWarehouse(id: number): Promise<boolean> {
+    const warehouse = this.warehouses.get(id);
+    if (!warehouse) return false;
+    
+    // Check if this is the default warehouse
+    if (warehouse.isDefault) {
+      // Can't delete the default warehouse unless it's the only one
+      if (this.warehouses.size > 1) {
+        return false;
+      }
+    }
+    
+    // Check if any items are stored in this warehouse
+    const warehouseInventory = Array.from(this.warehouseInventory.values())
+      .filter(wi => wi.warehouseId === id);
+    
+    if (warehouseInventory.length > 0) {
+      // Warehouse has items, can't delete
+      return false;
+    }
+    
+    // Check if any users are assigned to this warehouse
+    const assignedUsers = Array.from(this.users.values())
+      .filter(user => user.warehouseId === id);
+    
+    if (assignedUsers.length > 0) {
+      // Users are assigned to this warehouse, can't delete
+      return false;
+    }
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Warehouse Deleted",
+      description: `Removed warehouse: ${warehouse.name}`,
+      referenceType: "warehouse",
+      referenceId: warehouse.id
+    });
+    
+    return this.warehouses.delete(id);
+  }
+  
+  async setDefaultWarehouse(id: number): Promise<Warehouse | undefined> {
+    const warehouse = this.warehouses.get(id);
+    if (!warehouse) return undefined;
+    
+    // Already the default
+    if (warehouse.isDefault) return warehouse;
+    
+    // Update current default warehouse(s)
+    for (const [wId, w] of this.warehouses.entries()) {
+      if (wId !== id && w.isDefault) {
+        this.warehouses.set(wId, { ...w, isDefault: false });
+      }
+    }
+    
+    // Set this warehouse as default
+    const updatedWarehouse = { ...warehouse, isDefault: true };
+    this.warehouses.set(id, updatedWarehouse);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Default Warehouse Changed",
+      description: `Set ${updatedWarehouse.name} as the default warehouse`,
+      referenceType: "warehouse",
+      referenceId: updatedWarehouse.id
+    });
+    
+    return updatedWarehouse;
+  }
+  
+  // Warehouse inventory methods
+  async getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]> {
+    return Array.from(this.warehouseInventory.values())
+      .filter(wi => wi.warehouseId === warehouseId);
+  }
+  
+  async getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined> {
+    return Array.from(this.warehouseInventory.values())
+      .find(wi => wi.warehouseId === warehouseId && wi.itemId === itemId);
+  }
+  
+  async createWarehouseInventory(insertWI: InsertWarehouseInventory): Promise<WarehouseInventory> {
+    const id = this.warehouseInventoryCurrentId++;
+    const now = new Date();
+    const wi: WarehouseInventory = {
+      ...insertWI,
+      id,
+      updatedAt: now
+    };
+    this.warehouseInventory.set(id, wi);
+    
+    // Create activity log
+    const warehouse = await this.getWarehouse(wi.warehouseId);
+    const item = await this.getInventoryItem(wi.itemId);
+    
+    if (warehouse && item) {
+      await this.createActivityLog({
+        action: "Warehouse Inventory Created",
+        description: `Added ${item.name} to ${warehouse.name} (Quantity: ${wi.quantity})`,
+        referenceType: "warehouse_inventory",
+        referenceId: wi.id,
+        itemId: item.id
+      });
+    }
+    
+    return wi;
+  }
+  
+  async updateWarehouseInventory(id: number, updateData: Partial<InsertWarehouseInventory>): Promise<WarehouseInventory | undefined> {
+    const existingWI = this.warehouseInventory.get(id);
+    if (!existingWI) return undefined;
+    
+    const updatedWI = {
+      ...existingWI,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    this.warehouseInventory.set(id, updatedWI);
+    
+    // Create activity log
+    const warehouse = await this.getWarehouse(updatedWI.warehouseId);
+    const item = await this.getInventoryItem(updatedWI.itemId);
+    
+    if (warehouse && item && updateData.quantity !== undefined) {
+      const quantityDiff = updateData.quantity - existingWI.quantity;
+      const action = quantityDiff > 0 ? "Increased" : "Decreased";
+      
+      await this.createActivityLog({
+        action: `Warehouse Inventory ${action}`,
+        description: `${action} ${item.name} in ${warehouse.name} by ${Math.abs(quantityDiff)} (New total: ${updatedWI.quantity})`,
+        referenceType: "warehouse_inventory",
+        referenceId: updatedWI.id,
+        itemId: item.id
+      });
+    }
+    
+    return updatedWI;
+  }
+  
+  async deleteWarehouseInventory(id: number): Promise<boolean> {
+    const wi = this.warehouseInventory.get(id);
+    if (!wi) return false;
+    
+    // Create activity log
+    const warehouse = await this.getWarehouse(wi.warehouseId);
+    const item = await this.getInventoryItem(wi.itemId);
+    
+    if (warehouse && item) {
+      await this.createActivityLog({
+        action: "Warehouse Inventory Removed",
+        description: `Removed ${item.name} from ${warehouse.name}`,
+        referenceType: "warehouse_inventory",
+        referenceId: wi.id,
+        itemId: item.id
+      });
+    }
+    
+    return this.warehouseInventory.delete(id);
+  }
+  
+  // Stock movement methods
+  async getAllStockMovements(options?: {
+    warehouseId?: number;
+    itemId?: number;
+    startDate?: Date;
+    endDate?: Date;
+    type?: string;
+  }): Promise<StockMovement[]> {
+    let movements = Array.from(this.stockMovements.values());
+    
+    if (options) {
+      if (options.warehouseId !== undefined) {
+        movements = movements.filter(m => 
+          m.sourceWarehouseId === options.warehouseId || 
+          m.destinationWarehouseId === options.warehouseId
+        );
+      }
+      
+      if (options.itemId !== undefined) {
+        movements = movements.filter(m => m.itemId === options.itemId);
+      }
+      
+      if (options.startDate) {
+        movements = movements.filter(m => m.timestamp >= options.startDate!);
+      }
+      
+      if (options.endDate) {
+        movements = movements.filter(m => m.timestamp <= options.endDate!);
+      }
+      
+      if (options.type) {
+        movements = movements.filter(m => m.type === options.type);
+      }
+    }
+    
+    // Sort by timestamp (newest first)
+    return movements.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
+  
+  async getStockMovement(id: number): Promise<StockMovement | undefined> {
+    return this.stockMovements.get(id);
+  }
+  
+  async getStockMovementsByItemId(itemId: number): Promise<StockMovement[]> {
+    return this.getAllStockMovements({ itemId });
+  }
+  
+  async getStockMovementsByWarehouseId(warehouseId: number): Promise<StockMovement[]> {
+    return this.getAllStockMovements({ warehouseId });
+  }
+  
+  async createStockMovement(insertMovement: InsertStockMovement): Promise<StockMovement> {
+    const id = this.stockMovementCurrentId++;
+    const now = new Date();
+    
+    // Create the stock movement record
+    const movement: StockMovement = {
+      ...insertMovement,
+      id,
+      timestamp: insertMovement.timestamp || now,
+      createdAt: now,
+      notes: insertMovement.notes || null,
+      referenceId: insertMovement.referenceId || null,
+      referenceType: insertMovement.referenceType || null,
+      sourceWarehouseId: insertMovement.sourceWarehouseId || null,
+      destinationWarehouseId: insertMovement.destinationWarehouseId || null,
+      previousQuantity: null,
+      newQuantity: null,
+      warehouseId: insertMovement.warehouseId || null,
+      unitCost: insertMovement.unitCost || null,
+      userId: insertMovement.userId || null
+    };
+    
+    this.stockMovements.set(id, movement);
+    
+    // Get the inventory item
+    const item = await this.getInventoryItem(movement.itemId);
+    if (!item) {
+      throw new Error(`Item with ID ${movement.itemId} not found`);
+    }
+    
+    // Handle different movement types
+    switch (movement.type) {
+      case 'RECEIPT':
+        // Increment quantity in destination warehouse (if specified)
+        if (movement.destinationWarehouseId) {
+          const existingWI = await this.getWarehouseInventoryItem(
+            movement.destinationWarehouseId, 
+            movement.itemId
+          );
+          
+          if (existingWI) {
+            await this.updateWarehouseInventory(existingWI.id, {
+              quantity: existingWI.quantity + movement.quantity
+            });
+          } else {
+            await this.createWarehouseInventory({
+              warehouseId: movement.destinationWarehouseId,
+              itemId: movement.itemId,
+              quantity: movement.quantity,
+              location: null
+            });
+          }
+        }
+        
+        // Update overall inventory
+        await this.updateInventoryItem(movement.itemId, {
+          quantity: item.quantity + movement.quantity
+        });
+        break;
+        
+      case 'ISSUE':
+        // Decrement quantity in source warehouse (if specified)
+        if (movement.sourceWarehouseId) {
+          const existingWI = await this.getWarehouseInventoryItem(
+            movement.sourceWarehouseId, 
+            movement.itemId
+          );
+          
+          if (existingWI) {
+            if (existingWI.quantity >= movement.quantity) {
+              await this.updateWarehouseInventory(existingWI.id, {
+                quantity: existingWI.quantity - movement.quantity
+              });
+            } else {
+              throw new Error(`Insufficient quantity in warehouse`);
+            }
+          } else {
+            throw new Error(`Item not found in source warehouse`);
+          }
+        }
+        
+        // Update overall inventory
+        if (item.quantity >= movement.quantity) {
+          await this.updateInventoryItem(movement.itemId, {
+            quantity: item.quantity - movement.quantity
+          });
+        } else {
+          throw new Error(`Insufficient overall quantity`);
+        }
+        break;
+        
+      case 'TRANSFER':
+        // Need both source and destination warehouses
+        if (!movement.sourceWarehouseId || !movement.destinationWarehouseId) {
+          throw new Error(`Both source and destination warehouses are required for transfers`);
+        }
+        
+        // Check source warehouse inventory
+        const sourceWI = await this.getWarehouseInventoryItem(
+          movement.sourceWarehouseId, 
+          movement.itemId
+        );
+        
+        if (!sourceWI || sourceWI.quantity < movement.quantity) {
+          throw new Error(`Insufficient quantity in source warehouse`);
+        }
+        
+        // Decrement from source warehouse
+        await this.updateWarehouseInventory(sourceWI.id, {
+          quantity: sourceWI.quantity - movement.quantity
+        });
+        
+        // Increment in destination warehouse
+        const destWI = await this.getWarehouseInventoryItem(
+          movement.destinationWarehouseId, 
+          movement.itemId
+        );
+        
+        if (destWI) {
+          await this.updateWarehouseInventory(destWI.id, {
+            quantity: destWI.quantity + movement.quantity
+          });
+        } else {
+          await this.createWarehouseInventory({
+            warehouseId: movement.destinationWarehouseId,
+            itemId: movement.itemId,
+            quantity: movement.quantity,
+            location: null
+          });
+        }
+        
+        // Overall quantity doesn't change for transfers
+        break;
+        
+      case 'ADJUSTMENT':
+        // Adjust quantity in specific warehouse (if specified)
+        if (movement.destinationWarehouseId) {
+          const existingWI = await this.getWarehouseInventoryItem(
+            movement.destinationWarehouseId, 
+            movement.itemId
+          );
+          
+          if (existingWI) {
+            await this.updateWarehouseInventory(existingWI.id, {
+              quantity: existingWI.quantity + movement.quantity // Can be negative for reductions
+            });
+          } else if (movement.quantity > 0) {
+            await this.createWarehouseInventory({
+              warehouseId: movement.destinationWarehouseId,
+              itemId: movement.itemId,
+              quantity: movement.quantity,
+              location: movement.location || null
+            });
+          }
+        }
+        
+        // Update overall inventory
+        await this.updateInventoryItem(movement.itemId, {
+          quantity: item.quantity + movement.quantity // Can be negative for reductions
+        });
+        break;
+    }
+    
+    // Create activity log
+    let description = '';
+    switch (movement.type) {
+      case 'RECEIPT':
+        description = `Received ${movement.quantity} of ${item.name}`;
+        if (movement.destinationWarehouseId) {
+          const warehouse = await this.getWarehouse(movement.destinationWarehouseId);
+          if (warehouse) {
+            description += ` into ${warehouse.name}`;
+          }
+        }
+        break;
+        
+      case 'ISSUE':
+        description = `Issued ${movement.quantity} of ${item.name}`;
+        if (movement.sourceWarehouseId) {
+          const warehouse = await this.getWarehouse(movement.sourceWarehouseId);
+          if (warehouse) {
+            description += ` from ${warehouse.name}`;
+          }
+        }
+        break;
+        
+      case 'TRANSFER':
+        description = `Transferred ${movement.quantity} of ${item.name}`;
+        if (movement.sourceWarehouseId && movement.destinationWarehouseId) {
+          const sourceWarehouse = await this.getWarehouse(movement.sourceWarehouseId);
+          const destWarehouse = await this.getWarehouse(movement.destinationWarehouseId);
+          if (sourceWarehouse && destWarehouse) {
+            description += ` from ${sourceWarehouse.name} to ${destWarehouse.name}`;
+          }
+        }
+        break;
+        
+      case 'ADJUSTMENT':
+        const action = movement.quantity >= 0 ? 'Increased' : 'Decreased';
+        description = `${action} ${item.name} by ${Math.abs(movement.quantity)}`;
+        if (movement.destinationWarehouseId) {
+          const warehouse = await this.getWarehouse(movement.destinationWarehouseId);
+          if (warehouse) {
+            description += ` in ${warehouse.name}`;
+          }
+        }
+        break;
+    }
+    
+    await this.createActivityLog({
+      action: `Stock ${movement.type}`,
+      description,
+      referenceType: "stock_movement",
+      referenceId: movement.id,
+      itemId: movement.itemId
+    });
+    
+    return movement;
+  }
+  
+  async transferStock(
+    sourceWarehouseId: number, 
+    destinationWarehouseId: number, 
+    itemId: number, 
+    quantity: number, 
+    userId?: number
+  ): Promise<StockMovement> {
+    // Verify warehouses exist
+    const sourceWarehouse = await this.getWarehouse(sourceWarehouseId);
+    if (!sourceWarehouse) {
+      throw new Error("Source warehouse not found");
+    }
+    
+    const destinationWarehouse = await this.getWarehouse(destinationWarehouseId);
+    if (!destinationWarehouse) {
+      throw new Error("Destination warehouse not found");
+    }
+    
+    // Verify item exists
+    const item = await this.getInventoryItem(itemId);
+    if (!item) {
+      throw new Error("Inventory item not found");
+    }
+    
+    // Check if item exists in source warehouse inventory
+    const sourceInventory = await this.getWarehouseInventoryItem(sourceWarehouseId, itemId);
+    if (!sourceInventory) {
+      throw new Error("Item not found in source warehouse inventory");
+    }
+    
+    if (sourceInventory.quantity < quantity) {
+      throw new Error("Insufficient quantity in source warehouse");
+    }
+    
+    // Update source warehouse inventory (decrease quantity)
+    const updatedSourceInventory = await this.updateWarehouseInventory(
+      sourceInventory.id,
+      { quantity: sourceInventory.quantity - quantity }
+    );
+    
+    // Check if item exists in destination warehouse inventory
+    let destinationInventory = await this.getWarehouseInventoryItem(destinationWarehouseId, itemId);
+    
+    if (destinationInventory) {
+      // Update destination warehouse inventory (increase quantity)
+      await this.updateWarehouseInventory(
+        destinationInventory.id,
+        { quantity: destinationInventory.quantity + quantity }
+      );
+    } else {
+      // Create new inventory record for this item in the destination warehouse
+      await this.createWarehouseInventory({
+        warehouseId: destinationWarehouseId,
+        itemId: itemId,
+        quantity: quantity,
+        location: null // Default location
+      });
+    }
+    
+    // Create stock movement record with TRANSFER type
+    const movement = await this.createStockMovement({
+      itemId,
+      quantity,
+      type: "TRANSFER",
+      warehouseId: null, // Not using this since we have source and destination
+      userId: userId || null,
+      referenceId: null,
+      referenceType: null,
+      unitCost: null,
+      notes: `Transfer from ${sourceWarehouse.name} to ${destinationWarehouse.name}`,
+      sourceWarehouseId,
+      destinationWarehouseId
+    });
+    
+    // Log activity
+    await this.createActivityLog({
+      action: "STOCK_TRANSFER",
+      description: `Transferred ${quantity} units of ${item.name} from ${sourceWarehouse.name} to ${destinationWarehouse.name}`,
+      referenceType: "stock_movement",
+      referenceId: movement.id,
+      itemId: item.id
+    });
+    
+    return movement;
   }
   
   async createSupplier(insertSupplier: InsertSupplier): Promise<Supplier> {
@@ -637,6 +1371,118 @@ export class MemStorage implements IStorage {
     return Array.from(this.inventoryItems.values()).find(
       (item) => item.sku.toLowerCase() === sku.toLowerCase(),
     );
+  }
+  
+  // Barcode methods
+  async getAllBarcodes(): Promise<Barcode[]> {
+    return Array.from(this.barcodes.values());
+  }
+  
+  async getBarcode(id: number): Promise<Barcode | undefined> {
+    return this.barcodes.get(id);
+  }
+  
+  async getBarcodesByItemId(itemId: number): Promise<Barcode[]> {
+    return Array.from(this.barcodes.values())
+      .filter(barcode => barcode.itemId === itemId);
+  }
+  
+  async getBarcodeByValue(value: string): Promise<Barcode | undefined> {
+    return Array.from(this.barcodes.values())
+      .find(barcode => barcode.value === value);
+  }
+  
+  async createBarcode(insertBarcode: InsertBarcode): Promise<Barcode> {
+    // Check if barcode already exists
+    const existingBarcode = await this.getBarcodeByValue(insertBarcode.value);
+    if (existingBarcode) {
+      throw new Error(`Barcode with value ${insertBarcode.value} already exists`);
+    }
+    
+    const id = this.barcodeCurrentId++;
+    const now = new Date();
+    const barcode: Barcode = {
+      ...insertBarcode,
+      id,
+      updatedAt: now,
+      format: insertBarcode.format || 'CODE128',
+      notes: insertBarcode.notes || null
+    };
+    this.barcodes.set(id, barcode);
+    
+    // Create activity log
+    const item = await this.getInventoryItem(barcode.itemId);
+    if (item) {
+      await this.createActivityLog({
+        action: "Barcode Created",
+        description: `Added ${barcode.format} barcode ${barcode.value} for ${item.name}`,
+        referenceType: "barcode",
+        referenceId: barcode.id,
+        itemId: item.id
+      });
+    }
+    
+    return barcode;
+  }
+  
+  async updateBarcode(id: number, updateData: Partial<InsertBarcode>): Promise<Barcode | undefined> {
+    const existingBarcode = this.barcodes.get(id);
+    if (!existingBarcode) return undefined;
+    
+    // If value is being updated, make sure it doesn't conflict
+    if (updateData.value && updateData.value !== existingBarcode.value) {
+      const conflictBarcode = await this.getBarcodeByValue(updateData.value);
+      if (conflictBarcode) {
+        throw new Error(`Barcode with value ${updateData.value} already exists`);
+      }
+    }
+    
+    const updatedBarcode = {
+      ...existingBarcode,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    this.barcodes.set(id, updatedBarcode);
+    
+    // Create activity log
+    const item = await this.getInventoryItem(updatedBarcode.itemId);
+    if (item) {
+      await this.createActivityLog({
+        action: "Barcode Updated",
+        description: `Updated barcode for ${item.name}`,
+        referenceType: "barcode",
+        referenceId: updatedBarcode.id,
+        itemId: item.id
+      });
+    }
+    
+    return updatedBarcode;
+  }
+  
+  async deleteBarcode(id: number): Promise<boolean> {
+    const barcode = this.barcodes.get(id);
+    if (!barcode) return false;
+    
+    // Create activity log
+    const item = await this.getInventoryItem(barcode.itemId);
+    if (item) {
+      await this.createActivityLog({
+        action: "Barcode Deleted",
+        description: `Removed ${barcode.format} barcode ${barcode.value} from ${item.name}`,
+        referenceType: "barcode",
+        referenceId: barcode.id,
+        itemId: item.id
+      });
+    }
+    
+    return this.barcodes.delete(id);
+  }
+  
+  async findItemByBarcode(barcodeValue: string): Promise<InventoryItem | undefined> {
+    const barcode = await this.getBarcodeByValue(barcodeValue);
+    if (!barcode) return undefined;
+    
+    return this.getInventoryItem(barcode.itemId);
   }
   
   async createInventoryItem(insertItem: InsertInventoryItem): Promise<InventoryItem> {

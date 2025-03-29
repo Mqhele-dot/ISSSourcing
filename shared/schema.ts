@@ -1,6 +1,9 @@
-import { pgTable, text, serial, integer, real, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, real, boolean, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// User role enum
+export const UserRoleEnum = pgEnum("user_role", ["admin", "manager", "warehouse_staff", "viewer"]);
 
 // User schema for authentication
 export const users = pgTable("users", {
@@ -8,7 +11,13 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   email: text("email"),
-  role: text("role").default("user"),
+  role: UserRoleEnum("role").default("viewer"),
+  warehouseId: integer("warehouse_id"),
+  lastLogin: timestamp("last_login"),
+  profilePicture: text("profile_picture"),
+  preferences: jsonb("preferences"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -62,6 +71,23 @@ export const inventoryItems = pgTable("inventory_items", {
   lowStockThreshold: integer("low_stock_threshold").default(10),
   location: text("location"),
   supplierId: integer("supplier_id"),
+  barcode: text("barcode"),
+  barcodeType: text("barcode_type").default("CODE128"),
+  dimensions: text("dimensions"),
+  weight: real("weight"),
+  unitOfMeasure: text("unit_of_measure").default("each"),
+  defaultWarehouseId: integer("default_warehouse_id"),
+  minOrderQuantity: integer("min_order_quantity").default(1),
+  leadTime: integer("lead_time"), // In days
+  reorderPoint: integer("reorder_point"),
+  maxStockLevel: integer("max_stock_level"),
+  taxable: boolean("taxable").default(true),
+  status: text("status").default("active"),
+  expiryDate: timestamp("expiry_date"),
+  lastCountDate: timestamp("last_count_date"),
+  images: jsonb("images"),
+  tags: text("tags").array(),
+  customFields: jsonb("custom_fields"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -197,6 +223,21 @@ export const inventoryItemFormSchema = insertInventoryItemSchema.extend({
   quantity: z.coerce.number().int().min(0, "Quantity must be a positive number"),
   price: z.coerce.number().min(0, "Price must be a positive number"),
   lowStockThreshold: z.coerce.number().int().min(0).optional(),
+  barcode: z.string().optional(),
+  barcodeType: z.enum(["CODE128", "EAN13", "EAN8", "UPC", "QR", "DATAMATRIX"]).optional(),
+  dimensions: z.string().optional(),
+  weight: z.coerce.number().min(0).optional(),
+  unitOfMeasure: z.string().optional(),
+  defaultWarehouseId: z.coerce.number().int().optional(),
+  minOrderQuantity: z.coerce.number().int().min(1).optional(),
+  leadTime: z.coerce.number().int().min(0).optional(),
+  reorderPoint: z.coerce.number().int().min(0).optional(),
+  maxStockLevel: z.coerce.number().int().min(0).optional(),
+  taxable: z.boolean().optional(),
+  status: z.enum(["active", "inactive", "discontinued"]).default("active").optional(),
+  tags: z.array(z.string()).optional(),
+  images: z.any().optional(),
+  customFields: z.any().optional(),
 });
 
 export const supplierFormSchema = insertSupplierSchema.extend({
@@ -440,6 +481,212 @@ export type VatRateForm = z.infer<typeof vatRateFormSchema>;
 
 export type SupplierLogo = typeof supplierLogos.$inferSelect;
 export type InsertSupplierLogo = z.infer<typeof insertSupplierLogoSchema>;
+
+// Warehouse schema for multi-warehouse management
+export const warehouses = pgTable("warehouses", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  location: text("location"),
+  address: text("address"),
+  contactPerson: text("contact_person"),
+  contactPhone: text("contact_phone"),
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertWarehouseSchema = createInsertSchema(warehouses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const warehouseFormSchema = insertWarehouseSchema.extend({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+});
+
+// Stock Movement Types enum
+export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
+  "PURCHASE", 
+  "SALE", 
+  "ADJUSTMENT", 
+  "TRANSFER", 
+  "RETURN", 
+  "DAMAGE", 
+  "EXPIRE", 
+  "RECOUNT",
+  "RECEIPT",
+  "ISSUE"
+]);
+
+// Stock movements schema for tracking inventory changes
+export const stockMovements = pgTable("stock_movements", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  warehouseId: integer("warehouse_id"),
+  type: stockMovementTypeEnum("type").notNull(),
+  quantity: integer("quantity").notNull(),
+  referenceId: integer("reference_id"),
+  referenceType: text("reference_type"),
+  notes: text("notes"),
+  userId: integer("user_id"),
+  previousQuantity: integer("previous_quantity"),
+  newQuantity: integer("new_quantity"),
+  unitCost: real("unit_cost"),
+  sourceWarehouseId: integer("source_warehouse_id"),
+  destinationWarehouseId: integer("destination_warehouse_id"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertStockMovementSchema = createInsertSchema(stockMovements).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const stockMovementFormSchema = insertStockMovementSchema.extend({
+  itemId: z.number().int().positive("Item ID must be positive"),
+  quantity: z.number().int().min(1, "Quantity must be at least 1").or(z.number().int().max(-1, "Quantity must be at most -1")),
+  type: z.enum(["PURCHASE", "SALE", "ADJUSTMENT", "TRANSFER", "RETURN", "DAMAGE", "EXPIRE", "RECOUNT", "RECEIPT", "ISSUE"]),
+});
+
+// Warehouse Inventory schema for tracking inventory per warehouse
+export const warehouseInventory = pgTable("warehouse_inventory", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  warehouseId: integer("warehouse_id").notNull(),
+  quantity: integer("quantity").default(0).notNull(),
+  location: text("location"),
+  aisle: text("aisle"),
+  bin: text("bin"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertWarehouseInventorySchema = createInsertSchema(warehouseInventory).omit({
+  id: true,
+  updatedAt: true,
+});
+
+// Barcode schema for product identification
+export const barcodes = pgTable("barcodes", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  type: text("type").default("CODE128"),
+  value: text("value").notNull().unique(),
+  isPrimary: boolean("is_primary").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertBarcodeSchema = createInsertSchema(barcodes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const barcodeFormSchema = insertBarcodeSchema.extend({
+  value: z.string().min(1, "Barcode value is required"),
+  type: z.enum(["CODE128", "EAN13", "EAN8", "UPC", "QR", "DATAMATRIX"]),
+});
+
+// AI prediction settings
+export const demandForecasts = pgTable("demand_forecasts", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  forecastedDemand: real("forecasted_demand").notNull(),
+  confidenceLevel: real("confidence_level"),
+  forecastPeriod: text("forecast_period").notNull(), // daily, weekly, monthly
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  algorithmUsed: text("algorithm_used"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertDemandForecastSchema = createInsertSchema(demandForecasts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Integration schema for external systems
+export const externalIntegrations = pgTable("external_integrations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type").notNull(), // accounting, ecommerce, erp, pos
+  apiKey: text("api_key"),
+  configData: jsonb("config_data"),
+  isActive: boolean("is_active").default(true),
+  lastSyncTime: timestamp("last_sync_time"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertExternalIntegrationSchema = createInsertSchema(externalIntegrations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Audit log for security tracking
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id"),
+  action: text("action").notNull(),
+  resourceType: text("resource_type").notNull(),
+  resourceId: integer("resource_id"),
+  details: jsonb("details"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+// User preferences for dashboard customization
+export const userPreferences = pgTable("user_preferences", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique(),
+  dashboardLayout: jsonb("dashboard_layout"),
+  notifications: jsonb("notifications"),
+  theme: text("theme").default("light"),
+  language: text("language").default("en"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertUserPreferencesSchema = createInsertSchema(userPreferences).omit({
+  id: true,
+  updatedAt: true,
+});
+
+// Export types for new schemas
+export type Warehouse = typeof warehouses.$inferSelect;
+export type InsertWarehouse = z.infer<typeof insertWarehouseSchema>;
+export type WarehouseForm = z.infer<typeof warehouseFormSchema>;
+
+export type StockMovement = typeof stockMovements.$inferSelect;
+export type InsertStockMovement = z.infer<typeof insertStockMovementSchema>;
+export type StockMovementForm = z.infer<typeof stockMovementFormSchema>;
+
+export type WarehouseInventory = typeof warehouseInventory.$inferSelect;
+export type InsertWarehouseInventory = z.infer<typeof insertWarehouseInventorySchema>;
+
+export type Barcode = typeof barcodes.$inferSelect;
+export type InsertBarcode = z.infer<typeof insertBarcodeSchema>;
+export type BarcodeForm = z.infer<typeof barcodeFormSchema>;
+
+export type DemandForecast = typeof demandForecasts.$inferSelect;
+export type InsertDemandForecast = z.infer<typeof insertDemandForecastSchema>;
+
+export type ExternalIntegration = typeof externalIntegrations.$inferSelect;
+export type InsertExternalIntegration = z.infer<typeof insertExternalIntegrationSchema>;
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+
+export type UserPreference = typeof userPreferences.$inferSelect;
+export type InsertUserPreference = z.infer<typeof insertUserPreferencesSchema>;
 
 // Reorder Request Types
 export type ReorderRequest = typeof reorderRequests.$inferSelect;

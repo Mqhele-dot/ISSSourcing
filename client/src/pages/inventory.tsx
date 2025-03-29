@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatCurrency, getItemStatus, getStatusColor, downloadFile } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import ItemForm from "@/components/inventory/item-form";
+import { StockMovementsList } from "@/components/inventory/stock-movements-list";
 import { apiRequest } from "@/lib/queryClient";
 import { type InventoryItem, type Category, type DocumentType } from "@shared/schema";
 import TutorialButton from "@/components/ui/tutorial-button";
@@ -275,7 +276,10 @@ export default function Inventory() {
       cell: ({ row }: any) => {
         const item = row.original as InventoryItem;
         return (
-          <div className="flex items-center">
+          <div 
+            className="flex items-center cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-md p-1" 
+            onClick={() => setLocation(`/inventory/${item.id}`)}
+          >
             <div className="flex-shrink-0 h-10 w-10 bg-neutral-200 dark:bg-neutral-700 rounded flex items-center justify-center">
               <BarChart3 className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
             </div>
@@ -498,6 +502,11 @@ export default function Inventory() {
           </div>
         </CardContent>
       </Card>
+      
+      {/* Stock Movements Section */}
+      <div className="mt-8">
+        <StockMovementsList limit={5} />
+      </div>
 
       {/* Add/Edit Item Form Dialog */}
       <ItemForm 
