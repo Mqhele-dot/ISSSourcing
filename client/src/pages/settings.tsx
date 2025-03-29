@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -74,18 +74,20 @@ export default function SettingsPage() {
   });
 
   // Update form when settings are loaded
-  if (settings && !form.formState.isDirty) {
-    form.reset({
-      companyName: settings.companyName,
-      companyLogo: settings.companyLogo || "",
-      primaryColor: settings.primaryColor,
-      dateFormat: settings.dateFormat,
-      timeFormat: settings.timeFormat,
-      currencySymbol: settings.currencySymbol,
-      lowStockDefaultThreshold: settings.lowStockDefaultThreshold,
-      allowNegativeInventory: settings.allowNegativeInventory,
-    });
-  }
+  useEffect(() => {
+    if (settings) {
+      form.reset({
+        companyName: settings.companyName,
+        companyLogo: settings.companyLogo || "",
+        primaryColor: settings.primaryColor,
+        dateFormat: settings.dateFormat || "YYYY-MM-DD",
+        timeFormat: settings.timeFormat || "HH:mm",
+        currencySymbol: settings.currencySymbol || "$",
+        lowStockDefaultThreshold: settings.lowStockDefaultThreshold || 10,
+        allowNegativeInventory: settings.allowNegativeInventory || false,
+      });
+    }
+  }, [settings, form]);
 
   // Handle settings update
   const handleUpdateSettings = (data: AppSettingsForm) => {
