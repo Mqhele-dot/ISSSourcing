@@ -152,7 +152,7 @@ export default function Inventory() {
   // Reorder item mutation
   const reorderMutation = useMutation({
     mutationFn: async (data: { itemId: number; quantity: number }) => {
-      return apiRequest("POST", "/api/reorder-requests", { data });
+      return apiRequest("POST", "/api/reorder-requests", data);
     },
     onSuccess: async () => {
       // Invalidate and refetch reorder requests

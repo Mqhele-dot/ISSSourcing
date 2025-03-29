@@ -1,13 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { AlertTriangle, ExternalLink } from "lucide-react";
+import { AlertTriangle, ExternalLink, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type InventoryItem } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function StockAlerts() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const { data: lowStockItems, isLoading } = useQuery({
     queryKey: ["/api/inventory/low-stock"],
     queryFn: async () => {
@@ -27,6 +32,29 @@ export default function StockAlerts() {
         throw new Error("Failed to fetch out of stock items");
       }
       return response.json() as Promise<InventoryItem[]>;
+    },
+  });
+  
+  // Reorder item mutation
+  const reorderMutation = useMutation({
+    mutationFn: async (data: { itemId: number; quantity: number }) => {
+      return apiRequest("POST", "/api/reorder-requests", data);
+    },
+    onSuccess: async () => {
+      // Invalidate and refetch reorder requests
+      await queryClient.invalidateQueries({ queryKey: ["/api/reorder-requests"] });
+      
+      toast({
+        title: "Reorder Request Created",
+        description: "A reorder request has been created successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create reorder request",
+        variant: "destructive",
+      });
     },
   });
 
@@ -95,7 +123,23 @@ export default function StockAlerts() {
                 </div>
               </div>
               <div className="ml-4 flex-shrink-0">
-                <Button size="sm" className="h-8">
+                <Button 
+                  size="sm" 
+                  className="h-8 reorder-alert-button"
+                  onClick={() => {
+                    const defaultQuantity = item.lowStockThreshold || 10;
+                    reorderMutation.mutate({
+                      itemId: item.id,
+                      quantity: defaultQuantity
+                    });
+                  }}
+                  disabled={reorderMutation.isPending}
+                >
+                  {reorderMutation.isPending ? (
+                    <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                  )}
                   Reorder
                 </Button>
               </div>
