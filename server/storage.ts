@@ -1022,10 +1022,10 @@ export class MemStorage implements IStorage {
       createdAt: now,
       updatedAt: now,
       address: insertWarehouse.address || null,
-      phone: insertWarehouse.phone || null,
-      contactName: insertWarehouse.contactName || null,
-      isDefault: insertWarehouse.isDefault || false,
-      notes: insertWarehouse.notes || null
+      location: insertWarehouse.location || null,
+      contactPerson: insertWarehouse.contactPerson || null,
+      contactPhone: insertWarehouse.contactPhone || null,
+      isDefault: insertWarehouse.isDefault || false
     };
     
     // If this is marked as default, update other warehouses
@@ -1169,7 +1169,11 @@ export class MemStorage implements IStorage {
     const wi: WarehouseInventory = {
       ...insertWI,
       id,
-      updatedAt: now
+      updatedAt: now,
+      quantity: insertWI.quantity || 0,
+      location: insertWI.location || null,
+      aisle: insertWI.aisle || null,
+      bin: insertWI.bin || null
     };
     this.warehouseInventory.set(id, wi);
     
@@ -1444,7 +1448,7 @@ export class MemStorage implements IStorage {
               warehouseId: movement.destinationWarehouseId,
               itemId: movement.itemId,
               quantity: movement.quantity,
-              location: movement.location || null
+              location: null
             });
           }
         }
@@ -1721,9 +1725,9 @@ export class MemStorage implements IStorage {
     const barcode: Barcode = {
       ...insertBarcode,
       id,
-      updatedAt: now,
-      format: insertBarcode.format || 'CODE128',
-      notes: insertBarcode.notes || null
+      createdAt: now,
+      type: insertBarcode.type || null,
+      isPrimary: insertBarcode.isPrimary || false
     };
     this.barcodes.set(id, barcode);
     
@@ -1732,7 +1736,7 @@ export class MemStorage implements IStorage {
     if (item) {
       await this.createActivityLog({
         action: "Barcode Created",
-        description: `Added ${barcode.format} barcode ${barcode.value} for ${item.name}`,
+        description: `Added ${barcode.type || 'standard'} barcode ${barcode.value} for ${item.name}`,
         referenceType: "barcode",
         referenceId: barcode.id,
         itemId: item.id
@@ -1785,7 +1789,7 @@ export class MemStorage implements IStorage {
     if (item) {
       await this.createActivityLog({
         action: "Barcode Deleted",
-        description: `Removed ${barcode.format} barcode ${barcode.value} from ${item.name}`,
+        description: `Removed ${barcode.type || 'standard'} barcode ${barcode.value} from ${item.name}`,
         referenceType: "barcode",
         referenceId: barcode.id,
         itemId: item.id

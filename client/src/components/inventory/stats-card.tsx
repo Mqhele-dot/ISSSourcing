@@ -51,11 +51,9 @@ export function StatsCard({
       </CardContent>
       <CardFooter className="bg-neutral-50 dark:bg-neutral-700 px-5 py-3">
         <div className="text-sm">
-          <Link href={link.href}>
-            <a className="font-medium text-primary hover:text-primary/80 flex items-center">
-              {link.label}
-              <ExternalLink className="ml-1 h-3 w-3" />
-            </a>
+          <Link href={link.href} className="font-medium text-primary hover:text-primary/80 flex items-center">
+            {link.label}
+            <ExternalLink className="ml-1 h-3 w-3" />
           </Link>
         </div>
       </CardFooter>
