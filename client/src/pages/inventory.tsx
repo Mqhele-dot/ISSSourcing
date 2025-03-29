@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Plus, FileDown, Filter, Trash2, BarChart3 } from "lucide-react";
+import { Plus, FileDown, Filter, Trash2, BarChart3, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -148,6 +148,29 @@ export default function Inventory() {
       });
     },
   });
+  
+  // Reorder item mutation
+  const reorderMutation = useMutation({
+    mutationFn: async (data: { itemId: number; quantity: number }) => {
+      return apiRequest("POST", "/api/reorder-requests", { data });
+    },
+    onSuccess: async () => {
+      // Invalidate and refetch reorder requests
+      await queryClient.invalidateQueries({ queryKey: ["/api/reorder-requests"] });
+      
+      toast({
+        title: "Reorder Request Created",
+        description: "A reorder request has been created successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create reorder request",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Handle item deletion
   const handleDeleteItem = async () => {
@@ -168,6 +191,19 @@ export default function Inventory() {
   const handleFormClose = () => {
     setSelectedItem(null);
     setShowItemForm(false);
+  };
+  
+  // Handle reorder item
+  const handleReorderItem = async (item: InventoryItem) => {
+    try {
+      const defaultQuantity = item.lowStockThreshold || 10;
+      await reorderMutation.mutateAsync({
+        itemId: item.id,
+        quantity: defaultQuantity
+      });
+    } catch (error) {
+      console.error("Failed to create reorder request:", error);
+    }
   };
 
   // Export report handler
@@ -314,6 +350,16 @@ export default function Inventory() {
               onClick={() => handleEditItem(item)}
             >
               Edit
+            </Button>
+            <Button 
+              variant="link" 
+              size="sm" 
+              className="text-warning hover:text-warning/80 mr-3 reorder-button"
+              onClick={() => handleReorderItem(item)}
+              disabled={reorderMutation.isPending}
+            >
+              <RefreshCw className="h-4 w-4 mr-1 inline-block" />
+              Reorder
             </Button>
             <Button 
               variant="link" 
