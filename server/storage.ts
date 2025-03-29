@@ -10,6 +10,7 @@ import {
   activityLogs, type ActivityLog, type InsertActivityLog,
   appSettings, type AppSettings, type InsertAppSettings,
   supplierLogos, type SupplierLogo, type InsertSupplierLogo,
+  vatRates, type VatRate, type InsertVatRate,
   type InventoryStats, ItemStatus, type BulkImportInventory,
   PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus,
 } from "@shared/schema";
@@ -98,6 +99,23 @@ export interface IStorage {
   getAllActivityLogs(limit?: number): Promise<ActivityLog[]>;
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
   
+  // VAT rate methods
+  getAllVatRates(): Promise<VatRate[]>;
+  getVatRate(id: number): Promise<VatRate | undefined>;
+  getVatRateByCountryCode(countryCode: string): Promise<VatRate | undefined>;
+  createVatRate(vatRate: InsertVatRate): Promise<VatRate>;
+  updateVatRate(id: number, vatRate: Partial<InsertVatRate>): Promise<VatRate | undefined>;
+  deleteVatRate(id: number): Promise<boolean>;
+  
+  // VAT calculation methods
+  calculateVat(amount: number, countryCode: string, useReducedRate?: boolean): Promise<{
+    originalAmount: number;
+    vatAmount: number;
+    totalAmount: number;
+    vatRate: number;
+    countryCode: string;
+  }>;
+  
   // For reference lookup combined methods
   getItemWithSupplierAndCategory(id: number): Promise<(InventoryItem & { 
     supplier?: Supplier, 
@@ -128,6 +146,7 @@ export class MemStorage implements IStorage {
   private purchaseOrderItems: Map<number, PurchaseOrderItem>;
   private appSettings: Map<number, AppSettings>;
   private supplierLogos: Map<number, SupplierLogo>;
+  private vatRates: Map<number, VatRate>;
   
   private userCurrentId: number;
   private categoryCurrentId: number;
@@ -140,6 +159,7 @@ export class MemStorage implements IStorage {
   private orderItemCurrentId: number;
   private settingsCurrentId: number;
   private supplierLogoCurrentId: number;
+  private vatRateCurrentId: number;
   
   constructor() {
     this.users = new Map();
@@ -153,6 +173,7 @@ export class MemStorage implements IStorage {
     this.purchaseOrderItems = new Map();
     this.appSettings = new Map();
     this.supplierLogos = new Map();
+    this.vatRates = new Map();
     
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
@@ -165,6 +186,7 @@ export class MemStorage implements IStorage {
     this.orderItemCurrentId = 1;
     this.settingsCurrentId = 1;
     this.supplierLogoCurrentId = 1;
+    this.vatRateCurrentId = 1;
     
     // Add default data
     this.initializeDefaultData();
@@ -179,6 +201,39 @@ export class MemStorage implements IStorage {
       role: "admin"
     };
     this.createUser(defaultUser);
+    
+    // Add default VAT rates
+    const defaultVatRates: InsertVatRate[] = [
+      {
+        countryCode: 'GB',
+        countryName: 'United Kingdom',
+        standardRate: 20,
+        reducedRate: 5,
+        active: true
+      },
+      {
+        countryCode: 'US',
+        countryName: 'United States',
+        standardRate: 0,
+        active: true
+      },
+      {
+        countryCode: 'DE',
+        countryName: 'Germany',
+        standardRate: 19,
+        reducedRate: 7,
+        active: true
+      },
+      {
+        countryCode: 'FR',
+        countryName: 'France',
+        standardRate: 20,
+        reducedRate: 5.5,
+        active: true
+      }
+    ];
+    
+    defaultVatRates.forEach(vatRate => this.createVatRate(vatRate));
 
     // Add default categories
     const defaultCategories: InsertCategory[] = [
@@ -1557,6 +1612,9 @@ export class MemStorage implements IStorage {
         currencySymbol: settings.currencySymbol || "$",
         lowStockDefaultThreshold: settings.lowStockDefaultThreshold || 10,
         allowNegativeInventory: settings.allowNegativeInventory || false,
+        enableVat: settings.enableVat || false,
+        defaultVatCountry: settings.defaultVatCountry || "US",
+        showPricesWithVat: settings.showPricesWithVat || true,
         updatedAt: now
       };
       
@@ -1647,6 +1705,114 @@ export class MemStorage implements IStorage {
     });
     
     return this.supplierLogos.delete(logo.id);
+  }
+  
+  // VAT rate methods
+  async getAllVatRates(): Promise<VatRate[]> {
+    return Array.from(this.vatRates.values());
+  }
+  
+  async getVatRate(id: number): Promise<VatRate | undefined> {
+    return this.vatRates.get(id);
+  }
+  
+  async getVatRateByCountryCode(countryCode: string): Promise<VatRate | undefined> {
+    return Array.from(this.vatRates.values()).find(
+      vatRate => vatRate.countryCode.toLowerCase() === countryCode.toLowerCase()
+    );
+  }
+  
+  async createVatRate(vatRate: InsertVatRate): Promise<VatRate> {
+    const id = this.vatRateCurrentId++;
+    const now = new Date();
+    const newVatRate: VatRate = {
+      ...vatRate,
+      id,
+      updatedAt: now
+    };
+    
+    this.vatRates.set(id, newVatRate);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "VAT Rate Added",
+      description: `Added VAT rate for ${vatRate.countryName} (${vatRate.countryCode}): ${vatRate.standardRate}%`,
+      referenceType: "settings",
+      referenceId: 0
+    });
+    
+    return newVatRate;
+  }
+  
+  async updateVatRate(id: number, vatRate: Partial<InsertVatRate>): Promise<VatRate | undefined> {
+    const existingVatRate = this.vatRates.get(id);
+    if (!existingVatRate) return undefined;
+    
+    const updatedVatRate: VatRate = {
+      ...existingVatRate,
+      ...vatRate,
+      updatedAt: new Date()
+    };
+    
+    this.vatRates.set(id, updatedVatRate);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "VAT Rate Updated",
+      description: `Updated VAT rate for ${updatedVatRate.countryName} (${updatedVatRate.countryCode})`,
+      referenceType: "settings",
+      referenceId: 0
+    });
+    
+    return updatedVatRate;
+  }
+  
+  async deleteVatRate(id: number): Promise<boolean> {
+    const vatRate = this.vatRates.get(id);
+    if (!vatRate) return false;
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "VAT Rate Deleted",
+      description: `Deleted VAT rate for ${vatRate.countryName} (${vatRate.countryCode})`,
+      referenceType: "settings",
+      referenceId: 0
+    });
+    
+    return this.vatRates.delete(id);
+  }
+  
+  // VAT calculation method
+  async calculateVat(amount: number, countryCode: string, useReducedRate: boolean = false): Promise<{
+    originalAmount: number;
+    vatAmount: number;
+    totalAmount: number;
+    vatRate: number;
+    countryCode: string;
+  }> {
+    const vatRate = await this.getVatRateByCountryCode(countryCode);
+    
+    if (!vatRate) {
+      // If no VAT rate found for country, return with 0% VAT
+      return {
+        originalAmount: amount,
+        vatAmount: 0,
+        totalAmount: amount,
+        vatRate: 0,
+        countryCode
+      };
+    }
+    
+    const rate = useReducedRate ? (vatRate.reducedRate || vatRate.standardRate) : vatRate.standardRate;
+    const vatAmount = amount * (rate / 100);
+    
+    return {
+      originalAmount: amount,
+      vatAmount: Number(vatAmount.toFixed(2)),
+      totalAmount: Number((amount + vatAmount).toFixed(2)),
+      vatRate: rate,
+      countryCode
+    };
   }
 }
 

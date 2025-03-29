@@ -336,6 +336,9 @@ export const appSettings = pgTable("app_settings", {
   currencySymbol: text("currency_symbol").default("$"),
   lowStockDefaultThreshold: integer("low_stock_default_threshold").default(10),
   allowNegativeInventory: boolean("allow_negative_inventory").default(false),
+  enableVat: boolean("enable_vat").default(false),
+  defaultVatCountry: text("default_vat_country").default("US"),
+  showPricesWithVat: boolean("show_prices_with_vat").default(true),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 
@@ -363,10 +366,45 @@ export const insertSupplierLogoSchema = createInsertSchema(supplierLogos).omit({
   updatedAt: true
 });
 
+// VAT Rate schema for different countries
+export const vatRates = pgTable("vat_rates", {
+  id: serial("id").primaryKey(),
+  countryCode: text("country_code").notNull().unique(),
+  countryName: text("country_name").notNull(),
+  standardRate: real("standard_rate").notNull(),
+  reducedRate: real("reduced_rate"),
+  superReducedRate: real("super_reduced_rate"),
+  active: boolean("active").default(true),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertVatRateSchema = createInsertSchema(vatRates).omit({
+  id: true,
+  updatedAt: true
+});
+
+export const vatRateFormSchema = insertVatRateSchema.extend({
+  countryCode: z.string().min(2, "Country code must be at least 2 characters"),
+  countryName: z.string().min(2, "Country name must be at least 2 characters"),
+  standardRate: z.number().min(0, "Rate must be a positive number").max(100, "Rate cannot exceed 100%"),
+});
+
+// App settings extension for VAT
+export const appSettingsFormSchemaWithVat = appSettingsFormSchema.extend({
+  enableVat: z.boolean().default(false),
+  defaultVatCountry: z.string().min(2, "Default country code must be valid").optional(),
+  showPricesWithVat: z.boolean().default(true),
+});
+
 // Types for settings
 export type AppSettings = typeof appSettings.$inferSelect;
 export type InsertAppSettings = z.infer<typeof insertAppSettingsSchema>;
 export type AppSettingsForm = z.infer<typeof appSettingsFormSchema>;
+export type AppSettingsFormWithVat = z.infer<typeof appSettingsFormSchemaWithVat>;
+
+export type VatRate = typeof vatRates.$inferSelect;
+export type InsertVatRate = z.infer<typeof insertVatRateSchema>;
+export type VatRateForm = z.infer<typeof vatRateFormSchema>;
 
 export type SupplierLogo = typeof supplierLogos.$inferSelect;
 export type InsertSupplierLogo = z.infer<typeof insertSupplierLogoSchema>;

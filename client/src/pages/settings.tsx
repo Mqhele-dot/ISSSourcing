@@ -14,9 +14,10 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type AppSettings, type AppSettingsForm } from "@shared/schema";
+import { type AppSettings, type AppSettingsForm, type AppSettingsFormWithVat, type VatRate } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import TutorialStep from "@/components/ui/tutorial-button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const settingsFormSchema = z.object({
   companyName: z.string().min(2, "Company name must be at least 2 characters"),
@@ -27,6 +28,9 @@ const settingsFormSchema = z.object({
   currencySymbol: z.string().max(3, "Currency symbol must be 3 characters or less"),
   lowStockDefaultThreshold: z.number().int().min(1, "Must be at least 1"),
   allowNegativeInventory: z.boolean(),
+  enableVat: z.boolean().default(false),
+  defaultVatCountry: z.string().optional(),
+  showPricesWithVat: z.boolean().default(true),
 });
 
 export default function SettingsPage() {
@@ -40,7 +44,7 @@ export default function SettingsPage() {
 
   // Update settings
   const updateSettings = useMutation({
-    mutationFn: (data: Partial<AppSettingsForm>) => 
+    mutationFn: (data: Partial<AppSettingsFormWithVat>) => 
       apiRequest('/api/settings', { method: 'PUT', data }),
     onSuccess: () => {
       toast({
@@ -59,7 +63,7 @@ export default function SettingsPage() {
   });
 
   // Settings form
-  const form = useForm<AppSettingsForm>({
+  const form = useForm<AppSettingsFormWithVat>({
     resolver: zodResolver(settingsFormSchema),
     defaultValues: {
       companyName: "",
@@ -70,6 +74,9 @@ export default function SettingsPage() {
       currencySymbol: "$",
       lowStockDefaultThreshold: 10,
       allowNegativeInventory: false,
+      enableVat: false,
+      defaultVatCountry: "US",
+      showPricesWithVat: true,
     },
   });
 
@@ -85,12 +92,15 @@ export default function SettingsPage() {
         currencySymbol: settings.currencySymbol || "$",
         lowStockDefaultThreshold: settings.lowStockDefaultThreshold || 10,
         allowNegativeInventory: settings.allowNegativeInventory || false,
+        enableVat: settings.enableVat || false,
+        defaultVatCountry: settings.defaultVatCountry || "US",
+        showPricesWithVat: settings.showPricesWithVat || true,
       });
     }
   }, [settings, form]);
 
   // Handle settings update
-  const handleUpdateSettings = (data: AppSettingsForm) => {
+  const handleUpdateSettings = (data: AppSettingsFormWithVat) => {
     updateSettings.mutate(data);
   };
 
@@ -134,10 +144,11 @@ export default function SettingsPage() {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleUpdateSettings)} className="space-y-6">
             <Tabs defaultValue="general" className="space-y-6">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="general">General</TabsTrigger>
                 <TabsTrigger value="appearance">Appearance</TabsTrigger>
                 <TabsTrigger value="inventory">Inventory</TabsTrigger>
+                <TabsTrigger value="taxation">Taxation</TabsTrigger>
               </TabsList>
               
               {/* General Settings */}
@@ -404,6 +415,105 @@ export default function SettingsPage() {
                         </FormItem>
                       )}
                     />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              
+              {/* Taxation Settings */}
+              <TabsContent value="taxation" className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>VAT Settings</CardTitle>
+                    <CardDescription>
+                      Configure Value Added Tax (VAT) settings for your inventory
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <FormField
+                      control={form.control}
+                      name="enableVat"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">
+                              Enable VAT Calculation
+                            </FormLabel>
+                            <FormDescription>
+                              When enabled, VAT will be calculated for inventory items based on rates
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    
+                    {form.watch("enableVat") && (
+                      <>
+                        <FormField
+                          control={form.control}
+                          name="defaultVatCountry"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Default VAT Country</FormLabel>
+                              <FormControl>
+                                <Select
+                                  value={field.value}
+                                  onValueChange={field.onChange}
+                                  disabled={!form.watch("enableVat")}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select a country" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="US">United States</SelectItem>
+                                    <SelectItem value="GB">United Kingdom</SelectItem>
+                                    <SelectItem value="CA">Canada</SelectItem>
+                                    <SelectItem value="AU">Australia</SelectItem>
+                                    <SelectItem value="DE">Germany</SelectItem>
+                                    <SelectItem value="FR">France</SelectItem>
+                                    <SelectItem value="ES">Spain</SelectItem>
+                                    <SelectItem value="IT">Italy</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </FormControl>
+                              <FormDescription>
+                                Default country for VAT rate calculations
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        
+                        <FormField
+                          control={form.control}
+                          name="showPricesWithVat"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                              <div className="space-y-0.5">
+                                <FormLabel className="text-base">
+                                  Show Prices With VAT
+                                </FormLabel>
+                                <FormDescription>
+                                  When enabled, prices will be displayed with VAT included
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <Switch
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                  disabled={!form.watch("enableVat")}
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
