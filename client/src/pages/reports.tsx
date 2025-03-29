@@ -76,13 +76,15 @@ export default function Reports() {
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       
-      downloadFile(objectUrl, `${activeTab}-report.${exportFormat}`);
+      // Use .xlsx extension for Excel files
+      const fileExtension = exportFormat === 'excel' ? 'xlsx' : exportFormat;
+      downloadFile(objectUrl, `${activeTab}-report.${fileExtension}`);
       
       URL.revokeObjectURL(objectUrl);
       
       toast({
         title: "Export Successful",
-        description: `${getReportTitle(activeTab)} has been exported as ${exportFormat.toUpperCase()}`,
+        description: `${getReportTitle(activeTab)} has been exported as ${exportFormat === 'excel' ? 'XLSX' : exportFormat.toUpperCase()}`,
       });
     } catch (error) {
       toast({

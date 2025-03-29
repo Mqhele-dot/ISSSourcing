@@ -198,7 +198,11 @@ export default function ReorderRequestsPage() {
       // Create temporary anchor element to trigger download
       const a = document.createElement('a');
       a.href = url;
-      a.download = `reorder-requests.${format}`;
+      
+      // Use .xlsx extension for Excel files
+      const fileExtension = format === 'excel' ? 'xlsx' : format;
+      a.download = `reorder-requests.${fileExtension}`;
+      
       document.body.appendChild(a);
       a.click();
       
@@ -208,7 +212,7 @@ export default function ReorderRequestsPage() {
       
       toast({
         title: "Export Successful",
-        description: `Reorder requests have been exported as ${format.toUpperCase()}`,
+        description: `Reorder requests have been exported as ${format === 'excel' ? 'XLSX' : format.toUpperCase()}`,
       });
     } catch (error) {
       toast({

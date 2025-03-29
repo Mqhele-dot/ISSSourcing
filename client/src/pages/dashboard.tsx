@@ -74,13 +74,15 @@ export default function Dashboard() {
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       
-      downloadFile(objectUrl, `inventory-report.${format}`);
+      // Use .xlsx extension for Excel files
+      const fileExtension = format === 'excel' ? 'xlsx' : format;
+      downloadFile(objectUrl, `inventory-report.${fileExtension}`);
       
       URL.revokeObjectURL(objectUrl);
       
       toast({
         title: "Export Successful",
-        description: `Inventory report has been exported as ${format.toUpperCase()}`,
+        description: `Inventory report has been exported as ${format === 'excel' ? 'XLSX' : format.toUpperCase()}`,
       });
     } catch (error) {
       toast({
