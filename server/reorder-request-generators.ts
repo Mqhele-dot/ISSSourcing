@@ -167,7 +167,8 @@ export async function generateReorderRequestsPdfReport(requests: any[], title: s
     yPos -= 15;
   }
   
-  return await pdfDoc.save();
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
 }
 
 export async function generateReorderRequestsCsvReport(requests: any[], title: string): Promise<Buffer> {
@@ -244,5 +245,6 @@ export async function generateReorderRequestsExcelReport(requests: any[], title:
   });
   
   // Write to buffer
-  return await workbook.xlsx.writeBuffer();
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }

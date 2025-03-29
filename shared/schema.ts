@@ -348,6 +348,8 @@ export const insertReorderRequestSchema = createInsertSchema(reorderRequests).om
   createdAt: true,
   updatedAt: true,
   approvalDate: true,
+}).partial({
+  requestNumber: true,
 });
 
 export const reorderRequestFormSchema = insertReorderRequestSchema.extend({

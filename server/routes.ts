@@ -1151,6 +1151,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           break;
       }
       
+      // Ensure buffer is a proper Buffer instance
+      if (!(buffer instanceof Buffer)) {
+        buffer = Buffer.from(buffer);
+      }
+      
       res.send(buffer);
     } catch (error) {
       console.error(`Error generating ${req.params.format} report:`, error);
@@ -1783,7 +1788,8 @@ async function generateInventoryExcelReport(items: any[], title: string): Promis
   });
   
   // Write to buffer
-  return await workbook.xlsx.writeBuffer();
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }
 
 // Purchase Orders Reports
