@@ -20,9 +20,11 @@ import {
   externalIntegrations, type ExternalIntegration, type InsertExternalIntegration,
   auditLogs, type AuditLog, type InsertAuditLog,
   userPreferences, type UserPreference, type InsertUserPreference,
+  permissions, type Permission, type InsertPermission,
   type InventoryStats, ItemStatus, type BulkImportInventory,
   PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus, ReorderRequestStatus,
-  stockMovementTypeEnum, UserRoleEnum,
+  stockMovementTypeEnum, UserRoleEnum, PermissionTypeEnum, ResourceEnum,
+  Resource, PermissionType, UserRole,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -33,6 +35,18 @@ export interface IStorage {
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
   getUserPreferences(userId: number): Promise<UserPreference | undefined>;
   updateUserPreferences(userId: number, preferences: Partial<InsertUserPreference>): Promise<UserPreference | undefined>;
+  getAllUsers(): Promise<User[]>;
+  deleteUser(id: number): Promise<boolean>;
+  
+  // Permission methods
+  getAllPermissions(): Promise<Permission[]>;
+  getPermission(id: number): Promise<Permission | undefined>;
+  getPermissionsByRole(role: UserRole): Promise<Permission[]>;
+  getPermissionsByResource(resource: Resource): Promise<Permission[]>;
+  checkPermission(role: UserRole, resource: Resource, permissionType: PermissionType): Promise<boolean>;
+  createPermission(permission: InsertPermission): Permission;
+  updatePermission(id: number, permission: Partial<InsertPermission>): Promise<Permission | undefined>;
+  deletePermission(id: number): Promise<boolean>;
   
   // Category methods
   getAllCategories(): Promise<Category[]>;
@@ -237,6 +251,7 @@ export class MemStorage implements IStorage {
   private externalIntegrations: Map<number, ExternalIntegration>;
   private auditLogs: Map<number, AuditLog>;
   private userPreferences: Map<number, UserPreference>;
+  private permissions: Map<number, Permission>;
   
   private userCurrentId: number;
   private categoryCurrentId: number;
@@ -259,6 +274,7 @@ export class MemStorage implements IStorage {
   private externalIntegrationCurrentId: number;
   private auditLogCurrentId: number;
   private userPreferenceCurrentId: number;
+  private permissionCurrentId: number;
   
   constructor() {
     this.users = new Map();
@@ -282,6 +298,7 @@ export class MemStorage implements IStorage {
     this.externalIntegrations = new Map();
     this.auditLogs = new Map();
     this.userPreferences = new Map();
+    this.permissions = new Map();
     
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
@@ -304,6 +321,7 @@ export class MemStorage implements IStorage {
     this.externalIntegrationCurrentId = 1;
     this.auditLogCurrentId = 1;
     this.userPreferenceCurrentId = 1;
+    this.permissionCurrentId = 1;
     
     // Add default data
     this.initializeDefaultData();
@@ -318,6 +336,9 @@ export class MemStorage implements IStorage {
       role: "admin"
     };
     this.createUser(defaultUser);
+    
+    // Add default permissions for different user roles
+    this.setupDefaultPermissions();
     
     // Add default VAT rates
     const defaultVatRates: InsertVatRate[] = [
@@ -627,6 +648,302 @@ export class MemStorage implements IStorage {
     }
     
     return userPref;
+  }
+  
+  async getAllUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
+  }
+  
+  async deleteUser(id: number): Promise<boolean> {
+    // Check if the user exists
+    const user = this.users.get(id);
+    if (!user) return false;
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "User Deleted",
+      description: `Deleted user: ${user.username}`,
+      referenceType: "user",
+      referenceId: id
+    });
+    
+    return this.users.delete(id);
+  }
+  
+  // Permission methods
+  private setupDefaultPermissions() {
+    // Admin role permissions
+    const adminPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+      // Inventory resource permissions
+      { resource: Resource.INVENTORY, permissionType: PermissionType.CREATE },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.UPDATE },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.DELETE },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.EXPORT },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.IMPORT },
+      
+      // Purchases resource permissions
+      { resource: Resource.PURCHASES, permissionType: PermissionType.CREATE },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.UPDATE },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.DELETE },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.APPROVE },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.EXPORT },
+      
+      // Suppliers resource permissions
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.CREATE },
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.UPDATE },
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.DELETE },
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.EXPORT },
+      
+      // Categories resource permissions
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.CREATE },
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.UPDATE },
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.DELETE },
+      
+      // Warehouses resource permissions
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.CREATE },
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.UPDATE },
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.DELETE },
+      
+      // Reports resource permissions
+      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
+      { resource: Resource.REPORTS, permissionType: PermissionType.EXPORT },
+      
+      // Users resource permissions
+      { resource: Resource.USERS, permissionType: PermissionType.CREATE },
+      { resource: Resource.USERS, permissionType: PermissionType.READ },
+      { resource: Resource.USERS, permissionType: PermissionType.UPDATE },
+      { resource: Resource.USERS, permissionType: PermissionType.DELETE },
+      { resource: Resource.USERS, permissionType: PermissionType.ASSIGN },
+      
+      // Settings resource permissions
+      { resource: Resource.SETTINGS, permissionType: PermissionType.READ },
+      { resource: Resource.SETTINGS, permissionType: PermissionType.UPDATE },
+      
+      // Reorder Requests resource permissions
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.CREATE },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.UPDATE },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.DELETE },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.APPROVE },
+      
+      // Stock Movements resource permissions
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.CREATE },
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ },
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.UPDATE },
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.EXPORT }
+    ];
+    
+    // Manager role permissions
+    const managerPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+      // Inventory resource permissions
+      { resource: Resource.INVENTORY, permissionType: PermissionType.CREATE },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.UPDATE },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.EXPORT },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.IMPORT },
+      
+      // Purchases resource permissions
+      { resource: Resource.PURCHASES, permissionType: PermissionType.CREATE },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.UPDATE },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.APPROVE },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.EXPORT },
+      
+      // Suppliers resource permissions
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.CREATE },
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.UPDATE },
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.EXPORT },
+      
+      // Categories resource permissions
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.CREATE },
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.UPDATE },
+      
+      // Warehouses resource permissions
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.UPDATE },
+      
+      // Reports resource permissions
+      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
+      { resource: Resource.REPORTS, permissionType: PermissionType.EXPORT },
+      
+      // Users resource permissions
+      { resource: Resource.USERS, permissionType: PermissionType.READ },
+      
+      // Settings resource permissions
+      { resource: Resource.SETTINGS, permissionType: PermissionType.READ },
+      
+      // Reorder Requests resource permissions
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.CREATE },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.UPDATE },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.APPROVE },
+      
+      // Stock Movements resource permissions
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.CREATE },
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ },
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.EXPORT }
+    ];
+    
+    // Warehouse Staff role permissions
+    const warehouseStaffPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+      // Inventory resource permissions
+      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.UPDATE },
+      
+      // Purchases resource permissions
+      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
+      
+      // Suppliers resource permissions
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
+      
+      // Categories resource permissions
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      
+      // Warehouses resource permissions
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      
+      // Reorder Requests resource permissions
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.CREATE },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
+      
+      // Stock Movements resource permissions
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.CREATE },
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ }
+    ];
+    
+    // Viewer role permissions
+    const viewerPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+      // Inventory resource permissions
+      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
+      
+      // Purchases resource permissions
+      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
+      
+      // Suppliers resource permissions
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
+      
+      // Categories resource permissions
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      
+      // Warehouses resource permissions
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      
+      // Reports resource permissions
+      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
+      
+      // Reorder Requests resource permissions
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
+      
+      // Stock Movements resource permissions
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ }
+    ];
+    
+    // Create admin permissions
+    for (const permission of adminPermissions) {
+      this.createPermission({
+        role: UserRole.ADMIN,
+        resource: permission.resource,
+        permissionType: permission.permissionType
+      });
+    }
+    
+    // Create manager permissions
+    for (const permission of managerPermissions) {
+      this.createPermission({
+        role: UserRole.MANAGER,
+        resource: permission.resource,
+        permissionType: permission.permissionType
+      });
+    }
+    
+    // Create warehouse staff permissions
+    for (const permission of warehouseStaffPermissions) {
+      this.createPermission({
+        role: UserRole.WAREHOUSE_STAFF,
+        resource: permission.resource,
+        permissionType: permission.permissionType
+      });
+    }
+    
+    // Create viewer permissions
+    for (const permission of viewerPermissions) {
+      this.createPermission({
+        role: UserRole.VIEWER,
+        resource: permission.resource,
+        permissionType: permission.permissionType
+      });
+    }
+  }
+  
+  async getAllPermissions(): Promise<Permission[]> {
+    return Array.from(this.permissions.values());
+  }
+  
+  async getPermission(id: number): Promise<Permission | undefined> {
+    return this.permissions.get(id);
+  }
+  
+  async getPermissionsByRole(role: UserRole): Promise<Permission[]> {
+    return Array.from(this.permissions.values())
+      .filter(permission => permission.role === role);
+  }
+  
+  async getPermissionsByResource(resource: Resource): Promise<Permission[]> {
+    return Array.from(this.permissions.values())
+      .filter(permission => permission.resource === resource);
+  }
+  
+  async checkPermission(role: UserRole, resource: Resource, permissionType: PermissionType): Promise<boolean> {
+    // Admin always has access to everything
+    if (role === UserRole.ADMIN) return true;
+    
+    const foundPermission = Array.from(this.permissions.values())
+      .find(p => p.role === role && p.resource === resource && p.permissionType === permissionType);
+      
+    return !!foundPermission;
+  }
+  
+  createPermission(insertPermission: InsertPermission): Permission {
+    const id = this.permissionCurrentId++;
+    const now = new Date();
+    
+    const permission: Permission = {
+      ...insertPermission,
+      id,
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    this.permissions.set(id, permission);
+    
+    return permission;
+  }
+  
+  async updatePermission(id: number, updateData: Partial<InsertPermission>): Promise<Permission | undefined> {
+    const existingPermission = this.permissions.get(id);
+    
+    if (!existingPermission) return undefined;
+    
+    const updatedPermission = {
+      ...existingPermission,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    
+    this.permissions.set(id, updatedPermission);
+    
+    return updatedPermission;
+  }
+  
+  async deletePermission(id: number): Promise<boolean> {
+    return this.permissions.delete(id);
   }
   
   // Category methods

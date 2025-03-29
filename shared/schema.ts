@@ -5,14 +5,37 @@ import { z } from "zod";
 // User role enum
 export const UserRoleEnum = pgEnum("user_role", ["admin", "manager", "warehouse_staff", "viewer"]);
 
+// Permission Type enum - defines the type of permission
+export const PermissionTypeEnum = pgEnum("permission_type", [
+  "create", "read", "update", "delete", "approve", "export", "import", "assign"
+]);
+
+// Resource enum - defines resources that can have permissions
+export const ResourceEnum = pgEnum("resource", [
+  "inventory", "purchases", "suppliers", "categories", "warehouses", 
+  "reports", "users", "settings", "reorder_requests", "stock_movements"
+]);
+
+// Permissions schema
+export const permissions = pgTable("permissions", {
+  id: serial("id").primaryKey(),
+  role: UserRoleEnum("role").notNull(),
+  resource: ResourceEnum("resource").notNull(),
+  permissionType: PermissionTypeEnum("permission_type").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // User schema for authentication
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   email: text("email"),
+  fullName: text("full_name"),
   role: UserRoleEnum("role").default("viewer"),
   warehouseId: integer("warehouse_id"),
+  active: boolean("active").default(true),
   lastLogin: timestamp("last_login"),
   profilePicture: text("profile_picture"),
   preferences: jsonb("preferences"),
@@ -20,11 +43,19 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-  email: true,
-  role: true,
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  lastLogin: true,
+  profilePicture: true,
+  preferences: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPermissionSchema = createInsertSchema(permissions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
 });
 
 // Category schema for organizing inventory
@@ -289,6 +320,40 @@ export const bulkImportInventorySchema = z.array(
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+
+// Role-based permissions
+export enum UserRole {
+  ADMIN = "admin",
+  MANAGER = "manager",
+  WAREHOUSE_STAFF = "warehouse_staff",
+  VIEWER = "viewer"
+}
+
+export enum PermissionType {
+  CREATE = "create",
+  READ = "read",
+  UPDATE = "update",
+  DELETE = "delete",
+  APPROVE = "approve",
+  EXPORT = "export",
+  IMPORT = "import",
+  ASSIGN = "assign"
+}
+
+export enum Resource {
+  INVENTORY = "inventory",
+  PURCHASES = "purchases",
+  SUPPLIERS = "suppliers",
+  CATEGORIES = "categories",
+  WAREHOUSES = "warehouses",
+  REPORTS = "reports",
+  USERS = "users",
+  SETTINGS = "settings",
+  REORDER_REQUESTS = "reorder_requests",
+  STOCK_MOVEMENTS = "stock_movements"
+}
 
 export type Category = typeof categories.$inferSelect;
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
