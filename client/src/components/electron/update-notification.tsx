@@ -1,105 +1,70 @@
-import { useEffect } from "react";
-import { Download, RotateCw } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { useElectron } from "./electron-provider";
-import { appControls, isElectron } from "@/lib/electron-bridge";
+import React from 'react';
+import { useElectron } from '@/contexts/electron-provider';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { ArrowDownCircle, RefreshCw } from 'lucide-react';
 
-function formatDate(dateString: string): string {
-  try {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }).format(date);
-  } catch (error) {
-    return dateString;
-  }
-}
-
-export const UpdateNotification = () => {
-  const { updateAvailable, updateDownloaded, installUpdate } = useElectron();
-  const { toast } = useToast();
-
-  // Check for updates periodically
-  useEffect(() => {
-    if (!isElectron) return;
-
-    // Check for updates on mount
-    appControls.checkForUpdates();
-
-    // Set up interval to check for updates (every 4 hours)
-    const interval = setInterval(() => {
-      appControls.checkForUpdates();
-    }, 4 * 60 * 60 * 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // If not running in Electron, don't display anything
-  if (!isElectron) {
-    return null;
-  }
-
-  // No updates available or downloaded
+/**
+ * Component that displays a notification when a new update is available for the Electron application
+ */
+export function UpdateNotification() {
+  const { updateAvailable, updateDownloaded, updateInfo, installUpdate, checkForUpdates } = useElectron();
+  
   if (!updateAvailable && !updateDownloaded) {
     return null;
   }
-
-  // Update is available and downloading
-  if (updateAvailable && !updateDownloaded) {
-    return (
-      <Alert className="my-4 border-primary/50 bg-primary/10">
-        <RotateCw className="h-4 w-4 animate-spin text-primary" />
-        <AlertTitle className="text-primary">Update Available</AlertTitle>
-        <AlertDescription>
-          Version {updateAvailable.version} is downloading...
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
-  // Update is downloaded and ready to install
-  if (updateDownloaded) {
-    return (
-      <Alert className="my-4 border-primary/50 bg-primary/10">
-        <Download className="h-4 w-4 text-primary" />
-        <AlertTitle className="text-primary">Update Ready</AlertTitle>
-        <AlertDescription className="flex flex-col gap-2">
-          <div>
-            Version {updateDownloaded.version} ({formatDate(updateDownloaded.releaseDate)}) has been downloaded and is
-            ready to install.
-          </div>
-          {updateDownloaded.releaseNotes && (
-            <div className="mt-1 text-sm opacity-80">
-              <strong>Release Notes:</strong> {updateDownloaded.releaseNotes}
-            </div>
+  
+  return (
+    <Card className="shadow-lg border-primary/20 overflow-hidden">
+      <CardHeader className="bg-primary/5 pb-4">
+        <CardTitle className="flex items-center text-lg font-semibold">
+          {updateDownloaded ? (
+            <>
+              <RefreshCw className="h-5 w-5 mr-2 text-primary" />
+              Update Ready to Install
+            </>
+          ) : (
+            <>
+              <ArrowDownCircle className="h-5 w-5 mr-2 text-primary" />
+              Update Available
+            </>
           )}
-          <div className="mt-2 flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-primary/50 text-primary hover:bg-primary/10 hover:text-primary"
-              onClick={() => {
-                toast({
-                  title: "Installing Update",
-                  description: "The application will restart to apply the update.",
-                });
-                // Allow the toast to show before restarting
-                setTimeout(() => {
-                  installUpdate();
-                }, 1500);
-              }}
-            >
-              Install & Restart
-            </Button>
+        </CardTitle>
+        <CardDescription>
+          {updateInfo?.version && `Version ${updateInfo.version}`}
+          {updateInfo?.releaseDate && ` - Released on ${new Date(updateInfo.releaseDate).toLocaleDateString()}`}
+        </CardDescription>
+      </CardHeader>
+      
+      {updateInfo?.releaseNotes && (
+        <CardContent className="pt-4 max-h-40 overflow-y-auto">
+          <div className="text-sm">
+            <h4 className="font-medium mb-2">What's New:</h4>
+            <div 
+              className="prose prose-sm prose-neutral dark:prose-invert" 
+              dangerouslySetInnerHTML={{ __html: updateInfo.releaseNotes }}
+            />
           </div>
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
-  return null;
-};
+        </CardContent>
+      )}
+      
+      <CardFooter className={`flex ${updateDownloaded ? 'justify-between' : 'justify-end'} bg-background pt-4`}>
+        {updateDownloaded ? (
+          <>
+            <Button variant="outline" size="sm" onClick={checkForUpdates}>
+              Check Again
+            </Button>
+            <Button onClick={installUpdate} size="sm">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Restart & Install
+            </Button>
+          </>
+        ) : (
+          <div className="text-sm text-muted-foreground">
+            Update is downloading...
+          </div>
+        )}
+      </CardFooter>
+    </Card>
+  );
+}

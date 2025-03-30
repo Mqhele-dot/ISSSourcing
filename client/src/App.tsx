@@ -15,13 +15,12 @@ import Home from "@/pages/home";
 import ReorderPage from "@/pages/reorder";
 import AuthPage from "@/pages/auth-page";
 import { ThemeProvider } from "@/components/theme-provider";
-import Sidebar from "@/components/sidebar";
-import Header from "@/components/header";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TutorialProvider } from "./contexts/TutorialContext";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/lib/protected-route";
-import { ElectronProvider, TitleBar, UpdateNotification } from "@/components/electron";
+import { ElectronProvider, UpdateNotification } from "@/components/electron";
+import { DesktopLayout } from "@/components/layout/desktop-layout";
 
 function Router() {
   return (
@@ -43,24 +42,20 @@ function Router() {
 }
 
 function AppLayout({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar open={sidebarOpen} setOpen={setSidebarOpen} />
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <TitleBar title="InvTrack" />
-        <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto bg-neutral-100 dark:bg-neutral-900 p-4 md:p-6">
-          <UpdateNotification />
-          {children}
-        </main>
-      </div>
-    </div>
+    <DesktopLayout>
+      <UpdateNotification />
+      {children}
+    </DesktopLayout>
   );
 }
 
 function App() {
+  // Set up Electron-specific HTML classes when in Electron environment
+  useEffect(() => {
+    setupElectronApp();
+  }, []);
+
   return (
     <ThemeProvider defaultTheme="light" storageKey="invtrack-theme">
       <QueryClientProvider client={queryClient}>

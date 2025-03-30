@@ -1,69 +1,90 @@
-import { useEffect, useState } from "react";
-import { Maximize2, Minimize2, X, Square } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { windowControls, isElectron } from "@/lib/electron-bridge";
+import React, { useState, useEffect } from 'react';
+import { useElectron } from '@/contexts/electron-provider';
+import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface TitleBarProps {
   title?: string;
-  className?: string;
 }
 
-export const TitleBar = ({ title = "InvTrack", className }: TitleBarProps) => {
-  const [isMaximized, setIsMaximized] = useState(false);
-
-  // Check if window is maximized on mount and whenever the window size changes
-  const checkMaximized = async () => {
-    if (isElectron) {
-      const maximized = await windowControls.isMaximized();
-      setIsMaximized(maximized);
-    }
-  };
-
+/**
+ * Custom window title bar for Electron application
+ * 
+ * Provides window controls (minimize, maximize/restore, close) and displays the app title.
+ * This component is designed to match the look and feel of native title bars while
+ * allowing for custom styling consistent with the application theme.
+ */
+export function TitleBar({ title = 'InvTrack' }: TitleBarProps) {
+  const { 
+    isElectron,
+    isMaximized,
+    minimizeWindow,
+    maximizeWindow,
+    unmaximizeWindow,
+    closeWindow,
+    appVersion 
+  } = useElectron();
+  
+  const [hoveredButton, setHoveredButton] = useState<string | null>(null);
+  
   useEffect(() => {
-    checkMaximized();
-
-    // Add event listener for resize to update maximized state
-    window.addEventListener("resize", checkMaximized);
-    return () => {
-      window.removeEventListener("resize", checkMaximized);
-    };
-  }, []);
-
-  // If not running in Electron, don't display the title bar
+    if (isElectron && title) {
+      document.title = title;
+    }
+  }, [isElectron, title]);
+  
   if (!isElectron) {
     return null;
   }
-
+  
   return (
     <div
-      className={cn(
-        "h-9 flex items-center bg-background border-b border-border select-none",
-        className
-      )}
+      className="h-9 flex items-center justify-between bg-background border-b border-border select-none"
+      style={{ WebkitAppRegion: 'drag' }}
     >
-      <div className="flex-1 px-4 text-sm font-medium draggable">{title}</div>
-      <div className="flex items-center">
+      <div className="flex items-center px-3">
+        <img src="/logo-small.svg" alt="InvTrack Logo" className="h-5 w-5 mr-2" />
+        <span className="text-sm font-medium">{title}</span>
+        {appVersion && (
+          <span className="text-xs text-muted-foreground ml-2">v{appVersion}</span>
+        )}
+      </div>
+      
+      <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' }}>
         <button
-          onClick={windowControls.minimize}
-          className="h-9 w-12 inline-flex items-center justify-center hover:bg-muted transition-colors"
+          className={cn(
+            "h-9 w-12 flex items-center justify-center text-muted-foreground transition-colors",
+            hoveredButton === 'minimize' ? 'hover:bg-muted/50' : ''
+          )}
+          onClick={minimizeWindow}
+          onMouseEnter={() => setHoveredButton('minimize')}
+          onMouseLeave={() => setHoveredButton(null)}
           aria-label="Minimize"
         >
-          <Minimize2 className="h-4 w-4" />
+          <Minus className="h-4 w-4" />
         </button>
+        
         <button
-          onClick={windowControls.maximize}
-          className="h-9 w-12 inline-flex items-center justify-center hover:bg-muted transition-colors"
-          aria-label={isMaximized ? "Restore" : "Maximize"}
-        >
-          {isMaximized ? (
-            <Square className="h-4 w-4" />
-          ) : (
-            <Maximize2 className="h-4 w-4" />
+          className={cn(
+            "h-9 w-12 flex items-center justify-center text-muted-foreground transition-colors",
+            hoveredButton === 'maximize' ? 'hover:bg-muted/50' : ''
           )}
+          onClick={isMaximized ? unmaximizeWindow : maximizeWindow}
+          onMouseEnter={() => setHoveredButton('maximize')}
+          onMouseLeave={() => setHoveredButton(null)}
+          aria-label={isMaximized ? 'Restore' : 'Maximize'}
+        >
+          {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
         </button>
+        
         <button
-          onClick={windowControls.close}
-          className="h-9 w-12 inline-flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground transition-colors"
+          className={cn(
+            "h-9 w-12 flex items-center justify-center text-muted-foreground transition-colors",
+            hoveredButton === 'close' ? 'hover:bg-red-500 hover:text-white' : ''
+          )}
+          onClick={closeWindow}
+          onMouseEnter={() => setHoveredButton('close')}
+          onMouseLeave={() => setHoveredButton(null)}
           aria-label="Close"
         >
           <X className="h-4 w-4" />
@@ -71,4 +92,4 @@ export const TitleBar = ({ title = "InvTrack", className }: TitleBarProps) => {
       </div>
     </div>
   );
-};
+}

@@ -65,9 +65,9 @@ function createMainWindow() {
   
   // Load the application
   const startUrl = isDev
-    ? 'http://localhost:3000' // Development server
+    ? 'http://localhost:5000' // Development server
     : url.format({
-        pathname: path.join(__dirname, '../build/index.html'),
+        pathname: path.join(__dirname, '../dist/index.html'),
         protocol: 'file:',
         slashes: true
       });

@@ -10,4 +10,23 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+
+  /* Apply no margin to body in Electron to avoid scrollbars */
+  html.electron-app,
+  html.electron-app body {
+    @apply m-0 p-0 overflow-hidden;
+  }
+}
+
+@layer components {
+  /* Custom Electron title bar styles */
+  .drag {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
 }

@@ -1,180 +1,91 @@
 /**
  * Electron Bridge
  * 
- * This module provides a TypeScript interface for communicating with the Electron
- * main process via the IPC bridge exposed in the preload script.
+ * This module provides a bridge between the renderer process (React app)
+ * and the main process (Electron) through a safe IPC layer.
+ * It enables the React application to communicate with the native OS
+ * functionality that Electron provides access to.
  */
 
-// Define the Electron API interface
 interface ElectronAPI {
   send: (channel: string, ...args: any[]) => void;
-  on: (channel: string, func: (...args: any[]) => void) => () => void;
+  receive: (channel: string, func: (...args: any[]) => void) => () => void;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
-  system: {
-    getInfo: () => SystemInfo;
+  isElectron: () => boolean;
+  getSystemInfo: () => any;
+}
+
+/**
+ * Fallback API for non-Electron environments
+ * This provides no-op implementations of the electron API functions
+ * so that the application can run in a browser environment without errors.
+ */
+const fallbackAPI: ElectronAPI = {
+  send: () => {},
+  receive: () => () => {},
+  invoke: () => Promise.resolve(null),
+  isElectron: () => false,
+  getSystemInfo: () => ({
+    isElectron: false,
+    platform: 'web',
+    arch: 'web',
+    version: 'web',
+  }),
+};
+
+// Add type definition for window.electron
+declare global {
+  interface Window {
+    electron?: ElectronAPI;
+  }
+}
+
+/**
+ * Get the Electron API or fallback if not in Electron environment
+ */
+export const electron: ElectronAPI = (
+  typeof window !== 'undefined' && window.electron
+    ? window.electron
+    : fallbackAPI
+);
+
+/**
+ * Helper function to determine if the app is running in an Electron environment
+ */
+export function isElectronEnvironment(): boolean {
+  if (typeof window !== 'undefined') {
+    // Check for Electron runtime
+    if (window.electron) return true;
+    
+    // Secondary check via userAgent (less reliable)
+    const userAgent = navigator.userAgent.toLowerCase();
+    return userAgent.indexOf(' electron/') > -1;
+  }
+  return false;
+}
+
+/**
+ * Helper function to get system information from Electron
+ */
+export async function getSystemInfo() {
+  if (isElectronEnvironment()) {
+    try {
+      return await electron.invoke('system:getInfo');
+    } catch (error) {
+      console.error('Failed to get system info:', error);
+      return {
+        isElectron: true,
+        platform: 'unknown',
+        arch: 'unknown',
+        version: 'unknown',
+      };
+    }
+  }
+  
+  return {
+    isElectron: false,
+    platform: 'web',
+    arch: 'web',
+    version: 'web',
   };
 }
-
-// Define the system information interface
-interface SystemInfo {
-  platform: string;
-  arch: string;
-  version: string;
-  hostname: string;
-  cpus: number;
-  memory: {
-    total: number;
-    free: number;
-  };
-}
-
-// Define the update information interface
-interface UpdateInfo {
-  version: string;
-  releaseDate: string;
-  releaseNotes: string;
-}
-
-// Get the electron API from the window object
-const electron = (window as any).electron as ElectronAPI | undefined;
-
-// Check if running in Electron
-export const isElectron = !!electron;
-
-// Window control functions
-export const windowControls = {
-  minimize: () => {
-    electron?.send('window:minimize');
-  },
-  
-  maximize: () => {
-    electron?.send('window:maximize');
-  },
-  
-  close: () => {
-    electron?.send('window:close');
-  },
-  
-  isMaximized: async (): Promise<boolean> => {
-    if (!electron) return false;
-    return await electron.invoke('window:is-maximized');
-  }
-};
-
-// App control functions
-export const appControls = {
-  getVersion: async (): Promise<string> => {
-    if (!electron) return '0.0.0';
-    return await electron.invoke('app:get-version');
-  },
-  
-  getDataDirectory: async (): Promise<string> => {
-    if (!electron) return '';
-    return await electron.invoke('app:get-data-directory');
-  },
-  
-  checkForUpdates: () => {
-    electron?.send('app:check-updates');
-  },
-  
-  installUpdate: () => {
-    electron?.send('app:install-update');
-  },
-  
-  onUpdateAvailable: (callback: (info: UpdateInfo) => void): (() => void) => {
-    if (!electron) return () => {};
-    return electron.on('update-available', callback);
-  },
-  
-  onUpdateDownloaded: (callback: (info: UpdateInfo) => void): (() => void) => {
-    if (!electron) return () => {};
-    return electron.on('update-downloaded', callback);
-  }
-};
-
-// Document generation functions
-export const documentControls = {
-  generatePdf: async (data: any, templateName: string, options: any = {}): Promise<string | null> => {
-    if (!electron) return null;
-    return await electron.invoke('document:generate-pdf', data, templateName, options);
-  },
-  
-  exportToExcel: async (data: any[], options: any = {}): Promise<string | null> => {
-    if (!electron) return null;
-    return await electron.invoke('document:export-excel', data, options);
-  },
-  
-  exportToCsv: async (data: any[], options: any = {}): Promise<string | null> => {
-    if (!electron) return null;
-    return await electron.invoke('document:export-csv', data, options);
-  },
-  
-  onExportExcelRequest: (callback: () => void): (() => void) => {
-    if (!electron) return () => {};
-    return electron.on('menu:export-excel', callback);
-  },
-  
-  onExportCsvRequest: (callback: () => void): (() => void) => {
-    if (!electron) return () => {};
-    return electron.on('menu:export-csv', callback);
-  },
-  
-  onExportPdfRequest: (callback: () => void): (() => void) => {
-    if (!electron) return () => {};
-    return electron.on('menu:export-pdf', callback);
-  }
-};
-
-// Dialog functions
-export const dialogControls = {
-  openFile: async (options: any = {}): Promise<string | null> => {
-    if (!electron) return null;
-    return await electron.invoke('dialog:open-file', options);
-  },
-  
-  saveFile: async (options: any = {}): Promise<string | null> => {
-    if (!electron) return null;
-    return await electron.invoke('dialog:save-file', options);
-  }
-};
-
-// Barcode scanner functions
-export const barcodeControls = {
-  scan: async (): Promise<string | null> => {
-    if (!electron) return null;
-    return await electron.invoke('barcode:scan');
-  }
-};
-
-// Database functions
-export const databaseControls = {
-  createBackup: async (options: any = {}): Promise<string | null> => {
-    if (!electron) return null;
-    return await electron.invoke('database:create-backup', options);
-  },
-  
-  restoreFromBackup: async (backupPath: string): Promise<boolean> => {
-    if (!electron) return false;
-    return await electron.invoke('database:restore', backupPath);
-  }
-};
-
-// System information
-export const systemInfo = {
-  getInfo: (): SystemInfo | null => {
-    if (!electron) return null;
-    return electron.system.getInfo();
-  }
-};
-
-// Export a default object with all controls
-export default {
-  isElectron,
-  windowControls,
-  appControls,
-  documentControls,
-  dialogControls,
-  barcodeControls,
-  databaseControls,
-  systemInfo
-};
