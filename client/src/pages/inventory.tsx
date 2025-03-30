@@ -685,7 +685,7 @@ export default function Inventory() {
                     id="notes" 
                     placeholder="Add any additional notes here..." 
                     value={reorderNotes}
-                    onChange={(e) => setReorderNotes(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReorderNotes(e.target.value)}
                   />
                 </div>
               </div>
