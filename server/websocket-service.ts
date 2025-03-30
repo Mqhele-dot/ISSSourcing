@@ -1,6 +1,7 @@
 import { Server as HttpServer } from 'http';
 import WebSocket from 'ws';
 import { WebSocketServer } from 'ws';
+import * as zlib from 'zlib';
 import { v4 as uuidv4 } from 'uuid';
 import { IStorage } from './storage';
 
@@ -11,6 +12,9 @@ enum MessageType {
   STOCK_ALERT = 'stock_alert',
   CONNECTION = 'connection',
   WAREHOUSE_UPDATE = 'warehouse_update',
+  ITEM_SUBSCRIBE = 'item_subscribe',     // Subscribe to specific items
+  ITEM_UNSUBSCRIBE = 'item_unsubscribe', // Unsubscribe from specific items
+  CAPABILITIES = 'capabilities',         // Client capabilities (compression support, etc.)
   ERROR = 'error'
 }
 
@@ -18,25 +22,30 @@ enum MessageType {
 interface WebSocketMessage {
   type: MessageType;
   payload: any;
+  compressed?: boolean; // Flag to indicate if the payload is compressed
+  sequenceNumber?: number; // Sequence number for ordering
 }
 
 // Client connection storage
 interface ClientConnection {
   id: string;
   socket: WebSocket;
-  warehouses: number[];
+  warehouses: number[];      // Warehouses this client is subscribed to
+  items: number[];           // Specific items this client is subscribed to
+  lastSequenceNumber: number; // Last sequence number sent to this client
+  supportsCompression: boolean; // Whether client supports compression
   userId?: number;
 }
 
 // Global instance
-let wss: WebSocket.Server | null = null;
+let wss: WebSocketServer | null = null;
 let storage: IStorage | null = null;
 const clients: Map<string, ClientConnection> = new Map();
 
 /**
  * Initialize the WebSocket server for real-time inventory synchronization
  */
-export function initializeWebSocketService(server: HttpServer, storageInstance: IStorage): WebSocket.Server {
+export function initializeWebSocketService(server: HttpServer, storageInstance: IStorage): WebSocketServer {
   // If already initialized, return the existing instance
   if (wss) {
     return wss;
@@ -61,7 +70,10 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
     clients.set(clientId, {
       id: clientId,
       socket: ws,
-      warehouses: [] // No warehouse filter by default (receives all updates)
+      warehouses: [], // No warehouse filter by default (receives all updates)
+      items: [],      // No item filter by default
+      lastSequenceNumber: 0,
+      supportsCompression: false // Default to no compression until negotiated
     });
 
     console.log(`WebSocket client connected: ${clientId}`);
@@ -107,12 +119,59 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
 }
 
 /**
- * Send a message to a specific client
+ * Compress data using gzip
  */
-function sendMessageToClient(ws: WebSocket, message: WebSocketMessage): boolean {
+function compressData(data: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    zlib.gzip(data, (error, result) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(result);
+      }
+    });
+  });
+}
+
+/**
+ * Send a message to a specific client with support for compression
+ */
+async function sendMessageToClient(ws: WebSocket, message: WebSocketMessage, client?: ClientConnection): Promise<boolean> {
   if (ws.readyState === 1) { // WebSocket.OPEN is 1
     try {
-      ws.send(JSON.stringify(message));
+      // Add sequence number if we have a client connection
+      if (client) {
+        client.lastSequenceNumber++;
+        message.sequenceNumber = client.lastSequenceNumber;
+      }
+      
+      // Determine if we should compress this message
+      // Only compress if client supports it and message payload is large enough to benefit
+      const shouldCompress = client?.supportsCompression && 
+                          JSON.stringify(message.payload).length > 1024; // Only compress payloads > 1KB
+      
+      let dataToSend: string | Buffer;
+      
+      if (shouldCompress) {
+        // Compress payload
+        const messageString = JSON.stringify(message.payload);
+        const compressedData = await compressData(messageString);
+        
+        // Replace payload with compressed data (as base64 string)
+        const compressedMessage: WebSocketMessage = {
+          type: message.type,
+          sequenceNumber: message.sequenceNumber,
+          compressed: true,
+          payload: compressedData.toString('base64')
+        };
+        
+        dataToSend = JSON.stringify(compressedMessage);
+      } else {
+        // Send as normal JSON
+        dataToSend = JSON.stringify(message);
+      }
+      
+      ws.send(dataToSend);
       return true;
     } catch (error) {
       console.error('Error sending WebSocket message:', error);
@@ -123,18 +182,25 @@ function sendMessageToClient(ws: WebSocket, message: WebSocketMessage): boolean 
 }
 
 /**
- * Send a message to all connected clients or clients subscribed to a specific warehouse
+ * Send a message to all connected clients or clients subscribed to a specific warehouse or item
  */
-function broadcastMessage(message: WebSocketMessage, warehouseId?: number): void {
+function broadcastMessage(message: WebSocketMessage, warehouseId?: number, itemId?: number): void {
   clients.forEach((client) => {
-    // If warehouseId is specified, only send to clients subscribed to that warehouse
-    // If client has no warehouses specified, they receive all messages
-    if (
+    // Check warehouse filtering
+    const warehouseMatch = 
       warehouseId === undefined || 
       client.warehouses.length === 0 || 
-      client.warehouses.includes(warehouseId)
-    ) {
-      sendMessageToClient(client.socket, message);
+      client.warehouses.includes(warehouseId);
+    
+    // Check item filtering
+    const itemMatch = 
+      itemId === undefined || 
+      client.items.length === 0 || 
+      client.items.includes(itemId);
+    
+    // Send message if client is subscribed to both the warehouse and the item (or has no filters)
+    if (warehouseMatch && itemMatch) {
+      sendMessageToClient(client.socket, message, client);
     }
   });
 }
@@ -156,6 +222,40 @@ function handleClientMessage(clientId: string, message: WebSocketMessage): void 
         client.warehouses = message.payload.warehouses;
         console.log(`Client ${clientId} updated warehouse subscriptions:`, client.warehouses);
       }
+      break;
+
+    case MessageType.ITEM_SUBSCRIBE:
+      // Subscribe to specific items
+      if (Array.isArray(message.payload.items)) {
+        client.items = [...new Set([...client.items, ...message.payload.items])];
+        console.log(`Client ${clientId} subscribed to items:`, message.payload.items);
+      }
+      break;
+      
+    case MessageType.ITEM_UNSUBSCRIBE:
+      // Unsubscribe from specific items
+      if (Array.isArray(message.payload.items)) {
+        client.items = client.items.filter(itemId => !message.payload.items.includes(itemId));
+        console.log(`Client ${clientId} unsubscribed from items:`, message.payload.items);
+      }
+      break;
+      
+    case MessageType.CAPABILITIES:
+      // Update client capabilities
+      if (typeof message.payload.supportsCompression === 'boolean') {
+        client.supportsCompression = message.payload.supportsCompression;
+        console.log(`Client ${clientId} updated compression support:`, client.supportsCompression);
+      }
+      
+      // Send acknowledgment
+      sendMessageToClient(client.socket, {
+        type: MessageType.CAPABILITIES,
+        payload: {
+          serverSupportsCompression: true,
+          compressionFormats: ['gzip'],
+          serverProtocolVersion: '1.0'
+        }
+      });
       break;
 
     case MessageType.INVENTORY_UPDATE:
@@ -253,7 +353,7 @@ async function handleInventoryUpdate(payload: any, client: ClientConnection): Pr
         warehouseId,
         timestamp: new Date().toISOString()
       }
-    }, warehouseId);
+    }, warehouseId, itemId);
 
     // Check if we need to send a low stock alert
     await checkAndSendLowStockAlert(itemId, warehouseId);
@@ -384,11 +484,11 @@ async function handleStockTransfer(payload: any, client: ClientConnection): Prom
       }
     };
 
-    broadcastMessage(transferMessage, sourceWarehouseId);
+    broadcastMessage(transferMessage, sourceWarehouseId, itemId);
     
     // If someone is only subscribed to the destination warehouse, make sure they get the update too
     if (sourceWarehouseId !== destinationWarehouseId) {
-      broadcastMessage(transferMessage, destinationWarehouseId);
+      broadcastMessage(transferMessage, destinationWarehouseId, itemId);
     }
 
     // Check if we need to send low stock alerts
@@ -426,7 +526,7 @@ async function checkAndSendLowStockAlert(itemId: number, warehouseId: number): P
 
     // Check if the item is below the threshold
     if (warehouseInventory.quantity <= threshold) {
-      // Send a stock alert to all clients subscribed to this warehouse
+      // Send a stock alert to all clients subscribed to this warehouse or this item
       broadcastMessage({
         type: MessageType.STOCK_ALERT,
         payload: {
@@ -436,7 +536,7 @@ async function checkAndSendLowStockAlert(itemId: number, warehouseId: number): P
           threshold,
           timestamp: new Date().toISOString()
         }
-      }, warehouseId);
+      }, warehouseId, itemId);
 
       // Log the activity
       await storage.createActivityLog({
@@ -495,7 +595,7 @@ export async function notifyInventoryUpdate(
         warehouseId,
         timestamp: new Date().toISOString()
       }
-    }, warehouseId);
+    }, warehouseId, itemId);
 
     // Check if we need to send a low stock alert
     await checkAndSendLowStockAlert(itemId, warehouseId);
