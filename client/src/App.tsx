@@ -1,7 +1,11 @@
+import React from "react";
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Inventory from "@/pages/inventory";
@@ -19,8 +23,53 @@ import { useState, useEffect } from "react";
 import { TutorialProvider } from "./contexts/TutorialContext";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/lib/protected-route";
-import { ElectronProvider, UpdateNotification } from "@/components/electron";
-import { DesktopLayout } from "@/components/layout/desktop-layout";
+import { isElectronEnvironment } from "./lib/electron-bridge";
+import { ElectronProvider } from "./contexts/electron-provider";
+import { TitleBar, UpdateNotification } from "./components/electron";
+import { DesktopLayout } from "./components/layout/desktop-layout";
+
+// Error boundary component
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null}> {
+  constructor(props: {children: React.ReactNode}) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center min-h-screen p-4">
+          <Alert variant="destructive" className="max-w-2xl">
+            <AlertTitle className="text-lg font-semibold">Something went wrong</AlertTitle>
+            <AlertDescription className="mt-2">
+              <div className="mb-4 text-sm">
+                {this.state.error?.message || "An unexpected error occurred"}
+              </div>
+              <Button 
+                variant="outline" 
+                onClick={() => window.location.reload()}
+                className="w-full"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Reload Application
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function Router() {
   return (
@@ -50,6 +99,21 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Function to set up Electron-specific features
+function setupElectronApp() {
+  if (isElectronEnvironment()) {
+    // Add a class to the HTML element to allow for Electron-specific styling
+    document.documentElement.classList.add('electron-app');
+    
+    // Disable drag and drop file behavior that may interfere with the app
+    document.addEventListener('dragover', (e) => e.preventDefault());
+    document.addEventListener('drop', (e) => e.preventDefault());
+    
+    // Override the context menu for custom behavior if needed
+    // document.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+}
+
 function App() {
   // Set up Electron-specific HTML classes when in Electron environment
   useEffect(() => {
@@ -57,34 +121,36 @@ function App() {
   }, []);
 
   return (
-    <ThemeProvider defaultTheme="light" storageKey="invtrack-theme">
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <TutorialProvider>
-            <ElectronProvider>
-              <div className="relative min-h-screen">
-                <Route path="/auth">
-                  <Router />
-                </Route>
-                <Route path="*">
-                  {(params) => {
-                    // Don't wrap non-auth routes with AppLayout
-                    const pathname = params["*"] || "";
-                    if (pathname === "auth") return null;
-                    return (
-                      <AppLayout>
-                        <Router />
-                      </AppLayout>
-                    );
-                  }}
-                </Route>
-              </div>
-              <Toaster />
-            </ElectronProvider>
-          </TutorialProvider>
-        </AuthProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider defaultTheme="light" storageKey="invtrack-theme">
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <TutorialProvider>
+              <ElectronProvider>
+                <div className="relative min-h-screen">
+                  <Route path="/auth">
+                    <Router />
+                  </Route>
+                  <Route path="*">
+                    {(params) => {
+                      // Don't wrap non-auth routes with AppLayout
+                      const pathname = params["*"] || "";
+                      if (pathname === "auth") return null;
+                      return (
+                        <AppLayout>
+                          <Router />
+                        </AppLayout>
+                      );
+                    }}
+                  </Route>
+                </div>
+                <Toaster />
+              </ElectronProvider>
+            </TutorialProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

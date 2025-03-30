@@ -1,33 +1,26 @@
-import React, { ReactNode } from 'react';
-import { TitleBar } from '@/components/electron/title-bar';
-import { UpdateNotification } from '@/components/electron/update-notification';
-import { useElectron } from '@/contexts/electron-provider';
+import React from 'react';
+import { useElectron } from '../../contexts/electron-provider';
+import { TitleBar } from '../electron';
+import { OfflineModeIndicator } from '../electron/offline-mode-indicator';
 
 interface DesktopLayoutProps {
-  children: ReactNode;
+  children: React.ReactNode;
+  title?: string;
 }
 
-/**
- * Layout component for desktop application
- * 
- * This component adds the custom title bar and handles the desktop-specific
- * layout adjustments. It should wrap the entire application when running
- * in Electron environment.
- */
-export function DesktopLayout({ children }: DesktopLayoutProps) {
+export const DesktopLayout: React.FC<DesktopLayoutProps> = ({ 
+  children, 
+  title
+}) => {
   const { isElectron } = useElectron();
-  
-  if (!isElectron) {
-    return <>{children}</>;
-  }
-  
+
   return (
-    <div className="flex flex-col h-screen max-h-screen overflow-hidden">
-      <TitleBar />
-      <div className="flex-1 overflow-auto">
+    <div className="flex flex-col min-h-screen">
+      {isElectron && <TitleBar title={title} />}
+      {isElectron && <OfflineModeIndicator />}
+      <div className="flex-1">
         {children}
       </div>
-      <UpdateNotification />
     </div>
   );
-}
+};

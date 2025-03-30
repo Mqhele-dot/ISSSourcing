@@ -20,7 +20,7 @@
 
 @layer components {
   /* Custom Electron title bar styles */
-  .drag {
+  .drag, .drag-region {
     -webkit-app-region: drag;
     app-region: drag;
   }

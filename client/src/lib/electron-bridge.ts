@@ -1,106 +1,134 @@
 /**
- * Bridge between Electron (main process) and React (renderer process)
- * 
- * This module provides a safe way to access Electron functionality
- * from the React application.
+ * Utility functions for interacting with Electron from the renderer process.
+ * This provides type-safe wrappers around the electron IPC API.
  */
 
-interface SystemInfo {
-  platform: string;
-  appVersion: string;
-  isMaximized: boolean;
-  isDevMode: boolean;
-}
-
-interface ElectronAPI {
-  send: (channel: string, ...args: any[]) => void;
-  receive: (channel: string, func: (...args: any[]) => void) => () => void;
-  invoke: <T = any>(channel: string, ...args: any[]) => Promise<T>;
-  getSystemInfo: () => Promise<SystemInfo>;
-}
-
-// Extend Window interface
-declare global {
-  interface Window {
-    electron?: ElectronAPI;
-  }
-}
-
-/**
- * Check if the application is running in an Electron environment
- */
+// Check if we're running in Electron environment
 export function isElectronEnvironment(): boolean {
-  return typeof window !== 'undefined' && !!window.electron;
+  // @ts-ignore - window.electron is injected by the Electron preload script
+  return typeof window !== 'undefined' && window.electron !== undefined;
+}
+
+// Interface for database information returned by the main process
+export interface DatabaseInfo {
+  status: 'healthy' | 'degraded' | 'error' | 'unknown';
+  size: string;
+  location: string;
+  lastBackup: string | null;
+  dataCount: {
+    inventory: number;
+    movements: number;
+    suppliers: number;
+    users: number;
+  };
+}
+
+// Interface for backup result
+export interface BackupResult {
+  success: boolean;
+  path?: string;
+  error?: string;
 }
 
 /**
- * Get the electron API, safely
- * This will throw an error if called outside of Electron
+ * Bridge class for interacting with Electron-specific functionality
  */
-export function getElectronAPI(): ElectronAPI {
-  if (!isElectronEnvironment()) {
-    throw new Error("Electron API is not available in this environment");
-  }
-  
-  return window.electron!;
-}
-
-/**
- * Safely access the electron API without throwing errors
- * This will be undefined in a non-Electron environment
- */
-export const electron: ElectronAPI = new Proxy({} as ElectronAPI, {
-  get(target, prop: keyof ElectronAPI) {
+export class ElectronBridge {
+  /**
+   * Check if the app is connected to the internet
+   */
+  async checkNetworkStatus(): Promise<boolean> {
     if (!isElectronEnvironment()) {
-      // Return a no-op function for methods
-      if (typeof target[prop] === 'function') {
-        if (prop === 'invoke' || prop === 'getSystemInfo') {
-          return () => Promise.reject(new Error("Electron API is not available"));
-        }
-        
-        if (prop === 'receive') {
-          return () => () => {}; // Return an unsubscribe function that does nothing
-        }
-        
-        return () => {}; // Default no-op function
-      }
-      
-      return undefined;
+      return navigator.onLine;
     }
-    
-    return window.electron![prop];
-  }
-});
 
-/**
- * Setup the Electron app environment
- * - Adds appropriate classes to the HTML element
- * - Configures electron-specific behaviors
- */
-export function setupElectronApp(): void {
-  if (!isElectronEnvironment()) {
-    return;
-  }
-  
-  // Add platform specific class to HTML element
-  electron.invoke('system:getInfo').then((info: SystemInfo) => {
-    document.documentElement.classList.add(`platform-${info.platform}`);
-    
-    if (info.isDevMode) {
-      document.documentElement.classList.add('dev-mode');
+    try {
+      // @ts-ignore - window.electron is injected by the Electron preload script
+      return await window.electron.invoke('check-network-status');
+    } catch (error) {
+      console.error('Failed to check network status:', error);
+      return navigator.onLine; // Fallback to browser's online status
     }
-  });
-  
-  // Prevent default behavior for drag and drop
-  document.addEventListener('dragover', (e) => e.preventDefault());
-  document.addEventListener('drop', (e) => e.preventDefault());
-  
-  // Add special class when window gets focus
-  electron.receive('window:focus', () => {
-    document.documentElement.classList.add('window-focused');
-  });
-  
-  electron.receive('window:blur', () => {
-    document.documentElement.classList.remove('window-focused');
-  });
+  }
+
+  /**
+   * Get information about the local database
+   */
+  async getDatabaseInfo(): Promise<DatabaseInfo> {
+    if (!isElectronEnvironment()) {
+      throw new Error('Not running in Electron environment');
+    }
+
+    try {
+      // @ts-ignore - window.electron is injected by the Electron preload script
+      return await window.electron.invoke('get-database-info');
+    } catch (error) {
+      console.error('Failed to get database info:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a backup of the local database
+   */
+  async createDatabaseBackup(): Promise<BackupResult> {
+    if (!isElectronEnvironment()) {
+      throw new Error('Not running in Electron environment');
+    }
+
+    try {
+      // @ts-ignore - window.electron is injected by the Electron preload script
+      return await window.electron.invoke('create-database-backup');
+    } catch (error) {
+      console.error('Failed to create database backup:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Restore the local database from a backup
+   */
+  async restoreDatabaseFromBackup(backupPath: string): Promise<{ success: boolean; error?: string }> {
+    if (!isElectronEnvironment()) {
+      throw new Error('Not running in Electron environment');
+    }
+
+    try {
+      // @ts-ignore - window.electron is injected by the Electron preload script
+      return await window.electron.invoke('restore-database-backup', backupPath);
+    } catch (error) {
+      console.error('Failed to restore database from backup:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Synchronize the local database with the remote server
+   */
+  async syncDatabase(): Promise<void> {
+    if (!isElectronEnvironment()) {
+      throw new Error('Not running in Electron environment');
+    }
+
+    try {
+      // @ts-ignore - window.electron is injected by the Electron preload script
+      return await window.electron.invoke('sync-database');
+    } catch (error) {
+      console.error('Failed to sync database:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Register a listener for an IPC event from the main process
+   */
+  on<T>(channel: string, callback: (data: T) => void): () => void {
+    if (!isElectronEnvironment()) {
+      console.warn(`Cannot register listener for ${channel} in non-Electron environment`);
+      return () => {}; // No-op cleanup function
+    }
+
+    // @ts-ignore - window.electron is injected by the Electron preload script
+    return window.electron.on(channel, callback);
+  }
 }

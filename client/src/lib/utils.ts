@@ -1,102 +1,48 @@
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
-import { type InventoryItem, type ItemStatus } from "@shared/schema";
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 
+/**
+ * A utility function that combines Tailwind CSS classes with conditional logic
+ * Using clsx for conditionals and twMerge to properly merge Tailwind classes
+ */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount);
-}
-
-export function formatDate(date: Date | string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-  }).format(new Date(date));
-}
-
-export function formatRelativeDate(date: Date | string): string {
-  const now = new Date();
-  const itemDate = new Date(date);
+/**
+ * Format a date as a relative string (e.g. "today", "yesterday", "2 days ago", etc.)
+ * @param date The date to format
+ * @param includeTime Whether to include the time in the formatted string
+ * @returns A formatted string
+ */
+export function formatRelativeDate(date: Date | string | number | null | undefined, includeTime: boolean = false): string {
+  if (!date) return 'Never';
   
-  const diffInMs = now.getTime() - itemDate.getTime();
-  const diffInHours = diffInMs / (1000 * 60 * 60);
-  const diffInDays = diffInHours / 24;
+  // Convert to Date object if it's not already
+  const dateObj = date instanceof Date ? date : new Date(date);
   
-  if (diffInHours < 1) {
-    const minutes = Math.floor(diffInMs / (1000 * 60));
-    return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
-  } else if (diffInHours < 24) {
-    const hours = Math.floor(diffInHours);
-    return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
-  } else if (diffInDays < 7) {
-    const days = Math.floor(diffInDays);
-    return `${days} day${days !== 1 ? 's' : ''} ago`;
+  // Check for invalid date
+  if (isNaN(dateObj.getTime())) {
+    return 'Invalid date';
+  }
+
+  // Format based on how recent the date is
+  if (isToday(dateObj)) {
+    return includeTime 
+      ? `Today at ${format(dateObj, 'h:mm a')}` 
+      : 'Today';
+  } else if (isYesterday(dateObj)) {
+    return includeTime 
+      ? `Yesterday at ${format(dateObj, 'h:mm a')}` 
+      : 'Yesterday';
+  } else if (dateObj > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) {
+    // Within the last week
+    return formatDistanceToNow(dateObj, { addSuffix: true });
   } else {
-    return formatDate(date);
+    // Older than a week
+    return includeTime 
+      ? format(dateObj, 'MMM d, yyyy h:mm a') 
+      : format(dateObj, 'MMM d, yyyy');
   }
-}
-
-export function getItemStatus(item: InventoryItem): ItemStatus {
-  if (item.quantity === 0) {
-    return 'Out of Stock';
-  } else if (item.quantity <= item.lowStockThreshold) {
-    return 'Low Stock';
-  } else {
-    return 'In Stock';
-  }
-}
-
-export function getStatusColor(status: ItemStatus): {
-  bg: string;
-  text: string;
-  icon?: string;
-  pulse?: boolean;
-} {
-  switch (status) {
-    case 'In Stock':
-      return {
-        bg: 'bg-success/10 dark:bg-success/20',
-        text: 'text-success',
-      };
-    case 'Low Stock':
-      return {
-        bg: 'bg-warning/10 dark:bg-warning/20',
-        text: 'text-warning',
-        icon: 'ri-alert-line',
-        pulse: true,
-      };
-    case 'Out of Stock':
-      return {
-        bg: 'bg-error/10 dark:bg-error/20',
-        text: 'text-error',
-        icon: 'ri-error-warning-line',
-      };
-    default:
-      return {
-        bg: 'bg-neutral-100 dark:bg-neutral-700',
-        text: 'text-neutral-500 dark:text-neutral-400',
-      };
-  }
-}
-
-export function getTotalValue(items: InventoryItem[]): number {
-  return items.reduce((total, item) => total + item.price * item.quantity, 0);
-}
-
-export function downloadFile(url: string, filename: string) {
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
 }
