@@ -4077,6 +4077,40 @@ export class MemStorage implements IStorage {
   }
   
   // Custom Role Permission Methods
+  async getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]> {
+    return Array.from(this.customRolePermissions.values()).filter(
+      (permission) => permission.roleId === roleId
+    );
+  }
+  
+  async addPermissionToCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<CustomRolePermission> {
+    const permission: InsertCustomRolePermission = {
+      roleId,
+      resource,
+      permissionType
+    };
+    
+    return this.createCustomRolePermission(permission);
+  }
+  
+  async removePermissionFromCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<boolean> {
+    const permissions = await this.getCustomRolePermissions(roleId);
+    const permissionToRemove = permissions.find(
+      p => p.roleId === roleId && p.resource === resource && p.permissionType === permissionType
+    );
+    
+    if (!permissionToRemove) return false;
+    
+    return this.deleteCustomRolePermission(permissionToRemove.id);
+  }
+  
+  async checkCustomRolePermission(roleId: number, resource: Resource, permissionType: PermissionType): Promise<boolean> {
+    const permissions = await this.getCustomRolePermissions(roleId);
+    return permissions.some(
+      p => p.resource === resource && p.permissionType === permissionType
+    );
+  }
+  
   async getAllCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]> {
     return Array.from(this.customRolePermissions.values()).filter(
       (permission) => permission.roleId === roleId
