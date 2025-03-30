@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { isElectronEnvironment } from '@/lib/electron-bridge';
 
 export type WebSocketMessage = {
   type: 'inventory_update' | 'stock_transfer' | 'stock_alert' | 'connection' | 'warehouse_update' | 'error' | 'item_subscribe' | 'item_unsubscribe' | 'capabilities';
@@ -51,11 +52,21 @@ export function useWebSocket({
     try {
       // Create WebSocket connection
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      
+      // Determine the correct host for WebSocket connection
+      // In production, use the current host; in development, handle different scenarios
+      let host = window.location.host;
+      
+      // In Electron specifically, we need to adjust for running locally
+      if (isElectronEnvironment() && process.env.NODE_ENV !== 'production') {
+        // Use a hardcoded port in dev mode for Electron
+        host = 'localhost:5000';
+      }
+      
       // Connect to the correct WebSocket path defined in the server
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      const wsUrl = `${protocol}//${host}/ws`;
       
       console.log(`Connecting to WebSocket at ${wsUrl}`);
-      console.log('Creating WebSocket connection to:', wsUrl);
       socketRef.current = new WebSocket(wsUrl);
       
       // Connection opened handler
