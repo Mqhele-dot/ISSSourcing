@@ -15,6 +15,7 @@ import {
   getTopItems
 } from "./forecast-service";
 import { initializeWebSocketService } from "./websocket-service";
+import { initializeRealTimeSyncService, getConnectedClientInfo, notifyDataChange } from "./real-time-sync-service";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -3969,8 +3970,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Initialize WebSocket service for real-time inventory synchronization
   // This creates a WebSocket server on the /ws path
+  // Initialize WebSocket services
   const wss = initializeWebSocketService(httpServer, storage);
-  console.log("WebSocket server initialized at /ws path for real-time inventory synchronization");
+  const syncWss = initializeRealTimeSyncService(httpServer, storage);
+  console.log("WebSocket servers initialized for real-time inventory synchronization");
+  
+  // WebSocket connection status endpoint
+  app.get("/api/sync/status", auth.ensureAuthenticated, (_req: Request, res: Response) => {
+    try {
+      const connectionInfo = {
+        standardConnections: wss ? wss.clients.size : 0,
+        syncConnections: syncWss ? syncWss.clients.size : 0,
+        syncClientsInfo: typeof getConnectedClientInfo === 'function' ? getConnectedClientInfo() : []
+      };
+      res.json(connectionInfo);
+    } catch (error) {
+      console.error("Error getting WebSocket connection status:", error);
+      res.status(500).json({ message: "Error getting WebSocket connection status" });
+    }
+  });
+  
+  // Test real-time sync functionality
+  app.post("/api/inventory-sync/test", auth.ensureAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { entity, action, data } = req.body;
+      
+      if (!entity || !action || !data) {
+        return res.status(400).json({ message: "Missing required parameters: entity, action, data" });
+      }
+      
+      // Use the notifyDataChange function from real-time-sync-service if available
+      if (typeof notifyDataChange === 'function') {
+        const clientsNotified = notifyDataChange(entity, action, data);
+        return res.json({ 
+          success: true, 
+          message: `Notified ${clientsNotified} clients about the data change`,
+          clientsNotified
+        });
+      } else {
+        return res.status(501).json({ message: "Real-time sync notification service not available" });
+      }
+    } catch (error) {
+      console.error("Error testing real-time sync:", error);
+      res.status(500).json({ message: "Failed to test real-time sync" });
+    }
+  });
   
   return httpServer;
 }
