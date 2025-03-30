@@ -43,6 +43,7 @@ import {
   UserRole,
   Resource,
   PermissionType,
+  createCustomRoleSchema,
   type DocumentType,
   type ReportType
 } from "@shared/schema";
@@ -2595,10 +2596,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Unauthorized to access this resource" });
       }
       
-      const roleData = {
+      // Parse request using the schema with defaults
+      const validatedData = createCustomRoleSchema.safeParse({
         ...req.body,
-        createdById: req.user ? req.user.id : 1 // Use authenticated user's ID if available
-      };
+        createdBy: req.user ? req.user.id : 1 // Use authenticated user's ID if available
+      });
+      
+      if (!validatedData.success) {
+        return res.status(400).json({ 
+          message: "Invalid role data", 
+          errors: validatedData.error.errors 
+        });
+      }
+      
+      const roleData = validatedData.data;
       
       const newRole = await storage.createCustomRole(roleData);
       res.status(201).json(newRole);

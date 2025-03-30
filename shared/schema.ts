@@ -905,6 +905,11 @@ export const insertCustomRoleSchema = createInsertSchema(customRoles).omit({
   updatedAt: true,
 });
 
+// Custom role creation schema with defaults
+export const createCustomRoleSchema = insertCustomRoleSchema.extend({
+  isSystemRole: z.boolean().default(false),
+});
+
 // Custom Role Permissions - Maps permissions to custom roles
 export const customRolePermissions = pgTable("custom_role_permissions", {
   id: serial("id").primaryKey(),
@@ -1093,6 +1098,7 @@ export enum ReorderRequestStatus {
 // New types for enhanced user access control
 export type CustomRole = typeof customRoles.$inferSelect;
 export type InsertCustomRole = z.infer<typeof insertCustomRoleSchema>;
+export type CreateCustomRoleInput = z.infer<typeof createCustomRoleSchema>;
 
 export type CustomRolePermission = typeof customRolePermissions.$inferSelect;
 export type InsertCustomRolePermission = z.infer<typeof insertCustomRolePermissionSchema>;
