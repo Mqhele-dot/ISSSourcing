@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeWebSocketService } from "./websocket-service";
+import { storage } from "./storage";
 
 const app = express();
 app.use(express.json());
@@ -43,10 +44,50 @@ app.use((req, res, next) => {
   // Initialize the WebSocket service for real-time inventory updates
   const wsService = initializeWebSocketService(server);
   
-  // Set up a periodic check for low stock alerts every 5 minutes
+  // Set up a periodic check for low stock alerts based on app settings
+  let lowStockCheckInterval: NodeJS.Timeout;
+  
+  // Function to set up the low stock check interval
+  const setupLowStockAlertInterval = async () => {
+    // Clear existing interval if it exists
+    if (lowStockCheckInterval) {
+      clearInterval(lowStockCheckInterval);
+    }
+    
+    try {
+      // Get application settings
+      const appSettings = await storage.getAppSettings();
+      
+      // Default to 30 minutes if not configured or real-time updates disabled
+      const checkFrequencyMinutes = appSettings?.realTimeUpdatesEnabled 
+        ? (appSettings?.lowStockAlertFrequency || 30)
+        : 30;
+      
+      console.log(`Setting up low stock alert checks every ${checkFrequencyMinutes} minutes`);
+      
+      // Set up the new interval
+      lowStockCheckInterval = setInterval(() => {
+        wsService.checkLowStockAlerts();
+      }, checkFrequencyMinutes * 60 * 1000);
+      
+      // Run an initial check
+      wsService.checkLowStockAlerts();
+    } catch (error) {
+      console.error('Error setting up low stock alert interval:', error);
+      // Fallback to 30 minutes if there was an error
+      lowStockCheckInterval = setInterval(() => {
+        wsService.checkLowStockAlerts();
+      }, 30 * 60 * 1000);
+    }
+  };
+  
+  // Initial setup
+  setupLowStockAlertInterval();
+  
+  // Set up a daily check to refresh the interval based on potentially updated settings
   setInterval(() => {
-    wsService.checkLowStockAlerts();
-  }, 5 * 60 * 1000);
+    setupLowStockAlertInterval();
+  }, 24 * 60 * 60 * 1000);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

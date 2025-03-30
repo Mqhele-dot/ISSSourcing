@@ -1,11 +1,21 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Plus, FileDown, Filter, Trash2, BarChart3, RefreshCw } from "lucide-react";
+import { Plus, FileDown, Filter, Trash2, BarChart3, RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -152,7 +162,13 @@ export default function Inventory() {
   
   // Reorder item mutation
   const reorderMutation = useMutation({
-    mutationFn: async (data: { itemId: number; quantity: number }) => {
+    mutationFn: async (data: { 
+      itemId: number; 
+      quantity: number; 
+      warehouseId?: number | null;
+      supplierId?: number | null;
+      notes?: string | null;
+    }) => {
       return apiRequest("POST", "/api/reorder-requests", data);
     },
     onSuccess: async () => {
@@ -194,14 +210,70 @@ export default function Inventory() {
     setShowItemForm(false);
   };
   
-  // Handle reorder item
-  const handleReorderItem = async (item: InventoryItem) => {
+  // States for reorder dialog
+  const [reorderDialogOpen, setReorderDialogOpen] = useState(false);
+  const [reorderItem, setReorderItem] = useState<InventoryItem | null>(null);
+  const [reorderQuantity, setReorderQuantity] = useState<number>(0);
+  const [reorderWarehouseId, setReorderWarehouseId] = useState<number | null>(null);
+  const [reorderNotes, setReorderNotes] = useState<string>("");
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [loadingWarehouses, setLoadingWarehouses] = useState(false);
+  
+  // Fetch warehouses
+  useEffect(() => {
+    if (reorderDialogOpen && reorderItem) {
+      const fetchWarehouses = async () => {
+        setLoadingWarehouses(true);
+        try {
+          const response = await fetch("/api/warehouses");
+          if (response.ok) {
+            const data = await response.json();
+            setWarehouses(data);
+            // Set default warehouse if available
+            if (data.length > 0) {
+              setReorderWarehouseId(data[0].id);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to fetch warehouses:", error);
+        } finally {
+          setLoadingWarehouses(false);
+        }
+      };
+      
+      fetchWarehouses();
+    }
+  }, [reorderDialogOpen, reorderItem]);
+
+  // Open reorder dialog
+  const handleReorderItem = (item: InventoryItem) => {
+    setReorderItem(item);
+    setReorderQuantity(item.lowStockThreshold || 10);
+    setReorderNotes(`Manual reorder request for item: ${item.name} (${item.sku})`);
+    setReorderDialogOpen(true);
+  };
+  
+  // Submit reorder request
+  const submitReorderRequest = async () => {
+    if (!reorderItem) return;
+    
     try {
-      const defaultQuantity = item.lowStockThreshold || 10;
       await reorderMutation.mutateAsync({
-        itemId: item.id,
-        quantity: defaultQuantity
+        itemId: reorderItem.id,
+        quantity: reorderQuantity,
+        supplierId: reorderItem.supplierId,
+        warehouseId: reorderWarehouseId,
+        notes: reorderNotes
       });
+      
+      // Close dialog on success
+      setReorderDialogOpen(false);
+      
+      // Reset states
+      setReorderItem(null);
+      setReorderQuantity(0);
+      setReorderWarehouseId(null);
+      setReorderNotes("");
     } catch (error) {
       console.error("Failed to create reorder request:", error);
     }
@@ -540,6 +612,108 @@ export default function Inventory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Reorder Item Dialog */}
+      <Dialog open={reorderDialogOpen} onOpenChange={setReorderDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Reorder Request</DialogTitle>
+            <DialogDescription>
+              Create a reorder request for this item.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {reorderItem && (
+            <div className="py-4">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Item Details</Label>
+                  <div className="flex justify-between bg-gray-50 p-3 rounded-md">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">{reorderItem.name}</p>
+                      <p className="text-xs text-gray-500">SKU: {reorderItem.sku}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium">Current Stock: {reorderItem.quantity}</p>
+                      <p className="text-xs text-gray-500">
+                        Low Stock Threshold: {reorderItem.lowStockThreshold || 'Not set'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantity to Order</Label>
+                  <Input 
+                    id="quantity" 
+                    type="number" 
+                    min="1"
+                    value={reorderQuantity}
+                    onChange={(e) => setReorderQuantity(Number(e.target.value))}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="warehouse">Warehouse</Label>
+                  {loadingWarehouses ? (
+                    <div className="flex items-center space-x-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">Loading warehouses...</span>
+                    </div>
+                  ) : (
+                    <Select 
+                      value={reorderWarehouseId?.toString() || ""} 
+                      onValueChange={(value) => setReorderWarehouseId(value ? Number(value) : null)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a warehouse" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {warehouses.map((warehouse) => (
+                          <SelectItem key={warehouse.id} value={warehouse.id.toString()}>
+                            {warehouse.name} {warehouse.isDefault ? "(Default)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Notes</Label>
+                  <Textarea 
+                    id="notes" 
+                    placeholder="Add any additional notes here..." 
+                    value={reorderNotes}
+                    onChange={(e) => setReorderNotes(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter className="sm:justify-end">
+            <Button
+              variant="ghost"
+              onClick={() => setReorderDialogOpen(false)}
+              disabled={reorderMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={submitReorderRequest}
+              disabled={reorderMutation.isPending || !reorderWarehouseId || reorderQuantity <= 0}
+            >
+              {reorderMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating Request...
+                </>
+              ) : "Create Request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
