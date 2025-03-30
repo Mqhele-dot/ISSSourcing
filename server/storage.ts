@@ -46,6 +46,10 @@ export interface IStorage {
   // Session store for Express sessions
   sessionStore: session.Store;
 
+  // Settings methods
+  getSettings(): Promise<AppSettings>;
+  updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
+
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
