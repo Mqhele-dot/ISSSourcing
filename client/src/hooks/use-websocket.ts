@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
 export type WebSocketMessage = {
-  type: 'inventory_update' | 'stock_transfer' | 'stock_alert' | 'connection' | 'warehouse_update' | 'error';
+  type: 'inventory_update' | 'stock_transfer' | 'stock_alert' | 'connection' | 'warehouse_update' | 'error' | 'item_subscribe' | 'item_unsubscribe' | 'capabilities';
   payload: any;
+  compressed?: boolean;
+  sequenceNumber?: number;
 };
 
 interface UseWebSocketParams {
@@ -50,14 +52,15 @@ export function useWebSocket({
       // Create WebSocket connection
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       // Connect to the correct WebSocket path defined in the server
-      const wsUrl = `${protocol}//${window.location.host}/ws-inventory`;
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
       
       console.log(`Connecting to WebSocket at ${wsUrl}`);
+      console.log('Creating WebSocket connection to:', wsUrl);
       socketRef.current = new WebSocket(wsUrl);
       
       // Connection opened handler
-      socketRef.current.addEventListener('open', () => {
-        console.log('WebSocket connected');
+      socketRef.current.addEventListener('open', (event) => {
+        console.log('WebSocket connected successfully:', event);
         setIsConnected(true);
         onConnectionStatus?.(true);
         reconnectCount.current = 0; // Reset reconnect counter on successful connection
@@ -113,8 +116,11 @@ export function useWebSocket({
       });
       
       // Connection closed handler
-      socketRef.current.addEventListener('close', () => {
-        console.log('WebSocket disconnected');
+      socketRef.current.addEventListener('close', (event) => {
+        console.log('WebSocket disconnected with code:', event.code, 'reason:', event.reason);
+        console.log('WebSocket was clean?', event.wasClean);
+        console.log('WebSocket last state:', socketRef.current?.readyState);
+        
         setIsConnected(false);
         onConnectionStatus?.(false);
         
@@ -122,11 +128,13 @@ export function useWebSocket({
         if (reconnectCount.current < MAX_RECONNECT_ATTEMPTS) {
           reconnectCount.current += 1;
           
+          console.log(`Scheduling reconnect attempt ${reconnectCount.current}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_INTERVAL}ms`);
           reconnectTimeoutRef.current = setTimeout(() => {
             console.log(`Attempting to reconnect (${reconnectCount.current}/${MAX_RECONNECT_ATTEMPTS})...`);
             connect();
           }, RECONNECT_INTERVAL);
         } else {
+          console.log('Maximum reconnect attempts reached, giving up');
           toast({
             title: 'Connection Lost',
             description: 'Could not reconnect to real-time inventory updates.',
@@ -137,7 +145,14 @@ export function useWebSocket({
       
       // Error handler
       socketRef.current.addEventListener('error', (error) => {
-        console.error('WebSocket error:', error);
+        console.error('WebSocket error event:', error);
+        console.error('WebSocket readyState:', socketRef.current?.readyState);
+        
+        // Log more detailed error information if available
+        if (error instanceof ErrorEvent) {
+          console.error('WebSocket error message:', error.message);
+        }
+        
         toast({
           title: 'Connection Error',
           description: 'Error connecting to real-time inventory service',

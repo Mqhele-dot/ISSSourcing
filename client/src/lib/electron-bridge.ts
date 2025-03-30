@@ -9,6 +9,65 @@ export function isElectronEnvironment(): boolean {
   return typeof window !== 'undefined' && window.electron !== undefined;
 }
 
+// Alias for isElectronEnvironment for backward compatibility
+export const isElectron = isElectronEnvironment;
+
+// App control functions
+export const appControls = {
+  /**
+   * Minimize the application window
+   */
+  minimize: (): void => {
+    if (!isElectronEnvironment()) return;
+    // @ts-ignore - window.electron is injected by the Electron preload script
+    window.electron.send('window-minimize');
+  },
+
+  /**
+   * Maximize/restore the application window
+   */
+  maximize: (): void => {
+    if (!isElectronEnvironment()) return;
+    // @ts-ignore - window.electron is injected by the Electron preload script
+    window.electron.send('window-maximize');
+  },
+
+  /**
+   * Close the application window
+   */
+  close: (): void => {
+    if (!isElectronEnvironment()) return;
+    // @ts-ignore - window.electron is injected by the Electron preload script
+    window.electron.send('window-close');
+  },
+
+  /**
+   * Open the application settings
+   */
+  openSettings: (): void => {
+    if (!isElectronEnvironment()) return;
+    // @ts-ignore - window.electron is injected by the Electron preload script
+    window.electron.send('open-settings');
+  },
+
+  /**
+   * Check for application updates
+   */
+  checkForUpdates: async (): Promise<{ hasUpdate: boolean; version?: string }> => {
+    if (!isElectronEnvironment()) {
+      return { hasUpdate: false };
+    }
+    
+    try {
+      // @ts-ignore - window.electron is injected by the Electron preload script
+      return await window.electron.invoke('check-for-updates');
+    } catch (error) {
+      console.error('Failed to check for updates:', error);
+      return { hasUpdate: false };
+    }
+  }
+};
+
 // Interface for database information returned by the main process
 export interface DatabaseInfo {
   status: 'healthy' | 'degraded' | 'error' | 'unknown';

@@ -100,7 +100,7 @@ export function checkLowStockAlerts(): Promise<void> {
 /**
  * Initialize the WebSocket server for real-time inventory synchronization
  */
-export function initializeWebSocketService(server: HttpServer, storageInstance?: IStorage): WebSocketServer {
+export function initializeWebSocketService(server: HttpServer, storageInstance: IStorage | null = null): WebSocketServer {
   // If already initialized, return the existing instance
   if (wss) {
     return wss;
@@ -112,7 +112,7 @@ export function initializeWebSocketService(server: HttpServer, storageInstance?:
   // Create WebSocket server
   wss = new WebSocketServer({ 
     server,
-    path: '/ws-inventory'
+    path: '/ws'
   });
 
   console.log('WebSocket server initialized for inventory sync');
@@ -282,7 +282,14 @@ function handleClientMessage(clientId: string, message: WebSocketMessage): void 
     case MessageType.ITEM_SUBSCRIBE:
       // Subscribe to specific items
       if (Array.isArray(message.payload.items)) {
-        client.items = [...new Set([...client.items, ...message.payload.items])];
+        // Create a temporary array and filter out duplicates
+        const combinedItems = [...client.items];
+        message.payload.items.forEach((itemId: number) => {
+          if (!combinedItems.includes(itemId)) {
+            combinedItems.push(itemId);
+          }
+        });
+        client.items = combinedItems;
         console.log(`Client ${clientId} subscribed to items:`, message.payload.items);
       }
       break;
