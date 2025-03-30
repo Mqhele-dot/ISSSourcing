@@ -1,352 +1,504 @@
 import { Server as HttpServer } from 'http';
-import WebSocket, { WebSocketServer } from 'ws';
-import { storage } from './storage';
-import { stockMovementTypeEnum, InsertStockMovement, InsertActivityLog } from '@shared/schema';
+import WebSocket, { Server as WebSocketServer } from 'ws';
+import { v4 as uuidv4 } from 'uuid';
+import { IStorage } from './storage';
+import { ActivityLogType } from '@shared/schema';
 
-// Define the message types for WebSocket communications
-export interface WebSocketMessage {
-  type: 'inventory_update' | 'stock_transfer' | 'stock_alert' | 'connection' | 'warehouse_update' | 'error';
+// Types of messages
+type MessageType = 'inventory_update' | 'stock_transfer' | 'stock_alert' | 'connection' | 'warehouse_update' | 'error';
+
+// Message structure
+interface WebSocketMessage {
+  type: MessageType;
   payload: any;
 }
 
-// Connected clients with their metadata
-interface ConnectedClient {
-  ws: WebSocket;
+// Client connection storage
+interface ClientConnection {
   id: string;
-  warehouses: number[]; // List of warehouse IDs this client is interested in
+  socket: WebSocket;
+  warehouses: number[];
+  userId?: number;
 }
 
-export class InventoryWebSocketService {
-  private wss: WebSocketServer;
-  private clients: ConnectedClient[] = [];
+// Global instance
+let wss: WebSocketServer | null = null;
+let storage: IStorage | null = null;
+const clients: Map<string, ClientConnection> = new Map();
 
-  constructor(server: HttpServer) {
-    this.wss = new WebSocketServer({ 
-      server,
-      path: '/ws-inventory' // Use a specific path to avoid conflicts with Vite's WebSocket
-    });
-    this.setupWebSocketServer();
-    console.log('WebSocket server initialized on path /ws-inventory');
+/**
+ * Initialize the WebSocket server for real-time inventory synchronization
+ */
+export function initializeWebSocketService(server: HttpServer, storageInstance: IStorage): WebSocketServer {
+  // If already initialized, return the existing instance
+  if (wss) {
+    return wss;
   }
 
-  private setupWebSocketServer() {
-    this.wss.on('connection', (ws: WebSocket) => {
-      const clientId = this.generateClientId();
-      console.log(`New WebSocket client connected: ${clientId}`);
+  // Store the storage instance
+  storage = storageInstance;
 
-      // Add the client to our list with default of no warehouses (will be updated later)
-      this.clients.push({
-        ws,
+  // Create WebSocket server
+  wss = new WebSocketServer({ 
+    server,
+    path: '/ws-inventory'
+  });
+
+  console.log('WebSocket server initialized for inventory sync');
+
+  // Handle new client connections
+  wss.on('connection', (ws: WebSocket) => {
+    const clientId = uuidv4();
+    
+    // Store client connection
+    clients.set(clientId, {
+      id: clientId,
+      socket: ws,
+      warehouses: [] // No warehouse filter by default (receives all updates)
+    });
+
+    console.log(`WebSocket client connected: ${clientId}`);
+
+    // Send connection confirmation with client ID
+    sendMessageToClient(ws, {
+      type: 'connection',
+      payload: { 
         id: clientId,
-        warehouses: []
-      });
-
-      // Send a welcome message with the client ID
-      this.sendToClient(ws, {
-        type: 'connection',
-        payload: {
-          id: clientId,
-          message: 'Connected to Inventory Sync WebSocket Server',
-          timestamp: new Date().toISOString()
-        }
-      });
-
-      // Handle incoming messages
-      ws.on('message', (message: string) => {
-        try {
-          const parsedMessage: WebSocketMessage = JSON.parse(message);
-          this.handleMessage(parsedMessage, clientId, ws);
-        } catch (err) {
-          console.error('Error parsing WebSocket message:', err);
-          this.sendToClient(ws, {
-            type: 'error',
-            payload: { message: 'Invalid message format' }
-          } as WebSocketMessage);
-        }
-      });
-
-      // Handle client disconnection
-      ws.on('close', () => {
-        console.log(`WebSocket client disconnected: ${clientId}`);
-        this.clients = this.clients.filter(client => client.id !== clientId);
-      });
-
-      // Handle errors
-      ws.on('error', (error) => {
-        console.error(`WebSocket error for client ${clientId}:`, error);
-      });
+        message: 'Connected to inventory sync' 
+      }
     });
-  }
 
-  // Handle incoming messages from clients
-  private handleMessage(message: WebSocketMessage, clientId: string, ws: WebSocket) {
-    console.log(`Received message from client ${clientId}:`, message.type);
-
-    switch (message.type) {
-      case 'warehouse_update':
-        // Client is informing us which warehouses they're interested in
-        this.updateClientWarehouses(clientId, message.payload.warehouses);
-        break;
-
-      case 'inventory_update':
-        // Client is submitting inventory updates
-        this.processInventoryUpdate(message.payload);
-        break;
-
-      case 'stock_transfer':
-        // Client is initiating a stock transfer
-        this.processStockTransfer(message.payload);
-        break;
-
-      default:
-        this.sendToClient(ws, {
+    // Handle messages from client
+    ws.on('message', (message: WebSocket.Data) => {
+      try {
+        const parsedMessage = JSON.parse(message.toString()) as WebSocketMessage;
+        handleClientMessage(clientId, parsedMessage);
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+        sendMessageToClient(ws, {
           type: 'error',
-          payload: { message: `Unsupported message type: ${message.type}` }
-        } as WebSocketMessage);
-    }
-  }
+          payload: { message: 'Invalid message format' }
+        });
+      }
+    });
 
-  // Update which warehouses a client is interested in
-  private updateClientWarehouses(clientId: string, warehouses: number[]) {
-    const clientIndex = this.clients.findIndex(client => client.id === clientId);
-    if (clientIndex >= 0) {
-      this.clients[clientIndex].warehouses = warehouses;
-      console.log(`Updated client ${clientId} warehouses:`, warehouses);
-    }
-  }
+    // Handle client disconnection
+    ws.on('close', () => {
+      clients.delete(clientId);
+      console.log(`WebSocket client disconnected: ${clientId}`);
+    });
 
-  // Handle inventory updates
-  private async processInventoryUpdate(payload: any) {
+    // Handle errors
+    ws.on('error', (error) => {
+      console.error(`WebSocket error for client ${clientId}:`, error);
+      clients.delete(clientId);
+    });
+  });
+
+  // Return the WebSocket server instance
+  return wss;
+}
+
+/**
+ * Send a message to a specific client
+ */
+function sendMessageToClient(ws: WebSocket, message: WebSocketMessage): boolean {
+  if (ws.readyState === WebSocket.OPEN) {
     try {
-      const { itemId, quantity, warehouseId, reason, type } = payload;
+      ws.send(JSON.stringify(message));
+      return true;
+    } catch (error) {
+      console.error('Error sending WebSocket message:', error);
+      return false;
+    }
+  }
+  return false;
+}
 
-      // Create a stock movement record
-      await storage.createStockMovement({
-        itemId,
-        quantity,
-        warehouseId,
-        type: type || "ADJUSTMENT",
-        notes: reason || 'Inventory sync update',
-        timestamp: new Date() // Use timestamp instead of createdAt
+/**
+ * Send a message to all connected clients or clients subscribed to a specific warehouse
+ */
+function broadcastMessage(message: WebSocketMessage, warehouseId?: number): void {
+  clients.forEach((client) => {
+    // If warehouseId is specified, only send to clients subscribed to that warehouse
+    // If client has no warehouses specified, they receive all messages
+    if (
+      warehouseId === undefined || 
+      client.warehouses.length === 0 || 
+      client.warehouses.includes(warehouseId)
+    ) {
+      sendMessageToClient(client.socket, message);
+    }
+  });
+}
+
+/**
+ * Handle a message from a client
+ */
+function handleClientMessage(clientId: string, message: WebSocketMessage): void {
+  const client = clients.get(clientId);
+  if (!client) {
+    console.error(`Received message from unknown client: ${clientId}`);
+    return;
+  }
+
+  switch (message.type) {
+    case 'warehouse_update':
+      // Update client's warehouse subscriptions
+      if (Array.isArray(message.payload.warehouses)) {
+        client.warehouses = message.payload.warehouses;
+        console.log(`Client ${clientId} updated warehouse subscriptions:`, client.warehouses);
+      }
+      break;
+
+    case 'inventory_update':
+      // Process inventory update from client
+      handleInventoryUpdate(message.payload, client);
+      break;
+
+    case 'stock_transfer':
+      // Process stock transfer from client
+      handleStockTransfer(message.payload, client);
+      break;
+
+    default:
+      console.warn(`Unknown message type received from client ${clientId}:`, message.type);
+      sendMessageToClient(client.socket, {
+        type: 'error',
+        payload: { message: `Unknown message type: ${message.type}` }
       });
+  }
+}
 
-      // Broadcast the update to relevant clients
-      this.broadcastInventoryUpdate(itemId, warehouseId);
+/**
+ * Handle an inventory update message from a client
+ */
+async function handleInventoryUpdate(payload: any, client: ClientConnection): Promise<void> {
+  if (!storage) {
+    console.error('Storage not initialized for WebSocket service');
+    return;
+  }
 
-      // Create activity log
+  try {
+    const { itemId, quantity, warehouseId, userId, reason, type } = payload;
+    
+    // Validate required fields
+    if (!itemId || quantity === undefined || !warehouseId) {
+      sendMessageToClient(client.socket, {
+        type: 'error',
+        payload: { message: 'Missing required fields for inventory update' }
+      });
+      return;
+    }
+
+    // Get current warehouse inventory
+    const warehouseInventory = await storage.getWarehouseInventoryByItemId(warehouseId, itemId);
+    if (!warehouseInventory) {
+      // Create it if it doesn't exist
+      await storage.createWarehouseInventory({
+        itemId,
+        warehouseId,
+        quantity: quantity
+      });
+    } else {
+      // Update existing inventory
+      await storage.updateWarehouseInventory(warehouseInventory.id, {
+        quantity
+      });
+    }
+
+    // Create a stock movement record
+    await storage.createStockMovement({
+      itemId,
+      quantity,
+      warehouseId,
+      type: type || 'ADJUSTMENT',
+      notes: reason || 'Manual update via system',
+      userId: userId || null
+    });
+
+    // Log the activity
+    if (userId) {
       await storage.createActivityLog({
         action: 'INVENTORY_UPDATE',
-        userId: 1, // Using default system user ID
-        description: `Item #${itemId} quantity updated by ${quantity} in warehouse #${warehouseId}`
+        userId,
+        details: {
+          itemId,
+          warehouseId,
+          quantity,
+          reason
+        }
       });
-
-    } catch (error) {
-      console.error('Error processing inventory update:', error);
     }
+
+    // Get updated item for broadcasting
+    const updatedItem = await storage.getInventoryItem(itemId);
+    const warehouse = await storage.getWarehouse(warehouseId);
+
+    // Broadcast the update to all relevant clients
+    broadcastMessage({
+      type: 'inventory_update',
+      payload: {
+        item: updatedItem,
+        warehouse,
+        quantity,
+        previousQuantity: warehouseInventory?.quantity || 0,
+        warehouseId,
+        timestamp: new Date().toISOString()
+      }
+    }, warehouseId);
+
+    // Check if we need to send a low stock alert
+    await checkAndSendLowStockAlert(itemId, warehouseId);
+
+  } catch (error) {
+    console.error('Error handling inventory update:', error);
+    sendMessageToClient(client.socket, {
+      type: 'error',
+      payload: { message: 'Failed to process inventory update' }
+    });
+  }
+}
+
+/**
+ * Handle a stock transfer message from a client
+ */
+async function handleStockTransfer(payload: any, client: ClientConnection): Promise<void> {
+  if (!storage) {
+    console.error('Storage not initialized for WebSocket service');
+    return;
   }
 
-  // Handle stock transfers between warehouses
-  private async processStockTransfer(payload: any) {
-    try {
-      const { itemId, quantity, sourceWarehouseId, destinationWarehouseId, reason } = payload;
-
-      // First, reduce stock in the source warehouse
-      await storage.createStockMovement({
-        itemId,
-        quantity: -quantity,
-        warehouseId: sourceWarehouseId,
-        type: "TRANSFER",
-        notes: reason || `Transfer to warehouse #${destinationWarehouseId}`,
-        timestamp: new Date(),
-        destinationWarehouseId: destinationWarehouseId, // Specify destination
-        sourceWarehouseId: sourceWarehouseId // Ensure source is recorded
+  try {
+    const { 
+      itemId, 
+      quantity, 
+      sourceWarehouseId, 
+      destinationWarehouseId, 
+      userId, 
+      reason 
+    } = payload;
+    
+    // Validate required fields
+    if (!itemId || quantity === undefined || !sourceWarehouseId || !destinationWarehouseId) {
+      sendMessageToClient(client.socket, {
+        type: 'error',
+        payload: { message: 'Missing required fields for stock transfer' }
       });
+      return;
+    }
 
-      // No need for a second movement as the createStockMovement will handle both warehouses
-      // when type is TRANSFER and destinationWarehouseId is set
+    // Get source warehouse inventory
+    const sourceInventory = await storage.getWarehouseInventoryByItemId(sourceWarehouseId, itemId);
+    if (!sourceInventory || sourceInventory.quantity < quantity) {
+      sendMessageToClient(client.socket, {
+        type: 'error',
+        payload: { message: 'Insufficient stock in source warehouse' }
+      });
+      return;
+    }
 
-      // Broadcast updates for both warehouses
-      this.broadcastInventoryUpdate(itemId, sourceWarehouseId);
-      this.broadcastInventoryUpdate(itemId, destinationWarehouseId);
+    // Get destination warehouse inventory
+    const destinationInventory = await storage.getWarehouseInventoryByItemId(destinationWarehouseId, itemId);
 
-      // Create activity log
+    // Update source warehouse inventory (deduct)
+    await storage.updateWarehouseInventory(sourceInventory.id, {
+      quantity: sourceInventory.quantity - quantity
+    });
+
+    // Update or create destination warehouse inventory (add)
+    if (destinationInventory) {
+      await storage.updateWarehouseInventory(destinationInventory.id, {
+        quantity: destinationInventory.quantity + quantity
+      });
+    } else {
+      await storage.createWarehouseInventory({
+        itemId,
+        warehouseId: destinationWarehouseId,
+        quantity: quantity
+      });
+    }
+
+    // Create stock movement records
+    // 1. Outgoing from source warehouse
+    await storage.createStockMovement({
+      itemId,
+      quantity: -quantity,
+      warehouseId: sourceWarehouseId,
+      type: 'TRANSFER_OUT',
+      relatedWarehouseId: destinationWarehouseId,
+      notes: reason || 'Stock transfer',
+      userId: userId || null
+    });
+
+    // 2. Incoming to destination warehouse
+    await storage.createStockMovement({
+      itemId,
+      quantity: quantity,
+      warehouseId: destinationWarehouseId,
+      type: 'TRANSFER_IN',
+      relatedWarehouseId: sourceWarehouseId,
+      notes: reason || 'Stock transfer',
+      userId: userId || null
+    });
+
+    // Log the activity
+    if (userId) {
       await storage.createActivityLog({
         action: 'STOCK_TRANSFER',
-        userId: 1, // Using default system user ID
-        description: `Item #${itemId} quantity ${quantity} transferred from warehouse #${sourceWarehouseId} to warehouse #${destinationWarehouseId}`
-      });
-
-    } catch (error) {
-      console.error('Error processing stock transfer:', error);
-    }
-  }
-
-  // Send inventory alerts based on configurable thresholds
-  public async checkLowStockAlerts() {
-    try {
-      // Get application settings to check if real-time updates are enabled
-      const appSettings = await storage.getAppSettings();
-      
-      // If real-time updates are disabled, don't check for low stock
-      if (appSettings && !appSettings.realTimeUpdatesEnabled) {
-        console.log('Real-time inventory updates are disabled. Skipping low stock check.');
-        return;
-      }
-      
-      const lowStockItems = await storage.getLowStockItems();
-      
-      for (const item of lowStockItems) {
-        // Get all warehouse inventories for this item
-        const warehouseInventory = await storage.getItemWarehouseInventory(item.id);
-        
-        for (const warehouse of warehouseInventory) {
-          // If warehouse quantity is below or equal to the low stock threshold
-          if (warehouse.quantity <= (item.lowStockThreshold || appSettings?.lowStockDefaultThreshold || 10)) {
-            // Calculate a suggested reorder quantity (default to 10 units or twice the low stock threshold)
-            const suggestedReorderQuantity = item.minOrderQuantity || 
-              (item.lowStockThreshold ? item.lowStockThreshold * 2 : (appSettings?.lowStockDefaultThreshold ? appSettings.lowStockDefaultThreshold * 2 : 10));
-            
-            // Send alerts to all clients watching this warehouse
-            this.broadcastToWarehouse(warehouse.warehouseId, {
-              type: 'stock_alert',
-              payload: {
-                alertType: 'LOW_STOCK',
-                item,
-                warehouse,
-                currentLevel: warehouse.quantity,
-                reorderThreshold: item.lowStockThreshold || appSettings?.lowStockDefaultThreshold || 10,
-                suggestedReorderQuantity: suggestedReorderQuantity,
-                timestamp: new Date().toISOString()
-              }
-            });
-            
-            // If auto-reorder is enabled, create a reorder request automatically
-            if (appSettings?.autoReorderEnabled) {
-              try {
-                await this.createAutoReorderRequest(item, warehouse, suggestedReorderQuantity);
-              } catch (reorderError) {
-                console.error('Error creating auto-reorder request:', reorderError);
-              }
-            }
-          }
+        userId,
+        details: {
+          itemId,
+          quantity,
+          sourceWarehouseId,
+          destinationWarehouseId,
+          reason
         }
-      }
-    } catch (error) {
-      console.error('Error checking for low stock alerts:', error);
-    }
-  }
-  
-  // Create an automatic reorder request when inventory is low
-  private async createAutoReorderRequest(item: any, warehouse: any, suggestedQuantity: number) {
-    try {
-      // Get the default supplier for this item
-      const supplier = item.supplierId ? await storage.getSupplier(item.supplierId) : null;
-      
-      if (!supplier) {
-        console.log(`Can't auto-reorder item #${item.id}: No default supplier found`);
-        return;
-      }
-      
-      // Generate a unique request number
-      const requestNumber = `AUTO-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}${new Date().getDate().toString().padStart(2, '0')}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-      
-      // Create a reorder request with PENDING status
-      const reorderRequest = await storage.createReorderRequest({
-        requestNumber,
-        itemId: item.id,
-        quantity: suggestedQuantity,
-        supplierId: supplier.id,
-        warehouseId: warehouse.warehouseId,
-        status: 'PENDING',
-        isAutoGenerated: true,
-        notes: `Auto-generated reorder request for low stock item (${warehouse.quantity}/${item.lowStockThreshold || 10})`,
-        requestDate: new Date()
       });
-      
-      console.log(`Auto-generated reorder request #${reorderRequest.id} for item #${item.id}`);
-      
-      // Log this activity
-      await storage.createActivityLog({
-        action: 'AUTO_REORDER_REQUEST',
-        userId: 1, // System user
-        description: `Auto-generated reorder request #${reorderRequest.id} for item ${item.name} (${item.sku}) in warehouse #${warehouse.warehouseId}`
-      });
-      
-      return reorderRequest;
-    } catch (error) {
-      console.error(`Error creating auto-reorder request for item #${item.id}:`, error);
-      throw error;
     }
-  }
 
-  // Generate unique client ID
-  private generateClientId(): string {
-    return `client_${Math.random().toString(36).substr(2, 9)}`;
-  }
+    // Get updated data for broadcasting
+    const item = await storage.getInventoryItem(itemId);
+    const sourceWarehouse = await storage.getWarehouse(sourceWarehouseId);
+    const destinationWarehouse = await storage.getWarehouse(destinationWarehouseId);
 
-  // Send message to a specific client
-  private sendToClient(ws: WebSocket, message: WebSocketMessage) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(message));
-    }
-  }
-
-  // Broadcast to all clients interested in a specific warehouse
-  private broadcastToWarehouse(warehouseId: number, message: WebSocketMessage) {
-    const interestedClients = this.clients.filter(client => 
-      client.warehouses.includes(warehouseId) || 
-      client.warehouses.length === 0 // Clients listening to all warehouses
-    );
-
-    for (const client of interestedClients) {
-      this.sendToClient(client.ws, message);
-    }
-  }
-
-  // Broadcast inventory updates for a specific item and warehouse
-  public async broadcastInventoryUpdate(itemId: number, warehouseId: number) {
-    try {
-      // Get the current inventory level for this item in this warehouse
-      const warehouseInventory = await storage.getWarehouseInventoryItem(warehouseId, itemId);
-      const item = await storage.getInventoryItem(itemId);
-      
-      if (!warehouseInventory || !item) {
-        console.error(`Cannot broadcast update: item #${itemId} or warehouse #${warehouseId} not found`);
-        return;
+    // Broadcast updates for both warehouses
+    const transferMessage = {
+      type: 'inventory_update',
+      payload: {
+        item,
+        transfer: {
+          sourceWarehouseId,
+          destinationWarehouseId,
+          sourceWarehouse,
+          destinationWarehouse,
+          quantity
+        },
+        timestamp: new Date().toISOString()
       }
+    };
 
-      // Get the warehouse details
-      const warehouse = await storage.getWarehouse(warehouseId);
-      
-      // Broadcast to all clients interested in this warehouse
-      this.broadcastToWarehouse(warehouseId, {
-        type: 'inventory_update',
+    broadcastMessage(transferMessage, sourceWarehouseId);
+    
+    // If someone is only subscribed to the destination warehouse, make sure they get the update too
+    if (sourceWarehouseId !== destinationWarehouseId) {
+      broadcastMessage(transferMessage, destinationWarehouseId);
+    }
+
+    // Check if we need to send low stock alerts
+    await checkAndSendLowStockAlert(itemId, sourceWarehouseId);
+
+  } catch (error) {
+    console.error('Error handling stock transfer:', error);
+    sendMessageToClient(client.socket, {
+      type: 'error',
+      payload: { message: 'Failed to process stock transfer' }
+    });
+  }
+}
+
+/**
+ * Check if an item is below its low stock threshold and send alerts if needed
+ */
+async function checkAndSendLowStockAlert(itemId: number, warehouseId: number): Promise<void> {
+  if (!storage) return;
+
+  try {
+    const item = await storage.getInventoryItem(itemId);
+    if (!item) return;
+
+    const warehouseInventory = await storage.getWarehouseInventoryByItemId(warehouseId, itemId);
+    if (!warehouseInventory) return;
+
+    const warehouse = await storage.getWarehouse(warehouseId);
+    if (!warehouse) return;
+
+    // Use item's specific threshold or the global default
+    const threshold = item.lowStockThreshold !== null 
+      ? item.lowStockThreshold 
+      : (await storage.getAppSettings())?.lowStockDefaultThreshold || 5;
+
+    // Check if the item is below the threshold
+    if (warehouseInventory.quantity <= threshold) {
+      // Send a stock alert to all clients subscribed to this warehouse
+      broadcastMessage({
+        type: 'stock_alert',
         payload: {
           item,
-          warehouseId,
-          warehouseName: warehouse?.name || `Warehouse #${warehouseId}`,
-          currentQuantity: warehouseInventory.quantity,
+          warehouse,
+          currentLevel: warehouseInventory.quantity,
+          threshold,
           timestamp: new Date().toISOString()
         }
+      }, warehouseId);
+
+      // Log the activity
+      await storage.createActivityLog({
+        action: 'LOW_STOCK_ALERT',
+        userId: null,
+        details: {
+          itemId: item.id,
+          itemName: item.name,
+          warehouseId,
+          warehouseName: warehouse.name,
+          currentLevel: warehouseInventory.quantity,
+          threshold
+        }
       });
-    } catch (error) {
-      console.error(`Error broadcasting inventory update for item #${itemId} in warehouse #${warehouseId}:`, error);
     }
+  } catch (error) {
+    console.error('Error checking for low stock alert:', error);
   }
 }
 
-// Singleton instance
-let instance: InventoryWebSocketService | null = null;
-
-// Function to initialize the service
-export function initializeWebSocketService(server: HttpServer): InventoryWebSocketService {
-  if (!instance) {
-    instance = new InventoryWebSocketService(server);
+/**
+ * Notify all clients about an inventory update (to be called from routes after inventory changes)
+ */
+export async function notifyInventoryUpdate(
+  itemId: number, 
+  warehouseId: number, 
+  quantity: number, 
+  previousQuantity: number
+): Promise<void> {
+  if (!storage) {
+    console.error('Storage not initialized for WebSocket service');
+    return;
   }
-  return instance;
+
+  try {
+    const item = await storage.getInventoryItem(itemId);
+    const warehouse = await storage.getWarehouse(warehouseId);
+
+    if (!item || !warehouse) return;
+
+    broadcastMessage({
+      type: 'inventory_update',
+      payload: {
+        item,
+        warehouse,
+        quantity,
+        previousQuantity,
+        warehouseId,
+        timestamp: new Date().toISOString()
+      }
+    }, warehouseId);
+
+    // Check if we need to send a low stock alert
+    await checkAndSendLowStockAlert(itemId, warehouseId);
+  } catch (error) {
+    console.error('Error notifying inventory update:', error);
+  }
 }
 
-// Function to get the existing instance
-export function getWebSocketService(): InventoryWebSocketService | null {
-  return instance;
+/**
+ * Shutdown the WebSocket server
+ */
+export function shutdownWebSocketService(): void {
+  if (wss) {
+    wss.close();
+    wss = null;
+    storage = null;
+    clients.clear();
+    console.log('WebSocket server for inventory sync has been shut down');
+  }
 }

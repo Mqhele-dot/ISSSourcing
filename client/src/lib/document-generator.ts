@@ -1,176 +1,139 @@
-import { type InventoryItem, type DocumentType, type Category, type ReportType } from "@shared/schema";
-import { formatCurrency } from "./utils";
+/**
+ * Document Generator Utility
+ * 
+ * This module provides functions for generating documents in various formats.
+ * When running in Electron, it uses the native document generation capabilities.
+ * When running in a browser, it falls back to browser-based solutions.
+ */
 
-// Interface for document generator options
-interface DocumentGeneratorOptions {
-  title: string;
-  reportType: ReportType;
-  items: InventoryItem[];
-  categories?: Category[];
+import { documentControls, isElectron } from "./electron-bridge";
+
+// Define common export options
+export interface ExportOptions {
+  fileName?: string;
+  title?: string;
+  author?: string;
+  subject?: string;
+  keywords?: string[];
 }
 
-// Main document generator function
-export async function generateDocument(
-  format: DocumentType,
-  options: DocumentGeneratorOptions
-): Promise<void> {
-  switch (format) {
-    case "pdf":
-      await generatePdfDocument(options);
-      break;
-    case "csv":
-      await generateCsvDocument(options);
-      break;
-    case "excel":
-      await generateExcelDocument(options);
-      break;
-    default:
-      throw new Error(`Unsupported document format: ${format}`);
-  }
+// Define PDF export options
+export interface PdfExportOptions extends ExportOptions {
+  template?: string;
+  orientation?: "portrait" | "landscape";
+  pageSize?: "A4" | "Letter" | "Legal";
+  margins?: {
+    top?: number;
+    right?: number;
+    bottom?: number;
+    left?: number;
+  };
 }
 
-// PDF document generator
-async function generatePdfDocument(options: DocumentGeneratorOptions): Promise<void> {
-  try {
-    const response = await fetch(`/api/export/${options.reportType}/pdf`);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to generate PDF: ${response.statusText}`);
-    }
-    
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    
-    // Create a download link and trigger the download
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${options.title.replace(/\s+/g, "-").toLowerCase()}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    
-    // Clean up the object URL
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    console.error("Error generating PDF document:", error);
-    throw error;
-  }
+// Define Excel export options
+export interface ExcelExportOptions extends ExportOptions {
+  sheetName?: string;
+  includeHeaders?: boolean;
+  headerStyle?: any; // Could be expanded to include styling options
+  cellStyles?: any;  // Could be expanded to include styling options
 }
 
-// CSV document generator
-async function generateCsvDocument(options: DocumentGeneratorOptions): Promise<void> {
-  try {
-    const response = await fetch(`/api/export/${options.reportType}/csv`);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to generate CSV: ${response.statusText}`);
-    }
-    
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    
-    // Create a download link and trigger the download
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${options.title.replace(/\s+/g, "-").toLowerCase()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    
-    // Clean up the object URL
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    console.error("Error generating CSV document:", error);
-    throw error;
-  }
+// Define CSV export options
+export interface CsvExportOptions extends ExportOptions {
+  delimiter?: string;
+  includeHeaders?: boolean;
+  quoteStrings?: boolean;
 }
 
-// Excel document generator
-async function generateExcelDocument(options: DocumentGeneratorOptions): Promise<void> {
-  try {
-    const response = await fetch(`/api/export/${options.reportType}/excel`);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to generate Excel file: ${response.statusText}`);
-    }
-    
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    
-    // Create a download link and trigger the download
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${options.title.replace(/\s+/g, "-").toLowerCase()}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    
-    // Clean up the object URL
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    console.error("Error generating Excel document:", error);
-    throw error;
-  }
-}
-
-// Helper function to format inventory data for reports
-export function formatInventoryDataForReport(
-  items: InventoryItem[],
-  categories?: Category[]
-): Record<string, string | number>[] {
-  return items.map(item => {
-    const categoryName = item.categoryId && categories 
-      ? categories.find(c => c.id === item.categoryId)?.name || "Uncategorized"
-      : "Uncategorized";
-    
-    const value = item.price * item.quantity;
-    
-    return {
-      Name: item.name,
-      SKU: item.sku,
-      Category: categoryName,
-      Quantity: item.quantity,
-      Price: formatCurrency(item.price),
-      Value: formatCurrency(value),
-      Location: item.location || "N/A",
-      LowStockThreshold: item.lowStockThreshold
-    };
-  });
-}
-
-// Helper function to categorize inventory by category
-export function categorizeInventoryByCategory(
-  items: InventoryItem[],
-  categories?: Category[]
-): Record<string, InventoryItem[]> {
-  const categorized: Record<string, InventoryItem[]> = {};
-  
-  if (!categories || categories.length === 0) {
-    categorized["Uncategorized"] = [...items];
-    return categorized;
+/**
+ * Generate a PDF document from data
+ * @param data The data to include in the PDF
+ * @param options Options for the PDF generation
+ * @returns Promise with the path to the saved file or a Blob if in browser mode
+ */
+export async function generatePdf(data: any, options: PdfExportOptions = {}): Promise<string | Blob | null> {
+  // In Electron, use the native PDF generation
+  if (isElectron) {
+    const templateName = options.template || "default";
+    return await documentControls.generatePdf(data, templateName, options);
   }
   
-  // Initialize with empty arrays for all categories
-  categories.forEach(category => {
-    categorized[category.name] = [];
-  });
-  
-  // Add "Uncategorized" category
-  categorized["Uncategorized"] = [];
-  
-  // Categorize items
-  items.forEach(item => {
-    if (item.categoryId && categories) {
-      const category = categories.find(c => c.id === item.categoryId);
-      if (category) {
-        categorized[category.name].push(item);
-      } else {
-        categorized["Uncategorized"].push(item);
-      }
-    } else {
-      categorized["Uncategorized"].push(item);
-    }
-  });
-  
-  return categorized;
+  // In browser, implement fallback or return null
+  console.warn("PDF generation in browser not implemented");
+  return null;
 }
+
+/**
+ * Export data to Excel format
+ * @param data Array of data objects to export
+ * @param options Options for the Excel export
+ * @returns Promise with the path to the saved file or a Blob if in browser mode
+ */
+export async function exportToExcel(data: any[], options: ExcelExportOptions = {}): Promise<string | Blob | null> {
+  // In Electron, use the native Excel export
+  if (isElectron) {
+    return await documentControls.exportToExcel(data, options);
+  }
+  
+  // In browser, implement fallback or return null
+  console.warn("Excel export in browser not implemented");
+  return null;
+}
+
+/**
+ * Export data to CSV format
+ * @param data Array of data objects to export
+ * @param options Options for the CSV export
+ * @returns Promise with the path to the saved file or a Blob if in browser mode
+ */
+export async function exportToCsv(data: any[], options: CsvExportOptions = {}): Promise<string | Blob | null> {
+  // In Electron, use the native CSV export
+  if (isElectron) {
+    return await documentControls.exportToCsv(data, options);
+  }
+  
+  // In browser, implement fallback or return null
+  console.warn("CSV export in browser not implemented");
+  return null;
+}
+
+/**
+ * Set up document generation event listeners
+ * @param callbacks Object containing callback functions for different export types
+ * @returns Cleanup function to remove event listeners
+ */
+export function setupDocumentListeners(callbacks: {
+  onExcelExport?: () => void;
+  onCsvExport?: () => void;
+  onPdfExport?: () => void;
+}): () => void {
+  if (!isElectron) {
+    return () => {}; // No-op if not in Electron
+  }
+  
+  const cleanupFunctions: Array<() => void> = [];
+  
+  if (callbacks.onExcelExport) {
+    cleanupFunctions.push(documentControls.onExportExcelRequest(callbacks.onExcelExport));
+  }
+  
+  if (callbacks.onCsvExport) {
+    cleanupFunctions.push(documentControls.onExportCsvRequest(callbacks.onCsvExport));
+  }
+  
+  if (callbacks.onPdfExport) {
+    cleanupFunctions.push(documentControls.onExportPdfRequest(callbacks.onPdfExport));
+  }
+  
+  // Return a cleanup function that calls all individual cleanup functions
+  return () => {
+    cleanupFunctions.forEach(cleanup => cleanup());
+  };
+}
+
+export default {
+  generatePdf,
+  exportToExcel,
+  exportToCsv,
+  setupDocumentListeners
+};

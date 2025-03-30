@@ -14,6 +14,7 @@ import {
   generateDemandForecast, 
   getTopItems
 } from "./forecast-service";
+import { initializeWebSocketService } from "./websocket-service";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -2762,6 +2763,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Create the HTTP server
   const httpServer = createServer(app);
+  
+  // Initialize WebSocket service for real-time inventory synchronization
+  initializeWebSocketService(httpServer, storage);
+  
   return httpServer;
 }
 

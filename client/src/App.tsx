@@ -20,6 +20,7 @@ import { useState } from "react";
 import { TutorialProvider } from "./contexts/TutorialContext";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/lib/protected-route";
+import { ElectronProvider, TitleBar, UpdateNotification } from "@/components/electron";
 
 function Router() {
   return (
@@ -46,8 +47,10 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       <Sidebar open={sidebarOpen} setOpen={setSidebarOpen} />
       <div className="flex flex-col flex-1 overflow-hidden">
+        <TitleBar title="InvTrack" />
         <Header onMenuClick={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-y-auto bg-neutral-100 dark:bg-neutral-900 p-4 md:p-6">
+          <UpdateNotification />
           {children}
         </main>
       </div>
@@ -61,24 +64,26 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <TutorialProvider>
-            <div className="relative min-h-screen">
-              <Route path="/auth">
-                <Router />
-              </Route>
-              <Route path="*">
-                {(params) => {
-                  // Don't wrap non-auth routes with AppLayout
-                  const pathname = params["*"] || "";
-                  if (pathname === "auth") return null;
-                  return (
-                    <AppLayout>
-                      <Router />
-                    </AppLayout>
-                  );
-                }}
-              </Route>
-            </div>
-            <Toaster />
+            <ElectronProvider>
+              <div className="relative min-h-screen">
+                <Route path="/auth">
+                  <Router />
+                </Route>
+                <Route path="*">
+                  {(params) => {
+                    // Don't wrap non-auth routes with AppLayout
+                    const pathname = params["*"] || "";
+                    if (pathname === "auth") return null;
+                    return (
+                      <AppLayout>
+                        <Router />
+                      </AppLayout>
+                    );
+                  }}
+                </Route>
+              </div>
+              <Toaster />
+            </ElectronProvider>
           </TutorialProvider>
         </AuthProvider>
       </QueryClientProvider>
