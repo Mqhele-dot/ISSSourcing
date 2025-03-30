@@ -35,6 +35,14 @@ import {
   stockMovementTypeEnum, UserRoleEnum, PermissionTypeEnum, ResourceEnum,
   Resource, PermissionType, UserRole,
   type UserLogin, type PasswordResetRequest,
+  // Billing related imports
+  invoices, type Invoice, type InsertInvoice, 
+  invoiceItems, type InvoiceItem, type InsertInvoiceItem,
+  payments, type Payment, type InsertPayment,
+  billingSettings, type BillingSetting, type InsertBillingSetting,
+  taxRates, type TaxRate, type InsertTaxRate,
+  discounts, type Discount, type InsertDiscount,
+  billingReminderLogs, type BillingReminderLog, type InsertBillingReminderLog
 } from "@shared/schema";
 import session from "express-session";
 import memorystore from "memorystore";
@@ -386,6 +394,63 @@ export interface IStorage {
   createTimeRestriction(restriction: InsertTimeRestriction): Promise<TimeRestriction>;
   updateTimeRestriction(id: number, restriction: Partial<InsertTimeRestriction>): Promise<TimeRestriction | undefined>;
   deleteTimeRestriction(id: number): Promise<boolean>;
+  
+  // Invoice methods
+  getAllInvoices(): Promise<Invoice[]>;
+  getInvoice(id: number): Promise<Invoice | undefined>;
+  getInvoiceByNumber(invoiceNumber: string): Promise<Invoice | undefined>;
+  createInvoice(invoice: InsertInvoice, items: InsertInvoiceItem[]): Promise<Invoice>;
+  updateInvoice(id: number, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined>;
+  deleteInvoice(id: number): Promise<boolean>;
+  getInvoicesByCustomerId(customerId: number): Promise<Invoice[]>;
+  getInvoicesByDateRange(startDate: Date, endDate: Date): Promise<Invoice[]>;
+  getInvoicesByStatus(status: string): Promise<Invoice[]>;
+  getOverdueInvoices(): Promise<Invoice[]>;
+  getInvoiceDueInDays(days: number): Promise<Invoice[]>;
+  
+  // Invoice items methods
+  getInvoiceItems(invoiceId: number): Promise<InvoiceItem[]>;
+  getInvoiceItem(id: number): Promise<InvoiceItem | undefined>;
+  addInvoiceItem(item: InsertInvoiceItem): Promise<InvoiceItem>;
+  updateInvoiceItem(id: number, item: Partial<InsertInvoiceItem>): Promise<InvoiceItem | undefined>;
+  deleteInvoiceItem(id: number): Promise<boolean>;
+  
+  // Payment methods
+  getAllPayments(): Promise<Payment[]>;
+  getPayment(id: number): Promise<Payment | undefined>;
+  getPaymentsByInvoiceId(invoiceId: number): Promise<Payment[]>;
+  createPayment(payment: InsertPayment): Promise<Payment>;
+  updatePayment(id: number, payment: Partial<InsertPayment>): Promise<Payment | undefined>;
+  deletePayment(id: number): Promise<boolean>;
+  recordInvoicePayment(invoiceId: number, amount: number, method: string, receivedBy: number, reference?: string, notes?: string): Promise<Payment>;
+  
+  // Billing settings methods
+  getBillingSettings(): Promise<BillingSetting | undefined>;
+  updateBillingSettings(settings: Partial<InsertBillingSetting>): Promise<BillingSetting>;
+  
+  // Tax rate methods
+  getAllTaxRates(): Promise<TaxRate[]>;
+  getTaxRate(id: number): Promise<TaxRate | undefined>;
+  getDefaultTaxRate(): Promise<TaxRate | undefined>;
+  createTaxRate(taxRate: InsertTaxRate): Promise<TaxRate>;
+  updateTaxRate(id: number, taxRate: Partial<InsertTaxRate>): Promise<TaxRate | undefined>;
+  deleteTaxRate(id: number): Promise<boolean>;
+  setDefaultTaxRate(id: number): Promise<TaxRate | undefined>;
+  
+  // Discount methods
+  getAllDiscounts(): Promise<Discount[]>;
+  getDiscount(id: number): Promise<Discount | undefined>;
+  getActiveDiscounts(): Promise<Discount[]>;
+  createDiscount(discount: InsertDiscount): Promise<Discount>;
+  updateDiscount(id: number, discount: Partial<InsertDiscount>): Promise<Discount | undefined>;
+  deleteDiscount(id: number): Promise<boolean>;
+  
+  // Billing reminder logs methods
+  getAllBillingReminderLogs(): Promise<BillingReminderLog[]>;
+  getBillingReminderLog(id: number): Promise<BillingReminderLog | undefined>;
+  getBillingReminderLogsByInvoiceId(invoiceId: number): Promise<BillingReminderLog[]>;
+  createBillingReminderLog(log: InsertBillingReminderLog): Promise<BillingReminderLog>;
+  deleteBillingReminderLog(id: number): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -410,6 +475,8 @@ export class MemStorage implements IStorage {
   private demandForecasts: Map<number, DemandForecast>;
   private externalIntegrations: Map<number, ExternalIntegration>;
   private auditLogs: Map<number, AuditLog>;
+  
+  // User-related data structures
   private userPreferences: Map<number, UserPreference>;
   private permissions: Map<number, Permission>;
   private userVerificationTokens: Map<number, UserVerificationToken>;
@@ -421,6 +488,15 @@ export class MemStorage implements IStorage {
   private userSecuritySettings: Map<number, UserSecuritySetting>;
   private userPerformanceMetrics: Map<number, UserPerformanceMetric>;
   private timeRestrictions: Map<number, TimeRestriction>;
+  
+  // Billing-related data structures
+  private invoices: Map<number, Invoice>;
+  private invoiceItems: Map<number, InvoiceItem>;
+  private payments: Map<number, Payment>;
+  private billingSettings: Map<number, BillingSetting>;
+  private taxRates: Map<number, TaxRate>;
+  private discounts: Map<number, Discount>;
+  private billingReminderLogs: Map<number, BillingReminderLog>;
   
   // For tracking failed login attempts
   private failedLoginAttempts: Map<number, { count: number, lastAttempt: Date }>;
@@ -456,6 +532,13 @@ export class MemStorage implements IStorage {
   private userSecuritySettingCurrentId: number;
   private userPerformanceMetricCurrentId: number;
   private timeRestrictionCurrentId: number;
+  private invoiceCurrentId: number;
+  private invoiceItemCurrentId: number;
+  private paymentCurrentId: number;
+  private billingSettingCurrentId: number;
+  private taxRateCurrentId: number;
+  private discountCurrentId: number;
+  private billingReminderLogCurrentId: number;
   
   constructor() {
     this.users = new Map();
@@ -496,6 +579,15 @@ export class MemStorage implements IStorage {
     this.userPerformanceMetrics = new Map();
     this.timeRestrictions = new Map();
     
+    // Initialize billing-related maps
+    this.invoices = new Map();
+    this.invoiceItems = new Map();
+    this.payments = new Map();
+    this.billingSettings = new Map();
+    this.taxRates = new Map();
+    this.discounts = new Map();
+    this.billingReminderLogs = new Map();
+    
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
     this.itemCurrentId = 1;
@@ -527,6 +619,13 @@ export class MemStorage implements IStorage {
     this.userSecuritySettingCurrentId = 1;
     this.userPerformanceMetricCurrentId = 1;
     this.timeRestrictionCurrentId = 1;
+    this.invoiceCurrentId = 1;
+    this.invoiceItemCurrentId = 1;
+    this.paymentCurrentId = 1;
+    this.billingSettingCurrentId = 1;
+    this.taxRateCurrentId = 1;
+    this.discountCurrentId = 1;
+    this.billingReminderLogCurrentId = 1;
     
     // Add default data
     this.initializeDefaultData();
@@ -4663,6 +4762,739 @@ export class MemStorage implements IStorage {
   
   async deleteTimeRestriction(id: number): Promise<boolean> {
     return this.timeRestrictions.delete(id);
+  }
+
+  // Billing Methods
+  
+  // Invoice methods
+  async getAllInvoices(): Promise<Invoice[]> {
+    return Array.from(this.invoices.values());
+  }
+  
+  async getInvoice(id: number): Promise<Invoice | undefined> {
+    return this.invoices.get(id);
+  }
+  
+  async getInvoiceByNumber(invoiceNumber: string): Promise<Invoice | undefined> {
+    return Array.from(this.invoices.values()).find(
+      (invoice) => invoice.invoiceNumber === invoiceNumber
+    );
+  }
+  
+  async createInvoice(invoice: InsertInvoice, items: InsertInvoiceItem[] = []): Promise<Invoice> {
+    const id = this.invoiceCurrentId++;
+    const now = new Date();
+    
+    // Generate invoice number if not provided
+    if (!invoice.invoiceNumber) {
+      // Get billing settings for prefix
+      const billingSettings = await this.getBillingSettings();
+      const prefix = billingSettings?.invoicePrefix || 'INV-';
+      
+      invoice.invoiceNumber = `${prefix}${String(id).padStart(5, '0')}`;
+    }
+
+    // Calculate due amount based on total
+    const dueAmount = invoice.dueAmount || invoice.total;
+    
+    const newInvoice: Invoice = {
+      ...invoice,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      dueAmount,
+      paidAmount: invoice.paidAmount || 0,
+      sentDate: invoice.sentDate || null,
+      paidDate: invoice.paidDate || null
+    };
+    
+    this.invoices.set(id, newInvoice);
+    
+    // Create invoice items if provided
+    for (const item of items) {
+      await this.addInvoiceItem({
+        ...item,
+        invoiceId: id
+      });
+    }
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Invoice Created",
+      description: `Created invoice: ${newInvoice.invoiceNumber}`,
+      referenceType: "invoice",
+      referenceId: id,
+      userId: invoice.createdBy
+    });
+    
+    return newInvoice;
+  }
+  
+  async updateInvoice(id: number, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {
+    const existingInvoice = this.invoices.get(id);
+    if (!existingInvoice) return undefined;
+    
+    const updatedInvoice = {
+      ...existingInvoice,
+      ...invoice,
+      updatedAt: new Date()
+    };
+    
+    // Update due amount based on total and paid amount if total is changed
+    if (invoice.total !== undefined) {
+      updatedInvoice.dueAmount = invoice.total - (updatedInvoice.paidAmount || 0);
+    }
+    
+    this.invoices.set(id, updatedInvoice);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Invoice Updated",
+      description: `Updated invoice: ${updatedInvoice.invoiceNumber}`,
+      referenceType: "invoice",
+      referenceId: id
+    });
+    
+    return updatedInvoice;
+  }
+  
+  async deleteInvoice(id: number): Promise<boolean> {
+    const invoice = this.invoices.get(id);
+    if (!invoice) return false;
+    
+    // Delete related invoice items
+    const items = await this.getInvoiceItems(id);
+    for (const item of items) {
+      await this.deleteInvoiceItem(item.id);
+    }
+    
+    // Delete related payments
+    const payments = await this.getPaymentsByInvoiceId(id);
+    for (const payment of payments) {
+      await this.deletePayment(payment.id);
+    }
+    
+    // Delete reminder logs
+    const reminderLogs = await this.getBillingReminderLogsByInvoiceId(id);
+    for (const log of reminderLogs) {
+      await this.deleteBillingReminderLog(log.id);
+    }
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Invoice Deleted",
+      description: `Deleted invoice: ${invoice.invoiceNumber}`,
+      referenceType: "invoice",
+      referenceId: id
+    });
+    
+    return this.invoices.delete(id);
+  }
+  
+  async getInvoicesByCustomerId(customerId: number): Promise<Invoice[]> {
+    return Array.from(this.invoices.values())
+      .filter(invoice => invoice.customerId === customerId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+  
+  async getInvoicesByDateRange(startDate: Date, endDate: Date): Promise<Invoice[]> {
+    return Array.from(this.invoices.values())
+      .filter(invoice => {
+        const issueDate = new Date(invoice.issueDate);
+        return issueDate >= startDate && issueDate <= endDate;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+  
+  async getInvoicesByStatus(status: string): Promise<Invoice[]> {
+    return Array.from(this.invoices.values())
+      .filter(invoice => invoice.status === status)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+  
+  async getOverdueInvoices(): Promise<Invoice[]> {
+    const now = new Date();
+    return Array.from(this.invoices.values())
+      .filter(invoice => {
+        return (
+          invoice.status !== "PAID" && 
+          invoice.status !== "CANCELLED" && 
+          invoice.status !== "VOID" &&
+          new Date(invoice.dueDate) < now
+        );
+      })
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  }
+  
+  async getInvoiceDueInDays(days: number): Promise<Invoice[]> {
+    const now = new Date();
+    const futureDate = new Date(now);
+    futureDate.setDate(futureDate.getDate() + days);
+    
+    return Array.from(this.invoices.values())
+      .filter(invoice => {
+        const dueDate = new Date(invoice.dueDate);
+        return (
+          invoice.status !== "PAID" && 
+          invoice.status !== "CANCELLED" && 
+          invoice.status !== "VOID" &&
+          dueDate > now && 
+          dueDate <= futureDate
+        );
+      })
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  }
+  
+  // Invoice items methods
+  async getInvoiceItems(invoiceId: number): Promise<InvoiceItem[]> {
+    return Array.from(this.invoiceItems.values())
+      .filter(item => item.invoiceId === invoiceId);
+  }
+  
+  async getInvoiceItem(id: number): Promise<InvoiceItem | undefined> {
+    return this.invoiceItems.get(id);
+  }
+  
+  async addInvoiceItem(item: InsertInvoiceItem): Promise<InvoiceItem> {
+    const id = this.invoiceItemCurrentId++;
+    const now = new Date();
+    
+    const newItem: InvoiceItem = {
+      ...item,
+      id,
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    this.invoiceItems.set(id, newItem);
+    
+    // Update invoice totals
+    const invoice = await this.getInvoice(item.invoiceId);
+    if (invoice) {
+      const invoiceItems = await this.getInvoiceItems(item.invoiceId);
+      const subtotal = invoiceItems.reduce((sum, item) => sum + item.totalPrice, 0);
+      
+      await this.updateInvoice(item.invoiceId, {
+        subtotal,
+        total: subtotal - (invoice.discount || 0) + (invoice.tax || 0)
+      });
+    }
+    
+    return newItem;
+  }
+  
+  async updateInvoiceItem(id: number, item: Partial<InsertInvoiceItem>): Promise<InvoiceItem | undefined> {
+    const existingItem = this.invoiceItems.get(id);
+    if (!existingItem) return undefined;
+    
+    const updatedItem = {
+      ...existingItem,
+      ...item,
+      updatedAt: new Date()
+    };
+    
+    this.invoiceItems.set(id, updatedItem);
+    
+    // Update invoice totals
+    const invoice = await this.getInvoice(existingItem.invoiceId);
+    if (invoice) {
+      const invoiceItems = await this.getInvoiceItems(existingItem.invoiceId);
+      const subtotal = invoiceItems.reduce((sum, item) => sum + item.totalPrice, 0);
+      
+      await this.updateInvoice(existingItem.invoiceId, {
+        subtotal,
+        total: subtotal - (invoice.discount || 0) + (invoice.tax || 0)
+      });
+    }
+    
+    return updatedItem;
+  }
+  
+  async deleteInvoiceItem(id: number): Promise<boolean> {
+    const item = this.invoiceItems.get(id);
+    if (!item) return false;
+    
+    const invoiceId = item.invoiceId;
+    const result = this.invoiceItems.delete(id);
+    
+    // Update invoice totals
+    const invoice = await this.getInvoice(invoiceId);
+    if (invoice) {
+      const invoiceItems = await this.getInvoiceItems(invoiceId);
+      const subtotal = invoiceItems.reduce((sum, item) => sum + item.totalPrice, 0);
+      
+      await this.updateInvoice(invoiceId, {
+        subtotal,
+        total: subtotal - (invoice.discount || 0) + (invoice.tax || 0)
+      });
+    }
+    
+    return result;
+  }
+  
+  // Payment methods
+  async getAllPayments(): Promise<Payment[]> {
+    return Array.from(this.payments.values());
+  }
+  
+  async getPayment(id: number): Promise<Payment | undefined> {
+    return this.payments.get(id);
+  }
+  
+  async getPaymentsByInvoiceId(invoiceId: number): Promise<Payment[]> {
+    return Array.from(this.payments.values())
+      .filter(payment => payment.invoiceId === invoiceId);
+  }
+  
+  async createPayment(payment: InsertPayment): Promise<Payment> {
+    const id = this.paymentCurrentId++;
+    const now = new Date();
+    
+    const newPayment: Payment = {
+      ...payment,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      paymentDate: payment.paymentDate || now
+    };
+    
+    this.payments.set(id, newPayment);
+    
+    // Update invoice payment status
+    const invoice = await this.getInvoice(payment.invoiceId);
+    if (invoice) {
+      const payments = await this.getPaymentsByInvoiceId(payment.invoiceId);
+      const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+      
+      let status: string = invoice.status;
+      if (totalPaid >= invoice.total) {
+        status = "PAID";
+      } else if (totalPaid > 0) {
+        status = "PARTIALLY_PAID";
+      }
+      
+      await this.updateInvoice(payment.invoiceId, {
+        paidAmount: totalPaid,
+        dueAmount: invoice.total - totalPaid,
+        status,
+        paidDate: totalPaid >= invoice.total ? new Date() : invoice.paidDate
+      });
+    }
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Payment Recorded",
+      description: `Payment of ${payment.amount} recorded for invoice: ${invoice?.invoiceNumber}`,
+      referenceType: "payment",
+      referenceId: id,
+      userId: payment.receivedBy
+    });
+    
+    return newPayment;
+  }
+  
+  async updatePayment(id: number, payment: Partial<InsertPayment>): Promise<Payment | undefined> {
+    const existingPayment = this.payments.get(id);
+    if (!existingPayment) return undefined;
+    
+    const updatedPayment = {
+      ...existingPayment,
+      ...payment,
+      updatedAt: new Date()
+    };
+    
+    this.payments.set(id, updatedPayment);
+    
+    // Update invoice status if amount changed
+    if (payment.amount !== undefined && payment.amount !== existingPayment.amount) {
+      const invoice = await this.getInvoice(existingPayment.invoiceId);
+      if (invoice) {
+        const payments = await this.getPaymentsByInvoiceId(existingPayment.invoiceId);
+        const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+        
+        let status: string = invoice.status;
+        if (totalPaid >= invoice.total) {
+          status = "PAID";
+        } else if (totalPaid > 0) {
+          status = "PARTIALLY_PAID";
+        } else {
+          status = invoice.sentDate ? "SENT" : "DRAFT";
+        }
+        
+        await this.updateInvoice(existingPayment.invoiceId, {
+          paidAmount: totalPaid,
+          dueAmount: invoice.total - totalPaid,
+          status,
+          paidDate: totalPaid >= invoice.total ? new Date() : null
+        });
+      }
+    }
+    
+    return updatedPayment;
+  }
+  
+  async deletePayment(id: number): Promise<boolean> {
+    const payment = this.payments.get(id);
+    if (!payment) return false;
+    
+    const result = this.payments.delete(id);
+    
+    // Update invoice status
+    const invoice = await this.getInvoice(payment.invoiceId);
+    if (invoice) {
+      const payments = await this.getPaymentsByInvoiceId(payment.invoiceId);
+      const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+      
+      let status: string = invoice.status;
+      if (totalPaid >= invoice.total) {
+        status = "PAID";
+      } else if (totalPaid > 0) {
+        status = "PARTIALLY_PAID";
+      } else {
+        status = invoice.sentDate ? "SENT" : "DRAFT";
+      }
+      
+      await this.updateInvoice(payment.invoiceId, {
+        paidAmount: totalPaid,
+        dueAmount: invoice.total - totalPaid,
+        status,
+        paidDate: totalPaid >= invoice.total ? new Date() : null
+      });
+    }
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Payment Deleted",
+      description: `Payment of ${payment.amount} deleted for invoice: ${invoice?.invoiceNumber}`,
+      referenceType: "payment",
+      referenceId: id
+    });
+    
+    return result;
+  }
+  
+  async recordInvoicePayment(invoiceId: number, amount: number, method: string, receivedBy: number, reference?: string, notes?: string): Promise<Payment> {
+    return this.createPayment({
+      invoiceId,
+      amount,
+      method: method as any,
+      receivedBy,
+      transactionReference: reference,
+      notes,
+      paymentDate: new Date()
+    });
+  }
+  
+  // Billing settings methods
+  async getBillingSettings(): Promise<BillingSetting | undefined> {
+    // For simplicity, return the first billing settings entry
+    return Array.from(this.billingSettings.values())[0];
+  }
+  
+  async updateBillingSettings(settings: Partial<InsertBillingSetting>): Promise<BillingSetting> {
+    // Get existing settings or create new ones
+    const existingSettings = await this.getBillingSettings();
+    
+    if (existingSettings) {
+      // Update existing settings
+      const updatedSettings = {
+        ...existingSettings,
+        ...settings,
+        updatedAt: new Date()
+      };
+      
+      this.billingSettings.set(existingSettings.id, updatedSettings);
+      
+      // Create activity log
+      await this.createActivityLog({
+        action: "Billing Settings Updated",
+        description: `Updated billing settings for ${updatedSettings.companyName}`,
+        referenceType: "billing_settings",
+        referenceId: existingSettings.id
+      });
+      
+      return updatedSettings;
+    } else {
+      // Create new settings
+      const id = this.billingSettingCurrentId++;
+      const now = new Date();
+      
+      const companyName = settings.companyName || "Default Company";
+      
+      const newSettings: BillingSetting = {
+        id,
+        companyName,
+        companyAddress: settings.companyAddress || null,
+        companyPhone: settings.companyPhone || null,
+        companyEmail: settings.companyEmail || null,
+        companyWebsite: settings.companyWebsite || null,
+        companyLogo: settings.companyLogo || null,
+        taxIdentificationNumber: settings.taxIdentificationNumber || null,
+        defaultTaxRate: settings.defaultTaxRate || 0,
+        defaultPaymentTerms: settings.defaultPaymentTerms || 30,
+        invoicePrefix: settings.invoicePrefix || "INV-",
+        invoiceFooter: settings.invoiceFooter || null,
+        enableAutomaticReminders: settings.enableAutomaticReminders !== undefined ? settings.enableAutomaticReminders : true,
+        reminderDays: settings.reminderDays || [7, 3, 1],
+        updatedAt: now
+      };
+      
+      this.billingSettings.set(id, newSettings);
+      
+      // Create activity log
+      await this.createActivityLog({
+        action: "Billing Settings Created",
+        description: `Created billing settings for ${newSettings.companyName}`,
+        referenceType: "billing_settings",
+        referenceId: id
+      });
+      
+      return newSettings;
+    }
+  }
+  
+  // Tax rate methods
+  async getAllTaxRates(): Promise<TaxRate[]> {
+    return Array.from(this.taxRates.values());
+  }
+  
+  async getTaxRate(id: number): Promise<TaxRate | undefined> {
+    return this.taxRates.get(id);
+  }
+  
+  async getDefaultTaxRate(): Promise<TaxRate | undefined> {
+    return Array.from(this.taxRates.values()).find(rate => rate.isDefault);
+  }
+  
+  async createTaxRate(taxRate: InsertTaxRate): Promise<TaxRate> {
+    const id = this.taxRateCurrentId++;
+    const now = new Date();
+    
+    const newTaxRate: TaxRate = {
+      ...taxRate,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      isActive: taxRate.isActive !== undefined ? taxRate.isActive : true,
+      isDefault: taxRate.isDefault !== undefined ? taxRate.isDefault : false
+    };
+    
+    // If this is set as default, update other tax rates
+    if (newTaxRate.isDefault) {
+      await this.setDefaultTaxRate(id);
+    }
+    
+    this.taxRates.set(id, newTaxRate);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Tax Rate Created",
+      description: `Created tax rate: ${newTaxRate.name} (${newTaxRate.rate}%)`,
+      referenceType: "tax_rate",
+      referenceId: id
+    });
+    
+    return newTaxRate;
+  }
+  
+  async updateTaxRate(id: number, taxRate: Partial<InsertTaxRate>): Promise<TaxRate | undefined> {
+    const existingRate = this.taxRates.get(id);
+    if (!existingRate) return undefined;
+    
+    const updatedRate = {
+      ...existingRate,
+      ...taxRate,
+      updatedAt: new Date()
+    };
+    
+    // If this is being set as default, update other tax rates
+    if (taxRate.isDefault && !existingRate.isDefault) {
+      await this.setDefaultTaxRate(id);
+    }
+    
+    this.taxRates.set(id, updatedRate);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Tax Rate Updated",
+      description: `Updated tax rate: ${updatedRate.name} (${updatedRate.rate}%)`,
+      referenceType: "tax_rate",
+      referenceId: id
+    });
+    
+    return updatedRate;
+  }
+  
+  async deleteTaxRate(id: number): Promise<boolean> {
+    const taxRate = this.taxRates.get(id);
+    if (!taxRate) return false;
+    
+    // Don't allow deletion of default tax rate
+    if (taxRate.isDefault) {
+      throw new Error("Cannot delete default tax rate");
+    }
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Tax Rate Deleted",
+      description: `Deleted tax rate: ${taxRate.name}`,
+      referenceType: "tax_rate",
+      referenceId: id
+    });
+    
+    return this.taxRates.delete(id);
+  }
+  
+  async setDefaultTaxRate(id: number): Promise<TaxRate | undefined> {
+    // First, set all existing tax rates to non-default
+    for (const [existingId, existingRate] of this.taxRates.entries()) {
+      if (existingId !== id && existingRate.isDefault) {
+        this.taxRates.set(existingId, { 
+          ...existingRate, 
+          isDefault: false, 
+          updatedAt: new Date() 
+        });
+      }
+    }
+    
+    // Now set the specified tax rate as default
+    const taxRate = this.taxRates.get(id);
+    if (!taxRate) return undefined;
+    
+    const updatedTaxRate = {
+      ...taxRate,
+      isDefault: true,
+      updatedAt: new Date()
+    };
+    
+    this.taxRates.set(id, updatedTaxRate);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Default Tax Rate Changed",
+      description: `Set default tax rate to: ${updatedTaxRate.name} (${updatedTaxRate.rate}%)`,
+      referenceType: "tax_rate",
+      referenceId: id
+    });
+    
+    return updatedTaxRate;
+  }
+  
+  // Discount methods
+  async getAllDiscounts(): Promise<Discount[]> {
+    return Array.from(this.discounts.values());
+  }
+  
+  async getDiscount(id: number): Promise<Discount | undefined> {
+    return this.discounts.get(id);
+  }
+  
+  async getActiveDiscounts(): Promise<Discount[]> {
+    const now = new Date();
+    return Array.from(this.discounts.values())
+      .filter(discount => {
+        return discount.isActive && 
+               (!discount.startDate || new Date(discount.startDate) <= now) &&
+               (!discount.endDate || new Date(discount.endDate) >= now);
+      });
+  }
+  
+  async createDiscount(discount: InsertDiscount): Promise<Discount> {
+    const id = this.discountCurrentId++;
+    const now = new Date();
+    
+    const newDiscount: Discount = {
+      ...discount,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      isActive: discount.isActive !== undefined ? discount.isActive : true
+    };
+    
+    this.discounts.set(id, newDiscount);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Discount Created",
+      description: `Created discount: ${newDiscount.name}`,
+      referenceType: "discount",
+      referenceId: id
+    });
+    
+    return newDiscount;
+  }
+  
+  async updateDiscount(id: number, discount: Partial<InsertDiscount>): Promise<Discount | undefined> {
+    const existingDiscount = this.discounts.get(id);
+    if (!existingDiscount) return undefined;
+    
+    const updatedDiscount = {
+      ...existingDiscount,
+      ...discount,
+      updatedAt: new Date()
+    };
+    
+    this.discounts.set(id, updatedDiscount);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Discount Updated",
+      description: `Updated discount: ${updatedDiscount.name}`,
+      referenceType: "discount",
+      referenceId: id
+    });
+    
+    return updatedDiscount;
+  }
+  
+  async deleteDiscount(id: number): Promise<boolean> {
+    const discount = this.discounts.get(id);
+    if (!discount) return false;
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Discount Deleted",
+      description: `Deleted discount: ${discount.name}`,
+      referenceType: "discount",
+      referenceId: id
+    });
+    
+    return this.discounts.delete(id);
+  }
+  
+  // Billing reminder logs
+  async getAllBillingReminderLogs(): Promise<BillingReminderLog[]> {
+    return Array.from(this.billingReminderLogs.values());
+  }
+  
+  async getBillingReminderLog(id: number): Promise<BillingReminderLog | undefined> {
+    return this.billingReminderLogs.get(id);
+  }
+  
+  async getBillingReminderLogsByInvoiceId(invoiceId: number): Promise<BillingReminderLog[]> {
+    return Array.from(this.billingReminderLogs.values())
+      .filter(log => log.invoiceId === invoiceId)
+      .sort((a, b) => new Date(b.sentDate).getTime() - new Date(a.sentDate).getTime());
+  }
+  
+  async createBillingReminderLog(log: InsertBillingReminderLog): Promise<BillingReminderLog> {
+    const id = this.billingReminderLogCurrentId++;
+    const now = new Date();
+    
+    const newLog: BillingReminderLog = {
+      ...log,
+      id,
+      createdAt: now,
+      sentDate: log.sentDate || now
+    };
+    
+    this.billingReminderLogs.set(id, newLog);
+    
+    return newLog;
+  }
+  
+  async deleteBillingReminderLog(id: number): Promise<boolean> {
+    return this.billingReminderLogs.delete(id);
   }
 }
 

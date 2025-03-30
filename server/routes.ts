@@ -3288,6 +3288,683 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Billing Routes
+  
+  // Invoice routes
+  app.get("/api/invoices", async (req, res) => {
+    try {
+      let invoices;
+      
+      // Handle filtering options
+      const { customerId, status, fromDate, toDate, overdue, dueInDays } = req.query;
+      
+      if (overdue === "true") {
+        invoices = await storage.getOverdueInvoices();
+      } else if (dueInDays) {
+        const days = parseInt(dueInDays as string);
+        if (isNaN(days)) {
+          return res.status(400).json({ error: "Invalid dueInDays parameter" });
+        }
+        invoices = await storage.getInvoiceDueInDays(days);
+      } else if (customerId) {
+        invoices = await storage.getInvoicesByCustomerId(parseInt(customerId as string));
+      } else if (status) {
+        invoices = await storage.getInvoicesByStatus(status as string);
+      } else if (fromDate && toDate) {
+        invoices = await storage.getInvoicesByDateRange(
+          new Date(fromDate as string),
+          new Date(toDate as string)
+        );
+      } else {
+        invoices = await storage.getAllInvoices();
+      }
+      
+      res.json(invoices);
+    } catch (error) {
+      console.error("Error fetching invoices:", error);
+      res.status(500).json({ error: "Failed to fetch invoices" });
+    }
+  });
+
+  app.get("/api/invoices/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(id);
+      
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Get invoice items
+      const items = await storage.getInvoiceItems(id);
+      
+      // Get payments
+      const payments = await storage.getPaymentsByInvoiceId(id);
+      
+      res.json({
+        ...invoice,
+        items,
+        payments
+      });
+    } catch (error) {
+      console.error("Error fetching invoice:", error);
+      res.status(500).json({ error: "Failed to fetch invoice" });
+    }
+  });
+
+  app.post("/api/invoices", async (req, res) => {
+    try {
+      const invoiceData = req.body;
+      const items = invoiceData.items || [];
+      
+      // Delete items from invoice data as we'll handle them separately
+      delete invoiceData.items;
+      
+      // Validate invoice data
+      const now = new Date();
+      if (!invoiceData.issueDate) {
+        invoiceData.issueDate = now;
+      }
+      
+      if (!invoiceData.dueDate) {
+        // Default to 30 days from issue date
+        const dueDate = new Date(invoiceData.issueDate);
+        dueDate.setDate(dueDate.getDate() + 30);
+        invoiceData.dueDate = dueDate;
+      }
+      
+      if (!invoiceData.status) {
+        invoiceData.status = "DRAFT";
+      }
+      
+      // Create invoice
+      const invoice = await storage.createInvoice(invoiceData, items);
+      
+      res.status(201).json(invoice);
+    } catch (error) {
+      console.error("Error creating invoice:", error);
+      res.status(500).json({ error: "Failed to create invoice" });
+    }
+  });
+
+  app.patch("/api/invoices/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const invoiceData = req.body;
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(id);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Update invoice
+      const updatedInvoice = await storage.updateInvoice(id, invoiceData);
+      
+      res.json(updatedInvoice);
+    } catch (error) {
+      console.error("Error updating invoice:", error);
+      res.status(500).json({ error: "Failed to update invoice" });
+    }
+  });
+
+  app.delete("/api/invoices/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(id);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Check if invoice can be deleted (e.g., not in PAID status)
+      if (existingInvoice.status === "PAID" || existingInvoice.status === "PARTIALLY_PAID") {
+        return res.status(400).json({ 
+          error: "Cannot delete a paid invoice. Consider cancelling it instead." 
+        });
+      }
+      
+      // Delete invoice
+      await storage.deleteInvoice(id);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting invoice:", error);
+      res.status(500).json({ error: "Failed to delete invoice" });
+    }
+  });
+
+  // Invoice status update endpoints
+  app.post("/api/invoices/:id/send", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(id);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Check if invoice can be sent (must be in DRAFT status)
+      if (existingInvoice.status !== "DRAFT") {
+        return res.status(400).json({ 
+          error: "Only invoices in DRAFT status can be sent" 
+        });
+      }
+      
+      // Update invoice status to SENT
+      const updatedInvoice = await storage.updateInvoice(id, {
+        status: "SENT",
+        sentDate: new Date()
+      });
+      
+      res.json(updatedInvoice);
+    } catch (error) {
+      console.error("Error sending invoice:", error);
+      res.status(500).json({ error: "Failed to send invoice" });
+    }
+  });
+
+  app.post("/api/invoices/:id/cancel", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(id);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Check if invoice can be cancelled (not in PAID or CANCELLED status)
+      if (existingInvoice.status === "PAID" || existingInvoice.status === "CANCELLED" || existingInvoice.status === "VOID") {
+        return res.status(400).json({ 
+          error: "Cannot cancel an invoice that is already paid, cancelled, or void" 
+        });
+      }
+      
+      // Update invoice status to CANCELLED
+      const updatedInvoice = await storage.updateInvoice(id, {
+        status: "CANCELLED"
+      });
+      
+      res.json(updatedInvoice);
+    } catch (error) {
+      console.error("Error cancelling invoice:", error);
+      res.status(500).json({ error: "Failed to cancel invoice" });
+    }
+  });
+
+  app.post("/api/invoices/:id/void", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(id);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Check if invoice can be voided (not in VOID status)
+      if (existingInvoice.status === "VOID") {
+        return res.status(400).json({ 
+          error: "Invoice is already void" 
+        });
+      }
+      
+      // Update invoice status to VOID
+      const updatedInvoice = await storage.updateInvoice(id, {
+        status: "VOID"
+      });
+      
+      res.json(updatedInvoice);
+    } catch (error) {
+      console.error("Error voiding invoice:", error);
+      res.status(500).json({ error: "Failed to void invoice" });
+    }
+  });
+
+  // Invoice items routes
+  app.get("/api/invoices/:invoiceId/items", async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(invoiceId);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Get invoice items
+      const items = await storage.getInvoiceItems(invoiceId);
+      
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching invoice items:", error);
+      res.status(500).json({ error: "Failed to fetch invoice items" });
+    }
+  });
+
+  app.post("/api/invoices/:invoiceId/items", async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(invoiceId);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Check if invoice can be modified (not in PAID, CANCELLED, or VOID status)
+      if (["PAID", "CANCELLED", "VOID"].includes(existingInvoice.status)) {
+        return res.status(400).json({ 
+          error: "Cannot modify a paid, cancelled, or void invoice" 
+        });
+      }
+      
+      const itemData = req.body;
+      itemData.invoiceId = invoiceId;
+      
+      // Create invoice item
+      const item = await storage.addInvoiceItem(itemData);
+      
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error creating invoice item:", error);
+      res.status(500).json({ error: "Failed to create invoice item" });
+    }
+  });
+
+  app.patch("/api/invoices/:invoiceId/items/:itemId", async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      const itemId = parseInt(req.params.itemId);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(invoiceId);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Check if invoice can be modified
+      if (["PAID", "CANCELLED", "VOID"].includes(existingInvoice.status)) {
+        return res.status(400).json({ 
+          error: "Cannot modify a paid, cancelled, or void invoice" 
+        });
+      }
+      
+      // Validate item exists and belongs to the invoice
+      const existingItem = await storage.getInvoiceItem(itemId);
+      if (!existingItem || existingItem.invoiceId !== invoiceId) {
+        return res.status(404).json({ error: "Invoice item not found" });
+      }
+      
+      // Update invoice item
+      const updatedItem = await storage.updateInvoiceItem(itemId, req.body);
+      
+      res.json(updatedItem);
+    } catch (error) {
+      console.error("Error updating invoice item:", error);
+      res.status(500).json({ error: "Failed to update invoice item" });
+    }
+  });
+
+  app.delete("/api/invoices/:invoiceId/items/:itemId", async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      const itemId = parseInt(req.params.itemId);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(invoiceId);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Check if invoice can be modified
+      if (["PAID", "CANCELLED", "VOID"].includes(existingInvoice.status)) {
+        return res.status(400).json({ 
+          error: "Cannot modify a paid, cancelled, or void invoice" 
+        });
+      }
+      
+      // Validate item exists and belongs to the invoice
+      const existingItem = await storage.getInvoiceItem(itemId);
+      if (!existingItem || existingItem.invoiceId !== invoiceId) {
+        return res.status(404).json({ error: "Invoice item not found" });
+      }
+      
+      // Delete invoice item
+      await storage.deleteInvoiceItem(itemId);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting invoice item:", error);
+      res.status(500).json({ error: "Failed to delete invoice item" });
+    }
+  });
+
+  // Payment routes
+  app.get("/api/payments", async (req, res) => {
+    try {
+      const payments = await storage.getAllPayments();
+      res.json(payments);
+    } catch (error) {
+      console.error("Error fetching payments:", error);
+      res.status(500).json({ error: "Failed to fetch payments" });
+    }
+  });
+
+  app.get("/api/invoices/:invoiceId/payments", async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(invoiceId);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Get payments for invoice
+      const payments = await storage.getPaymentsByInvoiceId(invoiceId);
+      
+      res.json(payments);
+    } catch (error) {
+      console.error("Error fetching payments:", error);
+      res.status(500).json({ error: "Failed to fetch payments" });
+    }
+  });
+
+  app.post("/api/invoices/:invoiceId/payments", async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      
+      // Validate invoice exists
+      const existingInvoice = await storage.getInvoice(invoiceId);
+      if (!existingInvoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      // Check if invoice can accept payments
+      if (["CANCELLED", "VOID"].includes(existingInvoice.status)) {
+        return res.status(400).json({ 
+          error: "Cannot add payments to a cancelled or void invoice" 
+        });
+      }
+      
+      const paymentData = req.body;
+      paymentData.invoiceId = invoiceId;
+      
+      // Create payment
+      const payment = await storage.createPayment(paymentData);
+      
+      res.status(201).json(payment);
+    } catch (error) {
+      console.error("Error creating payment:", error);
+      res.status(500).json({ error: "Failed to create payment" });
+    }
+  });
+
+  app.patch("/api/payments/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate payment exists
+      const existingPayment = await storage.getPayment(id);
+      if (!existingPayment) {
+        return res.status(404).json({ error: "Payment not found" });
+      }
+      
+      // Update payment
+      const updatedPayment = await storage.updatePayment(id, req.body);
+      
+      res.json(updatedPayment);
+    } catch (error) {
+      console.error("Error updating payment:", error);
+      res.status(500).json({ error: "Failed to update payment" });
+    }
+  });
+
+  app.delete("/api/payments/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate payment exists
+      const existingPayment = await storage.getPayment(id);
+      if (!existingPayment) {
+        return res.status(404).json({ error: "Payment not found" });
+      }
+      
+      // Delete payment
+      await storage.deletePayment(id);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting payment:", error);
+      res.status(500).json({ error: "Failed to delete payment" });
+    }
+  });
+
+  // Billing settings routes
+  app.get("/api/billing-settings", async (req, res) => {
+    try {
+      const settings = await storage.getBillingSettings();
+      res.json(settings || {});
+    } catch (error) {
+      console.error("Error fetching billing settings:", error);
+      res.status(500).json({ error: "Failed to fetch billing settings" });
+    }
+  });
+
+  app.post("/api/billing-settings", async (req, res) => {
+    try {
+      const settings = await storage.updateBillingSettings(req.body);
+      res.json(settings);
+    } catch (error) {
+      console.error("Error updating billing settings:", error);
+      res.status(500).json({ error: "Failed to update billing settings" });
+    }
+  });
+
+  // Tax rates routes
+  app.get("/api/tax-rates", async (req, res) => {
+    try {
+      const taxRates = await storage.getAllTaxRates();
+      res.json(taxRates);
+    } catch (error) {
+      console.error("Error fetching tax rates:", error);
+      res.status(500).json({ error: "Failed to fetch tax rates" });
+    }
+  });
+
+  app.get("/api/tax-rates/default", async (req, res) => {
+    try {
+      const defaultTaxRate = await storage.getDefaultTaxRate();
+      if (!defaultTaxRate) {
+        return res.status(404).json({ error: "No default tax rate set" });
+      }
+      res.json(defaultTaxRate);
+    } catch (error) {
+      console.error("Error fetching default tax rate:", error);
+      res.status(500).json({ error: "Failed to fetch default tax rate" });
+    }
+  });
+
+  app.get("/api/tax-rates/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const taxRate = await storage.getTaxRate(id);
+      
+      if (!taxRate) {
+        return res.status(404).json({ error: "Tax rate not found" });
+      }
+      
+      res.json(taxRate);
+    } catch (error) {
+      console.error("Error fetching tax rate:", error);
+      res.status(500).json({ error: "Failed to fetch tax rate" });
+    }
+  });
+
+  app.post("/api/tax-rates", async (req, res) => {
+    try {
+      const taxRate = await storage.createTaxRate(req.body);
+      res.status(201).json(taxRate);
+    } catch (error) {
+      console.error("Error creating tax rate:", error);
+      res.status(500).json({ error: "Failed to create tax rate" });
+    }
+  });
+
+  app.patch("/api/tax-rates/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate tax rate exists
+      const existingTaxRate = await storage.getTaxRate(id);
+      if (!existingTaxRate) {
+        return res.status(404).json({ error: "Tax rate not found" });
+      }
+      
+      // Update tax rate
+      const updatedTaxRate = await storage.updateTaxRate(id, req.body);
+      
+      res.json(updatedTaxRate);
+    } catch (error) {
+      console.error("Error updating tax rate:", error);
+      res.status(500).json({ error: "Failed to update tax rate" });
+    }
+  });
+
+  app.delete("/api/tax-rates/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate tax rate exists
+      const existingTaxRate = await storage.getTaxRate(id);
+      if (!existingTaxRate) {
+        return res.status(404).json({ error: "Tax rate not found" });
+      }
+      
+      // Check if it's the default tax rate
+      if (existingTaxRate.isDefault) {
+        return res.status(400).json({ 
+          error: "Cannot delete the default tax rate. Set another tax rate as default first." 
+        });
+      }
+      
+      // Delete tax rate
+      await storage.deleteTaxRate(id);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting tax rate:", error);
+      res.status(500).json({ error: "Failed to delete tax rate" });
+    }
+  });
+
+  app.post("/api/tax-rates/:id/set-default", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate tax rate exists
+      const existingTaxRate = await storage.getTaxRate(id);
+      if (!existingTaxRate) {
+        return res.status(404).json({ error: "Tax rate not found" });
+      }
+      
+      // Set as default
+      const updatedTaxRate = await storage.setDefaultTaxRate(id);
+      
+      res.json(updatedTaxRate);
+    } catch (error) {
+      console.error("Error setting default tax rate:", error);
+      res.status(500).json({ error: "Failed to set default tax rate" });
+    }
+  });
+
+  // Discount routes
+  app.get("/api/discounts", async (req, res) => {
+    try {
+      const activeOnly = req.query.activeOnly === "true";
+      const discounts = activeOnly ? await storage.getActiveDiscounts() : await storage.getAllDiscounts();
+      res.json(discounts);
+    } catch (error) {
+      console.error("Error fetching discounts:", error);
+      res.status(500).json({ error: "Failed to fetch discounts" });
+    }
+  });
+
+  app.get("/api/discounts/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const discount = await storage.getDiscount(id);
+      
+      if (!discount) {
+        return res.status(404).json({ error: "Discount not found" });
+      }
+      
+      res.json(discount);
+    } catch (error) {
+      console.error("Error fetching discount:", error);
+      res.status(500).json({ error: "Failed to fetch discount" });
+    }
+  });
+
+  app.post("/api/discounts", async (req, res) => {
+    try {
+      const discount = await storage.createDiscount(req.body);
+      res.status(201).json(discount);
+    } catch (error) {
+      console.error("Error creating discount:", error);
+      res.status(500).json({ error: "Failed to create discount" });
+    }
+  });
+
+  app.patch("/api/discounts/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate discount exists
+      const existingDiscount = await storage.getDiscount(id);
+      if (!existingDiscount) {
+        return res.status(404).json({ error: "Discount not found" });
+      }
+      
+      // Update discount
+      const updatedDiscount = await storage.updateDiscount(id, req.body);
+      
+      res.json(updatedDiscount);
+    } catch (error) {
+      console.error("Error updating discount:", error);
+      res.status(500).json({ error: "Failed to update discount" });
+    }
+  });
+
+  app.delete("/api/discounts/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Validate discount exists
+      const existingDiscount = await storage.getDiscount(id);
+      if (!existingDiscount) {
+        return res.status(404).json({ error: "Discount not found" });
+      }
+      
+      // Delete discount
+      await storage.deleteDiscount(id);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting discount:", error);
+      res.status(500).json({ error: "Failed to delete discount" });
+    }
+  });
+
+  // Health Check
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
+  });
+
   const httpServer = createServer(app);
   
   // Initialize WebSocket service for real-time inventory synchronization

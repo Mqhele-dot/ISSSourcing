@@ -460,7 +460,8 @@ export type UserRole = "admin" | "manager" | "warehouse_staff" | "sales" | "audi
 export type Resource = "inventory" | "purchases" | "suppliers" | "categories" | "warehouses" | 
   "reports" | "users" | "settings" | "reorder_requests" | "stock_movements" |
   "analytics" | "dashboards" | "notifications" | "audit_logs" | "user_profiles" |
-  "documents" | "custom_roles" | "activity_logs" | "import_export" | "system";
+  "documents" | "custom_roles" | "activity_logs" | "import_export" | "system" |
+  "invoices" | "billing" | "taxes" | "payments";
 export type PermissionType = "create" | "read" | "update" | "delete" | "approve" | "export" | "import" | "assign" |
   "manage" | "execute" | "transfer" | "print" | "scan" | "view_reports" | "admin" | 
   "configure" | "restrict" | "download" | "upload" | "audit" | "verify";
@@ -512,7 +513,11 @@ export enum Resource {
   USERS = "users",
   SETTINGS = "settings",
   REORDER_REQUESTS = "reorder_requests",
-  STOCK_MOVEMENTS = "stock_movements"
+  STOCK_MOVEMENTS = "stock_movements",
+  INVOICES = "invoices",
+  BILLING = "billing",
+  TAXES = "taxes",
+  PAYMENTS = "payments"
 }
 
 export type Category = typeof categories.$inferSelect;
@@ -1139,3 +1144,282 @@ export type InsertUserPerformanceMetric = z.infer<typeof insertUserPerformanceMe
 
 export type TimeRestriction = typeof timeRestrictions.$inferSelect;
 export type InsertTimeRestriction = z.infer<typeof insertTimeRestrictionSchema>;
+
+// Invoice Status Enum
+export const invoiceStatusEnum = pgEnum("invoice_status", [
+  "DRAFT",
+  "SENT",
+  "OVERDUE",
+  "PAID",
+  "CANCELLED",
+  "PARTIALLY_PAID",
+  "VOID"
+]);
+
+// Invoice Table Schema
+export const invoices = pgTable("invoices", {
+  id: serial("id").primaryKey(),
+  invoiceNumber: text("invoice_number").notNull().unique(),
+  customerId: integer("customer_id").notNull(), // Reference to customer (can be users.id)
+  status: invoiceStatusEnum("status").notNull().default("DRAFT"),
+  issueDate: timestamp("issue_date").defaultNow().notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  subtotal: real("subtotal").notNull().default(0),
+  tax: real("tax").default(0),
+  discount: real("discount").default(0),
+  total: real("total").notNull().default(0),
+  notes: text("notes"),
+  termsAndConditions: text("terms_and_conditions"),
+  purchaseOrderId: integer("purchase_order_id"), // Optional reference to a purchase order
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  paidAmount: real("paid_amount").default(0),
+  dueAmount: real("due_amount").default(0),
+  sentDate: timestamp("sent_date"),
+  paidDate: timestamp("paid_date"),
+  createdBy: integer("created_by").notNull(), // User who created the invoice
+});
+
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  sentDate: true,
+  paidDate: true,
+}).partial({
+  invoiceNumber: true,
+  tax: true,
+  discount: true,
+  notes: true,
+  termsAndConditions: true,
+  purchaseOrderId: true,
+  paidAmount: true,
+  dueAmount: true,
+});
+
+export const invoiceFormSchema = insertInvoiceSchema.extend({
+  customerId: z.number().int().positive("Customer ID must be a positive number"),
+  subtotal: z.number().min(0, "Subtotal must be a positive number"),
+  total: z.number().min(0, "Total must be a positive number"),
+  dueDate: z.date().min(new Date(), "Due date must be in the future"),
+});
+
+// Invoice Items Table Schema
+export const invoiceItems = pgTable("invoice_items", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull(),
+  itemId: integer("item_id").notNull(),
+  description: text("description").notNull(),
+  quantity: real("quantity").notNull().default(1),
+  unitPrice: real("unit_price").notNull(),
+  discount: real("discount").default(0),
+  taxRate: real("tax_rate").default(0),
+  taxAmount: real("tax_amount").default(0),
+  totalPrice: real("total_price").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertInvoiceItemSchema = createInsertSchema(invoiceItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  description: true,
+  discount: true,
+  taxRate: true,
+  taxAmount: true,
+});
+
+export const invoiceItemFormSchema = insertInvoiceItemSchema.extend({
+  itemId: z.number().int().positive("Item ID must be a positive number"),
+  quantity: z.number().min(0.01, "Quantity must be greater than 0"),
+  unitPrice: z.number().min(0, "Unit price must be a positive number"),
+  totalPrice: z.number().min(0, "Total price must be a positive number"),
+});
+
+// Payment Methods Enum
+export const paymentMethodEnum = pgEnum("payment_method", [
+  "CASH",
+  "CREDIT_CARD",
+  "DEBIT_CARD",
+  "BANK_TRANSFER",
+  "CHECK",
+  "PAYPAL",
+  "OTHER"
+]);
+
+// Payments Table Schema
+export const payments = pgTable("payments", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull(),
+  amount: real("amount").notNull(),
+  method: paymentMethodEnum("method").notNull().default("CASH"),
+  transactionReference: text("transaction_reference"),
+  paymentDate: timestamp("payment_date").defaultNow().notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  receivedBy: integer("received_by").notNull(), // User who received the payment
+});
+
+export const insertPaymentSchema = createInsertSchema(payments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  notes: true,
+  transactionReference: true,
+});
+
+export const paymentFormSchema = insertPaymentSchema.extend({
+  invoiceId: z.number().int().positive("Invoice ID must be a positive number"),
+  amount: z.number().min(0.01, "Amount must be greater than 0"),
+  method: z.enum(["CASH", "CREDIT_CARD", "DEBIT_CARD", "BANK_TRANSFER", "CHECK", "PAYPAL", "OTHER"]),
+});
+
+// Billing Settings Table Schema
+export const billingSettings = pgTable("billing_settings", {
+  id: serial("id").primaryKey(),
+  companyName: text("company_name").notNull(),
+  companyAddress: text("company_address"),
+  companyPhone: text("company_phone"),
+  companyEmail: text("company_email"),
+  companyWebsite: text("company_website"),
+  companyLogo: text("company_logo"),
+  taxIdentificationNumber: text("tax_identification_number"),
+  defaultTaxRate: real("default_tax_rate").default(0),
+  defaultPaymentTerms: integer("default_payment_terms").default(30), // Days
+  invoicePrefix: text("invoice_prefix").default("INV-"),
+  invoiceFooter: text("invoice_footer"),
+  enableAutomaticReminders: boolean("enable_automatic_reminders").default(true),
+  reminderDays: jsonb("reminder_days").default([7, 3, 1]), // Days before due date to send reminders
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertBillingSettingsSchema = createInsertSchema(billingSettings).omit({
+  id: true,
+  updatedAt: true,
+}).partial({
+  companyAddress: true,
+  companyPhone: true,
+  companyEmail: true,
+  companyWebsite: true,
+  companyLogo: true,
+  taxIdentificationNumber: true,
+  invoiceFooter: true,
+});
+
+export const billingSettingsFormSchema = insertBillingSettingsSchema.extend({
+  companyName: z.string().min(2, "Company name must be at least 2 characters"),
+  defaultTaxRate: z.number().min(0, "Tax rate must be a positive number").max(100, "Tax rate cannot exceed 100%"),
+  defaultPaymentTerms: z.number().int().min(1, "Payment terms must be at least 1 day"),
+});
+
+// Tax Rates Table Schema
+export const taxRates = pgTable("tax_rates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  rate: real("rate").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertTaxRateSchema = createInsertSchema(taxRates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  description: true,
+  isActive: true,
+  isDefault: true,
+});
+
+export const taxRateFormSchema = insertTaxRateSchema.extend({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  rate: z.number().min(0, "Rate must be a positive number").max(100, "Rate cannot exceed 100%"),
+});
+
+// Discounts Table Schema
+export const discounts = pgTable("discounts", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("PERCENTAGE"), // PERCENTAGE or FIXED
+  value: real("value").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertDiscountSchema = createInsertSchema(discounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  description: true,
+  isActive: true,
+  startDate: true,
+  endDate: true,
+});
+
+export const discountFormSchema = insertDiscountSchema.extend({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  type: z.enum(["PERCENTAGE", "FIXED"], {
+    errorMap: () => ({ message: "Type must be either PERCENTAGE or FIXED" }),
+  }),
+  value: z.number().min(0, "Value must be a positive number"),
+});
+
+// Billing Reminder Logs Table Schema
+export const billingReminderLogs = pgTable("billing_reminder_logs", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull(),
+  reminderType: text("reminder_type").notNull(), // PRE_DUE, OVERDUE, etc.
+  sentDate: timestamp("sent_date").defaultNow().notNull(),
+  sentTo: text("sent_to").notNull(),
+  sentMethod: text("sent_method").notNull().default("EMAIL"), // EMAIL, SMS, etc.
+  messageContent: text("message_content"),
+  status: text("status").notNull().default("SENT"), // SENT, FAILED, etc.
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertBillingReminderLogSchema = createInsertSchema(billingReminderLogs).omit({
+  id: true,
+  createdAt: true,
+}).partial({
+  messageContent: true,
+});
+
+// Types for billing schemas
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+export type InvoiceForm = z.infer<typeof invoiceFormSchema>;
+
+export type InvoiceItem = typeof invoiceItems.$inferSelect;
+export type InsertInvoiceItem = z.infer<typeof insertInvoiceItemSchema>;
+export type InvoiceItemForm = z.infer<typeof invoiceItemFormSchema>;
+
+export type Payment = typeof payments.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type PaymentForm = z.infer<typeof paymentFormSchema>;
+
+export type BillingSetting = typeof billingSettings.$inferSelect;
+export type InsertBillingSetting = z.infer<typeof insertBillingSettingsSchema>;
+export type BillingSettingForm = z.infer<typeof billingSettingsFormSchema>;
+
+export type TaxRate = typeof taxRates.$inferSelect;
+export type InsertTaxRate = z.infer<typeof insertTaxRateSchema>;
+export type TaxRateForm = z.infer<typeof taxRateFormSchema>;
+
+export type Discount = typeof discounts.$inferSelect;
+export type InsertDiscount = z.infer<typeof insertDiscountSchema>;
+export type DiscountForm = z.infer<typeof discountFormSchema>;
+
+export type BillingReminderLog = typeof billingReminderLogs.$inferSelect;
+export type InsertBillingReminderLog = z.infer<typeof insertBillingReminderLogSchema>;
