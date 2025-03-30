@@ -76,23 +76,26 @@ export const sessions = pgTable("sessions", {
   isValid: boolean("is_valid").default(true),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  lastLogin: true,
-  emailVerified: true,
-  twoFactorEnabled: true,
-  twoFactorSecret: true,
-  passwordResetToken: true,
-  passwordResetExpires: true,
-  failedLoginAttempts: true,
-  accountLocked: true,
-  lockoutUntil: true,
-  lastPasswordChange: true,
-  profilePicture: true,
-  preferences: true,
-  createdAt: true,
-  updatedAt: true,
-});
+export const insertUserSchema = createInsertSchema(users)
+  .omit({
+    id: true,
+    emailVerified: true,
+    twoFactorEnabled: true,
+    twoFactorSecret: true,
+    failedLoginAttempts: true,
+    accountLocked: true,
+    lockoutUntil: true,
+    profilePicture: true,
+    preferences: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    passwordResetToken: z.string().nullable().optional(),
+    passwordResetExpires: z.date().nullable().optional(),
+    lastLogin: z.date().nullable().optional(),
+    lastPasswordChange: z.date().nullable().optional(),
+  });
 
 // User registration form schema with validation
 export const userRegistrationSchema = insertUserSchema.extend({

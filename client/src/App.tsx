@@ -66,9 +66,10 @@ function App() {
                 <Router />
               </Route>
               <Route path="*">
-                {({ match }) => {
+                {(params) => {
                   // Don't wrap non-auth routes with AppLayout
-                  if (match && match.path === "/auth") return null;
+                  const pathname = params.pathname || "";
+                  if (pathname === "/auth") return null;
                   return (
                     <AppLayout>
                       <Router />
