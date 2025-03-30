@@ -51,12 +51,32 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByResetToken(token: string): Promise<User | undefined>;
+  getUserCustomRoleId(userId: number): Promise<number | null>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
   getUserPreferences(userId: number): Promise<UserPreference | undefined>;
   updateUserPreferences(userId: number, preferences: Partial<InsertUserPreference>): Promise<UserPreference | undefined>;
   getAllUsers(): Promise<User[]>;
   deleteUser(id: number): Promise<boolean>;
+  
+  // Role and permission methods
+  checkPermission(role: string, resource: string, permissionType: string): Promise<boolean>;
+  checkCustomRolePermission(roleId: number, resource: string, permissionType: string): Promise<boolean>;
+  getSystemRoles(): Promise<string[]>;
+  getCustomRoles(): Promise<CustomRole[]>;
+  getCustomRole(id: number): Promise<CustomRole | undefined>;
+  createCustomRole(role: InsertCustomRole): Promise<CustomRole>;
+  updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined>;
+  deleteCustomRole(id: number): Promise<boolean>;
+  getRolePermissions(role: UserRole): Promise<Permission[]>;
+  getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]>;
+  addCustomRolePermission(roleId: number, resource: Resource, permissionType: PermissionType): Promise<CustomRolePermission>;
+  removeCustomRolePermission(roleId: number, permissionId: number): Promise<boolean>;
+  
+  // User access logging
+  logUserAccess(log: InsertUserAccessLog): Promise<UserAccessLog>;
+  getUserAccessLogs(userId: number): Promise<UserAccessLog[]>;
+  getRecentUserAccessLogs(limit: number): Promise<UserAccessLog[]>;
   
   // Authentication methods
   authenticateUser(credentials: UserLogin): Promise<User | null>;
@@ -93,7 +113,7 @@ export interface IStorage {
   getPermission(id: number): Promise<Permission | undefined>;
   getPermissionsByRole(role: UserRole): Promise<Permission[]>;
   getPermissionsByResource(resource: Resource): Promise<Permission[]>;
-  checkPermission(role: UserRole, resource: Resource, permissionType: PermissionType): Promise<boolean>;
+  checkPermission(role: string, resource: string, permissionType: string): Promise<boolean>;
   createPermission(permission: InsertPermission): Permission;
   updatePermission(id: number, permission: Partial<InsertPermission>): Promise<Permission | undefined>;
   deletePermission(id: number): Promise<boolean>;
@@ -108,7 +128,7 @@ export interface IStorage {
   getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]>;
   addPermissionToCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<CustomRolePermission>;
   removePermissionFromCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<boolean>;
-  checkCustomRolePermission(roleId: number, resource: Resource, permissionType: PermissionType): Promise<boolean>;
+  checkCustomRolePermission(roleId: number, resource: string, permissionType: string): Promise<boolean>;
   
   // Enhanced user access methods
   logUserAccess(userId: number, action: string, details?: any, ip?: string, userAgent?: string): Promise<UserAccessLog>;
@@ -772,6 +792,289 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values()).find(
       (user) => user.passwordResetToken === token,
     );
+  }
+  
+  async getUserCustomRoleId(userId: number): Promise<number | null> {
+    const user = await this.getUser(userId);
+    if (!user || user.role !== 'custom') {
+      return null;
+    }
+    
+    // Look for a custom role assignment in user preferences
+    const userPrefs = await this.getUserPreferences(userId);
+    if (userPrefs && userPrefs.preferences && typeof userPrefs.preferences === 'object') {
+      const prefs = userPrefs.preferences as any;
+      return prefs.customRoleId || null;
+    }
+    
+    return null;
+  }
+  
+  // Role and permission management
+  
+  // Returns all available system roles
+  async getSystemRoles(): Promise<string[]> {
+    // Return the predefined system roles
+    return Object.values(UserRoleEnum).filter(role => role !== 'custom');
+  }
+  
+  // Check if a system role has a specific permission
+  async checkPermission(role: UserRole, resource: Resource, permissionType: PermissionType): Promise<boolean> {
+    // Admin role has all permissions
+    if (role === 'admin') {
+      return true;
+    }
+    
+    // Get predefined permissions for the role
+    const permissions = await this.getRolePermissions(role);
+    
+    // Check if the role has the requested permission
+    return permissions.some(
+      (p) => p.resource === resource && p.permissionType === permissionType
+    );
+  }
+  
+  // Get permissions for a system role
+  async getRolePermissions(role: UserRole): Promise<Permission[]> {
+    // Predefined permissions for each role
+    // In a real DB, these would be fetched from the permissions table
+    switch(role) {
+      case 'admin':
+        // Admin has all permissions on all resources
+        return this.getAllPermissions();
+        
+      case 'manager':
+        // Return manager specific permissions
+        return Array.from(this.permissions.values()).filter(p => 
+          // Managers can do everything except system-level operations
+          p.resource !== 'system' || p.permissionType !== 'admin'
+        );
+        
+      case 'warehouse_manager':
+        // Warehouse managers can manage inventory and warehouses
+        return Array.from(this.permissions.values()).filter(p => 
+          ['inventory', 'warehouses', 'stock_movements', 'reorder_requests'].includes(p.resource)
+        );
+        
+      case 'procurement_officer':
+        // Procurement officers can manage suppliers and purchases
+        return Array.from(this.permissions.values()).filter(p => 
+          ['suppliers', 'purchases', 'reorder_requests'].includes(p.resource)
+        );
+        
+      case 'inventory_clerk':
+        // Inventory clerks can only work with inventory items
+        return Array.from(this.permissions.values()).filter(p => 
+          p.resource === 'inventory' && ['read', 'create', 'update'].includes(p.permissionType)
+        );
+        
+      case 'viewer':
+        // Viewers can only read data
+        return Array.from(this.permissions.values()).filter(p => 
+          p.permissionType === 'read'
+        );
+        
+      default:
+        return [];
+    }
+  }
+  
+  // Custom roles management
+  
+  // Get all custom roles
+  async getCustomRoles(): Promise<CustomRole[]> {
+    return Array.from(this.customRoles.values());
+  }
+  
+  // Get specific custom role
+  async getCustomRole(id: number): Promise<CustomRole | undefined> {
+    return this.customRoles.get(id);
+  }
+  
+  // Get custom role by name
+  async getCustomRoleByName(name: string): Promise<CustomRole | undefined> {
+    return Array.from(this.customRoles.values()).find(r => r.name === name);
+  }
+  
+  // Create a new custom role
+  async createCustomRole(role: InsertCustomRole): Promise<CustomRole> {
+    const id = this.customRoleCurrentId++;
+    const now = new Date();
+    
+    const newRole: CustomRole = {
+      ...role,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      description: role.description || null,
+      isActive: role.isActive !== undefined ? role.isActive : true,
+      isSystemRole: false
+    };
+    
+    this.customRoles.set(id, newRole);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Custom Role Created",
+      description: `Created custom role: ${role.name}`,
+      referenceType: "custom_role",
+      referenceId: id,
+      userId: role.createdBy
+    });
+    
+    return newRole;
+  }
+  
+  // Update existing custom role
+  async updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined> {
+    const existingRole = this.customRoles.get(id);
+    if (!existingRole) return undefined;
+    
+    const updatedRole = {
+      ...existingRole,
+      ...role,
+      updatedAt: new Date()
+    };
+    
+    this.customRoles.set(id, updatedRole);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Custom Role Updated",
+      description: `Updated custom role: ${updatedRole.name}`,
+      referenceType: "custom_role",
+      referenceId: id
+    });
+    
+    return updatedRole;
+  }
+  
+  // Delete a custom role
+  async deleteCustomRole(id: number): Promise<boolean> {
+    // First remove all permissions for this role
+    const permissions = await this.getCustomRolePermissions(id);
+    for (const permission of permissions) {
+      await this.removeCustomRolePermission(id, permission.id);
+    }
+    
+    // Create activity log
+    const role = this.customRoles.get(id);
+    if (role) {
+      await this.createActivityLog({
+        action: "Custom Role Deleted",
+        description: `Deleted custom role: ${role.name}`,
+        referenceType: "custom_role",
+        referenceId: id
+      });
+    }
+    
+    return this.customRoles.delete(id);
+  }
+  
+  // Get all permissions for a custom role
+  async getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]> {
+    return Array.from(this.customRolePermissions.values())
+      .filter(p => p.roleId === roleId);
+  }
+  
+  // Add a permission to a custom role
+  async addCustomRolePermission(roleId: number, resource: Resource, permissionType: PermissionType): Promise<CustomRolePermission> {
+    const role = await this.getCustomRole(roleId);
+    if (!role) {
+      throw new Error(`Custom role with ID ${roleId} not found`);
+    }
+    
+    // Check if permission already exists
+    const existing = Array.from(this.customRolePermissions.values())
+      .find(p => p.roleId === roleId && p.resource === resource && p.permissionType === permissionType);
+      
+    if (existing) {
+      return existing;
+    }
+    
+    // Create new permission
+    const id = this.customRolePermissionCurrentId++;
+    const now = new Date();
+    
+    const newPermission: CustomRolePermission = {
+      id,
+      roleId,
+      resource,
+      permissionType,
+      createdAt: now
+    };
+    
+    this.customRolePermissions.set(id, newPermission);
+    
+    // Create activity log
+    await this.createActivityLog({
+      action: "Custom Role Permission Added",
+      description: `Added ${permissionType} permission for ${resource} to role: ${role.name}`,
+      referenceType: "custom_role",
+      referenceId: roleId
+    });
+    
+    return newPermission;
+  }
+  
+  // Remove a permission from a custom role
+  async removeCustomRolePermission(roleId: number, permissionId: number): Promise<boolean> {
+    const permission = this.customRolePermissions.get(permissionId);
+    if (!permission || permission.roleId !== roleId) {
+      return false;
+    }
+    
+    const role = await this.getCustomRole(roleId);
+    
+    // Create activity log
+    if (role) {
+      await this.createActivityLog({
+        action: "Custom Role Permission Removed",
+        description: `Removed ${permission.permissionType} permission for ${permission.resource} from role: ${role.name}`,
+        referenceType: "custom_role",
+        referenceId: roleId
+      });
+    }
+    
+    return this.customRolePermissions.delete(permissionId);
+  }
+  
+  // Check if a custom role has a specific permission
+  async checkCustomRolePermission(roleId: number, resource: string, permissionType: string): Promise<boolean> {
+    const permissions = await this.getCustomRolePermissions(roleId);
+    
+    return permissions.some(
+      (p) => p.resource === resource && p.permissionType === permissionType
+    );
+  }
+  
+  // User access logging
+  
+  // Log user access
+  async logUserAccess(log: InsertUserAccessLog): Promise<UserAccessLog> {
+    const id = this.userAccessLogCurrentId++;
+    const userAccessLog: UserAccessLog = {
+      ...log,
+      id,
+      timestamp: new Date()
+    };
+    
+    this.userAccessLogs.set(id, userAccessLog);
+    return userAccessLog;
+  }
+  
+  // Get access logs for a specific user
+  async getUserAccessLogs(userId: number): Promise<UserAccessLog[]> {
+    return Array.from(this.userAccessLogs.values())
+      .filter(log => log.userId === userId)
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
+  
+  // Get recent access logs across all users
+  async getRecentUserAccessLogs(limit: number = 100): Promise<UserAccessLog[]> {
+    return Array.from(this.userAccessLogs.values())
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .slice(0, limit);
   }
   
   // Authentication methods

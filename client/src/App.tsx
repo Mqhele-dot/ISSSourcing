@@ -10,6 +10,7 @@ import OrdersPage from "@/pages/orders";
 import SuppliersPage from "@/pages/suppliers";
 import Reports from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
+import UserRolesPage from "@/pages/user-roles";
 import Home from "@/pages/home";
 import ReorderPage from "@/pages/reorder";
 import AuthPage from "@/pages/auth-page";
@@ -34,6 +35,7 @@ function Router() {
       <ProtectedRoute path="/reports" component={Reports} />
       <ProtectedRoute path="/reorder" component={ReorderPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
+      <ProtectedRoute path="/user-roles" component={UserRolesPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>

@@ -49,6 +49,79 @@ function ensureAdmin(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ message: "Forbidden: Admin access required" });
 }
 
+// Middleware to check if user has a specific role
+function ensureRole(role: string | string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const roles = Array.isArray(role) ? role : [role];
+    
+    if (roles.includes(req.user.role)) {
+      return next();
+    }
+    
+    res.status(403).json({ 
+      message: `Forbidden: Required role not found. Need one of: ${roles.join(', ')}` 
+    });
+  };
+}
+
+// Middleware to check if user has specific permission on a resource
+function ensurePermission(resource: string, permissionType: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const userRole = req.user.role;
+    
+    // Admin always has all permissions
+    if (userRole === "admin") {
+      return next();
+    }
+    
+    try {
+      // Check if user has the required permission
+      const hasPermission = await storage.checkPermission(
+        userRole as any, 
+        resource as any, 
+        permissionType as any
+      );
+      
+      if (hasPermission) {
+        return next();
+      }
+      
+      // If user has a custom role, check that too
+      if (userRole === "custom" && req.user.id) {
+        // Look up the custom role permissions
+        const customRoleId = await storage.getUserCustomRoleId(req.user.id);
+        
+        if (customRoleId) {
+          const hasCustomPermission = await storage.checkCustomRolePermission(
+            customRoleId,
+            resource as any,
+            permissionType as any
+          );
+          
+          if (hasCustomPermission) {
+            return next();
+          }
+        }
+      }
+      
+      res.status(403).json({ 
+        message: `Forbidden: You don't have ${permissionType} permission for ${resource}` 
+      });
+    } catch (error) {
+      console.error("Permission check error:", error);
+      res.status(500).json({ message: "Error checking permissions" });
+    }
+  };
+}
+
 // Set up authentication
 export function setupAuth(app: Express) {
   // Configure session
@@ -255,6 +328,8 @@ export function setupAuth(app: Express) {
   // Export middleware for route protection
   return {
     ensureAuthenticated,
-    ensureAdmin
+    ensureAdmin,
+    ensureRole,
+    ensurePermission
   };
 }

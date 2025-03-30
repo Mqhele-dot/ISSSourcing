@@ -456,6 +456,15 @@ export const bulkImportInventorySchema = z.array(
 );
 
 // Types
+export type UserRole = "admin" | "manager" | "warehouse_staff" | "sales" | "auditor" | "supplier" | "custom" | "viewer";
+export type Resource = "inventory" | "purchases" | "suppliers" | "categories" | "warehouses" | 
+  "reports" | "users" | "settings" | "reorder_requests" | "stock_movements" |
+  "analytics" | "dashboards" | "notifications" | "audit_logs" | "user_profiles" |
+  "documents" | "custom_roles" | "activity_logs" | "import_export" | "system";
+export type PermissionType = "create" | "read" | "update" | "delete" | "approve" | "export" | "import" | "assign" |
+  "manage" | "execute" | "transfer" | "print" | "scan" | "view_reports" | "admin" | 
+  "configure" | "restrict" | "download" | "upload" | "audit" | "verify";
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type UserVerificationToken = typeof userVerificationTokens.$inferSelect;
