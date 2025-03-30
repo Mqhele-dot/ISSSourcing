@@ -3187,9 +3187,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
   // Initialize WebSocket service for real-time inventory synchronization
-  // Initialize the WebSocket server for real-time inventory synchronization
+  // This creates a WebSocket server on the /ws path
   const wss = initializeWebSocketService(httpServer, storage);
-  console.log("WebSocket server initialized for real-time inventory synchronization");
+  console.log("WebSocket server initialized at /ws path for real-time inventory synchronization");
   
   return httpServer;
 }

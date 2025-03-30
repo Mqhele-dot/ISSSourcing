@@ -43,55 +43,71 @@ export function useWebSocket({
     }
   }, []);
   
+  // Get the appropriate WebSocket URL for the current environment
+  const getWebSocketUrl = useCallback(() => {
+    if (isElectronEnvironment()) {
+      console.log('Detected Electron environment, using localhost WebSocket URL');
+      return 'ws://localhost:5000/ws';
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${protocol}//${window.location.host}/ws`;
+      console.log(`Using standard WebSocket URL: ${url}`);
+      return url;
+    }
+  }, []);
+  
   // Connect to the WebSocket server
   const connect = useCallback(() => {
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      return; // Already connected
+    // If already connected or attempting to connect, do nothing
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected.');
+      return;
+    }
+    
+    if (socketRef.current && socketRef.current.readyState === WebSocket.CONNECTING) {
+      console.log('WebSocket connection already in progress.');
+      return;
     }
     
     try {
-      // Create WebSocket connection
-      let wsUrl = '';
-      
-      // Special handling for Replit environment
-      if (window.location.hostname.includes('replit') || window.location.hostname.includes('repl.co')) {
-        console.log('Detected Replit environment, using relative WebSocket URL');
-        // For Replit, use a relative path which will be resolved correctly
-        wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
-      } else if (isElectronEnvironment()) {
-        // In Electron, connect directly to the backend server
-        console.log('Detected Electron environment, using localhost WebSocket URL');
-        wsUrl = process.env.NODE_ENV === 'production' 
-          ? 'ws://localhost:5000/ws'  // In production build
-          : 'ws://localhost:5000/ws'; // In development
-      } else {
-        // Standard web development environment
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsUrl = `${protocol}//${window.location.host}/ws`;
+      // Close any existing connection
+      if (socketRef.current) {
+        try {
+          socketRef.current.close();
+        } catch (err) {
+          console.error('Error closing existing WebSocket:', err);
+        }
       }
       
+      // Get WebSocket URL
+      const wsUrl = getWebSocketUrl();
       console.log(`Connecting to WebSocket at ${wsUrl}`);
+      
+      // Create new WebSocket connection
       socketRef.current = new WebSocket(wsUrl);
       
-      // Connection opened handler
-      socketRef.current.addEventListener('open', (event) => {
+      // Set up event handlers
+      socketRef.current.onopen = (event) => {
         console.log('WebSocket connected successfully:', event);
         setIsConnected(true);
         onConnectionStatus?.(true);
-        reconnectCount.current = 0; // Reset reconnect counter on successful connection
+        reconnectCount.current = 0; // Reset reconnect counter
         clearReconnectTimeout();
         
         // Subscribe to specific warehouses (if any)
-        if (warehouses.length > 0) {
-          sendMessage({
-            type: 'warehouse_update',
-            payload: { warehouses }
-          });
+        if (warehouses.length > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
+          try {
+            socketRef.current.send(JSON.stringify({
+              type: 'warehouse_update',
+              payload: { warehouses }
+            }));
+          } catch (err) {
+            console.error('Error sending warehouse subscription:', err);
+          }
         }
-      });
+      };
       
-      // Listen for messages
-      socketRef.current.addEventListener('message', (event) => {
+      socketRef.current.onmessage = (event) => {
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
           setLastMessage(message);
@@ -103,12 +119,11 @@ export function useWebSocket({
               break;
             case 'stock_alert':
               onStockAlert?.(message.payload);
-              // Show toast notification for low stock alerts
               if (message.payload.alertType === 'LOW_STOCK') {
                 const { item, currentLevel, reorderThreshold } = message.payload;
                 toast({
                   title: 'Low Stock Alert',
-                  description: `${item.name} is running low (${currentLevel}/${reorderThreshold})`,
+                  description: `${item.name || 'Item'} is running low (${currentLevel}/${reorderThreshold})`,
                   variant: 'destructive'
                 });
               }
@@ -117,7 +132,7 @@ export function useWebSocket({
               onStockTransfer?.(message.payload);
               break;
             case 'error':
-              console.error('WebSocket error:', message.payload);
+              console.error('WebSocket error message received:', message.payload);
               toast({
                 title: 'Connection Error',
                 description: message.payload.message || 'Unknown error occurred',
@@ -128,19 +143,17 @@ export function useWebSocket({
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
-      });
+      };
       
-      // Connection closed handler
-      socketRef.current.addEventListener('close', (event) => {
-        console.log('WebSocket disconnected with code:', event.code, 'reason:', event.reason);
-        console.log('WebSocket was clean?', event.wasClean);
-        console.log('WebSocket last state:', socketRef.current?.readyState);
+      socketRef.current.onclose = (event) => {
+        console.log('WebSocket disconnected with code:', event.code, 'reason:', event.reason || 'No reason');
+        console.log('WebSocket was clean close?', event.wasClean);
         
         setIsConnected(false);
         onConnectionStatus?.(false);
         
-        // Attempt to reconnect if not at max attempts
-        if (reconnectCount.current < MAX_RECONNECT_ATTEMPTS) {
+        // Only attempt to reconnect if it wasn't a clean close and we haven't exceeded attempts
+        if (!event.wasClean && reconnectCount.current < MAX_RECONNECT_ATTEMPTS) {
           reconnectCount.current += 1;
           
           console.log(`Scheduling reconnect attempt ${reconnectCount.current}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_INTERVAL}ms`);
@@ -148,7 +161,7 @@ export function useWebSocket({
             console.log(`Attempting to reconnect (${reconnectCount.current}/${MAX_RECONNECT_ATTEMPTS})...`);
             connect();
           }, RECONNECT_INTERVAL);
-        } else {
+        } else if (reconnectCount.current >= MAX_RECONNECT_ATTEMPTS) {
           console.log('Maximum reconnect attempts reached, giving up');
           toast({
             title: 'Connection Lost',
@@ -156,28 +169,24 @@ export function useWebSocket({
             variant: 'destructive'
           });
         }
-      });
+      };
       
-      // Error handler
-      socketRef.current.addEventListener('error', (error) => {
+      socketRef.current.onerror = (error) => {
         console.error('WebSocket error event:', error);
-        console.error('WebSocket readyState:', socketRef.current?.readyState);
         
-        // Log more detailed error information if available
-        if (error instanceof ErrorEvent) {
-          console.error('WebSocket error message:', error.message);
-        }
-        
-        toast({
-          title: 'Connection Error',
-          description: 'Error connecting to real-time inventory service',
-          variant: 'destructive'
-        });
-      });
+        // Don't show toast here - let the onclose handle reconnect logic
+        // The error event is always followed by a close event
+      };
+      
     } catch (error) {
-      console.error('Error creating WebSocket connection:', error);
+      console.error('Error setting up WebSocket connection:', error);
+      toast({
+        title: 'Connection Error',
+        description: 'Failed to establish real-time connection',
+        variant: 'destructive'
+      });
     }
-  }, [onConnectionStatus, onInventoryUpdate, onStockAlert, onStockTransfer, warehouses, toast, clearReconnectTimeout]);
+  }, [getWebSocketUrl, onConnectionStatus, onInventoryUpdate, onStockAlert, onStockTransfer, warehouses, toast, clearReconnectTimeout]);
   
   // Send a message to the WebSocket server
   const sendMessage = useCallback((message: WebSocketMessage) => {
