@@ -43,9 +43,64 @@ let storage: IStorage | null = null;
 const clients: Map<string, ClientConnection> = new Map();
 
 /**
+ * Check all inventory items for low stock and send alerts
+ */
+export function checkLowStockAlerts(): Promise<void> {
+  return new Promise(async (resolve, reject) => {
+    if (!storage) {
+      console.error('Storage not initialized for WebSocket service');
+      return reject('Storage not initialized');
+    }
+
+    try {
+      console.log('Running scheduled low stock check...');
+      
+      // Get all low stock items
+      const lowStockItems = await storage.getLowStockItems();
+      
+      if (lowStockItems.length === 0) {
+        console.log('No low stock items found');
+        return resolve();
+      }
+      
+      console.log(`Found ${lowStockItems.length} items with low stock`);
+      
+      // Send alerts for each item
+      for (const item of lowStockItems) {
+        // Broadcast an alert to all clients
+        broadcastMessage({
+          type: MessageType.STOCK_ALERT,
+          payload: {
+            item,
+            alertType: 'low_stock',
+            currentQuantity: item.quantity,
+            threshold: item.lowStockThreshold,
+            timestamp: new Date().toISOString()
+          }
+        }, undefined, item.id);
+        
+        // Log the alert
+        await storage.createActivityLog({
+          action: 'LOW_STOCK_ALERT',
+          userId: null,
+          description: `Low stock alert for ${item.name} (${item.sku}): ${item.quantity} units remaining (threshold: ${item.lowStockThreshold})`,
+          itemId: item.id,
+          referenceType: 'inventory_item'
+        });
+      }
+      
+      resolve();
+    } catch (error) {
+      console.error('Error checking for low stock items:', error);
+      reject(error);
+    }
+  });
+}
+
+/**
  * Initialize the WebSocket server for real-time inventory synchronization
  */
-export function initializeWebSocketService(server: HttpServer, storageInstance: IStorage): WebSocketServer {
+export function initializeWebSocketService(server: HttpServer, storageInstance?: IStorage): WebSocketServer {
   // If already initialized, return the existing instance
   if (wss) {
     return wss;

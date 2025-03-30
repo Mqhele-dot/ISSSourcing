@@ -148,18 +148,18 @@ export default function StockAlerts() {
         ))}
       </CardContent>
       <CardFooter className="bg-neutral-50 dark:bg-neutral-700 px-5 py-3 rounded-b-lg flex justify-between">
-        <Link href="/inventory?filter=low-stock">
-          <a className="text-sm font-medium text-primary hover:text-primary/80 flex items-center">
+        <div className="text-sm font-medium text-primary hover:text-primary/80 flex items-center">
+          <Link href="/inventory?filter=low-stock">
             View all alerts
             <ExternalLink className="ml-1 h-3 w-3" />
-          </a>
-        </Link>
-        <Link href="/reorder">
-          <a className="text-sm font-medium text-primary hover:text-primary/80 flex items-center">
+          </Link>
+        </div>
+        <div className="text-sm font-medium text-primary hover:text-primary/80 flex items-center">
+          <Link href="/reorder">
             Manage reorders
             <ExternalLink className="ml-1 h-3 w-3" />
-          </a>
-        </Link>
+          </Link>
+        </div>
       </CardFooter>
     </Card>
   );
