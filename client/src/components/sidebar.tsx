@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
-import { Archive, BarChart3, ChevronRight, FileText, Home, Moon, Settings, ShoppingCart, Sun, Users, X, LayoutDashboard, RefreshCw } from "lucide-react";
+import { Archive, BarChart3, ChevronRight, FileText, Home, Moon, Settings, ShoppingCart, Sun, Users, X, LayoutDashboard, RefreshCw, QrCode, Activity, Zap } from "lucide-react";
 
 interface SidebarProps {
   open: boolean;
@@ -102,6 +102,14 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             
             <NavItem path="/reports" icon={<FileText className="mr-3 h-5 w-5" />}>
               Reports
+            </NavItem>
+            
+            <NavItem path="/barcode-scanner" icon={<QrCode className="mr-3 h-5 w-5" />}>
+              Barcode Scanner
+            </NavItem>
+            
+            <NavItem path="/real-time-updates" icon={<Activity className="mr-3 h-5 w-5" />}>
+              Real-Time Updates
             </NavItem>
             
             <NavItem path="/settings" icon={<Settings className="mr-3 h-5 w-5" />}>

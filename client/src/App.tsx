@@ -18,6 +18,8 @@ import UserRolesPage from "@/pages/user-roles";
 import Home from "@/pages/home";
 import ReorderPage from "@/pages/reorder";
 import AuthPage from "@/pages/auth-page";
+import BarcodeScannerPage from "@/pages/barcode-scanner-page";
+import RealTimeUpdatesPage from "@/pages/real-time-updates-page";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useState, useEffect } from "react";
 import { TutorialProvider } from "./contexts/TutorialContext";
@@ -82,6 +84,8 @@ function Router() {
       <ProtectedRoute path="/suppliers" component={SuppliersPage} />
       <ProtectedRoute path="/reports" component={Reports} />
       <ProtectedRoute path="/reorder" component={ReorderPage} />
+      <ProtectedRoute path="/barcode-scanner" component={BarcodeScannerPage} />
+      <ProtectedRoute path="/real-time-updates" component={RealTimeUpdatesPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/user-roles" component={UserRolesPage} />
       <Route path="/auth" component={AuthPage} />

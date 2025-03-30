@@ -206,7 +206,8 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
     });
 
     // Listen for pong responses to confirm connection is alive
-    ws.addEventListener('pong', () => {
+    // Use 'on' method instead of addEventListener for better compatibility with ws package
+    ws.on('pong', () => {
       // Connection is alive, can log if needed for debugging
       // console.log(`Received pong from client ${clientId}`);
     });

@@ -285,36 +285,439 @@ function handleDialogs() {
 
 // Barcode Scanner Handlers
 function handleBarcodeScanner() {
-  // Scan barcode (placeholder implementation)
-  ipcMain.handle('barcode:scan', async (_) => {
-    // In a real application, this would integrate with a camera API
-    // or a hardware barcode scanner
-    
-    // For demo purposes, show a dialog asking for manual input
-    const { response, checkboxChecked } = await dialog.showMessageBox({
-      type: 'question',
-      buttons: ['Cancel', 'Scan'],
-      defaultId: 1,
-      title: 'Barcode Scanner',
-      message: 'Barcode Scanner Simulation',
-      detail: 'In a real application, this would activate your camera or barcode scanner. For now, please enter a barcode value manually.',
-      checkboxLabel: 'Show this dialog again',
-      checkboxChecked: true
-    });
-    
-    if (response === 0) {
-      return null; // User canceled
+  let scannerWindow = null;
+  let cameraActive = false;
+  let onScanCallback = null;
+  
+  // Start the barcode scanner
+  ipcMain.handle('start-barcode-scanner', async (event, options = {}) => {
+    try {
+      const mainWindow = BrowserWindow.fromWebContents(event.sender);
+      if (!mainWindow) {
+        throw new Error('Parent window not found');
+      }
+      
+      // Set up callback for scan results
+      onScanCallback = (result) => {
+        if (event.sender.isDestroyed()) return;
+        event.sender.send('barcode-scan-result', result);
+      };
+      
+      // Determine scanner type
+      const scannerType = options.type || 'auto';
+      
+      // Create scanner window
+      scannerWindow = new BrowserWindow({
+        width: 800,
+        height: 600,
+        parent: mainWindow,
+        modal: true,
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          preload: path.join(__dirname, 'preload.js')
+        },
+      });
+      
+      // Load the scanner HTML (using a data URL for simplicity)
+      scannerWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Barcode Scanner</title>
+          <style>
+            body, html {
+              margin: 0;
+              padding: 0;
+              width: 100%;
+              height: 100%;
+              font-family: system-ui, sans-serif;
+              background: #000;
+              color: #fff;
+              overflow: hidden;
+            }
+            #scanner-container {
+              width: 100%;
+              height: 100%;
+              display: flex;
+              flex-direction: column;
+            }
+            #scanner {
+              flex: 1;
+              position: relative;
+              overflow: hidden;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            #scanner video {
+              max-width: 100%;
+              max-height: 100%;
+            }
+            #scanner-overlay {
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5);
+              pointer-events: none;
+            }
+            .scanner-targeting {
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              width: 250px;
+              height: 250px;
+              transform: translate(-50%, -50%);
+              border: 2px solid rgba(255, 255, 255, 0.5);
+              border-radius: 1rem;
+              box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5);
+            }
+            .scanner-targeting::before, 
+            .scanner-targeting::after {
+              content: '';
+              position: absolute;
+              width: 20px;
+              height: 20px;
+              border-color: #fff;
+              border-style: solid;
+            }
+            .scanner-targeting::before {
+              top: -2px;
+              left: -2px;
+              border-width: 2px 0 0 2px;
+              border-radius: 1rem 0 0 0;
+            }
+            .scanner-targeting::after {
+              bottom: -2px;
+              right: -2px;
+              border-width: 0 2px 2px 0;
+              border-radius: 0 0 1rem 0;
+            }
+            .controls {
+              height: 60px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 0 1rem;
+              background: #111;
+            }
+            .controls button {
+              background: #2563eb;
+              color: #fff;
+              border: none;
+              border-radius: 4px;
+              padding: 8px 16px;
+              font-size: 14px;
+              cursor: pointer;
+              margin: 0 8px;
+            }
+            .controls button:hover {
+              background: #1d4ed8;
+            }
+            .controls button.secondary {
+              background: #374151;
+            }
+            .controls button.secondary:hover {
+              background: #1f2937;
+            }
+            .status {
+              padding: 8px 16px;
+              font-size: 14px;
+              color: #a3a3a3;
+            }
+            #manual-entry {
+              display: none;
+              width: 100%;
+              height: 100%;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              padding: 1rem;
+            }
+            #manual-entry input {
+              width: 100%;
+              max-width: 300px;
+              padding: 8px 12px;
+              font-size: 16px;
+              border-radius: 4px;
+              border: 1px solid #374151;
+              margin-bottom: 16px;
+            }
+            #manual-entry p {
+              margin-bottom: 16px;
+              color: #a3a3a3;
+            }
+          </style>
+        </head>
+        <body>
+          <div id="scanner-container">
+            <div id="scanner">
+              <div id="scanner-overlay">
+                <div class="scanner-targeting"></div>
+              </div>
+            </div>
+            <div class="controls">
+              <button id="toggle-camera">Stop Camera</button>
+              <button id="manual-button" class="secondary">Manual Entry</button>
+              <button id="close-button" class="secondary">Close</button>
+            </div>
+            <div class="status" id="status">Scanning...</div>
+          </div>
+          <div id="manual-entry">
+            <p>Enter barcode value manually:</p>
+            <input type="text" id="manual-input" placeholder="e.g. 123456789012">
+            <div class="controls" style="width: 100%">
+              <button id="submit-manual">Submit</button>
+              <button id="cancel-manual" class="secondary">Cancel</button>
+            </div>
+          </div>
+          <script>
+            const scannerContainer = document.getElementById('scanner-container');
+            const manualEntry = document.getElementById('manual-entry');
+            const scanner = document.getElementById('scanner');
+            const toggleCameraBtn = document.getElementById('toggle-camera');
+            const manualBtn = document.getElementById('manual-button');
+            const closeBtn = document.getElementById('close-button');
+            const submitManualBtn = document.getElementById('submit-manual');
+            const cancelManualBtn = document.getElementById('cancel-manual');
+            const manualInput = document.getElementById('manual-input');
+            const statusEl = document.getElementById('status');
+            
+            let cameraStream = null;
+            let videoElement = null;
+            
+            // Initialize camera
+            async function startCamera() {
+              try {
+                toggleCameraBtn.textContent = 'Stop Camera';
+                
+                // Get camera stream
+                const constraints = {
+                  video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                  }
+                };
+                
+                cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Create video element
+                videoElement = document.createElement('video');
+                videoElement.srcObject = cameraStream;
+                videoElement.autoplay = true;
+                videoElement.setAttribute('playsinline', 'true');
+                scanner.appendChild(videoElement);
+                
+                // Notify main process
+                window.electron.send('barcode-scanner:camera-started');
+                statusEl.textContent = 'Camera active. Scanning...';
+                
+                // Start looking for barcodes (simulation for this example)
+                startBarcodeDetection();
+              } catch (error) {
+                console.error('Error starting camera:', error);
+                statusEl.textContent = 'Camera error: ' + error.message;
+                window.electron.send('barcode-scanner:camera-error', error.message);
+              }
+            }
+            
+            // Stop camera
+            function stopCamera() {
+              toggleCameraBtn.textContent = 'Start Camera';
+              
+              if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+              }
+              
+              if (videoElement && videoElement.parentNode) {
+                videoElement.parentNode.removeChild(videoElement);
+                videoElement = null;
+              }
+              
+              window.electron.send('barcode-scanner:camera-stopped');
+              statusEl.textContent = 'Camera stopped';
+            }
+            
+            // Simulate barcode detection
+            // In a real application, this would use a barcode detection library
+            function startBarcodeDetection() {
+              // Simulate random scanning time between 1-5 seconds
+              const randomInterval = Math.floor(Math.random() * 4000) + 1000;
+              
+              setTimeout(() => {
+                // Only continue if camera is still active
+                if (!cameraStream) return;
+                
+                // Generate a random barcode (UPC-A format, 12 digits)
+                const randomBarcode = Array.from(
+                  { length: 12 }, 
+                  () => Math.floor(Math.random() * 10)
+                ).join('');
+                
+                // Send the result to the main process
+                window.electron.send('barcode-scanner:result', {
+                  text: randomBarcode,
+                  format: 'UPC_A',
+                  timestamp: Date.now()
+                });
+                
+                statusEl.textContent = 'Detected: ' + randomBarcode;
+                
+                // Automatically close after scan (optional)
+                // window.close();
+              }, randomInterval);
+            }
+            
+            // Toggle camera
+            toggleCameraBtn.addEventListener('click', () => {
+              if (cameraStream) {
+                stopCamera();
+              } else {
+                startCamera();
+              }
+            });
+            
+            // Toggle manual entry
+            manualBtn.addEventListener('click', () => {
+              scannerContainer.style.display = 'none';
+              manualEntry.style.display = 'flex';
+              if (cameraStream) {
+                stopCamera();
+              }
+            });
+            
+            // Return to scanner from manual entry
+            cancelManualBtn.addEventListener('click', () => {
+              scannerContainer.style.display = 'flex';
+              manualEntry.style.display = 'none';
+            });
+            
+            // Submit manual entry
+            submitManualBtn.addEventListener('click', () => {
+              const value = manualInput.value.trim();
+              if (value) {
+                window.electron.send('barcode-scanner:result', {
+                  text: value,
+                  format: 'MANUAL',
+                  timestamp: Date.now()
+                });
+                // Close after manual entry
+                window.close();
+              }
+            });
+            
+            // Allow Enter key to submit
+            manualInput.addEventListener('keypress', (e) => {
+              if (e.key === 'Enter') {
+                submitManualBtn.click();
+              }
+            });
+            
+            // Close button
+            closeBtn.addEventListener('click', () => {
+              window.close();
+            });
+            
+            // Start camera on load
+            document.addEventListener('DOMContentLoaded', startCamera);
+            
+            // Clean up on close
+            window.addEventListener('beforeunload', () => {
+              if (cameraStream) {
+                stopCamera();
+              }
+            });
+          </script>
+        </body>
+        </html>
+      `)}`);
+      
+      // Handle scanner window events
+      scannerWindow.once('ready-to-show', () => {
+        scannerWindow.show();
+        cameraActive = true;
+      });
+      
+      scannerWindow.on('closed', () => {
+        cameraActive = false;
+        scannerWindow = null;
+      });
+      
+      // Return success
+      return { success: true };
+    } catch (error) {
+      console.error('Error starting barcode scanner:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // Stop the barcode scanner
+  ipcMain.handle('stop-barcode-scanner', () => {
+    try {
+      if (scannerWindow) {
+        scannerWindow.close();
+        scannerWindow = null;
+      }
+      cameraActive = false;
+      onScanCallback = null;
+      return { success: true };
+    } catch (error) {
+      console.error('Error stopping barcode scanner:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // Handle result from the scanner window
+  ipcMain.on('barcode-scanner:result', (_, result) => {
+    if (onScanCallback) {
+      onScanCallback(result);
     }
     
-    // Prompt for manual barcode input
-    const { canceled, value } = await dialog.showInputBox({
-      title: 'Enter Barcode',
-      message: 'Please enter a barcode value:',
-      buttons: ['Cancel', 'OK'],
-      type: 'question'
-    });
-    
-    return canceled ? null : value;
+    // Optionally close the scanner window after a successful scan
+    if (scannerWindow) {
+      setTimeout(() => {
+        if (scannerWindow) {
+          scannerWindow.close();
+          scannerWindow = null;
+        }
+      }, 500);
+    }
+  });
+  
+  // Monitor scanner status
+  ipcMain.on('barcode-scanner:camera-started', () => {
+    cameraActive = true;
+  });
+  
+  ipcMain.on('barcode-scanner:camera-stopped', () => {
+    cameraActive = false;
+  });
+  
+  ipcMain.on('barcode-scanner:camera-error', (_, errorMessage) => {
+    console.error('Camera error:', errorMessage);
+    cameraActive = false;
+  });
+  
+  // Generate barcodes and QR codes
+  ipcMain.handle('barcode:generate', async (_, options) => {
+    try {
+      // In a real application, this would use a barcode generation library
+      // For now, we'll just simulate success
+      return {
+        success: true,
+        message: `Generated ${options.type} with value ${options.value}`
+      };
+    } catch (error) {
+      console.error('Error generating barcode:', error);
+      return { success: false, error: error.message };
+    }
   });
 }
 

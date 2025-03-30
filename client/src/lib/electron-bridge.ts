@@ -3,9 +3,19 @@
  * This provides type-safe wrappers around the electron IPC API.
  */
 
+// Define the types for the Window.electron object
+declare global {
+  interface Window {
+    electron?: {
+      send: (channel: string, ...args: any[]) => void;
+      invoke: (channel: string, ...args: any[]) => Promise<any>;
+      on: <T>(channel: string, callback: (data: T) => void) => () => void;
+    };
+  }
+}
+
 // Check if we're running in Electron environment
 export function isElectronEnvironment(): boolean {
-  // @ts-ignore - window.electron is injected by the Electron preload script
   return typeof window !== 'undefined' && window.electron !== undefined;
 }
 
@@ -89,6 +99,24 @@ export interface BackupResult {
   error?: string;
 }
 
+// Define types for barcode scanner
+export type ScannerOptions = {
+  type?: 'barcode' | 'qrcode' | 'auto';
+};
+
+export type ScanResult = {
+  text: string;
+  format: string;
+  timestamp: number;
+};
+
+export interface BarcodeGenerateOptions {
+  value: string;
+  type: 'barcode' | 'qrcode';
+  format?: string;
+  size?: 'small' | 'medium' | 'large';
+}
+
 /**
  * Bridge class for interacting with Electron-specific functionality
  */
@@ -102,8 +130,7 @@ export class ElectronBridge {
     }
 
     try {
-      // @ts-ignore - window.electron is injected by the Electron preload script
-      return await window.electron.invoke('check-network-status');
+      return await window.electron!.invoke('check-network-status');
     } catch (error) {
       console.error('Failed to check network status:', error);
       return navigator.onLine; // Fallback to browser's online status
@@ -119,8 +146,7 @@ export class ElectronBridge {
     }
 
     try {
-      // @ts-ignore - window.electron is injected by the Electron preload script
-      return await window.electron.invoke('get-database-info');
+      return await window.electron!.invoke('get-database-info');
     } catch (error) {
       console.error('Failed to get database info:', error);
       throw error;
@@ -136,8 +162,7 @@ export class ElectronBridge {
     }
 
     try {
-      // @ts-ignore - window.electron is injected by the Electron preload script
-      return await window.electron.invoke('create-database-backup');
+      return await window.electron!.invoke('create-database-backup');
     } catch (error) {
       console.error('Failed to create database backup:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -153,8 +178,7 @@ export class ElectronBridge {
     }
 
     try {
-      // @ts-ignore - window.electron is injected by the Electron preload script
-      return await window.electron.invoke('restore-database-backup', backupPath);
+      return await window.electron!.invoke('restore-database-backup', backupPath);
     } catch (error) {
       console.error('Failed to restore database from backup:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -170,11 +194,63 @@ export class ElectronBridge {
     }
 
     try {
-      // @ts-ignore - window.electron is injected by the Electron preload script
-      return await window.electron.invoke('sync-database');
+      return await window.electron!.invoke('sync-database');
     } catch (error) {
       console.error('Failed to sync database:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Start the barcode scanner
+   * @param options Options for the scanner
+   * @returns Promise that resolves with the result of starting the scanner
+   */
+  async startBarcodeScanner(options?: ScannerOptions): Promise<{ success: boolean; error?: string }> {
+    if (!isElectronEnvironment()) {
+      throw new Error('Not running in Electron environment');
+    }
+
+    try {
+      return await window.electron!.invoke('start-barcode-scanner', options);
+    } catch (error) {
+      console.error('Failed to start barcode scanner:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Stop the barcode scanner
+   * @returns Promise that resolves with the result of stopping the scanner
+   */
+  async stopBarcodeScanner(): Promise<{ success: boolean; error?: string }> {
+    if (!isElectronEnvironment()) {
+      throw new Error('Not running in Electron environment');
+    }
+
+    try {
+      return await window.electron!.invoke('stop-barcode-scanner');
+    } catch (error) {
+      console.error('Failed to stop barcode scanner:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Generate a barcode or QR code
+   * @param options Options for generating the code
+   * @returns Promise that resolves with the result of generating the code
+   */
+  async generateBarcode(options: BarcodeGenerateOptions): Promise<{ success: boolean; message?: string; error?: string }> {
+    if (!isElectronEnvironment()) {
+      throw new Error('Not running in Electron environment');
+    }
+
+    try {
+      return await window.electron!.invoke('barcode:generate', options);
+    } catch (error) {
+      console.error('Failed to generate barcode:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
@@ -187,7 +263,6 @@ export class ElectronBridge {
       return () => {}; // No-op cleanup function
     }
 
-    // @ts-ignore - window.electron is injected by the Electron preload script
-    return window.electron.on(channel, callback);
+    return window.electron!.on(channel, callback);
   }
 }
