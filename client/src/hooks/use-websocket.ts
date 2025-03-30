@@ -49,6 +49,7 @@ export function useWebSocket({
     try {
       // Create WebSocket connection
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      // Connect to the correct WebSocket path defined in the server
       const wsUrl = `${protocol}//${window.location.host}/ws-inventory`;
       
       socketRef.current = new WebSocket(wsUrl);

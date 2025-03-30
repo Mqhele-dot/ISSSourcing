@@ -42,7 +42,7 @@ app.use((req, res, next) => {
   const server = await registerRoutes(app);
 
   // Initialize the WebSocket service for real-time inventory updates
-  const wsService = initializeWebSocketService(server);
+  const wsService = initializeWebSocketService(server, storage);
   
   // Set up a periodic check for low stock alerts based on app settings
   let lowStockCheckInterval: NodeJS.Timeout;
