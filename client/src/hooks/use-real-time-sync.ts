@@ -1,355 +1,344 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { isElectronEnvironment, callElectronBridge } from '@/lib/electron-bridge';
 
-interface SyncMessage {
-  type: 'data_change' | 'ping' | 'pong' | 'client_connected' | 'client_disconnected' | 'connection_status';
+// Define the types of messages that can be sent/received
+export enum SyncMessageType {
+  SYNC_REQUEST = 'sync_request',
+  SYNC_RESPONSE = 'sync_response',
+  SYNC_ERROR = 'sync_error',
+  DATA_CHANGE = 'data_change',
+  SYNC_COMPLETE = 'sync_complete',
+  CAPABILITIES = 'capabilities',
+  HEARTBEAT = 'heartbeat',
+  PONG = 'pong',
+  CONNECTION_INFO = 'connection_info',
+  CLIENT_CONNECTED = 'client_connected',
+  CLIENT_DISCONNECTED = 'client_disconnected',
+  CONNECTION_STATUS = 'connection_status'
+}
+
+// Define the structure of messages
+export interface SyncMessage {
+  type: SyncMessageType | string;
+  payload?: any;
+  timestamp: string;
   clientId?: string;
-  data?: any;
-  timestamp?: number;
-  entity?: string;
-  action?: 'create' | 'update' | 'delete';
+  compressed?: boolean;
+  sequenceNumber?: number;
 }
 
-interface RealTimeSyncOptions {
-  autoConnect?: boolean;
+// Options for the hook
+interface UseRealTimeSyncOptions {
   onMessage?: (message: SyncMessage) => void;
-  onDataChange?: (entity: string, action: 'create' | 'update' | 'delete', data: any) => void;
-  onConnected?: (clientId: string) => void;
+  onConnected?: () => void;
   onDisconnected?: () => void;
-  onError?: (error: Event) => void;
-  pingInterval?: number;
+  onError?: (error: Error | null) => void;
+  autoConnect?: boolean;
 }
 
-interface SyncState {
-  isConnected: boolean;
-  clientId: string | null;
-  connectedTimestamp: number | null;
-  socket: WebSocket | null;
-  error: Error | null;
+// Result data when syncing with Electron's local database
+interface SyncResult {
+  syncedCount: number;
+  entities: Record<string, number>;
+  duration: number;
+  errors: string[];
 }
 
-export function useRealTimeSync(options: RealTimeSyncOptions = {}) {
-  const {
-    autoConnect = false,
-    onMessage,
-    onDataChange,
-    onConnected,
-    onDisconnected,
-    onError,
-    pingInterval = 30000, // Default ping interval: 30 seconds
-  } = options;
-
-  const [state, setState] = useState<SyncState>({
-    isConnected: false,
-    clientId: null,
-    connectedTimestamp: null,
-    socket: null,
-    error: null,
-  });
-
-  const pingIntervalRef = useRef<number | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
-  const reconnectAttemptsRef = useRef<number>(0);
-  const deviceInfoRef = useRef<any>({
-    platform: typeof navigator !== 'undefined' ? navigator.platform : 'Unknown',
-    osVersion: typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown',
-    appVersion: typeof navigator !== 'undefined' ? navigator.appVersion : 'Unknown',
-    networkType: 'Unknown',
-  });
-
-  // Check for Electron
-  const isElectronApp = typeof window !== 'undefined' && 
-    typeof window.process === 'object' && 
-    window.process.type === 'renderer';
-
-  // Generate a stable client ID that persists between page reloads
-  const clientIdRef = useRef<string>(() => {
-    // Try to get from localStorage first
-    const savedId = typeof localStorage !== 'undefined' ? localStorage.getItem('sync_client_id') : null;
-    
-    if (savedId) {
-      return savedId;
+/**
+ * Hook for real-time synchronization with the server
+ */
+export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [connectedTimestamp, setConnectedTimestamp] = useState<Date | null>(null);
+  const [lastPingTime, setLastPingTime] = useState<number | null>(null);
+  const [sequenceNumber, setSequenceNumber] = useState(0);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 5;
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { toast } = useToast();
+  
+  // Reset sequence number when disconnected
+  useEffect(() => {
+    if (!isConnected) {
+      setSequenceNumber(0);
     }
+  }, [isConnected]);
 
-    // Generate a new ID if none exists
-    const newId = uuidv4();
-    
-    // Save to localStorage for persistence
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('sync_client_id', newId);
-    }
-    
-    return newId;
-  });
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, []);
 
-  // Function to connect to the WebSocket server
+  // Connect to the WebSocket server
   const connect = useCallback(() => {
-    // Clear any existing reconnect timeout
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+    if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+      return; // Already connecting or connected
     }
 
-    // Clear any existing websocket
-    if (state.socket) {
-      state.socket.close();
-    }
-
+    setIsConnecting(true);
+    
     try {
       // Determine the WebSocket URL
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const wsUrl = `${protocol}//${window.location.host}/ws`;
       
       // Create a new WebSocket connection
-      const socket = new WebSocket(wsUrl);
+      const newSocket = new WebSocket(wsUrl);
       
-      // Update state with the new socket
-      setState(prev => ({
-        ...prev,
-        socket,
-        error: null,
-      }));
-
       // Set up event handlers
-      socket.onopen = () => {
-        console.log('WebSocket connection established');
+      newSocket.onopen = () => {
+        setIsConnected(true);
+        setIsConnecting(false);
+        setConnectedTimestamp(new Date());
         reconnectAttemptsRef.current = 0;
         
-        const connectionTimestamp = Date.now();
-        const clientId = clientIdRef.current;
+        // Send capabilities message
+        sendCapabilitiesMessage(newSocket);
         
-        // Send initial connection message with client info
-        const connectionMessage: SyncMessage = {
-          type: 'client_connected',
-          clientId,
-          timestamp: connectionTimestamp,
-          data: {
-            deviceInfo: deviceInfoRef.current,
-            isElectron: isElectronApp,
-          }
-        };
-        
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify(connectionMessage));
-        }
-        
-        // Set up ping interval for keeping connection alive
-        if (pingIntervalRef.current) {
-          clearInterval(pingIntervalRef.current);
-        }
-        
-        pingIntervalRef.current = window.setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) {
-            const pingMessage: SyncMessage = {
-              type: 'ping',
-              clientId,
-              timestamp: Date.now(),
-            };
-            socket.send(JSON.stringify(pingMessage));
-          }
-        }, pingInterval);
-        
-        // Update state with connection info
-        setState(prev => ({
-          ...prev,
-          isConnected: true,
-          clientId,
-          connectedTimestamp: connectionTimestamp,
-          error: null,
-        }));
-        
-        // Call the onConnected callback if provided
-        if (onConnected) {
-          onConnected(clientId);
+        if (options.onConnected) {
+          options.onConnected();
         }
       };
       
-      socket.onmessage = (event: MessageEvent) => {
+      newSocket.onmessage = (event) => {
         try {
           const message: SyncMessage = JSON.parse(event.data);
           
-          // Call the onMessage callback if provided
-          if (onMessage) {
-            onMessage(message);
+          // If the message contains a client ID, save it
+          if (message.clientId && !clientId) {
+            setClientId(message.clientId);
           }
           
-          // Handle specific message types
-          if (message.type === 'data_change' && onDataChange && message.entity && message.action && message.clientId !== state.clientId) {
-            onDataChange(message.entity, message.action, message.data);
+          // Handle heartbeat/ping messages
+          if (message.type === SyncMessageType.PONG) {
+            const sentTime = message.payload?.time ? new Date(message.payload.time).getTime() : null;
+            if (sentTime) {
+              setLastPingTime(Date.now() - sentTime);
+            }
+          }
+          
+          // Call the onMessage callback if provided
+          if (options.onMessage) {
+            options.onMessage(message);
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
+          if (options.onError) {
+            options.onError(error instanceof Error ? error : new Error('Unknown error'));
+          }
         }
       };
       
-      socket.onclose = (event) => {
-        console.log('WebSocket connection closed', event.code, event.reason);
+      newSocket.onclose = (event) => {
+        setIsConnected(false);
+        setIsConnecting(false);
         
-        // Clean up
-        if (pingIntervalRef.current) {
-          clearInterval(pingIntervalRef.current);
-          pingIntervalRef.current = null;
+        if (options.onDisconnected) {
+          options.onDisconnected();
         }
         
-        // Update state
-        setState(prev => ({
-          ...prev,
-          isConnected: false,
-          socket: null,
-        }));
-        
-        // Call the onDisconnected callback if provided
-        if (onDisconnected) {
-          onDisconnected();
-        }
-        
-        // Auto-reconnect logic (with exponential backoff)
-        const maxReconnectDelay = 30000; // 30 seconds max
-        const baseDelay = 1000; // Start with 1 second
-        
-        const reconnectDelay = Math.min(
-          maxReconnectDelay,
-          baseDelay * Math.pow(2, reconnectAttemptsRef.current)
-        );
-        
-        reconnectAttemptsRef.current += 1;
-        
-        // Only reconnect if we haven't explicitly called disconnect
-        if (event.code !== 1000) {
-          console.log(`Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttemptsRef.current})`);
-          reconnectTimeoutRef.current = window.setTimeout(connect, reconnectDelay);
+        // Attempt to reconnect if not closing cleanly and not at max attempts
+        if (!event.wasClean && reconnectAttemptsRef.current < maxReconnectAttempts) {
+          reconnectAttemptsRef.current++;
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connect();
+          }, delay);
         }
       };
       
-      socket.onerror = (error) => {
+      newSocket.onerror = (error) => {
         console.error('WebSocket error:', error);
-        
-        setState(prev => ({
-          ...prev,
-          error: new Error('WebSocket connection error'),
-        }));
-        
-        // Call the onError callback if provided
-        if (onError) {
-          onError(error);
+        if (options.onError) {
+          options.onError(new Error('WebSocket connection error'));
         }
       };
-    } catch (error) {
-      console.error('Error setting up WebSocket:', error);
       
-      setState(prev => ({
-        ...prev,
-        error: error instanceof Error ? error : new Error('Unknown error setting up WebSocket'),
+      setSocket(newSocket);
+    } catch (error) {
+      setIsConnecting(false);
+      console.error('Error creating WebSocket:', error);
+      if (options.onError) {
+        options.onError(error instanceof Error ? error : new Error('Unknown error'));
+      }
+    }
+  }, [socket, clientId, options]);
+
+  // Disconnect from the server
+  const disconnect = useCallback(() => {
+    if (socket) {
+      socket.close();
+      setSocket(null);
+      setIsConnected(false);
+      setIsConnecting(false);
+      setClientId(null);
+      setConnectedTimestamp(null);
+      
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      
+      reconnectAttemptsRef.current = maxReconnectAttempts; // Prevent auto-reconnect
+    }
+  }, [socket]);
+
+  // Send a message to the server
+  const sendMessage = useCallback((message: Omit<SyncMessage, 'timestamp' | 'sequenceNumber'>): boolean => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+    
+    try {
+      const nextSequence = sequenceNumber + 1;
+      setSequenceNumber(nextSequence);
+      
+      const completeMessage: SyncMessage = {
+        ...message,
+        timestamp: new Date().toISOString(),
+        sequenceNumber: nextSequence,
+        clientId
+      };
+      
+      socket.send(JSON.stringify(completeMessage));
+      return true;
+    } catch (error) {
+      console.error('Error sending message:', error);
+      return false;
+    }
+  }, [socket, clientId, sequenceNumber]);
+
+  // Send capabilities to the server
+  const sendCapabilitiesMessage = useCallback((ws: WebSocket) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      // Collect device information
+      const deviceInfo: Record<string, any> = {
+        isElectron: isElectronEnvironment(),
+        userAgent: navigator.userAgent,
+      };
+      
+      // Add more details if available in modern browsers
+      if ('userAgentData' in navigator) {
+        const nav = navigator as any;
+        deviceInfo.platform = nav.userAgentData?.platform;
+        deviceInfo.mobile = nav.userAgentData?.mobile;
+        deviceInfo.brands = nav.userAgentData?.brands;
+      }
+      
+      // Add electron-specific details
+      if (isElectronEnvironment()) {
+        deviceInfo.type = 'desktop';
+        
+        // Try to get electron process info
+        try {
+          const process = window.process;
+          if (process) {
+            deviceInfo.platform = process.platform;
+            deviceInfo.arch = process.arch;
+            deviceInfo.version = process.version;
+          }
+        } catch (e) {
+          console.warn('Could not access electron process info');
+        }
+      }
+      
+      const nextSequence = sequenceNumber + 1;
+      setSequenceNumber(nextSequence);
+      
+      ws.send(JSON.stringify({
+        type: SyncMessageType.CAPABILITIES,
+        payload: {
+          version: '1.0.0',
+          features: ['compression', 'offline', 'encryption'],
+          deviceInfo
+        },
+        timestamp: new Date().toISOString(),
+        sequenceNumber: nextSequence
       }));
     }
-  }, [onConnected, onDataChange, onDisconnected, onError, onMessage, pingInterval, state.clientId, state.socket]);
-
-  // Function to disconnect from the WebSocket server
-  const disconnect = useCallback(() => {
-    // Clean up any pending timeouts or intervals
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+  }, [sequenceNumber]);
+  
+  // Request connected clients list
+  const getConnectedClients = useCallback(() => {
+    return sendMessage({
+      type: SyncMessageType.CONNECTION_STATUS,
+      payload: { requestDetails: true }
+    });
+  }, [sendMessage]);
+  
+  // Attempt to sync data with Electron's local database
+  const syncData = useCallback(async (): Promise<SyncResult> => {
+    if (!isElectronEnvironment()) {
+      throw new Error('Sync data is only available in Electron environment');
     }
     
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = null;
-    }
-    
-    // Only attempt to close the socket if it exists and is connected
-    if (state.socket && state.isConnected) {
-      try {
-        // Send a disconnect message before closing
-        const disconnectMessage: SyncMessage = {
-          type: 'client_disconnected',
-          clientId: state.clientId,
-          timestamp: Date.now(),
-        };
-        
-        if (state.socket.readyState === WebSocket.OPEN) {
-          state.socket.send(JSON.stringify(disconnectMessage));
-          
-          // Close the connection with a normal closure code
-          state.socket.close(1000, 'Client initiated disconnect');
-        }
-      } catch (error) {
-        console.error('Error during disconnect:', error);
-      }
-    }
-    
-    // Update state
-    setState(prev => ({
-      ...prev,
-      isConnected: false,
-      socket: null,
-    }));
-  }, [state.clientId, state.isConnected, state.socket]);
-
-  // Send a data change message to the server
-  const sendDataChange = useCallback(
-    (entity: string, action: 'create' | 'update' | 'delete', data: any): boolean => {
-      if (!state.socket || !state.isConnected) {
-        console.warn('Cannot send data change: WebSocket not connected');
-        return false;
+    try {
+      const startTime = Date.now();
+      
+      // Call Electron's syncDatabase method
+      const syncSuccess = await callElectronBridge('db', 'syncDatabase');
+      
+      if (!syncSuccess) {
+        throw new Error('Database sync failed');
       }
       
-      try {
-        // Create the data change message
-        const message: SyncMessage = {
-          type: 'data_change',
-          clientId: state.clientId,
-          timestamp: Date.now(),
-          entity,
-          action,
-          data,
-        };
-        
-        // Send the message if the socket is open
-        if (state.socket.readyState === WebSocket.OPEN) {
-          state.socket.send(JSON.stringify(message));
-          return true;
-        } else {
-          console.warn('WebSocket not in OPEN state', state.socket.readyState);
-          return false;
-        }
-      } catch (error) {
-        console.error('Error sending data change:', error);
-        return false;
-      }
-    },
-    [state.clientId, state.isConnected, state.socket]
-  );
+      // Get sync statistics
+      const syncInfo = await callElectronBridge('db', 'getSyncInfo');
+      const endTime = Date.now();
+      
+      const formattedResult: SyncResult = {
+        syncedCount: syncInfo.totalSynced || 0,
+        entities: syncInfo.entityCounts || {},
+        duration: endTime - startTime,
+        errors: syncInfo.errors || []
+      };
+      
+      return formattedResult;
+    } catch (error) {
+      console.error('Error syncing data with Electron DB:', error);
+      throw error instanceof Error 
+        ? error 
+        : new Error('Unknown error occurred during sync');
+    }
+  }, []);
 
-  // Auto-connect if enabled
+  // Auto-connect if specified
   useEffect(() => {
-    if (autoConnect) {
+    if (options.autoConnect) {
       connect();
     }
     
-    // Clean up on unmount
+    // Clean up when unmounting
     return () => {
-      if (pingIntervalRef.current) {
-        clearInterval(pingIntervalRef.current);
+      if (socket) {
+        socket.close();
       }
       
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      
-      if (state.socket) {
-        state.socket.close();
-      }
     };
-  }, [autoConnect, connect, state.socket]);
+  }, [options.autoConnect, connect, socket]);
 
   return {
-    isConnected: state.isConnected,
-    clientId: state.clientId,
-    connectedTimestamp: state.connectedTimestamp ? new Date(state.connectedTimestamp) : null,
-    error: state.error,
+    isConnected,
+    isConnecting,
     connect,
     disconnect,
-    sendDataChange,
+    sendMessage,
+    clientId,
+    connectedTimestamp,
+    latency: lastPingTime,
+    getConnectedClients,
+    syncData
   };
 }
