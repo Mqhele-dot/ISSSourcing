@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { Buffer } from "buffer";
+import { setupAuth } from "./auth";
 import {
   generateReorderRequestsPdfReport,
   generateReorderRequestsCsvReport,
@@ -56,6 +57,8 @@ async function workbookToBuffer(workbook: Excel.Workbook): Promise<Buffer> {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Set up authentication routes and middleware
+  setupAuth(app);
   // Categories endpoints
   app.get("/api/categories", async (_req: Request, res: Response) => {
     try {
@@ -2126,6 +2129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create the HTTP server
   const httpServer = createServer(app);
   return httpServer;
 }

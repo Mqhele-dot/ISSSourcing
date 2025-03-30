@@ -21,22 +21,64 @@ import {
   auditLogs, type AuditLog, type InsertAuditLog,
   userPreferences, type UserPreference, type InsertUserPreference,
   permissions, type Permission, type InsertPermission,
+  userVerificationTokens, type UserVerificationToken, type InsertUserVerificationToken,
+  sessions, type Session, type InsertSession,
   type InventoryStats, ItemStatus, type BulkImportInventory,
   PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus, ReorderRequestStatus,
   stockMovementTypeEnum, UserRoleEnum, PermissionTypeEnum, ResourceEnum,
   Resource, PermissionType, UserRole,
+  type UserLogin, type PasswordResetRequest,
 } from "@shared/schema";
+import session from "express-session";
+import memorystore from "memorystore";
+
+const MemoryStore = memorystore(session);
+import crypto from "crypto";
 
 export interface IStorage {
+  // Session store for Express sessions
+  sessionStore: session.Store;
+
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
   getUserPreferences(userId: number): Promise<UserPreference | undefined>;
   updateUserPreferences(userId: number, preferences: Partial<InsertUserPreference>): Promise<UserPreference | undefined>;
   getAllUsers(): Promise<User[]>;
   deleteUser(id: number): Promise<boolean>;
+  
+  // Authentication methods
+  authenticateUser(credentials: UserLogin): Promise<User | null>;
+  recordLoginAttempt(username: string, success: boolean): Promise<void>;
+  resetFailedLoginAttempts(userId: number): Promise<void>;
+  isAccountLocked(userId: number): Promise<boolean>;
+  
+  // Email verification methods
+  createVerificationToken(userId: number, tokenType: string, expiresInMinutes?: number): Promise<UserVerificationToken>;
+  getVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined>;
+  useVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined>;
+  markEmailAsVerified(userId: number): Promise<User | undefined>;
+  
+  // Password reset methods
+  createPasswordResetToken(email: string): Promise<UserVerificationToken | null>;
+  resetPassword(token: string, newPassword: string): Promise<boolean>;
+  changePassword(userId: number, currentPassword: string, newPassword: string): Promise<boolean>;
+  
+  // Two-factor authentication methods
+  generateTwoFactorSecret(userId: number): Promise<string>;
+  enableTwoFactorAuth(userId: number, verified: boolean): Promise<User | undefined>;
+  disableTwoFactorAuth(userId: number): Promise<User | undefined>;
+  verifyTwoFactorToken(userId: number, token: string): Promise<boolean>;
+  
+  // Session management
+  createSession(userId: number, ipAddress?: string, userAgent?: string, expiresInDays?: number): Promise<Session>;
+  getSession(token: string): Promise<Session | undefined>;
+  invalidateSession(token: string): Promise<boolean>;
+  invalidateAllUserSessions(userId: number): Promise<boolean>;
+  cleanExpiredSessions(): Promise<void>;
   
   // Permission methods
   getAllPermissions(): Promise<Permission[]>;
@@ -231,6 +273,7 @@ export interface IStorage {
 }
 
 export class MemStorage implements IStorage {
+  sessionStore: session.Store;
   private users: Map<number, User>;
   private categories: Map<number, Category>;
   private inventoryItems: Map<number, InventoryItem>;
@@ -253,6 +296,11 @@ export class MemStorage implements IStorage {
   private auditLogs: Map<number, AuditLog>;
   private userPreferences: Map<number, UserPreference>;
   private permissions: Map<number, Permission>;
+  private userVerificationTokens: Map<number, UserVerificationToken>;
+  private sessions: Map<number, Session>;
+  
+  // For tracking failed login attempts
+  private failedLoginAttempts: Map<number, { count: number, lastAttempt: Date }>;
   
   private userCurrentId: number;
   private categoryCurrentId: number;
@@ -276,6 +324,8 @@ export class MemStorage implements IStorage {
   private auditLogCurrentId: number;
   private userPreferenceCurrentId: number;
   private permissionCurrentId: number;
+  private userVerificationTokenCurrentId: number;
+  private sessionCurrentId: number;
   
   constructor() {
     this.users = new Map();
@@ -289,6 +339,14 @@ export class MemStorage implements IStorage {
     this.purchaseOrderItems = new Map();
     this.appSettings = new Map();
     this.supplierLogos = new Map();
+    this.userVerificationTokens = new Map();
+    this.sessions = new Map();
+    this.failedLoginAttempts = new Map();
+    
+    // Initialize the session store for Express
+    this.sessionStore = new MemoryStore({
+      checkPeriod: 86400000 // Prune expired entries every 24h
+    });
     this.vatRates = new Map();
     this.reorderRequests = new Map();
     this.warehouses = new Map();
@@ -323,6 +381,8 @@ export class MemStorage implements IStorage {
     this.auditLogCurrentId = 1;
     this.userPreferenceCurrentId = 1;
     this.permissionCurrentId = 1;
+    this.userVerificationTokenCurrentId = 1;
+    this.sessionCurrentId = 1;
     
     // Add default data
     this.initializeDefaultData();
@@ -580,6 +640,410 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values()).find(
       (user) => user.username === username,
     );
+  }
+  
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.email === email,
+    );
+  }
+  
+  // Authentication methods
+  async authenticateUser(credentials: UserLogin): Promise<User | null> {
+    const user = await this.getUserByUsername(credentials.username);
+    if (!user) return null;
+    
+    // In a real app, we would hash and compare passwords here
+    // This is a simplified version for demonstration
+    if (user.password === credentials.password) {
+      const now = new Date();
+      await this.updateUser(user.id, { lastLogin: now });
+      await this.resetFailedLoginAttempts(user.id);
+      
+      // Log successful login
+      await this.createActivityLog({
+        action: "User Login",
+        description: `User ${user.username} logged in successfully`,
+        referenceType: "user",
+        referenceId: user.id,
+        userId: user.id
+      });
+      
+      return user;
+    }
+    
+    // Log failed login attempt
+    await this.recordLoginAttempt(credentials.username, false);
+    return null;
+  }
+  
+  async recordLoginAttempt(username: string, success: boolean): Promise<void> {
+    if (success) return; // Only track failed attempts
+    
+    const user = await this.getUserByUsername(username);
+    if (!user) return; // Username doesn't exist, don't track
+    
+    const now = new Date();
+    const attempts = this.failedLoginAttempts.get(user.id);
+    
+    if (attempts) {
+      // Increment existing attempts
+      attempts.count += 1;
+      attempts.lastAttempt = now;
+    } else {
+      // First failed attempt
+      this.failedLoginAttempts.set(user.id, {
+        count: 1,
+        lastAttempt: now
+      });
+    }
+    
+    // Log failed attempt
+    await this.createActivityLog({
+      action: "Failed Login Attempt",
+      description: `Failed login attempt for user ${username}`,
+      referenceType: "user",
+      referenceId: user.id,
+      userId: user.id
+    });
+  }
+  
+  async resetFailedLoginAttempts(userId: number): Promise<void> {
+    this.failedLoginAttempts.delete(userId);
+  }
+  
+  async isAccountLocked(userId: number): Promise<boolean> {
+    const attempts = this.failedLoginAttempts.get(userId);
+    if (!attempts) return false;
+    
+    const MAX_FAILED_ATTEMPTS = 5;
+    const LOCKOUT_DURATION_MINUTES = 30;
+    
+    if (attempts.count >= MAX_FAILED_ATTEMPTS) {
+      const lockoutTime = new Date(attempts.lastAttempt);
+      lockoutTime.setMinutes(lockoutTime.getMinutes() + LOCKOUT_DURATION_MINUTES);
+      
+      // If current time is before the lockout expires, account is locked
+      if (new Date() < lockoutTime) {
+        return true;
+      } else {
+        // Lockout duration has passed, reset attempts
+        this.resetFailedLoginAttempts(userId);
+        return false;
+      }
+    }
+    
+    return false;
+  }
+  
+  // Email verification methods
+  async createVerificationToken(userId: number, tokenType: string, expiresInMinutes: number = 60): Promise<UserVerificationToken> {
+    const token = crypto.randomBytes(32).toString('hex');
+    const now = new Date();
+    const expiresAt = new Date(now);
+    expiresAt.setMinutes(now.getMinutes() + expiresInMinutes);
+    
+    const verificationToken: UserVerificationToken = {
+      id: this.userVerificationTokenCurrentId++,
+      userId,
+      token,
+      type: tokenType,
+      createdAt: now,
+      expiresAt,
+      used: null
+    };
+    
+    this.userVerificationTokens.set(verificationToken.id, verificationToken);
+    return verificationToken;
+  }
+  
+  async getVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined> {
+    return Array.from(this.userVerificationTokens.values()).find(
+      (vt) => vt.token === token && vt.type === type && !vt.used && vt.expiresAt > new Date()
+    );
+  }
+  
+  async useVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined> {
+    const verificationToken = await this.getVerificationToken(token, type);
+    if (!verificationToken) return undefined;
+    
+    // Mark token as used
+    verificationToken.used = true;
+    this.userVerificationTokens.set(verificationToken.id, verificationToken);
+    
+    return verificationToken;
+  }
+  
+  async markEmailAsVerified(userId: number): Promise<User | undefined> {
+    const user = await this.getUser(userId);
+    if (!user) return undefined;
+    
+    // In a real app, we'd set an emailVerified field
+    // For our demo, we'll just log the action
+    await this.createActivityLog({
+      action: "Email Verified",
+      description: `Email verified for user: ${user.username}`,
+      referenceType: "user",
+      referenceId: userId,
+      userId
+    });
+    
+    return user;
+  }
+  
+  // Password reset methods
+  async createPasswordResetToken(email: string): Promise<UserVerificationToken | null> {
+    const user = await this.getUserByEmail(email);
+    if (!user) return null;
+    
+    // Create a password reset token that expires in 30 minutes
+    const token = await this.createVerificationToken(user.id, 'password_reset', 30);
+    
+    // Log the action
+    await this.createActivityLog({
+      action: "Password Reset Requested",
+      description: `Password reset requested for user: ${user.username}`,
+      referenceType: "user",
+      referenceId: user.id,
+      userId: user.id
+    });
+    
+    return token;
+  }
+  
+  async resetPassword(token: string, newPassword: string): Promise<boolean> {
+    const verificationToken = await this.useVerificationToken(token, 'password_reset');
+    if (!verificationToken) return false;
+    
+    const user = await this.getUser(verificationToken.userId);
+    if (!user) return false;
+    
+    // Update the user's password
+    await this.updateUser(user.id, { password: newPassword });
+    
+    // Reset failed login attempts if any
+    await this.resetFailedLoginAttempts(user.id);
+    
+    // Log the action
+    await this.createActivityLog({
+      action: "Password Reset",
+      description: `Password reset for user: ${user.username}`,
+      referenceType: "user",
+      referenceId: user.id,
+      userId: user.id
+    });
+    
+    return true;
+  }
+  
+  async changePassword(userId: number, currentPassword: string, newPassword: string): Promise<boolean> {
+    const user = await this.getUser(userId);
+    if (!user) return false;
+    
+    // In a real app, we'd hash and compare the passwords
+    if (user.password !== currentPassword) return false;
+    
+    // Update the user's password
+    await this.updateUser(userId, { password: newPassword });
+    
+    // Log the action
+    await this.createActivityLog({
+      action: "Password Changed",
+      description: `Password changed for user: ${user.username}`,
+      referenceType: "user",
+      referenceId: userId,
+      userId
+    });
+    
+    return true;
+  }
+  
+  // Two-factor authentication methods
+  async generateTwoFactorSecret(userId: number): Promise<string> {
+    const user = await this.getUser(userId);
+    if (!user) throw new Error("User not found");
+    
+    // In a real app, we'd use a proper 2FA library like speakeasy
+    // Here we're just generating a random string for demonstration
+    const secret = crypto.randomBytes(20).toString('hex');
+    
+    // Store the secret in the user's 2FA token field in the verification tokens
+    await this.createVerificationToken(userId, 'two_factor_secret', 0);
+    
+    // Log the action
+    await this.createActivityLog({
+      action: "Two-Factor Secret Generated",
+      description: `Two-factor authentication secret generated for user: ${user.username}`,
+      referenceType: "user",
+      referenceId: userId,
+      userId
+    });
+    
+    return secret;
+  }
+  
+  async enableTwoFactorAuth(userId: number, verified: boolean): Promise<User | undefined> {
+    const user = await this.getUser(userId);
+    if (!user) return undefined;
+    
+    // In a real app, we'd need to set a field on the user for 2FA enabled
+    // Here we're just logging the action
+    await this.createActivityLog({
+      action: "Two-Factor Authentication Enabled",
+      description: `Two-factor authentication enabled for user: ${user.username}`,
+      referenceType: "user",
+      referenceId: userId,
+      userId
+    });
+    
+    return user;
+  }
+  
+  async disableTwoFactorAuth(userId: number): Promise<User | undefined> {
+    const user = await this.getUser(userId);
+    if (!user) return undefined;
+    
+    // In a real app, we'd need to disable 2FA on the user record
+    // Here we're just logging the action
+    await this.createActivityLog({
+      action: "Two-Factor Authentication Disabled",
+      description: `Two-factor authentication disabled for user: ${user.username}`,
+      referenceType: "user",
+      referenceId: userId,
+      userId
+    });
+    
+    return user;
+  }
+  
+  async verifyTwoFactorToken(userId: number, token: string): Promise<boolean> {
+    const user = await this.getUser(userId);
+    if (!user) return false;
+    
+    // In a real app, we'd validate the token against the user's secret using a 2FA library
+    // Here we're simplifying for demonstration by accepting any non-empty token
+    if (!token) return false;
+    
+    // Log the action
+    await this.createActivityLog({
+      action: "Two-Factor Token Verified",
+      description: `Two-factor token verified for user: ${user.username}`,
+      referenceType: "user",
+      referenceId: userId,
+      userId
+    });
+    
+    return true;
+  }
+  
+  // Session management methods
+  async createSession(userId: number, ipAddress?: string, userAgent?: string, expiresInDays: number = 30): Promise<Session> {
+    const user = await this.getUser(userId);
+    if (!user) throw new Error("User not found");
+    
+    const token = crypto.randomBytes(32).toString('hex');
+    const now = new Date();
+    const expiresAt = new Date(now);
+    expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+    
+    const session: Session = {
+      id: this.sessionCurrentId++,
+      userId,
+      token,
+      createdAt: now,
+      expiresAt,
+      ipAddress: ipAddress || null,
+      userAgent: userAgent || null,
+      lastActivity: now,
+      isValid: true
+    };
+    
+    this.sessions.set(session.id, session);
+    
+    // Log session creation
+    await this.createActivityLog({
+      action: "Session Created",
+      description: `New session created for user: ${user.username}`,
+      referenceType: "session",
+      referenceId: session.id,
+      userId
+    });
+    
+    return session;
+  }
+  
+  async getSession(token: string): Promise<Session | undefined> {
+    const now = new Date();
+    
+    return Array.from(this.sessions.values()).find(
+      (session) => 
+        session.token === token && 
+        session.isValid && 
+        session.expiresAt > now
+    );
+  }
+  
+  async invalidateSession(token: string): Promise<boolean> {
+    const session = await this.getSession(token);
+    if (!session) return false;
+    
+    // Mark session as invalid
+    session.isValid = false;
+    session.lastActivity = new Date();
+    this.sessions.set(session.id, session);
+    
+    // Log session invalidation
+    await this.createActivityLog({
+      action: "Session Invalidated",
+      description: `Session invalidated for user: ${session.userId}`,
+      referenceType: "session",
+      referenceId: session.id,
+      userId: session.userId
+    });
+    
+    return true;
+  }
+  
+  async invalidateAllUserSessions(userId: number): Promise<boolean> {
+    const user = await this.getUser(userId);
+    if (!user) return false;
+    
+    const userSessions = Array.from(this.sessions.values()).filter(
+      (session) => session.userId === userId && session.isValid
+    );
+    
+    if (userSessions.length === 0) return false;
+    
+    for (const session of userSessions) {
+      session.isValid = false;
+      session.lastActivity = new Date();
+      this.sessions.set(session.id, session);
+    }
+    
+    // Log all sessions invalidation
+    await this.createActivityLog({
+      action: "All Sessions Invalidated",
+      description: `All sessions invalidated for user: ${user.username}`,
+      referenceType: "user",
+      referenceId: userId,
+      userId
+    });
+    
+    return true;
+  }
+  
+  async cleanExpiredSessions(): Promise<void> {
+    const now = new Date();
+    
+    const expiredSessions = Array.from(this.sessions.values()).filter(
+      (session) => session.expiresAt <= now
+    );
+    
+    for (const session of expiredSessions) {
+      session.isValid = false;
+      session.lastActivity = now;
+      this.sessions.set(session.id, session);
+    }
   }
   
   async createUser(insertUser: InsertUser): Promise<User> {

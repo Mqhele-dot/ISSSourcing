@@ -31,25 +31,147 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
-  email: text("email"),
+  email: text("email").notNull().unique(),
   fullName: text("full_name"),
   role: UserRoleEnum("role").default("viewer"),
   warehouseId: integer("warehouse_id"),
   active: boolean("active").default(true),
+  emailVerified: boolean("email_verified").default(false),
+  twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  twoFactorSecret: text("two_factor_secret"),
+  passwordResetToken: text("password_reset_token"),
+  passwordResetExpires: timestamp("password_reset_expires"),
+  failedLoginAttempts: integer("failed_login_attempts").default(0),
+  accountLocked: boolean("account_locked").default(false),
+  lockoutUntil: timestamp("lockout_until"),
   lastLogin: timestamp("last_login"),
+  lastPasswordChange: timestamp("last_password_change"),
   profilePicture: text("profile_picture"),
   preferences: jsonb("preferences"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// User verification token schema
+export const userVerificationTokens = pgTable("user_verification_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  token: text("token").notNull(),
+  type: text("type").notNull(), // 'email', 'password-reset', etc.
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  used: boolean("used").default(false),
+});
+
+// Session schema for managing user sessions
+export const sessions = pgTable("sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  token: text("token").notNull().unique(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastActivity: timestamp("last_activity").defaultNow().notNull(),
+  isValid: boolean("is_valid").default(true),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   lastLogin: true,
+  emailVerified: true,
+  twoFactorEnabled: true,
+  twoFactorSecret: true,
+  passwordResetToken: true,
+  passwordResetExpires: true,
+  failedLoginAttempts: true,
+  accountLocked: true,
+  lockoutUntil: true,
+  lastPasswordChange: true,
   profilePicture: true,
   preferences: true,
   createdAt: true,
   updatedAt: true,
+});
+
+// User registration form schema with validation
+export const userRegistrationSchema = insertUserSchema.extend({
+  username: z.string().min(4, "Username must be at least 4 characters").max(50, "Username cannot exceed 50 characters"),
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
+  confirmPassword: z.string(),
+  fullName: z.string().min(2, "Full name must be at least 2 characters").max(100, "Full name cannot exceed 100 characters"),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"]
+});
+
+// User login schema
+export const userLoginSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+  rememberMe: z.boolean().optional().default(false),
+});
+
+// User password change schema
+export const userPasswordChangeSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
+  confirmNewPassword: z.string(),
+}).refine((data) => data.newPassword === data.confirmNewPassword, {
+  message: "New passwords do not match",
+  path: ["confirmNewPassword"]
+});
+
+// Password reset request schema
+export const passwordResetRequestSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+});
+
+// Password reset schema
+export const passwordResetSchema = z.object({
+  token: z.string().min(1, "Reset token is required"),
+  newPassword: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
+  confirmNewPassword: z.string(),
+}).refine((data) => data.newPassword === data.confirmNewPassword, {
+  message: "New passwords do not match",
+  path: ["confirmNewPassword"]
+});
+
+// Two-factor authentication setup schema
+export const twoFactorSetupSchema = z.object({
+  totpCode: z.string().min(6, "TOTP code must be at least 6 digits").max(6, "TOTP code cannot exceed 6 digits"),
+});
+
+// Two-factor authentication verification schema
+export const twoFactorVerificationSchema = z.object({
+  totpCode: z.string().min(6, "TOTP code must be at least 6 digits").max(6, "TOTP code cannot exceed 6 digits"),
+});
+
+export const insertVerificationTokenSchema = createInsertSchema(userVerificationTokens).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertSessionSchema = createInsertSchema(sessions).omit({
+  id: true,
+  createdAt: true,
+  lastActivity: true,
 });
 
 export const insertPermissionSchema = createInsertSchema(permissions).omit({
@@ -320,8 +442,21 @@ export const bulkImportInventorySchema = z.array(
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type UserVerificationToken = typeof userVerificationTokens.$inferSelect;
+export type InsertUserVerificationToken = z.infer<typeof insertVerificationTokenSchema>;
+export type Session = typeof sessions.$inferSelect;
+export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Permission = typeof permissions.$inferSelect;
 export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+
+// Auth schemas types
+export type UserRegistration = z.infer<typeof userRegistrationSchema>;
+export type UserLogin = z.infer<typeof userLoginSchema>;
+export type UserPasswordChange = z.infer<typeof userPasswordChangeSchema>;
+export type PasswordResetRequest = z.infer<typeof passwordResetRequestSchema>;
+export type PasswordReset = z.infer<typeof passwordResetSchema>;
+export type TwoFactorSetup = z.infer<typeof twoFactorSetupSchema>;
+export type TwoFactorVerification = z.infer<typeof twoFactorVerificationSchema>;
 
 // Role-based permissions
 export enum UserRole {

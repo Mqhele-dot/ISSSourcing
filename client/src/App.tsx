@@ -12,24 +12,28 @@ import Reports from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
 import Home from "@/pages/home";
 import ReorderPage from "@/pages/reorder";
+import AuthPage from "@/pages/auth-page";
 import { ThemeProvider } from "@/components/theme-provider";
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
 import { useState } from "react";
 import { TutorialProvider } from "./contexts/TutorialContext";
+import { AuthProvider } from "@/hooks/use-auth";
+import { ProtectedRoute } from "@/lib/protected-route";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/inventory" component={Inventory} />
-      <Route path="/inventory/:id" component={InventoryItemDetail} />
-      <Route path="/orders" component={OrdersPage} />
-      <Route path="/suppliers" component={SuppliersPage} />
-      <Route path="/reports" component={Reports} />
-      <Route path="/reorder" component={ReorderPage} />
-      <Route path="/settings" component={SettingsPage} />
+      <ProtectedRoute path="/" component={Home} />
+      <ProtectedRoute path="/dashboard" component={Dashboard} />
+      <ProtectedRoute path="/inventory" component={Inventory} />
+      <ProtectedRoute path="/inventory/:id" component={InventoryItemDetail} />
+      <ProtectedRoute path="/orders" component={OrdersPage} />
+      <ProtectedRoute path="/suppliers" component={SuppliersPage} />
+      <ProtectedRoute path="/reports" component={Reports} />
+      <ProtectedRoute path="/reorder" component={ReorderPage} />
+      <ProtectedRoute path="/settings" component={SettingsPage} />
+      <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -55,12 +59,27 @@ function App() {
   return (
     <ThemeProvider defaultTheme="light" storageKey="invtrack-theme">
       <QueryClientProvider client={queryClient}>
-        <TutorialProvider>
-          <AppLayout>
-            <Router />
-          </AppLayout>
-          <Toaster />
-        </TutorialProvider>
+        <AuthProvider>
+          <TutorialProvider>
+            <div className="relative min-h-screen">
+              <Route path="/auth">
+                <Router />
+              </Route>
+              <Route path="*">
+                {({ match }) => {
+                  // Don't wrap non-auth routes with AppLayout
+                  if (match && match.path === "/auth") return null;
+                  return (
+                    <AppLayout>
+                      <Router />
+                    </AppLayout>
+                  );
+                }}
+              </Route>
+            </div>
+            <Toaster />
+          </TutorialProvider>
+        </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );
