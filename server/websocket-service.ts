@@ -1,11 +1,18 @@
 import { Server as HttpServer } from 'http';
-import WebSocket, { Server as WebSocketServer } from 'ws';
+import WebSocket from 'ws';
+import { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { IStorage } from './storage';
-import { ActivityLogType } from '@shared/schema';
 
 // Types of messages
-type MessageType = 'inventory_update' | 'stock_transfer' | 'stock_alert' | 'connection' | 'warehouse_update' | 'error';
+enum MessageType {
+  INVENTORY_UPDATE = 'inventory_update',
+  STOCK_TRANSFER = 'stock_transfer',
+  STOCK_ALERT = 'stock_alert',
+  CONNECTION = 'connection',
+  WAREHOUSE_UPDATE = 'warehouse_update',
+  ERROR = 'error'
+}
 
 // Message structure
 interface WebSocketMessage {
@@ -22,14 +29,14 @@ interface ClientConnection {
 }
 
 // Global instance
-let wss: WebSocketServer | null = null;
+let wss: WebSocket.Server | null = null;
 let storage: IStorage | null = null;
 const clients: Map<string, ClientConnection> = new Map();
 
 /**
  * Initialize the WebSocket server for real-time inventory synchronization
  */
-export function initializeWebSocketService(server: HttpServer, storageInstance: IStorage): WebSocketServer {
+export function initializeWebSocketService(server: HttpServer, storageInstance: IStorage): WebSocket.Server {
   // If already initialized, return the existing instance
   if (wss) {
     return wss;
@@ -61,7 +68,7 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
 
     // Send connection confirmation with client ID
     sendMessageToClient(ws, {
-      type: 'connection',
+      type: MessageType.CONNECTION,
       payload: { 
         id: clientId,
         message: 'Connected to inventory sync' 
@@ -69,28 +76,28 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
     });
 
     // Handle messages from client
-    ws.on('message', (message: WebSocket.Data) => {
+    ws.addEventListener('message', (event) => {
       try {
-        const parsedMessage = JSON.parse(message.toString()) as WebSocketMessage;
+        const parsedMessage = JSON.parse(event.data.toString()) as WebSocketMessage;
         handleClientMessage(clientId, parsedMessage);
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
         sendMessageToClient(ws, {
-          type: 'error',
+          type: MessageType.ERROR,
           payload: { message: 'Invalid message format' }
         });
       }
     });
 
     // Handle client disconnection
-    ws.on('close', () => {
+    ws.addEventListener('close', () => {
       clients.delete(clientId);
       console.log(`WebSocket client disconnected: ${clientId}`);
     });
 
     // Handle errors
-    ws.on('error', (error) => {
-      console.error(`WebSocket error for client ${clientId}:`, error);
+    ws.addEventListener('error', (event) => {
+      console.error(`WebSocket error for client ${clientId}:`, event);
       clients.delete(clientId);
     });
   });
@@ -103,7 +110,7 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
  * Send a message to a specific client
  */
 function sendMessageToClient(ws: WebSocket, message: WebSocketMessage): boolean {
-  if (ws.readyState === WebSocket.OPEN) {
+  if (ws.readyState === 1) { // WebSocket.OPEN is 1
     try {
       ws.send(JSON.stringify(message));
       return true;
@@ -143,7 +150,7 @@ function handleClientMessage(clientId: string, message: WebSocketMessage): void 
   }
 
   switch (message.type) {
-    case 'warehouse_update':
+    case MessageType.WAREHOUSE_UPDATE:
       // Update client's warehouse subscriptions
       if (Array.isArray(message.payload.warehouses)) {
         client.warehouses = message.payload.warehouses;
@@ -151,12 +158,12 @@ function handleClientMessage(clientId: string, message: WebSocketMessage): void 
       }
       break;
 
-    case 'inventory_update':
+    case MessageType.INVENTORY_UPDATE:
       // Process inventory update from client
       handleInventoryUpdate(message.payload, client);
       break;
 
-    case 'stock_transfer':
+    case MessageType.STOCK_TRANSFER:
       // Process stock transfer from client
       handleStockTransfer(message.payload, client);
       break;
@@ -164,7 +171,7 @@ function handleClientMessage(clientId: string, message: WebSocketMessage): void 
     default:
       console.warn(`Unknown message type received from client ${clientId}:`, message.type);
       sendMessageToClient(client.socket, {
-        type: 'error',
+        type: MessageType.ERROR,
         payload: { message: `Unknown message type: ${message.type}` }
       });
   }
@@ -185,14 +192,14 @@ async function handleInventoryUpdate(payload: any, client: ClientConnection): Pr
     // Validate required fields
     if (!itemId || quantity === undefined || !warehouseId) {
       sendMessageToClient(client.socket, {
-        type: 'error',
+        type: MessageType.ERROR,
         payload: { message: 'Missing required fields for inventory update' }
       });
       return;
     }
 
     // Get current warehouse inventory
-    const warehouseInventory = await storage.getWarehouseInventoryByItemId(warehouseId, itemId);
+    const warehouseInventory = await storage.getWarehouseInventoryItem(warehouseId, itemId);
     if (!warehouseInventory) {
       // Create it if it doesn't exist
       await storage.createWarehouseInventory({
@@ -214,7 +221,9 @@ async function handleInventoryUpdate(payload: any, client: ClientConnection): Pr
       warehouseId,
       type: type || 'ADJUSTMENT',
       notes: reason || 'Manual update via system',
-      userId: userId || null
+      userId: userId || null,
+      sourceWarehouseId: warehouseId,
+      destinationWarehouseId: null
     });
 
     // Log the activity
@@ -222,12 +231,10 @@ async function handleInventoryUpdate(payload: any, client: ClientConnection): Pr
       await storage.createActivityLog({
         action: 'INVENTORY_UPDATE',
         userId,
-        details: {
-          itemId,
-          warehouseId,
-          quantity,
-          reason
-        }
+        description: `Updated inventory for item #${itemId} in warehouse #${warehouseId}: quantity ${quantity}${reason ? ` (${reason})` : ''}`,
+        itemId,
+        referenceId: warehouseId,
+        referenceType: 'warehouse'
       });
     }
 
@@ -237,7 +244,7 @@ async function handleInventoryUpdate(payload: any, client: ClientConnection): Pr
 
     // Broadcast the update to all relevant clients
     broadcastMessage({
-      type: 'inventory_update',
+      type: MessageType.INVENTORY_UPDATE,
       payload: {
         item: updatedItem,
         warehouse,
@@ -254,7 +261,7 @@ async function handleInventoryUpdate(payload: any, client: ClientConnection): Pr
   } catch (error) {
     console.error('Error handling inventory update:', error);
     sendMessageToClient(client.socket, {
-      type: 'error',
+      type: MessageType.ERROR,
       payload: { message: 'Failed to process inventory update' }
     });
   }
@@ -282,24 +289,24 @@ async function handleStockTransfer(payload: any, client: ClientConnection): Prom
     // Validate required fields
     if (!itemId || quantity === undefined || !sourceWarehouseId || !destinationWarehouseId) {
       sendMessageToClient(client.socket, {
-        type: 'error',
+        type: MessageType.ERROR,
         payload: { message: 'Missing required fields for stock transfer' }
       });
       return;
     }
 
     // Get source warehouse inventory
-    const sourceInventory = await storage.getWarehouseInventoryByItemId(sourceWarehouseId, itemId);
+    const sourceInventory = await storage.getWarehouseInventoryItem(sourceWarehouseId, itemId);
     if (!sourceInventory || sourceInventory.quantity < quantity) {
       sendMessageToClient(client.socket, {
-        type: 'error',
+        type: MessageType.ERROR,
         payload: { message: 'Insufficient stock in source warehouse' }
       });
       return;
     }
 
     // Get destination warehouse inventory
-    const destinationInventory = await storage.getWarehouseInventoryByItemId(destinationWarehouseId, itemId);
+    const destinationInventory = await storage.getWarehouseInventoryItem(destinationWarehouseId, itemId);
 
     // Update source warehouse inventory (deduct)
     await storage.updateWarehouseInventory(sourceInventory.id, {
@@ -325,9 +332,10 @@ async function handleStockTransfer(payload: any, client: ClientConnection): Prom
       itemId,
       quantity: -quantity,
       warehouseId: sourceWarehouseId,
-      type: 'TRANSFER_OUT',
-      relatedWarehouseId: destinationWarehouseId,
-      notes: reason || 'Stock transfer',
+      type: 'TRANSFER',
+      sourceWarehouseId: sourceWarehouseId,
+      destinationWarehouseId: destinationWarehouseId,
+      notes: reason || 'Stock transfer out',
       userId: userId || null
     });
 
@@ -336,8 +344,9 @@ async function handleStockTransfer(payload: any, client: ClientConnection): Prom
       itemId,
       quantity: quantity,
       warehouseId: destinationWarehouseId,
-      type: 'TRANSFER_IN',
-      relatedWarehouseId: sourceWarehouseId,
+      type: 'TRANSFER',
+      sourceWarehouseId: sourceWarehouseId,
+      destinationWarehouseId: destinationWarehouseId,
       notes: reason || 'Stock transfer',
       userId: userId || null
     });
@@ -347,13 +356,10 @@ async function handleStockTransfer(payload: any, client: ClientConnection): Prom
       await storage.createActivityLog({
         action: 'STOCK_TRANSFER',
         userId,
-        details: {
-          itemId,
-          quantity,
-          sourceWarehouseId,
-          destinationWarehouseId,
-          reason
-        }
+        description: `Transferred ${quantity} units of item #${itemId} from warehouse #${sourceWarehouseId} to warehouse #${destinationWarehouseId}${reason ? ` (${reason})` : ''}`,
+        itemId,
+        referenceId: sourceWarehouseId,
+        referenceType: 'warehouse'
       });
     }
 
@@ -364,7 +370,7 @@ async function handleStockTransfer(payload: any, client: ClientConnection): Prom
 
     // Broadcast updates for both warehouses
     const transferMessage = {
-      type: 'inventory_update',
+      type: MessageType.INVENTORY_UPDATE,
       payload: {
         item,
         transfer: {
@@ -391,7 +397,7 @@ async function handleStockTransfer(payload: any, client: ClientConnection): Prom
   } catch (error) {
     console.error('Error handling stock transfer:', error);
     sendMessageToClient(client.socket, {
-      type: 'error',
+      type: MessageType.ERROR,
       payload: { message: 'Failed to process stock transfer' }
     });
   }
@@ -407,7 +413,7 @@ async function checkAndSendLowStockAlert(itemId: number, warehouseId: number): P
     const item = await storage.getInventoryItem(itemId);
     if (!item) return;
 
-    const warehouseInventory = await storage.getWarehouseInventoryByItemId(warehouseId, itemId);
+    const warehouseInventory = await storage.getWarehouseInventoryItem(warehouseId, itemId);
     if (!warehouseInventory) return;
 
     const warehouse = await storage.getWarehouse(warehouseId);
@@ -422,7 +428,7 @@ async function checkAndSendLowStockAlert(itemId: number, warehouseId: number): P
     if (warehouseInventory.quantity <= threshold) {
       // Send a stock alert to all clients subscribed to this warehouse
       broadcastMessage({
-        type: 'stock_alert',
+        type: MessageType.STOCK_ALERT,
         payload: {
           item,
           warehouse,
@@ -436,14 +442,10 @@ async function checkAndSendLowStockAlert(itemId: number, warehouseId: number): P
       await storage.createActivityLog({
         action: 'LOW_STOCK_ALERT',
         userId: null,
-        details: {
-          itemId: item.id,
-          itemName: item.name,
-          warehouseId,
-          warehouseName: warehouse.name,
-          currentLevel: warehouseInventory.quantity,
-          threshold
-        }
+        description: `Low stock alert for ${item.name} (ID: ${item.id}) in ${warehouse.name}: ${warehouseInventory.quantity} units remaining (threshold: ${threshold})`,
+        itemId: item.id,
+        referenceId: warehouseId,
+        referenceType: 'warehouse'
       });
     }
   } catch (error) {
@@ -471,8 +473,20 @@ export async function notifyInventoryUpdate(
 
     if (!item || !warehouse) return;
 
+    // Create a stock movement record to track this change
+    await storage.createStockMovement({
+      itemId,
+      quantity: quantity - previousQuantity,
+      warehouseId,
+      type: 'ADJUSTMENT',
+      notes: 'System inventory update',
+      userId: null,
+      sourceWarehouseId: warehouseId,
+      destinationWarehouseId: null
+    });
+
     broadcastMessage({
-      type: 'inventory_update',
+      type: MessageType.INVENTORY_UPDATE,
       payload: {
         item,
         warehouse,

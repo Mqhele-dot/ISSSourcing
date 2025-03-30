@@ -113,12 +113,12 @@ export function useInventorySync(options: InventorySyncOptions = {}): InventoryS
 
             case 'inventory_update':
               // When inventory updates come in, invalidate the relevant queries
-              queryClient.invalidateQueries(['/api/inventory']);
+              queryClient.invalidateQueries({ queryKey: ['/api/inventory'] });
               if (message.payload.warehouseId) {
-                queryClient.invalidateQueries(['/api/warehouses', message.payload.warehouseId, 'inventory']);
+                queryClient.invalidateQueries({ queryKey: ['/api/warehouses', message.payload.warehouseId, 'inventory'] });
               }
               if (message.payload.item?.id) {
-                queryClient.invalidateQueries(['/api/inventory', message.payload.item.id]);
+                queryClient.invalidateQueries({ queryKey: ['/api/inventory', message.payload.item.id] });
               }
               
               if (options.onInventoryUpdate) {

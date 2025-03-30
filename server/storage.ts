@@ -186,7 +186,7 @@ export interface IStorage {
   getStockMovementsByItemId(itemId: number): Promise<StockMovement[]>;
   getStockMovementsByWarehouseId(warehouseId: number): Promise<StockMovement[]>;
   createStockMovement(movement: InsertStockMovement): Promise<StockMovement>;
-  transferStock(sourceWarehouseId: number, destinationWarehouseId: number, itemId: number, quantity: number, userId?: number): Promise<StockMovement>;
+  transferStock(sourceWarehouseId: number, destinationWarehouseId: number, itemId: number, quantity: number, userId?: number, reason?: string): Promise<StockMovement>;
   
   // Reorder request methods
   getAllReorderRequests(): Promise<ReorderRequest[]>;
@@ -2240,7 +2240,8 @@ export class MemStorage implements IStorage {
     destinationWarehouseId: number, 
     itemId: number, 
     quantity: number, 
-    userId?: number
+    userId?: number,
+    reason?: string
   ): Promise<StockMovement> {
     // Verify warehouses exist
     const sourceWarehouse = await this.getWarehouse(sourceWarehouseId);
@@ -2304,7 +2305,9 @@ export class MemStorage implements IStorage {
       referenceId: null,
       referenceType: null,
       unitCost: null,
-      notes: `Transfer from ${sourceWarehouse.name} to ${destinationWarehouse.name}`,
+      notes: reason 
+        ? `Transfer from ${sourceWarehouse.name} to ${destinationWarehouse.name}: ${reason}` 
+        : `Transfer from ${sourceWarehouse.name} to ${destinationWarehouse.name}`,
       sourceWarehouseId,
       destinationWarehouseId
     });
@@ -2312,7 +2315,9 @@ export class MemStorage implements IStorage {
     // Log activity
     await this.createActivityLog({
       action: "STOCK_TRANSFER",
-      description: `Transferred ${quantity} units of ${item.name} from ${sourceWarehouse.name} to ${destinationWarehouse.name}`,
+      description: reason 
+        ? `Transferred ${quantity} units of ${item.name} from ${sourceWarehouse.name} to ${destinationWarehouse.name}: ${reason}` 
+        : `Transferred ${quantity} units of ${item.name} from ${sourceWarehouse.name} to ${destinationWarehouse.name}`,
       referenceType: "stock_movement",
       referenceId: movement.id,
       itemId: item.id

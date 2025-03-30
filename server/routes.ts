@@ -1501,10 +1501,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const validatedData = insertWarehouseInventorySchema.partial().parse(req.body);
+      
+      // Get the previous state for comparison
+      const warehouseInventory = await storage.getWarehouseInventory();
+      const previousItem = warehouseInventory.find(item => item.id === id);
+      if (!previousItem) {
+        return res.status(404).json({ message: "Warehouse inventory item not found" });
+      }
+      
+      const previousQuantity = previousItem.quantity;
       const updatedItem = await storage.updateWarehouseInventory(id, validatedData);
       
       if (!updatedItem) {
         return res.status(404).json({ message: "Warehouse inventory item not found" });
+      }
+      
+      // If quantity changed, notify via WebSocket
+      if (validatedData.quantity !== undefined && validatedData.quantity !== previousQuantity) {
+        try {
+          const { notifyInventoryUpdate } = await import('./websocket-service');
+          notifyInventoryUpdate(
+            updatedItem.itemId, 
+            updatedItem.warehouseId, 
+            updatedItem.quantity, 
+            previousQuantity
+          );
+        } catch (wsError) {
+          console.error("Failed to notify inventory update via WebSocket:", wsError);
+          // Continue with the response even if WebSocket notification fails
+        }
       }
       
       res.json(updatedItem);
@@ -1614,7 +1639,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/stock-movements/transfer", async (req: Request, res: Response) => {
     try {
-      const { sourceWarehouseId, destinationWarehouseId, itemId, quantity, userId } = req.body;
+      const { sourceWarehouseId, destinationWarehouseId, itemId, quantity, userId, reason } = req.body;
       
       if (!sourceWarehouseId || !destinationWarehouseId || !itemId || !quantity) {
         return res.status(400).json({ message: "Missing required fields" });
@@ -1624,13 +1649,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Source and destination warehouses must be different" });
       }
       
+      // Get previous inventory state for reporting
+      const sourceInventory = await storage.getWarehouseInventoryItem(
+        Number(sourceWarehouseId), 
+        Number(itemId)
+      );
+      
+      const destinationInventory = await storage.getWarehouseInventoryItem(
+        Number(destinationWarehouseId), 
+        Number(itemId)
+      );
+      
+      if (!sourceInventory || sourceInventory.quantity < Number(quantity)) {
+        return res.status(400).json({ message: "Insufficient stock in source warehouse" });
+      }
+      
       const movement = await storage.transferStock(
         Number(sourceWarehouseId),
         Number(destinationWarehouseId),
         Number(itemId),
         Number(quantity),
-        userId ? Number(userId) : undefined
+        userId ? Number(userId) : undefined,
+        reason
       );
+      
+      // Notify via WebSocket
+      try {
+        const { notifyInventoryUpdate } = await import('./websocket-service');
+        
+        // Notify for source warehouse (decrease)
+        notifyInventoryUpdate(
+          Number(itemId),
+          Number(sourceWarehouseId),
+          sourceInventory.quantity - Number(quantity),
+          sourceInventory.quantity
+        );
+        
+        // Notify for destination warehouse (increase)
+        const prevDestQuantity = destinationInventory ? destinationInventory.quantity : 0;
+        notifyInventoryUpdate(
+          Number(itemId),
+          Number(destinationWarehouseId),
+          prevDestQuantity + Number(quantity),
+          prevDestQuantity
+        );
+      } catch (wsError) {
+        console.error("Failed to notify inventory update via WebSocket:", wsError);
+        // Continue with the response even if WebSocket notification fails
+      }
       
       res.status(201).json(movement);
     } catch (error) {
@@ -1652,6 +1718,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Quantity must be positive for receipt" });
       }
       
+      // Get current inventory state for this item/warehouse
+      const warehouseInventory = await storage.getWarehouseInventoryItem(
+        Number(warehouseId), 
+        Number(itemId)
+      );
+      
+      const previousQuantity = warehouseInventory ? warehouseInventory.quantity : 0;
+      
       const movement = await storage.createStockMovement({
         itemId: Number(itemId),
         quantity: Number(quantity),
@@ -1665,6 +1739,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: userId ? Number(userId) : null,
         unitCost: unitCost ? Number(unitCost) : null
       });
+      
+      // Notify via WebSocket
+      try {
+        const { notifyInventoryUpdate } = await import('./websocket-service');
+        
+        // Notify for warehouse (increase)
+        notifyInventoryUpdate(
+          Number(itemId),
+          Number(warehouseId),
+          previousQuantity + Number(quantity),
+          previousQuantity
+        );
+      } catch (wsError) {
+        console.error("Failed to notify inventory update via WebSocket:", wsError);
+        // Continue with the response even if WebSocket notification fails
+      }
       
       res.status(201).json(movement);
     } catch (error) {
@@ -1686,6 +1776,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Quantity must be positive for issue" });
       }
       
+      // Get current inventory state for this item/warehouse
+      const warehouseInventory = await storage.getWarehouseInventoryItem(
+        Number(warehouseId), 
+        Number(itemId)
+      );
+      
+      if (!warehouseInventory || warehouseInventory.quantity < Number(quantity)) {
+        return res.status(400).json({ message: "Insufficient stock in warehouse" });
+      }
+      
+      const previousQuantity = warehouseInventory.quantity;
+      
       const movement = await storage.createStockMovement({
         itemId: Number(itemId),
         quantity: Number(quantity),
@@ -1698,6 +1800,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes: notes || null,
         userId: userId ? Number(userId) : null
       });
+      
+      // Notify via WebSocket
+      try {
+        const { notifyInventoryUpdate } = await import('./websocket-service');
+        
+        // Notify for warehouse (decrease)
+        notifyInventoryUpdate(
+          Number(itemId),
+          Number(warehouseId),
+          previousQuantity - Number(quantity),
+          previousQuantity
+        );
+      } catch (wsError) {
+        console.error("Failed to notify inventory update via WebSocket:", wsError);
+        // Continue with the response even if WebSocket notification fails
+      }
       
       res.status(201).json(movement);
     } catch (error) {
@@ -2765,7 +2883,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
   // Initialize WebSocket service for real-time inventory synchronization
-  initializeWebSocketService(httpServer, storage);
+  // Initialize the WebSocket server for real-time inventory synchronization
+  const wss = initializeWebSocketService(httpServer, storage);
+  console.log("WebSocket server initialized for real-time inventory synchronization");
   
   return httpServer;
 }
