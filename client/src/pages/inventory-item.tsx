@@ -18,6 +18,7 @@ import { getItemStatus, getStatusColor, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { StockMovementsList } from "@/components/inventory/stock-movements-list";
 import ItemForm from "@/components/inventory/item-form";
+import { DemandForecast } from "@/components/analytics/demand-forecast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type InventoryItem, type Category } from "@shared/schema";
 
@@ -321,6 +322,7 @@ export default function InventoryItemDetail() {
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="movements">Stock Movements</TabsTrigger>
               <TabsTrigger value="warehouses">Warehouse Inventory</TabsTrigger>
+              <TabsTrigger value="forecast">Demand Forecast</TabsTrigger>
             </TabsList>
           </Tabs>
         </CardHeader>
@@ -364,6 +366,10 @@ export default function InventoryItemDetail() {
             <div className="text-center py-8 text-neutral-500">
               Warehouse inventory details will be shown here.
             </div>
+          </TabsContent>
+          
+          <TabsContent value="forecast" className="p-0 mt-0">
+            <DemandForecast itemId={itemId} itemName={item.name} />
           </TabsContent>
         </CardContent>
       </Card>

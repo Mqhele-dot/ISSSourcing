@@ -86,6 +86,7 @@ export interface IStorage {
   // Warehouse inventory methods
   getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]>;
   getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined>;
+  getItemWarehouseInventory(itemId: number): Promise<WarehouseInventory[]>;
   createWarehouseInventory(warehouseInventory: InsertWarehouseInventory): Promise<WarehouseInventory>;
   updateWarehouseInventory(id: number, warehouseInventory: Partial<InsertWarehouseInventory>): Promise<WarehouseInventory | undefined>;
   deleteWarehouseInventory(id: number): Promise<boolean>;
@@ -1161,6 +1162,11 @@ export class MemStorage implements IStorage {
   async getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined> {
     return Array.from(this.warehouseInventory.values())
       .find(wi => wi.warehouseId === warehouseId && wi.itemId === itemId);
+  }
+  
+  async getItemWarehouseInventory(itemId: number): Promise<WarehouseInventory[]> {
+    return Array.from(this.warehouseInventory.values())
+      .filter(wi => wi.itemId === itemId);
   }
   
   async createWarehouseInventory(insertWI: InsertWarehouseInventory): Promise<WarehouseInventory> {

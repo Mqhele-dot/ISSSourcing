@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { initializeWebSocketService } from "./websocket-service";
 
 const app = express();
 app.use(express.json());
@@ -39,6 +40,14 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // Initialize the WebSocket service for real-time inventory updates
+  const wsService = initializeWebSocketService(server);
+  
+  // Set up a periodic check for low stock alerts every 5 minutes
+  setInterval(() => {
+    wsService.checkLowStockAlerts();
+  }, 5 * 60 * 1000);
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -66,5 +75,6 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    log(`WebSocket server for real-time inventory sync is active`);
   });
 })();

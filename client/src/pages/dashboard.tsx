@@ -15,6 +15,9 @@ import { downloadFile } from "@/lib/utils";
 import { type InventoryItem, type InventoryStats, type Category, type DocumentType } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import TutorialButton from "@/components/ui/tutorial-button";
+import { TopItems } from "@/components/analytics/top-items";
+import { InventoryValue } from "@/components/analytics/inventory-value";
+import { RealTimeInventory } from "@/components/inventory/real-time-inventory";
 
 export default function Dashboard() {
   const [showItemForm, setShowItemForm] = useState(false);
@@ -312,6 +315,27 @@ export default function Dashboard() {
           <div className="activity-log-section">
             <RecentActivity />
           </div>
+        </div>
+      </div>
+
+      {/* Real-time Inventory Section */}
+      <div className="mt-8 mb-6">
+        <h3 className="text-xl font-semibold mb-4 text-neutral-900 dark:text-white">
+          Real-Time Inventory Sync
+        </h3>
+        <div className="mb-6">
+          <RealTimeInventory />
+        </div>
+      </div>
+
+      {/* Analytics Section */}
+      <div className="mt-8 mb-6">
+        <h3 className="text-xl font-semibold mb-4 text-neutral-900 dark:text-white">
+          Analytics & Insights
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <TopItems />
+          <InventoryValue />
         </div>
       </div>
 

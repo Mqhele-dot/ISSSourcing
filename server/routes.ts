@@ -3,11 +3,16 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
+import { Buffer } from "buffer";
 import {
   generateReorderRequestsPdfReport,
   generateReorderRequestsCsvReport,
   generateReorderRequestsExcelReport
 } from "./reorder-request-generators";
+import {
+  generateDemandForecast, 
+  getTopItems
+} from "./forecast-service";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -43,6 +48,12 @@ import * as path from 'path';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import Excel from 'exceljs';
 import { createObjectCsvWriter } from 'csv-writer';
+
+// Helper function to convert Excel workbook to Buffer safely
+async function workbookToBuffer(workbook: Excel.Workbook): Promise<Buffer> {
+  const excelBuffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(excelBuffer);
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Categories endpoints
@@ -1519,6 +1530,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to delete warehouse inventory item" });
     }
   });
+  
+  // Get inventory of an item across all warehouses
+  app.get("/api/inventory/:itemId/warehouses", async (req: Request, res: Response) => {
+    try {
+      const itemId = Number(req.params.itemId);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+      
+      const inventory = await storage.getItemWarehouseInventory(itemId);
+      res.json(inventory);
+    } catch (error) {
+      console.error("Error fetching item warehouse inventory:", error);
+      res.status(500).json({ message: "Failed to fetch item warehouse inventory" });
+    }
+  });
 
   // Stock movement endpoints
   app.get("/api/stock-movements", async (_req: Request, res: Response) => {
@@ -1999,6 +2026,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Analytics and forecasting endpoints
+  app.get("/api/analytics/demand-forecast/:itemId", async (req: Request, res: Response) => {
+    try {
+      const itemId = Number(req.params.itemId);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+
+      const daysToForecast = req.query.days ? Number(req.query.days) : 30;
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+
+      const item = await storage.getInventoryItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+
+      // Get stock movements for the item
+      let movements = await storage.getStockMovementsByItemId(itemId);
+
+      // Filter by date range if specified
+      if (startDate && endDate) {
+        movements = movements.filter((m: any) => {
+          const movementDate = new Date(m.timestamp);
+          return movementDate >= startDate && movementDate <= endDate;
+        });
+      }
+
+      const forecast = await generateDemandForecast(item, movements, daysToForecast, startDate, endDate);
+      res.json(forecast);
+    } catch (error) {
+      console.error("Error generating demand forecast:", error);
+      res.status(500).json({ message: "Failed to generate demand forecast" });
+    }
+  });
+
+  app.get("/api/analytics/top-items", async (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : 10;
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+
+      const items = await storage.getAllInventoryItems();
+      let movements = await storage.getAllStockMovements();
+
+      // Filter by date range if specified
+      if (startDate && endDate) {
+        movements = movements.filter((m: any) => {
+          const movementDate = new Date(m.timestamp);
+          return movementDate >= startDate && movementDate <= endDate;
+        });
+      }
+
+      const topItems = await getTopItems(items, movements, limit);
+      res.json(topItems);
+    } catch (error) {
+      console.error("Error getting top items:", error);
+      res.status(500).json({ message: "Failed to get top items" });
+    }
+  });
+
+  app.get("/api/analytics/inventory-value", async (req: Request, res: Response) => {
+    try {
+      const items = await storage.getAllInventoryItems();
+      
+      // Calculate total inventory value
+      let totalValue = 0;
+      let totalItems = 0;
+      const itemValues = [];
+
+      for (const item of items) {
+        // Use item.quantity and item.cost (instead of quantityInStock and costPrice)
+        const costPrice = item.cost || 0;
+        const itemValue = item.quantity * costPrice;
+        totalValue += itemValue;
+        totalItems += item.quantity;
+        
+        itemValues.push({
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          cost: costPrice,
+          value: itemValue
+        });
+      }
+
+      // Sort by value (highest first)
+      itemValues.sort((a, b) => b.value - a.value);
+
+      res.json({
+        totalValue,
+        totalItems,
+        items: itemValues
+      });
+    } catch (error) {
+      console.error("Error calculating inventory value:", error);
+      res.status(500).json({ message: "Failed to calculate inventory value" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
@@ -2307,8 +2434,7 @@ async function generateInventoryExcelReport(items: any[], title: string): Promis
   });
   
   // Write to buffer
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  return await workbookToBuffer(workbook);
 }
 
 // Purchase Orders Reports
@@ -2600,7 +2726,7 @@ async function generatePurchaseOrdersExcelReport(items: any[], title: string): P
   });
   
   // Write to buffer
-  return await workbook.xlsx.writeBuffer();
+  return await workbookToBuffer(workbook);
 }
 
 // Purchase Requisitions Reports
@@ -2893,7 +3019,7 @@ async function generatePurchaseRequisitionsExcelReport(items: any[], title: stri
   });
   
   // Write to buffer
-  return await workbook.xlsx.writeBuffer();
+  return await workbookToBuffer(workbook);
 }
 
 // Suppliers Reports
@@ -3171,5 +3297,5 @@ async function generateSuppliersExcelReport(items: any[], title: string): Promis
   });
   
   // Write to buffer
-  return await workbook.xlsx.writeBuffer();
+  return await workbookToBuffer(workbook);
 }
