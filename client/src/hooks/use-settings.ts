@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { AppSettings, AppSettingsFormWithVat } from "@shared/schema";
+import type { AppSettings, AppSettingsFormWithVat } from "@shared/schema";
 
 // Define database settings type
 export type DatabaseSettings = {

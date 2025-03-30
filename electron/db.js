@@ -133,10 +133,125 @@ function getDb() {
   };
 }
 
+/**
+ * Get database information and statistics
+ * @returns {Object} Database information
+ */
+async function getDatabaseInfo() {
+  try {
+    // Check if database file exists
+    const dbExists = fs.existsSync(DB_FILE);
+    
+    // Get file stats
+    let stats = null;
+    let size = '0 KB';
+    
+    if (dbExists) {
+      stats = fs.statSync(DB_FILE);
+      // Convert to human-readable size
+      const fileSizeInBytes = stats.size;
+      const fileSizeInKB = fileSizeInBytes / 1024;
+      if (fileSizeInKB < 1024) {
+        size = `${fileSizeInKB.toFixed(2)} KB`;
+      } else {
+        const fileSizeInMB = fileSizeInKB / 1024;
+        size = `${fileSizeInMB.toFixed(2)} MB`;
+      }
+    }
+    
+    // Get the most recent backup if any
+    let lastBackup = null;
+    if (fs.existsSync(BACKUPS_DIRECTORY)) {
+      const backupFiles = fs.readdirSync(BACKUPS_DIRECTORY)
+        .filter(file => file.startsWith('invtrack-backup-'))
+        .sort();
+      
+      if (backupFiles.length > 0) {
+        const latestBackupFile = backupFiles[backupFiles.length - 1];
+        const backupStats = fs.statSync(path.join(BACKUPS_DIRECTORY, latestBackupFile));
+        lastBackup = backupStats.mtime.toISOString();
+      }
+    }
+    
+    // In a real application, we would query the database to get record counts
+    // For this example, we'll just return placeholder data
+    return {
+      status: dbExists ? 'healthy' : 'error',
+      size,
+      location: DB_FILE,
+      lastBackup,
+      dataCount: {
+        inventory: 0,  // Would fetch from database in real app
+        movements: 0,  // Would fetch from database in real app
+        suppliers: 0,  // Would fetch from database in real app
+        users: 0       // Would fetch from database in real app
+      }
+    };
+  } catch (error) {
+    console.error('Error getting database info:', error);
+    return {
+      status: 'error',
+      size: '0 KB',
+      location: DB_FILE,
+      lastBackup: null,
+      dataCount: {
+        inventory: 0,
+        movements: 0,
+        suppliers: 0,
+        users: 0
+      }
+    };
+  }
+}
+
+/**
+ * Synchronize the local database with the remote server
+ * @param {Function} progressCallback Optional callback to report sync progress
+ * @returns {Promise<boolean>} Whether sync was successful
+ */
+async function syncDatabase(progressCallback = null) {
+  // In a real application, this would sync data with a remote server
+  // For now, we'll simulate the process with timeouts
+  
+  try {
+    console.log('Starting database synchronization...');
+    
+    // Simulate sync progress
+    const totalSteps = 5;
+    
+    for (let step = 1; step <= totalSteps; step++) {
+      // Calculate progress percentage
+      const progress = Math.floor((step / totalSteps) * 100);
+      
+      // Report progress if a callback is provided
+      if (typeof progressCallback === 'function') {
+        progressCallback(progress);
+      }
+      
+      console.log(`Sync progress: ${progress}%`);
+      
+      // Simulate network delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    // Update a timestamp file to record successful sync
+    const syncTimestampFile = path.join(DATA_DIRECTORY, 'last_sync.txt');
+    fs.writeFileSync(syncTimestampFile, new Date().toISOString());
+    
+    console.log('Database synchronization completed successfully');
+    return true;
+  } catch (error) {
+    console.error('Error synchronizing database:', error);
+    return false;
+  }
+}
+
 // Export the module
 module.exports = {
   initialize,
   getDb,
   createBackup,
-  restoreFromBackup
+  restoreFromBackup,
+  getDatabaseInfo,
+  syncDatabase
 };

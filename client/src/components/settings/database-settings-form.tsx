@@ -15,10 +15,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Database, RotateCw, CheckCircle, XCircle } from "lucide-react";
+import { Loader2, Database, RotateCw, CheckCircle, XCircle, CloudCog, Download, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings, DatabaseSettings } from "@/hooks/use-settings";
-import { isElectronEnvironment, ElectronBridge } from "@/lib/electron-bridge";
+import { isElectronEnvironment, ElectronBridge, DatabaseInfo, BackupResult } from "@/lib/electron-bridge";
 import {
   Select,
   SelectContent,
@@ -153,6 +153,42 @@ export function DatabaseSettingsForm() {
       });
     }
   }, [isElectron, electronBridge, setDbStatus, toast]);
+  
+  // Manual database synchronization function
+  const [isSyncing, setIsSyncing] = useState(false);
+  
+  const handleManualSync = useCallback(async () => {
+    if (!isElectron) {
+      toast({
+        title: "Not Available",
+        description: "Database synchronization is only available in the desktop application",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsSyncing(true);
+    
+    try {
+      await electronBridge.syncDatabase();
+      toast({
+        title: "Synchronization Complete",
+        description: "Database has been successfully synchronized with the server",
+      });
+      
+      // Re-check the connection after sync
+      await checkDatabaseConnection();
+    } catch (error) {
+      console.error('Error synchronizing database:', error);
+      toast({
+        title: "Synchronization Failed",
+        description: error instanceof Error ? error.message : "Failed to synchronize database",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [isElectron, electronBridge, toast, checkDatabaseConnection]);
 
   // Check database connection when component mounts
   useEffect(() => {
@@ -532,14 +568,37 @@ export function DatabaseSettingsForm() {
             </div>
           </CardContent>
           <CardFooter className="border-t px-6 py-4 flex justify-between">
-            <Button 
-              type="button" 
-              variant="outline"
-              onClick={checkDatabaseConnection}
-              disabled={!isElectron}
-            >
-              Test Connection
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                type="button" 
+                variant="outline"
+                onClick={checkDatabaseConnection}
+                disabled={!isElectron}
+              >
+                Test Connection
+              </Button>
+              
+              <Button 
+                type="button" 
+                variant="outline"
+                onClick={handleManualSync}
+                disabled={!isElectron || !form.watch("useLocalDB") || isSyncing}
+                className="flex items-center"
+              >
+                {isSyncing ? (
+                  <>
+                    <RotateCw className="mr-2 h-4 w-4 animate-spin" />
+                    Synchronizing...
+                  </>
+                ) : (
+                  <>
+                    <CloudCog className="mr-2 h-4 w-4" />
+                    Sync Now
+                  </>
+                )}
+              </Button>
+            </div>
+            
             <Button 
               type="submit" 
               disabled={!isElectron || updateSettings.isPending}

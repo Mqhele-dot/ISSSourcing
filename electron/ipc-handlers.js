@@ -724,6 +724,29 @@ function handleBarcodeScanner() {
 // Database Handlers
 function handleDatabase() {
   // Create database backup
+  ipcMain.handle('create-database-backup', async (_, options = {}) => {
+    try {
+      const directory = options.directory || app.getPath('documents');
+      const backupPath = await db.createBackup(directory);
+      return { success: true, path: backupPath };
+    } catch (error) {
+      console.error('Error creating database backup:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Restore database from backup
+  ipcMain.handle('restore-database-backup', async (_, backupPath) => {
+    try {
+      await db.restoreFromBackup(backupPath);
+      return { success: true };
+    } catch (error) {
+      console.error('Error restoring database:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // For backward compatibility
   ipcMain.handle('database:create-backup', async (_, options = {}) => {
     try {
       const directory = options.directory || app.getPath('documents');
@@ -735,7 +758,7 @@ function handleDatabase() {
     }
   });
 
-  // Restore database from backup
+  // For backward compatibility
   ipcMain.handle('database:restore', async (_, backupPath) => {
     try {
       await db.restoreFromBackup(backupPath);
@@ -744,6 +767,68 @@ function handleDatabase() {
       console.error('Error restoring database:', error);
       return false;
     }
+  });
+  
+  // Get database information
+  ipcMain.handle('get-database-info', async () => {
+    try {
+      const info = await db.getDatabaseInfo();
+      return info;
+    } catch (error) {
+      console.error('Error getting database info:', error);
+      return {
+        status: 'error',
+        size: '0 KB',
+        location: 'unknown',
+        lastBackup: null,
+        dataCount: {
+          inventory: 0,
+          movements: 0,
+          suppliers: 0,
+          users: 0
+        },
+        error: error.message
+      };
+    }
+  });
+  
+  // Synchronize database with server
+  ipcMain.handle('sync-database', async () => {
+    try {
+      // Set up a progress reporter function
+      const reportProgress = (progress) => {
+        // Send progress updates to all windows
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('sync-progress', progress);
+          }
+        });
+      };
+      
+      // Start the sync process
+      const result = await db.syncDatabase(reportProgress);
+      
+      // Notify all windows of the database status change
+      BrowserWindow.getAllWindows().forEach(async (win) => {
+        if (win && !win.isDestroyed()) {
+          // Get updated info to send with the notification
+          const updatedInfo = await db.getDatabaseInfo();
+          win.webContents.send('database-status-changed', updatedInfo);
+        }
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('Error syncing database:', error);
+      throw error;
+    }
+  });
+  
+  // Network connectivity check
+  ipcMain.handle('check-network-status', () => {
+    // This is a simple implementation - for production, you might want
+    // to actually test connectivity to your server
+    return !app.isPackaged || require('electron-is-dev') ? true : require('electron-util').isOnline();
   });
 }
 
