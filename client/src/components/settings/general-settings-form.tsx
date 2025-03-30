@@ -2,7 +2,7 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useSettings, AppSettingsForm } from "@/hooks/use-settings";
+import { useSettings, AppSettings } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,18 +35,28 @@ export function GeneralSettingsForm() {
   const form = useForm<z.infer<typeof generalSettingsSchema>>({
     resolver: zodResolver(generalSettingsSchema),
     defaultValues: {
-      companyName: settings.companyName,
+      companyName: settings.companyName || '',
       companyLogo: settings.companyLogo,
-      primaryColor: settings.primaryColor,
-      dateFormat: settings.dateFormat,
-      timeFormat: settings.timeFormat,
-      currencySymbol: settings.currencySymbol,
+      primaryColor: settings.primaryColor || '#0f766e',
+      dateFormat: settings.dateFormat || 'YYYY-MM-DD',
+      timeFormat: settings.timeFormat || 'HH:mm',
+      currencySymbol: settings.currencySymbol || '$',
     },
   });
 
   // Submit handler
   function onSubmit(data: z.infer<typeof generalSettingsSchema>) {
-    updateSettings.mutate(data);
+    if (settings) {
+      updateSettings.mutate({
+        ...settings,
+        companyName: data.companyName,
+        companyLogo: data.companyLogo,
+        primaryColor: data.primaryColor,
+        dateFormat: data.dateFormat,
+        timeFormat: data.timeFormat,
+        currencySymbol: data.currencySymbol,
+      });
+    }
   }
 
   return (

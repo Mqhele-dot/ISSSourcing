@@ -661,6 +661,8 @@ export const appSettings = pgTable("app_settings", {
   enableVat: boolean("enable_vat").default(false),
   defaultVatCountry: text("default_vat_country").default("US"),
   showPricesWithVat: boolean("show_prices_with_vat").default(true),
+  // Database settings (for Electron app)
+  databaseSettings: jsonb("database_settings"),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 
@@ -736,6 +738,17 @@ export const appSettingsFormSchemaWithVat = appSettingsFormSchema.extend({
   enableVat: z.boolean().default(false),
   defaultVatCountry: z.string().min(2, "Default country code must be valid").optional(),
   showPricesWithVat: z.boolean().default(true),
+  
+  // Database settings (for Electron app)
+  databaseSettings: z.object({
+    host: z.string().optional(),
+    port: z.string().optional(),
+    username: z.string().optional(),
+    password: z.string().optional(),
+    database: z.string().optional(),
+    autoConnect: z.boolean().optional().default(true),
+    useLocalDB: z.boolean().optional().default(true)
+  }).optional(),
 });
 
 // Types for settings

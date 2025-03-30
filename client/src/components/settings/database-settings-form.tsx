@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Database, RotateCw, CheckCircle, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useSettings } from "@/hooks/use-settings";
+import { useSettings, DatabaseSettings } from "@/hooks/use-settings";
 import { isElectronEnvironment, ElectronBridge } from "@/lib/electron-bridge";
 import {
   Select,
@@ -26,15 +26,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-// Define schema for form validation
+// Define schema for synchronization settings
+const syncSettingsSchema = z.object({
+  useLocalDB: z.boolean().default(true),
+  autoConnect: z.boolean().default(true),
+  syncInterval: z.coerce.number().int().min(1, "Min sync interval is 1 minute").max(1440, "Max sync interval is 24 hours (1440 minutes)").optional(),
+  offlineMode: z.boolean().default(false).optional(),
+  syncOnStartup: z.boolean().default(true).optional(),
+  maxOfflineDays: z.coerce.number().int().min(1, "Min is 1 day").max(30, "Max is 30 days").optional(),
+  compressionEnabled: z.boolean().default(true).optional(),
+});
+
+// Define schema for connection settings
+const connectionSettingsSchema = z.object({
+  host: z.string().min(1, "Host is required").optional(),
+  port: z.string().min(1, "Port is required").optional(),
+  username: z.string().min(1, "Username is required").optional(),
+  password: z.string().optional(),
+  database: z.string().min(1, "Database name is required").optional(),
+});
+
+// Combined database settings schema
 const databaseSettingsSchema = z.object({
-  localDatabaseEnabled: z.boolean().default(true),
-  syncInterval: z.coerce.number().int().min(1, "Min sync interval is 1 minute").max(1440, "Max sync interval is 24 hours (1440 minutes)"),
-  offlineMode: z.boolean().default(false),
-  syncOnStartup: z.boolean().default(true),
-  maxOfflineDays: z.coerce.number().int().min(1, "Min is 1 day").max(30, "Max is 30 days"),
-  compressionEnabled: z.boolean().default(true),
+  ...syncSettingsSchema.shape,
+  ...connectionSettingsSchema.shape
 });
 
 // Type for form data
@@ -46,31 +63,50 @@ export function DatabaseSettingsForm() {
   const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
   const { settings, updateSettings } = useSettings();
   const electronBridge = useMemo(() => new ElectronBridge(), []);
+  const [activeTab, setActiveTab] = useState<string>("sync");
 
   // Create form with default values
   const form = useForm<DatabaseSettingsFormType>({
     resolver: zodResolver(databaseSettingsSchema),
     defaultValues: {
-      localDatabaseEnabled: true,
+      // Sync settings defaults
+      useLocalDB: true,
+      autoConnect: true,
       syncInterval: 15,
       offlineMode: false,
       syncOnStartup: true,
       maxOfflineDays: 7,
       compressionEnabled: true,
+      
+      // Connection settings defaults
+      host: "",
+      port: "5432",
+      username: "",
+      password: "",
+      database: "",
     },
   });
   
   // Update form with settings if available
   useEffect(() => {
     if (settings && settings.databaseSettings) {
-      const dbSettings = settings.databaseSettings;
+      const dbSettings = settings.databaseSettings as DatabaseSettings;
       form.reset({
-        localDatabaseEnabled: dbSettings.localDatabaseEnabled ?? true,
+        // Sync settings
+        useLocalDB: dbSettings.useLocalDB ?? true,
+        autoConnect: dbSettings.autoConnect ?? true,
         syncInterval: dbSettings.syncInterval ?? 15,
         offlineMode: dbSettings.offlineMode ?? false,
         syncOnStartup: dbSettings.syncOnStartup ?? true,
         maxOfflineDays: dbSettings.maxOfflineDays ?? 7,
         compressionEnabled: dbSettings.compressionEnabled ?? true,
+        
+        // Connection settings
+        host: dbSettings.host ?? "",
+        port: dbSettings.port ?? "5432",
+        username: dbSettings.username ?? "",
+        password: dbSettings.password ?? "",
+        database: dbSettings.database ?? "",
       });
     }
   }, [settings, form]);
@@ -86,18 +122,37 @@ export function DatabaseSettingsForm() {
         
         if (dbInfo && dbInfo.status === 'healthy') {
           setDbStatus('connected');
+          toast({
+            title: "Database Connected",
+            description: `Successfully connected to ${dbInfo.database || 'database'}`,
+          });
         } else {
           setDbStatus('disconnected');
+          toast({
+            title: "Database Disconnected",
+            description: dbInfo?.error || "Unable to connect to database",
+            variant: "destructive",
+          });
         }
       } catch (error) {
         console.error('Error checking database connection:', error);
         setDbStatus('disconnected');
+        toast({
+          title: "Connection Error",
+          description: error instanceof Error ? error.message : "Failed to check database connection",
+          variant: "destructive",
+        });
       }
     } else {
       // If not in Electron, always show as disconnected
       setDbStatus('disconnected');
+      toast({
+        title: "Not Available",
+        description: "Database connections are only available in the desktop application",
+        variant: "destructive",
+      });
     }
-  }, [isElectron, electronBridge, setDbStatus]);
+  }, [isElectron, electronBridge, setDbStatus, toast]);
 
   // Check database connection when component mounts
   useEffect(() => {
@@ -124,8 +179,13 @@ export function DatabaseSettingsForm() {
           
           toast({
             title: "Database settings updated",
-            description: "Local database settings have been saved successfully.",
+            description: "Database settings have been saved successfully.",
           });
+          
+          // Re-check the connection status after settings are updated
+          setTimeout(() => {
+            checkDatabaseConnection();
+          }, 1000);
         })
         .catch((error: Error) => {
           toast({
@@ -142,7 +202,7 @@ export function DatabaseSettingsForm() {
         variant: "destructive",
       });
     }
-  }, [isElectron, toast, settings, updateSettings]);
+  }, [isElectron, toast, settings, updateSettings, checkDatabaseConnection]);
 
   return (
     <Card>
@@ -151,16 +211,16 @@ export function DatabaseSettingsForm() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Database className="h-5 w-5 text-primary" />
-              Local Database Settings
+              Database Settings
             </CardTitle>
             <CardDescription>
-              Configure offline database and synchronization settings
+              Configure database connection and synchronization settings
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Database status indicator */}
             <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
-              <span className="font-medium">Local Database Status</span>
+              <span className="font-medium">Database Status</span>
               <div className="flex items-center">
                 {dbStatus === 'checking' && (
                   <><RotateCw className="h-4 w-4 mr-2 animate-spin text-orange-600" /> Checking...</>
@@ -178,143 +238,289 @@ export function DatabaseSettingsForm() {
               <div className="rounded-md bg-amber-50 p-4 text-amber-800 dark:bg-amber-950 dark:text-amber-400">
                 <p className="font-medium">Desktop Application Required</p>
                 <p className="mt-1">
-                  Local database functionality is only available in the desktop application.
+                  Database configuration is only available in the desktop application.
                   These settings will have no effect in the web browser.
                 </p>
               </div>
             )}
 
-            <FormField
-              control={form.control}
-              name="localDatabaseEnabled"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-base">Enable Local Database</FormLabel>
-                    <FormDescription>
-                      Store inventory data locally for offline access
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      disabled={!isElectron}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+            <Tabs defaultValue="sync" value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="sync">Synchronization</TabsTrigger>
+                <TabsTrigger value="connection">Connection</TabsTrigger>
+              </TabsList>
+              
+              {/* Sync Settings Tab */}
+              <TabsContent value="sync" className="space-y-4 pt-4">
+                <FormField
+                  control={form.control}
+                  name="useLocalDB"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Use Local Database</FormLabel>
+                        <FormDescription>
+                          Store inventory data locally for offline access
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          disabled={!isElectron}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="syncInterval"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Sync Interval (minutes)</FormLabel>
-                  <FormControl>
-                    <Input 
-                      type="number" 
-                      {...field} 
-                      disabled={!isElectron || !form.watch("localDatabaseEnabled")}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    How often to synchronize local database with the server
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="autoConnect"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Auto-Connect</FormLabel>
+                        <FormDescription>
+                          Automatically connect to database on startup
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          disabled={!isElectron}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="maxOfflineDays"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Max Offline Days</FormLabel>
-                  <FormControl>
-                    <Input 
-                      type="number" 
-                      {...field} 
-                      disabled={!isElectron || !form.watch("localDatabaseEnabled")}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Maximum number of days to retain offline data
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="syncOnStartup"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base">Sync on Startup</FormLabel>
+                <FormField
+                  control={form.control}
+                  name="syncInterval"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Sync Interval (minutes)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          {...field} 
+                          disabled={!isElectron || !form.watch("useLocalDB")}
+                        />
+                      </FormControl>
                       <FormDescription>
-                        Synchronize when application starts
+                        How often to synchronize local database with the server
                       </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        disabled={!isElectron || !form.watch("localDatabaseEnabled")}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="compressionEnabled"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base">Data Compression</FormLabel>
+                <FormField
+                  control={form.control}
+                  name="maxOfflineDays"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Max Offline Days</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          {...field} 
+                          disabled={!isElectron || !form.watch("useLocalDB")}
+                        />
+                      </FormControl>
                       <FormDescription>
-                        Compress local data to save space
+                        Maximum number of days to retain offline data
                       </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        disabled={!isElectron || !form.watch("localDatabaseEnabled")}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="offlineMode"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 bg-amber-50 dark:bg-amber-950">
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-base font-medium">Force Offline Mode</FormLabel>
-                    <FormDescription>
-                      Work offline even when internet is available (for testing)
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      disabled={!isElectron || !form.watch("localDatabaseEnabled")}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="syncOnStartup"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">Sync on Startup</FormLabel>
+                          <FormDescription>
+                            Synchronize when application starts
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value ?? true}
+                            onCheckedChange={field.onChange}
+                            disabled={!isElectron || !form.watch("useLocalDB")}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="compressionEnabled"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">Data Compression</FormLabel>
+                          <FormDescription>
+                            Compress local data to save space
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value ?? true}
+                            onCheckedChange={field.onChange}
+                            disabled={!isElectron || !form.watch("useLocalDB")}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="offlineMode"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 bg-amber-50 dark:bg-amber-950">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base font-medium">Force Offline Mode</FormLabel>
+                        <FormDescription>
+                          Work offline even when internet is available (for testing)
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value ?? false}
+                          onCheckedChange={field.onChange}
+                          disabled={!isElectron || !form.watch("useLocalDB")}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </TabsContent>
+              
+              {/* Connection Settings Tab */}
+              <TabsContent value="connection" className="space-y-4 pt-4">
+                <FormField
+                  control={form.control}
+                  name="host"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Database Host</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="localhost or IP address" 
+                          {...field} 
+                          disabled={!isElectron}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        The hostname or IP address of your PostgreSQL server
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="port"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Port</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="5432" 
+                          {...field} 
+                          disabled={!isElectron}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        The port your PostgreSQL server is running on (default: 5432)
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="username"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Username</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="Database username" 
+                            {...field} 
+                            disabled={!isElectron}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="password" 
+                            placeholder="••••••••" 
+                            {...field} 
+                            disabled={!isElectron}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                
+                <FormField
+                  control={form.control}
+                  name="database"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Database Name</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="Database name" 
+                          {...field} 
+                          disabled={!isElectron}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        The name of your PostgreSQL database
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <div className="rounded-md bg-blue-50 p-4 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-400">
+                  <p className="font-medium">Database Connection Security</p>
+                  <p className="mt-1">
+                    Your database credentials are stored securely within the application and
+                    are never transmitted to external servers. All connections are made directly 
+                    from your device to the database server.
+                  </p>
+                </div>
+              </TabsContent>
+            </Tabs>
 
             <div className="rounded-md bg-blue-50 p-4 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-400">
               <p className="font-medium">About Offline Functionality</p>

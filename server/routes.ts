@@ -3184,6 +3184,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create the HTTP server
+  // WebSocket test endpoint for real-time inventory updates
+  app.post("/api/inventory-sync/test", auth.ensureAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { type, itemId, warehouseId, quantity, reason, userId } = req.body;
+
+      if (!type || !itemId || !warehouseId) {
+        return res.status(400).json({ message: "Missing required fields: type, itemId, warehouseId" });
+      }
+
+      // Get the item and warehouse to ensure they exist
+      const item = await storage.getInventoryItem(itemId);
+      const warehouse = await storage.getWarehouse(warehouseId);
+
+      if (!item) {
+        return res.status(404).json({ message: `Inventory item #${itemId} not found` });
+      }
+
+      if (!warehouse) {
+        return res.status(404).json({ message: `Warehouse #${warehouseId} not found` });
+      }
+
+      // Update the inventory if data is valid
+      if (type === 'update') {
+        if (quantity === undefined) {
+          return res.status(400).json({ message: "Quantity is required for inventory updates" });
+        }
+
+        // Get current warehouse inventory
+        let warehouseInventory = await storage.getWarehouseInventoryItem(warehouseId, itemId);
+        
+        if (!warehouseInventory) {
+          // Create it if it doesn't exist
+          warehouseInventory = await storage.createWarehouseInventory({
+            itemId,
+            warehouseId,
+            quantity: quantity
+          });
+        } else {
+          // Update existing inventory
+          warehouseInventory = await storage.updateWarehouseInventory(warehouseInventory.id, {
+            quantity
+          }) as any;
+        }
+
+        // Create a stock movement record
+        const movement = await storage.createStockMovement({
+          itemId,
+          quantity,
+          warehouseId,
+          type: 'ADJUSTMENT',
+          notes: reason || 'Test update via API',
+          userId: userId || req.user?.id || null,
+          sourceWarehouseId: warehouseId,
+          destinationWarehouseId: null
+        });
+
+        // Log the activity
+        await storage.createActivityLog({
+          action: 'INVENTORY_UPDATE',
+          userId: userId || req.user?.id || null,
+          description: `Test API: Updated inventory for ${item.name} in ${warehouse.name}: quantity ${quantity}${reason ? ` (${reason})` : ''}`,
+          itemId,
+          referenceId: warehouseId,
+          referenceType: 'warehouse'
+        });
+
+        res.json({ 
+          message: "Inventory updated successfully", 
+          item, 
+          warehouse, 
+          updatedQuantity: quantity,
+          movement
+        });
+      } else if (type === 'alert') {
+        // Manually trigger a low stock alert for testing
+        const alertItem = {
+          ...item,
+          quantity: quantity || item.quantity, // Use provided quantity or current quantity
+          lowStockThreshold: item.lowStockThreshold || 10
+        };
+
+        await storage.createActivityLog({
+          action: 'LOW_STOCK_ALERT_TEST',
+          userId: userId || req.user?.id || null,
+          description: `Test API: Low stock alert for ${item.name} in ${warehouse.name}: ${alertItem.quantity} units remaining (threshold: ${alertItem.lowStockThreshold})`,
+          itemId,
+          referenceId: warehouseId,
+          referenceType: 'warehouse'
+        });
+
+        res.json({
+          message: "Low stock alert triggered successfully",
+          item: alertItem,
+          warehouse
+        });
+      } else {
+        return res.status(400).json({ message: `Unknown test type: ${type}. Supported types: update, alert` });
+      }
+    } catch (error) {
+      console.error("Error in inventory sync test:", error);
+      res.status(500).json({ message: "Failed to process inventory sync test" });
+    }
+  });
+
   const httpServer = createServer(app);
   
   // Initialize WebSocket service for real-time inventory synchronization

@@ -65,57 +65,27 @@ app.use((req, res, next) => {
       
       console.log(`Setting up low stock alert checks every ${checkFrequencyMinutes} minutes`);
       
-      // Set up the new interval using storage directly
+      // Set up the new interval using the checkLowStockAlerts function
       lowStockCheckInterval = setInterval(async () => {
         try {
-          // Get all inventory items
-          const items = await storage.getAllInventoryItems();
-          
-          // Check each item for low stock
-          for (const item of items) {
-            if (item.quantity <= (item.lowStockThreshold || 10)) {
-              console.log(`Low stock alert: ${item.name} (${item.quantity} left)`);
-              // Here you would typically send an alert through WebSocket
-              // wsService.sendMessage({ type: 'LOW_STOCK_ALERT', item });
-            }
-          }
+          await checkLowStockAlerts();
         } catch (error) {
           console.error('Error checking low stock:', error);
         }
       }, checkFrequencyMinutes * 60 * 1000);
       
-      // Run an initial check
+      // Run an initial check for low stock items
       try {
-        // Get all inventory items
-        const items = await storage.getAllInventoryItems();
-        
-        // Check each item for low stock
-        for (const item of items) {
-          if (item.quantity <= (item.lowStockThreshold || 10)) {
-            console.log(`Low stock alert: ${item.name} (${item.quantity} left)`);
-            // Here you would typically send an alert through WebSocket
-            // wsService.sendMessage({ type: 'LOW_STOCK_ALERT', item });
-          }
-        }
+        await checkLowStockAlerts();
       } catch (error) {
-        console.error('Error checking low stock:', error);
+        console.error('Error running initial low stock check:', error);
       }
     } catch (error) {
       console.error('Error setting up low stock alert interval:', error);
       // Fallback to 30 minutes if there was an error
       lowStockCheckInterval = setInterval(async () => {
         try {
-          // Get all inventory items
-          const items = await storage.getAllInventoryItems();
-          
-          // Check each item for low stock
-          for (const item of items) {
-            if (item.quantity <= (item.lowStockThreshold || 10)) {
-              console.log(`Low stock alert: ${item.name} (${item.quantity} left)`);
-              // Here you would typically send an alert through WebSocket
-              // wsService.sendMessage({ type: 'LOW_STOCK_ALERT', item });
-            }
-          }
+          await checkLowStockAlerts();
         } catch (error) {
           console.error('Error checking low stock:', error);
         }

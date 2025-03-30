@@ -3,6 +3,20 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AppSettings, AppSettingsFormWithVat } from "@shared/schema";
 
+// Define database settings type
+export type DatabaseSettings = {
+  host?: string;
+  port?: string;
+  username?: string;
+  password?: string;
+  database?: string;
+  autoConnect?: boolean;
+  useLocalDB?: boolean;
+};
+
+// Re-export needed types
+export { AppSettings, AppSettingsFormWithVat };
+
 export function useSettings() {
   const { toast } = useToast();
 
@@ -35,6 +49,7 @@ export function useSettings() {
     enableVat: false,
     defaultVatCountry: "US",
     showPricesWithVat: true,
+    databaseSettings: null,
     updatedAt: new Date(),
   };
 
