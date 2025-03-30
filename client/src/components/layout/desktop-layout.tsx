@@ -1,42 +1,33 @@
 import React, { ReactNode } from 'react';
+import { TitleBar } from '@/components/electron/title-bar';
+import { UpdateNotification } from '@/components/electron/update-notification';
 import { useElectron } from '@/contexts/electron-provider';
-import { TitleBar, UpdateNotification } from '@/components/electron';
 
 interface DesktopLayoutProps {
   children: ReactNode;
-  title?: string;
 }
 
 /**
- * Desktop Layout for Electron Application
+ * Layout component for desktop application
  * 
- * This layout wraps the application with Electron-specific components like the custom
- * title bar and update notification. It only renders these components when running in
- * an Electron environment, falling back to rendering just the children in a browser.
+ * This component adds the custom title bar and handles the desktop-specific
+ * layout adjustments. It should wrap the entire application when running
+ * in Electron environment.
  */
-export function DesktopLayout({ children, title = 'InvTrack' }: DesktopLayoutProps) {
+export function DesktopLayout({ children }: DesktopLayoutProps) {
   const { isElectron } = useElectron();
   
-  // If not in Electron, just render the children
   if (!isElectron) {
     return <>{children}</>;
   }
   
   return (
-    <div className="flex flex-col h-screen">
-      {/* Custom titlebar for the Electron window */}
-      <TitleBar title={title} />
-      
-      {/* Main content area */}
+    <div className="flex flex-col h-screen max-h-screen overflow-hidden">
+      <TitleBar />
       <div className="flex-1 overflow-auto">
-        {/* Update notification */}
-        <div className="container mx-auto p-4">
-          <UpdateNotification />
-        </div>
-        
-        {/* Render the children components */}
         {children}
       </div>
+      <UpdateNotification />
     </div>
   );
 }

@@ -3,6 +3,42 @@ import { useElectron } from '@/contexts/electron-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { DownloadCloud } from 'lucide-react';
+import { isElectronEnvironment } from '@/lib/electron-bridge';
+
+// Re-export components
+export { TitleBar } from './title-bar';
+export { UpdateNotification } from './update-notification';
+export { ElectronProvider } from '@/contexts/electron-provider';
+
+/**
+ * Sets up the application for Electron environment
+ * - Adds appropriate CSS classes to the HTML element
+ * - Configures electron-specific behaviors
+ */
+export function setupElectronApp() {
+  if (isElectronEnvironment()) {
+    // Add electron-specific classes to HTML
+    document.documentElement.classList.add('electron-app');
+    
+    // Add platform-specific class (windows, mac, linux)
+    const platform = navigator.platform.toLowerCase();
+    if (platform.includes('win')) {
+      document.documentElement.classList.add('windows');
+    } else if (platform.includes('mac')) {
+      document.documentElement.classList.add('macos');
+    } else if (platform.includes('linux')) {
+      document.documentElement.classList.add('linux');
+    }
+    
+    // Prevent default browser shortcuts that might conflict with Electron
+    document.addEventListener('keydown', (e) => {
+      // Prevent browser's back/forward navigation
+      if ((e.metaKey || e.ctrlKey) && (e.key === '[' || e.key === ']')) {
+        e.preventDefault();
+      }
+    });
+  }
+}
 
 /**
  * Component that displays when the application is not running in Electron

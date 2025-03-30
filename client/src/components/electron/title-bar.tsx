@@ -1,93 +1,64 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { Maximize2, Minimize2, X, Square } from 'lucide-react';
 import { useElectron } from '@/contexts/electron-provider';
-import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
-
-interface TitleBarProps {
-  title?: string;
-}
 
 /**
- * Custom window title bar for Electron application
+ * Custom Electron window title bar
  * 
- * Provides window controls (minimize, maximize/restore, close) and displays the app title.
- * This component is designed to match the look and feel of native title bars while
- * allowing for custom styling consistent with the application theme.
+ * This component creates a custom title bar for the Electron application
+ * that mimics the native window controls while providing consistent styling
+ * across platforms.
  */
-export function TitleBar({ title = 'InvTrack' }: TitleBarProps) {
-  const { 
-    isElectron,
-    isMaximized,
-    minimizeWindow,
-    maximizeWindow,
-    unmaximizeWindow,
-    closeWindow,
-    appVersion 
-  } = useElectron();
+export function TitleBar() {
+  const { isElectron, platform, isMaximized, appVersion, appControls } = useElectron();
   
-  const [hoveredButton, setHoveredButton] = useState<string | null>(null);
-  
-  useEffect(() => {
-    if (isElectron && title) {
-      document.title = title;
-    }
-  }, [isElectron, title]);
-  
-  if (!isElectron) {
+  if (!isElectron || !appControls) {
     return null;
   }
   
   return (
-    <div
-      className="h-9 flex items-center justify-between bg-background border-b border-border select-none"
-      style={{ WebkitAppRegion: 'drag' }}
-    >
-      <div className="flex items-center px-3">
-        <img src="/logo-small.svg" alt="InvTrack Logo" className="h-5 w-5 mr-2" />
-        <span className="text-sm font-medium">{title}</span>
+    <div className="select-none bg-background border-b border-border flex items-center h-8 justify-between">
+      {/* Drag region */}
+      <div 
+        className="flex-1 h-full px-3 flex items-center text-xs text-muted-foreground"
+        style={{ WebkitAppRegion: 'drag' }}
+      >
+        <span className="font-semibold">Inventory Management</span>
         {appVersion && (
-          <span className="text-xs text-muted-foreground ml-2">v{appVersion}</span>
+          <span className="ml-2 opacity-50">v{appVersion}</span>
         )}
       </div>
       
-      <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' }}>
+      {/* Window controls */}
+      <div className="flex h-full">
+        {/* Minimize */}
         <button
-          className={cn(
-            "h-9 w-12 flex items-center justify-center text-muted-foreground transition-colors",
-            hoveredButton === 'minimize' ? 'hover:bg-muted/50' : ''
-          )}
-          onClick={minimizeWindow}
-          onMouseEnter={() => setHoveredButton('minimize')}
-          onMouseLeave={() => setHoveredButton(null)}
-          aria-label="Minimize"
+          className="h-full w-10 flex items-center justify-center hover:bg-muted transition-colors"
+          onClick={appControls.minimizeWindow}
+          title="Minimize"
+          style={{ WebkitAppRegion: 'no-drag' }}
         >
-          <Minus className="h-4 w-4" />
+          <Minimize2 className="w-3.5 h-3.5" />
         </button>
         
+        {/* Maximize / Restore */}
         <button
-          className={cn(
-            "h-9 w-12 flex items-center justify-center text-muted-foreground transition-colors",
-            hoveredButton === 'maximize' ? 'hover:bg-muted/50' : ''
-          )}
-          onClick={isMaximized ? unmaximizeWindow : maximizeWindow}
-          onMouseEnter={() => setHoveredButton('maximize')}
-          onMouseLeave={() => setHoveredButton(null)}
-          aria-label={isMaximized ? 'Restore' : 'Maximize'}
+          className="h-full w-10 flex items-center justify-center hover:bg-muted transition-colors"
+          onClick={appControls.toggleMaximize}
+          title={isMaximized ? 'Restore' : 'Maximize'}
+          style={{ WebkitAppRegion: 'no-drag' }}
         >
-          {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          {isMaximized ? <Square className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
         </button>
         
+        {/* Close */}
         <button
-          className={cn(
-            "h-9 w-12 flex items-center justify-center text-muted-foreground transition-colors",
-            hoveredButton === 'close' ? 'hover:bg-red-500 hover:text-white' : ''
-          )}
-          onClick={closeWindow}
-          onMouseEnter={() => setHoveredButton('close')}
-          onMouseLeave={() => setHoveredButton(null)}
-          aria-label="Close"
+          className="h-full w-10 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"
+          onClick={appControls.closeWindow}
+          title="Close"
+          style={{ WebkitAppRegion: 'no-drag' }}
         >
-          <X className="h-4 w-4" />
+          <X className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>
