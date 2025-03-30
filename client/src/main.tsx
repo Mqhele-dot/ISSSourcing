@@ -10,10 +10,12 @@ const tourOptions = {
     cancelIcon: {
       enabled: true
     },
-    classes: 'shadow-md rounded-lg',
-    scrollTo: true
+    classes: 'shepherd-theme-custom',
+    scrollTo: { behavior: 'smooth', block: 'center' }
   },
-  useModalOverlay: true
+  useModalOverlay: true,
+  exitOnEsc: true,
+  confirmCancel: false
 };
 
 createRoot(document.getElementById("root")!).render(

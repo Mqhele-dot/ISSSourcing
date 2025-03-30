@@ -15,8 +15,18 @@ const TutorialContext = createContext<TutorialContextType>({
   endTutorial: () => {},
 });
 
+// Define a more complete step interface to match Shepherd's actual API
+interface ShepherdStep {
+  id: string;
+  text: string;
+  attachTo?: { element: string; on: string };
+  buttons: { action: () => any; text: string }[];
+  beforeShowPromise?: () => Promise<any>;
+  [key: string]: any; // Allow for other properties that Shepherd might use
+}
+
 // Create the tour steps for each page
-const tourSteps = {
+const tourSteps: Record<string, ShepherdStep[]> = {
   home: [
     {
       id: "home-welcome",
@@ -479,23 +489,48 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       
       // Remove existing steps if any
       try {
-        const existingSteps = shepherd.steps;
-        if (existingSteps && existingSteps.length > 0) {
+        if (shepherd.steps && shepherd.steps.length > 0) {
           // Clear existing steps - this approach depends on the Shepherd implementation
-          while (shepherd.steps.length > 0) {
-            shepherd.removeStep(shepherd.steps[0].id);
-          }
+          shepherd.steps.forEach((step: any) => {
+            if (step && step.id) {
+              shepherd.removeStep(step.id);
+            }
+          });
         }
       } catch (e) {
         console.log("Error clearing steps", e);
       }
       
-      // Add steps for the new tour
+      // Add steps for the new tour with modified attachTo behavior
       steps.forEach(step => {
         try {
-          shepherd.addStep(step);
+          // Create a copy of the step to modify
+          const modifiedStep = { ...step };
+          
+          // Check if the element exists before attaching
+          if (modifiedStep.attachTo && modifiedStep.attachTo.element) {
+            const elementSelector = modifiedStep.attachTo.element;
+            // Wait for element to be available or proceed without attaching
+            modifiedStep.beforeShowPromise = function() {
+              return new Promise((resolve) => {
+                // First check if element exists
+                if (document.querySelector(elementSelector)) {
+                  resolve(true);
+                  return;
+                }
+                
+                // If not, try again after DOM is ready
+                setTimeout(() => {
+                  // If still doesn't exist, just continue without attaching
+                  resolve(true);
+                }, 100);
+              });
+            };
+          }
+          
+          shepherd.addStep(modifiedStep);
         } catch (e) {
-          console.log(`Error adding step ${step.id}`, e);
+          console.warn(`Error adding step ${step.id}`, e);
         }
       });
       
@@ -507,9 +542,11 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         try {
           shepherd.start();
         } catch (e) {
-          console.log("Error starting tour", e);
+          console.warn("Error starting tour", e);
         }
-      }, 200);
+      }, 500); // Increased delay to ensure DOM is more fully loaded
+    } else {
+      console.warn("Cannot start tutorial: Shepherd not initialized or no steps for page", page);
     }
   };
 

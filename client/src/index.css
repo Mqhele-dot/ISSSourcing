@@ -2,6 +2,84 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom Shepherd Tour styling */
+.shepherd-theme-custom {
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  background: white;
+  color: #1f2937;
+  z-index: 9999;
+  max-width: 400px;
+}
+
+.shepherd-theme-custom .shepherd-content {
+  padding: 1rem;
+}
+
+.shepherd-theme-custom .shepherd-text {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  padding: 0.5rem 0;
+}
+
+.shepherd-theme-custom .shepherd-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 0 0 0;
+  gap: 0.5rem;
+}
+
+.shepherd-theme-custom .shepherd-button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.shepherd-theme-custom .shepherd-button:first-child {
+  background-color: #e5e7eb;
+  color: #1f2937;
+}
+
+.shepherd-theme-custom .shepherd-button:first-child:hover {
+  background-color: #d1d5db;
+}
+
+.shepherd-theme-custom .shepherd-button:last-child {
+  background-color: hsl(var(--primary));
+  color: white;
+}
+
+.shepherd-theme-custom .shepherd-button:last-child:hover {
+  background-color: hsl(var(--primary) / 0.9);
+}
+
+.shepherd-theme-custom .shepherd-arrow {
+  border-width: 8px;
+}
+
+.shepherd-theme-custom[data-popper-placement^='top'] .shepherd-arrow {
+  border-bottom-width: 0;
+  border-top-color: white;
+}
+
+.shepherd-theme-custom[data-popper-placement^='bottom'] .shepherd-arrow {
+  border-top-width: 0;
+  border-bottom-color: white;
+}
+
+.shepherd-theme-custom[data-popper-placement^='left'] .shepherd-arrow {
+  border-right-width: 0;
+  border-left-color: white;
+}
+
+.shepherd-theme-custom[data-popper-placement^='right'] .shepherd-arrow {
+  border-left-width: 0;
+  border-right-color: white;
+}
+
 @layer base {
   * {
     @apply border-border;
