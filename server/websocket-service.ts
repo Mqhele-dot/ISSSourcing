@@ -109,17 +109,49 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
   // Store the storage instance
   storage = storageInstance;
 
-  // Create WebSocket server
+  // Create WebSocket server with more robust configuration
   wss = new WebSocketServer({ 
     server,
-    path: '/ws'
+    path: '/ws',
+    // Increase timeouts and add more robust handling
+    clientTracking: true,
+    perMessageDeflate: {
+      zlibDeflateOptions: {
+        chunkSize: 1024,
+        memLevel: 7,
+        level: 3
+      },
+      zlibInflateOptions: {
+        chunkSize: 10 * 1024
+      },
+      concurrencyLimit: 10,
+      threshold: 1024 // Only compress messages larger than 1KB
+    }
   });
 
   console.log('WebSocket server initialized for inventory sync');
 
+  // Set up server-wide error handling
+  wss.on('error', (error) => {
+    console.error('WebSocket server error:', error);
+  });
+
+  wss.on('close', () => {
+    console.log('WebSocket server closed');
+  });
+
+  wss.on('headers', (headers, request) => {
+    console.log('WebSocket connection headers sent:', headers.join(', '));
+    console.log('WebSocket connection request URL:', request.url);
+  });
+
   // Handle new client connections
-  wss.on('connection', (ws: WebSocket) => {
+  wss.on('connection', (ws: WebSocket, request) => {
     const clientId = uuidv4();
+    const clientIp = request.socket.remoteAddress;
+    const clientUrl = request.url;
+    
+    console.log(`WebSocket client connecting: ${clientId} from ${clientIp}, URL: ${clientUrl}`);
     
     // Store client connection
     clients.set(clientId, {
@@ -131,6 +163,21 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
       supportsCompression: false // Default to no compression until negotiated
     });
 
+    // Setup ping/pong for connection health checking
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === 1) { // WebSocket.OPEN
+        try {
+          // Send a ping message to keep the connection alive
+          ws.ping(() => {});
+        } catch (error) {
+          console.error(`Error sending ping to client ${clientId}:`, error);
+          clearInterval(pingInterval);
+        }
+      } else {
+        clearInterval(pingInterval);
+      }
+    }, 30000); // 30 seconds
+    
     console.log(`WebSocket client connected: ${clientId}`);
 
     // Send connection confirmation with client ID
@@ -138,7 +185,9 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
       type: MessageType.CONNECTION,
       payload: { 
         id: clientId,
-        message: 'Connected to inventory sync' 
+        message: 'Connected to inventory sync',
+        serverTime: new Date().toISOString(),
+        supportedFeatures: ['compression', 'item_subscriptions', 'warehouse_subscriptions']
       }
     });
 
@@ -156,16 +205,24 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
       }
     });
 
+    // Listen for pong responses to confirm connection is alive
+    ws.addEventListener('pong', () => {
+      // Connection is alive, can log if needed for debugging
+      // console.log(`Received pong from client ${clientId}`);
+    });
+
     // Handle client disconnection
-    ws.addEventListener('close', () => {
+    ws.addEventListener('close', (event) => {
+      clearInterval(pingInterval);
       clients.delete(clientId);
-      console.log(`WebSocket client disconnected: ${clientId}`);
+      console.log(`WebSocket client disconnected: ${clientId}, code: ${event.code}, reason: ${event.reason || 'No reason provided'}`);
     });
 
     // Handle errors
     ws.addEventListener('error', (event) => {
       console.error(`WebSocket error for client ${clientId}:`, event);
-      clients.delete(clientId);
+      // Don't delete the client here - let the close event handle it
+      // as error is often followed by close
     });
   });
 

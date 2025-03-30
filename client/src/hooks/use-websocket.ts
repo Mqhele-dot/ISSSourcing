@@ -51,20 +51,24 @@ export function useWebSocket({
     
     try {
       // Create WebSocket connection
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      let wsUrl = '';
       
-      // Determine the correct host for WebSocket connection
-      // In production, use the current host; in development, handle different scenarios
-      let host = window.location.host;
-      
-      // In Electron specifically, we need to adjust for running locally
-      if (isElectronEnvironment() && process.env.NODE_ENV !== 'production') {
-        // Use a hardcoded port in dev mode for Electron
-        host = 'localhost:5000';
+      // Special handling for Replit environment
+      if (window.location.hostname.includes('replit') || window.location.hostname.includes('repl.co')) {
+        console.log('Detected Replit environment, using relative WebSocket URL');
+        // For Replit, use a relative path which will be resolved correctly
+        wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+      } else if (isElectronEnvironment()) {
+        // In Electron, connect directly to the backend server
+        console.log('Detected Electron environment, using localhost WebSocket URL');
+        wsUrl = process.env.NODE_ENV === 'production' 
+          ? 'ws://localhost:5000/ws'  // In production build
+          : 'ws://localhost:5000/ws'; // In development
+      } else {
+        // Standard web development environment
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${protocol}//${window.location.host}/ws`;
       }
-      
-      // Connect to the correct WebSocket path defined in the server
-      const wsUrl = `${protocol}//${host}/ws`;
       
       console.log(`Connecting to WebSocket at ${wsUrl}`);
       socketRef.current = new WebSocket(wsUrl);
