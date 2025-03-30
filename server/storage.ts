@@ -23,6 +23,13 @@ import {
   permissions, type Permission, type InsertPermission,
   userVerificationTokens, type UserVerificationToken, type InsertUserVerificationToken,
   sessions, type Session, type InsertSession,
+  customRoles, type CustomRole, type InsertCustomRole,
+  customRolePermissions, type CustomRolePermission, type InsertCustomRolePermission,
+  userAccessLogs, type UserAccessLog, type InsertUserAccessLog,
+  userContacts, type UserContact, type InsertUserContact,
+  userSecuritySettings, type UserSecuritySetting, type InsertUserSecuritySetting,
+  userPerformanceMetrics, type UserPerformanceMetric, type InsertUserPerformanceMetric,
+  timeRestrictions, type TimeRestriction, type InsertTimeRestriction,
   type InventoryStats, ItemStatus, type BulkImportInventory,
   PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus, ReorderRequestStatus,
   stockMovementTypeEnum, UserRoleEnum, PermissionTypeEnum, ResourceEnum,
@@ -90,6 +97,45 @@ export interface IStorage {
   createPermission(permission: InsertPermission): Permission;
   updatePermission(id: number, permission: Partial<InsertPermission>): Promise<Permission | undefined>;
   deletePermission(id: number): Promise<boolean>;
+  
+  // Custom Role methods
+  getAllCustomRoles(): Promise<CustomRole[]>;
+  getCustomRole(id: number): Promise<CustomRole | undefined>;
+  getCustomRoleByName(name: string): Promise<CustomRole | undefined>;
+  createCustomRole(role: InsertCustomRole): Promise<CustomRole>;
+  updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined>;
+  deleteCustomRole(id: number): Promise<boolean>;
+  getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]>;
+  addPermissionToCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<CustomRolePermission>;
+  removePermissionFromCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<boolean>;
+  checkCustomRolePermission(roleId: number, resource: Resource, permissionType: PermissionType): Promise<boolean>;
+  
+  // Enhanced user access methods
+  logUserAccess(userId: number, action: string, details?: any, ip?: string, userAgent?: string): Promise<UserAccessLog>;
+  getUserAccessLogs(userId: number, limit?: number): Promise<UserAccessLog[]>;
+  getRecentUserAccessLogs(limit?: number): Promise<UserAccessLog[]>;
+  getFailedLoginAttempts(userId: number, hours?: number): Promise<UserAccessLog[]>;
+  
+  // User profile methods
+  getUserContactInfo(userId: number): Promise<UserContact | undefined>;
+  updateUserContactInfo(userId: number, contactInfo: Partial<InsertUserContact>): Promise<UserContact | undefined>;
+  
+  // User security methods
+  getUserSecuritySettings(userId: number): Promise<UserSecuritySetting | undefined>;
+  updateUserSecuritySettings(userId: number, settings: Partial<InsertUserSecuritySetting>): Promise<UserSecuritySetting | undefined>;
+  checkIpAllowed(userId: number, ipAddress: string): Promise<boolean>;
+  checkTimeAllowed(userId: number, timestamp?: Date): Promise<boolean>;
+  checkGeoAllowed(userId: number, country: string): Promise<boolean>;
+  
+  // User performance metrics
+  recordUserPerformance(metric: InsertUserPerformanceMetric): Promise<UserPerformanceMetric>;
+  getUserPerformanceMetrics(userId: number, metricType?: string, startDate?: Date, endDate?: Date): Promise<UserPerformanceMetric[]>;
+  
+  // Time restriction methods
+  getTimeRestrictions(userId: number): Promise<TimeRestriction[]>;
+  addTimeRestriction(restriction: InsertTimeRestriction): Promise<TimeRestriction>;
+  updateTimeRestriction(id: number, restriction: Partial<InsertTimeRestriction>): Promise<TimeRestriction | undefined>;
+  deleteTimeRestriction(id: number): Promise<boolean>;
   
   // Category methods
   getAllCategories(): Promise<Category[]>;
@@ -271,6 +317,51 @@ export interface IStorage {
     supplier: Supplier;
     requisition?: PurchaseRequisition;
   }) | undefined>;
+  
+  // Custom role methods
+  getAllCustomRoles(): Promise<CustomRole[]>;
+  getCustomRole(id: number): Promise<CustomRole | undefined>;
+  getCustomRoleByName(name: string): Promise<CustomRole | undefined>;
+  createCustomRole(role: InsertCustomRole): Promise<CustomRole>;
+  updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined>;
+  deleteCustomRole(id: number): Promise<boolean>;
+  
+  // Custom role permission methods
+  getAllCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]>;
+  getCustomRolePermission(id: number): Promise<CustomRolePermission | undefined>;
+  createCustomRolePermission(permission: InsertCustomRolePermission): Promise<CustomRolePermission>;
+  updateCustomRolePermission(id: number, permission: Partial<InsertCustomRolePermission>): Promise<CustomRolePermission | undefined>;
+  deleteCustomRolePermission(id: number): Promise<boolean>;
+  
+  // User access log methods
+  getAllUserAccessLogs(userId?: number): Promise<UserAccessLog[]>;
+  getUserAccessLog(id: number): Promise<UserAccessLog | undefined>;
+  createUserAccessLog(log: InsertUserAccessLog): Promise<UserAccessLog>;
+  
+  // User contact methods
+  getAllUserContacts(userId: number): Promise<UserContact[]>;
+  getUserContact(id: number): Promise<UserContact | undefined>;
+  createUserContact(contact: InsertUserContact): Promise<UserContact>;
+  updateUserContact(id: number, contact: Partial<InsertUserContact>): Promise<UserContact | undefined>;
+  deleteUserContact(id: number): Promise<boolean>;
+  
+  // User security settings methods
+  getUserSecuritySettings(userId: number): Promise<UserSecuritySetting | undefined>;
+  createUserSecuritySettings(settings: InsertUserSecuritySetting): Promise<UserSecuritySetting>;
+  updateUserSecuritySettings(userId: number, settings: Partial<InsertUserSecuritySetting>): Promise<UserSecuritySetting | undefined>;
+  
+  // User performance metrics methods
+  getAllUserPerformanceMetrics(userId: number): Promise<UserPerformanceMetric[]>;
+  getUserPerformanceMetric(id: number): Promise<UserPerformanceMetric | undefined>;
+  createUserPerformanceMetric(metric: InsertUserPerformanceMetric): Promise<UserPerformanceMetric>;
+  updateUserPerformanceMetric(id: number, metric: Partial<InsertUserPerformanceMetric>): Promise<UserPerformanceMetric | undefined>;
+  
+  // Time restriction methods
+  getAllTimeRestrictions(userId?: number): Promise<TimeRestriction[]>;
+  getTimeRestriction(id: number): Promise<TimeRestriction | undefined>;
+  createTimeRestriction(restriction: InsertTimeRestriction): Promise<TimeRestriction>;
+  updateTimeRestriction(id: number, restriction: Partial<InsertTimeRestriction>): Promise<TimeRestriction | undefined>;
+  deleteTimeRestriction(id: number): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -299,6 +390,13 @@ export class MemStorage implements IStorage {
   private permissions: Map<number, Permission>;
   private userVerificationTokens: Map<number, UserVerificationToken>;
   private sessions: Map<number, Session>;
+  private customRoles: Map<number, CustomRole>;
+  private customRolePermissions: Map<number, CustomRolePermission>;
+  private userAccessLogs: Map<number, UserAccessLog>;
+  private userContacts: Map<number, UserContact>;
+  private userSecuritySettings: Map<number, UserSecuritySetting>;
+  private userPerformanceMetrics: Map<number, UserPerformanceMetric>;
+  private timeRestrictions: Map<number, TimeRestriction>;
   
   // For tracking failed login attempts
   private failedLoginAttempts: Map<number, { count: number, lastAttempt: Date }>;
@@ -327,6 +425,13 @@ export class MemStorage implements IStorage {
   private permissionCurrentId: number;
   private userVerificationTokenCurrentId: number;
   private sessionCurrentId: number;
+  private customRoleCurrentId: number;
+  private customRolePermissionCurrentId: number;
+  private userAccessLogCurrentId: number;
+  private userContactCurrentId: number;
+  private userSecuritySettingCurrentId: number;
+  private userPerformanceMetricCurrentId: number;
+  private timeRestrictionCurrentId: number;
   
   constructor() {
     this.users = new Map();
@@ -359,6 +464,13 @@ export class MemStorage implements IStorage {
     this.auditLogs = new Map();
     this.userPreferences = new Map();
     this.permissions = new Map();
+    this.customRoles = new Map();
+    this.customRolePermissions = new Map();
+    this.userAccessLogs = new Map();
+    this.userContacts = new Map();
+    this.userSecuritySettings = new Map();
+    this.userPerformanceMetrics = new Map();
+    this.timeRestrictions = new Map();
     
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
@@ -384,6 +496,13 @@ export class MemStorage implements IStorage {
     this.permissionCurrentId = 1;
     this.userVerificationTokenCurrentId = 1;
     this.sessionCurrentId = 1;
+    this.customRoleCurrentId = 1;
+    this.customRolePermissionCurrentId = 1;
+    this.userAccessLogCurrentId = 1;
+    this.userContactCurrentId = 1;
+    this.userSecuritySettingCurrentId = 1;
+    this.userPerformanceMetricCurrentId = 1;
+    this.timeRestrictionCurrentId = 1;
     
     // Add default data
     this.initializeDefaultData();
@@ -1144,7 +1263,9 @@ export class MemStorage implements IStorage {
   
   // Permission methods
   private setupDefaultPermissions() {
-    // Admin role permissions
+    // ==================== STANDARD ROLES ====================
+    
+    // Admin role permissions (full access to all resources)
     const adminPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
       { resource: Resource.INVENTORY, permissionType: PermissionType.CREATE },
@@ -1210,7 +1331,7 @@ export class MemStorage implements IStorage {
       { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.EXPORT }
     ];
     
-    // Manager role permissions
+    // Manager role permissions (extensive but not full access)
     const managerPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
       { resource: Resource.INVENTORY, permissionType: PermissionType.CREATE },
@@ -1263,7 +1384,7 @@ export class MemStorage implements IStorage {
       { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.EXPORT }
     ];
     
-    // Warehouse Staff role permissions
+    // Warehouse Staff role permissions (focused on inventory operations)
     const warehouseStaffPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
       { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
@@ -1290,7 +1411,7 @@ export class MemStorage implements IStorage {
       { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ }
     ];
     
-    // Viewer role permissions
+    // Viewer role permissions (read-only access)
     const viewerPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
       { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
@@ -1316,6 +1437,76 @@ export class MemStorage implements IStorage {
       // Stock Movements resource permissions
       { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ }
     ];
+    
+    // ==================== ADDITIONAL ROLES ====================
+    
+    // Sales Team role permissions (focus on inventory and customers)
+    const salesTeamPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+      // Inventory resource permissions
+      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.EXPORT },
+      
+      // Categories resource permissions
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      
+      // Warehouses resource permissions
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      
+      // Reports resource permissions
+      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
+      { resource: Resource.REPORTS, permissionType: PermissionType.EXPORT },
+      
+      // Reorder Requests resource permissions
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.CREATE },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ }
+    ];
+    
+    // Auditor role permissions (focused on reporting and history)
+    const auditorPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+      // Inventory resource permissions
+      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
+      { resource: Resource.INVENTORY, permissionType: PermissionType.EXPORT },
+      
+      // Purchases resource permissions
+      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
+      { resource: Resource.PURCHASES, permissionType: PermissionType.EXPORT },
+      
+      // Suppliers resource permissions
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
+      { resource: Resource.SUPPLIERS, permissionType: PermissionType.EXPORT },
+      
+      // Categories resource permissions
+      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      
+      // Warehouses resource permissions
+      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      
+      // Reports resource permissions
+      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
+      { resource: Resource.REPORTS, permissionType: PermissionType.EXPORT },
+      
+      // Reorder Requests resource permissions
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.EXPORT },
+      
+      // Stock Movements resource permissions
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ },
+      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.EXPORT }
+    ];
+    
+    // Supplier role permissions (limited to their own inventory)
+    const supplierPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+      // Inventory resource permissions (limited)
+      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
+      
+      // Purchases resource permissions (limited to their own POs)
+      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
+      
+      // Reorder Requests resource permissions (limited to relevant items)
+      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ }
+    ];
+    
+    // ==================== CREATE PERMISSIONS ====================
     
     // Create admin permissions
     for (const permission of adminPermissions) {
@@ -1352,6 +1543,56 @@ export class MemStorage implements IStorage {
         permissionType: permission.permissionType
       });
     }
+    
+    // ==================== SETUP DEFAULT CUSTOM ROLES ====================
+    
+    // Create Sales Team as a default custom role
+    this.createCustomRole({
+      name: "Sales Team",
+      description: "Role for sales personnel with access to inventory information and ability to place reorder requests",
+      createdBy: 1, // System user ID
+      isActive: true
+    }).then(salesTeamRole => {
+      for (const permission of salesTeamPermissions) {
+        this.createCustomRolePermission({
+          roleId: salesTeamRole.id,
+          resource: permission.resource,
+          permissionType: permission.permissionType
+        });
+      }
+    });
+    
+    // Create Auditor as a default custom role
+    this.createCustomRole({
+      name: "Auditor",
+      description: "Role for auditors with read and export access to all resources for compliance and financial review",
+      createdBy: 1, // System user ID
+      isActive: true
+    }).then(auditorRole => {
+      for (const permission of auditorPermissions) {
+        this.createCustomRolePermission({
+          roleId: auditorRole.id,
+          resource: permission.resource,
+          permissionType: permission.permissionType
+        });
+      }
+    });
+    
+    // Create Supplier as a default custom role
+    this.createCustomRole({
+      name: "Supplier",
+      description: "Role for external suppliers with limited access to view relevant inventory, purchase orders, and reorder requests",
+      createdBy: 1, // System user ID
+      isActive: true
+    }).then(supplierRole => {
+      for (const permission of supplierPermissions) {
+        this.createCustomRolePermission({
+          roleId: supplierRole.id,
+          resource: permission.resource,
+          permissionType: permission.permissionType
+        });
+      }
+    });
   }
   
   async getAllPermissions(): Promise<Permission[]> {
@@ -3751,6 +3992,331 @@ export class MemStorage implements IStorage {
       vatRate: rate,
       countryCode
     };
+  }
+
+  // Custom Role Methods
+  async getAllCustomRoles(): Promise<CustomRole[]> {
+    return Array.from(this.customRoles.values());
+  }
+  
+  async getCustomRole(id: number): Promise<CustomRole | undefined> {
+    return this.customRoles.get(id);
+  }
+  
+  async getCustomRoleByName(name: string): Promise<CustomRole | undefined> {
+    return Array.from(this.customRoles.values()).find(
+      (role) => role.name.toLowerCase() === name.toLowerCase()
+    );
+  }
+  
+  async createCustomRole(role: InsertCustomRole): Promise<CustomRole> {
+    const now = new Date();
+    const customRole: CustomRole = {
+      id: this.customRoleCurrentId++,
+      createdAt: now,
+      updatedAt: now,
+      isSystemRole: role.isSystemRole || false,
+      ...role
+    };
+    
+    this.customRoles.set(customRole.id, customRole);
+    
+    // Log the action
+    await this.createActivityLog({
+      action: "Custom Role Created",
+      description: `Created custom role: ${customRole.name}`,
+      referenceType: "custom_role",
+      referenceId: customRole.id,
+      userId: role.createdBy
+    });
+    
+    return customRole;
+  }
+  
+  async updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined> {
+    const existingRole = await this.getCustomRole(id);
+    if (!existingRole) return undefined;
+    
+    const updatedRole: CustomRole = {
+      ...existingRole,
+      ...role,
+      updatedAt: new Date()
+    };
+    
+    this.customRoles.set(id, updatedRole);
+    
+    // Log the action
+    if (role.createdBy) {
+      await this.createActivityLog({
+        action: "Custom Role Updated",
+        description: `Updated custom role: ${updatedRole.name}`,
+        referenceType: "custom_role",
+        referenceId: id,
+        userId: role.createdBy
+      });
+    }
+    
+    return updatedRole;
+  }
+  
+  async deleteCustomRole(id: number): Promise<boolean> {
+    // Check if the role exists
+    const role = await this.getCustomRole(id);
+    if (!role) return false;
+    
+    // Delete the role
+    const result = this.customRoles.delete(id);
+    
+    // Delete all associated permissions
+    const permissions = await this.getAllCustomRolePermissions(id);
+    for (const permission of permissions) {
+      await this.deleteCustomRolePermission(permission.id);
+    }
+    
+    return result;
+  }
+  
+  // Custom Role Permission Methods
+  async getAllCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]> {
+    return Array.from(this.customRolePermissions.values()).filter(
+      (permission) => permission.roleId === roleId
+    );
+  }
+  
+  async getCustomRolePermission(id: number): Promise<CustomRolePermission | undefined> {
+    return this.customRolePermissions.get(id);
+  }
+  
+  async createCustomRolePermission(permission: InsertCustomRolePermission): Promise<CustomRolePermission> {
+    const now = new Date();
+    const customRolePermission: CustomRolePermission = {
+      id: this.customRolePermissionCurrentId++,
+      createdAt: now,
+      updatedAt: now,
+      ...permission
+    };
+    
+    this.customRolePermissions.set(customRolePermission.id, customRolePermission);
+    
+    return customRolePermission;
+  }
+  
+  async updateCustomRolePermission(id: number, permission: Partial<InsertCustomRolePermission>): Promise<CustomRolePermission | undefined> {
+    const existingPermission = await this.getCustomRolePermission(id);
+    if (!existingPermission) return undefined;
+    
+    const updatedPermission: CustomRolePermission = {
+      ...existingPermission,
+      ...permission,
+      updatedAt: new Date()
+    };
+    
+    this.customRolePermissions.set(id, updatedPermission);
+    
+    return updatedPermission;
+  }
+  
+  async deleteCustomRolePermission(id: number): Promise<boolean> {
+    return this.customRolePermissions.delete(id);
+  }
+  
+  // User Access Log Methods
+  async getAllUserAccessLogs(userId?: number): Promise<UserAccessLog[]> {
+    let logs = Array.from(this.userAccessLogs.values());
+    
+    if (userId) {
+      logs = logs.filter(log => log.userId === userId);
+    }
+    
+    // Sort by timestamp, most recent first
+    return logs.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
+  
+  async getUserAccessLog(id: number): Promise<UserAccessLog | undefined> {
+    return this.userAccessLogs.get(id);
+  }
+  
+  async createUserAccessLog(log: InsertUserAccessLog): Promise<UserAccessLog> {
+    const userAccessLog: UserAccessLog = {
+      id: this.userAccessLogCurrentId++,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...log
+    };
+    
+    this.userAccessLogs.set(userAccessLog.id, userAccessLog);
+    
+    return userAccessLog;
+  }
+  
+  // User Contact Methods
+  async getAllUserContacts(userId: number): Promise<UserContact[]> {
+    return Array.from(this.userContacts.values()).filter(
+      (contact) => contact.userId === userId
+    );
+  }
+  
+  async getUserContact(id: number): Promise<UserContact | undefined> {
+    return this.userContacts.get(id);
+  }
+  
+  async createUserContact(contact: InsertUserContact): Promise<UserContact> {
+    const now = new Date();
+    const userContact: UserContact = {
+      id: this.userContactCurrentId++,
+      createdAt: now,
+      updatedAt: now,
+      ...contact
+    };
+    
+    this.userContacts.set(userContact.id, userContact);
+    
+    return userContact;
+  }
+  
+  async updateUserContact(id: number, contact: Partial<InsertUserContact>): Promise<UserContact | undefined> {
+    const existingContact = await this.getUserContact(id);
+    if (!existingContact) return undefined;
+    
+    const updatedContact: UserContact = {
+      ...existingContact,
+      ...contact,
+      updatedAt: new Date()
+    };
+    
+    this.userContacts.set(id, updatedContact);
+    
+    return updatedContact;
+  }
+  
+  async deleteUserContact(id: number): Promise<boolean> {
+    return this.userContacts.delete(id);
+  }
+  
+  // User Security Settings Methods
+  async getUserSecuritySettings(userId: number): Promise<UserSecuritySetting | undefined> {
+    return Array.from(this.userSecuritySettings.values()).find(
+      (settings) => settings.userId === userId
+    );
+  }
+  
+  async createUserSecuritySettings(settings: InsertUserSecuritySetting): Promise<UserSecuritySetting> {
+    const now = new Date();
+    const userSecuritySetting: UserSecuritySetting = {
+      id: this.userSecuritySettingCurrentId++,
+      createdAt: now,
+      updatedAt: now,
+      ...settings
+    };
+    
+    this.userSecuritySettings.set(userSecuritySetting.id, userSecuritySetting);
+    
+    return userSecuritySetting;
+  }
+  
+  async updateUserSecuritySettings(userId: number, settings: Partial<InsertUserSecuritySetting>): Promise<UserSecuritySetting | undefined> {
+    const existingSettings = await this.getUserSecuritySettings(userId);
+    if (!existingSettings) return undefined;
+    
+    const updatedSettings: UserSecuritySetting = {
+      ...existingSettings,
+      ...settings,
+      updatedAt: new Date()
+    };
+    
+    this.userSecuritySettings.set(existingSettings.id, updatedSettings);
+    
+    return updatedSettings;
+  }
+  
+  // User Performance Metrics Methods
+  async getAllUserPerformanceMetrics(userId: number): Promise<UserPerformanceMetric[]> {
+    return Array.from(this.userPerformanceMetrics.values()).filter(
+      (metric) => metric.userId === userId
+    );
+  }
+  
+  async getUserPerformanceMetric(id: number): Promise<UserPerformanceMetric | undefined> {
+    return this.userPerformanceMetrics.get(id);
+  }
+  
+  async createUserPerformanceMetric(metric: InsertUserPerformanceMetric): Promise<UserPerformanceMetric> {
+    const now = new Date();
+    const userPerformanceMetric: UserPerformanceMetric = {
+      id: this.userPerformanceMetricCurrentId++,
+      createdAt: now,
+      updatedAt: now,
+      ...metric
+    };
+    
+    this.userPerformanceMetrics.set(userPerformanceMetric.id, userPerformanceMetric);
+    
+    return userPerformanceMetric;
+  }
+  
+  async updateUserPerformanceMetric(id: number, metric: Partial<InsertUserPerformanceMetric>): Promise<UserPerformanceMetric | undefined> {
+    const existingMetric = await this.getUserPerformanceMetric(id);
+    if (!existingMetric) return undefined;
+    
+    const updatedMetric: UserPerformanceMetric = {
+      ...existingMetric,
+      ...metric,
+      updatedAt: new Date()
+    };
+    
+    this.userPerformanceMetrics.set(id, updatedMetric);
+    
+    return updatedMetric;
+  }
+  
+  // Time Restriction Methods
+  async getAllTimeRestrictions(userId?: number): Promise<TimeRestriction[]> {
+    let restrictions = Array.from(this.timeRestrictions.values());
+    
+    if (userId) {
+      restrictions = restrictions.filter(
+        (restriction) => restriction.userId === userId
+      );
+    }
+    
+    return restrictions;
+  }
+  
+  async getTimeRestriction(id: number): Promise<TimeRestriction | undefined> {
+    return this.timeRestrictions.get(id);
+  }
+  
+  async createTimeRestriction(restriction: InsertTimeRestriction): Promise<TimeRestriction> {
+    const now = new Date();
+    const timeRestriction: TimeRestriction = {
+      id: this.timeRestrictionCurrentId++,
+      createdAt: now,
+      updatedAt: now,
+      ...restriction
+    };
+    
+    this.timeRestrictions.set(timeRestriction.id, timeRestriction);
+    
+    return timeRestriction;
+  }
+  
+  async updateTimeRestriction(id: number, restriction: Partial<InsertTimeRestriction>): Promise<TimeRestriction | undefined> {
+    const existingRestriction = await this.getTimeRestriction(id);
+    if (!existingRestriction) return undefined;
+    
+    const updatedRestriction: TimeRestriction = {
+      ...existingRestriction,
+      ...restriction,
+      updatedAt: new Date()
+    };
+    
+    this.timeRestrictions.set(id, updatedRestriction);
+    
+    return updatedRestriction;
+  }
+  
+  async deleteTimeRestriction(id: number): Promise<boolean> {
+    return this.timeRestrictions.delete(id);
   }
 }
 

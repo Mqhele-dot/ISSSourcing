@@ -40,6 +40,9 @@ import {
   PurchaseOrderStatus,
   PaymentStatus,
   ReorderRequestStatus,
+  UserRole,
+  Resource,
+  PermissionType,
   type DocumentType,
   type ReportType
 } from "@shared/schema";
@@ -2126,6 +2129,623 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error calculating inventory value:", error);
       res.status(500).json({ message: "Failed to calculate inventory value" });
+    }
+  });
+
+  // ================== USER MANAGEMENT ENDPOINTS ==================
+  
+  app.get("/api/users", async (_req: Request, res: Response) => {
+    try {
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+  
+  app.get("/api/users/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      const user = await storage.getUser(id);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+  
+  app.put("/api/users/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Validate and update the user
+      const updatedUser = await storage.updateUser(id, req.body);
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // If user role is changed, log it
+      if (req.body.role && req.user) {
+        await storage.createActivityLog({
+          action: "User Role Updated",
+          description: `Updated user role to ${req.body.role} for user ${updatedUser.username}`,
+          userId: req.user.id,
+          referenceType: "user",
+          referenceId: id
+        });
+      }
+      
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+  
+  app.delete("/api/users/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Don't allow users to delete themselves
+      if (req.user && req.user.id === id) {
+        return res.status(400).json({ message: "Cannot delete your own account" });
+      }
+      
+      const success = await storage.deleteUser(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (req.user) {
+        await storage.createActivityLog({
+          action: "User Deleted",
+          description: `Deleted user with ID ${id}`,
+          userId: req.user.id,
+          referenceType: "user",
+          referenceId: id
+        });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ message: "Failed to delete user" });
+    }
+  });
+  
+  // ================== USER PROFILE MANAGEMENT ENDPOINTS ==================
+  
+  // User contact information
+  app.get("/api/users/:id/contacts", async (req: Request, res: Response) => {
+    try {
+      const userId = Number(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Security check: users can only access their own contacts unless admin
+      if (req.user && req.user.id !== userId && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const contacts = await storage.getAllUserContacts(userId);
+      res.json(contacts);
+    } catch (error) {
+      console.error("Error fetching user contacts:", error);
+      res.status(500).json({ message: "Failed to fetch user contacts" });
+    }
+  });
+  
+  app.post("/api/users/:id/contacts", async (req: Request, res: Response) => {
+    try {
+      const userId = Number(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Security check: users can only modify their own contacts unless admin
+      if (req.user && req.user.id !== userId && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const contactData = { ...req.body, userId };
+      const newContact = await storage.createUserContact(contactData);
+      res.status(201).json(newContact);
+    } catch (error) {
+      console.error("Error creating user contact:", error);
+      res.status(500).json({ message: "Failed to create user contact" });
+    }
+  });
+  
+  app.put("/api/users/contacts/:id", async (req: Request, res: Response) => {
+    try {
+      const contactId = Number(req.params.id);
+      if (isNaN(contactId)) {
+        return res.status(400).json({ message: "Invalid contact ID" });
+      }
+      
+      // Get the contact to check ownership
+      const contact = await storage.getUserContact(contactId);
+      if (!contact) {
+        return res.status(404).json({ message: "Contact not found" });
+      }
+      
+      // Security check: users can only modify their own contacts unless admin
+      if (req.user && req.user.id !== contact.userId && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const updatedContact = await storage.updateUserContact(contactId, req.body);
+      res.json(updatedContact);
+    } catch (error) {
+      console.error("Error updating user contact:", error);
+      res.status(500).json({ message: "Failed to update user contact" });
+    }
+  });
+  
+  app.delete("/api/users/contacts/:id", async (req: Request, res: Response) => {
+    try {
+      const contactId = Number(req.params.id);
+      if (isNaN(contactId)) {
+        return res.status(400).json({ message: "Invalid contact ID" });
+      }
+      
+      // Get the contact to check ownership
+      const contact = await storage.getUserContact(contactId);
+      if (!contact) {
+        return res.status(404).json({ message: "Contact not found" });
+      }
+      
+      // Security check: users can only delete their own contacts unless admin
+      if (req.user && req.user.id !== contact.userId && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const success = await storage.deleteUserContact(contactId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Contact not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting user contact:", error);
+      res.status(500).json({ message: "Failed to delete user contact" });
+    }
+  });
+  
+  // User security settings
+  app.get("/api/users/:id/security-settings", async (req: Request, res: Response) => {
+    try {
+      const userId = Number(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Security check: users can only access their own security settings unless admin
+      if (req.user && req.user.id !== userId && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const settings = await storage.getUserSecuritySettings(userId);
+      if (!settings) {
+        return res.status(404).json({ message: "Security settings not found" });
+      }
+      
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching security settings:", error);
+      res.status(500).json({ message: "Failed to fetch security settings" });
+    }
+  });
+  
+  app.post("/api/users/:id/security-settings", async (req: Request, res: Response) => {
+    try {
+      const userId = Number(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Security check: users can only modify their own security settings unless admin
+      if (req.user && req.user.id !== userId && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      // Check if settings already exist
+      const existingSettings = await storage.getUserSecuritySettings(userId);
+      
+      let securitySettings;
+      if (existingSettings) {
+        securitySettings = await storage.updateUserSecuritySettings(userId, req.body);
+      } else {
+        securitySettings = await storage.createUserSecuritySettings({
+          ...req.body,
+          userId
+        });
+      }
+      
+      res.status(201).json(securitySettings);
+    } catch (error) {
+      console.error("Error creating/updating security settings:", error);
+      res.status(500).json({ message: "Failed to create/update security settings" });
+    }
+  });
+  
+  // User access logs
+  app.get("/api/users/:id/access-logs", async (req: Request, res: Response) => {
+    try {
+      const userId = Number(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Security check: users can only access their own access logs unless admin
+      if (req.user && req.user.id !== userId && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const logs = await storage.getAllUserAccessLogs(userId);
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching user access logs:", error);
+      res.status(500).json({ message: "Failed to fetch user access logs" });
+    }
+  });
+  
+  app.post("/api/users/:id/access-logs", async (req: Request, res: Response) => {
+    try {
+      const userId = Number(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      const logData = {
+        ...req.body,
+        userId,
+        timestamp: new Date()
+      };
+      
+      const log = await storage.createUserAccessLog(logData);
+      res.status(201).json(log);
+    } catch (error) {
+      console.error("Error creating user access log:", error);
+      res.status(500).json({ message: "Failed to create user access log" });
+    }
+  });
+  
+  // Time restrictions
+  app.get("/api/users/:id/time-restrictions", async (req: Request, res: Response) => {
+    try {
+      const userId = Number(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Admin only endpoint
+      if (req.user && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const restrictions = await storage.getAllTimeRestrictions(userId);
+      res.json(restrictions);
+    } catch (error) {
+      console.error("Error fetching time restrictions:", error);
+      res.status(500).json({ message: "Failed to fetch time restrictions" });
+    }
+  });
+  
+  app.post("/api/users/:id/time-restrictions", async (req: Request, res: Response) => {
+    try {
+      const userId = Number(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Admin only endpoint
+      if (req.user && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const restrictionData = {
+        ...req.body,
+        userId
+      };
+      
+      const restriction = await storage.createTimeRestriction(restrictionData);
+      res.status(201).json(restriction);
+    } catch (error) {
+      console.error("Error creating time restriction:", error);
+      res.status(500).json({ message: "Failed to create time restriction" });
+    }
+  });
+  
+  app.put("/api/time-restrictions/:id", async (req: Request, res: Response) => {
+    try {
+      const restrictionId = Number(req.params.id);
+      if (isNaN(restrictionId)) {
+        return res.status(400).json({ message: "Invalid restriction ID" });
+      }
+      
+      // Admin only endpoint
+      if (req.user && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const updatedRestriction = await storage.updateTimeRestriction(restrictionId, req.body);
+      
+      if (!updatedRestriction) {
+        return res.status(404).json({ message: "Time restriction not found" });
+      }
+      
+      res.json(updatedRestriction);
+    } catch (error) {
+      console.error("Error updating time restriction:", error);
+      res.status(500).json({ message: "Failed to update time restriction" });
+    }
+  });
+  
+  app.delete("/api/time-restrictions/:id", async (req: Request, res: Response) => {
+    try {
+      const restrictionId = Number(req.params.id);
+      if (isNaN(restrictionId)) {
+        return res.status(400).json({ message: "Invalid restriction ID" });
+      }
+      
+      // Admin only endpoint
+      if (req.user && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const success = await storage.deleteTimeRestriction(restrictionId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Time restriction not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting time restriction:", error);
+      res.status(500).json({ message: "Failed to delete time restriction" });
+    }
+  });
+  
+  // ================== ROLE MANAGEMENT ENDPOINTS ==================
+  
+  // System Roles and Permissions
+  app.get("/api/roles", async (_req: Request, res: Response) => {
+    try {
+      // Return a list of all available roles from UserRole enum
+      res.json(Object.values(UserRole));
+    } catch (error) {
+      console.error("Error fetching roles:", error);
+      res.status(500).json({ message: "Failed to fetch roles" });
+    }
+  });
+  
+  app.get("/api/roles/:role/permissions", async (req: Request, res: Response) => {
+    try {
+      const role = req.params.role as UserRole;
+      
+      // Validate role exists
+      if (!Object.values(UserRole).includes(role)) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+      
+      const permissions = await storage.getPermissionsByRole(role);
+      res.json(permissions);
+    } catch (error) {
+      console.error("Error fetching role permissions:", error);
+      res.status(500).json({ message: "Failed to fetch role permissions" });
+    }
+  });
+  
+  // Custom Roles
+  app.get("/api/custom-roles", async (_req: Request, res: Response) => {
+    try {
+      const roles = await storage.getAllCustomRoles();
+      res.json(roles);
+    } catch (error) {
+      console.error("Error fetching custom roles:", error);
+      res.status(500).json({ message: "Failed to fetch custom roles" });
+    }
+  });
+  
+  app.get("/api/custom-roles/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid role ID" });
+      }
+      
+      const role = await storage.getCustomRole(id);
+      
+      if (!role) {
+        return res.status(404).json({ message: "Custom role not found" });
+      }
+      
+      res.json(role);
+    } catch (error) {
+      console.error("Error fetching custom role:", error);
+      res.status(500).json({ message: "Failed to fetch custom role" });
+    }
+  });
+  
+  app.post("/api/custom-roles", async (req: Request, res: Response) => {
+    try {
+      // Admin only endpoint
+      if (req.user && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const roleData = {
+        ...req.body,
+        createdById: req.user ? req.user.id : 1 // Use authenticated user's ID if available
+      };
+      
+      const newRole = await storage.createCustomRole(roleData);
+      res.status(201).json(newRole);
+    } catch (error) {
+      console.error("Error creating custom role:", error);
+      res.status(500).json({ message: "Failed to create custom role" });
+    }
+  });
+  
+  app.put("/api/custom-roles/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid role ID" });
+      }
+      
+      // Admin only endpoint
+      if (req.user && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      // Check if it's a system role
+      const role = await storage.getCustomRole(id);
+      if (role && role.isSystemRole) {
+        return res.status(403).json({ message: "Cannot modify system roles" });
+      }
+      
+      const roleData = {
+        ...req.body,
+        updatedById: req.user ? req.user.id : undefined // Use authenticated user's ID if available
+      };
+      
+      const updatedRole = await storage.updateCustomRole(id, roleData);
+      
+      if (!updatedRole) {
+        return res.status(404).json({ message: "Custom role not found" });
+      }
+      
+      res.json(updatedRole);
+    } catch (error) {
+      console.error("Error updating custom role:", error);
+      res.status(500).json({ message: "Failed to update custom role" });
+    }
+  });
+  
+  app.delete("/api/custom-roles/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid role ID" });
+      }
+      
+      // Admin only endpoint
+      if (req.user && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      // Check if it's a system role
+      const role = await storage.getCustomRole(id);
+      if (role && role.isSystemRole) {
+        return res.status(403).json({ message: "Cannot delete system roles" });
+      }
+      
+      const success = await storage.deleteCustomRole(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Custom role not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting custom role:", error);
+      res.status(500).json({ message: "Failed to delete custom role" });
+    }
+  });
+  
+  // Custom Role Permissions
+  app.get("/api/custom-roles/:id/permissions", async (req: Request, res: Response) => {
+    try {
+      const roleId = Number(req.params.id);
+      if (isNaN(roleId)) {
+        return res.status(400).json({ message: "Invalid role ID" });
+      }
+      
+      const permissions = await storage.getAllCustomRolePermissions(roleId);
+      res.json(permissions);
+    } catch (error) {
+      console.error("Error fetching custom role permissions:", error);
+      res.status(500).json({ message: "Failed to fetch custom role permissions" });
+    }
+  });
+  
+  app.post("/api/custom-roles/:id/permissions", async (req: Request, res: Response) => {
+    try {
+      const roleId = Number(req.params.id);
+      if (isNaN(roleId)) {
+        return res.status(400).json({ message: "Invalid role ID" });
+      }
+      
+      // Admin only endpoint
+      if (req.user && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      const permissionData = {
+        ...req.body,
+        roleId
+      };
+      
+      const newPermission = await storage.createCustomRolePermission(permissionData);
+      res.status(201).json(newPermission);
+    } catch (error) {
+      console.error("Error creating custom role permission:", error);
+      res.status(500).json({ message: "Failed to create custom role permission" });
+    }
+  });
+  
+  app.delete("/api/custom-roles/:roleId/permissions/:permissionId", async (req: Request, res: Response) => {
+    try {
+      const roleId = Number(req.params.roleId);
+      const permissionId = Number(req.params.permissionId);
+      
+      if (isNaN(roleId) || isNaN(permissionId)) {
+        return res.status(400).json({ message: "Invalid role or permission ID" });
+      }
+      
+      // Admin only endpoint
+      if (req.user && req.user.role !== 'admin') {
+        return res.status(403).json({ message: "Unauthorized to access this resource" });
+      }
+      
+      // Check if the permission belongs to the role
+      const permission = await storage.getCustomRolePermission(permissionId);
+      if (!permission || permission.roleId !== roleId) {
+        return res.status(404).json({ message: "Permission not found for this role" });
+      }
+      
+      const success = await storage.deleteCustomRolePermission(permissionId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Permission not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting custom role permission:", error);
+      res.status(500).json({ message: "Failed to delete custom role permission" });
     }
   });
 

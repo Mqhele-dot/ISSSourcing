@@ -2,18 +2,31 @@ import { pgTable, text, serial, integer, real, boolean, timestamp, pgEnum, jsonb
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// User role enum
-export const UserRoleEnum = pgEnum("user_role", ["admin", "manager", "warehouse_staff", "viewer"]);
+// User role enum with expanded roles
+export const UserRoleEnum = pgEnum("user_role", [
+  "admin",            // Full access to all features
+  "manager",          // Approvals, reports, supplier management
+  "warehouse_staff",  // Stock updates, scanning, inventory requests
+  "sales",            // View inventory, create orders
+  "auditor",          // Read-only access to inventory history and reports
+  "supplier",         // View purchase orders, update delivery status
+  "custom",           // For user-defined custom roles
+  "viewer"            // Basic view access (legacy/default)
+]);
 
 // Permission Type enum - defines the type of permission
 export const PermissionTypeEnum = pgEnum("permission_type", [
-  "create", "read", "update", "delete", "approve", "export", "import", "assign"
+  "create", "read", "update", "delete", "approve", "export", "import", "assign",
+  "manage", "execute", "transfer", "print", "scan", "view_reports", "admin", 
+  "configure", "restrict", "download", "upload", "audit", "verify"
 ]);
 
 // Resource enum - defines resources that can have permissions
 export const ResourceEnum = pgEnum("resource", [
   "inventory", "purchases", "suppliers", "categories", "warehouses", 
-  "reports", "users", "settings", "reorder_requests", "stock_movements"
+  "reports", "users", "settings", "reorder_requests", "stock_movements",
+  "analytics", "dashboards", "notifications", "audit_logs", "user_profiles",
+  "documents", "custom_roles", "activity_logs", "import_export", "system"
 ]);
 
 // Permissions schema
@@ -874,6 +887,135 @@ export const insertExternalIntegrationSchema = createInsertSchema(externalIntegr
 });
 
 // Audit log for security tracking
+// Custom Roles - For creating user-defined roles with specific permissions
+export const customRoles = pgTable("custom_roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  createdBy: integer("created_by").notNull(), // Reference to user who created this role
+  isActive: boolean("is_active").default(true),
+  isSystemRole: boolean("is_system_role").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertCustomRoleSchema = createInsertSchema(customRoles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Custom Role Permissions - Maps permissions to custom roles
+export const customRolePermissions = pgTable("custom_role_permissions", {
+  id: serial("id").primaryKey(),
+  roleId: integer("role_id").notNull(),
+  resource: ResourceEnum("resource").notNull(),
+  permissionType: PermissionTypeEnum("permission_type").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertCustomRolePermissionSchema = createInsertSchema(customRolePermissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+// User Access Logs - For tracking login attempts, session activities
+export const userAccessLogs = pgTable("user_access_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  action: text("action").notNull(), // "login", "logout", "failed_login", etc.
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  geolocation: text("geolocation"), // Country/city info based on IP
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  details: jsonb("details"), // Additional info like device type, success/failure reason
+  sessionId: text("session_id"), // Reference to the session if applicable
+});
+
+export const insertUserAccessLogSchema = createInsertSchema(userAccessLogs).omit({
+  id: true,
+  timestamp: true,
+});
+
+// User Contact Information - Extended profile details
+export const userContacts = pgTable("user_contacts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique(),
+  phoneWork: text("phone_work"),
+  phoneMobile: text("phone_mobile"),
+  phoneHome: text("phone_home"),
+  addressLine1: text("address_line1"),
+  addressLine2: text("address_line2"),
+  city: text("city"),
+  state: text("state"),
+  postalCode: text("postal_code"),
+  country: text("country"),
+  emergencyContact: text("emergency_contact"),
+  emergencyPhone: text("emergency_phone"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertUserContactSchema = createInsertSchema(userContacts).omit({
+  id: true,
+  updatedAt: true,
+});
+
+// User Security Settings - Enhanced security controls
+export const userSecuritySettings = pgTable("user_security_settings", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique(),
+  allowedIpAddresses: text("allowed_ip_addresses").array(), // IP whitelist
+  allowedTimeWindows: jsonb("allowed_time_windows"), // JSON with time restrictions
+  allowedGeolocations: text("allowed_geolocations").array(), // Country/region restrictions
+  securityQuestions: jsonb("security_questions"), // Stored securely
+  securityAnswers: jsonb("security_answers"), // Hashed answers
+  biometricEnabled: boolean("biometric_enabled").default(false),
+  biometricType: text("biometric_type"), // "fingerprint", "face", etc.
+  ssoEnabled: boolean("sso_enabled").default(false),
+  ssoProvider: text("sso_provider"), // "google", "microsoft", etc.
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertUserSecuritySettingSchema = createInsertSchema(userSecuritySettings).omit({
+  id: true,
+  updatedAt: true,
+});
+
+// User Performance Metrics - For tracking warehouse staff efficiency
+export const userPerformanceMetrics = pgTable("user_performance_metrics", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  metricType: text("metric_type").notNull(), // "items_processed", "accuracy", "speed", etc.
+  value: real("value").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertUserPerformanceMetricSchema = createInsertSchema(userPerformanceMetrics).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Time-based access restrictions for users
+export const timeRestrictions = pgTable("time_restrictions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  dayOfWeek: integer("day_of_week").notNull(), // 0-6 (Sunday-Saturday)
+  startTime: text("start_time").notNull(), // Format: "HH:MM"
+  endTime: text("end_time").notNull(), // Format: "HH:MM"
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertTimeRestrictionSchema = createInsertSchema(timeRestrictions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
   userId: integer("user_id"),
@@ -947,3 +1089,25 @@ export enum ReorderRequestStatus {
   REJECTED = "REJECTED",
   CONVERTED = "CONVERTED"
 }
+
+// New types for enhanced user access control
+export type CustomRole = typeof customRoles.$inferSelect;
+export type InsertCustomRole = z.infer<typeof insertCustomRoleSchema>;
+
+export type CustomRolePermission = typeof customRolePermissions.$inferSelect;
+export type InsertCustomRolePermission = z.infer<typeof insertCustomRolePermissionSchema>;
+
+export type UserAccessLog = typeof userAccessLogs.$inferSelect;
+export type InsertUserAccessLog = z.infer<typeof insertUserAccessLogSchema>;
+
+export type UserContact = typeof userContacts.$inferSelect;
+export type InsertUserContact = z.infer<typeof insertUserContactSchema>;
+
+export type UserSecuritySetting = typeof userSecuritySettings.$inferSelect;
+export type InsertUserSecuritySetting = z.infer<typeof insertUserSecuritySettingSchema>;
+
+export type UserPerformanceMetric = typeof userPerformanceMetrics.$inferSelect;
+export type InsertUserPerformanceMetric = z.infer<typeof insertUserPerformanceMetricSchema>;
+
+export type TimeRestriction = typeof timeRestrictions.$inferSelect;
+export type InsertTimeRestriction = z.infer<typeof insertTimeRestrictionSchema>;
