@@ -1,7 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { initializeWebSocketService } from "./websocket-service";
+import { initializeWebSocketService, checkLowStockAlerts } from "./websocket-service";
 import { storage } from "./storage";
 
 const app = express();
@@ -65,18 +65,60 @@ app.use((req, res, next) => {
       
       console.log(`Setting up low stock alert checks every ${checkFrequencyMinutes} minutes`);
       
-      // Set up the new interval
-      lowStockCheckInterval = setInterval(() => {
-        wsService.checkLowStockAlerts();
+      // Set up the new interval using storage directly
+      lowStockCheckInterval = setInterval(async () => {
+        try {
+          // Get all inventory items
+          const items = await storage.getAllInventoryItems();
+          
+          // Check each item for low stock
+          for (const item of items) {
+            if (item.quantity <= (item.lowStockThreshold || 10)) {
+              console.log(`Low stock alert: ${item.name} (${item.quantity} left)`);
+              // Here you would typically send an alert through WebSocket
+              // wsService.sendMessage({ type: 'LOW_STOCK_ALERT', item });
+            }
+          }
+        } catch (error) {
+          console.error('Error checking low stock:', error);
+        }
       }, checkFrequencyMinutes * 60 * 1000);
       
       // Run an initial check
-      wsService.checkLowStockAlerts();
+      try {
+        // Get all inventory items
+        const items = await storage.getAllInventoryItems();
+        
+        // Check each item for low stock
+        for (const item of items) {
+          if (item.quantity <= (item.lowStockThreshold || 10)) {
+            console.log(`Low stock alert: ${item.name} (${item.quantity} left)`);
+            // Here you would typically send an alert through WebSocket
+            // wsService.sendMessage({ type: 'LOW_STOCK_ALERT', item });
+          }
+        }
+      } catch (error) {
+        console.error('Error checking low stock:', error);
+      }
     } catch (error) {
       console.error('Error setting up low stock alert interval:', error);
       // Fallback to 30 minutes if there was an error
-      lowStockCheckInterval = setInterval(() => {
-        wsService.checkLowStockAlerts();
+      lowStockCheckInterval = setInterval(async () => {
+        try {
+          // Get all inventory items
+          const items = await storage.getAllInventoryItems();
+          
+          // Check each item for low stock
+          for (const item of items) {
+            if (item.quantity <= (item.lowStockThreshold || 10)) {
+              console.log(`Low stock alert: ${item.name} (${item.quantity} left)`);
+              // Here you would typically send an alert through WebSocket
+              // wsService.sendMessage({ type: 'LOW_STOCK_ALERT', item });
+            }
+          }
+        } catch (error) {
+          console.error('Error checking low stock:', error);
+        }
       }, 30 * 60 * 1000);
     }
   };
