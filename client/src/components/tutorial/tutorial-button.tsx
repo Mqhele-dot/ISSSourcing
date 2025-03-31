@@ -80,45 +80,19 @@ export function TutorialButton() {
   
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon" className="rounded-full w-9 h-9">
-            {isScanning ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <HelpCircle className="h-5 w-5" />
-            )}
-            <span className="sr-only">Help & Tutorials</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>Help & Tutorials</DropdownMenuLabel>
-          
-          <DropdownMenuSeparator />
-          
-          <DropdownMenuItem onClick={() => handleStartTutorial("main")}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            <span>Getting Started</span>
-          </DropdownMenuItem>
-          
-          <DropdownMenuItem onClick={() => handleStartTutorial("inventory")}>
-            <Zap className="mr-2 h-4 w-4" />
-            <span>Inventory Management</span>
-          </DropdownMenuItem>
-          
-          <DropdownMenuItem onClick={() => handleStartTutorial("reports")}>
-            <Search className="mr-2 h-4 w-4" />
-            <span>Reports Tutorial</span>
-          </DropdownMenuItem>
-          
-          <DropdownMenuSeparator />
-          
-          <DropdownMenuItem onClick={handleScanForErrors} disabled={isScanning}>
-            <AlertCircle className="mr-2 h-4 w-4" />
-            <span>Scan for Issues</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Button 
+        variant="outline" 
+        size="icon" 
+        className="rounded-full w-9 h-9"
+        onClick={() => setShowDialog(true)}
+      >
+        {isScanning ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : (
+          <HelpCircle className="h-5 w-5" />
+        )}
+        <span className="sr-only">Help & Tutorials</span>
+      </Button>
       
       {/* Error scan results dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
