@@ -46,8 +46,12 @@ import {
 } from "@shared/schema";
 import session from "express-session";
 import memorystore from "memorystore";
+import connectPg from "connect-pg-simple";
+import { db } from "./db";
+import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
 
 const MemoryStore = memorystore(session);
+const PostgresSessionStore = connectPg(session);
 import crypto from "crypto";
 
 export interface IStorage {
