@@ -59,6 +59,7 @@ export function useBarcodeScanner(): UseBarcodeScanner {
         stopScanning();
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Start scanning for barcodes/QR codes
@@ -95,85 +96,98 @@ export function useBarcodeScanner(): UseBarcodeScanner {
           throw new Error(`Element with ID "${elementId}" not found`);
         }
 
-        // Dynamically import to avoid issues with SSR
-        const { Html5Qrcode } = await import('html5-qrcode');
-        
-        // Create scanner instance
-        const html5QrCode = new Html5Qrcode(elementId);
-        
-        // Hard-code format values because the library doesn't export them properly in TypeScript
-        const FORMAT_VALUES = {
-          QRCODE: 'QR_CODE',
-          EAN_8: 'EAN_8',
-          EAN_13: 'EAN_13',
-          UPC_A: 'UPC_A',
-          UPC_E: 'UPC_E',
-          CODE_39: 'CODE_39',
-          CODE_93: 'CODE_93',
-          CODE_128: 'CODE_128',
-          ITF: 'ITF',
-          RSS_14: 'RSS_14'
-        };
-        
-        // Determine which formats to scan based on the type
-        const formatsToScan = type === 'qrcode' 
-          ? [FORMAT_VALUES.QRCODE]
-          : type === 'barcode'
-            ? [
-                FORMAT_VALUES.EAN_8,
-                FORMAT_VALUES.EAN_13,
-                FORMAT_VALUES.UPC_A,
-                FORMAT_VALUES.UPC_E,
-                FORMAT_VALUES.CODE_39,
-                FORMAT_VALUES.CODE_93,
-                FORMAT_VALUES.CODE_128,
-                FORMAT_VALUES.ITF,
-                FORMAT_VALUES.RSS_14,
-              ]
-            : undefined; // 'auto' = all formats
-            
-        // Start scanning
-        await html5QrCode.start(
-          { facingMode: "environment" }, // Prefer rear camera
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0,
-            disableFlip: false,
-            // @ts-ignore - Despite TypeScript errors, the library does accept this parameter
-            formatsToSupport: formatsToScan,
-          } as any,
-          (decodedText, decodedResult) => {
-            // Handle scan success
-            const format = typeof decodedResult.result.format?.format === 'string' 
-              ? decodedResult.result.format.format 
-              : 'Unknown';
+        try {
+          // Request camera permission explicitly first
+          await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+              facingMode: "environment",
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            } 
+          });
+          
+          // Dynamically import to avoid issues with SSR
+          const { Html5Qrcode } = await import('html5-qrcode');
+          
+          // Create scanner instance
+          const html5QrCode = new Html5Qrcode(elementId);
+          
+          // Hard-code format values because the library doesn't export them properly in TypeScript
+          const FORMAT_VALUES = {
+            QRCODE: 'QR_CODE',
+            EAN_8: 'EAN_8',
+            EAN_13: 'EAN_13',
+            UPC_A: 'UPC_A',
+            UPC_E: 'UPC_E',
+            CODE_39: 'CODE_39',
+            CODE_93: 'CODE_93',
+            CODE_128: 'CODE_128',
+            ITF: 'ITF',
+            RSS_14: 'RSS_14'
+          };
+          
+          // Determine which formats to scan based on the type
+          const formatsToScan = type === 'qrcode' 
+            ? [FORMAT_VALUES.QRCODE]
+            : type === 'barcode'
+              ? [
+                  FORMAT_VALUES.EAN_8,
+                  FORMAT_VALUES.EAN_13,
+                  FORMAT_VALUES.UPC_A,
+                  FORMAT_VALUES.UPC_E,
+                  FORMAT_VALUES.CODE_39,
+                  FORMAT_VALUES.CODE_93,
+                  FORMAT_VALUES.CODE_128,
+                  FORMAT_VALUES.ITF,
+                  FORMAT_VALUES.RSS_14,
+                ]
+              : undefined; // 'auto' = all formats
               
-            const scanResult: ScanResult = {
-              text: decodedText,
-              format,
-              timestamp: Date.now()
-            };
-            setLastScan(scanResult);
-            toast({
-              title: `${scanResult.format} Scanned`,
-              description: scanResult.text,
-            });
-          },
-          (errorMessage) => {
-            // Errors during scanning don't need to be displayed to the user
-            // unless they're fatal to the scanning process
-            if (errorMessage.includes('not found') || 
-                errorMessage.includes('error') ||
-                errorMessage.includes('failed')) {
-              console.error('Scanner error:', errorMessage);
+          // Start scanning
+          await html5QrCode.start(
+            { facingMode: "environment" }, // Prefer rear camera
+            {
+              fps: 10,
+              qrbox: { width: 250, height: 250 },
+              aspectRatio: 1.0,
+              disableFlip: false,
+              // @ts-ignore - Despite TypeScript errors, the library does accept this parameter
+              formatsToSupport: formatsToScan,
+            } as any,
+            (decodedText, decodedResult) => {
+              // Handle scan success
+              const format = typeof decodedResult.result.format?.format === 'string' 
+                ? decodedResult.result.format.format 
+                : 'Unknown';
+                
+              const scanResult: ScanResult = {
+                text: decodedText,
+                format,
+                timestamp: Date.now()
+              };
+              setLastScan(scanResult);
+              toast({
+                title: `${scanResult.format} Scanned`,
+                description: scanResult.text,
+              });
+            },
+            (errorMessage) => {
+              // Errors during scanning don't need to be displayed to the user
+              // unless they're fatal to the scanning process
+              if (errorMessage.includes('not found') || 
+                  errorMessage.includes('error') ||
+                  errorMessage.includes('failed')) {
+                console.error('Scanner error:', errorMessage);
+              }
             }
-          }
-        );
-        
-        // Store the scanner instance in the ref for cleanup
-        scannerRef.current = { type: 'web', scanner: html5QrCode };
-        setIsScanning(true);
+          );
+          
+          // Store the scanner instance in the ref for cleanup
+          scannerRef.current = { type: 'web', scanner: html5QrCode };
+          setIsScanning(true);
+        } catch (cameraErr) {
+          throw new Error(`Camera access denied: ${cameraErr.message}`);
+        }
       }
     } catch (err) {
       console.error('Error starting scanner:', err);
@@ -184,6 +198,7 @@ export function useBarcodeScanner(): UseBarcodeScanner {
         variant: 'destructive'
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
   // Stop scanning
@@ -208,6 +223,7 @@ export function useBarcodeScanner(): UseBarcodeScanner {
       scannerRef.current = null;
       setIsScanning(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

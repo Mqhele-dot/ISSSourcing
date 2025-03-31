@@ -8,9 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { QrCode, Barcode, Printer, Download, Copy } from 'lucide-react';
 
-// Import barcode generator libraries dynamically to avoid SSR issues
-let JsBarcode: any = null;
-let QRCode: any = null;
+// Import barcode generator libraries directly to ensure they're available
+import JsBarcode from 'jsbarcode';
+import QRCode from 'qrcode';
 
 type BarcodeFormat = 'CODE128' | 'CODE39' | 'EAN13' | 'EAN8' | 'UPC' | 'ITF14';
 
@@ -28,23 +28,7 @@ export function BarcodeGenerator({ initialValue = '', onClose }: BarcodeGenerato
   const qrcodeRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Load libraries on component mount
-  useEffect(() => {
-    const loadLibraries = async () => {
-      try {
-        if (!JsBarcode) {
-          JsBarcode = (await import('jsbarcode')).default;
-        }
-        if (!QRCode) {
-          QRCode = (await import('qrcode')).default;
-        }
-      } catch (err) {
-        console.error('Error loading barcode libraries:', err);
-      }
-    };
-    
-    loadLibraries();
-  }, []);
+  // No need to load libraries dynamically anymore since we're importing them directly
 
   // Generate barcode/QR code whenever value, format, or size changes
   useEffect(() => {
