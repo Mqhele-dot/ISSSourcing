@@ -8,6 +8,7 @@ import { WarehouseSettingsForm } from "@/components/settings/warehouse-settings-
 import { SecuritySettingsForm } from "@/components/settings/security-settings-form";
 import { ForecastingSettingsForm } from "@/components/settings/forecasting-settings-form";
 import { TaxSettingsForm } from "@/components/settings/tax-settings-form";
+import { BillingSettingsForm } from "@/components/settings/billing-settings-form";
 import { Settings, UserCircle, Package, Activity, Database, CreditCard, Building, Shield, BarChart3, Receipt } from "lucide-react";
 
 export default function SettingsPage() {
@@ -88,14 +89,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="billing" className="space-y-4">
-          <div className="rounded-md bg-amber-50 p-4 text-amber-800 dark:bg-amber-950 dark:text-amber-400">
-            <h3 className="text-lg font-medium">Billing Settings Coming Soon</h3>
-            <p className="mt-2">
-              Payment processing and subscription management settings will be available 
-              in a future update. These settings will allow you to configure payment methods, 
-              tax calculations, and invoice templates.
-            </p>
-          </div>
+          <BillingSettingsForm />
         </TabsContent>
 
         <TabsContent value="warehouses" className="space-y-4">

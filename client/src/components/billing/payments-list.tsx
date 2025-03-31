@@ -23,9 +23,10 @@ import {
   RefreshCw,
   ArrowDownUp,
   CreditCard,
-  Receipt,
   Trash2,
-  FileSearch,
+  FileText,
+  Printer,
+  Download,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -39,40 +40,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { cn } from "@/lib/utils";
-
-interface Payment {
-  id: number;
-  invoiceId: number;
-  amount: number;
-  paymentDate: string | Date;
-  method: string;
-  transactionReference: string | null;
-  notes: string | null;
-  receivedBy: number;
-  createdAt: string | Date;
-  updatedAt: string | Date;
-  invoice?: any;
-}
 
 interface PaymentsListProps {
-  payments: Payment[];
-  onInvoiceView: (invoiceId: number) => void;
+  payments: any[];
   onCreatePayment: () => void;
   onRefresh: () => void;
 }
 
 export function PaymentsList({
   payments,
-  onInvoiceView,
   onCreatePayment,
   onRefresh,
 }: PaymentsListProps) {
   const { toast } = useToast();
   const [sortField, setSortField] = useState("paymentDate");
   const [sortDirection, setSortDirection] = useState("desc");
+  const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   
   // Sort payments
   const sortedPayments = [...payments].sort((a, b) => {
@@ -80,7 +64,7 @@ export function PaymentsList({
     let valueB = b[sortField];
     
     // Handle dates
-    if (valueA instanceof Date || (typeof valueA === 'string' && !isNaN(Date.parse(valueA)))) {
+    if (typeof valueA === 'string' && !isNaN(Date.parse(valueA))) {
       valueA = new Date(valueA).getTime();
       valueB = new Date(valueB).getTime();
     }
@@ -109,15 +93,16 @@ export function PaymentsList({
       setSortDirection("asc");
     }
   };
-
+  
   // Format currency
   const formatCurrency = (amount: number) => {
     return `$${amount.toFixed(2)}`;
   };
   
   // Get payment method badge
-  const getMethodBadge = (method: string) => {
+  const getPaymentMethodBadge = (method: string) => {
     let badgeVariant;
+    
     switch (method) {
       case "CREDIT_CARD":
       case "DEBIT_CARD":
@@ -127,13 +112,13 @@ export function PaymentsList({
         badgeVariant = "success";
         break;
       case "BANK_TRANSFER":
-        badgeVariant = "outline";
-        break;
-      case "CHECK":
         badgeVariant = "secondary";
         break;
+      case "CHECK":
+        badgeVariant = "outline";
+        break;
       case "PAYPAL":
-        badgeVariant = "blue";
+        badgeVariant = "info";
         break;
       default:
         badgeVariant = "outline";
@@ -152,11 +137,6 @@ export function PaymentsList({
     );
   };
   
-  // View invoice details
-  const handleViewInvoice = (invoiceId: number) => {
-    onInvoiceView(invoiceId);
-  };
-  
   // Delete payment mutation
   const deletePaymentMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -164,12 +144,12 @@ export function PaymentsList({
       if (!res.ok) throw new Error("Failed to delete payment");
       return id;
     },
-    onSuccess: () => {
+    onSuccess: (id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      
+      // Also invalidate the invoice this payment was for to update its status
       if (selectedPayment?.invoiceId) {
         queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedPayment.invoiceId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       }
       
       toast({
@@ -187,10 +167,32 @@ export function PaymentsList({
     },
   });
   
-  // Handle payment deletion
-  const handleDeleteClick = (payment: Payment) => {
+  // Handle payment actions
+  const handleDeleteClick = (payment: any) => {
     setSelectedPayment(payment);
     setDeleteDialogOpen(true);
+  };
+  
+  // Handle document generation
+  const handlePrintClick = (payment: any) => {
+    toast({
+      title: "Print feature",
+      description: "Payment receipt printing is not yet implemented.",
+    });
+  };
+  
+  const handleDownloadClick = (payment: any) => {
+    toast({
+      title: "Download feature",
+      description: "Payment receipt download is not yet implemented.",
+    });
+  };
+  
+  const handleViewInvoiceClick = (payment: any) => {
+    toast({
+      title: "View Invoice",
+      description: "Viewing associated invoice is not yet implemented.",
+    });
   };
   
   return (
@@ -206,7 +208,7 @@ export function PaymentsList({
           </Button>
           <Button size="sm" onClick={onCreatePayment}>
             <CreditCard className="h-4 w-4 mr-2" />
-            New Payment
+            Record Payment
           </Button>
         </div>
       </div>
@@ -234,7 +236,7 @@ export function PaymentsList({
                     className="font-medium"
                     onClick={() => toggleSort("id")}
                   >
-                    ID
+                    Payment ID
                     {sortField === "id" && (
                       <ArrowDownUp className="ml-2 h-4 w-4" />
                     )}
@@ -247,21 +249,8 @@ export function PaymentsList({
                     className="font-medium"
                     onClick={() => toggleSort("invoiceId")}
                   >
-                    Invoice
+                    Invoice #
                     {sortField === "invoiceId" && (
-                      <ArrowDownUp className="ml-2 h-4 w-4" />
-                    )}
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="font-medium"
-                    onClick={() => toggleSort("method")}
-                  >
-                    Method
-                    {sortField === "method" && (
                       <ArrowDownUp className="ml-2 h-4 w-4" />
                     )}
                   </Button>
@@ -275,6 +264,19 @@ export function PaymentsList({
                   >
                     Date
                     {sortField === "paymentDate" && (
+                      <ArrowDownUp className="ml-2 h-4 w-4" />
+                    )}
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="font-medium"
+                    onClick={() => toggleSort("method")}
+                  >
+                    Method
+                    {sortField === "method" && (
                       <ArrowDownUp className="ml-2 h-4 w-4" />
                     )}
                   </Button>
@@ -300,24 +302,13 @@ export function PaymentsList({
             <TableBody>
               {sortedPayments.map((payment) => (
                 <TableRow key={payment.id}>
-                  <TableCell>{payment.id}</TableCell>
+                  <TableCell>#{payment.id}</TableCell>
                   <TableCell>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="p-0 h-auto font-normal"
-                      onClick={() => handleViewInvoice(payment.invoiceId)}
-                    >
-                      #{payment.invoice?.invoiceNumber || payment.invoiceId}
-                    </Button>
+                    {payment.invoice?.invoiceNumber || `#${payment.invoiceId}`}
                   </TableCell>
-                  <TableCell>{getMethodBadge(payment.method)}</TableCell>
-                  <TableCell>
-                    {format(new Date(payment.paymentDate), "MMM d, yyyy")}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {formatCurrency(payment.amount)}
-                  </TableCell>
+                  <TableCell>{format(new Date(payment.paymentDate), "MMM d, yyyy")}</TableCell>
+                  <TableCell>{getPaymentMethodBadge(payment.method)}</TableCell>
+                  <TableCell className="font-medium">{formatCurrency(payment.amount)}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -327,24 +318,23 @@ export function PaymentsList({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleViewInvoice(payment.invoiceId)}>
-                          <FileSearch className="h-4 w-4 mr-2" />
+                        <DropdownMenuItem onClick={() => handleViewInvoiceClick(payment)}>
+                          <FileText className="h-4 w-4 mr-2" />
                           View Invoice
                         </DropdownMenuItem>
                         
-                        <DropdownMenuItem 
-                          onClick={() => {
-                            toast({
-                              title: "Info",
-                              description: "Payment receipt printing is not yet implemented.",
-                            })
-                          }}
-                        >
-                          <Receipt className="h-4 w-4 mr-2" />
+                        <DropdownMenuItem onClick={() => handlePrintClick(payment)}>
+                          <Printer className="h-4 w-4 mr-2" />
                           Print Receipt
                         </DropdownMenuItem>
                         
+                        <DropdownMenuItem onClick={() => handleDownloadClick(payment)}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Download Receipt
+                        </DropdownMenuItem>
+                        
                         <DropdownMenuSeparator />
+                        
                         <DropdownMenuItem 
                           onClick={() => handleDeleteClick(payment)}
                           className="text-red-600 dark:text-red-400"
@@ -368,9 +358,8 @@ export function PaymentsList({
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the payment of {formatCurrency(selectedPayment?.amount || 0)} 
-              made on {selectedPayment ? format(new Date(selectedPayment.paymentDate), "MMMM d, yyyy") : ""}.
-              This action cannot be undone, and it will also reduce the paid amount on the associated invoice.
+              This will permanently delete this payment record. This action cannot be undone.
+              This will also update the payment status of the associated invoice.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -378,6 +367,7 @@ export function PaymentsList({
             <AlertDialogAction
               onClick={() => selectedPayment && deletePaymentMutation.mutate(selectedPayment.id)}
               disabled={deletePaymentMutation.isPending}
+              className="bg-red-600 hover:bg-red-700"
             >
               {deletePaymentMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>

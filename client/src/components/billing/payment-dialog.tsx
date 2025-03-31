@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/popover";
 import { CalendarIcon, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 // Payment validation schema
 const paymentFormSchema = z.object({
@@ -53,15 +54,7 @@ const paymentFormSchema = z.object({
   amount: z.number({
     required_error: "Amount is required",
   }).min(0.01, "Amount must be greater than 0"),
-  method: z.enum([
-    "CASH", 
-    "CREDIT_CARD", 
-    "DEBIT_CARD", 
-    "BANK_TRANSFER", 
-    "CHECK", 
-    "PAYPAL", 
-    "OTHER"
-  ], {
+  method: z.enum(["CASH", "CREDIT_CARD", "DEBIT_CARD", "BANK_TRANSFER", "CHECK", "PAYPAL", "OTHER"], {
     required_error: "Payment method is required",
   }),
   transactionReference: z.string().nullable().optional(),
@@ -74,7 +67,7 @@ export function PaymentDialog({ open, onClose, invoices }) {
   const { toast } = useToast();
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   
-  // Default values for the form
+  // Default form values
   const defaultValues: Partial<PaymentFormValues> = {
     invoiceId: 0,
     paymentDate: new Date(),
@@ -84,48 +77,104 @@ export function PaymentDialog({ open, onClose, invoices }) {
     notes: "",
   };
   
-  // Set up form
+  // Setup form
   const form = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentFormSchema),
     defaultValues,
   });
   
-  // Update amount when invoice changes
+  // Update the amount when invoice changes
   const handleInvoiceChange = (invoiceId: number) => {
-    const invoice = invoices?.find(inv => inv.id === invoiceId);
+    const invoice = invoices.find(inv => inv.id === invoiceId);
+    setSelectedInvoice(invoice);
+    
     if (invoice) {
-      setSelectedInvoice(invoice);
-      
-      // Calculate remaining amount
-      const totalDue = invoice.total || 0;
-      const amountPaid = invoice.amountPaid || 0;
-      const remainingAmount = totalDue - amountPaid;
-      
-      form.setValue("amount", remainingAmount > 0 ? remainingAmount : 0);
+      const dueAmount = invoice.total - (invoice.amountPaid || 0);
+      form.setValue("amount", dueAmount);
     }
+  };
+  
+  // Get invoice options with status badges
+  const getInvoiceOptions = () => {
+    return invoices
+      .filter(invoice => 
+        invoice.status !== "PAID" && 
+        invoice.status !== "CANCELLED" && 
+        invoice.status !== "VOID"
+      )
+      .map(invoice => ({
+        id: invoice.id,
+        label: `#${invoice.invoiceNumber || invoice.id} - ${format(new Date(invoice.dueDate), "MMM d, yyyy")}`,
+        dueAmount: invoice.total - (invoice.amountPaid || 0),
+        status: invoice.status,
+        customerName: invoice.customer?.name || `Customer #${invoice.customerId}`
+      }));
+  };
+  
+  // Get status badge
+  const getStatusBadge = (status: string) => {
+    let badgeVariant;
+    switch (status) {
+      case "PARTIALLY_PAID":
+        badgeVariant = "warning";
+        break;
+      case "OVERDUE":
+        badgeVariant = "destructive";
+        break;
+      case "DRAFT":
+        badgeVariant = "outline";
+        break;
+      case "SENT":
+        badgeVariant = "default";
+        break;
+      default:
+        badgeVariant = "outline";
+    }
+    
+    // Convert status to user-friendly format
+    const statusText = status
+      .split("_")
+      .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+      .join(" ");
+    
+    return (
+      <Badge variant={badgeVariant as any} className="font-normal ml-2">
+        {statusText}
+      </Badge>
+    );
+  };
+  
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return `$${amount.toFixed(2)}`;
   };
   
   // Create payment mutation
   const paymentMutation = useMutation({
     mutationFn: async (data: PaymentFormValues) => {
-      const res = await apiRequest("POST", "/api/payments", data);
+      // Add receivedBy (current user ID - would come from auth in a real app)
+      const paymentData = {
+        ...data,
+        receivedBy: 1, // Placeholder, would be the current user ID
+      };
+      
+      const res = await apiRequest("POST", "/api/payments", paymentData);
+      
       if (!res.ok) throw new Error("Failed to record payment");
+      
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", data.invoiceId] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      
-      if (form.getValues("invoiceId")) {
-        queryClient.invalidateQueries({ 
-          queryKey: ["/api/invoices", form.getValues("invoiceId")] 
-        });
-      }
       
       toast({
         title: "Payment recorded",
-        description: "The payment has been recorded successfully.",
+        description: "The payment has been recorded successfully",
       });
+      
       onClose(true);
     },
     onError: (error) => {
@@ -137,26 +186,54 @@ export function PaymentDialog({ open, onClose, invoices }) {
     },
   });
   
-  // Form submission
-  const onSubmit = (data: PaymentFormValues) => {
-    paymentMutation.mutate(data);
+  // Create payment with Stripe
+  const processPaymentWithStripe = () => {
+    const values = form.getValues();
+    const invoice = invoices.find(invoice => invoice.id === values.invoiceId);
+    
+    // Check if we have Stripe keys configured
+    if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
+      toast({
+        title: "Stripe not configured",
+        description: "Stripe payment processing is not configured. Please add your Stripe API keys to process card payments.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    toast({
+      title: "Stripe integration",
+      description: "Stripe payment processing would be initiated here with proper setup. For now, recording as a manual payment.",
+    });
+    
+    // Submit the form with the current values
+    form.handleSubmit(onSubmit)();
   };
   
-  // Format currency
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
+  // Form submission
+  const onSubmit = (data: PaymentFormValues) => {
+    if (data.method === "CREDIT_CARD" || data.method === "DEBIT_CARD") {
+      // If using card payment and Stripe is set up, process with Stripe
+      if (import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
+        processPaymentWithStripe();
+        return;
+      }
+    }
+    
+    // Otherwise, just record the payment directly
+    paymentMutation.mutate(data);
   };
   
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose(false)}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[550px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CreditCard className="h-5 w-5" />
             Record Payment
           </DialogTitle>
           <DialogDescription>
-            Record a payment for an invoice
+            Record a payment for an invoice. This will update the invoice's payment status.
           </DialogDescription>
         </DialogHeader>
         
@@ -179,16 +256,22 @@ export function PaymentDialog({ open, onClose, invoices }) {
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select an invoice" />
+                        <SelectValue placeholder="Select an invoice to pay" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {invoices?.map((invoice) => (
+                      {getInvoiceOptions().map((option) => (
                         <SelectItem
-                          key={invoice.id}
-                          value={invoice.id.toString()}
+                          key={option.id}
+                          value={option.id.toString()}
                         >
-                          #{invoice.invoiceNumber || invoice.id} - {invoice.customer?.name || `Customer #${invoice.customerId}`} - {formatCurrency(invoice.total || 0)}
+                          <div className="flex items-center justify-between w-full">
+                            <span>{option.label}</span>
+                            {getStatusBadge(option.status)}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {option.customerName} - Due: {formatCurrency(option.dueAmount)}
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -198,64 +281,75 @@ export function PaymentDialog({ open, onClose, invoices }) {
               )}
             />
             
-            {/* Payment Details Section */}
-            {selectedInvoice && (
-              <div className="rounded-md border p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Invoice Total:</span>
-                  <span className="font-medium">{formatCurrency(selectedInvoice.total || 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount Paid:</span>
-                  <span className="font-medium">{formatCurrency(selectedInvoice.amountPaid || 0)}</span>
-                </div>
-                <div className="flex justify-between border-t pt-2">
-                  <span className="text-muted-foreground">Due Amount:</span>
-                  <span className="font-medium">{formatCurrency((selectedInvoice.total || 0) - (selectedInvoice.amountPaid || 0))}</span>
-                </div>
-              </div>
-            )}
-            
-            {/* Payment Date */}
-            <FormField
-              control={form.control}
-              name="paymentDate"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Payment Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
+            {/* Payment Amount and Date in a row */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Payment Amount */}
+              <FormField
+                control={form.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2">$</span>
+                        <Input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          className="pl-7"
+                          {...field}
+                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                           disabled={paymentMutation.isPending}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP")
-                          ) : (
-                            <span>Pick a date</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                        />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              {/* Payment Date */}
+              <FormField
+                control={form.control}
+                name="paymentDate"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Payment Date</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant={"outline"}
+                            className={cn(
+                              "pl-3 text-left font-normal",
+                              !field.value && "text-muted-foreground"
+                            )}
+                            disabled={paymentMutation.isPending}
+                          >
+                            {field.value ? (
+                              format(field.value, "PPP")
+                            ) : (
+                              <span>Pick a date</span>
+                            )}
+                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={field.value}
+                          onSelect={field.onChange}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             
             {/* Payment Method */}
             <FormField
@@ -284,36 +378,11 @@ export function PaymentDialog({ open, onClose, invoices }) {
                       <SelectItem value="OTHER">Other</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            {/* Payment Amount */}
-            <FormField
-              control={form.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2">$</span>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        className="pl-7"
-                        placeholder="0.00"
-                        {...field}
-                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                        disabled={paymentMutation.isPending}
-                      />
-                    </div>
-                  </FormControl>
-                  <FormDescription>
-                    Enter the payment amount
-                  </FormDescription>
+                  {(form.watch("method") === "CREDIT_CARD" || form.watch("method") === "DEBIT_CARD") && (
+                    <FormDescription>
+                      Card payments will be processed through Stripe when configured.
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -325,17 +394,20 @@ export function PaymentDialog({ open, onClose, invoices }) {
               name="transactionReference"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Transaction Reference</FormLabel>
+                  <FormLabel>Reference/Transaction ID</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Check number, transaction ID, etc."
+                      placeholder="Enter check number, transaction ID, etc."
                       {...field}
                       value={field.value || ""}
                       disabled={paymentMutation.isPending}
                     />
                   </FormControl>
                   <FormDescription>
-                    Reference number for this payment (optional)
+                    {form.watch("method") === "CHECK" ? "Check number" : 
+                     form.watch("method") === "BANK_TRANSFER" ? "Transfer reference" :
+                     form.watch("method") === "CREDIT_CARD" || form.watch("method") === "DEBIT_CARD" ? "Card last 4 digits" :
+                     "Optional reference information"}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -351,7 +423,7 @@ export function PaymentDialog({ open, onClose, invoices }) {
                   <FormLabel>Notes</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Additional notes about this payment"
+                      placeholder="Enter any additional notes about this payment"
                       className="min-h-[80px]"
                       {...field}
                       value={field.value || ""}
@@ -374,9 +446,9 @@ export function PaymentDialog({ open, onClose, invoices }) {
               </Button>
               <Button
                 type="submit"
-                disabled={paymentMutation.isPending || !form.getValues("invoiceId")}
+                disabled={paymentMutation.isPending || !form.formState.isValid}
               >
-                {paymentMutation.isPending ? "Saving..." : "Record Payment"}
+                {paymentMutation.isPending ? "Processing..." : "Record Payment"}
               </Button>
             </DialogFooter>
           </form>

@@ -25,15 +25,12 @@ import {
   FileText,
   CreditCard,
   Trash2,
+  Download,
   Send,
   Printer,
-  Download,
-  Clock,
-  Ban,
-  Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { format, isAfter, parseISO } from "date-fns";
+import { format } from "date-fns";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,17 +44,17 @@ import {
 
 interface InvoicesListProps {
   invoices: any[];
-  onInvoiceSelect: (invoice: any) => void;
   onCreateInvoice: () => void;
-  onPaymentAdd: (invoice: any) => void;
+  onPayInvoice: (invoice: any) => void;
+  onEditInvoice: (invoice: any) => void;
   onRefresh: () => void;
 }
 
 export function InvoicesList({
   invoices,
-  onInvoiceSelect,
   onCreateInvoice,
-  onPaymentAdd,
+  onPayInvoice,
+  onEditInvoice,
   onRefresh,
 }: InvoicesListProps) {
   const { toast } = useToast();
@@ -65,9 +62,6 @@ export function InvoicesList({
   const [sortDirection, setSortDirection] = useState("desc");
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
-  const [payDialogOpen, setPayDialogOpen] = useState(false);
   
   // Sort invoices
   const sortedInvoices = [...invoices].sort((a, b) => {
@@ -113,6 +107,7 @@ export function InvoicesList({
   // Get status badge
   const getStatusBadge = (status: string) => {
     let badgeVariant;
+    
     switch (status) {
       case "PAID":
         badgeVariant = "success";
@@ -150,89 +145,14 @@ export function InvoicesList({
     );
   };
   
-  // Select invoice to view
-  const handleInvoiceClick = (invoice: any) => {
-    onInvoiceSelect(invoice);
-  };
-  
-  // Invoice actions mutations
-  const updateInvoiceStatusMutation = useMutation({
-    mutationFn: async ({ invoice, action }: { invoice: any, action: string }) => {
-      let newStatus;
-      
-      switch (action) {
-        case "cancel":
-          newStatus = "CANCELLED";
-          break;
-        case "void":
-          newStatus = "VOID";
-          break;
-        case "mark_paid":
-          newStatus = "PAID";
-          break;
-        case "mark_sent":
-          newStatus = "SENT";
-          break;
-        default:
-          throw new Error("Invalid action");
-      }
-      
-      const res = await apiRequest("PATCH", `/api/invoices/${invoice.id}`, {
-        status: newStatus
-      });
-      
-      if (!res.ok) throw new Error(`Failed to ${action} invoice`);
-      
-      return {
-        invoice,
-        action,
-        newStatus
-      };
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices", data.invoice.id] });
-      
-      let message;
-      switch (data.action) {
-        case "cancel":
-          message = "Invoice cancelled successfully";
-          setCancelDialogOpen(false);
-          break;
-        case "void":
-          message = "Invoice voided successfully";
-          setVoidDialogOpen(false);
-          break;
-        case "mark_paid":
-          message = "Invoice marked as paid";
-          setPayDialogOpen(false);
-          break;
-        case "mark_sent":
-          message = "Invoice marked as sent";
-          break;
-      }
-      
-      toast({
-        title: "Status updated",
-        description: message,
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-  
+  // Delete invoice mutation
   const deleteInvoiceMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiRequest("DELETE", `/api/invoices/${id}`);
       if (!res.ok) throw new Error("Failed to delete invoice");
       return id;
     },
-    onSuccess: () => {
+    onSuccess: (id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       
       toast({
@@ -250,20 +170,30 @@ export function InvoicesList({
     },
   });
   
-  // Check if invoice is overdue
-  const isInvoiceOverdue = (dueDate: any) => {
-    const parsedDueDate = typeof dueDate === 'string' ? parseISO(dueDate) : dueDate;
-    return parsedDueDate && isAfter(new Date(), parsedDueDate);
-  };
-  
-  // Get due date styling
-  const getDueDateStyle = (dueDate: any, status: any) => {
-    if (["PAID", "CANCELLED", "VOID"].includes(status)) {
-      return "text-muted-foreground";
-    }
-    
-    return isInvoiceOverdue(dueDate) ? "text-red-500 dark:text-red-400 font-medium" : "";
-  };
+  // Send invoice mutation
+  const sendInvoiceMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("POST", `/api/invoices/${id}/send`);
+      if (!res.ok) throw new Error("Failed to send invoice");
+      return id;
+    },
+    onSuccess: (id) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", id] });
+      
+      toast({
+        title: "Invoice sent",
+        description: "The invoice has been marked as sent and an email would be sent to the customer.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Failed to send invoice: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
   
   // Handle invoice actions
   const handleDeleteClick = (invoice: any) => {
@@ -271,48 +201,22 @@ export function InvoicesList({
     setDeleteDialogOpen(true);
   };
   
-  const handleCancelClick = (invoice: any) => {
-    setSelectedInvoice(invoice);
-    setCancelDialogOpen(true);
-  };
-  
-  const handleVoidClick = (invoice: any) => {
-    setSelectedInvoice(invoice);
-    setVoidDialogOpen(true);
-  };
-  
-  const handlePaymentClick = (invoice: any) => {
-    onPaymentAdd(invoice);
-  };
-  
-  const handleMarkAsPaidClick = (invoice: any) => {
-    setSelectedInvoice(invoice);
-    setPayDialogOpen(true);
-  };
-  
-  const handleMarkAsSentClick = (invoice: any) => {
-    updateInvoiceStatusMutation.mutate({ invoice, action: "mark_sent" });
+  const handleSendClick = (invoice: any) => {
+    sendInvoiceMutation.mutate(invoice.id);
   };
   
   // Handle document generation/printing/download
-  const handlePrintClick = () => {
+  const handlePrintClick = (invoice: any) => {
     toast({
       title: "Print feature",
       description: "Invoice printing is not yet implemented.",
     });
   };
   
-  const handleDownloadClick = () => {
+  const handleDownloadClick = (invoice: any) => {
     toast({
       title: "Download feature",
       description: "Invoice download is not yet implemented.",
-    });
-  };
-  
-  const handleSendInvoiceClick = () => {
-    toast({
-      title: "Send invoice",
-      description: "Email sending is not yet implemented.",
     });
   };
   
@@ -329,7 +233,7 @@ export function InvoicesList({
           </Button>
           <Button size="sm" onClick={onCreateInvoice}>
             <FileText className="h-4 w-4 mr-2" />
-            New Invoice
+            Create Invoice
           </Button>
         </div>
       </div>
@@ -350,19 +254,6 @@ export function InvoicesList({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="font-medium"
-                    onClick={() => toggleSort("id")}
-                  >
-                    ID
-                    {sortField === "id" && (
-                      <ArrowDownUp className="ml-2 h-4 w-4" />
-                    )}
-                  </Button>
-                </TableHead>
                 <TableHead>
                   <Button
                     variant="ghost"
@@ -394,10 +285,10 @@ export function InvoicesList({
                     variant="ghost"
                     size="sm"
                     className="font-medium"
-                    onClick={() => toggleSort("status")}
+                    onClick={() => toggleSort("createdAt")}
                   >
-                    Status
-                    {sortField === "status" && (
+                    Created
+                    {sortField === "createdAt" && (
                       <ArrowDownUp className="ml-2 h-4 w-4" />
                     )}
                   </Button>
@@ -411,6 +302,19 @@ export function InvoicesList({
                   >
                     Due Date
                     {sortField === "dueDate" && (
+                      <ArrowDownUp className="ml-2 h-4 w-4" />
+                    )}
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="font-medium"
+                    onClick={() => toggleSort("status")}
+                  >
+                    Status
+                    {sortField === "status" && (
                       <ArrowDownUp className="ml-2 h-4 w-4" />
                     )}
                   </Button>
@@ -442,31 +346,37 @@ export function InvoicesList({
                   </Button>
                 </TableHead>
                 <TableHead>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="font-medium"
+                    onClick={() => toggleSort("dueAmount")}
+                  >
+                    Balance
+                    {sortField === "dueAmount" && (
+                      <ArrowDownUp className="ml-2 h-4 w-4" />
+                    )}
+                  </Button>
+                </TableHead>
+                <TableHead>
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedInvoices.map((invoice) => (
-                <TableRow key={invoice.id} className="cursor-pointer" onClick={() => handleInvoiceClick(invoice)}>
-                  <TableCell>{invoice.id}</TableCell>
-                  <TableCell className="font-medium">
-                    #{invoice.invoiceNumber || invoice.id}
-                  </TableCell>
-                  <TableCell>
-                    {invoice.customer?.name || `Customer #${invoice.customerId}`}
-                  </TableCell>
+                <TableRow key={invoice.id}>
+                  <TableCell>{invoice.invoiceNumber || `#${invoice.id}`}</TableCell>
+                  <TableCell>{invoice.customer?.name || `Customer #${invoice.customerId}`}</TableCell>
+                  <TableCell>{format(new Date(invoice.createdAt), "MMM d, yyyy")}</TableCell>
+                  <TableCell>{format(new Date(invoice.dueDate), "MMM d, yyyy")}</TableCell>
                   <TableCell>{getStatusBadge(invoice.status)}</TableCell>
-                  <TableCell className={getDueDateStyle(invoice.dueDate, invoice.status)}>
-                    {format(new Date(invoice.dueDate), "MMM d, yyyy")}
+                  <TableCell className="font-medium">{formatCurrency(invoice.total)}</TableCell>
+                  <TableCell>{formatCurrency(invoice.amountPaid || 0)}</TableCell>
+                  <TableCell className={invoice.dueAmount > 0 ? "text-red-600 dark:text-red-400 font-medium" : ""}>
+                    {formatCurrency(invoice.dueAmount)}
                   </TableCell>
-                  <TableCell className="font-medium">
-                    {formatCurrency(invoice.total || 0)}
-                  </TableCell>
-                  <TableCell>
-                    {formatCurrency(invoice.amountPaid || 0)}
-                  </TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                  <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="sm">
@@ -475,70 +385,36 @@ export function InvoicesList({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleInvoiceClick(invoice)}>
+                        <DropdownMenuItem onClick={() => onEditInvoice(invoice)}>
                           <FileText className="h-4 w-4 mr-2" />
-                          View Details
+                          Edit Invoice
                         </DropdownMenuItem>
                         
-                        {invoice.status !== "PAID" && invoice.status !== "CANCELLED" && invoice.status !== "VOID" && (
-                          <DropdownMenuItem onClick={() => handlePaymentClick(invoice)}>
+                        {(invoice.status === "DRAFT" || invoice.status === "SENT" || invoice.status === "OVERDUE" || invoice.status === "PARTIALLY_PAID") && (
+                          <DropdownMenuItem onClick={() => onPayInvoice(invoice)}>
                             <CreditCard className="h-4 w-4 mr-2" />
                             Record Payment
                           </DropdownMenuItem>
                         )}
                         
-                        <DropdownMenuItem onClick={handlePrintClick}>
-                          <Printer className="h-4 w-4 mr-2" />
-                          Print
-                        </DropdownMenuItem>
-                        
-                        <DropdownMenuItem onClick={handleDownloadClick}>
-                          <Download className="h-4 w-4 mr-2" />
-                          Download PDF
-                        </DropdownMenuItem>
-                        
                         {invoice.status === "DRAFT" && (
-                          <DropdownMenuItem onClick={() => handleMarkAsSentClick(invoice)}>
+                          <DropdownMenuItem onClick={() => handleSendClick(invoice)} disabled={sendInvoiceMutation.isPending}>
                             <Send className="h-4 w-4 mr-2" />
                             Mark as Sent
                           </DropdownMenuItem>
                         )}
                         
-                        {invoice.status === "SENT" && (
-                          <DropdownMenuItem onClick={handleSendInvoiceClick}>
-                            <Send className="h-4 w-4 mr-2" />
-                            Send Email
-                          </DropdownMenuItem>
-                        )}
+                        <DropdownMenuItem onClick={() => handlePrintClick(invoice)}>
+                          <Printer className="h-4 w-4 mr-2" />
+                          Print
+                        </DropdownMenuItem>
                         
-                        {invoice.status !== "PAID" && invoice.status !== "CANCELLED" && invoice.status !== "VOID" && (
-                          <DropdownMenuItem onClick={() => handleMarkAsPaidClick(invoice)}>
-                            <Check className="h-4 w-4 mr-2" />
-                            Mark as Paid
-                          </DropdownMenuItem>
-                        )}
+                        <DropdownMenuItem onClick={() => handleDownloadClick(invoice)}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Download PDF
+                        </DropdownMenuItem>
                         
                         <DropdownMenuSeparator />
-                        
-                        {invoice.status !== "CANCELLED" && invoice.status !== "VOID" && (
-                          <>
-                            <DropdownMenuItem 
-                              onClick={() => handleCancelClick(invoice)}
-                              className="text-amber-600 dark:text-amber-400"
-                            >
-                              <Ban className="h-4 w-4 mr-2" />
-                              Cancel Invoice
-                            </DropdownMenuItem>
-                            
-                            <DropdownMenuItem 
-                              onClick={() => handleVoidClick(invoice)}
-                              className="text-amber-600 dark:text-amber-400"
-                            >
-                              <Clock className="h-4 w-4 mr-2" />
-                              Void Invoice
-                            </DropdownMenuItem>
-                          </>
-                        )}
                         
                         <DropdownMenuItem 
                           onClick={() => handleDeleteClick(invoice)}
@@ -563,8 +439,8 @@ export function InvoicesList({
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the invoice #{selectedInvoice?.invoiceNumber || selectedInvoice?.id}.
-              This action cannot be undone.
+              This will permanently delete the invoice and all associated line items. This action cannot be undone.
+              {selectedInvoice && selectedInvoice.status !== "DRAFT" && " This invoice has already been processed. Deleting it may cause accounting inconsistencies."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -575,76 +451,6 @@ export function InvoicesList({
               className="bg-red-600 hover:bg-red-700"
             >
               {deleteInvoiceMutation.isPending ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      {/* Cancel Invoice Dialog */}
-      <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cancel Invoice?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to cancel invoice #{selectedInvoice?.invoiceNumber || selectedInvoice?.id}?
-              Cancelled invoices cannot be modified or paid, but they will remain in the system for record-keeping.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>No, Keep It</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => selectedInvoice && updateInvoiceStatusMutation.mutate({ invoice: selectedInvoice, action: "cancel" })}
-              disabled={updateInvoiceStatusMutation.isPending}
-              className="bg-amber-600 hover:bg-amber-700"
-            >
-              {updateInvoiceStatusMutation.isPending ? "Cancelling..." : "Yes, Cancel Invoice"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      {/* Void Invoice Dialog */}
-      <AlertDialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Void Invoice?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to void invoice #{selectedInvoice?.invoiceNumber || selectedInvoice?.id}?
-              Voided invoices cannot be modified or paid, and they will be marked as having zero value while 
-              remaining in the system for record-keeping.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>No, Keep It</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => selectedInvoice && updateInvoiceStatusMutation.mutate({ invoice: selectedInvoice, action: "void" })}
-              disabled={updateInvoiceStatusMutation.isPending}
-              className="bg-amber-600 hover:bg-amber-700"
-            >
-              {updateInvoiceStatusMutation.isPending ? "Voiding..." : "Yes, Void Invoice"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      {/* Mark as Paid Dialog */}
-      <AlertDialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Mark Invoice as Paid?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to mark invoice #{selectedInvoice?.invoiceNumber || selectedInvoice?.id} as paid?
-              This will update the invoice status without recording any specific payment details. 
-              For detailed payment records, use the "Record Payment" option instead.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => selectedInvoice && updateInvoiceStatusMutation.mutate({ invoice: selectedInvoice, action: "mark_paid" })}
-              disabled={updateInvoiceStatusMutation.isPending}
-            >
-              {updateInvoiceStatusMutation.isPending ? "Updating..." : "Mark as Paid"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
