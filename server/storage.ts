@@ -73,7 +73,7 @@ export interface IStorage {
   
   // Role and permission methods
   checkPermission(role: string, resource: string, permissionType: string): Promise<boolean>;
-  checkCustomRolePermission(roleId: number, resource: string, permissionType: string): Promise<boolean>;
+  checkCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean>;
   getSystemRoles(): Promise<string[]>;
   getCustomRoles(): Promise<CustomRole[]>;
   getCustomRole(id: number): Promise<CustomRole | undefined>;
@@ -140,7 +140,6 @@ export interface IStorage {
   getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]>;
   addPermissionToCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission>;
   removePermissionFromCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean>;
-  checkCustomRolePermission(roleId: number, resource: string, permissionType: string): Promise<boolean>;
   
   // Enhanced user access methods
   logUserAccess(userId: number, action: string, details?: any, ip?: string, userAgent?: string): Promise<UserAccessLog>;
@@ -1143,7 +1142,7 @@ export class MemStorage implements IStorage {
   }
   
   // Check if a custom role has a specific permission
-  async checkCustomRolePermission(roleId: number, resource: string, permissionType: string): Promise<boolean> {
+  async checkCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean> {
     const permissions = await this.getCustomRolePermissions(roleId);
     
     return permissions.some(
@@ -4494,7 +4493,7 @@ export class MemStorage implements IStorage {
     );
   }
   
-  async addPermissionToCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<CustomRolePermission> {
+  async addPermissionToCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission> {
     const permission: InsertCustomRolePermission = {
       roleId,
       resource,
@@ -4504,7 +4503,7 @@ export class MemStorage implements IStorage {
     return this.createCustomRolePermission(permission);
   }
   
-  async removePermissionFromCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<boolean> {
+  async removePermissionFromCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean> {
     const permissions = await this.getCustomRolePermissions(roleId);
     const permissionToRemove = permissions.find(
       p => p.roleId === roleId && p.resource === resource && p.permissionType === permissionType
@@ -4513,13 +4512,6 @@ export class MemStorage implements IStorage {
     if (!permissionToRemove) return false;
     
     return this.deleteCustomRolePermission(permissionToRemove.id);
-  }
-  
-  async checkCustomRolePermission(roleId: number, resource: Resource, permissionType: PermissionType): Promise<boolean> {
-    const permissions = await this.getCustomRolePermissions(roleId);
-    return permissions.some(
-      p => p.resource === resource && p.permissionType === permissionType
-    );
   }
   
   async getAllCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]> {
