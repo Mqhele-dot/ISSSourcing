@@ -7,8 +7,8 @@ neonConfig.webSocketConstructor = ws;
 
 console.log('Connecting to database...');
 if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL environment variable is not set');
-  process.exit(1);
+  console.error('DATABASE_URL environment variable is not set. Please add it to your deployment configuration in the Secrets section.');
+  throw new Error('Missing DATABASE_URL configuration');
 }
 
 export const pool = new Pool({ 
