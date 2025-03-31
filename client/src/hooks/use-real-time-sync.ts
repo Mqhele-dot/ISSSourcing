@@ -18,12 +18,23 @@ export enum SyncMessageType {
   CONNECTION_STATUS = 'connection_status'
 }
 
+// Define the status of the synchronization process
+export enum SyncStatus {
+  DISCONNECTED = 'disconnected',
+  CONNECTING = 'connecting',
+  CONNECTED = 'connected',
+  SYNCING = 'syncing',
+  SYNC_COMPLETE = 'sync_complete',
+  SYNC_ERROR = 'sync_error',
+  OFFLINE = 'offline'
+}
+
 // Define the structure of messages
 export interface SyncMessage {
   type: SyncMessageType | string;
   payload?: any;
   timestamp: string;
-  clientId?: string;
+  clientId?: string | undefined;
   compressed?: boolean;
   sequenceNumber?: number;
 }
@@ -206,7 +217,7 @@ export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
         ...message,
         timestamp: new Date().toISOString(),
         sequenceNumber: nextSequence,
-        clientId
+        clientId: clientId || undefined
       };
       
       socket.send(JSON.stringify(completeMessage));

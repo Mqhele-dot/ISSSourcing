@@ -11,6 +11,110 @@ export function isElectronEnvironment(): boolean {
   return window.electron !== undefined;
 }
 
+// Alias for backward compatibility
+export const isElectron = isElectronEnvironment;
+
+// Electron Bridge class for type safety and organization
+export class ElectronBridge {
+  constructor() {
+    if (!isElectronEnvironment()) {
+      console.warn('Creating ElectronBridge in non-Electron environment');
+    }
+  }
+
+  invoke<T = any>(channel: string, ...args: any[]): Promise<T> {
+    if (!isElectronEnvironment()) {
+      return Promise.reject(new Error('Not running in Electron environment'));
+    }
+    return window.electron!.invoke(channel, ...args);
+  }
+
+  send(channel: string, ...args: any[]): void {
+    if (!isElectronEnvironment()) {
+      console.warn('Not running in Electron environment, message not sent');
+      return;
+    }
+    window.electron!.send(channel, ...args);
+  }
+
+  on<T = any>(channel: string, callback: (data: T) => void): () => void {
+    if (!isElectronEnvironment()) {
+      console.warn('Not running in Electron environment, listener not added');
+      return () => {};
+    }
+    return window.electron!.on(channel, callback);
+  }
+}
+
+// App control helpers
+export const appControls = {
+  getVersion: async (): Promise<string> => {
+    if (!isElectronEnvironment()) {
+      return '0.0.0';
+    }
+    return callElectronBridge('app', 'getVersion');
+  },
+  
+  minimize: () => {
+    if (isElectronEnvironment()) {
+      sendToElectron('window:minimize');
+    }
+  },
+  
+  maximize: () => {
+    if (isElectronEnvironment()) {
+      sendToElectron('window:maximize');
+    }
+  },
+  
+  close: () => {
+    if (isElectronEnvironment()) {
+      sendToElectron('window:close');
+    }
+  },
+  
+  installUpdate: () => {
+    if (isElectronEnvironment()) {
+      sendToElectron('app:install-update');
+    }
+  },
+  
+  onUpdateAvailable: (callback: (updateInfo: any) => void) => {
+    if (!isElectronEnvironment()) {
+      return () => {};
+    }
+    return listenToElectron('update:available', callback);
+  },
+  
+  onUpdateDownloaded: (callback: (updateInfo: any) => void) => {
+    if (!isElectronEnvironment()) {
+      return () => {};
+    }
+    return listenToElectron('update:downloaded', callback);
+  }
+};
+
+// Types for database operations
+export interface DatabaseInfo {
+  size: number;
+  tables: { name: string; rows: number }[];
+  lastSync: string | null;
+  version: string;
+}
+
+export interface BackupResult {
+  success: boolean;
+  path: string | null;
+  error?: string;
+}
+
+// Type definition for barcode scanning
+export interface ScanResult {
+  text: string;
+  format: string;
+  timestamp: number;
+}
+
 /**
  * Call a method exposed by the Electron preload script
  * @param category The category of functionality (e.g., 'window', 'app', 'db')
@@ -28,7 +132,8 @@ export async function callElectronBridge<T = any>(
   }
 
   try {
-    return await window.electron.invoke(`${category}:${method}`, ...args);
+    // We already checked that window.electron is defined above
+    return await window.electron!.invoke(`${category}:${method}`, ...args);
   } catch (error) {
     console.error(`Error calling Electron ${category}:${method}:`, error);
     throw error;
@@ -46,7 +151,7 @@ export function sendToElectron(channel: string, ...args: any[]): void {
     return;
   }
 
-  window.electron.send(channel, ...args);
+  window.electron!.send(channel, ...args);
 }
 
 /**
@@ -64,7 +169,7 @@ export function listenToElectron<T = any>(
     return () => {}; // No-op cleanup function
   }
 
-  return window.electron.on(channel, callback);
+  return window.electron!.on(channel, callback);
 }
 
 /**
@@ -77,7 +182,7 @@ export async function getSystemInfo(): Promise<any | null> {
   }
 
   try {
-    return await window.electron.getSystemInfo();
+    return await window.electron!.getSystemInfo();
   } catch (error) {
     console.error('Error getting system info:', error);
     return null;

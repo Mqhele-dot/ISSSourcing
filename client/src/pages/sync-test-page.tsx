@@ -5,7 +5,8 @@ import { RealTimeSyncTester } from '@/components/sync/real-time-sync-tester';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { InfoCircledIcon, GearIcon, BeakerIcon, CircleBackslashIcon } from '@radix-ui/react-icons';
+import { InfoCircledIcon, GearIcon, CircleBackslashIcon } from '@radix-ui/react-icons';
+import { FlaskConical } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { isElectronEnvironment, callElectronBridge } from '@/lib/electron-bridge';
@@ -95,7 +96,7 @@ export default function SyncTestPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <BeakerIcon className="h-5 w-5" />
+                <FlaskConical className="h-5 w-5" />
                 Sync Test Tools
               </CardTitle>
               <CardDescription>
