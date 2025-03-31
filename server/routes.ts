@@ -42,9 +42,12 @@ import {
   PurchaseOrderStatus,
   PaymentStatus,
   ReorderRequestStatus,
-  UserRole,
-  Resource,
-  PermissionType,
+  userRoleEnum,
+  resourceEnum,
+  permissionTypeEnum,
+  type UserRole,
+  type Resource,
+  type PermissionType,
   createCustomRoleSchema,
   type DocumentType,
   type ReportType
@@ -1329,17 +1332,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const reportType = req.params.reportType as ReportType;
       const format = req.params.format as DocumentType;
       
-      // Get optional date range parameters
+      // Get optional filter parameters
       const startDateParam = req.query.startDate as string;
       const endDateParam = req.query.endDate as string;
+      const categoryIdParam = req.query.categoryId as string;
+      const warehouseIdParam = req.query.warehouseId as string;
+      const supplierIdParam = req.query.supplierId as string;
+      const statusParam = req.query.status as string;
       
-      let startDate: Date | undefined;
-      let endDate: Date | undefined;
+      // Create filter object
+      const filter: any = {};
       
-      // If both date parameters are provided, parse them
+      // Parse date range if provided
       if (startDateParam && endDateParam) {
-        startDate = new Date(startDateParam);
-        endDate = new Date(endDateParam);
+        const startDate = new Date(startDateParam);
+        const endDate = new Date(endDateParam);
         
         // Set end date to end of day
         endDate.setHours(23, 59, 59, 999);
@@ -1348,6 +1355,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
           return res.status(400).json({ message: "Invalid date format. Please use ISO format (YYYY-MM-DD)." });
         }
+        
+        filter.startDate = startDate;
+        filter.endDate = endDate;
+      }
+      
+      // Parse category filter if provided
+      if (categoryIdParam) {
+        const categoryId = parseInt(categoryIdParam);
+        if (!isNaN(categoryId)) {
+          filter.categoryId = categoryId;
+        }
+      }
+      
+      // Parse warehouse filter if provided
+      if (warehouseIdParam) {
+        const warehouseId = parseInt(warehouseIdParam);
+        if (!isNaN(warehouseId)) {
+          filter.warehouseId = warehouseId;
+        }
+      }
+      
+      // Parse supplier filter if provided
+      if (supplierIdParam) {
+        const supplierId = parseInt(supplierIdParam);
+        if (!isNaN(supplierId)) {
+          filter.supplierId = supplierId;
+        }
+      }
+      
+      // Parse status filter if provided
+      if (statusParam) {
+        filter.status = statusParam;
       }
       
       // All report types should be defined in the ReportType type in schema.ts
@@ -1362,54 +1401,146 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       let items;
       let title;
-      let dateRangeText = startDate && endDate ? ` (${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]})` : '';
+      
+      // Build filter text for title
+      let filterTexts = [];
+      if (filter.startDate && filter.endDate) {
+        filterTexts.push(`${filter.startDate.toISOString().split('T')[0]} to ${filter.endDate.toISOString().split('T')[0]}`);
+      }
+      
+      if (filter.categoryId) {
+        const category = await storage.getCategory(filter.categoryId);
+        if (category) {
+          filterTexts.push(`Category: ${category.name}`);
+        }
+      }
+      
+      if (filter.warehouseId) {
+        const warehouse = await storage.getWarehouse(filter.warehouseId);
+        if (warehouse) {
+          filterTexts.push(`Warehouse: ${warehouse.name}`);
+        }
+      }
+      
+      if (filter.supplierId) {
+        const supplier = await storage.getSupplier(filter.supplierId);
+        if (supplier) {
+          filterTexts.push(`Supplier: ${supplier.name}`);
+        }
+      }
+      
+      if (filter.status) {
+        filterTexts.push(`Status: ${filter.status}`);
+      }
+      
+      let filterText = filterTexts.length > 0 ? ` (${filterTexts.join(', ')})` : '';
       
       switch (reportType) {
         case 'inventory':
-          items = await storage.getAllInventoryItems();
-          title = 'Inventory Report' + dateRangeText;
+          // Apply category filter if provided
+          if (filter.categoryId) {
+            items = (await storage.getAllInventoryItems()).filter(item => item.categoryId === filter.categoryId);
+          } else {
+            items = await storage.getAllInventoryItems();
+          }
+          title = 'Inventory Report' + filterText;
           break;
         case 'low-stock':
-          items = await storage.getLowStockItems();
-          title = 'Low Stock Items Report' + dateRangeText;
+          // Get low stock items and apply filters
+          let lowStockItems = await storage.getLowStockItems();
+          if (filter.categoryId) {
+            lowStockItems = lowStockItems.filter(item => item.categoryId === filter.categoryId);
+          }
+          items = lowStockItems;
+          title = 'Low Stock Items Report' + filterText;
           break;
         case 'value':
-          items = await storage.getAllInventoryItems();
-          title = 'Inventory Value Report' + dateRangeText;
+          // Apply category filter if provided
+          if (filter.categoryId) {
+            items = (await storage.getAllInventoryItems()).filter(item => item.categoryId === filter.categoryId);
+          } else {
+            items = await storage.getAllInventoryItems();
+          }
+          title = 'Inventory Value Report' + filterText;
           break;
         case 'purchase-orders':
-          if (startDate && endDate) {
-            // Get orders within date range (based on createdAt)
-            items = (await storage.getAllPurchaseOrders()).filter(order => 
-              order.createdAt >= startDate! && order.createdAt <= endDate!
+          // Get all orders
+          let orders = await storage.getAllPurchaseOrders();
+          
+          // Apply date range filter if provided
+          if (filter.startDate && filter.endDate) {
+            orders = orders.filter(order => 
+              order.createdAt >= filter.startDate && order.createdAt <= filter.endDate
             );
-          } else {
-            items = await storage.getAllPurchaseOrders();
           }
-          title = 'Purchase Orders Report' + dateRangeText;
+          
+          // Apply supplier filter if provided
+          if (filter.supplierId) {
+            orders = orders.filter(order => order.supplierId === filter.supplierId);
+          }
+          
+          // Apply status filter if provided
+          if (filter.status) {
+            orders = orders.filter(order => order.status === filter.status);
+          }
+          
+          items = orders;
+          title = 'Purchase Orders Report' + filterText;
           break;
         case 'purchase-requisitions':
-          if (startDate && endDate) {
-            // Get requisitions within date range (based on createdAt)
-            items = (await storage.getAllPurchaseRequisitions()).filter(req => 
-              req.createdAt >= startDate! && req.createdAt <= endDate!
+          // Get all requisitions
+          let requisitions = await storage.getAllPurchaseRequisitions();
+          
+          // Apply date range filter if provided
+          if (filter.startDate && filter.endDate) {
+            requisitions = requisitions.filter(req => 
+              req.createdAt >= filter.startDate && req.createdAt <= filter.endDate
             );
-          } else {
-            items = await storage.getAllPurchaseRequisitions();
           }
-          title = 'Purchase Requisitions Report' + dateRangeText;
+          
+          // Apply supplier filter if provided
+          if (filter.supplierId) {
+            requisitions = requisitions.filter(req => req.supplierId === filter.supplierId);
+          }
+          
+          // Apply status filter if provided
+          if (filter.status) {
+            requisitions = requisitions.filter(req => req.status === filter.status);
+          }
+          
+          items = requisitions;
+          title = 'Purchase Requisitions Report' + filterText;
           break;
         case 'suppliers':
           items = await storage.getAllSuppliers();
-          title = 'Suppliers Report' + dateRangeText;
+          title = 'Suppliers Report' + filterText;
           break;
         case 'reorder-requests':
-          if (startDate && endDate) {
-            items = await storage.getReorderRequestsByDateRange(startDate, endDate);
+          // Get reorder requests with date range filter
+          let reorderRequests;
+          if (filter.startDate && filter.endDate) {
+            reorderRequests = await storage.getReorderRequestsByDateRange(filter.startDate, filter.endDate);
           } else {
-            items = await storage.getAllReorderRequests();
+            reorderRequests = await storage.getAllReorderRequests();
           }
-          title = 'Reorder Requests Report' + dateRangeText;
+          
+          // Apply supplier filter if provided
+          if (filter.supplierId) {
+            reorderRequests = reorderRequests.filter(req => req.supplierId === filter.supplierId);
+          }
+          
+          // Apply warehouse filter if provided
+          if (filter.warehouseId) {
+            reorderRequests = reorderRequests.filter(req => req.warehouseId === filter.warehouseId);
+          }
+          
+          // Apply status filter if provided
+          if (filter.status) {
+            reorderRequests = reorderRequests.filter(req => req.status === filter.status);
+          }
+          
+          items = reorderRequests;
+          title = 'Reorder Requests Report' + filterText;
           break;
       }
       

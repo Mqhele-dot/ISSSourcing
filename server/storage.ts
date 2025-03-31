@@ -1,4 +1,5 @@
 import {
+  UserRoleEnum, ResourceEnum, PermissionTypeEnum,
   users, type User, type InsertUser,
   categories, type Category, type InsertCategory,
   inventoryItems, type InventoryItem, type InsertInventoryItem,
@@ -32,8 +33,7 @@ import {
   timeRestrictions, type TimeRestriction, type InsertTimeRestriction,
   type InventoryStats, ItemStatus, type BulkImportInventory,
   PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus, ReorderRequestStatus,
-  stockMovementTypeEnum, UserRoleEnum, PermissionTypeEnum, ResourceEnum,
-  Resource, PermissionType, UserRole,
+  stockMovementTypeEnum, userRoleEnum, permissionTypeEnum, resourceEnum,
   type UserLogin, type PasswordResetRequest,
   // Billing related imports
   invoices, type Invoice, type InsertInvoice, 
@@ -80,9 +80,9 @@ export interface IStorage {
   createCustomRole(role: InsertCustomRole): Promise<CustomRole>;
   updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined>;
   deleteCustomRole(id: number): Promise<boolean>;
-  getRolePermissions(role: UserRole): Promise<Permission[]>;
+  getRolePermissions(role: keyof typeof UserRoleEnum): Promise<Permission[]>;
   getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]>;
-  addCustomRolePermission(roleId: number, resource: Resource, permissionType: PermissionType): Promise<CustomRolePermission>;
+  addCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission>;
   removeCustomRolePermission(roleId: number, permissionId: number): Promise<boolean>;
   
   // User access logging
@@ -123,8 +123,8 @@ export interface IStorage {
   // Permission methods
   getAllPermissions(): Promise<Permission[]>;
   getPermission(id: number): Promise<Permission | undefined>;
-  getPermissionsByRole(role: UserRole): Promise<Permission[]>;
-  getPermissionsByResource(resource: Resource): Promise<Permission[]>;
+  getPermissionsByRole(role: keyof typeof UserRoleEnum): Promise<Permission[]>;
+  getPermissionsByResource(resource: keyof typeof ResourceEnum): Promise<Permission[]>;
   checkPermission(role: string, resource: string, permissionType: string): Promise<boolean>;
   createPermission(permission: InsertPermission): Permission;
   updatePermission(id: number, permission: Partial<InsertPermission>): Promise<Permission | undefined>;
@@ -138,8 +138,8 @@ export interface IStorage {
   updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined>;
   deleteCustomRole(id: number): Promise<boolean>;
   getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]>;
-  addPermissionToCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<CustomRolePermission>;
-  removePermissionFromCustomRole(roleId: number, resource: Resource, permissionType: PermissionType): Promise<boolean>;
+  addPermissionToCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission>;
+  removePermissionFromCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean>;
   checkCustomRolePermission(roleId: number, resource: string, permissionType: string): Promise<boolean>;
   
   // Enhanced user access methods

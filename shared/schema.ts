@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // User role enum with expanded roles
-export const UserRoleEnum = pgEnum("user_role", [
+export const userRoleEnum = pgEnum("user_role", [
   "admin",            // Full access to all features
   "manager",          // Approvals, reports, supplier management
   "warehouse_staff",  // Stock updates, scanning, inventory requests
@@ -15,14 +15,14 @@ export const UserRoleEnum = pgEnum("user_role", [
 ]);
 
 // Permission Type enum - defines the type of permission
-export const PermissionTypeEnum = pgEnum("permission_type", [
+export const permissionTypeEnum = pgEnum("permission_type", [
   "create", "read", "update", "delete", "approve", "export", "import", "assign",
   "manage", "execute", "transfer", "print", "scan", "view_reports", "admin", 
   "configure", "restrict", "download", "upload", "audit", "verify"
 ]);
 
 // Resource enum - defines resources that can have permissions
-export const ResourceEnum = pgEnum("resource", [
+export const resourceEnum = pgEnum("resource", [
   "inventory", "purchases", "suppliers", "categories", "warehouses", 
   "reports", "users", "settings", "reorder_requests", "stock_movements",
   "analytics", "dashboards", "notifications", "audit_logs", "user_profiles",
@@ -32,9 +32,9 @@ export const ResourceEnum = pgEnum("resource", [
 // Permissions schema
 export const permissions = pgTable("permissions", {
   id: serial("id").primaryKey(),
-  role: UserRoleEnum("role").notNull(),
-  resource: ResourceEnum("resource").notNull(),
-  permissionType: PermissionTypeEnum("permission_type").notNull(),
+  role: userRoleEnum("role").notNull(),
+  resource: resourceEnum("resource").notNull(),
+  permissionType: permissionTypeEnum("permission_type").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -46,7 +46,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   email: text("email").notNull().unique(),
   fullName: text("full_name"),
-  role: UserRoleEnum("role").default("viewer"),
+  role: userRoleEnum("role").default("viewer"),
   warehouseId: integer("warehouse_id"),
   active: boolean("active").default(true),
   emailVerified: boolean("email_verified").default(false),
@@ -455,16 +455,51 @@ export const bulkImportInventorySchema = z.array(
   })
 );
 
+// Role-based permissions and enums
+export enum UserRoleEnum {
+  ADMIN = "admin",
+  MANAGER = "manager",
+  WAREHOUSE_STAFF = "warehouse_staff",
+  SALES = "sales",
+  AUDITOR = "auditor",
+  SUPPLIER = "supplier",
+  CUSTOM = "custom",
+  VIEWER = "viewer"
+}
+
+export enum PermissionTypeEnum {
+  CREATE = "create",
+  READ = "read",
+  UPDATE = "update",
+  DELETE = "delete",
+  APPROVE = "approve",
+  EXPORT = "export",
+  IMPORT = "import",
+  ASSIGN = "assign"
+}
+
+export enum ResourceEnum {
+  INVENTORY = "inventory",
+  PURCHASES = "purchases",
+  SUPPLIERS = "suppliers",
+  CATEGORIES = "categories",
+  WAREHOUSES = "warehouses",
+  REPORTS = "reports",
+  USERS = "users",
+  SETTINGS = "settings",
+  REORDER_REQUESTS = "reorder_requests",
+  STOCK_MOVEMENTS = "stock_movements",
+  INVOICES = "invoices",
+  BILLING = "billing",
+  TAXES = "taxes",
+  PAYMENTS = "payments"
+}
+
 // Types
-export type UserRole = "admin" | "manager" | "warehouse_staff" | "sales" | "auditor" | "supplier" | "custom" | "viewer";
-export type Resource = "inventory" | "purchases" | "suppliers" | "categories" | "warehouses" | 
-  "reports" | "users" | "settings" | "reorder_requests" | "stock_movements" |
-  "analytics" | "dashboards" | "notifications" | "audit_logs" | "user_profiles" |
-  "documents" | "custom_roles" | "activity_logs" | "import_export" | "system" |
-  "invoices" | "billing" | "taxes" | "payments";
-export type PermissionType = "create" | "read" | "update" | "delete" | "approve" | "export" | "import" | "assign" |
-  "manage" | "execute" | "transfer" | "print" | "scan" | "view_reports" | "admin" | 
-  "configure" | "restrict" | "download" | "upload" | "audit" | "verify";
+export type UserRoleString = keyof typeof UserRoleEnum;
+export type UserRole = UserRoleString;
+export type Resource = keyof typeof ResourceEnum;
+export type PermissionType = keyof typeof PermissionTypeEnum;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -484,41 +519,7 @@ export type PasswordReset = z.infer<typeof passwordResetSchema>;
 export type TwoFactorSetup = z.infer<typeof twoFactorSetupSchema>;
 export type TwoFactorVerification = z.infer<typeof twoFactorVerificationSchema>;
 
-// Role-based permissions
-export enum UserRole {
-  ADMIN = "admin",
-  MANAGER = "manager",
-  WAREHOUSE_STAFF = "warehouse_staff",
-  VIEWER = "viewer"
-}
-
-export enum PermissionType {
-  CREATE = "create",
-  READ = "read",
-  UPDATE = "update",
-  DELETE = "delete",
-  APPROVE = "approve",
-  EXPORT = "export",
-  IMPORT = "import",
-  ASSIGN = "assign"
-}
-
-export enum Resource {
-  INVENTORY = "inventory",
-  PURCHASES = "purchases",
-  SUPPLIERS = "suppliers",
-  CATEGORIES = "categories",
-  WAREHOUSES = "warehouses",
-  REPORTS = "reports",
-  USERS = "users",
-  SETTINGS = "settings",
-  REORDER_REQUESTS = "reorder_requests",
-  STOCK_MOVEMENTS = "stock_movements",
-  INVOICES = "invoices",
-  BILLING = "billing",
-  TAXES = "taxes",
-  PAYMENTS = "payments"
-}
+// Note: Enums already defined above
 
 export type Category = typeof categories.$inferSelect;
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
@@ -568,6 +569,18 @@ export enum ItemStatus {
 // Export types for document generation
 export type DocumentType = "pdf" | "csv" | "excel";
 export type ReportType = "inventory" | "low-stock" | "value" | "purchase-orders" | "purchase-requisitions" | "suppliers" | "reorder-requests";
+
+// Report filter interface for customizable report filtering
+export interface ReportFilter {
+  startDate?: Date;
+  endDate?: Date;
+  categoryId?: number;
+  warehouseId?: number;
+  supplierId?: number;
+  status?: string;
+  tags?: string[];
+  search?: string;
+}
 
 // Purchase Requisition Status
 export enum PurchaseRequisitionStatus {
@@ -650,6 +663,12 @@ export const appSettings = pgTable("app_settings", {
   // Inventory settings
   lowStockDefaultThreshold: integer("low_stock_default_threshold").default(10),
   allowNegativeInventory: boolean("allow_negative_inventory").default(false),
+  // Units of measure settings
+  availableUnits: jsonb("available_units").default(["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"]),
+  defaultUnit: text("default_unit").default("each"),
+  // Item categories settings
+  enableCustomTags: boolean("enable_custom_tags").default(true),
+  defaultTags: jsonb("default_tags").default(["featured", "seasonal", "sale", "new", "discontinued"]),
   // Real-time inventory settings
   realTimeUpdatesEnabled: boolean("real_time_updates_enabled").default(true),
   lowStockAlertFrequency: integer("low_stock_alert_frequency").default(30), // Minutes between alerts
@@ -723,6 +742,14 @@ export const appSettingsFormSchemaWithVat = appSettingsFormSchema.extend({
   // Inventory settings
   lowStockDefaultThreshold: z.number().int().min(1, "Threshold must be at least 1"),
   allowNegativeInventory: z.boolean(),
+  
+  // Units of measure settings
+  availableUnits: z.array(z.string()).min(1, "At least one unit of measure must be defined"),
+  defaultUnit: z.string().min(1, "Default unit must be specified"),
+  
+  // Item categories settings
+  enableCustomTags: z.boolean(),
+  defaultTags: z.array(z.string()).optional(),
   
   // Real-time inventory settings
   realTimeUpdatesEnabled: z.boolean(),
@@ -941,8 +968,8 @@ export const createCustomRoleSchema = insertCustomRoleSchema.extend({
 export const customRolePermissions = pgTable("custom_role_permissions", {
   id: serial("id").primaryKey(),
   roleId: integer("role_id").notNull(),
-  resource: ResourceEnum("resource").notNull(),
-  permissionType: PermissionTypeEnum("permission_type").notNull(),
+  resource: resourceEnum("resource").notNull(),
+  permissionType: permissionTypeEnum("permission_type").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
