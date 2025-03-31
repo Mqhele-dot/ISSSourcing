@@ -16,7 +16,15 @@ if (!process.env.DATABASE_URL) {
   console.error('2. Click on Configuration');
   console.error('3. Under Secrets, add DATABASE_URL with your database connection string in the format:');
   console.error(`   ${DEFAULT_CONNECTION_STRING}`);
-  throw new Error('DATABASE_URL environment variable must be set');
+  
+  // Instead of throwing an error, attempt to use fallback environment variables
+  if (process.env.PGHOST && process.env.PGUSER && process.env.PGPASSWORD && process.env.PGDATABASE) {
+    const port = process.env.PGPORT || '5432';
+    process.env.DATABASE_URL = `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${port}/${process.env.PGDATABASE}`;
+    console.log('Created DATABASE_URL from individual PostgreSQL environment variables');
+  } else {
+    throw new Error('DATABASE_URL environment variable must be set');
+  }
 }
 
 export const pool = new Pool({ 

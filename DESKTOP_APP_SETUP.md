@@ -1,92 +1,195 @@
 # Desktop Application Setup Guide
 
-This guide provides instructions on how to run and build the desktop version of the Inventory Management System.
+This document provides instructions for setting up and building the Electron desktop version of the inventory management system.
+
+## Overview
+
+The inventory management system can be run as:
+1. A web application hosted on a server
+2. A desktop application using Electron
+
+The desktop version provides:
+- Better performance for local usage
+- Offline capabilities with local data synchronization
+- Native operating system integration
+- Secure local database for sensitive inventory data
 
 ## Prerequisites
 
-Before getting started, ensure you have the following installed:
-- Node.js (latest LTS version)
-- npm (comes with Node.js)
-- Git
+Before building the desktop application, ensure you have:
 
-## Running the Desktop App for Development
+- Node.js (v18.x or later) installed
+- npm (v9.x or later) installed
+- Git installed
+- Required build tools for your operating system:
+  - Windows: Visual Studio Build Tools
+  - macOS: Xcode Command Line Tools
+  - Linux: GCC and related build packages
 
-### Step 1: Clone the Repository (if you haven't already)
+## Development Setup
 
-```bash
-git clone <repository-url>
-cd <repository-directory>
-```
+### 1. Install Dependencies
 
-### Step 2: Install Dependencies
+First, install all required dependencies:
 
 ```bash
 npm install
 ```
 
-### Step 3: Start the Desktop App in Development Mode
+### 2. Run in Development Mode
+
+To run the application in development mode:
 
 ```bash
+# Start the development server and Electron app
+npm run electron:dev
+
+# OR use the provided script
 ./start-electron-dev.sh
 ```
 
-This will:
-1. Start the Express server
-2. Wait for it to be ready
-3. Launch the Electron app pointing to the running server
+This will start:
+- The Express backend server
+- The Electron application connected to the backend
 
-## Testing Real-time Sync Functionality
+### 3. Making Changes
 
-1. In the desktop app, navigate to `/sync-test` in the application
-2. Use the connection controls to connect to the WebSocket server
-3. Send test messages and observe real-time updates across instances
+When developing the desktop application:
 
-## Building the Desktop App for Distribution
+- Web/UI changes: Modify files in the `client/src` directory
+- Electron-specific changes: Modify files in the `electron` directory
+- Backend changes: Modify files in the `server` directory
 
-### Building for Development Testing
+## Building for Distribution
 
-To build a development version of the desktop app:
+### 1. Prerequisites for Building
+
+Ensure your environment is set up correctly:
 
 ```bash
+# Install required global packages
+npm install -g electron-builder
+```
+
+### 2. Build Process
+
+To build the desktop application:
+
+```bash
+# Build for the current platform
+npm run electron:build
+
+# OR use the provided script
 ./build-electron.sh
 ```
 
-The built application will be in the `dist_electron` directory.
+This will:
+1. Build the React frontend using Vite
+2. Compile the server-side code with esbuild
+3. Package everything with Electron builder
 
-### Building for Production
+### 3. Platform-Specific Builds
 
-To build a production-ready version of the desktop app with installers:
+To build for specific platforms:
 
 ```bash
-./build-electron.sh --production
+# Windows
+npm run electron:build:win
+
+# macOS
+npm run electron:build:mac
+
+# Linux
+npm run electron:build:linux
 ```
 
-This will create:
-- Windows: NSIS installer (.exe)
-- macOS: DMG and ZIP (.dmg, .zip)
-- Linux: AppImage and Debian package (.AppImage, .deb)
+The build outputs will be available in the `dist` directory.
 
-The built packages will be in the `dist_electron` directory.
+## Deployment Configuration
 
-## Application Features
+### Local Database Setup
 
-The desktop application includes all features of the web application plus:
+The desktop application uses SQLite for local data storage. This is automatically configured when the application is installed.
 
-1. **Offline Functionality**: Work without an internet connection
-2. **Local Database**: Store data locally with synchronization capabilities
-3. **Custom Desktop UI**: Native window controls and desktop-specific components
-4. **Real-time Sync**: Synchronize data across multiple instances
-5. **Database Management**: Create backups and restore from them
-6. **Document Generation**: Export data to PDF, Excel, and CSV formats
-7. **Native System Integration**: File system access and native dialogs
+### Data Synchronization
+
+Configure synchronization settings in the application:
+
+1. Navigate to Settings > Sync
+2. Enter your server URL
+3. Configure sync frequency and options
+4. Enable offline mode if needed
+
+### Auto Updates
+
+The application supports auto-updates:
+
+1. Host the update files on a server
+2. Configure `electron-builder.json` with the update URL
+3. Build the application with auto-update support enabled
 
 ## Troubleshooting
 
-If you encounter issues:
+### Common Issues
 
-1. **Application Won't Start**: Check the console output for errors
-2. **Build Errors**: Ensure all dependencies are installed
-3. **Real-time Sync Issues**: Verify WebSocket connections are working
-4. **Icon Conversion Errors**: Ensure the SVG icons are properly formatted
+#### Application Won't Start
 
-For more detailed information or support, please refer to the main documentation or contact the development team.
+- Check logs in `%APPDATA%/inventory-manager/logs` (Windows) or `~/Library/Logs/inventory-manager` (macOS)
+- Verify all dependencies are installed
+- Check permissions on installation directory
+
+#### Database Errors
+
+- Check SQLite database file integrity
+- Verify user has write permissions to the database directory
+- Try resetting the database from Settings > Advanced
+
+#### Sync Problems
+
+- Verify server URL is correct
+- Check network connectivity
+- Ensure server API is compatible with client version
+
+## Advanced Configuration
+
+### Custom Installation
+
+You can customize the installation directory and other options in `electron-builder.json`:
+
+```json
+{
+  "appId": "com.yourcompany.inventory-manager",
+  "productName": "Inventory Manager",
+  "directories": {
+    "output": "dist"
+  },
+  "win": {
+    "target": ["nsis"],
+    "icon": "build/icon.ico"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "icon": "build/icon.icns"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "icon": "build/icon.png"
+  }
+}
+```
+
+### Custom Database Location
+
+To change where data is stored:
+
+1. Modify `electron/db.js` to specify a custom database path
+2. Rebuild the application
+
+### Security Considerations
+
+For enhanced security:
+
+1. Enable data encryption in Settings > Security
+2. Use strong passwords for application access
+3. Regularly backup your database
+4. Keep the application updated to the latest version

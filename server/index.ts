@@ -4,19 +4,32 @@ import { setupVite, serveStatic, log } from "./vite";
 import { initializeWebSocketService, checkLowStockAlerts } from "./websocket-service";
 import { storage } from "./storage";
 import { pool } from "./db";
+import { initializeDatabase } from "./init-db";
 
-// Test database connection on startup
+// Test database connection and initialize schema on startup
 pool.connect()
-  .then(client => {
+  .then(async (client) => {
     console.log("✅ Database connection successful");
     console.log(`Connection format: postgresql://username:password@host:port/database`);
     client.release();
+    
+    // Initialize database schema
+    try {
+      await initializeDatabase();
+      console.log("✅ Database schema initialized");
+    } catch (schemaError) {
+      console.error("⚠️ Database schema initialization failed:", schemaError);
+      console.error("The application may not function correctly without a properly initialized database");
+    }
   })
   .catch(err => {
     console.error("❌ Failed to connect to database:", err.message);
     console.error("Please check your DATABASE_URL connection string in the format:");
     console.error("postgresql://username:password@host:port/database");
     console.error("For more details, see DATABASE_SETUP.md");
+    
+    // Application will continue running but database-dependent features will fail
+    console.warn("⚠️ Running with limited functionality due to database connection failure");
   });
 
 const app = express();
