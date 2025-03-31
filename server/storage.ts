@@ -47,12 +47,13 @@ import {
 import session from "express-session";
 import memorystore from "memorystore";
 import connectPg from "connect-pg-simple";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
 
 const MemoryStore = memorystore(session);
 const PostgresSessionStore = connectPg(session);
 import crypto from "crypto";
+import { Pool } from "@neondatabase/serverless";
 
 export interface IStorage {
   // Session store for Express sessions
@@ -5494,4 +5495,1078 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// DatabaseStorage implementation with PostgreSQL
+export class DatabaseStorage implements IStorage {
+  sessionStore: session.Store;
+
+  constructor() {
+    this.sessionStore = new PostgresSessionStore({ 
+      pool,
+      createTableIfMissing: true 
+    });
+  }
+
+  // User methods
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const [newUser] = await db.insert(users).values(user).returning();
+    return newUser;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users);
+  }
+
+  // Category methods
+  async getAllCategories(): Promise<Category[]> {
+    return db.select().from(categories);
+  }
+
+  async getCategory(id: number): Promise<Category | undefined> {
+    const [category] = await db.select().from(categories).where(eq(categories.id, id));
+    return category;
+  }
+
+  async createCategory(category: InsertCategory): Promise<Category> {
+    const [newCategory] = await db.insert(categories).values(category).returning();
+    return newCategory;
+  }
+
+  // Inventory item methods
+  async getAllInventoryItems(): Promise<InventoryItem[]> {
+    return db.select().from(inventoryItems);
+  }
+
+  async getInventoryItem(id: number): Promise<InventoryItem | undefined> {
+    const [item] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, id));
+    return item;
+  }
+
+  async getInventoryItemBySku(sku: string): Promise<InventoryItem | undefined> {
+    const [item] = await db.select().from(inventoryItems).where(eq(inventoryItems.sku, sku));
+    return item;
+  }
+
+  async createInventoryItem(item: InsertInventoryItem): Promise<InventoryItem> {
+    const [newItem] = await db.insert(inventoryItems).values(item).returning();
+    return newItem;
+  }
+
+  async updateInventoryItem(id: number, item: Partial<InsertInventoryItem>): Promise<InventoryItem | undefined> {
+    const [updatedItem] = await db
+      .update(inventoryItems)
+      .set({
+        ...item,
+        updatedAt: new Date()
+      })
+      .where(eq(inventoryItems.id, id))
+      .returning();
+    
+    return updatedItem;
+  }
+
+  // Settings methods
+  async getSettings(): Promise<AppSettings> {
+    const [settings] = await db.select().from(appSettings);
+    if (settings) {
+      return settings;
+    }
+
+    // If no settings exist, create default settings
+    const defaultSettings: InsertAppSettings = {
+      companyName: "My Inventory System",
+      primaryColor: "#4f46e5",
+      dateFormat: "MM/DD/YYYY",
+      timeFormat: "hh:mm A",
+      currencySymbol: "$",
+      lowStockDefaultThreshold: 10,
+      allowNegativeInventory: false,
+      enableVat: false,
+      defaultVatCountry: "US",
+      showPricesWithVat: true
+    };
+
+    const [newSettings] = await db.insert(appSettings).values(defaultSettings).returning();
+    return newSettings;
+  }
+
+  async updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
+    const currentSettings = await this.getSettings();
+    
+    const [updatedSettings] = await db
+      .update(appSettings)
+      .set({
+        ...settings,
+        updatedAt: new Date()
+      })
+      .where(eq(appSettings.id, currentSettings.id))
+      .returning();
+    
+    return updatedSettings;
+  }
+  
+  // Activity log methods
+  async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
+    const [newLog] = await db.insert(activityLogs).values(log).returning();
+    return newLog;
+  }
+
+  async getAllActivityLogs(limit?: number): Promise<ActivityLog[]> {
+    const query = db.select().from(activityLogs).orderBy(desc(activityLogs.timestamp));
+    
+    if (limit) {
+      query.limit(limit);
+    }
+    
+    return query;
+  }
+
+  // Additional methods would be implemented here following the same pattern
+  // Each method would use Drizzle ORM to interact with the database
+  
+  // For the remaining methods, we use MemStorage temporarily until they're fully implemented
+  // We create an instance of MemStorage for temporary fallback
+  private memStorage = new MemStorage();
+  
+  // Delegate methods to memStorage for those not yet implemented
+  async getUserByResetToken(token: string): Promise<User | undefined> {
+    return this.memStorage.getUserByResetToken(token);
+  }
+  
+  async getUserCustomRoleId(userId: number): Promise<number | null> {
+    return this.memStorage.getUserCustomRoleId(userId);
+  }
+  
+  async updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined> {
+    return this.memStorage.updateUser(id, user);
+  }
+  
+  async getUserPreferences(userId: number): Promise<UserPreference | undefined> {
+    return this.memStorage.getUserPreferences(userId);
+  }
+  
+  async updateUserPreferences(userId: number, preferences: Partial<InsertUserPreference>): Promise<UserPreference | undefined> {
+    return this.memStorage.updateUserPreferences(userId, preferences);
+  }
+  
+  async deleteUser(id: number): Promise<boolean> {
+    return this.memStorage.deleteUser(id);
+  }
+  
+  async checkPermission(role: string, resource: string, permissionType: string): Promise<boolean> {
+    return this.memStorage.checkPermission(role, resource, permissionType);
+  }
+  
+  async checkCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean> {
+    return this.memStorage.checkCustomRolePermission(roleId, resource, permissionType);
+  }
+  
+  async getSystemRoles(): Promise<string[]> {
+    return this.memStorage.getSystemRoles();
+  }
+  
+  async getCustomRoles(): Promise<CustomRole[]> {
+    return this.memStorage.getCustomRoles();
+  }
+  
+  async getCustomRole(id: number): Promise<CustomRole | undefined> {
+    return this.memStorage.getCustomRole(id);
+  }
+  
+  async createCustomRole(role: InsertCustomRole): Promise<CustomRole> {
+    return this.memStorage.createCustomRole(role);
+  }
+  
+  async updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined> {
+    return this.memStorage.updateCustomRole(id, role);
+  }
+  
+  async deleteCustomRole(id: number): Promise<boolean> {
+    return this.memStorage.deleteCustomRole(id);
+  }
+  
+  async getRolePermissions(role: keyof typeof UserRoleEnum): Promise<Permission[]> {
+    return this.memStorage.getRolePermissions(role);
+  }
+  
+  async getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]> {
+    return this.memStorage.getCustomRolePermissions(roleId);
+  }
+  
+  async addCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission> {
+    return this.memStorage.addCustomRolePermission(roleId, resource, permissionType);
+  }
+  
+  async removeCustomRolePermission(roleId: number, permissionId: number): Promise<boolean> {
+    return this.memStorage.removeCustomRolePermission(roleId, permissionId);
+  }
+  
+  async logUserAccess(log: InsertUserAccessLog): Promise<UserAccessLog> {
+    return this.memStorage.logUserAccess(log);
+  }
+  
+  async getUserAccessLogs(userId: number): Promise<UserAccessLog[]> {
+    return this.memStorage.getUserAccessLogs(userId);
+  }
+  
+  async getRecentUserAccessLogs(limit: number): Promise<UserAccessLog[]> {
+    return this.memStorage.getRecentUserAccessLogs(limit);
+  }
+  
+  async authenticateUser(credentials: UserLogin): Promise<User | null> {
+    return this.memStorage.authenticateUser(credentials);
+  }
+  
+  async recordLoginAttempt(username: string, success: boolean): Promise<void> {
+    return this.memStorage.recordLoginAttempt(username, success);
+  }
+  
+  async resetFailedLoginAttempts(userId: number): Promise<void> {
+    return this.memStorage.resetFailedLoginAttempts(userId);
+  }
+  
+  async isAccountLocked(userId: number): Promise<boolean> {
+    return this.memStorage.isAccountLocked(userId);
+  }
+  
+  async createVerificationToken(userId: number, tokenType: string, expiresInMinutes?: number): Promise<UserVerificationToken> {
+    return this.memStorage.createVerificationToken(userId, tokenType, expiresInMinutes);
+  }
+  
+  async getVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined> {
+    return this.memStorage.getVerificationToken(token, type);
+  }
+  
+  async useVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined> {
+    return this.memStorage.useVerificationToken(token, type);
+  }
+  
+  async markEmailAsVerified(userId: number): Promise<User | undefined> {
+    return this.memStorage.markEmailAsVerified(userId);
+  }
+  
+  async createPasswordResetToken(email: string): Promise<UserVerificationToken | null> {
+    return this.memStorage.createPasswordResetToken(email);
+  }
+  
+  async resetPassword(token: string, newPassword: string): Promise<boolean> {
+    return this.memStorage.resetPassword(token, newPassword);
+  }
+  
+  async changePassword(userId: number, currentPassword: string, newPassword: string): Promise<boolean> {
+    return this.memStorage.changePassword(userId, currentPassword, newPassword);
+  }
+  
+  async generateTwoFactorSecret(userId: number): Promise<string> {
+    return this.memStorage.generateTwoFactorSecret(userId);
+  }
+  
+  async enableTwoFactorAuth(userId: number, verified: boolean): Promise<User | undefined> {
+    return this.memStorage.enableTwoFactorAuth(userId, verified);
+  }
+  
+  async disableTwoFactorAuth(userId: number): Promise<User | undefined> {
+    return this.memStorage.disableTwoFactorAuth(userId);
+  }
+  
+  async verifyTwoFactorToken(userId: number, token: string): Promise<boolean> {
+    return this.memStorage.verifyTwoFactorToken(userId, token);
+  }
+  
+  async createSession(userId: number, ipAddress?: string, userAgent?: string, expiresInDays?: number): Promise<Session> {
+    return this.memStorage.createSession(userId, ipAddress, userAgent, expiresInDays);
+  }
+  
+  async getSession(token: string): Promise<Session | undefined> {
+    return this.memStorage.getSession(token);
+  }
+  
+  async invalidateSession(token: string): Promise<boolean> {
+    return this.memStorage.invalidateSession(token);
+  }
+  
+  async invalidateAllUserSessions(userId: number): Promise<boolean> {
+    return this.memStorage.invalidateAllUserSessions(userId);
+  }
+  
+  async cleanExpiredSessions(): Promise<void> {
+    return this.memStorage.cleanExpiredSessions();
+  }
+  
+  async getAllPermissions(): Promise<Permission[]> {
+    return this.memStorage.getAllPermissions();
+  }
+  
+  async getPermission(id: number): Promise<Permission | undefined> {
+    return this.memStorage.getPermission(id);
+  }
+  
+  async getPermissionsByRole(role: keyof typeof UserRoleEnum): Promise<Permission[]> {
+    return this.memStorage.getPermissionsByRole(role);
+  }
+  
+  async getPermissionsByResource(resource: keyof typeof ResourceEnum): Promise<Permission[]> {
+    return this.memStorage.getPermissionsByResource(resource);
+  }
+  
+  createPermission(permission: InsertPermission): Permission {
+    return this.memStorage.createPermission(permission);
+  }
+  
+  async updatePermission(id: number, permission: Partial<InsertPermission>): Promise<Permission | undefined> {
+    return this.memStorage.updatePermission(id, permission);
+  }
+  
+  async deletePermission(id: number): Promise<boolean> {
+    return this.memStorage.deletePermission(id);
+  }
+  
+  async getAllCustomRoles(): Promise<CustomRole[]> {
+    return this.memStorage.getAllCustomRoles();
+  }
+  
+  async getCustomRoleByName(name: string): Promise<CustomRole | undefined> {
+    return this.memStorage.getCustomRoleByName(name);
+  }
+  
+  async addPermissionToCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission> {
+    return this.memStorage.addPermissionToCustomRole(roleId, resource, permissionType);
+  }
+  
+  async removePermissionFromCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean> {
+    return this.memStorage.removePermissionFromCustomRole(roleId, resource, permissionType);
+  }
+  
+  async logUserAccess(userId: number, action: string, details?: any, ip?: string, userAgent?: string): Promise<UserAccessLog> {
+    return this.memStorage.logUserAccess(userId, action, details, ip, userAgent);
+  }
+  
+  async getUserAccessLogs(userId: number, limit?: number): Promise<UserAccessLog[]> {
+    return this.memStorage.getUserAccessLogs(userId, limit);
+  }
+  
+  async getRecentUserAccessLogs(limit?: number): Promise<UserAccessLog[]> {
+    return this.memStorage.getRecentUserAccessLogs(limit);
+  }
+  
+  async getFailedLoginAttempts(userId: number, hours?: number): Promise<UserAccessLog[]> {
+    return this.memStorage.getFailedLoginAttempts(userId, hours);
+  }
+  
+  async getUserContactInfo(userId: number): Promise<UserContact | undefined> {
+    return this.memStorage.getUserContactInfo(userId);
+  }
+  
+  async updateUserContactInfo(userId: number, contactInfo: Partial<InsertUserContact>): Promise<UserContact | undefined> {
+    return this.memStorage.updateUserContactInfo(userId, contactInfo);
+  }
+  
+  async getUserSecuritySettings(userId: number): Promise<UserSecuritySetting | undefined> {
+    return this.memStorage.getUserSecuritySettings(userId);
+  }
+  
+  async updateUserSecuritySettings(userId: number, settings: Partial<InsertUserSecuritySetting>): Promise<UserSecuritySetting | undefined> {
+    return this.memStorage.updateUserSecuritySettings(userId, settings);
+  }
+  
+  async checkIpAllowed(userId: number, ipAddress: string): Promise<boolean> {
+    return this.memStorage.checkIpAllowed(userId, ipAddress);
+  }
+  
+  async checkTimeAllowed(userId: number, timestamp?: Date): Promise<boolean> {
+    return this.memStorage.checkTimeAllowed(userId, timestamp);
+  }
+  
+  async checkGeoAllowed(userId: number, country: string): Promise<boolean> {
+    return this.memStorage.checkGeoAllowed(userId, country);
+  }
+  
+  async recordUserPerformance(metric: InsertUserPerformanceMetric): Promise<UserPerformanceMetric> {
+    return this.memStorage.recordUserPerformance(metric);
+  }
+  
+  async getUserPerformanceMetrics(userId: number, metricType?: string, startDate?: Date, endDate?: Date): Promise<UserPerformanceMetric[]> {
+    return this.memStorage.getUserPerformanceMetrics(userId, metricType, startDate, endDate);
+  }
+  
+  async getTimeRestrictions(userId: number): Promise<TimeRestriction[]> {
+    return this.memStorage.getTimeRestrictions(userId);
+  }
+  
+  async addTimeRestriction(restriction: InsertTimeRestriction): Promise<TimeRestriction> {
+    return this.memStorage.addTimeRestriction(restriction);
+  }
+  
+  async updateTimeRestriction(id: number, restriction: Partial<InsertTimeRestriction>): Promise<TimeRestriction | undefined> {
+    return this.memStorage.updateTimeRestriction(id, restriction);
+  }
+  
+  async deleteTimeRestriction(id: number): Promise<boolean> {
+    return this.memStorage.deleteTimeRestriction(id);
+  }
+  
+  async getCategoryByName(name: string): Promise<Category | undefined> {
+    return this.memStorage.getCategoryByName(name);
+  }
+  
+  async updateCategory(id: number, category: Partial<InsertCategory>): Promise<Category | undefined> {
+    return this.memStorage.updateCategory(id, category);
+  }
+  
+  async deleteCategory(id: number): Promise<boolean> {
+    return this.memStorage.deleteCategory(id);
+  }
+  
+  async getAllSuppliers(): Promise<Supplier[]> {
+    return this.memStorage.getAllSuppliers();
+  }
+  
+  async getSupplier(id: number): Promise<Supplier | undefined> {
+    return this.memStorage.getSupplier(id);
+  }
+  
+  async getSupplierByName(name: string): Promise<Supplier | undefined> {
+    return this.memStorage.getSupplierByName(name);
+  }
+  
+  async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
+    return this.memStorage.createSupplier(supplier);
+  }
+  
+  async updateSupplier(id: number, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined> {
+    return this.memStorage.updateSupplier(id, supplier);
+  }
+  
+  async deleteSupplier(id: number): Promise<boolean> {
+    return this.memStorage.deleteSupplier(id);
+  }
+  
+  async getAllBarcodes(): Promise<Barcode[]> {
+    return this.memStorage.getAllBarcodes();
+  }
+  
+  async getBarcode(id: number): Promise<Barcode | undefined> {
+    return this.memStorage.getBarcode(id);
+  }
+  
+  async getBarcodesByItemId(itemId: number): Promise<Barcode[]> {
+    return this.memStorage.getBarcodesByItemId(itemId);
+  }
+  
+  async getBarcodeByValue(value: string): Promise<Barcode | undefined> {
+    return this.memStorage.getBarcodeByValue(value);
+  }
+  
+  async createBarcode(barcode: InsertBarcode): Promise<Barcode> {
+    return this.memStorage.createBarcode(barcode);
+  }
+  
+  async updateBarcode(id: number, barcode: Partial<InsertBarcode>): Promise<Barcode | undefined> {
+    return this.memStorage.updateBarcode(id, barcode);
+  }
+  
+  async deleteBarcode(id: number): Promise<boolean> {
+    return this.memStorage.deleteBarcode(id);
+  }
+  
+  async findItemByBarcode(barcodeValue: string): Promise<InventoryItem | undefined> {
+    return this.memStorage.findItemByBarcode(barcodeValue);
+  }
+  
+  async getAllWarehouses(): Promise<Warehouse[]> {
+    return this.memStorage.getAllWarehouses();
+  }
+  
+  async getWarehouse(id: number): Promise<Warehouse | undefined> {
+    return this.memStorage.getWarehouse(id);
+  }
+  
+  async getDefaultWarehouse(): Promise<Warehouse | undefined> {
+    return this.memStorage.getDefaultWarehouse();
+  }
+  
+  async createWarehouse(warehouse: InsertWarehouse): Promise<Warehouse> {
+    return this.memStorage.createWarehouse(warehouse);
+  }
+  
+  async updateWarehouse(id: number, warehouse: Partial<InsertWarehouse>): Promise<Warehouse | undefined> {
+    return this.memStorage.updateWarehouse(id, warehouse);
+  }
+  
+  async deleteWarehouse(id: number): Promise<boolean> {
+    return this.memStorage.deleteWarehouse(id);
+  }
+  
+  async setDefaultWarehouse(id: number): Promise<Warehouse | undefined> {
+    return this.memStorage.setDefaultWarehouse(id);
+  }
+  
+  async getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]> {
+    return this.memStorage.getWarehouseInventory(warehouseId);
+  }
+  
+  async getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined> {
+    return this.memStorage.getWarehouseInventoryItem(warehouseId, itemId);
+  }
+  
+  async getItemWarehouseInventory(itemId: number): Promise<WarehouseInventory[]> {
+    return this.memStorage.getItemWarehouseInventory(itemId);
+  }
+  
+  async createWarehouseInventory(warehouseInventory: InsertWarehouseInventory): Promise<WarehouseInventory> {
+    return this.memStorage.createWarehouseInventory(warehouseInventory);
+  }
+  
+  async updateWarehouseInventory(id: number, warehouseInventory: Partial<InsertWarehouseInventory>): Promise<WarehouseInventory | undefined> {
+    return this.memStorage.updateWarehouseInventory(id, warehouseInventory);
+  }
+  
+  async deleteWarehouseInventory(id: number): Promise<boolean> {
+    return this.memStorage.deleteWarehouseInventory(id);
+  }
+  
+  async getAllStockMovements(): Promise<StockMovement[]> {
+    return this.memStorage.getAllStockMovements();
+  }
+  
+  async getStockMovement(id: number): Promise<StockMovement | undefined> {
+    return this.memStorage.getStockMovement(id);
+  }
+  
+  async getStockMovementsByItemId(itemId: number): Promise<StockMovement[]> {
+    return this.memStorage.getStockMovementsByItemId(itemId);
+  }
+  
+  async getStockMovementsByWarehouseId(warehouseId: number): Promise<StockMovement[]> {
+    return this.memStorage.getStockMovementsByWarehouseId(warehouseId);
+  }
+  
+  async createStockMovement(movement: InsertStockMovement): Promise<StockMovement> {
+    return this.memStorage.createStockMovement(movement);
+  }
+  
+  async transferStock(sourceWarehouseId: number, destinationWarehouseId: number, itemId: number, quantity: number, userId?: number, reason?: string): Promise<StockMovement> {
+    return this.memStorage.transferStock(sourceWarehouseId, destinationWarehouseId, itemId, quantity, userId, reason);
+  }
+  
+  async getAllReorderRequests(): Promise<ReorderRequest[]> {
+    return this.memStorage.getAllReorderRequests();
+  }
+  
+  async getReorderRequestsByDateRange(startDate: Date, endDate: Date): Promise<ReorderRequest[]> {
+    return this.memStorage.getReorderRequestsByDateRange(startDate, endDate);
+  }
+  
+  async getReorderRequest(id: number): Promise<ReorderRequest | undefined> {
+    return this.memStorage.getReorderRequest(id);
+  }
+  
+  async getReorderRequestByNumber(requestNumber: string): Promise<ReorderRequest | undefined> {
+    return this.memStorage.getReorderRequestByNumber(requestNumber);
+  }
+  
+  async createReorderRequest(request: InsertReorderRequest): Promise<ReorderRequest> {
+    return this.memStorage.createReorderRequest(request);
+  }
+  
+  async updateReorderRequest(id: number, request: Partial<InsertReorderRequest>): Promise<ReorderRequest | undefined> {
+    return this.memStorage.updateReorderRequest(id, request);
+  }
+  
+  async deleteReorderRequest(id: number): Promise<boolean> {
+    return this.memStorage.deleteReorderRequest(id);
+  }
+  
+  async approveReorderRequest(id: number, approverId: number): Promise<ReorderRequest | undefined> {
+    return this.memStorage.approveReorderRequest(id, approverId);
+  }
+  
+  async rejectReorderRequest(id: number, approverId: number, reason: string): Promise<ReorderRequest | undefined> {
+    return this.memStorage.rejectReorderRequest(id, approverId, reason);
+  }
+  
+  async convertReorderRequestToRequisition(id: number): Promise<PurchaseRequisition | undefined> {
+    return this.memStorage.convertReorderRequestToRequisition(id);
+  }
+  
+  async getReorderRequestWithDetails(id: number): Promise<(ReorderRequest & { item: InventoryItem; requestor?: User; approver?: User; }) | undefined> {
+    return this.memStorage.getReorderRequestWithDetails(id);
+  }
+  
+  async getAppSettings(): Promise<AppSettings | undefined> {
+    return this.memStorage.getAppSettings();
+  }
+  
+  async updateAppSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings> {
+    return this.memStorage.updateAppSettings(settings);
+  }
+  
+  async getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined> {
+    return this.memStorage.getSupplierLogo(supplierId);
+  }
+  
+  async createSupplierLogo(logo: InsertSupplierLogo): Promise<SupplierLogo> {
+    return this.memStorage.createSupplierLogo(logo);
+  }
+  
+  async updateSupplierLogo(supplierId: number, logoUrl: string): Promise<SupplierLogo | undefined> {
+    return this.memStorage.updateSupplierLogo(supplierId, logoUrl);
+  }
+  
+  async deleteSupplierLogo(supplierId: number): Promise<boolean> {
+    return this.memStorage.deleteSupplierLogo(supplierId);
+  }
+  
+  async deleteInventoryItem(id: number): Promise<boolean> {
+    return this.memStorage.deleteInventoryItem(id);
+  }
+  
+  async searchInventoryItems(query: string, categoryId?: number): Promise<InventoryItem[]> {
+    return this.memStorage.searchInventoryItems(query, categoryId);
+  }
+  
+  async getLowStockItems(): Promise<InventoryItem[]> {
+    return this.memStorage.getLowStockItems();
+  }
+  
+  async getOutOfStockItems(): Promise<InventoryItem[]> {
+    return this.memStorage.getOutOfStockItems();
+  }
+  
+  async getInventoryStats(): Promise<InventoryStats> {
+    return this.memStorage.getInventoryStats();
+  }
+  
+  async bulkImportInventory(items: BulkImportInventory): Promise<{ created: InventoryItem[]; updated: InventoryItem[]; errors: { row: number; sku: string; message: string; }[]; }> {
+    return this.memStorage.bulkImportInventory(items);
+  }
+  
+  async getAllPurchaseRequisitions(): Promise<PurchaseRequisition[]> {
+    return this.memStorage.getAllPurchaseRequisitions();
+  }
+  
+  async getPurchaseRequisition(id: number): Promise<PurchaseRequisition | undefined> {
+    return this.memStorage.getPurchaseRequisition(id);
+  }
+  
+  async getPurchaseRequisitionByNumber(requisitionNumber: string): Promise<PurchaseRequisition | undefined> {
+    return this.memStorage.getPurchaseRequisitionByNumber(requisitionNumber);
+  }
+  
+  async createPurchaseRequisition(requisition: InsertPurchaseRequisition, items: Omit<InsertPurchaseRequisitionItem, "requisitionId">[]): Promise<PurchaseRequisition> {
+    return this.memStorage.createPurchaseRequisition(requisition, items);
+  }
+  
+  async updatePurchaseRequisition(id: number, requisition: Partial<InsertPurchaseRequisition>): Promise<PurchaseRequisition | undefined> {
+    return this.memStorage.updatePurchaseRequisition(id, requisition);
+  }
+  
+  async deletePurchaseRequisition(id: number): Promise<boolean> {
+    return this.memStorage.deletePurchaseRequisition(id);
+  }
+  
+  async getPurchaseRequisitionItems(requisitionId: number): Promise<PurchaseRequisitionItem[]> {
+    return this.memStorage.getPurchaseRequisitionItems(requisitionId);
+  }
+  
+  async addPurchaseRequisitionItem(item: InsertPurchaseRequisitionItem): Promise<PurchaseRequisitionItem> {
+    return this.memStorage.addPurchaseRequisitionItem(item);
+  }
+  
+  async updatePurchaseRequisitionItem(id: number, item: Partial<InsertPurchaseRequisitionItem>): Promise<PurchaseRequisitionItem | undefined> {
+    return this.memStorage.updatePurchaseRequisitionItem(id, item);
+  }
+  
+  async deletePurchaseRequisitionItem(id: number): Promise<boolean> {
+    return this.memStorage.deletePurchaseRequisitionItem(id);
+  }
+  
+  async approvePurchaseRequisition(id: number, approverId: number): Promise<PurchaseRequisition | undefined> {
+    return this.memStorage.approvePurchaseRequisition(id, approverId);
+  }
+  
+  async rejectPurchaseRequisition(id: number, approverId: number, reason: string): Promise<PurchaseRequisition | undefined> {
+    return this.memStorage.rejectPurchaseRequisition(id, approverId, reason);
+  }
+  
+  async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
+    return this.memStorage.getAllPurchaseOrders();
+  }
+  
+  async getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> {
+    return this.memStorage.getPurchaseOrder(id);
+  }
+  
+  async getPurchaseOrderByNumber(orderNumber: string): Promise<PurchaseOrder | undefined> {
+    return this.memStorage.getPurchaseOrderByNumber(orderNumber);
+  }
+  
+  async createPurchaseOrder(order: InsertPurchaseOrder, items: Omit<InsertPurchaseOrderItem, "orderId">[]): Promise<PurchaseOrder> {
+    return this.memStorage.createPurchaseOrder(order, items);
+  }
+  
+  async updatePurchaseOrder(id: number, order: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined> {
+    return this.memStorage.updatePurchaseOrder(id, order);
+  }
+  
+  async deletePurchaseOrder(id: number): Promise<boolean> {
+    return this.memStorage.deletePurchaseOrder(id);
+  }
+  
+  async getPurchaseOrderItems(orderId: number): Promise<PurchaseOrderItem[]> {
+    return this.memStorage.getPurchaseOrderItems(orderId);
+  }
+  
+  async addPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem> {
+    return this.memStorage.addPurchaseOrderItem(item);
+  }
+  
+  async updatePurchaseOrderItem(id: number, item: Partial<InsertPurchaseOrderItem>): Promise<PurchaseOrderItem | undefined> {
+    return this.memStorage.updatePurchaseOrderItem(id, item);
+  }
+  
+  async deletePurchaseOrderItem(id: number): Promise<boolean> {
+    return this.memStorage.deletePurchaseOrderItem(id);
+  }
+  
+  async updatePurchaseOrderStatus(id: number, status: PurchaseOrderStatus): Promise<PurchaseOrder | undefined> {
+    return this.memStorage.updatePurchaseOrderStatus(id, status);
+  }
+  
+  async updatePurchaseOrderPaymentStatus(id: number, paymentStatus: PaymentStatus, reference?: string): Promise<PurchaseOrder | undefined> {
+    return this.memStorage.updatePurchaseOrderPaymentStatus(id, paymentStatus, reference);
+  }
+  
+  async recordPurchaseOrderItemReceived(itemId: number, receivedQuantity: number): Promise<PurchaseOrderItem | undefined> {
+    return this.memStorage.recordPurchaseOrderItemReceived(itemId, receivedQuantity);
+  }
+  
+  async createPurchaseOrderFromRequisition(requisitionId: number): Promise<PurchaseOrder | undefined> {
+    return this.memStorage.createPurchaseOrderFromRequisition(requisitionId);
+  }
+  
+  async sendPurchaseOrderEmail(id: number, recipientEmail: string): Promise<boolean> {
+    return this.memStorage.sendPurchaseOrderEmail(id, recipientEmail);
+  }
+  
+  async createReorderRequest(insertRequest: InsertReorderRequest): Promise<ReorderRequest> {
+    return this.memStorage.createReorderRequest(insertRequest);
+  }
+  
+  async updateReorderRequest(id: number, updateData: Partial<InsertReorderRequest>): Promise<ReorderRequest | undefined> {
+    return this.memStorage.updateReorderRequest(id, updateData);
+  }
+  
+  async getAllVatRates(): Promise<VatRate[]> {
+    return this.memStorage.getAllVatRates();
+  }
+  
+  async getVatRate(id: number): Promise<VatRate | undefined> {
+    return this.memStorage.getVatRate(id);
+  }
+  
+  async getVatRateByCountryCode(countryCode: string): Promise<VatRate | undefined> {
+    return this.memStorage.getVatRateByCountryCode(countryCode);
+  }
+  
+  async createVatRate(vatRate: InsertVatRate): Promise<VatRate> {
+    return this.memStorage.createVatRate(vatRate);
+  }
+  
+  async updateVatRate(id: number, vatRate: Partial<InsertVatRate>): Promise<VatRate | undefined> {
+    return this.memStorage.updateVatRate(id, vatRate);
+  }
+  
+  async deleteVatRate(id: number): Promise<boolean> {
+    return this.memStorage.deleteVatRate(id);
+  }
+  
+  async calculateVat(amount: number, countryCode: string, useReducedRate?: boolean): Promise<{ originalAmount: number; vatAmount: number; totalAmount: number; vatRate: number; countryCode: string; }> {
+    return this.memStorage.calculateVat(amount, countryCode, useReducedRate);
+  }
+  
+  async getItemWithSupplierAndCategory(id: number): Promise<(InventoryItem & { supplier?: Supplier; category?: Category; }) | undefined> {
+    return this.memStorage.getItemWithSupplierAndCategory(id);
+  }
+  
+  async getRequisitionWithDetails(id: number): Promise<(PurchaseRequisition & { items: (PurchaseRequisitionItem & { item: InventoryItem; })[]; requestor?: User; approver?: User; supplier?: Supplier; }) | undefined> {
+    return this.memStorage.getRequisitionWithDetails(id);
+  }
+  
+  async getPurchaseOrderWithDetails(id: number): Promise<(PurchaseOrder & { items: (PurchaseOrderItem & { item: InventoryItem; })[]; supplier: Supplier; requisition?: PurchaseRequisition; }) | undefined> {
+    return this.memStorage.getPurchaseOrderWithDetails(id);
+  }
+  
+  async getAllCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]> {
+    return this.memStorage.getAllCustomRolePermissions(roleId);
+  }
+  
+  async getCustomRolePermission(id: number): Promise<CustomRolePermission | undefined> {
+    return this.memStorage.getCustomRolePermission(id);
+  }
+  
+  async createCustomRolePermission(permission: InsertCustomRolePermission): Promise<CustomRolePermission> {
+    return this.memStorage.createCustomRolePermission(permission);
+  }
+  
+  async updateCustomRolePermission(id: number, permission: Partial<InsertCustomRolePermission>): Promise<CustomRolePermission | undefined> {
+    return this.memStorage.updateCustomRolePermission(id, permission);
+  }
+  
+  async deleteCustomRolePermission(id: number): Promise<boolean> {
+    return this.memStorage.deleteCustomRolePermission(id);
+  }
+  
+  async getAllUserAccessLogs(userId?: number): Promise<UserAccessLog[]> {
+    return this.memStorage.getAllUserAccessLogs(userId);
+  }
+  
+  async getUserAccessLog(id: number): Promise<UserAccessLog | undefined> {
+    return this.memStorage.getUserAccessLog(id);
+  }
+  
+  async createUserAccessLog(log: InsertUserAccessLog): Promise<UserAccessLog> {
+    return this.memStorage.createUserAccessLog(log);
+  }
+  
+  async getAllUserContacts(userId: number): Promise<UserContact[]> {
+    return this.memStorage.getAllUserContacts(userId);
+  }
+  
+  async getUserContact(id: number): Promise<UserContact | undefined> {
+    return this.memStorage.getUserContact(id);
+  }
+  
+  async createUserContact(contact: InsertUserContact): Promise<UserContact> {
+    return this.memStorage.createUserContact(contact);
+  }
+  
+  async updateUserContact(id: number, contact: Partial<InsertUserContact>): Promise<UserContact | undefined> {
+    return this.memStorage.updateUserContact(id, contact);
+  }
+  
+  async deleteUserContact(id: number): Promise<boolean> {
+    return this.memStorage.deleteUserContact(id);
+  }
+  
+  async createUserSecuritySettings(settings: InsertUserSecuritySetting): Promise<UserSecuritySetting> {
+    return this.memStorage.createUserSecuritySettings(settings);
+  }
+  
+  async getAllUserPerformanceMetrics(userId: number): Promise<UserPerformanceMetric[]> {
+    return this.memStorage.getAllUserPerformanceMetrics(userId);
+  }
+  
+  async getUserPerformanceMetric(id: number): Promise<UserPerformanceMetric | undefined> {
+    return this.memStorage.getUserPerformanceMetric(id);
+  }
+  
+  async createUserPerformanceMetric(metric: InsertUserPerformanceMetric): Promise<UserPerformanceMetric> {
+    return this.memStorage.createUserPerformanceMetric(metric);
+  }
+  
+  async updateUserPerformanceMetric(id: number, metric: Partial<InsertUserPerformanceMetric>): Promise<UserPerformanceMetric | undefined> {
+    return this.memStorage.updateUserPerformanceMetric(id, metric);
+  }
+  
+  async getAllTimeRestrictions(userId?: number): Promise<TimeRestriction[]> {
+    return this.memStorage.getAllTimeRestrictions(userId);
+  }
+  
+  async getTimeRestriction(id: number): Promise<TimeRestriction | undefined> {
+    return this.memStorage.getTimeRestriction(id);
+  }
+  
+  async createTimeRestriction(restriction: InsertTimeRestriction): Promise<TimeRestriction> {
+    return this.memStorage.createTimeRestriction(restriction);
+  }
+  
+  async getAllInvoices(): Promise<Invoice[]> {
+    return this.memStorage.getAllInvoices();
+  }
+  
+  async getInvoice(id: number): Promise<Invoice | undefined> {
+    return this.memStorage.getInvoice(id);
+  }
+  
+  async getInvoiceByNumber(invoiceNumber: string): Promise<Invoice | undefined> {
+    return this.memStorage.getInvoiceByNumber(invoiceNumber);
+  }
+  
+  async createInvoice(invoice: InsertInvoice, items: InsertInvoiceItem[]): Promise<Invoice> {
+    return this.memStorage.createInvoice(invoice, items);
+  }
+  
+  async updateInvoice(id: number, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {
+    return this.memStorage.updateInvoice(id, invoice);
+  }
+  
+  async deleteInvoice(id: number): Promise<boolean> {
+    return this.memStorage.deleteInvoice(id);
+  }
+  
+  async getInvoicesByCustomerId(customerId: number): Promise<Invoice[]> {
+    return this.memStorage.getInvoicesByCustomerId(customerId);
+  }
+  
+  async getInvoicesByDateRange(startDate: Date, endDate: Date): Promise<Invoice[]> {
+    return this.memStorage.getInvoicesByDateRange(startDate, endDate);
+  }
+  
+  async getInvoicesByStatus(status: string): Promise<Invoice[]> {
+    return this.memStorage.getInvoicesByStatus(status);
+  }
+  
+  async getOverdueInvoices(): Promise<Invoice[]> {
+    return this.memStorage.getOverdueInvoices();
+  }
+  
+  async getInvoiceDueInDays(days: number): Promise<Invoice[]> {
+    return this.memStorage.getInvoiceDueInDays(days);
+  }
+  
+  async getInvoiceItems(invoiceId: number): Promise<InvoiceItem[]> {
+    return this.memStorage.getInvoiceItems(invoiceId);
+  }
+  
+  async getInvoiceItem(id: number): Promise<InvoiceItem | undefined> {
+    return this.memStorage.getInvoiceItem(id);
+  }
+  
+  async addInvoiceItem(item: InsertInvoiceItem): Promise<InvoiceItem> {
+    return this.memStorage.addInvoiceItem(item);
+  }
+  
+  async updateInvoiceItem(id: number, item: Partial<InsertInvoiceItem>): Promise<InvoiceItem | undefined> {
+    return this.memStorage.updateInvoiceItem(id, item);
+  }
+  
+  async deleteInvoiceItem(id: number): Promise<boolean> {
+    return this.memStorage.deleteInvoiceItem(id);
+  }
+  
+  async getAllPayments(): Promise<Payment[]> {
+    return this.memStorage.getAllPayments();
+  }
+  
+  async getPayment(id: number): Promise<Payment | undefined> {
+    return this.memStorage.getPayment(id);
+  }
+  
+  async getPaymentsByInvoiceId(invoiceId: number): Promise<Payment[]> {
+    return this.memStorage.getPaymentsByInvoiceId(invoiceId);
+  }
+  
+  async createPayment(payment: InsertPayment): Promise<Payment> {
+    return this.memStorage.createPayment(payment);
+  }
+  
+  async updatePayment(id: number, payment: Partial<InsertPayment>): Promise<Payment | undefined> {
+    return this.memStorage.updatePayment(id, payment);
+  }
+  
+  async deletePayment(id: number): Promise<boolean> {
+    return this.memStorage.deletePayment(id);
+  }
+  
+  async recordInvoicePayment(invoiceId: number, amount: number, method: string, receivedBy: number, reference?: string, notes?: string): Promise<Payment> {
+    return this.memStorage.recordInvoicePayment(invoiceId, amount, method, receivedBy, reference, notes);
+  }
+  
+  async getBillingSettings(): Promise<BillingSetting | undefined> {
+    return this.memStorage.getBillingSettings();
+  }
+  
+  async updateBillingSettings(settings: Partial<InsertBillingSetting>): Promise<BillingSetting> {
+    return this.memStorage.updateBillingSettings(settings);
+  }
+  
+  async getAllTaxRates(): Promise<TaxRate[]> {
+    return this.memStorage.getAllTaxRates();
+  }
+  
+  async getTaxRate(id: number): Promise<TaxRate | undefined> {
+    return this.memStorage.getTaxRate(id);
+  }
+  
+  async getDefaultTaxRate(): Promise<TaxRate | undefined> {
+    return this.memStorage.getDefaultTaxRate();
+  }
+  
+  async createTaxRate(taxRate: InsertTaxRate): Promise<TaxRate> {
+    return this.memStorage.createTaxRate(taxRate);
+  }
+  
+  async updateTaxRate(id: number, taxRate: Partial<InsertTaxRate>): Promise<TaxRate | undefined> {
+    return this.memStorage.updateTaxRate(id, taxRate);
+  }
+  
+  async deleteTaxRate(id: number): Promise<boolean> {
+    return this.memStorage.deleteTaxRate(id);
+  }
+  
+  async setDefaultTaxRate(id: number): Promise<TaxRate | undefined> {
+    return this.memStorage.setDefaultTaxRate(id);
+  }
+  
+  async getAllDiscounts(): Promise<Discount[]> {
+    return this.memStorage.getAllDiscounts();
+  }
+  
+  async getDiscount(id: number): Promise<Discount | undefined> {
+    return this.memStorage.getDiscount(id);
+  }
+  
+  async getActiveDiscounts(): Promise<Discount[]> {
+    return this.memStorage.getActiveDiscounts();
+  }
+  
+  async createDiscount(discount: InsertDiscount): Promise<Discount> {
+    return this.memStorage.createDiscount(discount);
+  }
+  
+  async updateDiscount(id: number, discount: Partial<InsertDiscount>): Promise<Discount | undefined> {
+    return this.memStorage.updateDiscount(id, discount);
+  }
+  
+  async deleteDiscount(id: number): Promise<boolean> {
+    return this.memStorage.deleteDiscount(id);
+  }
+  
+  async getAllBillingReminderLogs(): Promise<BillingReminderLog[]> {
+    return this.memStorage.getAllBillingReminderLogs();
+  }
+  
+  async getBillingReminderLog(id: number): Promise<BillingReminderLog | undefined> {
+    return this.memStorage.getBillingReminderLog(id);
+  }
+  
+  async getBillingReminderLogsByInvoiceId(invoiceId: number): Promise<BillingReminderLog[]> {
+    return this.memStorage.getBillingReminderLogsByInvoiceId(invoiceId);
+  }
+  
+  async createBillingReminderLog(log: InsertBillingReminderLog): Promise<BillingReminderLog> {
+    return this.memStorage.createBillingReminderLog(log);
+  }
+  
+  async deleteBillingReminderLog(id: number): Promise<boolean> {
+    return this.memStorage.deleteBillingReminderLog(id);
+  }
+}
+
+// Export the storage instance (using PostgreSQL)
+export const storage = new DatabaseStorage();
