@@ -23,6 +23,7 @@ import RealTimeUpdatesPage from "@/pages/real-time-updates-page";
 import SyncTestPage from "@/pages/sync-test-page";
 import SyncDashboard from "@/pages/sync-dashboard";
 import DownloadPage from "@/pages/download";
+import BillingPage from "@/pages/billing";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useState, useEffect } from "react";
 import { TutorialProvider } from "./contexts/TutorialContext";
@@ -94,6 +95,7 @@ function Router() {
       <ProtectedRoute path="/download" component={DownloadPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/user-roles" component={UserRolesPage} />
+      <ProtectedRoute path="/billing" component={BillingPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
