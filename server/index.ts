@@ -3,6 +3,21 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeWebSocketService, checkLowStockAlerts } from "./websocket-service";
 import { storage } from "./storage";
+import { pool } from "./db";
+
+// Test database connection on startup
+pool.connect()
+  .then(client => {
+    console.log("✅ Database connection successful");
+    console.log(`Connection format: postgresql://username:password@host:port/database`);
+    client.release();
+  })
+  .catch(err => {
+    console.error("❌ Failed to connect to database:", err.message);
+    console.error("Please check your DATABASE_URL connection string in the format:");
+    console.error("postgresql://username:password@host:port/database");
+    console.error("For more details, see DATABASE_SETUP.md");
+  });
 
 const app = express();
 app.use(express.json());

@@ -54,6 +54,13 @@ export function TutorialButton() {
   // Define all tutorials for each page
   const pageSpecificTutorials = [
     {
+      id: "database",
+      name: "Database Setup",
+      description: "Configure and manage your PostgreSQL database",
+      icon: <AlertCircle className="h-5 w-5 mr-2" />,
+      color: "bg-blue-200"
+    },
+    {
       id: "dashboard",
       name: "Dashboard",
       description: "Overview of your inventory status and key metrics",

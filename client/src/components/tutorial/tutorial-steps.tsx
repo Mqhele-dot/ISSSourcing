@@ -363,6 +363,35 @@ export function TutorialSteps() {
       }
     ]);
     
+    // Database Management tutorial
+    registerTutorial("database", [
+      {
+        id: "database-intro",
+        title: "Database Management",
+        text: "Learn how to set up and manage your PostgreSQL database for optimal performance."
+      },
+      {
+        id: "connection-string",
+        title: "Connection String",
+        text: "The application connects to PostgreSQL using a connection string in the format: postgresql://username:password@host:port/database"
+      },
+      {
+        id: "db-setup",
+        title: "Database Setup",
+        text: "Ensure your PostgreSQL server is running and you have created a database for the application. Set the DATABASE_URL environment variable to connect."
+      },
+      {
+        id: "schema-management",
+        title: "Schema Management",
+        text: "The database schema is defined in shared/schema.ts using Drizzle ORM. Use 'npm run db:push' to update your database after schema changes."
+      },
+      {
+        id: "data-backup",
+        title: "Backup and Recovery",
+        text: "Regularly back up your database using the export features. For PostgreSQL, you can also use pg_dump for complete database backups."
+      }
+    ]);
+    
   // Empty dependency array since we're using isRegistered.current to prevent re-registration
   }, []);
   
