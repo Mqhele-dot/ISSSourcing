@@ -315,7 +315,7 @@ export default function Home() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {quickAccessItems.map((item, index) => (
             <Link key={index} href={item.path}>
-              <Card className="h-full hover:bg-accent/50 transition-colors cursor-pointer">
+              <Card className="h-full hover:bg-accent/50 transition-colors cursor-pointer overflow-hidden">
                 <CardContent className="pt-6 pb-4 px-4 flex flex-col items-center text-center h-full">
                   <div className="mb-3 relative">
                     {item.icon}
@@ -328,8 +328,10 @@ export default function Home() {
                       </Badge>
                     )}
                   </div>
-                  <h4 className="font-medium text-sm mb-1">{item.name}</h4>
-                  <p className="text-xs text-muted-foreground">{item.description}</p>
+                  <div className="w-full">
+                    <h4 className="font-medium text-sm mb-1 truncate">{item.name}</h4>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+                  </div>
                 </CardContent>
               </Card>
             </Link>
@@ -390,7 +392,7 @@ export default function Home() {
                   <h3 className="text-2xl font-bold">
                     {statsLoading ? 
                       <Skeleton className="w-24 h-8" /> : 
-                      formatCurrency(stats?.totalValue || 0)
+                      formatCurrency(stats?.inventoryValue || 0)
                     }
                   </h3>
                 </div>
@@ -409,11 +411,13 @@ export default function Home() {
       </div>
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="items">Items</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto">
+          <TabsList className="w-full sm:w-auto">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="categories">Categories</TabsTrigger>
+            <TabsTrigger value="items">Items</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
