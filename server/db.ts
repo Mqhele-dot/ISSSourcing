@@ -30,7 +30,7 @@ let connectionString: string | undefined = process.env.DATABASE_URL;
 if (!connectionString) {
   console.warn('DATABASE_URL environment variable is not set');
   connectionString = buildConnectionStringFromEnv();
-  
+
   if (connectionString) {
     console.log('Using database connection string built from individual parameters');
     process.env.DATABASE_URL = connectionString;
@@ -63,13 +63,13 @@ let db: ReturnType<typeof drizzle>;
 try {
   pool = new Pool(poolOptions);
   db = drizzle({ client: pool, schema });
-  
+
   // Log connection status but not the actual connection string for security
   console.log('Database connection initialized');
-  console.log('Connection format:', DEFAULT_CONNECTION_STRING);
+  console.log('Database connection string format: postgresql://user:pass@host:port/db');
 } catch (error) {
   console.error('Failed to initialize database connection:', error instanceof Error ? error.message : error);
-  
+
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Database connection failed. Please check your connection parameters.');
   } else {
