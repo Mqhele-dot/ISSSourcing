@@ -1,13 +1,37 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import "shepherd.js/dist/css/shepherd.css";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+
+// Define the tutorial step interface
+interface TutorialStep {
+  id: string;
+  title: string;
+  text: string;
+  attachTo?: {
+    element: string;
+    on: string;
+  };
+}
 
 interface TutorialContextType {
   startTutorial: (tourId?: string) => void;
   endTutorial: () => void;
   isTutorialActive: boolean;
-  registerTutorial: (tourId: string, steps: any[]) => void;
+  currentStep: number;
+  registerTutorial: (tourId: string, steps: TutorialStep[]) => void;
   scanForErrors: () => Promise<{ [key: string]: string[] }>;
   fixErrors: (errorType: string) => Promise<boolean>;
+  activeTourSteps: TutorialStep[] | null;
+  goToNextStep: () => void;
+  goToPreviousStep: () => void;
 }
 
 const TutorialContext = createContext<TutorialContextType | undefined>(undefined);
@@ -19,14 +43,38 @@ interface TutorialProviderProps {
 export function TutorialProvider({ children }: TutorialProviderProps) {
   const [isTutorialActive, setIsTutorialActive] = useState(false);
   const [activeTour, setActiveTour] = useState<string | null>(null);
-  const [tutorials, setTutorials] = useState<{ [key: string]: any[] }>({});
+  const [currentStep, setCurrentStep] = useState(0);
+  const [tutorials, setTutorials] = useState<{ [key: string]: TutorialStep[] }>({});
 
   // Register a new tutorial with steps
-  const registerTutorial = (tourId: string, steps: any[]) => {
+  const registerTutorial = (tourId: string, steps: TutorialStep[]) => {
     setTutorials(prev => ({
       ...prev,
       [tourId]: steps
     }));
+  };
+
+  // Get the steps for the active tutorial
+  const activeTourSteps = activeTour && tutorials[activeTour] ? tutorials[activeTour] : null;
+
+  // Navigation functions
+  const goToNextStep = () => {
+    if (!activeTourSteps) return;
+    
+    if (currentStep < activeTourSteps.length - 1) {
+      setCurrentStep(prev => prev + 1);
+    } else {
+      // End the tutorial when we reach the last step
+      endTutorial();
+    }
+  };
+
+  const goToPreviousStep = () => {
+    if (!activeTourSteps) return;
+    
+    if (currentStep > 0) {
+      setCurrentStep(prev => prev - 1);
+    }
   };
 
   // Start a tutorial
@@ -37,22 +85,15 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
     }
 
     setActiveTour(tourId);
+    setCurrentStep(0);
     setIsTutorialActive(true);
-    
-    // In a real implementation, this would trigger the tutorial to start
-    console.log(`Starting tutorial: ${tourId} with ${tutorials[tourId].length} steps`);
-    
-    // Simulate tour starting and completing after 5 seconds
-    setTimeout(() => {
-      setIsTutorialActive(false);
-      setActiveTour(null);
-    }, 5000);
   };
 
   // End the current tutorial
   const endTutorial = () => {
     setIsTutorialActive(false);
     setActiveTour(null);
+    setCurrentStep(0);
   };
 
   // Scan for common errors in the application
@@ -99,14 +140,65 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
     startTutorial,
     endTutorial,
     isTutorialActive,
+    currentStep,
     registerTutorial,
     scanForErrors,
-    fixErrors
+    fixErrors,
+    activeTourSteps,
+    goToNextStep,
+    goToPreviousStep
   };
   
   return (
     <TutorialContext.Provider value={contextValue}>
       {children}
+      
+      {/* Tutorial Dialog */}
+      {isTutorialActive && activeTourSteps && (
+        <Dialog open={isTutorialActive} onOpenChange={endTutorial}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>{activeTourSteps[currentStep]?.title || "Tutorial"}</DialogTitle>
+              <DialogDescription>
+                {activeTourSteps[currentStep]?.text || "Follow these steps to learn about the application."}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="flex justify-between items-center pt-4">
+              <div className="text-sm text-muted-foreground">
+                Step {currentStep + 1} of {activeTourSteps.length}
+              </div>
+              
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToPreviousStep}
+                  disabled={currentStep === 0}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={goToNextStep}
+                >
+                  {currentStep === activeTourSteps.length - 1 ? "Finish" : "Next"}
+                  {currentStep < activeTourSteps.length - 1 && <ChevronRight className="h-4 w-4 ml-1" />}
+                </Button>
+              </div>
+            </div>
+            
+            <DialogFooter className="pt-2">
+              <Button variant="ghost" size="sm" onClick={endTutorial}>
+                <X className="h-4 w-4 mr-1" />
+                Skip Tutorial
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </TutorialContext.Provider>
   );
 }
