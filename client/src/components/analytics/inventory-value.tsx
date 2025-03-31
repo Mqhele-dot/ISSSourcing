@@ -123,9 +123,9 @@ export function InventoryValue() {
             </div>
             
             {chartData.length > 0 ? (
-              <div className="h-[250px] mt-6">
+              <div className="h-[300px] mt-6">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
+                  <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
                     <Pie
                       data={chartData}
                       cx="50%"
@@ -134,9 +134,7 @@ export function InventoryValue() {
                       innerRadius={40}
                       dataKey="value"
                       labelLine={false}
-                      label={({ name, percent }) => 
-                        `${name} (${(percent * 100).toFixed(0)}%)`
-                      }
+                      label={false} // Remove inline labels to prevent overlapping
                     >
                       {chartData.map((entry, index) => (
                         <Cell 
@@ -146,7 +144,23 @@ export function InventoryValue() {
                       ))}
                     </Pie>
                     <Tooltip content={<CustomTooltip />} />
-                    <Legend layout="vertical" align="right" verticalAlign="middle" />
+                    <Legend 
+                      layout="horizontal" 
+                      align="center" 
+                      verticalAlign="bottom"
+                      formatter={(value, entry) => {
+                        // Truncate long names and show tooltip on hover
+                        return value.length > 10 ? `${value.substring(0, 10)}...` : value;
+                      }}
+                      wrapperStyle={{ 
+                        paddingTop: '10px', 
+                        width: '100%', 
+                        display: 'flex', 
+                        flexWrap: 'wrap', 
+                        justifyContent: 'center', 
+                        gap: '10px'
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
