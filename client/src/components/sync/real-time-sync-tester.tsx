@@ -6,13 +6,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Send, RefreshCw, ArrowDownToLine, ArrowUpToLine, XCircle, Clock } from 'lucide-react';
+import { Loader2, Send, RefreshCw, ArrowDownToLine, ArrowUpToLine, XCircle, Clock, Wifi, Info } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
+import { isFeatureEnabled, setFeatureFlag } from '@/lib/config';
 
 const MESSAGE_TYPES = [
   { value: SyncMessageType.SYNC_REQUEST, label: 'Sync Request' },
@@ -71,7 +73,8 @@ export function RealTimeSyncTester() {
     isConnected,
     isConnecting,
     clientId,
-    sendMessage
+    sendMessage,
+    realTimeSyncEnabled
   } = useRealTimeSync({
     autoConnect: true,
     onMessage: (message) => {
@@ -263,8 +266,33 @@ export function RealTimeSyncTester() {
     }
   };
   
+  // Function to enable WebSockets
+  const enableRealTimeSync = () => {
+    setFeatureFlag('enableRealTimeSync', true);
+    // Force page refresh to apply feature flag change
+    window.location.reload();
+  };
+  
   return (
     <div className="space-y-4">
+      {!realTimeSyncEnabled && !isElectronEnvironment() && (
+        <Alert variant="warning" className="mb-4">
+          <Info className="h-4 w-4" />
+          <AlertDescription className="flex flex-col space-y-2">
+            <span>Real-time synchronization is currently disabled in development mode. WebSocket tester will not work.</span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={enableRealTimeSync}
+              className="self-start"
+            >
+              <Wifi className="mr-2 h-4 w-4" />
+              Enable Real-Time Sync
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      
       <Tabs defaultValue="send">
         <TabsList className="mb-4">
           <TabsTrigger value="send">Send Messages</TabsTrigger>

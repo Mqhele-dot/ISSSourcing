@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { Activity, AlertTriangle, BarChart2, Info, PackageOpen, RefreshCw, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart2, Info, PackageOpen, RefreshCw, Zap, Wifi } from 'lucide-react';
+import { isElectronEnvironment } from '@/lib/electron-bridge';
+import { setFeatureFlag } from '@/lib/config';
 
 type UpdateItem = {
   id: string;
@@ -87,8 +89,15 @@ export function RealTimeUpdates() {
     }
   };
 
+  // Function to enable WebSockets
+  const enableWebSockets = () => {
+    setFeatureFlag('enableWebSockets', true);
+    // Force page refresh to apply feature flag change
+    window.location.reload();
+  };
+
   // Connect to WebSocket
-  const { isConnected, sendMessage, connect, disconnect } = useWebSocket({
+  const { isConnected, sendMessage, connect, disconnect, webSocketsEnabled } = useWebSocket({
     warehouses: [], // Subscribe to all warehouses
     onInventoryUpdate: isListening ? handleInventoryUpdate : undefined,
     onStockAlert: isListening ? handleStockAlert : undefined,
@@ -131,6 +140,23 @@ export function RealTimeUpdates() {
 
   return (
     <Card className="h-full flex flex-col">
+      {!webSocketsEnabled && !isElectronEnvironment() && (
+        <Alert variant="warning" className="mb-4 mx-6 mt-6">
+          <Info className="h-4 w-4" />
+          <AlertDescription className="flex flex-col space-y-2">
+            <span>Real-time activity updates are currently disabled in development mode.</span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={enableWebSockets}
+              className="self-start"
+            >
+              <Wifi className="mr-2 h-4 w-4" />
+              Enable Real-Time Activity
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       <CardHeader className="pb-3">
         <div className="flex justify-between items-center">
           <div>

@@ -3,8 +3,9 @@ import { useRealTimeSync, SyncMessageType, SyncMessage } from '@/hooks/use-real-
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, Check, AlertCircle, Database, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { Loader2, Check, AlertCircle, Database, Wifi, WifiOff, RefreshCw, Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   PlayIcon, 
   StopIcon, 
@@ -12,23 +13,28 @@ import {
   ClockIcon
 } from '@radix-ui/react-icons';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
+import { isFeatureEnabled, setFeatureFlag } from '@/lib/config';
 
 interface RealTimeSyncStatusProps {
   showDebugInfo?: boolean;
 }
 
 export function RealTimeSyncStatus({ showDebugInfo = false }: RealTimeSyncStatusProps) {
+  // Initialize state values with default props that might not exist on the hook yet
+  const [syncInProgress, setSyncInProgress] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
+  const [pendingChanges, setPendingChanges] = useState(0);
+  
   const { 
     isConnected,
     isConnecting,
     connect,
     disconnect,
     syncData,
-    syncInProgress,
-    syncProgress,
-    lastSyncTime,
-    lastSyncError,
-    pendingChanges
+    clientId,
+    realTimeSyncEnabled
   } = useRealTimeSync({
     autoConnect: true
   });
@@ -49,10 +55,26 @@ export function RealTimeSyncStatus({ showDebugInfo = false }: RealTimeSyncStatus
 
   const handleSync = async () => {
     try {
+      setSyncInProgress(true);
+      setSyncProgress(0.25);
       await syncData();
+      setLastSyncTime(Date.now());
+      setSyncProgress(1);
+      setTimeout(() => {
+        setSyncInProgress(false);
+      }, 500);
     } catch (error) {
       console.error('Sync failed:', error);
+      setLastSyncError(error instanceof Error ? error.message : 'Unknown error');
+      setSyncInProgress(false);
     }
+  };
+  
+  // Function to enable WebSockets
+  const enableRealTimeSync = () => {
+    setFeatureFlag('enableRealTimeSync', true);
+    // Force page refresh to apply feature flag change
+    window.location.reload();
   };
 
   // Format the last sync time
@@ -92,6 +114,24 @@ export function RealTimeSyncStatus({ showDebugInfo = false }: RealTimeSyncStatus
 
   return (
     <div className="space-y-4">
+      {!realTimeSyncEnabled && !isElectron && (
+        <Alert variant="warning" className="mb-4">
+          <Info className="h-4 w-4" />
+          <AlertDescription className="flex flex-col space-y-2">
+            <span>Real-time synchronization is currently disabled in development mode.</span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={enableRealTimeSync}
+              className="self-start"
+            >
+              <Wifi className="mr-2 h-4 w-4" />
+              Enable Real-Time Sync
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isConnected ? (
@@ -172,7 +212,7 @@ export function RealTimeSyncStatus({ showDebugInfo = false }: RealTimeSyncStatus
         </Button>
       </div>
 
-      {showDebugInfo && isElectron && (
+      {showDebugInfo && (
         <Card className="mt-2">
           <CardContent className="py-3 px-3 text-xs">
             <h4 className="font-semibold mb-2 text-xs flex items-center">
@@ -182,7 +222,11 @@ export function RealTimeSyncStatus({ showDebugInfo = false }: RealTimeSyncStatus
             <div className="space-y-1.5">
               <div className="grid grid-cols-2 gap-1">
                 <span className="text-muted-foreground">Environment:</span>
-                <span>Electron Desktop</span>
+                <span>{isElectron ? 'Electron Desktop' : 'Web Browser'}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <span className="text-muted-foreground">WebSockets Enabled:</span>
+                <span>{realTimeSyncEnabled ? 'Yes' : 'No'}</span>
               </div>
               <div className="grid grid-cols-2 gap-1">
                 <span className="text-muted-foreground">Connection:</span>
@@ -196,6 +240,12 @@ export function RealTimeSyncStatus({ showDebugInfo = false }: RealTimeSyncStatus
                 <span className="text-muted-foreground">Last Error:</span>
                 <span className="truncate">{lastSyncError || 'None'}</span>
               </div>
+              {clientId && (
+                <div className="grid grid-cols-2 gap-1">
+                  <span className="text-muted-foreground">Client ID:</span>
+                  <span className="truncate">{clientId}</span>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

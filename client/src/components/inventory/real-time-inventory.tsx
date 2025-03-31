@@ -5,9 +5,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, AlertTriangle, ArrowUpDown, RotateCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, AlertTriangle, ArrowUpDown, RotateCw, Wifi, Info } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { isElectronEnvironment } from '@/lib/electron-bridge';
+import { setFeatureFlag } from '@/lib/config';
 
 export function RealTimeInventory() {
   // Fetch warehouses to allow user to choose which ones to monitor
@@ -42,8 +45,15 @@ export function RealTimeInventory() {
     });
   };
 
+  // Function to enable WebSockets
+  const enableWebSockets = () => {
+    setFeatureFlag('enableWebSockets', true);
+    // Force page refresh to apply feature flag change
+    window.location.reload();
+  };
+
   // Connect to WebSocket for real-time updates
-  const { isConnected, lastMessage } = useWebSocket({
+  const { isConnected, lastMessage, webSocketsEnabled } = useWebSocket({
     warehouses: selectedWarehouses,
     onInventoryUpdate: handleInventoryUpdate,
     onStockAlert: handleStockAlert,
@@ -94,6 +104,23 @@ export function RealTimeInventory() {
 
   return (
     <Card className="w-full">
+      {!webSocketsEnabled && !isElectronEnvironment() && (
+        <Alert variant="warning" className="mb-4 mx-6 mt-6">
+          <Info className="h-4 w-4" />
+          <AlertDescription className="flex flex-col space-y-2">
+            <span>Real-time inventory updates are currently disabled in development mode.</span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={enableWebSockets}
+              className="self-start"
+            >
+              <Wifi className="mr-2 h-4 w-4" />
+              Enable Real-Time Updates
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       <CardHeader>
         <div className="flex justify-between items-center">
           <div>

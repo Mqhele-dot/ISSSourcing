@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { isElectronEnvironment, callElectronBridge } from '@/lib/electron-bridge';
+import { isFeatureEnabled } from '@/lib/config';
 
 // Define the types of messages that can be sent/received
 export enum SyncMessageType {
@@ -46,6 +47,7 @@ interface UseRealTimeSyncOptions {
   onDisconnected?: () => void;
   onError?: (error: Error | null) => void;
   autoConnect?: boolean;
+  forceEnabled?: boolean; // Override feature flag
 }
 
 // Result data when syncing with Electron's local database
@@ -72,6 +74,9 @@ export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   
+  // Check if real-time sync is enabled via feature flag or forced via options
+  const realTimeSyncEnabled = options.forceEnabled || isElectronEnvironment() || isFeatureEnabled('enableRealTimeSync');
+  
   // Reset sequence number when disconnected
   useEffect(() => {
     if (!isConnected) {
@@ -90,6 +95,15 @@ export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
 
   // Connect to the WebSocket server
   const connect = useCallback(() => {
+    // If real-time sync is disabled via feature flag, don't connect
+    if (!realTimeSyncEnabled) {
+      console.log('Real-time sync is disabled by feature flag. Not connecting.');
+      if (options.onError) {
+        options.onError(new Error('Real-time sync is disabled'));
+      }
+      return;
+    }
+    
     if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
       return; // Already connecting or connected
     }
@@ -182,7 +196,7 @@ export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
         options.onError(error instanceof Error ? error : new Error('Unknown error'));
       }
     }
-  }, [socket, clientId, options]);
+  }, [socket, clientId, options, realTimeSyncEnabled]);
 
   // Disconnect from the server
   const disconnect = useCallback(() => {
@@ -350,6 +364,7 @@ export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
     connectedTimestamp,
     latency: lastPingTime,
     getConnectedClients,
-    syncData
+    syncData,
+    realTimeSyncEnabled
   };
 }

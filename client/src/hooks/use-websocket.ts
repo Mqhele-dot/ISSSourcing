@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
+import { isFeatureEnabled } from '@/lib/config';
 
 export type WebSocketMessage = {
   type: 'inventory_update' | 'stock_transfer' | 'stock_alert' | 'connection' | 'warehouse_update' | 'error' | 'item_subscribe' | 'item_unsubscribe' | 'capabilities';
@@ -15,6 +16,7 @@ interface UseWebSocketParams {
   onStockAlert?: (payload: any) => void;
   onStockTransfer?: (payload: any) => void;
   onConnectionStatus?: (connected: boolean) => void;
+  forceEnabled?: boolean; // Override feature flag
 }
 
 export function useWebSocket({
@@ -23,11 +25,15 @@ export function useWebSocket({
   onStockAlert,
   onStockTransfer,
   onConnectionStatus,
+  forceEnabled = false,
 }: UseWebSocketParams = {}) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const { toast } = useToast();
+  
+  // Check if WebSockets are enabled via feature flag
+  const webSocketsEnabled = forceEnabled || isFeatureEnabled('enableWebSockets');
   
   // Reconnect logic
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -58,6 +64,13 @@ export function useWebSocket({
   
   // Connect to the WebSocket server
   const connect = useCallback(() => {
+    // If WebSockets are disabled via feature flag, don't connect
+    if (!webSocketsEnabled) {
+      console.log('WebSockets are disabled by feature flag. Not connecting.');
+      onConnectionStatus?.(false);
+      return;
+    }
+    
     // If already connected or attempting to connect, do nothing
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       console.log('WebSocket already connected.');
@@ -186,7 +199,7 @@ export function useWebSocket({
         variant: 'destructive'
       });
     }
-  }, [getWebSocketUrl, onConnectionStatus, onInventoryUpdate, onStockAlert, onStockTransfer, warehouses, toast, clearReconnectTimeout]);
+  }, [getWebSocketUrl, onConnectionStatus, onInventoryUpdate, onStockAlert, onStockTransfer, warehouses, toast, clearReconnectTimeout, webSocketsEnabled]);
   
   // Send a message to the WebSocket server
   const sendMessage = useCallback((message: WebSocketMessage) => {
@@ -233,6 +246,7 @@ export function useWebSocket({
     lastMessage,
     sendMessage,
     connect,
-    disconnect
+    disconnect,
+    webSocketsEnabled
   };
 }
