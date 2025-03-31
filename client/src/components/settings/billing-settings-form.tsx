@@ -110,7 +110,7 @@ export function BillingSettingsForm() {
     isLoading: isLoadingSettings,
   } = useQuery({
     queryKey: ["/api/settings/billing"],
-    queryFn: getQueryFn(),
+    queryFn: getQueryFn({ on401: "throw" }),
     enabled: false, // Disabled until API endpoint is ready
   });
   

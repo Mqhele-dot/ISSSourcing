@@ -5,6 +5,7 @@ import { OfflineModeIndicator } from '../electron/offline-mode-indicator';
 import Sidebar from '../sidebar';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { TutorialButton } from '@/components/tutorial/tutorial-button';
 
 interface DesktopLayoutProps {
   children: React.ReactNode;
@@ -45,6 +46,11 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
           <main className="flex-1 p-4 md:p-6 relative">
             {children}
           </main>
+          
+          {/* Tutorial Button - Fixed at the bottom right */}
+          <div className="fixed bottom-6 right-6 z-50">
+            <TutorialButton />
+          </div>
         </div>
       </div>
     </div>

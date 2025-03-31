@@ -26,7 +26,8 @@ import DownloadPage from "@/pages/download";
 import BillingPage from "@/pages/billing";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useState, useEffect } from "react";
-import { TutorialProvider } from "./contexts/TutorialContext";
+import { TutorialProvider } from "@/contexts/tutorial-context";
+import { TutorialSteps } from "@/components/tutorial/tutorial-steps";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { isElectronEnvironment } from "./lib/electron-bridge";
@@ -156,6 +157,7 @@ function App() {
                     }}
                   </Route>
                 </div>
+                <TutorialSteps />
                 <Toaster />
               </ElectronProvider>
             </TutorialProvider>
