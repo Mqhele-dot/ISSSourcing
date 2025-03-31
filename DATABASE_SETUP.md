@@ -13,6 +13,34 @@ The application requires the following PostgreSQL environment variables to be se
 - `PGDATABASE` - PostgreSQL database name
 - `PGPORT` - PostgreSQL server port (defaults to 5432)
 
+## Deployment Configuration
+
+When deploying the application, you need to configure the database connection in one of two ways:
+
+### Option 1: Using DATABASE_URL (Recommended)
+
+1. Go to your Replit project's "Secrets" tab in the Tools panel
+2. Add a new secret with key `DATABASE_URL` and value in the format:
+   ```
+   postgresql://username:password@host:port/database
+   ```
+3. Save the secret
+
+### Option 2: Using Individual PostgreSQL Parameters
+
+If you prefer to set individual parameters (for better secret management):
+
+1. Go to your Replit project's "Secrets" tab in the Tools panel
+2. Add the following secrets:
+   - `PGHOST` - Your PostgreSQL server hostname
+   - `PGUSER` - Your PostgreSQL username 
+   - `PGPASSWORD` - Your PostgreSQL password
+   - `PGDATABASE` - Your PostgreSQL database name
+   - `PGPORT` - Your PostgreSQL server port (optional, defaults to 5432)
+3. Save all secrets
+
+The application will automatically detect and use these individual parameters if `DATABASE_URL` is not set.
+
 ## Automatic Setup
 
 The application will automatically:
@@ -132,3 +160,21 @@ export const pool = new Pool({
 3. Configure high availability and failover
 4. Implement database monitoring
 5. Use secure connection strings and store credentials safely
+
+## Replit Deployment Configuration
+
+When deploying your application on Replit:
+
+1. Navigate to the "Secrets" tab in your Replit project (lock icon in the tools panel)
+2. Add the following secrets:
+   - `DATABASE_URL` (if using the connection string approach)
+   - Or individual parameters: `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGPORT`
+3. Click "Add new secret" for each entry
+4. Format the DATABASE_URL as: `postgresql://username:password@host:port/database`
+5. Make sure your PostgreSQL server allows connections from Replit's IP ranges
+6. For Neon Database or similar serverless PostgreSQL services:
+   - Use the connection string from your database provider dashboard
+   - Ensure WebSocket support is enabled (for Neon Database)
+   - Set SSL mode appropriately (usually `{ rejectUnauthorized: false }`)
+
+The application will automatically use these environment variables during deployment and runtime.

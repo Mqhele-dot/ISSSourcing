@@ -11,6 +11,7 @@ import {
 } from '@shared/schema';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { PgTable } from 'drizzle-orm/pg-core';
 
 const execAsync = promisify(exec);
 
@@ -18,7 +19,7 @@ const execAsync = promisify(exec);
  * Initializes the database by ensuring all required tables exist
  * This is called during application startup to prepare the database
  */
-export async function initializeDatabase() {
+export async function initializeDatabase(): Promise<boolean> {
   console.log('Initializing database schema...');
   
   try {

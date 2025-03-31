@@ -5,10 +5,11 @@ import { initializeWebSocketService, checkLowStockAlerts } from "./websocket-ser
 import { storage } from "./storage";
 import { pool } from "./db";
 import { initializeDatabase } from "./init-db";
+import { PoolClient } from '@neondatabase/serverless';
 
 // Test database connection and initialize schema on startup
 pool.connect()
-  .then(async (client) => {
+  .then(async (client: PoolClient) => {
     console.log("✅ Database connection successful");
     console.log(`Connection format: postgresql://username:password@host:port/database`);
     client.release();
@@ -22,7 +23,7 @@ pool.connect()
       console.error("The application may not function correctly without a properly initialized database");
     }
   })
-  .catch(err => {
+  .catch((err: Error) => {
     console.error("❌ Failed to connect to database:", err.message);
     console.error("Please check your DATABASE_URL connection string in the format:");
     console.error("postgresql://username:password@host:port/database");
