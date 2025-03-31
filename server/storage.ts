@@ -45,13 +45,13 @@ import {
   billingReminderLogs, type BillingReminderLog, type InsertBillingReminderLog
 } from "@shared/schema";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import memorystore from "memorystore";
-import connectPg from "connect-pg-simple";
 import { db, pool } from "./db";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
 
 const MemoryStore = memorystore(session);
-const PostgresSessionStore = connectPg(session);
+const PostgresSessionStore = connectPgSimple(session);
 import crypto from "crypto";
 import { Pool } from "@neondatabase/serverless";
 
@@ -1678,174 +1678,174 @@ export class MemStorage implements IStorage {
     // Admin role permissions (full access to all resources)
     const adminPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
-      { resource: Resource.INVENTORY, permissionType: PermissionType.CREATE },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.UPDATE },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.DELETE },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.EXPORT },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.IMPORT },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.DELETE },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.EXPORT },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.IMPORT },
       
       // Purchases resource permissions
-      { resource: Resource.PURCHASES, permissionType: PermissionType.CREATE },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.UPDATE },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.DELETE },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.APPROVE },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.DELETE },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.APPROVE },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.EXPORT },
       
       // Suppliers resource permissions
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.CREATE },
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.UPDATE },
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.DELETE },
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.DELETE },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.EXPORT },
       
       // Categories resource permissions
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.CREATE },
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.UPDATE },
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.DELETE },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.DELETE },
       
       // Warehouses resource permissions
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.CREATE },
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.UPDATE },
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.DELETE },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.DELETE },
       
       // Reports resource permissions
-      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
-      { resource: Resource.REPORTS, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.EXPORT },
       
       // Users resource permissions
-      { resource: Resource.USERS, permissionType: PermissionType.CREATE },
-      { resource: Resource.USERS, permissionType: PermissionType.READ },
-      { resource: Resource.USERS, permissionType: PermissionType.UPDATE },
-      { resource: Resource.USERS, permissionType: PermissionType.DELETE },
-      { resource: Resource.USERS, permissionType: PermissionType.ASSIGN },
+      { resource: ResourceEnum.USERS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.USERS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.USERS, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.USERS, permissionType: PermissionTypeEnum.DELETE },
+      { resource: ResourceEnum.USERS, permissionType: PermissionTypeEnum.ASSIGN },
       
       // Settings resource permissions
-      { resource: Resource.SETTINGS, permissionType: PermissionType.READ },
-      { resource: Resource.SETTINGS, permissionType: PermissionType.UPDATE },
+      { resource: ResourceEnum.SETTINGS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.SETTINGS, permissionType: PermissionTypeEnum.UPDATE },
       
       // Reorder Requests resource permissions
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.CREATE },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.UPDATE },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.DELETE },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.APPROVE },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.DELETE },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.APPROVE },
       
       // Stock Movements resource permissions
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.CREATE },
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ },
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.UPDATE },
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.EXPORT }
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.EXPORT }
     ];
     
     // Manager role permissions (extensive but not full access)
     const managerPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
-      { resource: Resource.INVENTORY, permissionType: PermissionType.CREATE },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.UPDATE },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.EXPORT },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.IMPORT },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.EXPORT },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.IMPORT },
       
       // Purchases resource permissions
-      { resource: Resource.PURCHASES, permissionType: PermissionType.CREATE },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.UPDATE },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.APPROVE },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.APPROVE },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.EXPORT },
       
       // Suppliers resource permissions
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.CREATE },
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.UPDATE },
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.EXPORT },
       
       // Categories resource permissions
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.CREATE },
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.UPDATE },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.UPDATE },
       
       // Warehouses resource permissions
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.UPDATE },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.UPDATE },
       
       // Reports resource permissions
-      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
-      { resource: Resource.REPORTS, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.EXPORT },
       
       // Users resource permissions
-      { resource: Resource.USERS, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.USERS, permissionType: PermissionTypeEnum.READ },
       
       // Settings resource permissions
-      { resource: Resource.SETTINGS, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.SETTINGS, permissionType: PermissionTypeEnum.READ },
       
       // Reorder Requests resource permissions
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.CREATE },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.UPDATE },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.APPROVE },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.APPROVE },
       
       // Stock Movements resource permissions
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.CREATE },
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ },
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.EXPORT }
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.EXPORT }
     ];
     
     // Warehouse Staff role permissions (focused on inventory operations)
     const warehouseStaffPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
-      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.UPDATE },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.UPDATE },
       
       // Purchases resource permissions
-      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.READ },
       
       // Suppliers resource permissions
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.READ },
       
       // Categories resource permissions
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.READ },
       
       // Warehouses resource permissions
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.READ },
       
       // Reorder Requests resource permissions
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.CREATE },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.READ },
       
       // Stock Movements resource permissions
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.CREATE },
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ }
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.READ }
     ];
     
     // Viewer role permissions (read-only access)
     const viewerPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
-      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
       
       // Purchases resource permissions
-      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.READ },
       
       // Suppliers resource permissions
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.READ },
       
       // Categories resource permissions
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.READ },
       
       // Warehouses resource permissions
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.READ },
       
       // Reports resource permissions
-      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.READ },
       
       // Reorder Requests resource permissions
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.READ },
       
       // Stock Movements resource permissions
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ }
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.READ }
     ];
     
     // ==================== ADDITIONAL ROLES ====================
@@ -1853,67 +1853,67 @@ export class MemStorage implements IStorage {
     // Sales Team role permissions (focus on inventory and customers)
     const salesTeamPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
-      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.EXPORT },
       
       // Categories resource permissions
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.READ },
       
       // Warehouses resource permissions
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.READ },
       
       // Reports resource permissions
-      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
-      { resource: Resource.REPORTS, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.EXPORT },
       
       // Reorder Requests resource permissions
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.CREATE },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ }
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.READ }
     ];
     
     // Auditor role permissions (focused on reporting and history)
     const auditorPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions
-      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
-      { resource: Resource.INVENTORY, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.EXPORT },
       
       // Purchases resource permissions
-      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
-      { resource: Resource.PURCHASES, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.EXPORT },
       
       // Suppliers resource permissions
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.READ },
-      { resource: Resource.SUPPLIERS, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.EXPORT },
       
       // Categories resource permissions
-      { resource: Resource.CATEGORIES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.CATEGORIES, permissionType: PermissionTypeEnum.READ },
       
       // Warehouses resource permissions
-      { resource: Resource.WAREHOUSES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.READ },
       
       // Reports resource permissions
-      { resource: Resource.REPORTS, permissionType: PermissionType.READ },
-      { resource: Resource.REPORTS, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.EXPORT },
       
       // Reorder Requests resource permissions
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ },
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.EXPORT },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.EXPORT },
       
       // Stock Movements resource permissions
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.READ },
-      { resource: Resource.STOCK_MOVEMENTS, permissionType: PermissionType.EXPORT }
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.EXPORT }
     ];
     
     // Supplier role permissions (limited to their own inventory)
     const supplierPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
       // Inventory resource permissions (limited)
-      { resource: Resource.INVENTORY, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
       
       // Purchases resource permissions (limited to their own POs)
-      { resource: Resource.PURCHASES, permissionType: PermissionType.READ },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.READ },
       
       // Reorder Requests resource permissions (limited to relevant items)
-      { resource: Resource.REORDER_REQUESTS, permissionType: PermissionType.READ }
+      { resource: ResourceEnum.REORDER_REQUESTS, permissionType: PermissionTypeEnum.READ }
     ];
     
     // ==================== CREATE PERMISSIONS ====================
@@ -1921,7 +1921,7 @@ export class MemStorage implements IStorage {
     // Create admin permissions
     for (const permission of adminPermissions) {
       this.createPermission({
-        role: UserRole.ADMIN,
+        role: UserRoleEnum.ADMIN,
         resource: permission.resource,
         permissionType: permission.permissionType
       });
@@ -1930,7 +1930,7 @@ export class MemStorage implements IStorage {
     // Create manager permissions
     for (const permission of managerPermissions) {
       this.createPermission({
-        role: UserRole.MANAGER,
+        role: UserRoleEnum.MANAGER,
         resource: permission.resource,
         permissionType: permission.permissionType
       });
@@ -1939,7 +1939,7 @@ export class MemStorage implements IStorage {
     // Create warehouse staff permissions
     for (const permission of warehouseStaffPermissions) {
       this.createPermission({
-        role: UserRole.WAREHOUSE_STAFF,
+        role: UserRoleEnum.WAREHOUSE_STAFF,
         resource: permission.resource,
         permissionType: permission.permissionType
       });
@@ -1948,7 +1948,7 @@ export class MemStorage implements IStorage {
     // Create viewer permissions
     for (const permission of viewerPermissions) {
       this.createPermission({
-        role: UserRole.VIEWER,
+        role: UserRoleEnum.VIEWER,
         resource: permission.resource,
         permissionType: permission.permissionType
       });
@@ -2025,7 +2025,7 @@ export class MemStorage implements IStorage {
   
   async checkPermission(role: UserRole, resource: Resource, permissionType: PermissionType): Promise<boolean> {
     // Admin always has access to everything
-    if (role === UserRole.ADMIN) return true;
+    if (role === UserRoleEnum.ADMIN) return true;
     
     const foundPermission = Array.from(this.permissions.values())
       .find(p => p.role === role && p.resource === resource && p.permissionType === permissionType);
@@ -5501,7 +5501,7 @@ export class DatabaseStorage implements IStorage {
 
   constructor() {
     this.sessionStore = new PostgresSessionStore({ 
-      pool,
+      pool: pool,
       createTableIfMissing: true 
     });
   }
