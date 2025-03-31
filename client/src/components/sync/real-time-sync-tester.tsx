@@ -64,11 +64,14 @@ export function RealTimeSyncTester() {
   });
   const [latencies, setLatencies] = useState<{timestamp: number, latency: number}[]>([]);
   
+  const [status, setStatus] = useState<SyncStatus>(SyncStatus.DISCONNECTED);
+  const [connectionInfo, setConnectionInfo] = useState<{clientId?: string}>({});
+
   const { 
-    status, 
-    sendMessage,
-    connectionInfo,
-    currentStats
+    isConnected,
+    isConnecting,
+    clientId,
+    sendMessage
   } = useRealTimeSync({
     autoConnect: true,
     onMessage: (message) => {
@@ -111,6 +114,21 @@ export function RealTimeSyncTester() {
     }
   });
   
+  // Update status and connection info
+  useEffect(() => {
+    if (isConnecting) {
+      setStatus(SyncStatus.CONNECTING);
+    } else if (isConnected) {
+      setStatus(SyncStatus.CONNECTED);
+    } else {
+      setStatus(SyncStatus.DISCONNECTED);
+    }
+    
+    if (clientId) {
+      setConnectionInfo(prev => ({ ...prev, clientId }));
+    }
+  }, [isConnected, isConnecting, clientId]);
+
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -347,22 +365,22 @@ export function RealTimeSyncTester() {
         <TabsContent value="logs">
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <div className="flex items-center space-x-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex items-center space-x-2 mb-2 sm:mb-0">
                   <Switch
                     id="show-payload"
                     checked={showPayload}
                     onCheckedChange={setShowPayload}
                   />
-                  <Label htmlFor="show-payload">Show payloads</Label>
+                  <Label htmlFor="show-payload" className="ml-2">Show payloads</Label>
                 </div>
-                <div className="flex items-center space-x-2 ml-4">
+                <div className="flex items-center space-x-2">
                   <Switch
                     id="auto-scroll"
                     checked={autoScroll}
                     onCheckedChange={setAutoScroll}
                   />
-                  <Label htmlFor="auto-scroll">Auto-scroll</Label>
+                  <Label htmlFor="auto-scroll" className="ml-2">Auto-scroll</Label>
                 </div>
               </div>
               <Button variant="outline" size="sm" onClick={clearLog}>
@@ -424,23 +442,23 @@ export function RealTimeSyncTester() {
                 <CardDescription>Current session information</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div className="text-muted-foreground">Status:</div>
+                <div className="grid grid-cols-[120px_1fr] md:grid-cols-[150px_1fr] gap-x-4 gap-y-3 text-sm">
+                  <div className="text-muted-foreground whitespace-nowrap">Status:</div>
                   <div>{status}</div>
                   
-                  <div className="text-muted-foreground">Client ID:</div>
-                  <div className="font-mono text-xs">{connectionInfo?.clientId || 'Unknown'}</div>
+                  <div className="text-muted-foreground whitespace-nowrap">Client ID:</div>
+                  <div className="font-mono text-xs overflow-x-auto">{connectionInfo?.clientId || 'Unknown'}</div>
                   
-                  <div className="text-muted-foreground">Messages Sent:</div>
+                  <div className="text-muted-foreground whitespace-nowrap">Messages Sent:</div>
                   <div>{testSummary.messagesSent}</div>
                   
-                  <div className="text-muted-foreground">Messages Received:</div>
+                  <div className="text-muted-foreground whitespace-nowrap">Messages Received:</div>
                   <div>{testSummary.messagesReceived}</div>
                   
-                  <div className="text-muted-foreground">Average Latency:</div>
+                  <div className="text-muted-foreground whitespace-nowrap">Average Latency:</div>
                   <div>{getLatencyAvg()}ms</div>
                   
-                  <div className="text-muted-foreground">Session Started:</div>
+                  <div className="text-muted-foreground whitespace-nowrap">Session Started:</div>
                   <div>{testSummary.startTime.toLocaleTimeString()}</div>
                 </div>
               </CardContent>
