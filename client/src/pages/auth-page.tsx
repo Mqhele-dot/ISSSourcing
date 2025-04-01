@@ -71,7 +71,7 @@ export default function AuthPage() {
       toast({
         title: "Email Verified",
         description: "Your email has been successfully verified. You can now log in.",
-        variant: "success"
+        variant: "default"
       });
     }
   }, [toast]);
@@ -141,7 +141,7 @@ export default function AuthPage() {
                         toast({
                           title: "Registration Successful",
                           description: "Please check your email to verify your account.",
-                          variant: "success"
+                          variant: "default"
                         });
                       }
                     }} />
@@ -288,7 +288,7 @@ function LoginForm({
                   toast({
                     title: "Verification Email Sent",
                     description: result.message || "If your email is registered, you will receive a new verification email.",
-                    variant: "success"
+                    variant: "default"
                   });
                 } catch (error) {
                   console.error("Error resending verification email:", error);
@@ -552,7 +552,7 @@ function PasswordResetRequestForm({ onCancel }: { onCancel: () => void }) {
         toast({
           title: "Reset Email Sent",
           description: "If your email is registered, you will receive a password reset link.",
-          variant: "success"
+          variant: "default"
         });
       } else {
         const errorData = await response.json();
@@ -674,7 +674,7 @@ function PasswordResetConfirmForm({ token, onComplete }: { token: string, onComp
         toast({
           title: "Password Reset Successful",
           description: "Your password has been reset. You can now log in with your new password.",
-          variant: "success"
+          variant: "default"
         });
         
         // Delay to show success message
@@ -806,7 +806,7 @@ function TwoFactorAuthForm({
         toast({
           title: "Verification Successful",
           description: "Two-factor authentication successful",
-          variant: "success"
+          variant: "default"
         });
         
         // Update the auth state with the fully authenticated user
