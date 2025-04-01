@@ -149,8 +149,8 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // Try to listen on port 5000 first (Replit expected port)
-  const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
+  // Try to listen on port 5001 first (port 5000 is currently in use)
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 5001;
   
   server.listen({
     port,
