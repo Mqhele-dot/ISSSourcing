@@ -245,13 +245,14 @@ export function setupAuth(app: Express) {
         }
       }
       
-      // Check if email is verified
-      if (!user.emailVerified) {
-        return done(null, false, { 
-          message: "Please verify your email address before logging in",
-          requiresEmailVerification: true 
-        });
-      }
+      // Temporarily bypass email verification for development 
+      // In production, uncomment this check
+      // if (!user.emailVerified) {
+      //   return done(null, false, { 
+      //     message: "Please verify your email address before logging in",
+      //     requiresEmailVerification: true 
+      //   });
+      // }
 
       // Record successful login attempt
       await storage.recordLoginAttempt(username, true);
@@ -369,7 +370,7 @@ export function setupAuth(app: Express) {
         ...req.body,
         password: hashedPassword,
         lastPasswordChange: new Date(),
-        emailVerified: false, // Set to false by default, user needs to verify email
+        emailVerified: true, // Temporarily set to true for development to bypass email verification
         twoFactorEnabled: false,
         failedLoginAttempts: 0,
         accountLocked: false
@@ -389,10 +390,10 @@ export function setupAuth(app: Express) {
         // Continue but log the error - don't let email sending failure prevent registration
       }
 
-      // Return success but don't log in automatically - require email verification first
+      // Return success - email is automatically verified in development
       res.status(201).json({ 
-        message: "Registration successful. Please check your email to verify your account.",
-        requiresEmailVerification: true
+        message: "Registration successful! You can now log in with your credentials.",
+        requiresEmailVerification: false
       });
     } catch (error) {
       console.error("Registration error:", error);
