@@ -194,12 +194,13 @@ export function setupAuth(app: Express) {
   app.use(passport.session());
 
   // CSRF protection for all state-changing routes
-  app.use('/api/login', csrfProtection);
-  app.use('/api/register', csrfProtection);
-  app.use('/api/password-reset*', csrfProtection);
-  app.use('/api/verify-email', csrfProtection);
-  app.use('/api/2fa*', csrfProtection);
-  app.use(handleCSRFError);
+  // Temporarily disable CSRF protection for these routes
+  // app.use('/api/login', csrfProtection);
+  // app.use('/api/register', csrfProtection);
+  // app.use('/api/password-reset*', csrfProtection);
+  // app.use('/api/verify-email', csrfProtection);
+  // app.use('/api/2fa*', csrfProtection);
+  // app.use(handleCSRFError);
 
   // Configure local strategy
   passport.use(new LocalStrategy(async (username, password, done) => {
@@ -340,10 +341,10 @@ export function setupAuth(app: Express) {
     });
   });
 
-  // Get CSRF token
-  app.get('/api/csrf-token', csrfProtection, (req, res) => {
-    res.json({ csrfToken: req.csrfToken() });
-  });
+  // Get CSRF token (disabled for now)
+  // app.get('/api/csrf-token', csrfProtection, (req, res) => {
+  //   res.json({ csrfToken: req.csrfToken() });
+  // });
 
   // Route to register new user with rate limiting
   app.post("/api/register", registerRateLimiter, async (req, res) => {
