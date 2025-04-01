@@ -26,6 +26,7 @@ import DownloadPage from "@/pages/download";
 import BillingPage from "@/pages/billing";
 import ProfilePage from "@/pages/profile";
 import ImageRecognitionPage from "@/pages/image-recognition-page";
+import DocumentExtractorPage from "@/pages/document-extractor-page";
 import WarehousesPage from "@/pages/warehouses";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useState, useEffect } from "react";
@@ -102,6 +103,7 @@ function Router() {
       <ProtectedRoute path="/billing" component={BillingPage} />
       <ProtectedRoute path="/profile" component={ProfilePage} />
       <ProtectedRoute path="/image-recognition" component={ImageRecognitionPage} />
+      <ProtectedRoute path="/document-extractor" component={DocumentExtractorPage} />
       <ProtectedRoute path="/warehouses" component={WarehousesPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />

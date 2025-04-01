@@ -17,6 +17,7 @@ import {
 import { initializeWebSocketService } from "./websocket-service";
 import { initializeRealTimeSyncService, getConnectedClientInfo, notifyDataChange } from "./real-time-sync-service";
 import { registerImageRecognitionRoutes } from "./controllers/image-recognition-controller";
+import { registerDocumentExtractorRoutes } from "./controllers/document-extractor-controller";
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument } from "./services/document-generator-service";
@@ -4130,6 +4131,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Initialize image recognition routes
   registerImageRecognitionRoutes(app);
+  
+  // Register document extractor routes
+  registerDocumentExtractorRoutes(app);
   
   // Profile picture routes
   app.post('/api/profile/picture', auth.ensureAuthenticated, profilePictureUpload.single('profilePicture'), uploadProfilePicture);
