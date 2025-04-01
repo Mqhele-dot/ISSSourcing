@@ -15,7 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { Camera, Info, AlertTriangle, Zap, Server, Database, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { ask_secrets } from '@/lib/utils';
+
 
 export default function ImageRecognitionPage() {
   const { toast } = useToast();

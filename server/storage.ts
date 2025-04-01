@@ -42,7 +42,8 @@ import {
   billingSettings, type BillingSetting, type InsertBillingSetting,
   taxRates, type TaxRate, type InsertTaxRate,
   discounts, type Discount, type InsertDiscount,
-  billingReminderLogs, type BillingReminderLog, type InsertBillingReminderLog
+  billingReminderLogs, type BillingReminderLog, type InsertBillingReminderLog,
+  imageAnalysisLogs, type ImageAnalysisLog, type InsertImageAnalysisLog
 } from "@shared/schema";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
@@ -117,6 +118,11 @@ export interface IStorage {
   enableTwoFactorAuth(userId: number, verified: boolean): Promise<User | undefined>;
   disableTwoFactorAuth(userId: number): Promise<User | undefined>;
   verifyTwoFactorToken(userId: number, token: string): Promise<boolean>;
+  
+  // Image recognition methods
+  logImageAnalysis(log: InsertImageAnalysisLog): Promise<ImageAnalysisLog>;
+  getItemImageAnalysisHistory(itemId: number): Promise<ImageAnalysisLog[]>;
+  getImageAnalysisByUserId(userId: number): Promise<ImageAnalysisLog[]>;
   
   // Session management
   createSession(userId: number, ipAddress?: string, userAgent?: string, expiresInDays?: number): Promise<Session>;
@@ -455,6 +461,11 @@ export interface IStorage {
   getBillingReminderLogsByInvoiceId(invoiceId: number): Promise<BillingReminderLog[]>;
   createBillingReminderLog(log: InsertBillingReminderLog): Promise<BillingReminderLog>;
   deleteBillingReminderLog(id: number): Promise<boolean>;
+  
+  // Image Analysis methods
+  logImageAnalysis(log: InsertImageAnalysisLog): Promise<ImageAnalysisLog>;
+  getItemImageAnalysisHistory(itemId: number): Promise<ImageAnalysisLog[]>;
+  getImageAnalysisByUserId(userId: number): Promise<ImageAnalysisLog[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -498,6 +509,9 @@ export class MemStorage implements IStorage {
   private invoiceItems: Map<number, InvoiceItem>;
   private payments: Map<number, Payment>;
   private billingSettings: Map<number, BillingSetting>;
+  
+  // Image recognition data structures
+  private imageAnalysisLogs: Map<number, ImageAnalysisLog>;
   private taxRates: Map<number, TaxRate>;
   private discounts: Map<number, Discount>;
   private billingReminderLogs: Map<number, BillingReminderLog>;
@@ -543,6 +557,7 @@ export class MemStorage implements IStorage {
   private taxRateCurrentId: number;
   private discountCurrentId: number;
   private billingReminderLogCurrentId: number;
+  private imageAnalysisLogCurrentId: number;
   
   constructor() {
     this.users = new Map();
@@ -592,6 +607,9 @@ export class MemStorage implements IStorage {
     this.discounts = new Map();
     this.billingReminderLogs = new Map();
     
+    // Initialize image recognition-related maps
+    this.imageAnalysisLogs = new Map();
+    
     this.userCurrentId = 1;
     this.categoryCurrentId = 1;
     this.itemCurrentId = 1;
@@ -630,6 +648,7 @@ export class MemStorage implements IStorage {
     this.taxRateCurrentId = 1;
     this.discountCurrentId = 1;
     this.billingReminderLogCurrentId = 1;
+    this.imageAnalysisLogCurrentId = 1;
     
     // Add default data
     this.initializeDefaultData();
@@ -5493,6 +5512,54 @@ export class MemStorage implements IStorage {
   async deleteBillingReminderLog(id: number): Promise<boolean> {
     return this.billingReminderLogs.delete(id);
   }
+  
+  // Image Analysis methods
+  async logImageAnalysis(log: InsertImageAnalysisLog): Promise<ImageAnalysisLog> {
+    const id = this.imageAnalysisLogCurrentId++;
+    const timestamp = new Date();
+    
+    const newLog: ImageAnalysisLog = {
+      id,
+      userId: log.userId,
+      imageHash: log.imageHash,
+      recognitionResults: log.recognitionResults || null,
+      itemId: log.itemId || null,
+      confidence: log.confidence || null,
+      isTrainingData: log.isTrainingData || null,
+      notes: log.notes || null,
+      timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    
+    this.imageAnalysisLogs.set(id, newLog);
+    
+    // Also create an activity log
+    this.createActivityLog({
+      action: "Image Analysis",
+      description: `Analyzed image for item ${log.itemId || 'Unknown'}`,
+      userId: log.userId,
+      itemId: log.itemId || null,
+      referenceType: "image_analysis",
+      referenceId: id
+    }).catch(error => {
+      console.error("Error creating activity log for image analysis:", error);
+    });
+    
+    return newLog;
+  }
+  
+  async getItemImageAnalysisHistory(itemId: number): Promise<ImageAnalysisLog[]> {
+    return Array.from(this.imageAnalysisLogs.values())
+      .filter(log => log.itemId === itemId)
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()); // Sort by timestamp descending
+  }
+  
+  async getImageAnalysisByUserId(userId: number): Promise<ImageAnalysisLog[]> {
+    return Array.from(this.imageAnalysisLogs.values())
+      .filter(log => log.userId === userId)
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()); // Sort by timestamp descending
+  }
 }
 
 // DatabaseStorage implementation with PostgreSQL
@@ -5641,6 +5708,73 @@ export class DatabaseStorage implements IStorage {
   // For the remaining methods, we use MemStorage temporarily until they're fully implemented
   // We create an instance of MemStorage for temporary fallback
   private memStorage = new MemStorage();
+  
+  // Image Analysis Log methods
+  async logImageAnalysis(log: InsertImageAnalysisLog): Promise<ImageAnalysisLog> {
+    try {
+      // Create an activity log entry
+      const activityLogPromise = db.insert(activityLogs).values({
+        action: "Image Analysis",
+        description: `Analyzed image for item ${log.itemId || 'Unknown'}`,
+        userId: log.userId,
+        itemId: log.itemId || null,
+        referenceType: "image_analysis",
+        timestamp: new Date()
+      });
+      
+      // Add the log entry
+      const [newLog] = await db
+        .insert(imageAnalysisLogs)
+        .values({
+          ...log,
+          timestamp: log.timestamp || new Date(),
+        })
+        .returning();
+        
+      // Wait for the activity log to complete (but don't block returning the result)
+      activityLogPromise.catch(error => {
+        console.error("Error creating activity log for image analysis:", error);
+      });
+        
+      return newLog;
+    } catch (error) {
+      console.error("Error logging image analysis:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.logImageAnalysis(log);
+    }
+  }
+  
+  async getItemImageAnalysisHistory(itemId: number): Promise<ImageAnalysisLog[]> {
+    try {
+      const logs = await db
+        .select()
+        .from(imageAnalysisLogs)
+        .where(eq(imageAnalysisLogs.itemId, itemId))
+        .orderBy(desc(imageAnalysisLogs.timestamp));
+        
+      return logs;
+    } catch (error) {
+      console.error("Error getting item image analysis history:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.getItemImageAnalysisHistory(itemId);
+    }
+  }
+  
+  async getImageAnalysisByUserId(userId: number): Promise<ImageAnalysisLog[]> {
+    try {
+      const logs = await db
+        .select()
+        .from(imageAnalysisLogs)
+        .where(eq(imageAnalysisLogs.userId, userId))
+        .orderBy(desc(imageAnalysisLogs.timestamp));
+        
+      return logs;
+    } catch (error) {
+      console.error("Error getting user image analysis logs:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.getImageAnalysisByUserId(userId);
+    }
+  }
   
   // Delegate methods to memStorage for those not yet implemented
   async getUserByResetToken(token: string): Promise<User | undefined> {
@@ -6843,6 +6977,8 @@ export class DatabaseStorage implements IStorage {
   async deleteBillingReminderLog(id: number): Promise<boolean> {
     return this.memStorage.deleteBillingReminderLog(id);
   }
+  
+
 }
 
 // Export the storage instance (using PostgreSQL)

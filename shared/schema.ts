@@ -1450,3 +1450,32 @@ export type DiscountForm = z.infer<typeof discountFormSchema>;
 
 export type BillingReminderLog = typeof billingReminderLogs.$inferSelect;
 export type InsertBillingReminderLog = z.infer<typeof insertBillingReminderLogSchema>;
+
+// Image Analysis Logs Table Schema
+export const imageAnalysisLogs = pgTable("image_analysis_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  imageHash: text("image_hash").notNull(), // Store a hash of the image, not the image itself
+  recognitionResults: jsonb("recognition_results"), // Store the AI recognition results as JSON
+  itemId: integer("item_id").references(() => inventoryItems.id), // Optional reference to the created inventory item
+  confidence: real("confidence").default(0), // Confidence score from the AI model
+  isTrainingData: boolean("is_training_data").default(false), // Whether this entry is used for training
+  notes: text("notes"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertImageAnalysisLogSchema = createInsertSchema(imageAnalysisLogs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  notes: true,
+  isTrainingData: true,
+  itemId: true,
+  recognitionResults: true,
+});
+
+export type ImageAnalysisLog = typeof imageAnalysisLogs.$inferSelect;
+export type InsertImageAnalysisLog = z.infer<typeof insertImageAnalysisLogSchema>;
