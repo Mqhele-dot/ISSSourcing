@@ -66,10 +66,10 @@ export function initializeRealTimeSyncService(server: HttpServer, storageInstanc
   // Store the storage instance
   storage = storageInstance;
 
-  // Create WebSocket server
+  // Create WebSocket server - attach to existing HTTP server
   syncWss = new WebSocketServer({
-    server,
-    path: '/sync',
+    server, // Use existing HTTP server
+    path: '/sync', // Use different path from inventory WebSocket
     clientTracking: true,
     perMessageDeflate: {
       zlibDeflateOptions: {
@@ -328,7 +328,17 @@ async function handleSyncRequest(client: SyncClient, payload: any): Promise<void
           data = await storage.getAllCategories();
           break;
         case 'units':
-          data = await storage.getAllUnits();
+          // Get units from app settings instead of a dedicated units table
+          try {
+            const settings = await storage.getSettings();
+            data = settings.availableUnits || [];
+            if (!Array.isArray(data) || data.length === 0) {
+              data = ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"];
+            }
+          } catch (error) {
+            console.error("Error getting units from settings:", error);
+            data = ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"];
+          }
           break;
         default:
           console.warn(`Unknown dataset requested: ${dataset}`);

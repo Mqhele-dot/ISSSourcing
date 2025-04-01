@@ -149,8 +149,9 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // Serve the app on port 3000
-  const port = 3000;
+  // Try to listen on port 5000 first (Replit expected port)
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
+  
   server.listen({
     port,
     host: "0.0.0.0",

@@ -113,7 +113,9 @@ export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
     try {
       // Determine the WebSocket URL
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      // Use the /sync path for real-time sync WebSocket (different from inventory WebSocket at /ws)
+      const wsUrl = `${protocol}//${window.location.host}/sync`;
+      console.log(`Connecting to real-time sync WebSocket at: ${wsUrl}`);
       
       // Create a new WebSocket connection
       const newSocket = new WebSocket(wsUrl);

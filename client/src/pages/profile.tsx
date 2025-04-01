@@ -609,14 +609,4 @@ export default function ProfilePage() {
   );
 }
 
-interface FormDescriptionProps {
-  children: React.ReactNode;
-}
-
-function FormDescription({ children }: FormDescriptionProps) {
-  return (
-    <p className="text-sm text-muted-foreground">
-      {children}
-    </p>
-  );
-}
+// Custom form description removed to fix duplicate declaration
