@@ -13,13 +13,19 @@ type VerificationResponse = {
   message: string;
 };
 
+type RegistrationResponse = {
+  user?: User;
+  requiresEmailVerification?: boolean;
+  message?: string;
+};
+
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
   error: Error | null;
   loginMutation: UseMutationResult<User, Error, UserLogin>;
   logoutMutation: UseMutationResult<void, Error, void>;
-  registerMutation: UseMutationResult<User, Error, UserRegistration>;
+  registerMutation: UseMutationResult<RegistrationResponse, Error, UserRegistration>;
   verifyEmailMutation: UseMutationResult<VerificationResponse, Error, { token: string }>;
 };
 
@@ -58,20 +64,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  const registerMutation = useMutation({
+  const registerMutation = useMutation<RegistrationResponse, Error, UserRegistration>({
     mutationFn: async (userData: UserRegistration) => {
       const res = await apiRequest("POST", "/api/register", userData);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || "Registration failed");
+      }
       const data = await res.json();
-      return data as User;
+      return data as RegistrationResponse;
     },
-    onSuccess: (user: User) => {
-      queryClient.setQueryData(["/api/user"], user);
-      toast({
-        title: "Registration successful",
-        description: "Your account has been created",
-      });
+    onSuccess: (response: RegistrationResponse) => {
+      console.log("Registration response:", response);
+      
+      if (response.requiresEmailVerification) {
+        toast({
+          title: "Registration successful",
+          description: "Please check your email to verify your account",
+        });
+      } else if (response.user) {
+        queryClient.setQueryData(["/api/user"], response.user);
+        toast({
+          title: "Registration successful",
+          description: "Your account has been created",
+        });
+      } else {
+        toast({
+          title: "Registration successful",
+          description: response.message || "Your account has been created",
+        });
+      }
     },
     onError: (error: Error) => {
+      console.error("Registration error:", error);
       toast({
         title: "Registration failed",
         description: error.message || "Could not create your account",

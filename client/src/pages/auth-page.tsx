@@ -136,11 +136,28 @@ export default function AuthPage() {
                   
                   <TabsContent value="register">
                     <RegisterForm onSuccess={(data) => {
-                      setActiveTab("login");
+                      console.log("Registration response:", data);
+                      
                       if (data.requiresEmailVerification) {
+                        setActiveTab("login");
                         toast({
                           title: "Registration Successful",
                           description: "Please check your email to verify your account.",
+                          variant: "default"
+                        });
+                      } else if (data.user) {
+                        // User is already logged in, redirect will happen automatically
+                        // due to the useEffect checking for user being set
+                        toast({
+                          title: "Registration Successful",
+                          description: "Your account has been created and you're now logged in.",
+                          variant: "default"
+                        });
+                      } else {
+                        setActiveTab("login");
+                        toast({
+                          title: "Registration Successful",
+                          description: "Your account has been created. You can now log in.",
                           variant: "default"
                         });
                       }
@@ -402,16 +419,22 @@ function RegisterForm({ onSuccess }: { onSuccess: (data: any) => void }) {
       setRegisterError(null);
       
       registerMutation.mutate(data, {
-        onSuccess: (response) => onSuccess(response),
+        onSuccess: (response) => {
+          if (response && (response.user || response.requiresEmailVerification)) {
+            onSuccess(response);
+          }
+        },
         onError: (error: any) => {
-          if (error.response?.data) {
-            setRegisterError(error.response.data.message);
+          console.error("Registration error:", error);
+          if (error.message) {
+            setRegisterError(error.message);
           } else {
             setRegisterError("An error occurred during registration. Please try again.");
           }
         }
       });
     } catch (error) {
+      console.error("Registration catch error:", error);
       setRegisterError("An error occurred during registration. Please try again.");
     }
   });
