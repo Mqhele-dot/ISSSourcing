@@ -24,7 +24,7 @@ import { createWorker } from 'tesseract.js';
 import { Readable } from 'stream';
 
 export type FileType = 'pdf' | 'excel' | 'csv' | 'image' | 'unknown';
-export type ExportFormat = 'json' | 'csv' | 'database';
+export type ExportFormat = 'json' | 'csv' | 'excel' | 'database';
 export type ProcessingOptions = {
   useOcr?: boolean;
   ocrLanguage?: string;
@@ -755,6 +755,139 @@ export async function exportData(
         
         // Clean up the temporary file
         fs.unlinkSync(csvFilePath);
+        
+        return buffer;
+      }
+      
+      case 'excel': {
+        if (data.data.length === 0) {
+          throw new Error('No data to export to Excel');
+        }
+        
+        // Create a temporary file path
+        const tmpDir = path.join(process.cwd(), 'tmp');
+        if (!fs.existsSync(tmpDir)) {
+          fs.mkdirSync(tmpDir);
+        }
+        
+        const excelFilePath = path.join(tmpDir, `${fileName}.xlsx`);
+        
+        // Get all unique keys from all records
+        const headers = Array.from(
+          new Set(
+            data.data.flatMap(record => Object.keys(record))
+          )
+        );
+        
+        // Create a new workbook
+        const workbook = new Excel.Workbook();
+        const worksheet = workbook.addWorksheet('Extracted Data');
+        
+        // Add headers to the worksheet
+        worksheet.addRow(headers);
+        
+        // Add data rows
+        data.data.forEach(record => {
+          const rowData = headers.map(header => {
+            const value = record[header];
+            return value !== undefined ? value : '';
+          });
+          worksheet.addRow(rowData);
+        });
+        
+        // Style the header row
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true };
+        headerRow.eachCell((cell) => {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFE0E0E0' }
+          };
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+        });
+        
+        // Auto-fit columns (approximately)
+        worksheet.columns.forEach(column => {
+          let maxLength = 0;
+          column.eachCell({ includeEmpty: true }, (cell) => {
+            const columnLength = cell.value ? cell.value.toString().length : 10;
+            if (columnLength > maxLength) {
+              maxLength = columnLength;
+            }
+          });
+          column.width = maxLength < 10 ? 10 : maxLength + 2;
+        });
+        
+        // Add metadata to a separate sheet
+        if (data.metadata && Object.keys(data.metadata).length > 0) {
+          const metadataSheet = workbook.addWorksheet('Metadata');
+          metadataSheet.addRow(['Property', 'Value']);
+          
+          Object.entries(data.metadata).forEach(([key, value]) => {
+            metadataSheet.addRow([key, value !== null ? String(value) : '']);
+          });
+          
+          // Style the metadata header
+          const metaHeaderRow = metadataSheet.getRow(1);
+          metaHeaderRow.font = { bold: true };
+          metaHeaderRow.eachCell((cell) => {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFE0E0E0' }
+            };
+          });
+          
+          // Auto-fit columns
+          metadataSheet.getColumn(1).width = 30;
+          metadataSheet.getColumn(2).width = 50;
+        }
+        
+        // Add file information
+        const infoSheet = workbook.addWorksheet('File Information');
+        infoSheet.addRow(['Property', 'Value']);
+        infoSheet.addRow(['File Name', data.fileName]);
+        infoSheet.addRow(['File Type', data.fileType]);
+        infoSheet.addRow(['Extraction Date', data.extractionDate]);
+        infoSheet.addRow(['Total Records', data.data.length.toString()]);
+        
+        if (data.pages) {
+          infoSheet.addRow(['Pages', data.pages.toString()]);
+        }
+        
+        if (data.processingTimeMs) {
+          infoSheet.addRow(['Processing Time', `${data.processingTimeMs}ms`]);
+        }
+        
+        // Style the info header
+        const infoHeaderRow = infoSheet.getRow(1);
+        infoHeaderRow.font = { bold: true };
+        infoHeaderRow.eachCell((cell) => {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFE0E0E0' }
+          };
+        });
+        
+        // Auto-fit columns
+        infoSheet.getColumn(1).width = 30;
+        infoSheet.getColumn(2).width = 50;
+        
+        // Write to file
+        await workbook.xlsx.writeFile(excelFilePath);
+        
+        // Read the file and return as buffer
+        const buffer = fs.readFileSync(excelFilePath);
+        
+        // Clean up the temporary file
+        fs.unlinkSync(excelFilePath);
         
         return buffer;
       }

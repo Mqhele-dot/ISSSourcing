@@ -15,7 +15,8 @@ import {
   exportData,
   FileType,
   ProcessingOptions,
-  ExtractedData
+  ExtractedData,
+  ExportFormat
 } from '../services/document-extractor-service';
 import { storage } from '../storage';
 
@@ -172,7 +173,7 @@ export function registerDocumentExtractorRoutes(router: Router): void {
   router.get('/api/document-extractor/supported-formats', (_req: Request, res: Response) => {
     res.json({
       supportedFileTypes: ['pdf', 'excel', 'csv', 'jpg', 'jpeg', 'png', 'tiff'],
-      supportedExportFormats: ['json', 'csv', 'database'],
+      supportedExportFormats: ['json', 'csv', 'excel', 'database'],
       supportedOcrLanguages: ['eng', 'spa', 'fra', 'deu', 'ita', 'por', 'jpn', 'kor', 'chi_sim', 'chi_tra']
     });
   });
@@ -218,6 +219,9 @@ export function registerDocumentExtractorRoutes(router: Router): void {
       } else if (format === 'csv') {
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}.csv"`);
+      } else if (format === 'excel') {
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}.xlsx"`);
       }
       
       res.send(exportedData);
