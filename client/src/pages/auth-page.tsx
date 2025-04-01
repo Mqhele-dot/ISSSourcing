@@ -254,8 +254,31 @@ function LoginForm({
             <AlertDescription className="text-amber-600">
               Please check your email for the verification link. If you didn't receive an email, you can <Button variant="link" className="p-0 h-auto text-amber-600 font-semibold" onClick={async () => {
                 try {
-                  // Get the email from the form
-                  const email = form.getValues("username");
+                  // Get the email from the form or prompt if not available
+                  let email = "";
+                  
+                  // For login, username might be email or actual username
+                  // Let's add a small form to collect email if needed
+                  const usernameValue = form.getValues("username");
+                  
+                  // Check if username looks like an email
+                  if (usernameValue && usernameValue.includes('@')) {
+                    email = usernameValue;
+                  } else {
+                    // Create a dialog to ask for email
+                    const promptEmail = window.prompt("Please enter your email address to receive a verification link:", "");
+                    if (!promptEmail) return; // User cancelled
+                    email = promptEmail;
+                  }
+                  
+                  if (!email || !email.includes('@')) {
+                    toast({
+                      title: "Invalid Email",
+                      description: "Please provide a valid email address.",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
                   
                   // Call the resend verification email API
                   const response = await apiRequest("POST", "/api/resend-verification-email", { email });
