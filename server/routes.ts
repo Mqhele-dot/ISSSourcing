@@ -16,6 +16,7 @@ import {
 } from "./forecast-service";
 import { initializeWebSocketService } from "./websocket-service";
 import { initializeRealTimeSyncService, getConnectedClientInfo, notifyDataChange } from "./real-time-sync-service";
+import { registerImageRecognitionRoutes } from "./controllers/image-recognition-controller";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -4096,6 +4097,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
+  
+  // Initialize image recognition routes
+  registerImageRecognitionRoutes(app);
 
   const httpServer = createServer(app);
   

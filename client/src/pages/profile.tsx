@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Shield, User, Mail, Key, Image as ImageIcon, Save, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -214,119 +214,181 @@ export default function ProfilePage() {
                 
                 <Separator className="my-4" />
                 
-                <div className="w-full">
-                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="grid w-full grid-cols-1">
-                      <TabsTrigger value="profile" className="justify-start">
-                        <User className="mr-2 h-4 w-4" />
-                        Profile
-                      </TabsTrigger>
-                      <TabsTrigger value="security" className="justify-start">
-                        <Shield className="mr-2 h-4 w-4" />
-                        Security
-                      </TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+                <div className="w-full space-y-2 text-left">
+                  <Button 
+                    variant={activeTab === "profile" ? "default" : "ghost"} 
+                    className="w-full justify-start"
+                    onClick={() => setActiveTab("profile")}
+                  >
+                    <User className="mr-2 h-4 w-4" />
+                    Profile
+                  </Button>
+                  <Button 
+                    variant={activeTab === "security" ? "default" : "ghost"} 
+                    className="w-full justify-start"
+                    onClick={() => setActiveTab("security")}
+                  >
+                    <Shield className="mr-2 h-4 w-4" />
+                    Security
+                  </Button>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Account Activity Card */}
+          <Card className="mt-6">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Account Activity</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm space-y-3">
+              <div>
+                <div className="text-muted-foreground">Last login</div>
+                <div>Today, 8:26 AM</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Login location</div>
+                <div>San Francisco, USA</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Account created</div>
+                <div>January 5, 2024</div>
               </div>
             </CardContent>
           </Card>
         </div>
         
         <div className="md:w-3/4">
-          <TabsContent value="profile" className="mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle>Profile Information</CardTitle>
-                <CardDescription>
-                  Update your personal information and profile picture
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...profileForm}>
-                  <form onSubmit={handleProfileUpdate} className="space-y-6">
-                    <div className="grid gap-4 md:grid-cols-2">
+          {activeTab === "profile" && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Profile Information</CardTitle>
+                  <CardDescription>
+                    Update your personal information and profile picture
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Form {...profileForm}>
+                    <form onSubmit={handleProfileUpdate} className="space-y-6">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <FormField
+                          control={profileForm.control}
+                          name="fullName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Full Name</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Your full name" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        
+                        <FormField
+                          control={profileForm.control}
+                          name="email"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Email Address</FormLabel>
+                              <FormControl>
+                                <Input type="email" placeholder="Your email address" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      
                       <FormField
                         control={profileForm.control}
-                        name="fullName"
+                        name="profilePicture"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Full Name</FormLabel>
+                            <FormLabel>Profile Picture URL</FormLabel>
                             <FormControl>
-                              <Input placeholder="Your full name" {...field} />
+                              <div className="flex space-x-2">
+                                <Input 
+                                  placeholder="URL to your profile picture" 
+                                  {...field} 
+                                  value={field.value || ""} 
+                                />
+                                <Button 
+                                  type="button" 
+                                  variant="outline"
+                                  onClick={() => profileForm.setValue("profilePicture", null)}
+                                >
+                                  Clear
+                                </Button>
+                              </div>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                       
-                      <FormField
-                        control={profileForm.control}
-                        name="email"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Email Address</FormLabel>
-                            <FormControl>
-                              <Input type="email" placeholder="Your email address" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      <div className="flex justify-end">
+                        <Button 
+                          type="submit" 
+                          disabled={updateProfileMutation.isPending}
+                        >
+                          {updateProfileMutation.isPending ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="mr-2 h-4 w-4" />
+                              Save Changes
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                </CardContent>
+              </Card>
+              
+              {/* Additional Contact Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Contact Information</CardTitle>
+                  <CardDescription>
+                    Add additional contact details to your profile
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <FormLabel>Phone Number</FormLabel>
+                      <Input placeholder="Your phone number" />
                     </div>
-                    
-                    <FormField
-                      control={profileForm.control}
-                      name="profilePicture"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Profile Picture URL</FormLabel>
-                          <FormControl>
-                            <div className="flex space-x-2">
-                              <Input 
-                                placeholder="URL to your profile picture" 
-                                {...field} 
-                                value={field.value || ""} 
-                              />
-                              <Button 
-                                type="button" 
-                                variant="outline"
-                                onClick={() => profileForm.setValue("profilePicture", null)}
-                              >
-                                Clear
-                              </Button>
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <div className="flex justify-end">
-                      <Button 
-                        type="submit" 
-                        disabled={updateProfileMutation.isPending}
-                      >
-                        {updateProfileMutation.isPending ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Saving...
-                          </>
-                        ) : (
-                          <>
-                            <Save className="mr-2 h-4 w-4" />
-                            Save Changes
-                          </>
-                        )}
-                      </Button>
+                    <div>
+                      <FormLabel>Work Phone</FormLabel>
+                      <Input placeholder="Your work phone" />
                     </div>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                    <div>
+                      <FormLabel>Address</FormLabel>
+                      <Input placeholder="Your address" />
+                    </div>
+                    <div>
+                      <FormLabel>City</FormLabel>
+                      <Input placeholder="Your city" />
+                    </div>
+                  </div>
+                  <div className="flex justify-end mt-4">
+                    <Button variant="outline" className="mr-2">Cancel</Button>
+                    <Button>Save Details</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
           
-          <TabsContent value="security" className="mt-0">
+          {activeTab === "security" && (
+            <div className="space-y-6">
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Password</CardTitle>
@@ -539,7 +601,8 @@ export default function ProfilePage() {
                 </Form>
               </CardContent>
             </Card>
-          </TabsContent>
+            </div>
+          )}
         </div>
       </div>
     </div>
