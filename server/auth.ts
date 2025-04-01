@@ -368,8 +368,12 @@ export function setupAuth(app: Express) {
 
       // Create new user with hashed password
       const hashedPassword = await hashPassword(req.body.password);
+      
+      // Create user data object (without confirmPassword)
+      const { confirmPassword, ...userDataWithoutConfirm } = req.body;
+      
       const userData = {
-        ...req.body,
+        ...userDataWithoutConfirm,
         password: hashedPassword,
         lastPasswordChange: new Date(),
         emailVerified: true, // Temporarily set to true for development to bypass email verification
@@ -377,8 +381,14 @@ export function setupAuth(app: Express) {
         failedLoginAttempts: 0,
         accountLocked: false
       };
-      delete userData.confirmPassword; // Remove confirmPassword field
 
+      // Log user data for debugging (excluding password)
+      console.log("Creating user with data:", { 
+        ...userData, 
+        password: "[REDACTED]" 
+      });
+
+      // Create the user
       const newUser = await storage.createUser(userData);
       
       // Create verification token

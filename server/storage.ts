@@ -5714,11 +5714,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(user: InsertUser): Promise<User> {
+    // Insert the user without creating a verification token
+    // since that will be handled separately in the route
     const [newUser] = await db.insert(users).values(user).returning();
-    
-    // Create a welcome verification token
-    await this.createVerificationToken(newUser.id, 'email');
-    
     return newUser;
   }
 
@@ -5748,11 +5746,6 @@ export class DatabaseStorage implements IStorage {
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
-  }
-
-  async createUser(user: InsertUser): Promise<User> {
-    const [newUser] = await db.insert(users).values(user).returning();
-    return newUser;
   }
 
   async getAllUsers(): Promise<User[]> {
