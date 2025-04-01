@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Shield, User, Mail, Key, Image as ImageIcon, Save, Eye, EyeOff } from "lucide-react";
+import { Loader2, Shield, User, Mail, Key, Image as ImageIcon, Save, Eye, EyeOff, Upload, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -306,23 +306,132 @@ export default function ProfilePage() {
                         name="profilePicture"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Profile Picture URL</FormLabel>
+                            <FormLabel>Profile Picture</FormLabel>
                             <FormControl>
-                              <div className="flex space-x-2">
-                                <Input 
-                                  placeholder="URL to your profile picture" 
-                                  {...field} 
-                                  value={field.value || ""} 
-                                />
-                                <Button 
-                                  type="button" 
-                                  variant="outline"
-                                  onClick={() => profileForm.setValue("profilePicture", null)}
-                                >
-                                  Clear
-                                </Button>
+                              <div className="space-y-4">
+                                {field.value && (
+                                  <div className="flex items-center gap-4">
+                                    <Avatar className="h-16 w-16">
+                                      <AvatarImage src={field.value} alt="Current profile picture" />
+                                      <AvatarFallback>{getInitials(user.fullName || user.username)}</AvatarFallback>
+                                    </Avatar>
+                                    <Button 
+                                      type="button" 
+                                      variant="destructive"
+                                      size="sm"
+                                      onClick={async () => {
+                                        if (confirm("Are you sure you want to remove your profile picture?")) {
+                                          try {
+                                            await apiRequest("DELETE", "/api/profile/picture");
+                                            profileForm.setValue("profilePicture", null);
+                                            queryClient.setQueryData(["/api/user"], (oldData: any) => ({
+                                              ...oldData,
+                                              profilePicture: null,
+                                            }));
+                                            toast({
+                                              title: "Profile Picture Removed",
+                                              description: "Your profile picture has been removed successfully."
+                                            });
+                                          } catch (error) {
+                                            toast({
+                                              title: "Error",
+                                              description: "Failed to remove profile picture",
+                                              variant: "destructive"
+                                            });
+                                          }
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Remove
+                                    </Button>
+                                  </div>
+                                )}
+                                
+                                <div className="flex items-center space-x-2">
+                                  <Input
+                                    id="picture-upload"
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={async (e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      
+                                      const formData = new FormData();
+                                      formData.append('profilePicture', file);
+                                      
+                                      try {
+                                        const res = await fetch('/api/profile/picture', {
+                                          method: 'POST',
+                                          body: formData,
+                                          credentials: 'include'
+                                        });
+                                        
+                                        if (!res.ok) {
+                                          throw new Error('Failed to upload profile picture');
+                                        }
+                                        
+                                        const data = await res.json();
+                                        profileForm.setValue("profilePicture", data.profilePicture);
+                                        
+                                        // Update user data in the cache
+                                        queryClient.setQueryData(["/api/user"], (oldData: any) => ({
+                                          ...oldData,
+                                          profilePicture: data.profilePicture,
+                                        }));
+                                        
+                                        toast({
+                                          title: "Profile Picture Updated",
+                                          description: "Your profile picture has been updated successfully."
+                                        });
+                                      } catch (error) {
+                                        toast({
+                                          title: "Upload Failed",
+                                          description: error instanceof Error ? error.message : "Failed to upload profile picture",
+                                          variant: "destructive"
+                                        });
+                                      }
+                                      
+                                      // Reset the input
+                                      e.target.value = '';
+                                    }}
+                                    ref={(input) => {
+                                      // This prevents react-hook-form from controlling this input
+                                      if (input) {
+                                        input.name = 'profilePictureUpload';
+                                      }
+                                    }}
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      document.getElementById('picture-upload')?.click();
+                                    }}
+                                  >
+                                    <Upload className="h-4 w-4 mr-2" />
+                                    Upload Picture
+                                  </Button>
+                                  <Button 
+                                    type="button" 
+                                    variant="ghost"
+                                    onClick={() => {
+                                      const url = prompt("Enter the URL to your profile picture");
+                                      if (url) {
+                                        profileForm.setValue("profilePicture", url);
+                                      }
+                                    }}
+                                  >
+                                    <ImageIcon className="h-4 w-4 mr-2" />
+                                    Use URL
+                                  </Button>
+                                </div>
                               </div>
                             </FormControl>
+                            <FormDescription>
+                              Upload a profile picture or provide a URL to an image.
+                            </FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}

@@ -72,6 +72,7 @@ export interface IStorage {
   getUserCustomRoleId(userId: number): Promise<number | null>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
+  updateProfilePicture(userId: number, profilePictureUrl: string | null): Promise<User>;
   getUserPreferences(userId: number): Promise<UserPreference | undefined>;
   updateUserPreferences(userId: number, preferences: Partial<InsertUserPreference>): Promise<UserPreference | undefined>;
   getAllUsers(): Promise<User[]>;
@@ -1630,6 +1631,28 @@ export class MemStorage implements IStorage {
       updatedAt: new Date()
     };
     this.users.set(id, updatedUser);
+    
+    return updatedUser;
+  }
+  
+  /**
+   * Update a user's profile picture
+   * @param userId ID of the user to update
+   * @param profilePictureUrl URL of the new profile picture (or null to remove)
+   * @returns The updated user object
+   */
+  async updateProfilePicture(userId: number, profilePictureUrl: string | null): Promise<User> {
+    const existingUser = this.users.get(userId);
+    if (!existingUser) {
+      throw new Error(`User with ID ${userId} not found`);
+    }
+    
+    const updatedUser = { 
+      ...existingUser, 
+      profilePicture: profilePictureUrl,
+      updatedAt: new Date()
+    };
+    this.users.set(userId, updatedUser);
     
     return updatedUser;
   }
@@ -5800,6 +5823,28 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("Error updating user:", error);
       return undefined;
+    }
+  }
+  
+  async updateProfilePicture(userId: number, profilePictureUrl: string | null): Promise<User> {
+    try {
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          profilePicture: profilePictureUrl,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      
+      if (!updatedUser) {
+        throw new Error(`User with ID ${userId} not found`);
+      }
+      
+      return updatedUser;
+    } catch (error) {
+      console.error("Error updating profile picture:", error);
+      throw error;
     }
   }
   
