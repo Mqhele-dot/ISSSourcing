@@ -52,18 +52,51 @@ if (typeof globalThis.DOMMatrix === 'undefined') {
   (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
 }
 
-// Use legacy build of PDF.js for Node.js environment
-// Importing as ES module for compatibility with ES modules
-import * as PDFjs from 'pdfjs-dist/legacy/build/pdf.js';
+// Use dynamic import for PDF.js to avoid startup performance issues
+// This will load PDF.js only when needed
+let PDFjs: any;
+const loadPDFjs = async () => {
+  if (!PDFjs) {
+    try {
+      // Use ES module version instead of legacy
+      const pdfModule = await import('pdfjs-dist');
+      PDFjs = pdfModule.default;
+    } catch (err) {
+      console.error('Error loading pdfjs-dist:', err);
+      throw new Error(`Failed to load PDF.js: ${err}`);
+    }
+  }
+  return PDFjs;
+};
 
-// Set PDF.js worker path
-const pdfjsWorker = path.join(process.cwd(), 'node_modules/pdfjs-dist/legacy/build/pdf.worker.js');
-if (fs.existsSync(pdfjsWorker)) {
-  PDFjs.GlobalWorkerOptions.workerSrc = `file://${pdfjsWorker}`;
-} else {
-  console.warn('PDF.js worker not found at expected path. Using default worker path.');
-  // Use CDN for worker as fallback
-  PDFjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.worker.min.js';
-}
+// Function to set worker path when PDFjs is loaded
+const setupWorker = async (pdfjs: any) => {
+  try {
+    // Try to use the proper ES module worker path
+    const workerPath = path.join(process.cwd(), 'node_modules/pdfjs-dist/build/pdf.worker.mjs');
+    
+    if (fs.existsSync(workerPath)) {
+      pdfjs.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
+    } else {
+      // Fallback to the CDN worker
+      console.warn('PDF.js worker not found at expected path. Using CDN worker path.');
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@latest/build/pdf.worker.min.js';
+    }
+  } catch (err) {
+    console.error('Error setting up PDF.js worker:', err);
+    // Continue anyway - some environments may work without explicit worker setup
+  }
+  
+  return pdfjs;
+};
 
-export const pdfjsLib = PDFjs;
+// Export a function that returns the PDFjs library (lazy-loaded)
+export const getPdfLib = async () => {
+  try {
+    const pdfjs = await loadPDFjs();
+    return await setupWorker(pdfjs);
+  } catch (error) {
+    console.error('Error initializing PDF.js library:', error);
+    throw error;
+  }
+};

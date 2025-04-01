@@ -407,8 +407,8 @@ const DocumentExtractorPage: React.FC = () => {
       
       if (!response.ok) throw new Error('Export failed');
       
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const responseBlob = await response.blob();
+      const url = window.URL.createObjectURL(responseBlob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `export-${new Date().toISOString().slice(0, 10)}.csv`;

@@ -19,7 +19,7 @@ import Excel from 'exceljs';
 import { createObjectCsvWriter } from 'csv-writer';
 import fetch from 'node-fetch';
 import * as https from 'https';
-import { pdfjsLib } from './pdfjs-setup';
+import { getPdfLib } from './pdfjs-setup';
 import { createWorker } from 'tesseract.js';
 import { Readable } from 'stream';
 
@@ -155,6 +155,7 @@ export async function extractFromPdf(
   try {
     // Load the PDF file
     const data = new Uint8Array(fs.readFileSync(filePath));
+    const pdfjsLib = await getPdfLib();
     const loadingTask = pdfjsLib.getDocument({ data });
     const pdf = await loadingTask.promise;
     
