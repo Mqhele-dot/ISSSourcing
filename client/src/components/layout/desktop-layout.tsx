@@ -6,6 +6,7 @@ import Sidebar from '../sidebar';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TutorialButton } from '@/components/tutorial/tutorial-button';
+import { Header } from './header';
 
 interface DesktopLayoutProps {
   children: React.ReactNode;
@@ -28,7 +29,10 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
         <Sidebar open={sidebarOpen} setOpen={setSidebarOpen} />
         
         {/* Main content */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative flex flex-col">
+          {/* Header with profile icon */}
+          <Header />
+          
           {/* Mobile menu button */}
           <div className="block md:hidden absolute top-4 left-4 z-30">
             <Button 

@@ -24,6 +24,7 @@ import SyncTestPage from "@/pages/sync-test-page";
 import SyncDashboard from "@/pages/sync-dashboard";
 import DownloadPage from "@/pages/download";
 import BillingPage from "@/pages/billing";
+import ProfilePage from "@/pages/profile";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useState, useEffect } from "react";
 import { TutorialProvider } from "@/contexts/tutorial-context";
@@ -97,6 +98,7 @@ function Router() {
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/user-roles" component={UserRolesPage} />
       <ProtectedRoute path="/billing" component={BillingPage} />
+      <ProtectedRoute path="/profile" component={ProfilePage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
