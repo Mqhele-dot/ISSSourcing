@@ -5652,7 +5652,21 @@ export class DatabaseStorage implements IStorage {
   }
   
   async updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined> {
-    return this.memStorage.updateUser(id, user);
+    try {
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          ...user,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, id))
+        .returning();
+      
+      return updatedUser;
+    } catch (error) {
+      console.error("Error updating user:", error);
+      return undefined;
+    }
   }
   
   async getUserPreferences(userId: number): Promise<UserPreference | undefined> {
@@ -5716,15 +5730,54 @@ export class DatabaseStorage implements IStorage {
   }
   
   async logUserAccess(log: InsertUserAccessLog): Promise<UserAccessLog> {
-    return this.memStorage.logUserAccess(log);
+    try {
+      const [accessLog] = await db
+        .insert(userAccessLogs)
+        .values({
+          ...log,
+          timestamp: new Date()
+        })
+        .returning();
+        
+      return accessLog;
+    } catch (error) {
+      console.error("Error logging user access:", error);
+      // If database operation fails, fall back to memory storage
+      return this.memStorage.logUserAccess(log);
+    }
   }
   
   async getUserAccessLogs(userId: number): Promise<UserAccessLog[]> {
-    return this.memStorage.getUserAccessLogs(userId);
+    try {
+      const logs = await db
+        .select()
+        .from(userAccessLogs)
+        .where(eq(userAccessLogs.userId, userId))
+        .orderBy(desc(userAccessLogs.timestamp))
+        .limit(50);
+        
+      return logs;
+    } catch (error) {
+      console.error("Error getting user access logs:", error);
+      // If database operation fails, fall back to memory storage
+      return this.memStorage.getUserAccessLogs(userId);
+    }
   }
   
-  async getRecentUserAccessLogs(limit: number): Promise<UserAccessLog[]> {
-    return this.memStorage.getRecentUserAccessLogs(limit);
+  async getRecentUserAccessLogs(limit: number = 10): Promise<UserAccessLog[]> {
+    try {
+      const logs = await db
+        .select()
+        .from(userAccessLogs)
+        .orderBy(desc(userAccessLogs.timestamp))
+        .limit(limit);
+        
+      return logs;
+    } catch (error) {
+      console.error("Error getting recent user access logs:", error);
+      // If database operation fails, fall back to memory storage
+      return this.memStorage.getRecentUserAccessLogs(limit);
+    }
   }
   
   async authenticateUser(credentials: UserLogin): Promise<User | null> {
@@ -5879,67 +5932,216 @@ export class DatabaseStorage implements IStorage {
   
   async logUserAccess(userId: number, action: string, details?: any, ip?: string, userAgent?: string): Promise<UserAccessLog> {
     try {
-      // For now, we'll just log to console and return a placeholder
-      console.log(`User access log: User ID ${userId}, Action: ${action}, Details:`, details);
-      return {
-        id: Date.now(),
-        userId,
-        action,
-        details: details || {},
-        ipAddress: ip || '127.0.0.1',
-        userAgent: userAgent || 'Unknown',
-        timestamp: new Date(),
-      };
+      // Insert a new access log record in the database
+      const [accessLog] = await db
+        .insert(userAccessLogs)
+        .values({
+          userId,
+          action,
+          details: details || {},
+          ipAddress: ip || '127.0.0.1',
+          userAgent: userAgent || 'Unknown',
+          timestamp: new Date(),
+          geolocation: null,
+          sessionId: null
+        })
+        .returning();
+        
+      return accessLog;
     } catch (error) {
       console.error("Error logging user access:", error);
-      throw error;
+      
+      // If database operation fails, fall back to memory storage
+      const log = {
+        userId,
+        action,
+        details,
+        ipAddress: ip,
+        userAgent: userAgent
+      };
+      
+      try {
+        return this.memStorage.logUserAccess(log as InsertUserAccessLog);
+      } catch (fallbackError) {
+        // In case memory storage also fails, log to console and create a local record
+        console.error("Memory storage fallback also failed:", fallbackError);
+        console.log(`User access log: User ID ${userId}, Action: ${action}, Details:`, details);
+        
+        return {
+          id: Date.now(),
+          userId,
+          action,
+          details: details || {},
+          ipAddress: ip || '127.0.0.1',
+          userAgent: userAgent || 'Unknown',
+          geolocation: null,
+          sessionId: null,
+          timestamp: new Date(),
+        };
+      }
     }
   }
   
   async getUserAccessLogs(userId: number, limit?: number): Promise<UserAccessLog[]> {
     try {
-      // For now, return an empty array
-      return [];
+      let query = db
+        .select()
+        .from(userAccessLogs)
+        .where(eq(userAccessLogs.userId, userId))
+        .orderBy(desc(userAccessLogs.timestamp));
+      
+      if (limit) {
+        query = query.limit(limit);
+      }
+      
+      const logs = await query;
+      return logs;
     } catch (error) {
       console.error("Error getting user access logs:", error);
-      return [];
+      // If database operation fails, fall back to memory storage
+      return this.memStorage.getUserAccessLogs(userId, limit);
     }
   }
   
   async getRecentUserAccessLogs(limit: number = 10): Promise<UserAccessLog[]> {
     try {
-      // For now, return an empty array
-      return [];
+      const logs = await db
+        .select()
+        .from(userAccessLogs)
+        .orderBy(desc(userAccessLogs.timestamp))
+        .limit(limit);
+        
+      return logs;
     } catch (error) {
       console.error("Error getting recent user access logs:", error);
-      return [];
+      // If database operation fails, fall back to memory storage
+      return this.memStorage.getRecentUserAccessLogs(limit);
     }
   }
   
   async getFailedLoginAttempts(userId: number, hours: number = 24): Promise<UserAccessLog[]> {
     try {
-      // For now, return an empty array
-      return [];
+      const cutoffTime = new Date();
+      cutoffTime.setHours(cutoffTime.getHours() - hours);
+      
+      const logs = await db
+        .select()
+        .from(userAccessLogs)
+        .where(
+          and(
+            eq(userAccessLogs.userId, userId),
+            eq(userAccessLogs.action, 'login_failure'),
+            gt(userAccessLogs.timestamp, cutoffTime)
+          )
+        )
+        .orderBy(desc(userAccessLogs.timestamp));
+        
+      return logs;
     } catch (error) {
       console.error("Error getting failed login attempts:", error);
-      return [];
+      // If database operation fails, fall back to memory storage
+      return this.memStorage.getFailedLoginAttempts(userId, hours);
     }
   }
   
   async getUserContactInfo(userId: number): Promise<UserContact | undefined> {
-    return this.memStorage.getUserContactInfo(userId);
+    try {
+      const [contact] = await db
+        .select()
+        .from(userContacts)
+        .where(eq(userContacts.userId, userId));
+      
+      return contact;
+    } catch (error) {
+      console.error("Error getting user contact info:", error);
+      return undefined;
+    }
   }
   
   async updateUserContactInfo(userId: number, contactInfo: Partial<InsertUserContact>): Promise<UserContact | undefined> {
-    return this.memStorage.updateUserContactInfo(userId, contactInfo);
+    try {
+      // Check if contact info already exists for this user
+      const existingContact = await this.getUserContactInfo(userId);
+      
+      if (existingContact) {
+        // Update existing contact info
+        const [updatedContact] = await db
+          .update(userContacts)
+          .set({
+            ...contactInfo,
+            updatedAt: new Date()
+          })
+          .where(eq(userContacts.id, existingContact.id))
+          .returning();
+          
+        return updatedContact;
+      } else {
+        // Create new contact info
+        const [newContact] = await db
+          .insert(userContacts)
+          .values({
+            userId,
+            ...contactInfo,
+            updatedAt: new Date()
+          })
+          .returning();
+          
+        return newContact;
+      }
+    } catch (error) {
+      console.error("Error updating user contact info:", error);
+      return undefined;
+    }
   }
   
   async getUserSecuritySettings(userId: number): Promise<UserSecuritySetting | undefined> {
-    return this.memStorage.getUserSecuritySettings(userId);
+    try {
+      const [settings] = await db
+        .select()
+        .from(userSecuritySettings)
+        .where(eq(userSecuritySettings.userId, userId));
+      
+      return settings;
+    } catch (error) {
+      console.error("Error getting user security settings:", error);
+      return undefined;
+    }
   }
   
   async updateUserSecuritySettings(userId: number, settings: Partial<InsertUserSecuritySetting>): Promise<UserSecuritySetting | undefined> {
-    return this.memStorage.updateUserSecuritySettings(userId, settings);
+    try {
+      // Check if settings already exist for this user
+      const existingSettings = await this.getUserSecuritySettings(userId);
+      
+      if (existingSettings) {
+        // Update existing settings
+        const [updatedSettings] = await db
+          .update(userSecuritySettings)
+          .set({
+            ...settings,
+            updatedAt: new Date()
+          })
+          .where(eq(userSecuritySettings.id, existingSettings.id))
+          .returning();
+          
+        return updatedSettings;
+      } else {
+        // Create new settings
+        const [newSettings] = await db
+          .insert(userSecuritySettings)
+          .values({
+            userId,
+            ...settings,
+            updatedAt: new Date()
+          })
+          .returning();
+          
+        return newSettings;
+      }
+    } catch (error) {
+      console.error("Error updating user security settings:", error);
+      return undefined;
+    }
   }
   
   async checkIpAllowed(userId: number, ipAddress: string): Promise<boolean> {
@@ -6391,7 +6593,23 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllUserAccessLogs(userId?: number): Promise<UserAccessLog[]> {
-    return this.memStorage.getAllUserAccessLogs(userId);
+    try {
+      let query = db
+        .select()
+        .from(userAccessLogs)
+        .orderBy(desc(userAccessLogs.timestamp));
+      
+      if (userId) {
+        query = query.where(eq(userAccessLogs.userId, userId));
+      }
+      
+      const logs = await query;
+      return logs;
+    } catch (error) {
+      console.error("Error getting all user access logs:", error);
+      // If database operation fails, fall back to memory storage
+      return this.memStorage.getAllUserAccessLogs(userId);
+    }
   }
   
   async getUserAccessLog(id: number): Promise<UserAccessLog | undefined> {
