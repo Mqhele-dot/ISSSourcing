@@ -1838,6 +1838,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
   });
+  
+  // Add PATCH endpoint for warehouse updates - serves the same purpose as PUT
+  app.patch("/api/warehouses/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid warehouse ID" });
+      }
+      
+      const validatedData = insertWarehouseSchema.partial().parse(req.body);
+      const updatedWarehouse = await storage.updateWarehouse(id, validatedData);
+      
+      if (!updatedWarehouse) {
+        return res.status(404).json({ message: "Warehouse not found" });
+      }
+      
+      res.json(updatedWarehouse);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        res.status(400).json({ message: validationError.message });
+      } else {
+        console.error("Error updating warehouse:", error);
+        res.status(500).json({ message: "Failed to update warehouse" });
+      }
+    }
+  });
 
   app.delete("/api/warehouses/:id", async (req: Request, res: Response) => {
     try {
