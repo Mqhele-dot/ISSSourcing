@@ -20,7 +20,7 @@ import { registerImageRecognitionRoutes } from "./controllers/image-recognition-
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument } from "./services/document-generator-service";
-import { ReportFormat } from "@shared/schema";
+import { ReportFormat, ReportType, reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
