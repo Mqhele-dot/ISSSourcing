@@ -5728,19 +5728,45 @@ export class DatabaseStorage implements IStorage {
   }
   
   async authenticateUser(credentials: UserLogin): Promise<User | null> {
-    return this.memStorage.authenticateUser(credentials);
+    try {
+      const user = await this.getUserByUsername(credentials.username);
+      // Authentication is handled by Passport in auth.ts, so we just return the user or null
+      return user || null;
+    } catch (error) {
+      console.error("Error authenticating user:", error);
+      return null;
+    }
   }
   
   async recordLoginAttempt(username: string, success: boolean): Promise<void> {
-    return this.memStorage.recordLoginAttempt(username, success);
+    try {
+      // Log the login attempt
+      const user = await this.getUserByUsername(username);
+      if (user) {
+        await this.logUserAccess(user.id, success ? 'login_success' : 'login_failure');
+      }
+    } catch (error) {
+      console.error("Error recording login attempt:", error);
+    }
   }
   
   async resetFailedLoginAttempts(userId: number): Promise<void> {
-    return this.memStorage.resetFailedLoginAttempts(userId);
+    try {
+      // This is a simplified implementation for now
+      console.log(`Reset failed login attempts for user ID: ${userId}`);
+    } catch (error) {
+      console.error("Error resetting failed login attempts:", error);
+    }
   }
   
   async isAccountLocked(userId: number): Promise<boolean> {
-    return this.memStorage.isAccountLocked(userId);
+    try {
+      // This is a simplified implementation that doesn't lock accounts
+      return false;
+    } catch (error) {
+      console.error("Error checking if account is locked:", error);
+      return false;
+    }
   }
   
   async createVerificationToken(userId: number, tokenType: string, expiresInMinutes?: number): Promise<UserVerificationToken> {
@@ -5852,19 +5878,52 @@ export class DatabaseStorage implements IStorage {
   }
   
   async logUserAccess(userId: number, action: string, details?: any, ip?: string, userAgent?: string): Promise<UserAccessLog> {
-    return this.memStorage.logUserAccess(userId, action, details, ip, userAgent);
+    try {
+      // For now, we'll just log to console and return a placeholder
+      console.log(`User access log: User ID ${userId}, Action: ${action}, Details:`, details);
+      return {
+        id: Date.now(),
+        userId,
+        action,
+        details: details || {},
+        ipAddress: ip || '127.0.0.1',
+        userAgent: userAgent || 'Unknown',
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      console.error("Error logging user access:", error);
+      throw error;
+    }
   }
   
   async getUserAccessLogs(userId: number, limit?: number): Promise<UserAccessLog[]> {
-    return this.memStorage.getUserAccessLogs(userId, limit);
+    try {
+      // For now, return an empty array
+      return [];
+    } catch (error) {
+      console.error("Error getting user access logs:", error);
+      return [];
+    }
   }
   
-  async getRecentUserAccessLogs(limit?: number): Promise<UserAccessLog[]> {
-    return this.memStorage.getRecentUserAccessLogs(limit);
+  async getRecentUserAccessLogs(limit: number = 10): Promise<UserAccessLog[]> {
+    try {
+      // For now, return an empty array
+      return [];
+    } catch (error) {
+      console.error("Error getting recent user access logs:", error);
+      return [];
+    }
   }
   
-  async getFailedLoginAttempts(userId: number, hours?: number): Promise<UserAccessLog[]> {
-    return this.memStorage.getFailedLoginAttempts(userId, hours);
+  async getFailedLoginAttempts(userId: number, hours: number = 24): Promise<UserAccessLog[]> {
+    try {
+      // For now, return an empty array
+      return [];
+    } catch (error) {
+      console.error("Error getting failed login attempts:", error);
+      return [];
+    }
   }
   
   async getUserContactInfo(userId: number): Promise<UserContact | undefined> {
