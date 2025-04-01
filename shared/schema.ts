@@ -2,6 +2,26 @@ import { pgTable, text, serial, integer, real, boolean, timestamp, pgEnum, jsonb
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Report types enum
+export const reportTypeEnum = [
+  'inventory',
+  'categories',
+  'suppliers',
+  'warehouses',
+  'stock_movements',
+  'users',
+  'reorder_requests',
+  'purchase_orders',
+  'purchase_requisitions',
+  'activity_logs'
+] as const;
+
+export type ReportType = typeof reportTypeEnum[number];
+
+// Report formats enum
+export const reportFormatEnum = ['pdf', 'csv', 'excel'] as const;
+export type ReportFormat = typeof reportFormatEnum[number];
+
 // User role enum with expanded roles
 export const userRoleEnum = pgEnum("user_role", [
   "admin",            // Full access to all features
@@ -568,7 +588,7 @@ export enum ItemStatus {
 
 // Export types for document generation
 export type DocumentType = "pdf" | "csv" | "excel";
-export type ReportType = "inventory" | "low-stock" | "value" | "purchase-orders" | "purchase-requisitions" | "suppliers" | "reorder-requests";
+// ReportType is already defined at the top of the file
 
 // Report filter interface for customizable report filtering
 export interface ReportFilter {

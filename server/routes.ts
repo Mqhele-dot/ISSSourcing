@@ -19,6 +19,8 @@ import { initializeRealTimeSyncService, getConnectedClientInfo, notifyDataChange
 import { registerImageRecognitionRoutes } from "./controllers/image-recognition-controller";
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
+import { generateDocument } from "./services/document-generator-service";
+import { ReportFormat } from "@shared/schema";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -52,8 +54,7 @@ import {
   type Resource,
   type PermissionType,
   createCustomRoleSchema,
-  type DocumentType,
-  type ReportType
+  type DocumentType
 } from "@shared/schema";
 
 import * as fs from 'fs';
@@ -1332,8 +1333,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Document generation endpoints
   app.get("/api/export/:reportType/:format", async (req: Request, res: Response) => {
     try {
-      const reportType = req.params.reportType as ReportType;
-      const format = req.params.format as DocumentType;
+      const reportType = req.params.reportType;
+      const format = req.params.format;
+      
+      // Validate report type
+      const validReportTypes = reportTypeEnum;
+      const normalizedReportType = reportType.replace(/-/g, '_');
+      
+      if (!validReportTypes.includes(normalizedReportType as ReportType)) {
+        return res.status(400).json({ 
+          message: "Invalid report type. Valid types are: " + validReportTypes.join(', ')
+        });
+      }
+      
+      // Validate format
+      const validFormats = reportFormatEnum;
+      if (!validFormats.includes(format as ReportFormat)) {
+        return res.status(400).json({ 
+          message: "Invalid format. Valid formats are: " + validFormats.join(', ')
+        });
+      }
       
       // Get optional filter parameters
       const startDateParam = req.query.startDate as string;
@@ -1363,7 +1382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filter.endDate = endDate;
       }
       
-      // Parse category filter if provided
+      // Parse filters if provided
       if (categoryIdParam) {
         const categoryId = parseInt(categoryIdParam);
         if (!isNaN(categoryId)) {
@@ -1371,7 +1390,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Parse warehouse filter if provided
       if (warehouseIdParam) {
         const warehouseId = parseInt(warehouseIdParam);
         if (!isNaN(warehouseId)) {
@@ -1379,7 +1397,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Parse supplier filter if provided
       if (supplierIdParam) {
         const supplierId = parseInt(supplierIdParam);
         if (!isNaN(supplierId)) {
@@ -1387,23 +1404,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Parse status filter if provided
       if (statusParam) {
         filter.status = statusParam;
       }
-      
-      // All report types should be defined in the ReportType type in schema.ts
-      const reportTypes: ReportType[] = ['inventory', 'low-stock', 'value', 'purchase-orders', 'purchase-requisitions', 'suppliers', 'reorder-requests'];
-      if (!reportTypes.includes(reportType)) {
-        return res.status(400).json({ message: "Invalid report type" });
-      }
-      
-      if (!['pdf', 'csv', 'excel'].includes(format)) {
-        return res.status(400).json({ message: "Invalid format" });
-      }
-      
-      let items;
-      let title;
       
       // Build filter text for title
       let filterTexts = [];
@@ -1436,89 +1439,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filterTexts.push(`Status: ${filter.status}`);
       }
       
-      let filterText = filterTexts.length > 0 ? ` (${filterTexts.join(', ')})` : '';
+      const filterText = filterTexts.length > 0 ? ` (${filterTexts.join(', ')})` : '';
       
-      switch (reportType) {
+      // Get data based on report type
+      let data: any[] = [];
+      let title: string;
+      
+      switch (normalizedReportType) {
         case 'inventory':
           // Apply category filter if provided
           if (filter.categoryId) {
-            items = (await storage.getAllInventoryItems()).filter(item => item.categoryId === filter.categoryId);
+            data = (await storage.getAllInventoryItems()).filter(item => item.categoryId === filter.categoryId);
           } else {
-            items = await storage.getAllInventoryItems();
+            data = await storage.getAllInventoryItems();
           }
           title = 'Inventory Report' + filterText;
           break;
-        case 'low-stock':
-          // Get low stock items and apply filters
-          let lowStockItems = await storage.getLowStockItems();
-          if (filter.categoryId) {
-            lowStockItems = lowStockItems.filter(item => item.categoryId === filter.categoryId);
-          }
-          items = lowStockItems;
-          title = 'Low Stock Items Report' + filterText;
+          
+        case 'categories':
+          data = await storage.getAllCategories();
+          title = 'Categories Report' + filterText;
           break;
-        case 'value':
-          // Apply category filter if provided
-          if (filter.categoryId) {
-            items = (await storage.getAllInventoryItems()).filter(item => item.categoryId === filter.categoryId);
-          } else {
-            items = await storage.getAllInventoryItems();
-          }
-          title = 'Inventory Value Report' + filterText;
-          break;
-        case 'purchase-orders':
-          // Get all orders
-          let orders = await storage.getAllPurchaseOrders();
           
-          // Apply date range filter if provided
-          if (filter.startDate && filter.endDate) {
-            orders = orders.filter(order => 
-              order.createdAt >= filter.startDate && order.createdAt <= filter.endDate
-            );
-          }
-          
-          // Apply supplier filter if provided
-          if (filter.supplierId) {
-            orders = orders.filter(order => order.supplierId === filter.supplierId);
-          }
-          
-          // Apply status filter if provided
-          if (filter.status) {
-            orders = orders.filter(order => order.status === filter.status);
-          }
-          
-          items = orders;
-          title = 'Purchase Orders Report' + filterText;
-          break;
-        case 'purchase-requisitions':
-          // Get all requisitions
-          let requisitions = await storage.getAllPurchaseRequisitions();
-          
-          // Apply date range filter if provided
-          if (filter.startDate && filter.endDate) {
-            requisitions = requisitions.filter(req => 
-              req.createdAt >= filter.startDate && req.createdAt <= filter.endDate
-            );
-          }
-          
-          // Apply supplier filter if provided
-          if (filter.supplierId) {
-            requisitions = requisitions.filter(req => req.supplierId === filter.supplierId);
-          }
-          
-          // Apply status filter if provided
-          if (filter.status) {
-            requisitions = requisitions.filter(req => req.status === filter.status);
-          }
-          
-          items = requisitions;
-          title = 'Purchase Requisitions Report' + filterText;
-          break;
         case 'suppliers':
-          items = await storage.getAllSuppliers();
+          data = await storage.getAllSuppliers();
           title = 'Suppliers Report' + filterText;
           break;
-        case 'reorder-requests':
+          
+        case 'warehouses':
+          data = await storage.getAllWarehouses();
+          title = 'Warehouses Report' + filterText;
+          break;
+          
+        case 'stock_movements':
+          let stockMovements = await storage.getAllStockMovements();
+          
+          // Apply date range filter if provided
+          if (filter.startDate && filter.endDate) {
+            stockMovements = stockMovements.filter(movement => 
+              movement.createdAt >= filter.startDate && movement.createdAt <= filter.endDate
+            );
+          }
+          
+          // Apply warehouse filters if provided
+          if (filter.warehouseId) {
+            stockMovements = stockMovements.filter(movement => 
+              movement.fromWarehouseId === filter.warehouseId || movement.toWarehouseId === filter.warehouseId
+            );
+          }
+          
+          data = stockMovements;
+          title = 'Stock Movements Report' + filterText;
+          break;
+          
+        case 'users':
+          data = await storage.getAllUsers();
+          title = 'Users Report' + filterText;
+          break;
+          
+        case 'reorder_requests':
           // Get reorder requests with date range filter
           let reorderRequests;
           if (filter.startDate && filter.endDate) {
@@ -1542,89 +1521,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
             reorderRequests = reorderRequests.filter(req => req.status === filter.status);
           }
           
-          items = reorderRequests;
+          data = reorderRequests;
           title = 'Reorder Requests Report' + filterText;
           break;
+          
+        case 'purchase_orders':
+          // Get all orders
+          let orders = await storage.getAllPurchaseOrders();
+          
+          // Apply date range filter if provided
+          if (filter.startDate && filter.endDate) {
+            orders = orders.filter(order => 
+              order.createdAt >= filter.startDate && order.createdAt <= filter.endDate
+            );
+          }
+          
+          // Apply supplier filter if provided
+          if (filter.supplierId) {
+            orders = orders.filter(order => order.supplierId === filter.supplierId);
+          }
+          
+          // Apply status filter if provided
+          if (filter.status) {
+            orders = orders.filter(order => order.status === filter.status);
+          }
+          
+          data = orders;
+          title = 'Purchase Orders Report' + filterText;
+          break;
+          
+        case 'purchase_requisitions':
+          // Get all requisitions
+          let requisitions = await storage.getAllPurchaseRequisitions();
+          
+          // Apply date range filter if provided
+          if (filter.startDate && filter.endDate) {
+            requisitions = requisitions.filter(req => 
+              req.createdAt >= filter.startDate && req.createdAt <= filter.endDate
+            );
+          }
+          
+          // Apply supplier filter if provided
+          if (filter.supplierId) {
+            requisitions = requisitions.filter(req => req.supplierId === filter.supplierId);
+          }
+          
+          // Apply status filter if provided
+          if (filter.status) {
+            requisitions = requisitions.filter(req => req.status === filter.status);
+          }
+          
+          data = requisitions;
+          title = 'Purchase Requisitions Report' + filterText;
+          break;
+          
+        case 'activity_logs':
+          let activityLogs = await storage.getAllActivityLogs();
+          
+          // Apply date range filter if provided
+          if (filter.startDate && filter.endDate) {
+            activityLogs = activityLogs.filter(log => 
+              log.timestamp >= filter.startDate && log.timestamp <= filter.endDate
+            );
+          }
+          
+          data = activityLogs;
+          title = 'Activity Logs Report' + filterText;
+          break;
+          
+        default:
+          return res.status(400).json({ message: "Unsupported report type" });
       }
       
-      let buffer;
-      
-      // Make sure we have items and a title
-      if (!items || !title) {
+      // Make sure we have data for the report
+      if (!data || data.length === 0) {
         return res.status(404).json({ message: "No data found for report" });
       }
       
-      // Determine which generator to use based on report type
-      let generator;
+      // Generate the document using the centralized document generation service
+      const buffer = await generateDocument(normalizedReportType as ReportType, format as ReportFormat, data, title);
       
-      switch (reportType) {
-        case 'inventory':
-        case 'low-stock':
-        case 'value':
-          generator = {
-            pdf: generateInventoryPdfReport,
-            csv: generateInventoryCsvReport,
-            excel: generateInventoryExcelReport
-          };
-          break;
-        case 'purchase-orders':
-          generator = {
-            pdf: generatePurchaseOrdersPdfReport,
-            csv: generatePurchaseOrdersCsvReport,
-            excel: generatePurchaseOrdersExcelReport
-          };
-          break;
-        case 'purchase-requisitions':
-          generator = {
-            pdf: generatePurchaseRequisitionsPdfReport,
-            csv: generatePurchaseRequisitionsCsvReport,
-            excel: generatePurchaseRequisitionsExcelReport
-          };
-          break;
-        case 'suppliers':
-          generator = {
-            pdf: generateSuppliersPdfReport,
-            csv: generateSuppliersCsvReport,
-            excel: generateSuppliersExcelReport
-          };
-          break;
-        case 'reorder-requests':
-          generator = {
-            pdf: generateReorderRequestsPdfReport,
-            csv: generateReorderRequestsCsvReport,
-            excel: generateReorderRequestsExcelReport
-          };
-          break;
-      }
-      
-      // Generate the report
+      // Set appropriate headers
       switch (format) {
         case 'pdf':
-          buffer = await generator.pdf(items, title);
           res.setHeader('Content-Type', 'application/pdf');
           res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '-').toLowerCase()}.pdf"`);
           break;
         case 'csv':
-          buffer = await generator.csv(items, title);
           res.setHeader('Content-Type', 'text/csv');
           res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '-').toLowerCase()}.csv"`);
           break;
         case 'excel':
-          buffer = await generator.excel(items, title);
           res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
           res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '-').toLowerCase()}.xlsx"`);
           break;
       }
       
-      // Ensure buffer is a proper Buffer instance
-      if (!(buffer instanceof Buffer)) {
-        buffer = Buffer.from(buffer);
-      }
-      
+      // Send the document
       res.send(buffer);
+      
     } catch (error) {
-      console.error(`Error generating ${req.params.format} report:`, error);
-      res.status(500).json({ message: `Failed to generate ${req.params.format} report` });
+      console.error(`Error generating ${req.params.format} report for ${req.params.reportType}:`, error);
+      res.status(500).json({ 
+        message: `Failed to generate ${req.params.format} report for ${req.params.reportType}`,
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
