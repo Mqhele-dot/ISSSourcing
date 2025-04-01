@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -69,6 +69,18 @@ export default function ProfilePage() {
       profilePicture: user?.profilePicture || null,
     },
   });
+  
+  // Update profile form when user data changes
+  useEffect(() => {
+    if (user) {
+      profileForm.reset({
+        fullName: user.fullName || "",
+        email: user.email || "",
+        warehouseId: user.warehouseId || null,
+        profilePicture: user.profilePicture || null,
+      });
+    }
+  }, [user]);
 
   // Set up security preferences form
   const securityForm = useForm({
@@ -91,13 +103,15 @@ export default function ProfilePage() {
   });
 
   // Update form values when security preferences data is loaded
-  if (securityPreferences && !loadingPreferences) {
-    securityForm.reset({
-      twoFactorEnabled: securityPreferences.twoFactorEnabled,
-      emailNotifications: securityPreferences.emailNotifications,
-      sessionTimeout: securityPreferences.sessionTimeout,
-    });
-  }
+  useEffect(() => {
+    if (securityPreferences && !loadingPreferences) {
+      securityForm.reset({
+        twoFactorEnabled: securityPreferences.twoFactorEnabled,
+        emailNotifications: securityPreferences.emailNotifications,
+        sessionTimeout: securityPreferences.sessionTimeout,
+      });
+    }
+  }, [securityPreferences, loadingPreferences]);
 
   // Profile update mutation
   const updateProfileMutation = useMutation({
