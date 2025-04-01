@@ -252,12 +252,29 @@ function LoginForm({
             <Mail className="h-4 w-4 text-amber-600" />
             <AlertTitle className="text-amber-600">Email Verification Required</AlertTitle>
             <AlertDescription className="text-amber-600">
-              Please check your email for the verification link. If you didn't receive an email, you can <Button variant="link" className="p-0 h-auto text-amber-600 font-semibold" onClick={() => {
-                // Request email verification resend
-                toast({
-                  title: "Verification Email Sent",
-                  description: "If your email is registered, you will receive a new verification email.",
-                });
+              Please check your email for the verification link. If you didn't receive an email, you can <Button variant="link" className="p-0 h-auto text-amber-600 font-semibold" onClick={async () => {
+                try {
+                  // Get the email from the form
+                  const email = form.getValues("username");
+                  
+                  // Call the resend verification email API
+                  const response = await apiRequest("POST", "/api/resend-verification-email", { email });
+                  const result = await response.json();
+                  
+                  // Show success message
+                  toast({
+                    title: "Verification Email Sent",
+                    description: result.message || "If your email is registered, you will receive a new verification email.",
+                    variant: "success"
+                  });
+                } catch (error) {
+                  console.error("Error resending verification email:", error);
+                  toast({
+                    title: "Error",
+                    description: "Failed to resend verification email. Please try again later.",
+                    variant: "destructive"
+                  });
+                }
               }}>click here</Button> to request a new one.
             </AlertDescription>
           </Alert>

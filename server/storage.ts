@@ -109,6 +109,7 @@ export interface IStorage {
   useVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined>;
   markEmailAsVerified(userId: number): Promise<User | undefined>;
   verifyEmail(token: string): Promise<boolean>;
+  resendVerificationEmail(email: string): Promise<{ success: boolean; message: string }>;
   
   // Password reset methods
   createPasswordResetToken(email: string): Promise<UserVerificationToken | null>;
@@ -1366,6 +1367,93 @@ export class MemStorage implements IStorage {
     });
     
     return token;
+  }
+  
+  async verifyEmail(token: string): Promise<boolean> {
+    // Get the verification token
+    const verificationToken = await this.getVerificationToken(token, 'email');
+    
+    if (!verificationToken) {
+      return false;
+    }
+    
+    // Check if token is expired
+    const now = new Date();
+    if (verificationToken.expiresAt < now) {
+      return false;
+    }
+    
+    // Mark user's email as verified
+    await this.markEmailAsVerified(verificationToken.userId);
+    
+    // Mark token as used
+    await this.useVerificationToken(token, 'email');
+    
+    // Log the verification
+    const user = await this.getUser(verificationToken.userId);
+    if (user) {
+      await this.createActivityLog({
+        action: "Email Verified",
+        description: `Email verified for user: ${user.username}`,
+        referenceType: "user",
+        referenceId: user.id,
+        userId: user.id
+      });
+    }
+    
+    return true;
+  }
+  
+  async resendVerificationEmail(email: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Find the user by email
+      const user = await this.getUserByEmail(email);
+      
+      if (!user) {
+        // For security reasons, always return success even if email doesn't exist
+        return {
+          success: true,
+          message: "If your email is registered, you will receive a new verification email."
+        };
+      }
+      
+      // Check if email is already verified
+      if (user.emailVerified) {
+        return {
+          success: false,
+          message: "Your email is already verified."
+        };
+      }
+      
+      // Create a new verification token
+      const verificationToken = await this.createVerificationToken(user.id, 'email', 24 * 60); // 24 hours expiry
+      
+      // Import email service
+      const { sendVerificationEmail } = await import('./services/email-service');
+      
+      // Send verification email
+      await sendVerificationEmail(user.email, verificationToken.token, user.username);
+      
+      // Log the action
+      await this.createActivityLog({
+        action: "Email Verification Resent",
+        description: `Verification email resent to ${user.email}`,
+        referenceType: "user",
+        referenceId: user.id,
+        userId: user.id
+      });
+      
+      return {
+        success: true,
+        message: "If your email is registered, you will receive a new verification email."
+      };
+    } catch (error) {
+      console.error("Error resending verification email:", error);
+      return {
+        success: false,
+        message: "An error occurred while resending the verification email."
+      };
+    }
   }
   
   async resetPassword(token: string, newPassword: string): Promise<boolean> {
@@ -6241,6 +6329,55 @@ export class DatabaseStorage implements IStorage {
       console.error("Error verifying email:", error);
       // Fall back to memory storage if database operation fails
       return this.memStorage.verifyEmail ? this.memStorage.verifyEmail(token) : false;
+    }
+  }
+  
+  async resendVerificationEmail(email: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Find the user by email
+      const user = await this.getUserByEmail(email);
+      
+      if (!user) {
+        // For security reasons, always return success even if email doesn't exist
+        return {
+          success: true,
+          message: "If your email is registered, you will receive a new verification email."
+        };
+      }
+      
+      // Check if email is already verified
+      if (user.emailVerified) {
+        return {
+          success: false,
+          message: "Your email is already verified."
+        };
+      }
+      
+      // Create a new verification token
+      const verificationToken = await this.createVerificationToken(user.id, 'email', 24 * 60); // 24 hours expiry
+      
+      // Import email service
+      const { sendVerificationEmail } = await import('./services/email-service');
+      
+      // Send verification email
+      await sendVerificationEmail(user.email, verificationToken.token, user.username);
+      
+      // Log the action
+      await this.logUserAccess(user.id, 'verification_email_resent');
+      
+      return {
+        success: true,
+        message: "If your email is registered, you will receive a new verification email."
+      };
+    } catch (error) {
+      console.error("Error resending verification email:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.resendVerificationEmail ? 
+        this.memStorage.resendVerificationEmail(email) : 
+        {
+          success: false,
+          message: "An error occurred while resending the verification email."
+        };
     }
   }
   

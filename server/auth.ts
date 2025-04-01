@@ -455,6 +455,32 @@ export function setupAuth(app: Express) {
       });
     }
   });
+  
+  // Route to resend verification email
+  app.post("/api/resend-verification-email", emailVerificationRateLimiter, async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email || typeof email !== 'string') {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Email address is required" 
+        });
+      }
+      
+      // Call the storage function to resend verification email
+      const result = await storage.resendVerificationEmail(email);
+      
+      // Return the result directly from the storage function
+      return res.status(200).json(result);
+    } catch (error) {
+      console.error("Error resending verification email:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: "An error occurred while resending the verification email" 
+      });
+    }
+  });
 
   // Route to authenticate user with rate limiting
   app.post("/api/login", loginRateLimiter, (req, res, next) => {
