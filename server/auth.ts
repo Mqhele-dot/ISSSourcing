@@ -202,8 +202,10 @@ export function setupAuth(app: Express) {
   // app.use('/api/2fa*', csrfProtection);
   // app.use(handleCSRFError);
 
-  // Configure local strategy
-  passport.use(new LocalStrategy(async (username, password, done) => {
+  // Configure local strategy with options to pass request object
+  passport.use(new LocalStrategy({
+    passReqToCallback: true // This passes the request object to the callback
+  }, async (req, username, password, done) => {
     try {
       // Find the user
       const user = await storage.getUserByUsername(username);
@@ -265,25 +267,25 @@ export function setupAuth(app: Express) {
         lastLogin: new Date() 
       });
 
-      // Check for suspicious activity
-      const isSuspicious = await detectSuspiciousActivity(
-        user.id,
-        (typeof req.ip === 'string' ? req.ip : 'unknown'),
-        req.headers['user-agent'] || 'unknown'
-      );
+      // Temporarily comment out suspicious activity detection while we fix login issues
+      // const isSuspicious = await detectSuspiciousActivity(
+      //   user.id,
+      //   (typeof req.ip === 'string' ? req.ip : 'unknown'),
+      //   req.headers['user-agent'] || 'unknown'
+      // );
       
-      if (isSuspicious) {
-        // Send suspicious activity email
-        sendSuspiciousActivityEmail(
-          user.email,
-          user.username,
-          (typeof req.ip === 'string' ? req.ip : 'unknown'),
-          new Date(),
-          req.headers['user-agent'] || 'unknown'
-        ).catch(err => {
-          console.error('Error sending suspicious activity email:', err);
-        });
-      }
+      // if (isSuspicious) {
+      //   // Send suspicious activity email
+      //   sendSuspiciousActivityEmail(
+      //     user.email,
+      //     user.username,
+      //     (typeof req.ip === 'string' ? req.ip : 'unknown'),
+      //     new Date(),
+      //     req.headers['user-agent'] || 'unknown'
+      //   ).catch(err => {
+      //     console.error('Error sending suspicious activity email:', err);
+      //   });
+      // }
 
       // User found and password matches
       return done(null, user);
