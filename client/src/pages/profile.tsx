@@ -322,8 +322,10 @@ export default function ProfilePage() {
                                       onClick={async () => {
                                         if (confirm("Are you sure you want to remove your profile picture?")) {
                                           try {
-                                            await apiRequest("DELETE", "/api/profile/picture");
+                                            const res = await apiRequest("DELETE", "/api/profile/picture");
                                             profileForm.setValue("profilePicture", null);
+                                            
+                                            // Update user data in the cache
                                             queryClient.setQueryData(["/api/user"], (oldData: any) => ({
                                               ...oldData,
                                               profilePicture: null,
@@ -373,12 +375,17 @@ export default function ProfilePage() {
                                         }
                                         
                                         const data = await res.json();
-                                        profileForm.setValue("profilePicture", data.profilePicture);
+                                        // Check the structure of the response from the server
+                                        const profilePictureUrl = data.imageUrl || data.user?.profilePicture;
+                                        if (!profilePictureUrl) {
+                                          throw new Error('No profile picture URL in response');
+                                        }
+                                        profileForm.setValue("profilePicture", profilePictureUrl);
                                         
                                         // Update user data in the cache
                                         queryClient.setQueryData(["/api/user"], (oldData: any) => ({
                                           ...oldData,
-                                          profilePicture: data.profilePicture,
+                                          profilePicture: profilePictureUrl,
                                         }));
                                         
                                         toast({
@@ -416,10 +423,32 @@ export default function ProfilePage() {
                                   <Button 
                                     type="button" 
                                     variant="ghost"
-                                    onClick={() => {
+                                    onClick={async () => {
                                       const url = prompt("Enter the URL to your profile picture");
                                       if (url) {
                                         profileForm.setValue("profilePicture", url);
+                                        
+                                        // Update the API to save the URL
+                                        try {
+                                          await apiRequest("PUT", "/api/profile/picture/url", { url });
+                                          
+                                          // Update user data in the cache
+                                          queryClient.setQueryData(["/api/user"], (oldData: any) => ({
+                                            ...oldData,
+                                            profilePicture: url,
+                                          }));
+                                          
+                                          toast({
+                                            title: "Profile Picture Updated",
+                                            description: "Your profile picture URL has been updated successfully."
+                                          });
+                                        } catch (error) {
+                                          toast({
+                                            title: "Error",
+                                            description: "Failed to update profile picture URL",
+                                            variant: "destructive"
+                                          });
+                                        }
                                       }
                                     }}
                                   >
@@ -471,19 +500,19 @@ export default function ProfilePage() {
                 <CardContent>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
-                      <FormLabel>Phone Number</FormLabel>
+                      <label className="text-sm font-medium">Phone Number</label>
                       <Input placeholder="Your phone number" />
                     </div>
                     <div>
-                      <FormLabel>Work Phone</FormLabel>
+                      <label className="text-sm font-medium">Work Phone</label>
                       <Input placeholder="Your work phone" />
                     </div>
                     <div>
-                      <FormLabel>Address</FormLabel>
+                      <label className="text-sm font-medium">Address</label>
                       <Input placeholder="Your address" />
                     </div>
                     <div>
-                      <FormLabel>City</FormLabel>
+                      <label className="text-sm font-medium">City</label>
                       <Input placeholder="Your city" />
                     </div>
                   </div>

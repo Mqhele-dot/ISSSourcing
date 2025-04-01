@@ -17,7 +17,7 @@ import {
 import { initializeWebSocketService } from "./websocket-service";
 import { initializeRealTimeSyncService, getConnectedClientInfo, notifyDataChange } from "./real-time-sync-service";
 import { registerImageRecognitionRoutes } from "./controllers/image-recognition-controller";
-import { uploadProfilePicture, removeProfilePicture } from "./controllers/profile-picture-controller";
+import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { 
   insertInventoryItemSchema, 
@@ -4106,6 +4106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Profile picture routes
   app.post('/api/profile/picture', auth.ensureAuthenticated, profilePictureUpload.single('profilePicture'), uploadProfilePicture);
   app.delete('/api/profile/picture', auth.ensureAuthenticated, removeProfilePicture);
+  app.put('/api/profile/picture/url', auth.ensureAuthenticated, updateProfilePictureUrl);
 
   const httpServer = createServer(app);
   

@@ -108,3 +108,55 @@ export async function removeProfilePicture(req: Request, res: Response) {
     });
   }
 }
+
+/**
+ * Update profile picture using a URL
+ * This endpoint allows users to set their profile picture using an external URL
+ */
+export async function updateProfilePictureUrl(req: Request, res: Response) {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+    
+    const { url } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({ success: false, message: 'No URL provided' });
+    }
+    
+    // Get the current user's profile picture to check if we need to delete an old one
+    const user = await storage.getUser(req.user.id);
+    
+    // If the user already has a profile picture in Cloudinary, delete it
+    if (user && user.profilePicture) {
+      const publicId = getPublicIdFromUrl(user.profilePicture);
+      if (publicId) {
+        try {
+          await deleteCloudinaryImage(publicId);
+        } catch (error) {
+          console.error('Failed to delete old profile picture:', error);
+          // Continue even if deletion fails
+        }
+      }
+    }
+    
+    // Update the user's profile picture in the database with the provided URL
+    const updatedUser = await storage.updateProfilePicture(req.user.id, url);
+    
+    // Return success with the updated user info (excluding sensitive data)
+    const { password, ...userWithoutPassword } = updatedUser;
+    res.status(200).json({
+      success: true,
+      message: 'Profile picture URL updated successfully',
+      user: userWithoutPassword,
+      imageUrl: url
+    });
+  } catch (error) {
+    console.error('Error updating profile picture URL:', error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Failed to update profile picture URL'
+    });
+  }
+}
