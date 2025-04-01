@@ -186,6 +186,50 @@ export function registerDocumentExtractorRoutes(router: Router): void {
     });
   });
   
+  // Export extracted data to various formats
+  router.post('/api/document-extractor/export', upload.none(), async (req: Request, res: Response) => {
+    try {
+      if (!req.body.data) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'No data provided for export' 
+        });
+      }
+      
+      let data: ExtractedData;
+      try {
+        data = JSON.parse(req.body.data);
+      } catch (error) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Invalid data format. Expected JSON data.' 
+        });
+      }
+      
+      const format = (req.body.format || 'json') as ExportFormat;
+      const fileName = req.body.fileName || `export-${new Date().toISOString().slice(0, 10)}`;
+      
+      const exportedData = await exportData(data, format, fileName);
+      
+      // Set appropriate headers based on export format
+      if (format === 'json') {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}.json"`);
+      } else if (format === 'csv') {
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}.csv"`);
+      }
+      
+      res.send(exportedData);
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'An unknown error occurred' 
+      });
+    }
+  });
+  
   // Process a document from local filesystem path
   router.post('/api/document-extractor/from-path', async (req: Request, res: Response) => {
     try {
