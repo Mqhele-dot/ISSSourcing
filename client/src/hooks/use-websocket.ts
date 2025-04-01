@@ -53,12 +53,20 @@ export function useWebSocket({
   const getWebSocketUrl = useCallback(() => {
     if (isElectronEnvironment()) {
       console.log('Detected Electron environment, using localhost WebSocket URL');
-      return 'ws://localhost:5000/ws';
+      return 'ws://localhost:3000/ws';
     } else {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${protocol}//${window.location.host}/ws`;
-      console.log(`Using standard WebSocket URL: ${url}`);
-      return url;
+      // Special handling for Replit environment (using standard port configurations)
+      if (window.location.hostname.includes('replit') || window.location.hostname.includes('.repl.co')) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = `${protocol}//${window.location.host}/ws`;
+        console.log(`Using Replit WebSocket URL: ${url}`);
+        return url;
+      } else {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = `${protocol}//${window.location.host}/ws`;
+        console.log(`Using standard WebSocket URL: ${url}`);
+        return url;
+      }
     }
   }, []);
   

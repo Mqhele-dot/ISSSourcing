@@ -6,6 +6,8 @@ import { storage } from "./storage";
 import { pool } from "./db";
 import { initializeDatabase } from "./init-db";
 import { PoolClient } from '@neondatabase/serverless';
+import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
 
 // Test database connection and initialize schema on startup
 pool.connect()
@@ -147,10 +149,8 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 5000;
+  // Serve the app on port 3000
+  const port = 3000;
   server.listen({
     port,
     host: "0.0.0.0",
@@ -159,4 +159,6 @@ app.use((req, res, next) => {
     log(`serving on port ${port}`);
     log(`WebSocket server for real-time inventory sync is active`);
   });
+  
+
 })();

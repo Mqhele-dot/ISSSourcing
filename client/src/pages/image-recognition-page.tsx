@@ -35,18 +35,11 @@ export default function ImageRecognitionPage() {
 
   // Handle requesting API key
   const handleRequestApiKey = () => {
-    ask_secrets(['OPENAI_API_KEY'], 'To enable AI-powered image recognition, we need an OpenAI API key with vision capabilities.')
-      .then(() => {
-        // After API key is set, refresh the status
-        window.location.reload();
-      })
-      .catch(error => {
-        toast({
-          title: 'API Key Request Failed',
-          description: error.message || 'Could not request API key',
-          variant: 'destructive',
-        });
-      });
+    toast({
+      title: 'API Key Required',
+      description: 'To enable AI-powered image recognition, you need to set the OPENAI_API_KEY environment variable.',
+      variant: 'default',
+    });
   };
 
   return (
