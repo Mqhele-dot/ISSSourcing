@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
-import { Redirect } from "wouter";
+import { Loader2, KeyRound, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Redirect, useLocation } from "wouter";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,10 +10,71 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { userLoginSchema, userRegistrationSchema } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { z } from "zod";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
+
+// Schema for password reset request
+const passwordResetSchema = z.object({
+  email: z.string().email({ message: "Please enter a valid email address" })
+});
+
+// Schema for password reset confirmation
+const resetConfirmSchema = z.object({
+  newPassword: z.string().min(8, { message: "Password must be at least 8 characters long" }),
+  confirmNewPassword: z.string().min(8)
+}).refine(data => data.newPassword === data.confirmNewPassword, {
+  message: "Passwords do not match",
+  path: ["confirmNewPassword"]
+});
+
+// Schema for two-factor authentication
+const twoFactorAuthSchema = z.object({
+  totpCode: z.string().min(6, { message: "Code must be at least 6 digits" })
+});
 
 export default function AuthPage() {
   const [activeTab, setActiveTab] = useState<string>("login");
+  const [isPasswordResetMode, setIsPasswordResetMode] = useState(false);
+  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false);
+  const [twoFactorData, setTwoFactorData] = useState<any>(null);
   const { user, loginMutation, registerMutation } = useAuth();
+  const { toast } = useToast();
+  const [location] = useLocation();
+
+  // Check for URL params on component load
+  useEffect(() => {
+    // Check for password reset token in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    const verified = urlParams.get('verified');
+    
+    if (token) {
+      setResetToken(token);
+      setIsPasswordResetMode(true);
+    }
+    
+    if (verified === 'true') {
+      setEmailVerified(true);
+      setActiveTab("login");
+      toast({
+        title: "Email Verified",
+        description: "Your email has been successfully verified. You can now log in.",
+        variant: "success"
+      });
+    }
+  }, [toast]);
 
   // Redirect if user is already logged in
   if (user) {
@@ -21,27 +82,76 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex min-h-screen">
       {/* Left column - Form */}
       <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-8">
         <div className="max-w-md w-full">
           <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">Inventory Manager</h1>
           <p className="text-muted-foreground mb-8">Sign in to access your inventory dashboard</p>
           
-          <Tabs defaultValue="login" value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-8">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="register">Register</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="login">
-              <LoginForm />
-            </TabsContent>
-            
-            <TabsContent value="register">
-              <RegisterForm onSuccess={() => setActiveTab("login")} />
-            </TabsContent>
-          </Tabs>
+          {/* Email verification success message */}
+          {emailVerified && (
+            <Alert className="mb-6 bg-green-50 border-green-200">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <AlertTitle className="text-green-600">Email Verified</AlertTitle>
+              <AlertDescription className="text-green-600">
+                Your email has been successfully verified. You can now log in.
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {/* Two-factor authentication dialog */}
+          {twoFactorRequired && (
+            <TwoFactorAuthForm 
+              isOpen={twoFactorRequired} 
+              onClose={() => setTwoFactorRequired(false)}
+              userData={twoFactorData}
+            />
+          )}
+          
+          {isPasswordResetMode && resetToken ? (
+            <PasswordResetConfirmForm token={resetToken} onComplete={() => {
+              setIsPasswordResetMode(false);
+              setResetToken(null);
+              setActiveTab("login");
+            }} />
+          ) : (
+            <>
+              {!isPasswordResetMode ? (
+                <Tabs defaultValue="login" value={activeTab} onValueChange={setActiveTab} className="w-full">
+                  <TabsList className="grid w-full grid-cols-2 mb-8">
+                    <TabsTrigger value="login">Login</TabsTrigger>
+                    <TabsTrigger value="register">Register</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="login">
+                    <LoginForm 
+                      onForgotPassword={() => setIsPasswordResetMode(true)}
+                      onTwoFactorRequired={(data) => {
+                        setTwoFactorRequired(true);
+                        setTwoFactorData(data);
+                      }}
+                    />
+                  </TabsContent>
+                  
+                  <TabsContent value="register">
+                    <RegisterForm onSuccess={(data) => {
+                      setActiveTab("login");
+                      if (data.requiresEmailVerification) {
+                        toast({
+                          title: "Registration Successful",
+                          description: "Please check your email to verify your account.",
+                          variant: "success"
+                        });
+                      }
+                    }} />
+                  </TabsContent>
+                </Tabs>
+              ) : (
+                <PasswordResetRequestForm onCancel={() => setIsPasswordResetMode(false)} />
+              )}
+            </>
+          )}
         </div>
       </div>
       
@@ -72,8 +182,17 @@ export default function AuthPage() {
   );
 }
 
-function LoginForm() {
+function LoginForm({ 
+  onForgotPassword, 
+  onTwoFactorRequired 
+}: { 
+  onForgotPassword: () => void,
+  onTwoFactorRequired: (data: any) => void
+}) {
   const { loginMutation } = useAuth();
+  const { toast } = useToast();
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [requiresEmailVerification, setRequiresEmailVerification] = useState(false);
   
   const form = useForm({
     resolver: zodResolver(userLoginSchema),
@@ -84,8 +203,31 @@ function LoginForm() {
     }
   });
   
-  const onSubmit = form.handleSubmit((data) => {
-    loginMutation.mutate(data);
+  const onSubmit = form.handleSubmit(async (data) => {
+    try {
+      setLoginError(null);
+      setRequiresEmailVerification(false);
+      
+      loginMutation.mutate(data, {
+        onSuccess: (userData) => {
+          if (userData.requiresTwoFactor) {
+            onTwoFactorRequired(userData);
+          }
+        },
+        onError: (error: any) => {
+          if (error.response?.data) {
+            setLoginError(error.response.data.message);
+            if (error.response.data.requiresEmailVerification) {
+              setRequiresEmailVerification(true);
+            }
+          } else {
+            setLoginError("An error occurred during login. Please try again.");
+          }
+        }
+      });
+    } catch (error) {
+      setLoginError("An error occurred during login. Please try again.");
+    }
   });
   
   return (
@@ -95,6 +237,32 @@ function LoginForm() {
         <CardDescription>Enter your credentials to sign in to your account</CardDescription>
       </CardHeader>
       <CardContent>
+        {loginError && (
+          <Alert className="mb-4 bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertTitle className="text-red-600">Login Failed</AlertTitle>
+            <AlertDescription className="text-red-600">
+              {loginError}
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {requiresEmailVerification && (
+          <Alert className="mb-4 bg-amber-50 border-amber-200">
+            <Mail className="h-4 w-4 text-amber-600" />
+            <AlertTitle className="text-amber-600">Email Verification Required</AlertTitle>
+            <AlertDescription className="text-amber-600">
+              Please check your email for the verification link. If you didn't receive an email, you can <Button variant="link" className="p-0 h-auto text-amber-600 font-semibold" onClick={() => {
+                // Request email verification resend
+                toast({
+                  title: "Verification Email Sent",
+                  description: "If your email is registered, you will receive a new verification email.",
+                });
+              }}>click here</Button> to request a new one.
+            </AlertDescription>
+          </Alert>
+        )}
+        
         <Form {...form}>
           <form onSubmit={onSubmit} className="space-y-4">
             <FormField
@@ -125,28 +293,32 @@ function LoginForm() {
               )}
             />
             
-            <FormField
-              control={form.control}
-              name="rememberMe"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-4">
-                  <FormControl>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        checked={field.value}
-                        onChange={field.onChange}
+            <div className="flex justify-between items-center">
+              <FormField
+                control={form.control}
+                name="rememberMe"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                    <FormControl>
+                      <Checkbox 
+                        checked={field.value} 
+                        onCheckedChange={field.onChange} 
+                        id="rememberMe"
                       />
-                      <label htmlFor="rememberMe" className="text-sm font-medium text-muted-foreground">
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel htmlFor="rememberMe" className="text-sm font-medium text-muted-foreground">
                         Remember me
-                      </label>
+                      </FormLabel>
                     </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                  </FormItem>
+                )}
+              />
+              
+              <Button variant="link" className="p-0" onClick={onForgotPassword}>
+                Forgot password?
+              </Button>
+            </div>
             
             <Button 
               type="submit" 
@@ -169,8 +341,9 @@ function LoginForm() {
   );
 }
 
-function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
+function RegisterForm({ onSuccess }: { onSuccess: (data: any) => void }) {
   const { registerMutation } = useAuth();
+  const [registerError, setRegisterError] = useState<string | null>(null);
   
   const form = useForm({
     resolver: zodResolver(userRegistrationSchema),
@@ -184,10 +357,23 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
     }
   });
   
-  const onSubmit = form.handleSubmit((data) => {
-    registerMutation.mutate(data, {
-      onSuccess
-    });
+  const onSubmit = form.handleSubmit(async (data) => {
+    try {
+      setRegisterError(null);
+      
+      registerMutation.mutate(data, {
+        onSuccess: (response) => onSuccess(response),
+        onError: (error: any) => {
+          if (error.response?.data) {
+            setRegisterError(error.response.data.message);
+          } else {
+            setRegisterError("An error occurred during registration. Please try again.");
+          }
+        }
+      });
+    } catch (error) {
+      setRegisterError("An error occurred during registration. Please try again.");
+    }
   });
   
   return (
@@ -197,6 +383,16 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         <CardDescription>Enter your details to create a new account</CardDescription>
       </CardHeader>
       <CardContent>
+        {registerError && (
+          <Alert className="mb-4 bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertTitle className="text-red-600">Registration Failed</AlertTitle>
+            <AlertDescription className="text-red-600">
+              {registerError}
+            </AlertDescription>
+          </Alert>
+        )}
+        
         <Form {...form}>
           <form onSubmit={onSubmit} className="space-y-4">
             <FormField
@@ -290,6 +486,375 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         By creating an account, you agree to our Terms of Service and Privacy Policy
       </CardFooter>
     </Card>
+  );
+}
+
+function PasswordResetRequestForm({ onCancel }: { onCancel: () => void }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const { toast } = useToast();
+  
+  const form = useForm({
+    resolver: zodResolver(passwordResetSchema),
+    defaultValues: {
+      email: ""
+    }
+  });
+  
+  const onSubmit = form.handleSubmit(async (data) => {
+    try {
+      setIsSubmitting(true);
+      
+      const response = await apiRequest("POST", "/api/password-reset-request", data);
+      
+      if (response.ok) {
+        setIsSuccess(true);
+        toast({
+          title: "Reset Email Sent",
+          description: "If your email is registered, you will receive a password reset link.",
+          variant: "success"
+        });
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Error",
+          description: errorData.message || "An error occurred. Please try again.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "An error occurred. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  });
+  
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Reset Password</CardTitle>
+        <CardDescription>
+          Enter your email address and we'll send you a link to reset your password
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isSuccess ? (
+          <div className="space-y-4">
+            <Alert className="bg-green-50 border-green-200">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <AlertTitle className="text-green-600">Email Sent</AlertTitle>
+              <AlertDescription className="text-green-600">
+                If your email is registered, you will receive a password reset link shortly.
+              </AlertDescription>
+            </Alert>
+            <Button className="w-full" onClick={onCancel}>
+              Return to Login
+            </Button>
+          </div>
+        ) : (
+          <Form {...form}>
+            <form onSubmit={onSubmit} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="Enter your email" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="flex gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="w-1/2"
+                  onClick={onCancel}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  className="w-1/2"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    "Send Reset Link"
+                  )}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PasswordResetConfirmForm({ token, onComplete }: { token: string, onComplete: () => void }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  
+  const form = useForm({
+    resolver: zodResolver(resetConfirmSchema),
+    defaultValues: {
+      newPassword: "",
+      confirmNewPassword: ""
+    }
+  });
+  
+  const onSubmit = form.handleSubmit(async (data) => {
+    try {
+      setIsSubmitting(true);
+      setError(null);
+      
+      const response = await apiRequest("POST", "/api/password-reset", {
+        token,
+        newPassword: data.newPassword
+      });
+      
+      if (response.ok) {
+        setIsSuccess(true);
+        toast({
+          title: "Password Reset Successful",
+          description: "Your password has been reset. You can now log in with your new password.",
+          variant: "success"
+        });
+        
+        // Delay to show success message
+        setTimeout(onComplete, 2000);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.message || "Password reset failed. The token may be invalid or expired.");
+      }
+    } catch (error) {
+      setError("An error occurred. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  });
+  
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Reset Password</CardTitle>
+        <CardDescription>
+          Create a new password for your account
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {error && (
+          <Alert className="mb-4 bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertTitle className="text-red-600">Reset Failed</AlertTitle>
+            <AlertDescription className="text-red-600">
+              {error}
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {isSuccess ? (
+          <Alert className="mb-4 bg-green-50 border-green-200">
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <AlertTitle className="text-green-600">Password Reset</AlertTitle>
+            <AlertDescription className="text-green-600">
+              Your password has been reset successfully. You will be redirected to the login page.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Form {...form}>
+            <form onSubmit={onSubmit} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="newPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>New Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="Enter new password" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="confirmNewPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Confirm New Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="Confirm new password" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <Button 
+                type="submit" 
+                className="w-full"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Resetting...
+                  </>
+                ) : (
+                  "Reset Password"
+                )}
+              </Button>
+            </form>
+          </Form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TwoFactorAuthForm({ 
+  isOpen, 
+  onClose, 
+  userData 
+}: { 
+  isOpen: boolean, 
+  onClose: () => void, 
+  userData: any 
+}) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  const { loginMutation } = useAuth();
+  
+  const form = useForm({
+    resolver: zodResolver(twoFactorAuthSchema),
+    defaultValues: {
+      totpCode: ""
+    }
+  });
+  
+  const onSubmit = form.handleSubmit(async (data) => {
+    try {
+      setIsSubmitting(true);
+      setError(null);
+      
+      const response = await apiRequest("POST", "/api/2fa/verify", {
+        totpCode: data.totpCode
+      });
+      
+      if (response.ok) {
+        const responseData = await response.json();
+        
+        toast({
+          title: "Verification Successful",
+          description: "Two-factor authentication successful",
+          variant: "success"
+        });
+        
+        // Update the auth state with the fully authenticated user
+        if (responseData.user) {
+          loginMutation.mutate({ 
+            username: userData.username,
+            password: "VERIFIED_BY_2FA", // Dummy value, won't be used
+            twoFactorVerified: true
+          }, {
+            onSuccess: () => {
+              onClose();
+            }
+          });
+        }
+      } else {
+        const errorData = await response.json();
+        setError(errorData.message || "Invalid verification code. Please try again.");
+        form.reset();
+      }
+    } catch (error) {
+      setError("An error occurred. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  });
+  
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) onClose();
+    }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Two-Factor Authentication</DialogTitle>
+          <DialogDescription>
+            Enter the verification code from your authenticator app
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4">
+          {error && (
+            <Alert className="mb-4 bg-red-50 border-red-200">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <AlertTitle className="text-red-600">Verification Failed</AlertTitle>
+              <AlertDescription className="text-red-600">
+                {error}
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          <Form {...form}>
+            <form onSubmit={onSubmit} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="totpCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Verification Code</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Enter 6-digit code" 
+                        {...field} 
+                        maxLength={6}
+                        autoFocus
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <Button 
+                type="submit" 
+                className="w-full"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  "Verify"
+                )}
+              </Button>
+            </form>
+          </Form>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

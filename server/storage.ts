@@ -108,6 +108,7 @@ export interface IStorage {
   getVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined>;
   useVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined>;
   markEmailAsVerified(userId: number): Promise<User | undefined>;
+  verifyEmail(token: string): Promise<boolean>;
   
   // Password reset methods
   createPasswordResetToken(email: string): Promise<UserVerificationToken | null>;
@@ -5606,6 +5607,55 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db.select().from(users).where(eq(users.username, username));
     return user;
   }
+  
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async getUserByResetToken(token: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users)
+      .where(
+        and(
+          eq(users.passwordResetToken, token),
+          isNotNull(users.passwordResetExpires),
+          gt(users.passwordResetExpires, new Date())
+        )
+      );
+    return user;
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const [newUser] = await db.insert(users).values(user).returning();
+    
+    // Create a welcome verification token
+    await this.createVerificationToken(newUser.id, 'email');
+    
+    return newUser;
+  }
+
+  async updateUser(id: number, userData: Partial<InsertUser>): Promise<User | undefined> {
+    const [updatedUser] = await db
+      .update(users)
+      .set({ ...userData, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+      
+    return updatedUser;
+  }
+  
+  async updateProfilePicture(userId: number, profilePictureUrl: string | null): Promise<User> {
+    const [updatedUser] = await db
+      .update(users)
+      .set({ 
+        profilePicture: profilePictureUrl,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId))
+      .returning();
+      
+    return updatedUser;
+  }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
@@ -6001,68 +6051,563 @@ export class DatabaseStorage implements IStorage {
     }
   }
   
-  async createVerificationToken(userId: number, tokenType: string, expiresInMinutes?: number): Promise<UserVerificationToken> {
-    return this.memStorage.createVerificationToken(userId, tokenType, expiresInMinutes);
+  async createVerificationToken(userId: number, tokenType: string, expiresInMinutes: number = 60): Promise<UserVerificationToken> {
+    try {
+      // Generate a random token
+      const token = crypto.randomBytes(32).toString('hex');
+      
+      // Calculate expiry (default to 60 minutes if not specified)
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + expiresInMinutes);
+      
+      // Create the token in the database
+      const [verificationToken] = await db
+        .insert(userVerificationTokens)
+        .values({
+          userId,
+          token,
+          type: tokenType,
+          expiresAt,
+          createdAt: new Date(),
+          used: false
+        })
+        .returning();
+        
+      return verificationToken;
+    } catch (error) {
+      console.error("Error creating verification token:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.createVerificationToken(userId, tokenType, expiresInMinutes);
+    }
   }
   
   async getVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined> {
-    return this.memStorage.getVerificationToken(token, type);
+    try {
+      const [verificationToken] = await db
+        .select()
+        .from(userVerificationTokens)
+        .where(
+          and(
+            eq(userVerificationTokens.token, token),
+            eq(userVerificationTokens.type, type),
+            eq(userVerificationTokens.used, false)
+          )
+        );
+        
+      return verificationToken;
+    } catch (error) {
+      console.error("Error getting verification token:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.getVerificationToken(token, type);
+    }
   }
   
   async useVerificationToken(token: string, type: string): Promise<UserVerificationToken | undefined> {
-    return this.memStorage.useVerificationToken(token, type);
+    try {
+      // Get the token
+      const verificationToken = await this.getVerificationToken(token, type);
+      
+      if (!verificationToken) {
+        return undefined;
+      }
+      
+      // Mark token as used
+      const [updatedToken] = await db
+        .update(userVerificationTokens)
+        .set({
+          used: true,
+          usedAt: new Date()
+        })
+        .where(eq(userVerificationTokens.id, verificationToken.id))
+        .returning();
+        
+      return updatedToken;
+    } catch (error) {
+      console.error("Error using verification token:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.useVerificationToken(token, type);
+    }
   }
   
   async markEmailAsVerified(userId: number): Promise<User | undefined> {
-    return this.memStorage.markEmailAsVerified(userId);
+    try {
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          emailVerified: true,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId))
+        .returning();
+        
+      return updatedUser;
+    } catch (error) {
+      console.error("Error marking email as verified:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.markEmailAsVerified(userId);
+    }
   }
   
   async createPasswordResetToken(email: string): Promise<UserVerificationToken | null> {
-    return this.memStorage.createPasswordResetToken(email);
+    try {
+      // Find the user by email
+      const user = await this.getUserByEmail(email);
+      
+      if (!user) {
+        return null;
+      }
+      
+      // Create a token with 15 minute expiry
+      const token = await this.createVerificationToken(user.id, 'password_reset', 15);
+      
+      // Update the user with the reset token
+      await this.updateUser(user.id, {
+        passwordResetToken: token.token,
+        passwordResetExpires: token.expiresAt
+      });
+      
+      return token;
+    } catch (error) {
+      console.error("Error creating password reset token:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.createPasswordResetToken(email);
+    }
   }
   
   async resetPassword(token: string, newPassword: string): Promise<boolean> {
-    return this.memStorage.resetPassword(token, newPassword);
+    try {
+      // Find the user by reset token
+      const user = await this.getUserByResetToken(token);
+      
+      if (!user) {
+        return false;
+      }
+      
+      // Hash the new password
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.pbkdf2Sync(newPassword, salt, 10000, 64, 'sha512').toString('hex');
+      const hashedPassword = `${hash}.${salt}`;
+      
+      // Update the user's password and clear the reset token
+      await this.updateUser(user.id, {
+        password: hashedPassword,
+        passwordResetToken: null,
+        passwordResetExpires: null,
+        lastPasswordChange: new Date(),
+        failedLoginAttempts: 0,
+        accountLocked: false
+      });
+      
+      // Mark the password reset token as used
+      const verificationToken = await this.getVerificationToken(token, 'password_reset');
+      if (verificationToken) {
+        await this.useVerificationToken(token, 'password_reset');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("Error resetting password:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.resetPassword(token, newPassword);
+    }
+  }
+  
+  async verifyEmail(token: string): Promise<boolean> {
+    try {
+      // Get the verification token
+      const verificationToken = await this.getVerificationToken(token, 'email');
+      
+      if (!verificationToken) {
+        return false;
+      }
+      
+      // Check if token is expired
+      const now = new Date();
+      if (verificationToken.expiresAt < now) {
+        return false;
+      }
+      
+      // Mark user's email as verified
+      await this.markEmailAsVerified(verificationToken.userId);
+      
+      // Mark token as used
+      await this.useVerificationToken(token, 'email');
+      
+      // Log the verification
+      await this.logUserAccess(verificationToken.userId, 'email_verified');
+      
+      return true;
+    } catch (error) {
+      console.error("Error verifying email:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.verifyEmail ? this.memStorage.verifyEmail(token) : false;
+    }
   }
   
   async changePassword(userId: number, currentPassword: string, newPassword: string): Promise<boolean> {
-    return this.memStorage.changePassword(userId, currentPassword, newPassword);
+    try {
+      const user = await this.getUser(userId);
+      
+      if (!user) {
+        return false;
+      }
+      
+      // Verify current password
+      const [currentHash, currentSalt] = user.password.split('.');
+      const currentBuffer = Buffer.from(currentHash, 'hex');
+      const suppliedBuffer = crypto.pbkdf2Sync(currentPassword, currentSalt, 10000, 64, 'sha512');
+      
+      if (!crypto.timingSafeEqual(currentBuffer, suppliedBuffer)) {
+        return false;
+      }
+      
+      // Hash the new password
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.pbkdf2Sync(newPassword, salt, 10000, 64, 'sha512').toString('hex');
+      const hashedPassword = `${hash}.${salt}`;
+      
+      // Update the user's password
+      await this.updateUser(userId, {
+        password: hashedPassword,
+        lastPasswordChange: new Date()
+      });
+      
+      return true;
+    } catch (error) {
+      console.error("Error changing password:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.changePassword(userId, currentPassword, newPassword);
+    }
   }
   
   async generateTwoFactorSecret(userId: number): Promise<string> {
-    return this.memStorage.generateTwoFactorSecret(userId);
+    try {
+      // Import speakeasy here to avoid global import issues
+      const speakeasy = require('speakeasy');
+      
+      // Generate a secret
+      const secret = speakeasy.generateSecret({
+        name: `Inventory Manager (User ${userId})`
+      });
+      
+      // Save the secret to the user's record
+      await this.updateUser(userId, {
+        twoFactorSecret: secret.base32
+      });
+      
+      return secret.base32;
+    } catch (error) {
+      console.error("Error generating 2FA secret:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.generateTwoFactorSecret(userId);
+    }
   }
   
   async enableTwoFactorAuth(userId: number, verified: boolean): Promise<User | undefined> {
-    return this.memStorage.enableTwoFactorAuth(userId, verified);
+    try {
+      // Update the user to enable 2FA
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          twoFactorEnabled: verified,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId))
+        .returning();
+        
+      return updatedUser;
+    } catch (error) {
+      console.error("Error enabling 2FA:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.enableTwoFactorAuth(userId, verified);
+    }
   }
   
   async disableTwoFactorAuth(userId: number): Promise<User | undefined> {
-    return this.memStorage.disableTwoFactorAuth(userId);
+    try {
+      // Update the user to disable 2FA and clear the secret
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          twoFactorEnabled: false,
+          twoFactorSecret: null,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId))
+        .returning();
+        
+      return updatedUser;
+    } catch (error) {
+      console.error("Error disabling 2FA:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.disableTwoFactorAuth(userId);
+    }
+  }
+  
+  async getFailedLoginAttempts(userId: number, hours: number = 24): Promise<UserAccessLog[]> {
+    try {
+      // Calculate the time window
+      const cutoffTime = new Date();
+      cutoffTime.setHours(cutoffTime.getHours() - hours);
+      
+      // Get the failed login attempts
+      const logs = await db
+        .select()
+        .from(userAccessLogs)
+        .where(
+          and(
+            eq(userAccessLogs.userId, userId),
+            eq(userAccessLogs.action, 'login_failure'),
+            gt(userAccessLogs.timestamp, cutoffTime)
+          )
+        )
+        .orderBy(desc(userAccessLogs.timestamp));
+        
+      return logs;
+    } catch (error) {
+      console.error("Error getting failed login attempts:", error);
+      return [];
+    }
+  }
+  
+  async hasUserUsedIpBefore(userId: number, ipAddress: string): Promise<boolean> {
+    try {
+      // Look for previous successful logins with this IP
+      const [log] = await db
+        .select()
+        .from(userAccessLogs)
+        .where(
+          and(
+            eq(userAccessLogs.userId, userId),
+            eq(userAccessLogs.action, 'login_success'),
+            eq(userAccessLogs.ipAddress, ipAddress)
+          )
+        )
+        .limit(1);
+        
+      return !!log;
+    } catch (error) {
+      console.error("Error checking if user has used IP before:", error);
+      return false;
+    }
+  }
+  
+  async hasUserUsedUserAgentBefore(userId: number, userAgent: string): Promise<boolean> {
+    try {
+      // Look for previous successful logins with this user agent
+      const [log] = await db
+        .select()
+        .from(userAccessLogs)
+        .where(
+          and(
+            eq(userAccessLogs.userId, userId),
+            eq(userAccessLogs.action, 'login_success'),
+            eq(userAccessLogs.userAgent, userAgent)
+          )
+        )
+        .limit(1);
+        
+      return !!log;
+    } catch (error) {
+      console.error("Error checking if user has used user agent before:", error);
+      return false;
+    }
   }
   
   async verifyTwoFactorToken(userId: number, token: string): Promise<boolean> {
-    return this.memStorage.verifyTwoFactorToken(userId, token);
+    try {
+      // Import speakeasy here to avoid global import issues
+      const speakeasy = require('speakeasy');
+      
+      // Get the user record to retrieve their secret
+      const user = await this.getUser(userId);
+      
+      if (!user || !user.twoFactorSecret) {
+        return false;
+      }
+      
+      // Verify the token against the user's secret
+      const verified = speakeasy.totp.verify({
+        secret: user.twoFactorSecret,
+        encoding: 'base32',
+        token: token,
+        window: 1 // Allow a time skew of ±30 seconds
+      });
+      
+      // If verification succeeds, update the user's record to mark 2FA as enabled
+      if (verified) {
+        // Log successful 2FA verification
+        await this.logUserAccess(userId, 'two_factor_verification_success');
+        return true;
+      } else {
+        // Log failed 2FA verification
+        await this.logUserAccess(userId, 'two_factor_verification_failure');
+        return false;
+      }
+    } catch (error) {
+      console.error("Error verifying 2FA token:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.verifyTwoFactorToken(userId, token);
+    }
   }
   
-  async createSession(userId: number, ipAddress?: string, userAgent?: string, expiresInDays?: number): Promise<Session> {
-    return this.memStorage.createSession(userId, ipAddress, userAgent, expiresInDays);
+  async createSession(userId: number, ipAddress?: string, userAgent?: string, expiresInDays: number = 30): Promise<Session> {
+    try {
+      // Generate a session token
+      const token = crypto.randomBytes(32).toString('hex');
+      
+      // Calculate session expiry (default to 30 days if not specified)
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+      
+      // Create the session in the database
+      const [session] = await db
+        .insert(sessions)
+        .values({
+          userId,
+          token,
+          ipAddress: ipAddress || '127.0.0.1',
+          userAgent: userAgent || 'Unknown',
+          expiresAt,
+          createdAt: new Date(),
+          lastActiveAt: new Date(),
+          isActive: true
+        })
+        .returning();
+      
+      // Log session creation
+      await this.logUserAccess(userId, 'session_created', { sessionId: session.id }, ipAddress, userAgent);
+      
+      return session;
+    } catch (error) {
+      console.error("Error creating session:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.createSession(userId, ipAddress, userAgent, expiresInDays);
+    }
   }
   
   async getSession(token: string): Promise<Session | undefined> {
-    return this.memStorage.getSession(token);
+    try {
+      // Get the session
+      const [session] = await db
+        .select()
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.token, token),
+            eq(sessions.isActive, true),
+            gt(sessions.expiresAt, new Date())
+          )
+        );
+      
+      // If session exists, update lastActiveAt timestamp
+      if (session) {
+        await db
+          .update(sessions)
+          .set({
+            lastActiveAt: new Date()
+          })
+          .where(eq(sessions.id, session.id));
+      }
+      
+      return session;
+    } catch (error) {
+      console.error("Error getting session:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.getSession(token);
+    }
   }
   
   async invalidateSession(token: string): Promise<boolean> {
-    return this.memStorage.invalidateSession(token);
+    try {
+      // Get the session to log the action
+      const [session] = await db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.token, token));
+      
+      if (!session) {
+        return false;
+      }
+      
+      // Mark session as inactive
+      await db
+        .update(sessions)
+        .set({
+          isActive: false
+        })
+        .where(eq(sessions.id, session.id));
+      
+      // Log the session invalidation
+      await this.logUserAccess(session.userId, 'session_invalidated', { sessionId: session.id });
+      
+      return true;
+    } catch (error) {
+      console.error("Error invalidating session:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.invalidateSession(token);
+    }
   }
   
   async invalidateAllUserSessions(userId: number): Promise<boolean> {
-    return this.memStorage.invalidateAllUserSessions(userId);
+    try {
+      // Mark all user's sessions as inactive
+      await db
+        .update(sessions)
+        .set({
+          isActive: false
+        })
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            eq(sessions.isActive, true)
+          )
+        );
+      
+      // Log the action
+      await this.logUserAccess(userId, 'all_sessions_invalidated');
+      
+      return true;
+    } catch (error) {
+      console.error("Error invalidating all user sessions:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.invalidateAllUserSessions(userId);
+    }
   }
   
   async cleanExpiredSessions(): Promise<void> {
-    return this.memStorage.cleanExpiredSessions();
+    try {
+      // Get the expired sessions for logging
+      const expiredSessions = await db
+        .select()
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.isActive, true),
+            lt(sessions.expiresAt, new Date())
+          )
+        );
+      
+      // Mark all expired sessions as inactive
+      await db
+        .update(sessions)
+        .set({
+          isActive: false
+        })
+        .where(
+          and(
+            eq(sessions.isActive, true),
+            lt(sessions.expiresAt, new Date())
+          )
+        );
+      
+      // Log the number of expired sessions cleaned
+      console.log(`Cleaned ${expiredSessions.length} expired sessions`);
+    } catch (error) {
+      console.error("Error cleaning expired sessions:", error);
+      // Fall back to memory storage if database operation fails
+      return this.memStorage.cleanExpiredSessions();
+    }
   }
   
   async getAllPermissions(): Promise<Permission[]> {

@@ -8,6 +8,11 @@ import { User, type UserLogin, type UserRegistration } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+type VerificationResponse = {
+  success: boolean;
+  message: string;
+};
+
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
@@ -15,6 +20,7 @@ type AuthContextType = {
   loginMutation: UseMutationResult<User, Error, UserLogin>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<User, Error, UserRegistration>;
+  verifyEmailMutation: UseMutationResult<VerificationResponse, Error, { token: string }>;
 };
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -93,6 +99,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     },
   });
+  
+  const verifyEmailMutation = useMutation({
+    mutationFn: async ({ token }: { token: string }) => {
+      const res = await apiRequest("POST", "/api/verify-email", { token });
+      const data = await res.json();
+      return data as VerificationResponse;
+    },
+    onSuccess: (data: VerificationResponse) => {
+      toast({
+        title: "Email Verified",
+        description: data.message,
+        variant: "default",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Verification Failed",
+        description: error.message || "Could not verify your email address",
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <AuthContext.Provider
@@ -103,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginMutation,
         logoutMutation,
         registerMutation,
+        verifyEmailMutation,
       }}
     >
       {children}
