@@ -38,7 +38,20 @@ export default function StockAlerts() {
   // Reorder item mutation
   const reorderMutation = useMutation({
     mutationFn: async (data: { itemId: number; quantity: number }) => {
-      return apiRequest("POST", "/api/reorder-requests", data);
+      // Clean up the data to match the expected schema
+      const validData = {
+        itemId: data.itemId,
+        quantity: data.quantity
+      };
+      
+      const response = await apiRequest("POST", "/api/reorder-requests", validData);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to create reorder request");
+      }
+      
+      return response;
     },
     onSuccess: async () => {
       // Invalidate and refetch reorder requests
@@ -49,7 +62,8 @@ export default function StockAlerts() {
         description: "A reorder request has been created successfully.",
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      console.error("Reorder error:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to create reorder request",

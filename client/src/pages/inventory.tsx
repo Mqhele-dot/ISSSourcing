@@ -169,7 +169,24 @@ export default function Inventory() {
       supplierId?: number | null;
       notes?: string | null;
     }) => {
-      return apiRequest("POST", "/api/reorder-requests", data);
+      // Clean up the data to match the expected schema
+      const validData = {
+        itemId: data.itemId,
+        quantity: data.quantity,
+        // Only include these if they're not null
+        ...(data.warehouseId ? { warehouseId: data.warehouseId } : {}),
+        ...(data.supplierId ? { supplierId: data.supplierId } : {}),
+        ...(data.notes ? { notes: data.notes } : {})
+      };
+      
+      const response = await apiRequest("POST", "/api/reorder-requests", validData);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to create reorder request");
+      }
+      
+      return response;
     },
     onSuccess: async () => {
       // Invalidate and refetch reorder requests
@@ -180,7 +197,8 @@ export default function Inventory() {
         description: "A reorder request has been created successfully.",
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      console.error("Reorder error:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to create reorder request",
