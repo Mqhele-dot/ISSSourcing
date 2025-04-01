@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { storage } from '../storage';
+import * as openaiService from './openai-service';
 
 // Define a type for recognized items
 export interface RecognizedItem {
@@ -42,83 +43,115 @@ export interface RecognizedItem {
   }>;
 }
 
-// This would typically connect to a real AI service, but for this prototype
-// we'll use a simulated implementation that returns mock data with random variations
+/**
+ * Get the status of the image recognition service
+ * @returns Information about the service status
+ */
+export function getServiceStatus() {
+  return {
+    status: openaiService.getOpenAIStatus()
+  };
+}
+
+/**
+ * Analyze a product image to extract information
+ * 
+ * This function serves as the entry point for image recognition.
+ * If OpenAI is configured, it will use actual AI services.
+ * Otherwise, it falls back to simulation mode.
+ * 
+ * @param imageBuffer - The image data to analyze
+ * @returns RecognizedItem with product information
+ */
 export async function analyzeProductImage(imageBuffer: Buffer): Promise<RecognizedItem> {
-  // In a real implementation, this function would:
-  // 1. Call an AI vision API (like Google Cloud Vision, Azure Computer Vision, etc.)
-  // 2. Process the response to extract relevant product information
-  // 3. Return structured data about the recognized product
-  
   try {
     console.log(`Analyzing image of size: ${imageBuffer.length} bytes`);
     
-    // Simulate some processing time for realism
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // Check if OpenAI is configured
+    const status = openaiService.getOpenAIStatus();
     
-    // For the prototype, fetch a random existing product from the database
-    // to simulate "recognition"
-    const items = await storage.getAllInventoryItems();
-    
-    if (items.length === 0) {
-      // If no items exist yet, return a generic placeholder suggestion
-      return generatePlaceholderItem();
+    if (status.configured) {
+      // Use actual AI analysis if OpenAI is configured
+      console.log('Using OpenAI for image analysis');
+      return await openaiService.analyzeProductImage(imageBuffer);
+    } else {
+      // Fall back to simulation mode
+      console.log('OpenAI not configured. Using simulation mode for image analysis');
+      return await simulateImageAnalysis(imageBuffer);
     }
-    
-    // Get a random item from the database to simulate recognition
-    const randomIndex = Math.floor(Math.random() * items.length);
-    const recognizedItem = items[randomIndex];
-    
-    // Get category name if available
-    let categoryName: string | undefined;
-    if (recognizedItem.categoryId) {
-      const category = await storage.getCategory(recognizedItem.categoryId);
-      categoryName = category?.name;
-    }
-    
-    // Find some "similar" items for recommendations
-    const similarItems = items
-      .filter(item => item.id !== recognizedItem.id)
-      .sort(() => 0.5 - Math.random()) // Shuffle array
-      .slice(0, 3) // Take first 3 items
-      .map(item => ({
-        id: item.id,
-        name: item.name,
-        similarity: Number((0.5 + Math.random() * 0.4).toFixed(2)) // Random similarity between 0.5 and 0.9
-      }));
-    
-    // Create the response with some added "noise" to simulate real AI recognition
-    // which isn't always 100% accurate
-    return {
-      name: recognizedItem.name,
-      sku: recognizedItem.sku,
-      description: recognizedItem.description,
-      price: recognizedItem.price,
-      quantity: 1, // Default suggestion for quantity is 1
-      category: categoryName,
-      categoryId: recognizedItem.categoryId,
-      barcode: recognizedItem.barcode,
-      dimensions: recognizedItem.dimensions ? {
-        ...recognizedItem.dimensions,
-        // Add slight variations to simulate AI inference
-        length: recognizedItem.dimensions.length ? 
-          Number((recognizedItem.dimensions.length * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
-        width: recognizedItem.dimensions.width ? 
-          Number((recognizedItem.dimensions.width * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
-        height: recognizedItem.dimensions.height ? 
-          Number((recognizedItem.dimensions.height * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
-        unit: recognizedItem.dimensions.unit
-      } : undefined,
-      attributes: recognizedItem.attributes,
-      confidence: Number((0.7 + Math.random() * 0.25).toFixed(2)), // Random confidence between 0.7 and 0.95
-      similarItems
-    };
-  }
-  catch (error) {
+  } catch (error) {
     console.error("Error in image analysis:", error);
     // In case of an error, return a placeholder item rather than failing completely
     return generatePlaceholderItem();
   }
+}
+
+/**
+ * Simulate image analysis when no AI service is available
+ * @param imageBuffer - The image data to analyze
+ * @returns Simulated recognition results
+ */
+async function simulateImageAnalysis(imageBuffer: Buffer): Promise<RecognizedItem> {
+  // Simulate some processing time for realism
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  
+  // For the prototype, fetch a random existing product from the database
+  // to simulate "recognition"
+  const items = await storage.getAllInventoryItems();
+  
+  if (items.length === 0) {
+    // If no items exist yet, return a generic placeholder suggestion
+    return generatePlaceholderItem();
+  }
+  
+  // Get a random item from the database to simulate recognition
+  const randomIndex = Math.floor(Math.random() * items.length);
+  const recognizedItem = items[randomIndex];
+  
+  // Get category name if available
+  let categoryName: string | undefined;
+  if (recognizedItem.categoryId) {
+    const category = await storage.getCategory(recognizedItem.categoryId);
+    categoryName = category?.name;
+  }
+  
+  // Find some "similar" items for recommendations
+  const similarItems = items
+    .filter(item => item.id !== recognizedItem.id)
+    .sort(() => 0.5 - Math.random()) // Shuffle array
+    .slice(0, 3) // Take first 3 items
+    .map(item => ({
+      id: item.id,
+      name: item.name,
+      similarity: Number((0.5 + Math.random() * 0.4).toFixed(2)) // Random similarity between 0.5 and 0.9
+    }));
+  
+  // Create the response with some added "noise" to simulate real AI recognition
+  // which isn't always 100% accurate
+  return {
+    name: recognizedItem.name,
+    sku: recognizedItem.sku,
+    description: recognizedItem.description,
+    price: recognizedItem.price,
+    quantity: 1, // Default suggestion for quantity is 1
+    category: categoryName,
+    categoryId: recognizedItem.categoryId,
+    barcode: recognizedItem.barcode,
+    dimensions: recognizedItem.dimensions ? {
+      ...recognizedItem.dimensions,
+      // Add slight variations to simulate AI inference
+      length: recognizedItem.dimensions.length ? 
+        Number((recognizedItem.dimensions.length * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
+      width: recognizedItem.dimensions.width ? 
+        Number((recognizedItem.dimensions.width * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
+      height: recognizedItem.dimensions.height ? 
+        Number((recognizedItem.dimensions.height * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
+      unit: recognizedItem.dimensions.unit
+    } : undefined,
+    attributes: recognizedItem.attributes,
+    confidence: Number((0.5 + Math.random() * 0.25).toFixed(2)), // Lower confidence for simulation
+    similarItems
+  };
 }
 
 /**

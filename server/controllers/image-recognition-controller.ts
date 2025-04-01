@@ -13,7 +13,11 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { storage } from '../storage';
-import { analyzeProductImage, RecognizedItem } from '../services/image-recognition-service';
+import { 
+  analyzeProductImage, 
+  getServiceStatus, 
+  RecognizedItem 
+} from '../services/image-recognition-service';
 
 // Set up multer for file uploads
 const upload = multer({
@@ -197,16 +201,24 @@ async function getItemAnalysisHistoryHandler(req: Request, res: Response) {
  */
 async function getImageRecognitionStatusHandler(_req: Request, res: Response) {
   try {
-    // Send a simple status check - this could be enhanced to check external API keys
-    // or connection status to AI services if being used
+    // Get the service status which includes OpenAI configuration
+    const status = getServiceStatus();
+    
+    // Return the status with additional information
     res.json({
-      status: 'operational',
-      message: 'Image recognition service is properly configured and operational'
+      success: true,
+      status: status.status.configured ? 'operational' : 'simulation',
+      aiProvider: status.status.provider,
+      mode: status.status.mode,
+      message: status.status.configured 
+        ? 'Image recognition service is using real AI analysis'
+        : 'Image recognition service is running in simulation mode. Configure OpenAI API key to enable real AI analysis.'
     });
   } catch (error: any) {
     console.error('Error checking image recognition status:', error);
     res.status(500).json({ 
       success: false, 
+      status: 'error',
       message: 'Failed to check image recognition status',
       error: error.message 
     });

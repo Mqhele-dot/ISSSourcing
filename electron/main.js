@@ -11,8 +11,13 @@ const path = require('path');
 const url = require('url');
 const { is } = require('electron-util');
 const fs = require('fs');
+const log = require('electron-log');
 const { registerIpcHandlers } = require('./ipc-handlers');
+
+// Import our services
 const db = require('./db');
+const databaseService = require('./database-service');
+const syncService = require('./sync-service');
 
 // Keep a global reference of objects to prevent garbage collection
 let mainWindow;
@@ -431,22 +436,49 @@ function createTray() {
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
-app.whenReady().then(() => {
-  // Initialize the database module
-  db.initialize();
-  
-  // Register all IPC handlers
-  registerIpcHandlers();
-  
-  // Create the main window
-  createMainWindow();
-  
-  // On macOS, re-create a window when the dock icon is clicked
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
-    }
-  });
+app.whenReady().then(async () => {
+  try {
+    // Initialize the database modules
+    log.info('Initializing database services...');
+    db.initialize();
+    
+    // Initialize the SQL database service
+    await databaseService.initialize();
+    
+    // Initialize the sync service with server URL
+    const serverUrl = isDev 
+      ? 'http://localhost:5000' 
+      : process.env.SERVER_URL || 'https://api.invtrack.com';
+      
+    syncService.initialize(serverUrl, {
+      syncOnStartup: !isDev, // Only sync on startup in production
+      autoSync: !isDev,      // Only auto-sync in production
+      syncInterval: 5 * 60 * 1000 // 5 minutes
+    });
+    
+    // Register all IPC handlers
+    log.info('Registering IPC handlers...');
+    registerIpcHandlers();
+    
+    // Create the main window
+    log.info('Creating main application window...');
+    createMainWindow();
+    
+    // On macOS, re-create a window when the dock icon is clicked
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow();
+      }
+    });
+    
+    log.info('Application initialization complete');
+  } catch (error) {
+    log.error('Error during application initialization:', error);
+    dialog.showErrorBox(
+      'Initialization Error',
+      `Failed to initialize application: ${error.message}`
+    );
+  }
 });
 
 // Quit when all windows are closed, except on macOS where it's common
