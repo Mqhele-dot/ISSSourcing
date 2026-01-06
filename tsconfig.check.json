@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "client/src/**/*.ts",
+    "client/src/**/*.tsx",
+    "client/vite-env.d.ts",
+    "shared/**/*.ts",
+    "shared/**/*.tsx"
+  ],
+  "exclude": [
+    "server/**",
+    "electron/**",
+    "client/src/pages/billing*",
+    "client/src/pages/inventory*",
+    "client/src/pages/reports*",
+    "client/src/pages/**/billing/**",
+    "client/src/pages/**/inventory/**",
+    "client/src/pages/**/reports/**"
+  ]
+}
