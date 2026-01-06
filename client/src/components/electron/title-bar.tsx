@@ -1,13 +1,13 @@
-import React from 'react';
-import { useElectron } from '../../contexts/electron-provider';
-import { X, Minus, Square } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React from "react";
+import { useElectron } from "../../contexts/electron-provider";
+import { X, Minus, Square } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface TitleBarProps {
   title?: string;
 }
 
-export const TitleBar: React.FC<TitleBarProps> = ({ title = 'Inventory Management System' }) => {
+export const TitleBar: React.FC<TitleBarProps> = ({ title = "SkillRadius · Local Freelancer Marketplace" }) => {
   const { isElectron, electron } = useElectron();
 
   if (!isElectron) {
@@ -16,19 +16,19 @@ export const TitleBar: React.FC<TitleBarProps> = ({ title = 'Inventory Managemen
 
   const handleMinimize = () => {
     if (electron) {
-      electron.invoke('window-minimize');
+      electron.invoke("window-minimize");
     }
   };
 
   const handleMaximize = () => {
     if (electron) {
-      electron.invoke('window-maximize');
+      electron.invoke("window-maximize");
     }
   };
 
   const handleClose = () => {
     if (electron) {
-      electron.invoke('window-close');
+      electron.invoke("window-close");
     }
   };
 
