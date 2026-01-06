@@ -11,7 +11,9 @@ export default function ProfilePage() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <header className="space-y-3">
-        <Badge variant="secondary" className="w-fit">Profile</Badge>
+        <Badge variant="secondary" className="w-fit">
+          Profile
+        </Badge>
         <h1 className="text-3xl font-semibold">Freelancer profile</h1>
         <p className="text-muted-foreground">Showcase skills, experience, and availability to stand out.</p>
       </header>
@@ -42,13 +44,21 @@ export default function ProfilePage() {
             <label className="text-sm font-medium">Short bio</label>
             <Textarea defaultValue="Licensed handyman with 8+ years of residential repair experience." />
           </div>
+
           <div className="space-y-2 md:col-span-2">
             <label className="text-sm font-medium">Top skills</label>
             <div className="flex flex-wrap gap-2">
               {skills.map((skill) => (
-                <Badge key={skill} variant="outline">{skill}</Badge>
+                <Badge key={skill} variant="outline">
+                  {skill}
+                </Badge>
               ))}
             </div>
+          </div>
+
+          <div className="md:col-span-2 flex flex-wrap gap-3 pt-2">
+            <Button>Save changes</Button>
+            <Button variant="outline">Preview profile</Button>
           </div>
         </CardContent>
       </Card>
@@ -71,61 +81,51 @@ export default function ProfilePage() {
               <Briefcase className="h-4 w-4" />
               <span>Trade certificate pending review</span>
             </div>
-            <div className="pt-2">
-              <Button variant="outline" size="sm">Upload certificate</Button>
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4" />
+              <span>Service radius verified</span>
             </div>
+            <Button variant="outline" className="w-full mt-2">
+              Upload verification docs
+            </Button>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Star className="h-5 w-5 text-primary" />
-              Rating snapshot
+              Reputation
             </CardTitle>
-            <CardDescription>Your reputation at a glance.</CardDescription>
+            <CardDescription>Clients only review completed jobs.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-2xl font-semibold">4.8 ★</p>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Average rating</p>
+                <p className="text-xs text-muted-foreground">Based on recent reviews</p>
+              </div>
+              <Badge variant="secondary" className="gap-1">
+                <Star className="h-3 w-3" />
+                4.7
+              </Badge>
+            </div>
+
             <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <MapPin className="h-4 w-4" /> 203 reviews
+              <span className="flex items-center gap-2">
+                <Globe className="h-4 w-4" /> English, Hindi
               </span>
-              <span className="flex items-center gap-1">
-                <Globe className="h-4 w-4" /> 98% response rate
-              </span>
-              <span className="flex items-center gap-1">
-                <Star className="h-4 w-4" /> Top-rated this month
+              <span className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" /> 4.8 mi coverage
               </span>
             </div>
-            <Button size="sm" variant="outline">View public profile</Button>
+
+            <Button className="w-full" variant="outline">
+              View all reviews
+            </Button>
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Availability</CardTitle>
-          <CardDescription>Tell clients when you can start.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Earliest start</label>
-            <Input defaultValue="Same-day calls" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Typical hours</label>
-            <Input defaultValue="08:00 - 18:00" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Service area</label>
-            <Input defaultValue="Up to 5 miles" />
-          </div>
-          <div className="md:col-span-3 flex justify-end gap-2">
-            <Button variant="outline">Cancel</Button>
-            <Button>Save profile</Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
