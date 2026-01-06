@@ -1,15 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { MapPin, ShieldCheck, Star, Users } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Loader2, MapPin, ShieldCheck, Star, Users } from "lucide-react";
 
 export default function AuthPage() {
-  const { user } = useAuth();
+  const { user, loginMutation } = useAuth();
   const [, navigate] = useLocation();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   useEffect(() => {
     if (user) {
@@ -64,15 +67,47 @@ export default function AuthPage() {
             <CardDescription>Sign in to manage jobs, requests, and bookings.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {loginMutation.error ? (
+              <Alert variant="destructive">
+                <AlertTitle>Sign-in failed</AlertTitle>
+                <AlertDescription>
+                  {(loginMutation.error as Error)?.message || "Please check your details and try again."}
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <div className="space-y-2">
               <label className="text-sm font-medium">Email</label>
-              <Input placeholder="you@example.com" />
+              <Input
+                placeholder="you@example.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="username"
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Password</label>
-              <Input type="password" placeholder="••••••••" />
+              <Input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+              />
             </div>
-            <Button className="w-full">Continue</Button>
+            <Button
+              className="w-full"
+              disabled={loginMutation.isPending || !email || !password}
+              onClick={() => loginMutation.mutate({ username: email, password })}
+            >
+              {loginMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                "Continue"
+              )}
+            </Button>
             <div className="text-sm text-muted-foreground">
               New to SkillRadius? <span className="text-primary">Create an account</span>
             </div>

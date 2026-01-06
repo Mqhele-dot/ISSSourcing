@@ -88,21 +88,30 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 function setupElectronApp() {
-  if (isElectronEnvironment()) {
-    document.documentElement.classList.add("electron-app");
-    document.addEventListener("dragover", (e) => e.preventDefault());
-    document.addEventListener("drop", (e) => e.preventDefault());
-  }
+  if (!isElectronEnvironment()) return () => {};
+
+  document.documentElement.classList.add("electron-app");
+
+  const prevent = (e: DragEvent) => e.preventDefault();
+  document.addEventListener("dragover", prevent);
+  document.addEventListener("drop", prevent);
+
+  return () => {
+    document.documentElement.classList.remove("electron-app");
+    document.removeEventListener("dragover", prevent);
+    document.removeEventListener("drop", prevent);
+  };
 }
 
 function App() {
   useEffect(() => {
-    setupElectronApp();
+    const cleanup = setupElectronApp();
+    return cleanup;
   }, []);
 
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="light" storageKey="invtrack-theme">
+      <ThemeProvider defaultTheme="light" storageKey="skillradius-theme">
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <TutorialProvider>
