@@ -97,7 +97,7 @@ export default function AuthPage() {
             <Button
               className="w-full"
               disabled={loginMutation.isPending || !email || !password}
-              onClick={() => loginMutation.mutate({ username: email, password })}
+              onClick={() => loginMutation.mutate({ username: email, password, rememberMe: false })}
             >
               {loginMutation.isPending ? (
                 <>

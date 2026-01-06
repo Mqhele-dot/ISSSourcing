@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { Switch, Route } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -10,9 +10,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TutorialProvider } from "@/contexts/tutorial-context";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/lib/protected-route";
-import { isElectronEnvironment } from "./lib/electron-bridge";
-import { ElectronProvider } from "./contexts/electron-provider";
-import { UpdateNotification } from "./components/electron";
 import { DesktopLayout } from "./components/layout/desktop-layout";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
@@ -81,55 +78,31 @@ function Router() {
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <DesktopLayout>
-      <UpdateNotification />
       {children}
     </DesktopLayout>
   );
 }
 
-function setupElectronApp() {
-  if (!isElectronEnvironment()) return () => {};
-
-  document.documentElement.classList.add("electron-app");
-
-  const prevent = (e: DragEvent) => e.preventDefault();
-  document.addEventListener("dragover", prevent);
-  document.addEventListener("drop", prevent);
-
-  return () => {
-    document.documentElement.classList.remove("electron-app");
-    document.removeEventListener("dragover", prevent);
-    document.removeEventListener("drop", prevent);
-  };
-}
-
 function App() {
-  useEffect(() => {
-    const cleanup = setupElectronApp();
-    return cleanup;
-  }, []);
-
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light" storageKey="skillradius-theme">
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <TutorialProvider>
-              <ElectronProvider>
-                <div className="relative min-h-screen">
-                  <Route path="/auth">
-                    <Router />
-                  </Route>
-                  <Route path="*">
-                    {(params) => {
-                      const pathname = params["*"] || "";
-                      if (pathname === "auth") return null;
-                      return <AppLayout><Router /></AppLayout>;
-                    }}
-                  </Route>
-                </div>
-                <Toaster />
-              </ElectronProvider>
+              <div className="relative min-h-screen">
+                <Route path="/auth">
+                  <Router />
+                </Route>
+                <Route path="*">
+                  {(params) => {
+                    const pathname = params["*"] || "";
+                    if (pathname === "auth") return null;
+                    return <AppLayout><Router /></AppLayout>;
+                  }}
+                </Route>
+              </div>
+              <Toaster />
             </TutorialProvider>
           </AuthProvider>
         </QueryClientProvider>
