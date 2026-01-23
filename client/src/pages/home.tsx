@@ -1,793 +1,265 @@
 import React from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useToast } from "@/hooks/use-toast";
-import TutorialButton from "@/components/ui/tutorial-button";
-import { type InventoryItem, type Category, type InventoryStats } from "@shared/schema";
-import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency } from "@/lib/utils";
-import { Link, useLocation } from "wouter";
-import { 
-  BarChart3, 
-  Boxes, 
-  ClipboardList, 
-  Clock, 
-  FileBarChart, 
-  PackageOpen, 
-  QrCode, 
-  Settings, 
-  ShoppingCart, 
-  TrendingUp, 
-  Truck, 
-  Users,
-  AlertCircle,
-  Download
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { MapPin, Star, Globe, Filter, Search, CheckCircle2, Briefcase, Zap } from "lucide-react";
 
-// Define quick access menu items
-interface QuickAccessItem {
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-  path: string;
-  badge?: string;
-  badgeColor?: "default" | "secondary" | "destructive" | "outline";
-}
+const quickStats = [
+  { label: "Skilled pros nearby", value: "128" },
+  { label: "Avg. hourly rate", value: "$42/hr" },
+  { label: "Median response time", value: "12 min" },
+  { label: "Verified freelancers", value: "94%" },
+];
 
-const quickAccessItems: QuickAccessItem[] = [
+const skillHighlights = ["UI/UX Design", "Mobile Development", "Home Repair", "Video Editing", "Tutoring", "Translation"];
+
+const freelancers = [
   {
-    name: "Inventory",
-    description: "Manage your inventory items",
-    icon: <Boxes className="h-8 w-8" />,
-    path: "/inventory",
+    name: "Amira Bello",
+    title: "Product Designer",
+    rate: "$65/hr",
+    distance: "2.1 mi",
+    rating: 4.9,
+    reviews: 118,
+    languages: ["English", "French"],
+    skills: ["UX Research", "Figma", "Design Systems"],
+    availability: "Available today",
   },
   {
-    name: "Orders",
-    description: "View and process orders",
-    icon: <ShoppingCart className="h-8 w-8" />,
-    path: "/orders",
-    badge: "New",
-    badgeColor: "secondary",
+    name: "Carlos Nguyen",
+    title: "Full-stack Developer",
+    rate: "$58/hr",
+    distance: "3.4 mi",
+    rating: 4.8,
+    reviews: 96,
+    languages: ["English", "Spanish"],
+    skills: ["React", "Node.js", "PostgreSQL"],
+    availability: "Next-day start",
   },
   {
-    name: "Reorder Requests",
-    description: "Manage reorder requests",
-    icon: <ClipboardList className="h-8 w-8" />,
-    path: "/reorder",
-    badge: "3",
-    badgeColor: "destructive",
+    name: "Mina Okafor",
+    title: "Event Photographer",
+    rate: "$120/session",
+    distance: "1.6 mi",
+    rating: 5.0,
+    reviews: 54,
+    languages: ["English", "Yoruba"],
+    skills: ["Portraits", "Corporate", "Retouching"],
+    availability: "Weekend slots",
   },
   {
-    name: "Suppliers",
-    description: "Manage your suppliers",
-    icon: <Truck className="h-8 w-8" />,
-    path: "/suppliers",
-  },
-  {
-    name: "Barcode Scanner",
-    description: "Scan barcodes to lookup items",
-    icon: <QrCode className="h-8 w-8" />,
-    path: "/barcode-scanner",
-  },
-  {
-    name: "Reports",
-    description: "Generate inventory reports",
-    icon: <FileBarChart className="h-8 w-8" />,
-    path: "/reports",
-  },
-  {
-    name: "Analytics",
-    description: "Inventory analytics and insights",
-    icon: <BarChart3 className="h-8 w-8" />,
-    path: "/reports",
-  },
-  {
-    name: "Real-time Sync",
-    description: "Monitor inventory synchronization",
-    icon: <Clock className="h-8 w-8" />,
-    path: "/sync-dashboard",
-  },
-  {
-    name: "User Roles",
-    description: "Manage user permissions",
-    icon: <Users className="h-8 w-8" />,
-    path: "/user-roles",
-  },
-  {
-    name: "Settings",
-    description: "Configure application settings",
-    icon: <Settings className="h-8 w-8" />,
-    path: "/settings",
-  },
-  {
-    name: "Low Stock Items",
-    description: "View items needing reorder",
-    icon: <AlertCircle className="h-8 w-8" />,
-    path: "/inventory?filter=low_stock",
-    badge: "Alert",
-    badgeColor: "destructive",
-  },
-  {
-    name: "Desktop App",
-    description: "Download desktop application",
-    icon: <Download className="h-8 w-8" />,
-    path: "/download",
-    badge: "New",
-    badgeColor: "secondary",
+    name: "Jordan Patel",
+    title: "Handyman & Home Repair",
+    rate: "$45/hr",
+    distance: "4.8 mi",
+    rating: 4.7,
+    reviews: 203,
+    languages: ["English", "Hindi"],
+    skills: ["Plumbing", "Drywall", "Furniture Assembly"],
+    availability: "Same-day calls",
   },
 ];
 
-// Custom colors for charts
-const COLORS = [
-  "#0088FE", // Blue
-  "#00C49F", // Green
-  "#FFBB28", // Yellow
-  "#FF8042", // Orange
-  "#8884D8", // Purple
-  "#FF6B6B", // Pink
-  "#4CAF50", // Dark Green
-  "#9C27B0", // Violet
+const mapPins = [
+  { label: "Designers", count: 24 },
+  { label: "Developers", count: 32 },
+  { label: "Skilled Trades", count: 18 },
+  { label: "Creative", count: 21 },
 ];
-
-// Custom tooltip for charts
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-white dark:bg-neutral-800 p-3 rounded-md border border-neutral-200 dark:border-neutral-700 shadow-md">
-        <p className="font-medium">{`${label}`}</p>
-        {payload.map((entry: any, index: number) => (
-          <p key={`item-${index}`} style={{ color: entry.color }}>
-            {`${entry.name}: ${entry.value}`}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
-};
 
 export default function Home() {
-  const { toast } = useToast();
-
-  // Fetch inventory items
-  const { data: inventoryItems, isLoading: itemsLoading } = useQuery({
-    queryKey: ["/api/inventory"],
-    queryFn: async () => {
-      const response = await fetch("/api/inventory");
-      if (!response.ok) {
-        throw new Error("Failed to fetch inventory items");
-      }
-      return response.json() as Promise<InventoryItem[]>;
-    },
-  });
-
-  // Fetch categories
-  const { data: categories } = useQuery({
-    queryKey: ["/api/categories"],
-    queryFn: async () => {
-      const response = await fetch("/api/categories");
-      if (!response.ok) {
-        throw new Error("Failed to fetch categories");
-      }
-      return response.json() as Promise<Category[]>;
-    },
-  });
-
-  // Fetch inventory stats
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ["/api/inventory/stats"],
-    queryFn: async () => {
-      const response = await fetch("/api/inventory/stats");
-      if (!response.ok) {
-        throw new Error("Failed to fetch inventory stats");
-      }
-      return response.json() as Promise<InventoryStats>;
-    },
-  });
-
-  // Prepare data for inventory by category chart
-  const inventoryByCategoryData = React.useMemo(() => {
-    if (!inventoryItems || !categories) return [];
-
-    const categoryMap = new Map<number, { name: string; count: number }>();
-    
-    // Initialize with all categories
-    categories.forEach(cat => {
-      categoryMap.set(cat.id, { name: cat.name, count: 0 });
-    });
-    
-    // Count items per category
-    inventoryItems.forEach(item => {
-      if (item.categoryId) {
-        const category = categoryMap.get(item.categoryId);
-        if (category) {
-          category.count += 1;
-        }
-      }
-    });
-    
-    return Array.from(categoryMap.values())
-      .filter(cat => cat.count > 0) // Only include categories with items
-      .map(cat => ({ 
-        name: cat.name, 
-        items: cat.count 
-      }));
-  }, [inventoryItems, categories]);
-
-  // Prepare data for inventory value by category chart
-  const inventoryValueByCategoryData = React.useMemo(() => {
-    if (!inventoryItems || !categories) return [];
-
-    const categoryMap = new Map<number, { name: string; value: number }>();
-    
-    // Initialize with all categories
-    categories.forEach(cat => {
-      categoryMap.set(cat.id, { name: cat.name, value: 0 });
-    });
-    
-    // Sum value per category
-    inventoryItems.forEach(item => {
-      if (item.categoryId) {
-        const category = categoryMap.get(item.categoryId);
-        if (category) {
-          category.value += item.price * item.quantity;
-        }
-      }
-    });
-    
-    return Array.from(categoryMap.values())
-      .filter(cat => cat.value > 0) // Only include categories with value
-      .map(cat => ({ 
-        name: cat.name, 
-        value: cat.value 
-      }));
-  }, [inventoryItems, categories]);
-
-  // Prepare data for inventory quantity by item chart
-  const inventoryQuantityByItemData = React.useMemo(() => {
-    if (!inventoryItems) return [];
-    
-    return inventoryItems
-      .filter(item => item.quantity > 0) // Filter out zero quantity items
-      .map(item => ({
-        name: item.name,
-        quantity: item.quantity
-      }))
-      .sort((a, b) => b.quantity - a.quantity) // Sort by quantity descending
-      .slice(0, 10); // Take top 10
-  }, [inventoryItems]);
-
-  // Prepare data for item value chart
-  const inventoryValueByItemData = React.useMemo(() => {
-    if (!inventoryItems) return [];
-    
-    return inventoryItems
-      .map(item => ({
-        name: item.name,
-        value: item.price * item.quantity
-      }))
-      .sort((a, b) => b.value - a.value) // Sort by value descending
-      .slice(0, 10); // Take top 10
-  }, [inventoryItems]);
-
-  // Prepare data for status distribution
-  const statusDistributionData = React.useMemo(() => {
-    if (!stats) return [];
-    
-    return [
-      { name: "In Stock", value: stats.totalItems - stats.lowStockItems - stats.outOfStockItems },
-      { name: "Low Stock", value: stats.lowStockItems },
-      { name: "Out of Stock", value: stats.outOfStockItems }
-    ].filter(item => item.value > 0);
-  }, [stats]);
-
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Inventory Management System</h2>
-          <p className="text-muted-foreground">
-            Complete solution for your business inventory needs
-          </p>
+    <div className="max-w-7xl mx-auto space-y-10">
+      <section className="space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <Badge variant="secondary" className="w-fit">Local Freelancer Network</Badge>
+            <h1 className="text-4xl font-bold tracking-tight">Hire trusted talent right around the corner.</h1>
+            <p className="text-muted-foreground max-w-2xl">
+              Discover verified freelancers by skill, rate, distance, and language. Compare reviews, view availability,
+              and book the right pro in minutes.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button size="lg">Post a job</Button>
+            <Button size="lg" variant="outline">Invite freelancers</Button>
+          </div>
         </div>
-        <TutorialButton pageName="home" />
-      </div>
-
-      {/* Quick Access Menu */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold mb-4">Quick Access</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {quickAccessItems.map((item, index) => (
-            <Link key={index} href={item.path}>
-              <Card className="h-full hover:bg-accent/50 transition-colors cursor-pointer overflow-hidden">
-                <CardContent className="pt-6 pb-4 px-4 flex flex-col items-center text-center h-full">
-                  <div className="mb-3 relative">
-                    {item.icon}
-                    {item.badge && (
-                      <Badge 
-                        className="absolute -top-2 -right-2" 
-                        variant={item.badgeColor}
-                      >
-                        {item.badge}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="w-full">
-                    <h4 className="font-medium text-sm mb-1 truncate">{item.name}</h4>
-                    <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
+        <div className="flex flex-col gap-3 md:flex-row">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-9" placeholder="Search skills, services, or freelancer names" />
+          </div>
+          <Button variant="secondary" className="gap-2">
+            <Filter className="h-4 w-4" />
+            Filters
+          </Button>
+          <Button variant="outline" className="gap-2">
+            <MapPin className="h-4 w-4" />
+            Use my location
+          </Button>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {quickStats.map((stat) => (
+            <Card key={stat.label}>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">{stat.label}</p>
+                <p className="text-2xl font-semibold">{stat.value}</p>
+              </CardContent>
+            </Card>
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Summary Stats Section */}
-      <div className="mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground mb-1">Total Items</p>
-                  <h3 className="text-2xl font-bold">
-                    {statsLoading ? <Skeleton className="w-16 h-8" /> : stats?.totalItems || 0}
-                  </h3>
+      <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" />
+              Live talent map
+            </CardTitle>
+            <CardDescription>View freelancers clustered by skill and distance from you.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="relative h-[360px] w-full overflow-hidden rounded-lg bg-gradient-to-br from-primary/10 via-muted to-background">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.15),transparent_55%)]" />
+              <div className="absolute bottom-6 left-6 space-y-2 text-sm">
+                {mapPins.map((pin) => (
+                  <div key={pin.label} className="flex items-center gap-2 rounded-full bg-background/90 px-3 py-1 shadow">
+                    <span className="h-2 w-2 rounded-full bg-primary" />
+                    <span className="font-medium">{pin.label}</span>
+                    <span className="text-muted-foreground">{pin.count}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="absolute right-8 top-10 flex flex-col items-end gap-3 text-xs">
+                <div className="rounded-lg bg-background/90 p-3 shadow">
+                  <p className="font-semibold">3.2 mi radius</p>
+                  <p className="text-muted-foreground">92 freelancers active now</p>
                 </div>
-                <Boxes className="h-8 w-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground mb-1">Low Stock Items</p>
-                  <h3 className="text-2xl font-bold">
-                    {statsLoading ? <Skeleton className="w-16 h-8" /> : stats?.lowStockItems || 0}
-                  </h3>
+                <div className="rounded-lg bg-background/90 p-3 shadow">
+                  <p className="font-semibold">Avg. rating 4.8</p>
+                  <p className="text-muted-foreground">12 new reviews today</p>
                 </div>
-                <AlertCircle className="h-8 w-8 text-amber-500" />
               </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground mb-1">Out of Stock</p>
-                  <h3 className="text-2xl font-bold">
-                    {statsLoading ? <Skeleton className="w-16 h-8" /> : stats?.outOfStockItems || 0}
-                  </h3>
-                </div>
-                <PackageOpen className="h-8 w-8 text-destructive" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Recommended filters</CardTitle>
+            <CardDescription>Refine by project type, budget, and language.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Popular skills</p>
+              <div className="flex flex-wrap gap-2">
+                {skillHighlights.map((skill) => (
+                  <Badge key={skill} variant="outline">{skill}</Badge>
+                ))}
               </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground mb-1">Total Value</p>
-                  <h3 className="text-2xl font-bold">
-                    {statsLoading ? 
-                      <Skeleton className="w-24 h-8" /> : 
-                      formatCurrency(stats?.inventoryValue || 0)
-                    }
-                  </h3>
-                </div>
-                <TrendingUp className="h-8 w-8 text-green-500" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Budget range</p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">Under $50/hr</Badge>
+                <Badge variant="secondary">$50 - $100/hr</Badge>
+                <Badge variant="secondary">Fixed price</Badge>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      <div className="mb-6">
-        <h3 className="text-xl font-bold tracking-tight">Inventory Analytics</h3>
-        <p className="text-muted-foreground">
-          Visual insights into your inventory data
-        </p>
-      </div>
-
-      <Tabs defaultValue="overview" className="space-y-6">
-        <div className="overflow-x-auto">
-          <TabsList className="w-full sm:w-auto">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="categories">Categories</TabsTrigger>
-            <TabsTrigger value="items">Items</TabsTrigger>
-          </TabsList>
-        </div>
-
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <Card className="col-span-1">
-              <CardHeader>
-                <CardTitle>Inventory Status Distribution</CardTitle>
-                <CardDescription>
-                  Distribution of items by stock status
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                {statsLoading ? (
-                  <div className="flex items-center justify-center h-full">
-                    <Skeleton className="h-[250px] w-[250px] rounded-full" />
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={statusDistributionData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {statusDistributionData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="col-span-2">
-              <CardHeader>
-                <CardTitle>Items by Category</CardTitle>
-                <CardDescription>
-                  Number of inventory items per category
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                {itemsLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-[250px] w-full" />
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={inventoryByCategoryData}
-                      margin={{
-                        top: 5,
-                        right: 30,
-                        left: 20,
-                        bottom: 5,
-                      }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Bar dataKey="items" fill="#0088FE" name="Items" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="categories" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Inventory Value by Category</CardTitle>
-              <CardDescription>
-                Total value of inventory items per category
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="h-[400px]">
-              {itemsLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-[350px] w-full" />
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={inventoryValueByCategoryData}
-                    margin={{
-                      top: 5,
-                      right: 30,
-                      left: 20,
-                      bottom: 5,
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis 
-                      tickFormatter={(value) => `$${value}`}
-                    />
-                    <Tooltip 
-                      formatter={(value) => [`$${value}`, "Value"]}
-                      content={<CustomTooltip />}
-                    />
-                    <Legend />
-                    <Bar dataKey="value" fill="#00C49F" name="Value ($)" />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="items" className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Top Items by Quantity</CardTitle>
-                <CardDescription>
-                  Inventory items with highest quantity in stock
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="h-[400px]">
-                {itemsLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-[350px] w-full" />
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={inventoryQuantityByItemData}
-                      layout="vertical"
-                      margin={{
-                        top: 5,
-                        right: 30,
-                        left: 100,
-                        bottom: 5,
-                      }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" />
-                      <YAxis 
-                        type="category" 
-                        dataKey="name" 
-                        width={80}
-                        tickFormatter={(value) => 
-                          value.length > 15 ? `${value.substring(0, 15)}...` : value
-                        }
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Bar dataKey="quantity" fill="#FFBB28" name="Quantity" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Top Items by Value</CardTitle>
-                <CardDescription>
-                  Inventory items with highest total value
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="h-[400px]">
-                {itemsLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-[350px] w-full" />
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={inventoryValueByItemData}
-                      layout="vertical"
-                      margin={{
-                        top: 5,
-                        right: 30,
-                        left: 100,
-                        bottom: 5,
-                      }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        type="number"
-                        tickFormatter={(value) => `$${value}`}
-                      />
-                      <YAxis 
-                        type="category" 
-                        dataKey="name" 
-                        width={80}
-                        tickFormatter={(value) => 
-                          value.length > 15 ? `${value.substring(0, 15)}...` : value
-                        }
-                      />
-                      <Tooltip 
-                        formatter={(value) => [`$${value}`, "Value"]}
-                        content={<CustomTooltip />}
-                      />
-                      <Legend />
-                      <Bar dataKey="value" fill="#FF8042" name="Value ($)" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
-      
-      {/* Recent Activity and Alerts Section */}
-      <div className="mt-10 mb-6">
-        <h3 className="text-xl font-bold tracking-tight mb-6">Recent Activity & Alerts</h3>
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Recent Activities</span>
-                <Button variant="ghost" size="sm" className="text-primary">
-                  View All
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {statsLoading ? (
-                  <div className="space-y-4">
-                    <Skeleton className="h-14 w-full" />
-                    <Skeleton className="h-14 w-full" />
-                    <Skeleton className="h-14 w-full" />
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-start gap-4 bg-muted/50 p-3 rounded-lg">
-                      <div className="bg-primary/10 p-2 rounded-full">
-                        <PackageOpen className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">New inventory items added</p>
-                        <p className="text-xs text-muted-foreground">10 new items were added to Electronics category</p>
-                      </div>
-                      <div className="ml-auto text-xs text-muted-foreground">2 hours ago</div>
-                    </div>
-                    
-                    <div className="flex items-start gap-4 bg-muted/50 p-3 rounded-lg">
-                      <div className="bg-amber-500/10 p-2 rounded-full">
-                        <AlertCircle className="h-5 w-5 text-amber-500" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">Low stock alert triggered</p>
-                        <p className="text-xs text-muted-foreground">3 items have reached their reorder point</p>
-                      </div>
-                      <div className="ml-auto text-xs text-muted-foreground">5 hours ago</div>
-                    </div>
-                    
-                    <div className="flex items-start gap-4 bg-muted/50 p-3 rounded-lg">
-                      <div className="bg-green-500/10 p-2 rounded-full">
-                        <ShoppingCart className="h-5 w-5 text-green-500" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">Order completed</p>
-                        <p className="text-xs text-muted-foreground">Order #1234 has been fulfilled and shipped</p>
-                      </div>
-                      <div className="ml-auto text-xs text-muted-foreground">Yesterday</div>
-                    </div>
-                  </>
-                )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Language preference</p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">English</Badge>
+                <Badge variant="outline">Spanish</Badge>
+                <Badge variant="outline">French</Badge>
+                <Badge variant="outline">Mandarin</Badge>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+            <Button className="w-full" variant="outline">Save filter set</Button>
+          </CardContent>
+        </Card>
+      </section>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Upcoming Tasks</span>
-                <Button variant="ghost" size="sm" className="text-primary">
-                  View All
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {statsLoading ? (
-                  <div className="space-y-4">
-                    <Skeleton className="h-14 w-full" />
-                    <Skeleton className="h-14 w-full" />
-                    <Skeleton className="h-14 w-full" />
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-start gap-4 bg-destructive/10 p-3 rounded-lg">
-                      <div className="bg-destructive/10 p-2 rounded-full">
-                        <AlertCircle className="h-5 w-5 text-destructive" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">Critical: 3 items out of stock</p>
-                        <p className="text-xs text-muted-foreground">Please process reorder requests immediately</p>
-                      </div>
-                      <div className="ml-auto">
-                        <Badge variant="destructive">High</Badge>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start gap-4 bg-muted/50 p-3 rounded-lg">
-                      <div className="bg-amber-500/10 p-2 rounded-full">
-                        <Clock className="h-5 w-5 text-amber-500" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">Inventory audit scheduled</p>
-                        <p className="text-xs text-muted-foreground">Complete quarterly inventory audit by Friday</p>
-                      </div>
-                      <div className="ml-auto">
-                        <Badge variant="outline">Medium</Badge>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start gap-4 bg-muted/50 p-3 rounded-lg">
-                      <div className="bg-primary/10 p-2 rounded-full">
-                        <FileBarChart className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">Generate monthly report</p>
-                        <p className="text-xs text-muted-foreground">End of month inventory and sales report needed</p>
-                      </div>
-                      <div className="ml-auto">
-                        <Badge>Normal</Badge>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-      
-      {/* App Information Footer */}
-      <div className="mt-10 mb-6 border-t pt-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <section className="space-y-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h3 className="text-lg font-semibold">Inventory Management System</h3>
-            <p className="text-sm text-muted-foreground">Version 1.0.0 | Desktop App Available</p>
+            <h2 className="text-2xl font-semibold">Freelancers near you</h2>
+            <p className="text-muted-foreground">Compare rates, availability, reviews, and languages at a glance.</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/download">
-                <Download className="h-4 w-4 mr-2" />
-                Download Desktop App
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/settings">
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </Link>
-            </Button>
-            <Button size="sm" asChild>
-              <Link href="/support">
-                Get Support
-              </Link>
-            </Button>
-          </div>
+          <Button variant="secondary" className="gap-2">
+            <Zap className="h-4 w-4" />
+            See who can start now
+          </Button>
         </div>
-      </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          {freelancers.map((freelancer) => (
+            <Card key={freelancer.name} className="h-full">
+              <CardHeader className="space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-lg">{freelancer.name}</CardTitle>
+                    <CardDescription>{freelancer.title}</CardDescription>
+                  </div>
+                  <Badge variant="secondary" className="gap-1">
+                    <Star className="h-3 w-3" />
+                    {freelancer.rating}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1"><Briefcase className="h-4 w-4" /> {freelancer.rate}</span>
+                  <span className="flex items-center gap-1"><MapPin className="h-4 w-4" /> {freelancer.distance} away</span>
+                  <span className="flex items-center gap-1"><Globe className="h-4 w-4" /> {freelancer.languages.join(", ")}</span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  {freelancer.skills.map((skill) => (
+                    <Badge key={skill} variant="outline">{skill}</Badge>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Star className="h-4 w-4 text-amber-500" />
+                    {freelancer.reviews} reviews
+                  </div>
+                  <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {freelancer.availability}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <Button size="sm">View profile</Button>
+                  <Button size="sm" variant="outline">Request quote</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Verified credentials</CardTitle>
+            <CardDescription>We verify licenses, portfolios, and local references.</CardDescription>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Transparent pricing</CardTitle>
+            <CardDescription>Compare rates and fixed bids with no hidden fees.</CardDescription>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Multilingual support</CardTitle>
+            <CardDescription>Filter by language to match your communication needs.</CardDescription>
+          </CardHeader>
+        </Card>
+      </section>
     </div>
   );
 }

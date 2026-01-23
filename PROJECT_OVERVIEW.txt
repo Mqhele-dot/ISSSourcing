@@ -1,0 +1,129 @@
+SkillRadius Codebase Overview
+=============================
+
+This repository now contains a web-first freelancer marketplace UI. The legacy
+inventory, billing, reporting, and Electron desktop code has been removed to
+focus on the SkillRadius experience.
+
+Top-level files
+---------------
+- package.json
+  Defines client-only scripts (dev/build/preview/check) for the Vite UI.
+- tsconfig.json / tsconfig.check.json
+  TypeScript configuration; check config scopes typechecking to client/shared.
+- vite.config.ts
+  Vite configuration for the client app and path aliases.
+- tailwind.config.ts / postcss.config.js / theme.json
+  Styling and theme configuration for the UI.
+
+Client application (client/)
+---------------------------
+- client/index.html
+  HTML entry point for the Vite app.
+
+- client/src/main.tsx
+  React entry point; mounts the app and global styles.
+
+- client/src/App.tsx
+  Router + layout composition. Routes include:
+  - /
+  - /discover
+  - /jobs
+  - /messages
+  - /reviews
+  - /profile
+  - /settings
+  - /auth
+
+Pages (client/src/pages/)
+-------------------------
+- home.tsx
+  Marketplace landing page: hero, stats, map placeholder, filters, and
+  freelancer cards.
+
+- discover.tsx
+  Search + filter screen with a map placeholder.
+
+- jobs.tsx
+  Jobs list and “post a job” action.
+
+- messages.tsx
+  Messaging inbox view with conversations.
+
+- reviews.tsx
+  Client feedback list with star ratings.
+
+- profile.tsx
+  Freelancer profile details, verification, reputation, and availability.
+
+- settings.tsx
+  Account preferences for notifications, availability, and safety.
+
+- auth-page.tsx
+  Sign-in screen with basic login inputs and brand messaging.
+
+- not-found.tsx
+  Fallback 404 screen.
+
+Components (client/src/components/)
+----------------------------------
+- sidebar.tsx
+  Navigation for the SkillRadius routes.
+
+- header.tsx
+  Top header layout for the app pages.
+
+- layout/desktop-layout.tsx
+  Main layout wrapper (sidebar + header + content area).
+
+- page-header.tsx
+  Shared header component for sections.
+
+- theme-provider.tsx
+  Theme state and toggles.
+
+- ui/
+  Shadcn UI primitives (buttons, cards, inputs, badges, tabs, etc.).
+
+Contexts (client/src/contexts/)
+-------------------------------
+- tutorial-context.tsx / TutorialContext.tsx
+  Walkthrough/tutorial context; still present but currently UI-only.
+
+Hooks (client/src/hooks/)
+-------------------------
+- use-auth.tsx
+  Auth hooks with login/logout flow used on the auth page and protected routes.
+
+- use-mobile.tsx
+  Responsive helper hook.
+
+- use-toast.ts
+  Toast notification helper.
+
+Library (client/src/lib/)
+-------------------------
+- queryClient.ts
+  React Query client configuration and API helper.
+
+- protected-route.tsx
+  Route guard component for authenticated pages.
+
+- utils.ts
+  Utility helpers (class name merging, formatting, etc.).
+
+- config.ts
+  Feature flag management for web-only behavior.
+
+- document-generator.ts
+  Browser-first PDF/CSV/Excel generation helpers.
+
+Shared (shared/)
+----------------
+- shared/ holds shared types, schemas, and utilities consumed by the client.
+
+Notes
+-----
+- Electron/desktop code, server APIs, inventory/billing/reporting modules,
+  and related assets have been removed.
+- The app is now a client-only, web-first SkillRadius marketplace UI.

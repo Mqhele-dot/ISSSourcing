@@ -5,8 +5,6 @@
  * Environment-specific settings can be overridden in .env files.
  */
 
-import { isElectronEnvironment } from './electron-bridge';
-
 // Feature flags
 interface FeatureFlags {
   enableWebSockets: boolean;
@@ -24,19 +22,18 @@ const isDevelopment =
  * Default feature flags
  * 
  * WebSockets are:
- * - Always enabled in Electron (desktop app)
  * - Disabled by default in development web environment (like Replit)
  * - Enabled by default in production web environment
  */
 const defaultFeatureFlags: FeatureFlags = {
-  // Enable WebSockets in Electron or production, disable in development (like Replit)
-  enableWebSockets: isElectronEnvironment() || !isDevelopment,
-  
-  // Enable real-time sync in Electron or production, disable in development
-  enableRealTimeSync: isElectronEnvironment() || !isDevelopment,
-  
-  // Enable offline mode in Electron only by default
-  enableOfflineMode: isElectronEnvironment(),
+  // Enable WebSockets in production, disable in development (like Replit)
+  enableWebSockets: !isDevelopment,
+
+  // Enable real-time sync in production, disable in development
+  enableRealTimeSync: !isDevelopment,
+
+  // Disable offline mode by default for the web app
+  enableOfflineMode: false,
 };
 
 // Allow overriding via localStorage during development

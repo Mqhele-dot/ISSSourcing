@@ -2,32 +2,10 @@
  * Document Generator
  * 
  * This module provides utilities for generating various document formats
- * including PDFs, Excel spreadsheets, and CSV files. It uses the Electron
- * bridge for desktop environments and falls back to web-based alternatives
- * in browser environments.
+ * including PDFs, Excel spreadsheets, and CSV files for web-based usage.
  */
 
-import { isElectronEnvironment } from './electron-bridge';
-
-// Document generator API for Electron 
-// This would be initialized when running in Electron environment
-const electronDocumentGenerator = {
-  generatePdf: async (templateId: string, data: any, options: any): Promise<string> => {
-    // @ts-ignore - window.electron is injected by the Electron preload script
-    return await window.electron.invoke('generate-pdf', templateId, data, options);
-  },
-  generateExcel: async (data: any[], options: any): Promise<string> => {
-    // @ts-ignore - window.electron is injected by the Electron preload script
-    return await window.electron.invoke('generate-excel', data, options);
-  },
-  generateCsv: async (data: any[], options: any): Promise<string> => {
-    // @ts-ignore - window.electron is injected by the Electron preload script
-    return await window.electron.invoke('generate-csv', data, options);
-  }
-};
-
-// In browser environments, we need to implement web-based alternatives
-// These functions will be used when not running in Electron
+// Browser environments use web-based download helpers.
 
 /**
  * Create a downloadable blob and trigger a download
@@ -139,15 +117,8 @@ export async function generatePdf(
   data: any,
   options: { title?: string; filename?: string } = {}
 ): Promise<string> {
-  // In Electron, use the native PDF generation
-  if (isElectronEnvironment()) {
-    return electronDocumentGenerator.generatePdf(templateId, data, {
-      dialog: true,
-    });
-  }
-  
-  // In browser, create a simple HTML representation and open in a new tab
-  // This is a fallback - in a real app, you might use a library like jsPDF
+  // In browser, create a simple HTML representation and open in a new tab.
+  // This is a fallback - in a real app, you might use a library like jsPDF.
   const title = options.title || 'Generated PDF';
   const html = createHtmlTable(Array.isArray(data) ? data : [data], title);
   
@@ -175,15 +146,6 @@ export async function generateExcel(
     columns?: Array<{ header: string; key: string; width?: number }>;
   } = {}
 ): Promise<string> {
-  // In Electron, use the native Excel generation
-  if (isElectronEnvironment()) {
-    return electronDocumentGenerator.generateExcel(data, {
-      sheetName: options.sheetName,
-      columns: options.columns,
-      dialog: true,
-    });
-  }
-  
   // In browser, create a CSV as fallback since Excel is harder to generate
   // In a real app, you might use a library like exceljs
   const filename = options.filename || 'data.csv';
@@ -221,15 +183,6 @@ export async function generateCsv(
     delimiter?: string;
   } = {}
 ): Promise<string> {
-  // In Electron, use the native CSV generation
-  if (isElectronEnvironment()) {
-    return electronDocumentGenerator.generateCsv(data, {
-      headers: options.headers,
-      delimiter: options.delimiter,
-      dialog: true,
-    });
-  }
-  
   // In browser, generate and download the CSV
   const filename = options.filename || 'data.csv';
   const csv = createCsvString(data, options.headers, options.delimiter);
