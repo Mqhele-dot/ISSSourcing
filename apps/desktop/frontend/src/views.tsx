@@ -9,7 +9,7 @@ export function LoginView({ onLogin }: { onLogin: (role: 'Planner' | 'Ops' | 'Ad
 export const HomeView = () => {
   const [status, setStatus] = useState('checking...');
   useEffect(() => {
-    fetchHealth().then((h) => setStatus(`${h.status} (${h.service})`)).catch(() => setStatus('unreachable'));
+    fetchHealth().then((h) => setStatus(`${h.status} (${h.service})`)).catch((e: unknown) => setStatus(e instanceof Error ? e.message : 'unreachable'));
   }, []);
   return <div><h3>Home Dashboard</h3><p>KPIs + activity feed</p><p>Backend health: <strong>{status}</strong></p></div>;
 };

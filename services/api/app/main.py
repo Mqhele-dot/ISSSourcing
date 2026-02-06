@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from .db import init_db, get_conn
 from .security import create_session, require_role
@@ -12,6 +13,13 @@ from .connectors.erp_export import ERPExportConnector
 from .rules.exceptions import detect_late_confirmation, detect_shipment_delay, detect_stockout_risk
 
 app = FastAPI(title="SupplyChain Control Tower Local Backend")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class LoginRequest(BaseModel):

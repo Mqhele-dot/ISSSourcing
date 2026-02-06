@@ -5,3 +5,4 @@ services/api/.venv/
 apps/desktop/frontend/node_modules/
 apps/desktop/frontend/dist/
 .pytest_cache/
+logs/
