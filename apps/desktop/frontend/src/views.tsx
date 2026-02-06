@@ -31,6 +31,10 @@ export const InventoryView = () => <div><h3>Inventory</h3></div>;
 export const PurchaseView = () => <div><h3>Purchase</h3></div>;
 export const LogisticsView = () => <div><h3>Logistics</h3></div>;
 
+function LoginPrompt() {
+  return <p>Not logged in. <a href="#/login">Go to login</a></p>;
+}
+
 export const IntegrationsView = () => {
   const [runs, setRuns] = useState<ConnectorRun[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +53,7 @@ export const IntegrationsView = () => {
       <h3>Integrations</h3>
       <h4>Connector Runs</h4>
       {error ? <p>Failed to load connector runs: {error}</p> : null}
+      {error === 'Not logged in' ? <LoginPrompt /> : null}
       {!error && runs.length === 0 ? <p>No connector runs yet</p> : null}
       {runs.length > 0 ? (
         <table>
@@ -62,15 +67,21 @@ export const IntegrationsView = () => {
             </tr>
           </thead>
           <tbody>
-            {runs.map((run) => (
-              <tr key={run.id}>
-                <td>{run.connector_name}</td>
-                <td>{run.status === 'failed' ? `FAILED (${run.status})` : run.status}</td>
-                <td>{run.retries}</td>
-                <td>{run.started_at}</td>
-                <td>{run.ended_at ?? '-'}</td>
-              </tr>
-            ))}
+            {runs.map((run, idx) => {
+              const status = run.status ?? 'unknown';
+              const isFailed = status.toLowerCase() === 'failed';
+              const statusText = isFailed ? `FAILED - ${status}` : status;
+              const errorText = run.error ? ` (${run.error})` : '';
+              return (
+                <tr key={run.id ?? idx}>
+                  <td>{run.connector_name ?? 'unknown'}</td>
+                  <td>{statusText}{errorText}</td>
+                  <td>{run.retries ?? '-'}</td>
+                  <td>{run.started_at ?? '-'}</td>
+                  <td>{run.ended_at ?? '-'}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : null}
@@ -95,6 +106,7 @@ export const ExceptionsView = () => {
     <div>
       <h3>Exceptions / Cases</h3>
       {error ? <p>Failed to load exceptions: {error}</p> : null}
+      {error === 'Not logged in' ? <LoginPrompt /> : null}
       {!error && cases.length === 0 ? <p>No open exceptions</p> : null}
       {cases.length > 0 ? (
         <table>
@@ -107,12 +119,12 @@ export const ExceptionsView = () => {
             </tr>
           </thead>
           <tbody>
-            {cases.map((item) => (
-              <tr key={item.id}>
-                <td>{item.id}</td>
-                <td>{item.type}</td>
-                <td>{item.severity}</td>
-                <td>{item.status}</td>
+            {cases.map((item, idx) => (
+              <tr key={item.id ?? idx}>
+                <td>{item.id ?? '-'}</td>
+                <td>{item.type ?? 'unknown'}</td>
+                <td>{item.severity ?? 'unknown'}</td>
+                <td>{item.status ?? 'unknown'}</td>
               </tr>
             ))}
           </tbody>

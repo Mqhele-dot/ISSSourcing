@@ -11,10 +11,12 @@ def test_health_deep_ok(tmp_path, monkeypatch):
     assert deep_health(db.get_conn) == {'status': 'ok', 'db': 'ok'}
 
 
-def test_health_deep_degraded():
+def test_health_deep_degraded(capsys):
     @contextmanager
     def broken_conn():
         raise RuntimeError('db unavailable')
         yield
 
     assert deep_health(broken_conn) == {'status': 'degraded', 'db': 'error'}
+    captured = capsys.readouterr()
+    assert 'deep health db check failed: db unavailable' in captured.out

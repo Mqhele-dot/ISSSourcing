@@ -7,6 +7,7 @@ def deep_health(get_conn_fn: Callable[[], AbstractContextManager[Any]]) -> dict[
     try:
         with get_conn_fn() as conn:
             conn.execute('SELECT 1').fetchone()
-    except Exception:
+    except Exception as exc:
+        print(f'deep health db check failed: {exc}')
         return {'status': 'degraded', 'db': 'error'}
     return {'status': 'ok', 'db': 'ok'}

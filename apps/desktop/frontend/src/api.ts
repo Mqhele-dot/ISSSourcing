@@ -7,19 +7,20 @@ export async function fetchHealth(): Promise<{ status: string; service: string }
 }
 
 export type ExceptionCase = {
-  id: number;
-  type: string;
-  severity: string;
-  status: string;
+  id?: number | null;
+  type?: string | null;
+  severity?: string | null;
+  status?: string | null;
 };
 
 export type ConnectorRun = {
-  id: number;
-  connector_name: string;
-  status: string;
-  retries: number;
-  started_at: string;
-  ended_at: string | null;
+  id?: number | null;
+  connector_name?: string | null;
+  status?: string | null;
+  retries?: number | null;
+  started_at?: string | null;
+  ended_at?: string | null;
+  error?: string | null;
 };
 
 export async function loginDemo(role: 'Planner' | 'Ops' | 'Admin'): Promise<string> {
@@ -30,13 +31,15 @@ export async function loginDemo(role: 'Planner' | 'Ops' | 'Admin'): Promise<stri
     body: JSON.stringify({ username, password: 'demo' }),
   });
   if (!res.ok) throw new Error(`login failed: ${res.status}`);
-  const data = await res.json() as { token: string };
+  const data = await res.json() as { token: string; role?: string; username?: string };
+  if (data.role) sessionStorage.setItem('sct_role', data.role);
+  if (data.username) sessionStorage.setItem('sct_username', data.username);
   return data.token;
 }
 
 async function authedGet<T>(path: string): Promise<T> {
   const token = sessionStorage.getItem('sct_token');
-  if (!token) throw new Error('not authenticated');
+  if (!token) throw new Error('Not logged in');
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
