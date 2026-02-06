@@ -11,6 +11,7 @@ from .services.jobs import run_with_retry, start_scheduler
 from .connectors.csv_dropfolder import CSVDropFolderConnector
 from .connectors.erp_export import ERPExportConnector
 from .rules.exceptions import detect_late_confirmation, detect_shipment_delay, detect_stockout_risk
+from .health import deep_health
 
 app = FastAPI(title="SupplyChain Control Tower Local Backend")
 app.add_middleware(
@@ -44,6 +45,11 @@ def startup():
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "api"}
+
+
+@app.get("/health/deep")
+def health_deep():
+    return deep_health(get_conn)
 
 
 @app.post("/auth/login")
