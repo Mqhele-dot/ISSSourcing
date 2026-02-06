@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+backend/control_tower.db
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
