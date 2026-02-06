@@ -1,29 +1,36 @@
 # SupplyChain Control Tower (MVP Scaffold)
 
+## Repository layout
+- `apps/desktop` — Tauri desktop shell + React/TypeScript UI
+- `services/api` — FastAPI local backend + SQLite + APScheduler
+- `packages/shared` — shared contracts (JSON schema, TS types, pydantic model)
+- `docs/execution` — execution planning documents
+- `scripts` — local helper scripts
+
 ## Stack
 - Desktop: Tauri + React + TypeScript
 - Local backend: FastAPI + SQLite
 - Jobs: APScheduler with connector run tracking
 
-## MVP delivered in this scaffold
+## MVP implemented
 - Login + RBAC guard primitives (Planner/Ops/Admin)
 - Connector framework + CSV drop-folder + ERP export connector
 - Job runtime with retry and dead-letter queue
-- Canonical/staging/audit schema in SQLite
-- Exception rule engine for stockout risk, late confirmation, shipment delay
+- Staging/canonical/audit schema in SQLite
+- Exception rules for stockout risk, late confirmation, shipment delay
 - Case endpoints + audit hash-chain verification
 - Demo seed data + demo mode toggle endpoint
 
 ## Run backend
 ```bash
-cd backend
+cd services/api
 python -m venv .venv && source .venv/bin/activate
 pip install -e .[dev]
 uvicorn app.main:app --reload
 ```
 
-## Run tests
+## Run backend tests
 ```bash
-cd backend
-pytest
+cd services/api
+PYTHONPATH=. pytest -q
 ```

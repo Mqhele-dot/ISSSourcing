@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
-backend/control_tower.db
-backend/.venv/
-frontend/node_modules/
-frontend/dist/
+services/api/control_tower.db
+services/api/.venv/
+apps/desktop/frontend/node_modules/
+apps/desktop/frontend/dist/
+.pytest_cache/
