@@ -1,17 +1,18 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
 from .db import init_db, get_conn
 from .security import create_session, require_role
 from .seed import seed_demo_data
 from .services.audit import append_audit_event, verify_chain
-from .services.jobs import run_with_retry
+from .services.jobs import run_with_retry, start_scheduler
 from .connectors.csv_dropfolder import CSVDropFolderConnector
 from .connectors.erp_export import ERPExportConnector
 from .rules.exceptions import detect_late_confirmation, detect_shipment_delay, detect_stockout_risk
 
 app = FastAPI(title="SupplyChain Control Tower Local Backend")
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -29,6 +30,12 @@ def auth_user(authorization: str | None = Header(default=None)):
 def startup():
     init_db()
     seed_demo_data()
+    start_scheduler()
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "api"}
 
 
 @app.post("/auth/login")
@@ -66,6 +73,16 @@ def run_connector(connector_name: str, user=Depends(auth_user)):
     result = run_with_retry(connector)
     append_audit_event("connector.run", user["username"], "connector", connector.name, {"processed": result.processed})
     return result
+
+
+@app.get("/connectors/runs")
+def connector_runs(limit: int = Query(default=100, ge=1, le=500), user=Depends(auth_user)):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, connector_name, status, retries, error, started_at, ended_at FROM connector_runs ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 @app.get("/kpis/home")
@@ -118,6 +135,16 @@ def add_comment(case_id: int, comment: str, user=Depends(auth_user)):
         conn.execute("INSERT INTO case_comments(case_id, author, comment, created_at) VALUES(?,?,?,?)", (case_id, user["username"], comment, datetime.now(timezone.utc).isoformat()))
     append_audit_event("case.comment", user["username"], "exception_case", str(case_id), {"comment": comment})
     return {"ok": True}
+
+
+@app.get("/audit/events")
+def audit_events(limit: int = Query(default=100, ge=1, le=500), user=Depends(auth_user)):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, event_type, actor, entity_type, entity_id, payload, prev_hash, event_hash, created_at FROM audit_event ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 @app.get("/audit/verify")
