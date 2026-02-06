@@ -247,3 +247,9 @@ A planner can open the app and see:
 Integrations stay healthy, monitored, and recover automatically.
 
 Data quality issues are visible, measurable, and fixable via workflow.
+
+
+## 6) Execution package
+For implementation-level delivery details, see:
+- `docs/execution/phase-1-mvp-execution-plan.md`
+- `docs/execution/mvp-delivery-backlog.md`
