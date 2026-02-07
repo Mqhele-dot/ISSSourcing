@@ -34,3 +34,19 @@ uvicorn app.main:app --reload
 cd services/api
 PYTHONPATH=. pytest -q
 ```
+
+## Run in GitHub Codespaces
+
+After the Codespace finishes building:
+
+### Start backend + frontend
+```bash
+./scripts/dev-codespaces.sh
+```
+
+Backend tests
+```bash
+cd services/api
+source .venv/bin/activate
+PYTHONPATH=. pytest -q
+```
