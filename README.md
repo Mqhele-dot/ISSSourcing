@@ -37,16 +37,44 @@ PYTHONPATH=. pytest -q
 
 ## Run in GitHub Codespaces
 
-After the Codespace finishes building:
+Open in Codespaces
 
-### Start backend + frontend
+Wait for postCreate to finish (it runs once automatically)
+
+Then run:
+
 ```bash
+./scripts/smoke-codespaces.sh
 ./scripts/dev-codespaces.sh
 ```
 
-Backend tests
+If installs fail due to corporate proxy, fallback:
+
 ```bash
 cd services/api
+python -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e .[dev] --no-build-isolation || pip install -e .[dev] --use-pep517=false || true
 PYTHONPATH=. pytest -q
+```
+
+```bash
+cd apps/desktop/frontend
+npm config set fund false
+npm config set audit false
+npm install
+npm run build
+```
+
+Expected ports:
+
+- API: 8000
+- UI: 5173
+
+Quick checks:
+
+```bash
+curl -s http://127.0.0.1:8000/health
+curl -s http://127.0.0.1:8000/health/deep
 ```

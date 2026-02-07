@@ -16,8 +16,8 @@
   },
   "forwardPorts": [8000, 5173],
   "portsAttributes": {
-    "8000": { "label": "FastAPI", "onAutoForward": "openBrowser" },
-    "5173": { "label": "Vite", "onAutoForward": "openBrowser" }
+    "8000": { "label": "API (FastAPI)", "onAutoForward": "notify" },
+    "5173": { "label": "UI (Vite)", "onAutoForward": "openBrowser" }
   },
   "postCreateCommand": "bash .devcontainer/postCreate.sh",
   "remoteUser": "codespace"
