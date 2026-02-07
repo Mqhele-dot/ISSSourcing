@@ -12,6 +12,7 @@ from .connectors.csv_dropfolder import CSVDropFolderConnector
 from .connectors.erp_export import ERPExportConnector
 from .rules.exceptions import detect_late_confirmation, detect_shipment_delay, detect_stockout_risk
 from .health import deep_health
+from .services.cases import create_case_comment
 
 app = FastAPI(title="SupplyChain Control Tower Local Backend")
 app.add_middleware(
@@ -26,6 +27,10 @@ app.add_middleware(
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class CommentRequest(BaseModel):
+    comment: str
 
 
 def auth_user(authorization: str | None = Header(default=None)):
@@ -144,10 +149,8 @@ def list_exceptions(status: str = "open", user=Depends(auth_user)):
 
 
 @app.post("/cases/{case_id}/comment")
-def add_comment(case_id: int, comment: str, user=Depends(auth_user)):
-    with get_conn() as conn:
-        conn.execute("INSERT INTO case_comments(case_id, author, comment, created_at) VALUES(?,?,?,?)", (case_id, user["username"], comment, datetime.now(timezone.utc).isoformat()))
-    append_audit_event("case.comment", user["username"], "exception_case", str(case_id), {"comment": comment})
+def add_comment(case_id: int, payload: CommentRequest, user=Depends(auth_user)):
+    create_case_comment(case_id, payload.comment, user["username"])
     return {"ok": True}
 
 

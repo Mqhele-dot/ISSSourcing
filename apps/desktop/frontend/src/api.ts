@@ -47,10 +47,40 @@ async function authedGet<T>(path: string): Promise<T> {
   return res.json();
 }
 
-export function fetchExceptions(): Promise<ExceptionCase[]> {
-  return authedGet<ExceptionCase[]>('/exceptions');
+export async function authedPost<T>(path: string, body?: unknown): Promise<T> {
+  const token = sessionStorage.getItem('sct_token');
+  if (!token) throw new Error('Not logged in');
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+  let payload: string | undefined;
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    payload = JSON.stringify(body);
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers,
+    body: payload,
+  });
+  if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
+  return res.json();
 }
 
-export function fetchConnectorRuns(): Promise<ConnectorRun[]> {
-  return authedGet<ConnectorRun[]>('/connectors/runs');
+export function fetchExceptions(status = 'open'): Promise<ExceptionCase[]> {
+  return authedGet<ExceptionCase[]>(`/exceptions?status=${encodeURIComponent(status)}`);
+}
+
+export function detectExceptions(): Promise<{ created: number }> {
+  return authedPost<{ created: number }>('/exceptions/detect');
+}
+
+export function addCaseComment(caseId: number, comment: string): Promise<{ ok: boolean }> {
+  return authedPost<{ ok: boolean }>(`/cases/${caseId}/comment`, { comment });
+}
+
+export function fetchConnectorRuns(limit = 100): Promise<ConnectorRun[]> {
+  return authedGet<ConnectorRun[]>(`/connectors/runs?limit=${limit}`);
 }
