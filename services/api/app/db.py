@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS dead_letter_queue(id INTEGER PRIMARY KEY AUTOINCREMEN
 CREATE TABLE IF NOT EXISTS batches(id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, created_at TEXT, status TEXT);
 CREATE TABLE IF NOT EXISTS staging_records(id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id INTEGER, entity_type TEXT, payload TEXT, source_system TEXT, source_timestamp TEXT);
 CREATE TABLE IF NOT EXISTS canonical_records(id INTEGER PRIMARY KEY AUTOINCREMENT, entity_type TEXT, entity_id TEXT, payload TEXT, source_of_record TEXT, lineage_batch_id INTEGER, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS inventory_movement(id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT NOT NULL, location TEXT NOT NULL, delta INTEGER NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL, created_by TEXT);
 CREATE TABLE IF NOT EXISTS exception_cases(id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, severity TEXT, status TEXT, assignee TEXT, sla_due_at TEXT, reason TEXT, linked_entity_id TEXT, created_at TEXT, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS case_comments(id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER, author TEXT, comment TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS audit_event(id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, actor TEXT, entity_type TEXT, entity_id TEXT, payload TEXT, prev_hash TEXT, event_hash TEXT, created_at TEXT);

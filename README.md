@@ -80,3 +80,19 @@ Quick checks:
 curl -s http://127.0.0.1:8000/health
 curl -s http://127.0.0.1:8000/health/deep
 ```
+
+## Phase 2 preview walkthrough (Operational Workflows)
+
+1. Login as Planner/Ops/Admin on `/login` (demo password is `demo`).
+2. Open **Inventory**:
+   - Click an SKU to open detail.
+   - Submit an adjustment (location, delta, reason).
+   - Detail refetches and the movement log updates immediately.
+3. Open **Purchase**:
+   - Click a PO to open lines and status.
+   - Update status (`open -> approved -> sent -> received`).
+4. Open **Logistics**:
+   - Filter shipments by status on list page.
+   - Click a shipment for detail and update status.
+
+All operational endpoints require auth and show a **Not logged in** prompt on 401 in the UI.

@@ -21,14 +21,14 @@ def seed_demo_data() -> None:
                 {"sku": "SKU-3", "location": "WH-DUR", "on_hand": 32, "available": 24, "updated_at": (now - timedelta(hours=2)).isoformat()},
             ]
             po_rows = [
-                {"po_number": "PO-1001", "supplier": "Acme Supplies", "status": "open", "requested_date": (now + timedelta(days=4)).date().isoformat(), "lines": 4},
-                {"po_number": "PO-1002", "supplier": "Global Parts Co", "status": "open", "requested_date": (now + timedelta(days=6)).date().isoformat(), "lines": 2},
-                {"po_number": "PO-1003", "supplier": "Nova Industrial", "status": "closed", "requested_date": (now - timedelta(days=1)).date().isoformat(), "lines": 5},
+                {"po_number": "PO-1001", "supplier": "Acme Supplies", "status": "open", "requested_date": (now + timedelta(days=4)).date().isoformat(), "lines": [{"sku": "SKU-1", "qty": 10, "uom": "EA"}, {"sku": "SKU-3", "qty": 4, "uom": "EA"}]},
+                {"po_number": "PO-1002", "supplier": "Global Parts Co", "status": "open", "requested_date": (now + timedelta(days=6)).date().isoformat(), "lines": [{"sku": "SKU-2", "qty": 6, "uom": "EA"}]},
+                {"po_number": "PO-1003", "supplier": "Nova Industrial", "status": "received", "requested_date": (now - timedelta(days=1)).date().isoformat(), "lines": [{"sku": "SKU-4", "qty": 3, "uom": "EA"}]},
             ]
             shipment_rows = [
-                {"shipment_id": "SHIP-2001", "carrier": "DHL", "status": "in_transit", "eta": (now + timedelta(hours=18)).isoformat(), "eta_drift_hours": 10},
-                {"shipment_id": "SHIP-2002", "carrier": "Maersk", "status": "in_transit", "eta": (now + timedelta(hours=36)).isoformat(), "eta_drift_hours": 3},
-                {"shipment_id": "SHIP-2003", "carrier": "FedEx", "status": "delivered", "eta": (now - timedelta(hours=8)).isoformat(), "eta_drift_hours": 0},
+                {"shipment_id": "SHIP-2001", "po_number": "PO-1001", "carrier": "DHL", "status": "in_transit", "eta": (now + timedelta(hours=18)).isoformat(), "origin": "Shenzhen", "dest": "Johannesburg", "eta_drift_hours": 10, "events": [{"status": "picked_up", "at": (now - timedelta(hours=6)).isoformat()}]},
+                {"shipment_id": "SHIP-2002", "po_number": "PO-1002", "carrier": "Maersk", "status": "in_transit", "eta": (now + timedelta(hours=36)).isoformat(), "origin": "Rotterdam", "dest": "Cape Town", "eta_drift_hours": 3, "events": [{"status": "loaded", "at": (now - timedelta(hours=8)).isoformat()}]},
+                {"shipment_id": "SHIP-2003", "po_number": "PO-1003", "carrier": "FedEx", "status": "delivered", "eta": (now - timedelta(hours=8)).isoformat(), "origin": "Nairobi", "dest": "Durban", "eta_drift_hours": 0, "events": [{"status": "delivered", "at": (now - timedelta(hours=8)).isoformat()}]},
             ]
 
             for idx, payload in enumerate(inventory_rows, start=1):
