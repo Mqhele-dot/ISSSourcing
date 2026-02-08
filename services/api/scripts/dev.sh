@@ -5,10 +5,10 @@ cd "$(dirname "$0")/.."
 if [ ! -d ".venv" ]; then
   python -m venv .venv
 fi
-# shellcheck disable=SC1091
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -e .[dev]
+
+./.venv/bin/python -m pip install --upgrade pip setuptools wheel || true
+./.venv/bin/pip install -e ".[dev]"
+./.venv/bin/python -c "import fastapi; print('fastapi ok', fastapi.__version__)"
 
 export PYTHONPATH=.
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+./.venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

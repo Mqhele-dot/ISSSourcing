@@ -3,7 +3,7 @@ name = "supplychain-control-tower-backend"
 version = "0.1.0"
 dependencies = [
   "fastapi>=0.111.0",
-  "uvicorn>=0.30.0",
+  "uvicorn[standard]>=0.30.0",
   "pydantic>=2.7.0",
   "apscheduler>=3.10.4"
 ]

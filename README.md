@@ -32,8 +32,11 @@ uvicorn app.main:app --reload
 ## Run backend tests
 ```bash
 cd services/api
-PYTHONPATH=. pytest -q
+.venv/bin/python -m pip install -e ".[dev]"
+PYTHONPATH=. .venv/bin/python -m pytest -q
 ```
+
+> Codespaces guardrail: always use `services/api/.venv/bin/python` and `services/api/.venv/bin/pip` for backend installs and test runs.
 
 ## Run in GitHub Codespaces
 

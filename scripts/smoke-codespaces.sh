@@ -2,23 +2,26 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+API_DIR="$ROOT/services/api"
+API_PY="$API_DIR/.venv/bin/python"
+API_PIP="$API_DIR/.venv/bin/pip"
 
 echo "==> Backend tests"
-cd "$ROOT/services/api"
+cd "$API_DIR"
 if [ ! -d ".venv" ]; then
   python -m venv .venv
 fi
-# shellcheck disable=SC1091
-source .venv/bin/activate
-python -m pip install --upgrade pip || {
+
+"$API_PY" -m pip install -U pip setuptools wheel || true
+"$API_PIP" install -e ".[dev]" || {
   echo "Dependency install blocked; run inside Codespaces or configure proxy"
   exit 2
 }
-pip install -e .[dev] || {
-  echo "Dependency install blocked; run inside Codespaces or configure proxy"
+"$API_PY" -c "import fastapi; print('fastapi ok', fastapi.__version__)" || {
+  echo "FastAPI import failed after install"
   exit 2
 }
-PYTHONPATH=. pytest -q
+PYTHONPATH=. "$API_PY" -m pytest -q
 
 echo "==> Frontend typecheck/build (requires deps)"
 cd "$ROOT/apps/desktop/frontend"
