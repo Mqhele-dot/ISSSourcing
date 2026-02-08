@@ -27,6 +27,30 @@ export type ConnectorRun = {
   error?: string | null;
 };
 
+export type InventoryRow = {
+  sku?: string | null;
+  location?: string | null;
+  on_hand?: number | null;
+  available?: number | null;
+  updated_at?: string | null;
+};
+
+export type PurchaseOrderRow = {
+  po_number?: string | null;
+  supplier?: string | null;
+  status?: string | null;
+  requested_date?: string | null;
+  lines?: number | null;
+};
+
+export type ShipmentRow = {
+  shipment_id?: string | null;
+  carrier?: string | null;
+  status?: string | null;
+  eta?: string | null;
+  eta_drift_hours?: number | null;
+};
+
 export async function loginDemo(role: 'Planner' | 'Ops' | 'Admin'): Promise<string> {
   const username = role.toLowerCase();
   const res = await fetch(`${API_BASE}/auth/login`, {
@@ -87,4 +111,17 @@ export function addCaseComment(caseId: number, comment: string): Promise<{ ok: b
 
 export function fetchConnectorRuns(limit = 100): Promise<ConnectorRun[]> {
   return authedGet<ConnectorRun[]>(`/connectors/runs?limit=${limit}`);
+}
+
+export function fetchInventory(limit = 100): Promise<InventoryRow[]> {
+  return authedGet<InventoryRow[]>(`/inventory?limit=${limit}`);
+}
+
+export function fetchPurchaseOrders(status = 'open', limit = 100): Promise<PurchaseOrderRow[]> {
+  return authedGet<PurchaseOrderRow[]>(`/purchase/orders?status=${encodeURIComponent(status)}&limit=${limit}`);
+}
+
+export function fetchShipments(status?: string, limit = 100): Promise<ShipmentRow[]> {
+  const statusQuery = status ? `&status=${encodeURIComponent(status)}` : '';
+  return authedGet<ShipmentRow[]>(`/logistics/shipments?limit=${limit}${statusQuery}`);
 }

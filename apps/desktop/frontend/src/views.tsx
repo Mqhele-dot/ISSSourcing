@@ -1,6 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ConnectorRun, ExceptionCase, addCaseComment, detectExceptions, fetchConnectorRuns, fetchExceptions, fetchHealth, loginDemo } from './api';
+import {
+  ConnectorRun,
+  ExceptionCase,
+  InventoryRow,
+  PurchaseOrderRow,
+  ShipmentRow,
+  addCaseComment,
+  detectExceptions,
+  fetchConnectorRuns,
+  fetchExceptions,
+  fetchHealth,
+  fetchInventory,
+  fetchPurchaseOrders,
+  fetchShipments,
+  loginDemo,
+} from './api';
 
 function Navbar() {
   const loggedIn = Boolean(sessionStorage.getItem('sct_token'));
@@ -46,13 +61,153 @@ export const HomeView = () => {
   return <div><Navbar /><h3>Home Dashboard</h3><p>KPIs + activity feed</p><p>Backend health: <strong>{status}</strong></p></div>;
 };
 
-export const InventoryView = () => <div><Navbar /><h3>Inventory</h3></div>;
-export const PurchaseView = () => <div><Navbar /><h3>Purchase</h3></div>;
-export const LogisticsView = () => <div><Navbar /><h3>Logistics</h3></div>;
-
 function LoginPrompt() {
   return <p>Not logged in. <Link to="/login">Go to login</Link></p>;
 }
+
+export const InventoryView = () => {
+  const [rows, setRows] = useState<InventoryRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchInventory()
+      .then((data) => {
+        setRows(data);
+        setError(null);
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'failed to load inventory'));
+  }, []);
+
+  return (
+    <div>
+      <Navbar />
+      <h3>Inventory</h3>
+      {error ? <p>Failed to load inventory: {error}</p> : null}
+      {error === 'Not logged in' ? <LoginPrompt /> : null}
+      {!error && rows.length === 0 ? <p>No inventory records</p> : null}
+      {rows.length > 0 ? (
+        <table>
+          <thead>
+            <tr>
+              <th>sku</th>
+              <th>location</th>
+              <th>on_hand</th>
+              <th>available</th>
+              <th>updated_at</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={`${row.sku ?? 'unknown'}-${idx}`}>
+                <td>{row.sku ?? 'unknown'}</td>
+                <td>{row.location ?? 'unknown'}</td>
+                <td>{row.on_hand ?? '-'}</td>
+                <td>{row.available ?? '-'}</td>
+                <td>{row.updated_at ?? '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+    </div>
+  );
+};
+
+export const PurchaseView = () => {
+  const [orders, setOrders] = useState<PurchaseOrderRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchPurchaseOrders('open')
+      .then((data) => {
+        setOrders(data);
+        setError(null);
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'failed to load purchase orders'));
+  }, []);
+
+  return (
+    <div>
+      <Navbar />
+      <h3>Purchase</h3>
+      {error ? <p>Failed to load purchase orders: {error}</p> : null}
+      {error === 'Not logged in' ? <LoginPrompt /> : null}
+      {!error && orders.length === 0 ? <p>No purchase orders</p> : null}
+      {orders.length > 0 ? (
+        <table>
+          <thead>
+            <tr>
+              <th>po_number</th>
+              <th>supplier</th>
+              <th>status</th>
+              <th>requested_date</th>
+              <th>lines</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((order, idx) => (
+              <tr key={`${order.po_number ?? 'unknown'}-${idx}`}>
+                <td>{order.po_number ?? '-'}</td>
+                <td>{order.supplier ?? 'unknown'}</td>
+                <td>{order.status ?? 'unknown'}</td>
+                <td>{order.requested_date ?? '-'}</td>
+                <td>{order.lines ?? '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+    </div>
+  );
+};
+
+export const LogisticsView = () => {
+  const [shipments, setShipments] = useState<ShipmentRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchShipments()
+      .then((data) => {
+        setShipments(data);
+        setError(null);
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'failed to load shipments'));
+  }, []);
+
+  return (
+    <div>
+      <Navbar />
+      <h3>Logistics</h3>
+      {error ? <p>Failed to load shipments: {error}</p> : null}
+      {error === 'Not logged in' ? <LoginPrompt /> : null}
+      {!error && shipments.length === 0 ? <p>No shipments</p> : null}
+      {shipments.length > 0 ? (
+        <table>
+          <thead>
+            <tr>
+              <th>shipment_id</th>
+              <th>carrier</th>
+              <th>status</th>
+              <th>eta</th>
+              <th>eta_drift_hours</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shipments.map((shipment, idx) => (
+              <tr key={`${shipment.shipment_id ?? 'unknown'}-${idx}`}>
+                <td>{shipment.shipment_id ?? '-'}</td>
+                <td>{shipment.carrier ?? 'unknown'}</td>
+                <td>{shipment.status ?? 'unknown'}</td>
+                <td>{shipment.eta ?? '-'}</td>
+                <td>{shipment.eta_drift_hours ?? '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+    </div>
+  );
+};
 
 export const IntegrationsView = () => {
   const [runs, setRuns] = useState<ConnectorRun[]>([]);

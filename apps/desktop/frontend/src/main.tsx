@@ -12,7 +12,9 @@ function Guard({ role, allowed, children }: { role: Role | null; allowed: Role[]
 }
 
 function App() {
-  const [role, setRole] = useState<Role | null>(null);
+  const initialRole = sessionStorage.getItem('sct_role') as Role | null;
+  const [role, setRole] = useState<Role | null>(initialRole);
+
   return (
     <HashRouter>
       <Routes>
@@ -21,7 +23,7 @@ function App() {
         <Route path="/inventory" element={<Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><InventoryView /></Guard>} />
         <Route path="/purchase" element={<Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><PurchaseView /></Guard>} />
         <Route path="/logistics" element={<Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><LogisticsView /></Guard>} />
-        <Route path="/integrations" element={<Guard role={role} allowed={['Ops', 'Admin']}><IntegrationsView /></Guard>} />
+        <Route path="/integrations" element={<Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><IntegrationsView /></Guard>} />
         <Route path="/exceptions" element={<Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><ExceptionsView /></Guard>} />
       </Routes>
     </HashRouter>

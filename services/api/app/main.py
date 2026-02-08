@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -116,6 +117,17 @@ def home_kpis(user=Depends(auth_user)):
     return {"open_exceptions": open_cases, "fresh_sources": stale}
 
 
+def _list_canonical_payloads(entity_type: str, limit: int = 100, status: str | None = None):
+    query = "SELECT payload FROM canonical_records WHERE entity_type=? ORDER BY id DESC LIMIT ?"
+    params: tuple = (entity_type, limit)
+    with get_conn() as conn:
+        rows = conn.execute(query, params).fetchall()
+    payloads = [json.loads(row["payload"]) for row in rows]
+    if status is not None:
+        payloads = [p for p in payloads if str(p.get("status", "")).lower() == status.lower()]
+    return payloads
+
+
 @app.post("/exceptions/detect")
 def detect_exceptions(user=Depends(auth_user)):
     hits = [
@@ -150,6 +162,21 @@ def list_exceptions(status: str = "open", user=Depends(auth_user)):
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM exception_cases WHERE status=? ORDER BY id DESC", (status,)).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.get("/inventory")
+def list_inventory(limit: int = Query(default=100, ge=1, le=500), user=Depends(auth_user)):
+    return _list_canonical_payloads("inventory_position", limit=limit)
+
+
+@app.get("/purchase/orders")
+def list_purchase_orders(status: str | None = Query(default=None), limit: int = Query(default=100, ge=1, le=500), user=Depends(auth_user)):
+    return _list_canonical_payloads("purchase_order", limit=limit, status=status)
+
+
+@app.get("/logistics/shipments")
+def list_shipments(status: str | None = Query(default=None), limit: int = Query(default=100, ge=1, le=500), user=Depends(auth_user)):
+    return _list_canonical_payloads("shipment", limit=limit, status=status)
 
 
 @app.post("/cases/{case_id}/comment")
