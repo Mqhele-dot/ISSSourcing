@@ -65,7 +65,7 @@ PYTHONPATH=. pytest -q
 cd apps/desktop/frontend
 npm config set fund false
 npm config set audit false
-npm install
+npm ci || npm install
 npm run build
 ```
 

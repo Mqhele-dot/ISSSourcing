@@ -23,7 +23,7 @@ PYTHONPATH=. pytest -q
 echo "==> Frontend typecheck/build (requires deps)"
 cd "$ROOT/apps/desktop/frontend"
 if [ ! -d "node_modules" ]; then
-  npm install || {
+  npm ci || npm install || {
     echo "Dependency install blocked; run inside Codespaces or configure proxy"
     exit 2
   }
