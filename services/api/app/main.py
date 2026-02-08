@@ -1,8 +1,9 @@
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from .db import init_db, get_conn
 from .security import create_session, require_role
@@ -14,6 +15,7 @@ from .connectors.erp_export import ERPExportConnector
 from .rules.exceptions import detect_late_confirmation, detect_shipment_delay, detect_stockout_risk
 from .health import deep_health
 from .services.cases import create_case_comment
+from .services.exceptions import detect_demo_exceptions, detect_response
 
 app = FastAPI(title="SupplyChain Control Tower Local Backend")
 app.add_middleware(
@@ -27,6 +29,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_request: Request, exc: HTTPException):
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail, "code": f"HTTP_{exc.status_code}", "hint": "Check request payload, auth token, and route."})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_request: Request, exc: Exception):
+    return JSONResponse(status_code=500, content={"detail": str(exc), "code": "INTERNAL_ERROR", "hint": "Review backend logs for traceback details."})
 
 
 class LoginRequest(BaseModel):
@@ -130,31 +143,42 @@ def _list_canonical_payloads(entity_type: str, limit: int = 100, status: str | N
 
 @app.post("/exceptions/detect")
 def detect_exceptions(user=Depends(auth_user)):
-    hits = [
-        detect_stockout_risk("SKU-1", 2.5),
-        detect_late_confirmation("PO-9", False, 33),
-        detect_shipment_delay("SHIP-2", 10),
-    ]
-    created = 0
     with get_conn() as conn:
-        for hit in [h for h in hits if h]:
-            conn.execute(
-                "INSERT INTO exception_cases(type,severity,status,assignee,sla_due_at,reason,linked_entity_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                (
-                    hit.rule_type,
-                    hit.severity,
-                    "open",
-                    "unassigned",
-                    (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
-                    hit.reason,
-                    hit.linked_entity_id,
-                    datetime.now(timezone.utc).isoformat(),
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
-            created += 1
-            append_audit_event("case.create", user["username"], "exception_case", hit.linked_entity_id, {"type": hit.rule_type})
-    return {"created": created}
+        inv_rows = conn.execute("SELECT payload FROM canonical_records WHERE entity_type='inventory_position' ORDER BY id DESC LIMIT 200").fetchall()
+        po_rows = conn.execute("SELECT payload FROM canonical_records WHERE entity_type='purchase_order' ORDER BY id DESC LIMIT 200").fetchall()
+        ship_rows = conn.execute("SELECT payload FROM canonical_records WHERE entity_type='shipment' ORDER BY id DESC LIMIT 200").fetchall()
+
+    records = {
+        "inventory_position": [json.loads(r["payload"]) for r in inv_rows],
+        "purchase_order": [json.loads(r["payload"]) for r in po_rows],
+        "shipment": [json.loads(r["payload"]) for r in ship_rows],
+    }
+    items = detect_demo_exceptions(records)
+
+    created = 0
+    if items:
+        with get_conn() as conn:
+            for item in items:
+                conn.execute(
+                    "INSERT INTO exception_cases(type,severity,status,assignee,sla_due_at,reason,linked_entity_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (
+                        item["type"],
+                        item["severity"],
+                        "open",
+                        "unassigned",
+                        (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+                        item["reason"],
+                        str(item["linked_entity_id"]),
+                        datetime.now(timezone.utc).isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+                created += 1
+                append_audit_event("case.create", user["username"], "exception_case", str(item["linked_entity_id"]), {"type": item["type"]})
+
+    response = detect_response(items)
+    response["created"] = created
+    return response
 
 
 @app.get("/exceptions")
