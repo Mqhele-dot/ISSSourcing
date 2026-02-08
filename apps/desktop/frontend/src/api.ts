@@ -1,7 +1,8 @@
-export const API_BASE =
-  (import.meta as any).env?.VITE_API_BASE ??
-  (window as any).__SCT_API_BASE__ ??
-  'http://127.0.0.1:8000';
+const envApiBase = (import.meta as any).env?.VITE_API_BASE;
+const windowApiBase = (window as any).__SCT_API_BASE__;
+const isCodespacesHost = typeof window !== 'undefined' && /(?:\.app\.github\.dev|\.github\.dev)$/.test(window.location.hostname);
+
+export const API_BASE = envApiBase ?? windowApiBase ?? (isCodespacesHost ? '/api' : 'http://127.0.0.1:8000');
 
 export async function fetchHealth(): Promise<{ status: string; service: string }> {
   const res = await fetch(`${API_BASE}/health`);
