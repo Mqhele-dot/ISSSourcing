@@ -39,9 +39,12 @@ export type PurchaseOrderDetail = { po_number: string; supplier: string; status:
 export type ShipmentRow = { shipment_id: string; po_number?: string; carrier?: string; status: string; eta?: string; origin?: string; dest?: string };
 export type ShipmentDetail = ShipmentRow & { events?: Array<{ status: string; at: string }> };
 
-export type ExceptionCase = { id?: number | null; type?: string | null; severity?: string | null; status?: string | null };
+export type ExceptionCase = { id: number; type: string; severity: string; status: string; source: string; related_refs: Record<string, string>; reason?: string; assignee?: string; created_at?: string; updated_at?: string };
 export type ConnectorRun = { id?: number | null; connector_name?: string | null; status?: string | null; retries?: number | null; started_at?: string | null; ended_at?: string | null; error?: string | null };
 export type DetectExceptionsResponse = { items: Array<{ type: string; severity: string; reason: string; linked_entity_id: string }>; message?: string; created?: number };
+export type ExceptionComment = { id: number; author: string; comment: string; created_at: string };
+export type ExceptionDetail = ExceptionCase & { comments: ExceptionComment[] };
+
 
 export async function loginDemo(role: 'Planner' | 'Ops' | 'Admin'): Promise<string> {
   const username = role.toLowerCase();
@@ -73,8 +76,11 @@ export async function authedPost<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export const fetchExceptions = (status = 'open') => authedGet<ExceptionCase[]>(`/exceptions?status=${encodeURIComponent(status)}`);
+export const fetchExceptionDetail = (id: number) => authedGet<ExceptionDetail>(`/exceptions/${id}`);
 export const detectExceptions = () => authedPost<DetectExceptionsResponse>('/exceptions/detect');
-export const addCaseComment = (caseId: number, comment: string) => authedPost<{ ok: boolean }>(`/cases/${caseId}/comment`, { comment });
+export const addCaseComment = (caseId: number, comment: string) => authedPost<{ ok: boolean }>(`/exceptions/${caseId}/comment`, { comment });
+export const assignException = (id: number, assignee: string) => authedPost<{ ok: boolean }>(`/exceptions/${id}/assign`, { assignee });
+export const updateExceptionStatus = (id: number, status: string) => authedPost<{ ok: boolean }>(`/exceptions/${id}/status`, { status });
 export const fetchConnectorRuns = (limit = 100) => authedGet<ConnectorRun[]>(`/connectors/runs?limit=${limit}`);
 
 export async function fetchInventory(): Promise<InventoryRow[]> { return (await authedGet<{ items: InventoryRow[] }>('/inventory')).items; }

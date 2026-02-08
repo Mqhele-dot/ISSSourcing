@@ -8,6 +8,7 @@ import { LogisticsDetailPage } from './pages/LogisticsDetailPage';
 import { LogisticsPage } from './pages/LogisticsPage';
 import { PurchaseDetailPage } from './pages/PurchaseDetailPage';
 import { PurchasePage } from './pages/PurchasePage';
+import { ExceptionDetailPage } from './pages/ExceptionDetailPage';
 
 type Role = 'Planner' | 'Ops' | 'Admin';
 
@@ -36,6 +37,7 @@ function App() {
         <Route path="/logistics/:shipment_id" element={<Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><WithNav><LogisticsDetailPage /></WithNav></Guard>} />
         <Route path="/integrations" element={<Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><IntegrationsView /></Guard>} />
         <Route path="/exceptions" element={<Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><ExceptionsView /></Guard>} />
+        <Route path="/exceptions/:exception_id" element={<Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><WithNav><ExceptionDetailPage /></WithNav></Guard>} />
       </Routes>
     </HashRouter>
   );

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { addCaseComment, ConnectorRun, detectExceptions, ExceptionCase, fetchConnectorRuns, fetchExceptions, fetchHealth, loginDemo } from './api';
+import { ConnectorRun, detectExceptions, ExceptionCase, fetchConnectorRuns, fetchExceptions, fetchHealth, loginDemo } from './api';
 import { ApiErrorEntry, getApiErrors, subscribeApiErrors } from './state/apiErrors';
 import { LoginPrompt } from './pages/common';
 
@@ -8,7 +8,13 @@ function DevDebugPanel({ open }: { open: boolean }) {
   const [errors, setErrors] = useState<ApiErrorEntry[]>(getApiErrors());
   useEffect(() => subscribeApiErrors(() => setErrors(getApiErrors())), []);
   if (!import.meta.env.DEV || !open) return null;
-  return <details open><summary>Dev Debug ({errors.length})</summary>{errors.map((e, i) => <div key={i}><small>{e.time} | {e.route} | {e.status ?? 'network'} | {e.message}</small></div>)}</details>;
+  return (
+    <details open>
+      <summary>Dev Debug ({errors.length})</summary>
+      {errors.length === 0 ? <p>No API errors recorded</p> : null}
+      {errors.map((e, i) => <div key={i}><small>{e.time} | {e.route} | {e.status ?? 'network'} | {e.message}</small></div>)}
+    </details>
+  );
 }
 
 export function Navbar() {
@@ -32,16 +38,55 @@ export const HomeView = () => {
 
 export const IntegrationsView = () => {
   const [runs, setRuns] = useState<ConnectorRun[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { fetchConnectorRuns().then(setRuns).catch((e: unknown) => setError(e instanceof Error ? e.message : 'failed')); }, []);
-  return <div><Navbar /><h3>Integrations</h3>{error ? <p>{error === 'Not logged in' ? <LoginPrompt /> : error}</p> : null}<table><tbody>{runs.map((r, i) => <tr key={i}><td>{r.connector_name}</td><td>{r.status}</td></tr>)}</tbody></table></div>;
+
+  useEffect(() => {
+    fetchConnectorRuns().then((data) => { setRuns(data); setError(null); }).catch((e: unknown) => setError(e instanceof Error ? e.message : 'failed')).finally(() => setLoading(false));
+  }, []);
+
+  return <div><Navbar /><h3>Integrations</h3>{loading ? <p>Loading…</p> : null}{error ? (error === 'Not logged in' ? <LoginPrompt /> : <p>Error: {error}</p>) : null}{!loading && !error && runs.length === 0 ? <p>No connector runs yet</p> : null}{!loading && !error && runs.length > 0 ? <table><tbody>{runs.map((r, i) => <tr key={i}><td>{r.connector_name}</td><td>{r.status}</td></tr>)}</tbody></table> : null}</div>;
 };
 
 export const ExceptionsView = () => {
   const [cases, setCases] = useState<ExceptionCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
-  const load = () => fetchExceptions('open').then(setCases).catch((e: unknown) => setError(e instanceof Error ? e.message : 'failed'));
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = () => fetchExceptions('open').then((data) => { setCases(data); setError(null); }).catch((e: unknown) => setError(e instanceof Error ? e.message : 'failed')).finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
-  return <div><Navbar /><h3>Exceptions / Cases</h3><button onClick={async () => { await detectExceptions(); await load(); }}>Detect exceptions</button>{error ? <p>{error === 'Not logged in' ? <LoginPrompt /> : error}</p> : null}<table><tbody>{cases.map((c, i) => <tr key={i}><td>{c.id}</td><td>{c.type}</td><td><input value={commentDrafts[c.id ?? -1] ?? ''} onChange={(e) => c.id && setCommentDrafts((p) => ({ ...p, [c.id!]: e.target.value }))} /><button onClick={() => c.id && addCaseComment(c.id, commentDrafts[c.id] ?? '')}>Add</button></td></tr>)}</tbody></table></div>;
+
+  const runDetect = async () => {
+    setDetecting(true);
+    setMessage(null);
+    try {
+      const result = await detectExceptions();
+      setMessage(result.message ?? `${result.created ?? 0} exceptions created`);
+      setLoading(true);
+      await load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Detection failed');
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  return (
+    <div>
+      <Navbar />
+      <h3>Exceptions / Cases</h3>
+      <button onClick={runDetect} disabled={detecting}>{detecting ? 'Detecting…' : 'Detect exceptions'}</button>
+      {message ? <p>{message}</p> : null}
+      {loading ? <p>Loading…</p> : null}
+      {error ? (error === 'Not logged in' ? <LoginPrompt /> : <p>Error: {error}</p>) : null}
+      {!loading && !error && cases.length === 0 ? <p>No open exceptions</p> : null}
+      {!loading && !error && cases.length > 0 ? (
+        <table><thead><tr><th>ID</th><th>Type</th><th>Severity</th><th>Status</th><th>Source</th></tr></thead><tbody>
+          {cases.map((c) => <tr key={c.id}><td><Link to={`/exceptions/${c.id}`}>{c.id}</Link></td><td>{c.type}</td><td>{c.severity}</td><td>{c.status}</td><td>{c.source}</td></tr>)}
+        </tbody></table>
+      ) : null}
+    </div>
+  );
 };
