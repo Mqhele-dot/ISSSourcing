@@ -48,6 +48,8 @@ Then run:
 ./scripts/dev-codespaces.sh
 ```
 
+If you refresh and get redirected to /login, just click Login again (token is stored, but role state resets on reload).
+
 If installs fail due to corporate proxy, fallback:
 
 ```bash
