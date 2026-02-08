@@ -32,7 +32,9 @@ def test_exceptions_detect_with_no_issues_returns_empty_message(tmp_path, monkey
 
     response = client.post('/exceptions/detect', headers=headers)
     assert response.status_code == 200
-    assert response.json()['items'] == []
+    body = response.json()
+    assert body['items'] == []
+    assert 'message' in body
 
 
 def test_exceptions_detect_seeded_issue_creates_exception(tmp_path, monkeypatch):
@@ -41,7 +43,9 @@ def test_exceptions_detect_seeded_issue_creates_exception(tmp_path, monkeypatch)
 
     response = client.post('/exceptions/detect', headers=headers)
     assert response.status_code == 200
-    assert response.json()['created'] >= 1
+    body = response.json()
+    assert body['created'] >= 1
+    assert all('source' in item and 'related_refs' in item for item in body['items'])
 
 
 def test_exceptions_detect_idempotent_no_duplicates(tmp_path, monkeypatch):
@@ -66,9 +70,11 @@ def test_exception_lifecycle_assign_status_comment(tmp_path, monkeypatch):
 
     assign_response = client.post(f'/exceptions/{exception_id}/assign', json={'assignee': 'ops'}, headers=headers)
     assert assign_response.status_code == 200
+    assert assign_response.json()['assignee'] == 'ops'
 
     status_response = client.post(f'/exceptions/{exception_id}/status', json={'status': 'investigating'}, headers=headers)
     assert status_response.status_code == 200
+    assert status_response.json()['status'] == 'investigating'
 
     comment_response = client.post(f'/exceptions/{exception_id}/comment', json={'comment': 'Investigating root cause'}, headers=headers)
     assert comment_response.status_code == 200

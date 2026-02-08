@@ -16,7 +16,12 @@ from .security import create_session, require_role
 from .seed import seed_demo_data
 from .services.audit import append_audit_event, verify_chain
 from .services.cases import create_case_comment
-from .services.exceptions import detect_demo_exceptions, detect_response
+from .services.exceptions import (
+    detect_demo_exceptions,
+    detect_response,
+    normalize_exception_detail,
+    normalize_exception_row,
+)
 from .services.jobs import run_with_retry, start_scheduler
 
 app = FastAPI(title="SupplyChain Control Tower Local Backend")
@@ -59,6 +64,8 @@ class InventoryAdjustRequest(BaseModel):
     location: str
     delta: int
     reason: str
+    movement_type: str = "adjust"
+    source_ref: str = ""
 
 
 class StatusUpdateRequest(BaseModel):
@@ -172,23 +179,13 @@ def _exception_source_and_refs(item: dict[str, Any]) -> tuple[str, dict[str, str
     return "inventory", {"sku": linked}
 
 
-def _normalize_exception(row: dict[str, Any]) -> dict[str, Any]:
-    try:
-        refs = json.loads(row.get("related_refs") or "{}")
-    except json.JSONDecodeError:
-        refs = {}
-    return {
-        "id": row.get("id"),
-        "type": row.get("type") or "unknown",
-        "severity": row.get("severity") or "medium",
-        "status": row.get("status") or "open",
-        "source": row.get("source") or "inventory",
-        "related_refs": refs,
-        "reason": row.get("reason"),
-        "assignee": row.get("assignee"),
-        "created_at": row.get("created_at"),
-        "updated_at": row.get("updated_at"),
-    }
+def _get_exception_detail_or_404(exception_id: int) -> dict[str, Any]:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM exception_cases WHERE id=?", (exception_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Exception not found")
+        comments = conn.execute("SELECT id, author, comment, created_at FROM case_comments WHERE case_id=? ORDER BY id DESC", (exception_id,)).fetchall()
+    return normalize_exception_detail(dict(row), [dict(c) for c in comments])
 
 
 @app.post("/exceptions/detect")
@@ -204,41 +201,47 @@ def detect_exceptions(user=Depends(auth_user)):
             "purchase_order": [json.loads(r["payload"]) for r in po_rows],
             "shipment": [json.loads(r["payload"]) for r in ship_rows],
         }
-        items = detect_demo_exceptions(records)
+        findings = detect_demo_exceptions(records)
 
         created = 0
-        if items:
-            now = datetime.now(timezone.utc).isoformat()
-            with get_conn() as conn:
-                for item in items:
-                    linked = str(item.get("linked_entity_id", "unknown"))
-                    existing = conn.execute(
-                        "SELECT id FROM exception_cases WHERE type=? AND linked_entity_id=? AND status IN ('open','investigating') LIMIT 1",
-                        (item["type"], linked),
-                    ).fetchone()
-                    if existing:
-                        continue
-                    source, refs = _exception_source_and_refs(item)
-                    conn.execute(
-                        "INSERT INTO exception_cases(type,severity,status,assignee,source,related_refs,sla_due_at,reason,linked_entity_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            item.get("type", "unknown"),
-                            item.get("severity", "medium"),
-                            "open",
-                            "unassigned",
-                            source,
-                            json.dumps(refs),
-                            (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
-                            item.get("reason", ""),
-                            linked,
-                            now,
-                            now,
-                        ),
-                    )
-                    created += 1
-                    append_audit_event("case.create", user["username"], "exception_case", linked, {"type": item.get("type", "unknown")})
+        normalized_items: list[dict[str, Any]] = []
+        with get_conn() as conn:
+            for item in findings:
+                linked = str(item.get("linked_entity_id", "unknown"))
+                existing = conn.execute(
+                    "SELECT id FROM exception_cases WHERE type=? AND linked_entity_id=? AND status IN ('open','investigating') LIMIT 1",
+                    (item.get("type", "unknown"), linked),
+                ).fetchone()
+                if existing:
+                    existing_row = conn.execute("SELECT * FROM exception_cases WHERE id=?", (existing["id"],)).fetchone()
+                    normalized_items.append(normalize_exception_row(dict(existing_row)))
+                    continue
 
-        response = detect_response(items)
+                source, refs = _exception_source_and_refs(item)
+                now = datetime.now(timezone.utc).isoformat()
+                case_id = conn.execute(
+                    "INSERT INTO exception_cases(type,severity,status,assignee,source,related_refs,sla_due_at,reason,linked_entity_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        item.get("type", "unknown"),
+                        item.get("severity", "medium"),
+                        "open",
+                        "unassigned",
+                        source,
+                        json.dumps(refs),
+                        (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+                        item.get("reason", ""),
+                        linked,
+                        now,
+                        now,
+                    ),
+                ).lastrowid
+                created += 1
+                new_row = conn.execute("SELECT * FROM exception_cases WHERE id=?", (case_id,)).fetchone()
+                normalized_items.append(normalize_exception_row(dict(new_row)))
+                append_audit_event("case.create", user["username"], "exception_case", linked, {"type": item.get("type", "unknown")})
+
+        response = detect_response(normalized_items)
+        response["items"] = normalized_items
         response["created"] = created
         return response
     except Exception:
@@ -252,17 +255,12 @@ def list_exceptions(status: str | None = Query(default="open"), user=Depends(aut
             rows = conn.execute("SELECT * FROM exception_cases WHERE status=? ORDER BY id DESC", (status,)).fetchall()
         else:
             rows = conn.execute("SELECT * FROM exception_cases ORDER BY id DESC").fetchall()
-    return [_normalize_exception(dict(r)) for r in rows]
+    return [normalize_exception_row(dict(r)) for r in rows]
 
 
 @app.get("/exceptions/{exception_id}")
 def get_exception(exception_id: int, user=Depends(auth_user)):
-    with get_conn() as conn:
-        row = conn.execute("SELECT * FROM exception_cases WHERE id=?", (exception_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Exception not found")
-        comments = conn.execute("SELECT id, author, comment, created_at FROM case_comments WHERE case_id=? ORDER BY id DESC", (exception_id,)).fetchall()
-    return {**_normalize_exception(dict(row)), "comments": [dict(c) for c in comments]}
+    return _get_exception_detail_or_404(exception_id)
 
 
 @app.post("/exceptions/{exception_id}/assign")
@@ -273,7 +271,7 @@ def assign_exception(exception_id: int, payload: ExceptionAssignRequest, user=De
     if updated == 0:
         raise HTTPException(status_code=404, detail="Exception not found")
     append_audit_event("case.assign", user["username"], "exception_case", str(exception_id), {"assignee": payload.assignee})
-    return {"ok": True, "id": exception_id, "assignee": payload.assignee}
+    return _get_exception_detail_or_404(exception_id)
 
 
 @app.post("/exceptions/{exception_id}/status")
@@ -288,13 +286,14 @@ def update_exception_status(exception_id: int, payload: StatusUpdateRequest, use
     if updated == 0:
         raise HTTPException(status_code=404, detail="Exception not found")
     append_audit_event("case.status", user["username"], "exception_case", str(exception_id), {"status": next_status})
-    return {"ok": True, "id": exception_id, "status": next_status}
+    return _get_exception_detail_or_404(exception_id)
 
 
 @app.post("/exceptions/{exception_id}/comment")
 def add_exception_comment(exception_id: int, payload: CommentRequest, user=Depends(auth_user)):
     create_case_comment(exception_id, payload.comment, user["username"])
-    return {"ok": True}
+    append_audit_event("case.comment", user["username"], "exception_case", str(exception_id), {"comment": payload.comment})
+    return _get_exception_detail_or_404(exception_id)
 
 
 @app.get("/inventory")
@@ -306,7 +305,10 @@ def list_inventory(limit: int = Query(default=100, ge=1, le=500), user=Depends(a
 def inventory_detail(sku: str, user=Depends(auth_user)):
     positions = [row for row in _latest_inventory_positions() if row.get("sku") == sku]
     with get_conn() as conn:
-        movement_rows = conn.execute("SELECT id, sku, location, delta, reason, created_at, created_by FROM inventory_movement WHERE sku=? ORDER BY id DESC LIMIT 50", (sku,)).fetchall()
+        movement_rows = conn.execute(
+            "SELECT id, sku, location, delta, reason, movement_type, source_ref, created_at, created_by FROM inventory_movement WHERE sku=? ORDER BY id DESC LIMIT 50",
+            (sku,),
+        ).fetchall()
     return {"sku": sku, "positions": positions, "movements": [dict(r) for r in movement_rows]}
 
 
@@ -316,14 +318,46 @@ def inventory_adjust(payload: InventoryAdjustRequest, user=Depends(auth_user)):
         raise HTTPException(status_code=400, detail="delta must not be zero")
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
-        row = conn.execute("SELECT id, payload FROM canonical_records WHERE entity_type='inventory_position' AND json_extract(payload, '$.sku')=? AND json_extract(payload, '$.location')=? ORDER BY id DESC LIMIT 1", (payload.sku, payload.location)).fetchone()
+        row = conn.execute(
+            "SELECT id, payload FROM canonical_records WHERE entity_type='inventory_position' AND json_extract(payload, '$.sku')=? AND json_extract(payload, '$.location')=? ORDER BY id DESC LIMIT 1",
+            (payload.sku, payload.location),
+        ).fetchone()
         current = json.loads(row["payload"]) if row else {"sku": payload.sku, "location": payload.location, "on_hand": 0, "available": 0, "updated_at": now}
         current["on_hand"] = int(current.get("on_hand", 0)) + payload.delta
         current["available"] = int(current.get("available", 0)) + payload.delta
         current["updated_at"] = now
-        conn.execute("INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)", ("inventory_position", f"{payload.sku}:{payload.location}", json.dumps(current), "manual_adjustment", 0, now))
-        movement_id = conn.execute("INSERT INTO inventory_movement(sku, location, delta, reason, created_at, created_by) VALUES(?,?,?,?,?,?)", (payload.sku, payload.location, payload.delta, payload.reason, now, user["username"])).lastrowid
-        movement_row = conn.execute("SELECT id, sku, location, delta, reason, created_at, created_by FROM inventory_movement WHERE id=?", (movement_id,)).fetchone()
+
+        conn.execute(
+            "INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)",
+            ("inventory_position", f"{payload.sku}:{payload.location}", json.dumps(current), "manual_adjustment", 0, now),
+        )
+        movement_id = conn.execute(
+            "INSERT INTO inventory_movement(sku, location, delta, reason, movement_type, source_ref, created_at, created_by) VALUES(?,?,?,?,?,?,?,?)",
+            (payload.sku, payload.location, payload.delta, payload.reason, payload.movement_type, payload.source_ref, now, user["username"]),
+        ).lastrowid
+        movement_row = conn.execute(
+            "SELECT id, sku, location, delta, reason, movement_type, source_ref, created_at, created_by FROM inventory_movement WHERE id=?",
+            (movement_id,),
+        ).fetchone()
+
+        if current["available"] < 0:
+            conn.execute(
+                "INSERT INTO exception_cases(type,severity,status,assignee,source,related_refs,sla_due_at,reason,linked_entity_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "inventory_shortage",
+                    "critical",
+                    "open",
+                    "unassigned",
+                    "inventory",
+                    json.dumps({"sku": payload.sku}),
+                    (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+                    "Inventory available quantity is negative",
+                    payload.sku,
+                    now,
+                    now,
+                ),
+            )
+
     return {"ok": True, "position": current, "movement": dict(movement_row)}
 
 
@@ -350,7 +384,14 @@ def purchase_order_detail(po_number: str, user=Depends(auth_user)):
         row = conn.execute("SELECT payload FROM canonical_records WHERE entity_type='purchase_order' AND json_extract(payload, '$.po_number')=? ORDER BY id DESC LIMIT 1", (po_number,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    return json.loads(row["payload"])
+    order = json.loads(row["payload"])
+    with get_conn() as conn:
+        shipments = conn.execute(
+            "SELECT payload FROM canonical_records WHERE entity_type='shipment' AND json_extract(payload, '$.po_number')=? ORDER BY id DESC LIMIT 20",
+            (po_number,),
+        ).fetchall()
+    order["shipments"] = [json.loads(s["payload"]) for s in shipments]
+    return order
 
 
 @app.post("/purchase/orders/{po_number}/status")
@@ -369,6 +410,57 @@ def update_purchase_order_status(po_number: str, payload: StatusUpdateRequest, u
         now = datetime.now(timezone.utc).isoformat()
         conn.execute("INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)", ("purchase_order", po_number, json.dumps(order), "manual_status_update", 0, now))
     return {"ok": True, "po_number": po_number, "status": target}
+
+
+@app.post("/purchase/orders/{po_number}/receive")
+def receive_purchase_order(po_number: str, user=Depends(auth_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        po_row = conn.execute("SELECT payload FROM canonical_records WHERE entity_type='purchase_order' AND json_extract(payload, '$.po_number')=? ORDER BY id DESC LIMIT 1", (po_number,)).fetchone()
+        if not po_row:
+            raise HTTPException(status_code=404, detail="Purchase order not found")
+        po = json.loads(po_row["payload"])
+        po["status"] = "received"
+        conn.execute("INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)", ("purchase_order", po_number, json.dumps(po), "receive_po", 0, now))
+
+        inventory_updates: list[dict[str, Any]] = []
+        for line in po.get("lines", []):
+            sku = line.get("sku")
+            qty = int(line.get("qty", 0) or 0)
+            if not sku or qty == 0:
+                continue
+            location = "WH-JHB"
+            inv_row = conn.execute(
+                "SELECT payload FROM canonical_records WHERE entity_type='inventory_position' AND json_extract(payload, '$.sku')=? AND json_extract(payload, '$.location')=? ORDER BY id DESC LIMIT 1",
+                (sku, location),
+            ).fetchone()
+            inv = json.loads(inv_row["payload"]) if inv_row else {"sku": sku, "location": location, "on_hand": 0, "available": 0, "updated_at": now}
+            inv["on_hand"] = int(inv.get("on_hand", 0)) + qty
+            inv["available"] = int(inv.get("available", 0)) + qty
+            inv["updated_at"] = now
+            conn.execute("INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)", ("inventory_position", f"{sku}:{location}", json.dumps(inv), "receive_po", 0, now))
+            conn.execute(
+                "INSERT INTO inventory_movement(sku, location, delta, reason, movement_type, source_ref, created_at, created_by) VALUES(?,?,?,?,?,?,?,?)",
+                (sku, location, qty, f"PO {po_number} received", "receive", po_number, now, user["username"]),
+            )
+            inventory_updates.append(inv)
+
+        shipment_rows = conn.execute(
+            "SELECT payload FROM canonical_records WHERE entity_type='shipment' AND json_extract(payload, '$.po_number')=? ORDER BY id DESC LIMIT 20",
+            (po_number,),
+        ).fetchall()
+        updated_shipments: list[dict[str, Any]] = []
+        for row in shipment_rows:
+            shipment = json.loads(row["payload"])
+            shipment["status"] = "delivered"
+            events = shipment.get("events") or []
+            events.append({"status": "delivered", "at": now})
+            shipment["events"] = events
+            conn.execute("INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)", ("shipment", shipment.get("shipment_id", "unknown"), json.dumps(shipment), "receive_po", 0, now))
+            updated_shipments.append(shipment)
+
+    append_audit_event("po.receive", user["username"], "purchase_order", po_number, {"inventory_updates": len(inventory_updates), "shipments_updated": len(updated_shipments)})
+    return {"ok": True, "po_number": po_number, "status": "received", "inventory_updates": inventory_updates, "shipments_updated": updated_shipments, "exceptions_created": 0}
 
 
 @app.get("/logistics/shipments")

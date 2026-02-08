@@ -29,12 +29,12 @@ export async function fetchHealth(): Promise<{ status: string; service: string }
 }
 
 export type InventoryRow = { sku: string; location: string; on_hand: number; available: number; updated_at: string };
-export type InventoryMovement = { id: number; sku: string; location: string; delta: number; reason: string; created_at: string; created_by?: string };
+export type InventoryMovement = { id: number; sku: string; location: string; delta: number; reason: string; movement_type?: string; source_ref?: string; created_at: string; created_by?: string };
 export type InventoryDetail = { sku: string; positions: InventoryRow[]; movements: InventoryMovement[] };
 
 export type PurchaseOrderRow = { po_number: string; supplier: string; status: string; requested_date: string; lines: number };
 export type PurchaseLine = { sku: string; qty: number; uom: string };
-export type PurchaseOrderDetail = { po_number: string; supplier: string; status: string; requested_date: string; lines: PurchaseLine[] };
+export type PurchaseOrderDetail = { po_number: string; supplier: string; status: string; requested_date: string; lines: PurchaseLine[]; shipments?: ShipmentRow[] };
 
 export type ShipmentRow = { shipment_id: string; po_number?: string; carrier?: string; status: string; eta?: string; origin?: string; dest?: string };
 export type ShipmentDetail = ShipmentRow & { events?: Array<{ status: string; at: string }> };
@@ -85,13 +85,15 @@ export const fetchConnectorRuns = (limit = 100) => authedGet<ConnectorRun[]>(`/c
 
 export async function fetchInventory(): Promise<InventoryRow[]> { return (await authedGet<{ items: InventoryRow[] }>('/inventory')).items; }
 export const fetchInventoryDetail = (sku: string) => authedGet<InventoryDetail>(`/inventory/${encodeURIComponent(sku)}`);
-export const adjustInventory = (payload: { sku: string; location: string; delta: number; reason: string }) => authedPost<{ ok: boolean }>('/inventory/adjust', payload);
+export const adjustInventory = (payload: { sku: string; location: string; delta: number; reason: string; movement_type?: string; source_ref?: string }) => authedPost<{ ok: boolean }>('/inventory/adjust', payload);
 
 export async function fetchPurchaseOrders(status = 'open'): Promise<PurchaseOrderRow[]> {
   return (await authedGet<{ items: PurchaseOrderRow[] }>(`/purchase/orders?status=${encodeURIComponent(status)}`)).items;
 }
 export const fetchPurchaseOrder = (po: string) => authedGet<PurchaseOrderDetail>(`/purchase/orders/${encodeURIComponent(po)}`);
 export const updatePurchaseStatus = (po: string, status: string) => authedPost<{ ok: boolean }>(`/purchase/orders/${encodeURIComponent(po)}/status`, { status });
+
+export const receivePurchaseOrder = (po: string) => authedPost<{ ok: boolean; inventory_updates: InventoryRow[]; shipments_updated: ShipmentRow[]; exceptions_created: number }>(`/purchase/orders/${encodeURIComponent(po)}/receive`);
 
 export async function fetchShipments(params?: { status?: string; po_number?: string }): Promise<ShipmentRow[]> {
   const search = new URLSearchParams();

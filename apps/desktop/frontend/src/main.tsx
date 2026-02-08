@@ -13,16 +13,16 @@ import { ExceptionDetailPage } from './pages/ExceptionDetailPage';
 type Role = 'Planner' | 'Ops' | 'Admin';
 
 function Guard({ role, allowed, children }: { role: Role | null; allowed: Role[]; children: JSX.Element }) {
-  if (!role) return <Navigate to="/login" replace />;
-  if (!allowed.includes(role)) return <div>Forbidden</div>;
+  const token = sessionStorage.getItem('sct_token');
+  if (!token) return <Navigate to="/login" replace />;
+  if (!role || !allowed.includes(role)) return <div>Forbidden</div>;
   return children;
 }
 
 function WithNav({ children }: { children: JSX.Element }) { return <div><Navbar />{children}</div>; }
 
 function App() {
-  const initialRole = sessionStorage.getItem('sct_role') as Role | null;
-  const [role, setRole] = useState<Role | null>(initialRole);
+  const [role, setRole] = useState<Role | null>((sessionStorage.getItem('sct_role') as Role | null) ?? null);
 
   return (
     <HashRouter>

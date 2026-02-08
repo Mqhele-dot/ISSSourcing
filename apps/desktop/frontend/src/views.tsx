@@ -20,7 +20,15 @@ function DevDebugPanel({ open }: { open: boolean }) {
 export function Navbar() {
   const loggedIn = Boolean(sessionStorage.getItem('sct_token'));
   const [debugOpen, setDebugOpen] = useState(false);
-  return <><nav><Link to="/">Home</Link> | <Link to="/login">Login</Link>{loggedIn ? <><span> | </span><Link to="/inventory">Inventory</Link><span> | </span><Link to="/purchase">Purchase</Link><span> | </span><Link to="/logistics">Logistics</Link><span> | </span><Link to="/exceptions">Exceptions</Link><span> | </span><Link to="/integrations">Integrations</Link></> : null}{import.meta.env.DEV ? <><span> | </span><button onClick={() => setDebugOpen((v) => !v)}>Dev Debug</button></> : null}</nav><DevDebugPanel open={debugOpen} /></>;
+
+  const onLogout = () => {
+    sessionStorage.removeItem('sct_token');
+    sessionStorage.removeItem('sct_role');
+    sessionStorage.removeItem('sct_username');
+    window.location.hash = '#/login';
+  };
+
+  return <><nav><Link to="/">Home</Link> | <Link to="/login">Login</Link>{loggedIn ? <><span> | </span><Link to="/inventory">Inventory</Link><span> | </span><Link to="/purchase">Purchase</Link><span> | </span><Link to="/logistics">Logistics</Link><span> | </span><Link to="/exceptions">Exceptions</Link><span> | </span><Link to="/integrations">Integrations</Link><span> | </span><button onClick={onLogout}>Logout</button></> : null}{import.meta.env.DEV ? <><span> | </span><button onClick={() => setDebugOpen((v) => !v)}>Dev Debug</button></> : null}</nav><DevDebugPanel open={debugOpen} /></>;
 }
 
 export function LoginView({ onLogin }: { onLogin: (role: 'Planner' | 'Ops' | 'Admin') => void }) {
