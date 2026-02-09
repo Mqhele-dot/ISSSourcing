@@ -14,7 +14,13 @@ ensure_backend_deps() {
 
   echo "==> Backend dependency install"
   "$API_PY" -m pip install -U pip setuptools wheel || true
-  "$API_PIP" install -e ".[dev]"
+  if ! "$API_PIP" install -e ".[dev]"; then
+    echo "Backend deps could not be installed (likely proxy/index policy)."
+    echo "Try API-only preview: services/api/scripts/preview_api.sh"
+    echo "Or set PIP_INDEX_URL / NPM registry to your org mirror."
+    exit 2
+  fi
+
   "$API_PY" -c "import fastapi; print('fastapi ok', fastapi.__version__)"
 }
 

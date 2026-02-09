@@ -8,17 +8,18 @@ export const API_BASE = envApiBase ?? windowApiBase ?? (isCodespacesHost ? '/api
 
 async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const route = path;
+  const url = `${API_BASE}${path}`;
   try {
-    const response = await fetch(`${API_BASE}${path}`, init);
+    const response = await fetch(url, init);
     if (!response.ok) {
       const message = `${path} failed: ${response.status}`;
-      pushApiError({ route, status: response.status, message, time: new Date().toISOString() });
+      pushApiError({ route, url, status: response.status, message, time: new Date().toISOString() });
       throw new Error(response.status === 401 ? 'Not logged in' : message);
     }
     return response;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Request failed';
-    pushApiError({ route, status: null, message, time: new Date().toISOString() });
+    pushApiError({ route, url, status: null, message, time: new Date().toISOString() });
     throw error;
   }
 }
@@ -108,4 +109,4 @@ export const fetchShipment = (id: string) => authedGet<ShipmentDetail>(`/logisti
 export const updateShipmentStatus = (id: string, status: string) => authedPost<{ ok: boolean }>(`/logistics/shipments/${encodeURIComponent(id)}/status`, { status });
 export const deliverShipment = (id: string) => authedPost<{ message: string; changed: { inventory: InventoryRow[]; shipments: ShipmentRow[]; exceptions: ExceptionCase[] } }>(`/logistics/shipments/${encodeURIComponent(id)}/deliver`);
 
-export const resetDemoData = () => apiFetch('/demo/reset', { method: 'POST' }).then((r) => r.json() as Promise<{ ok: boolean; message: string }>);
+export const resetDemoData = () => authedPost<{ ok: boolean; message: string; seeded: { canonical: number; exceptions: number; movements: number; users: number } }>('/demo/reset');

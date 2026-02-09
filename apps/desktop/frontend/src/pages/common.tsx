@@ -15,7 +15,7 @@ export function LoadDemoDataButton({ onLoaded }: { onLoaded: () => void }) {
     setMessage(null);
     try {
       const resp = await resetDemoData();
-      setMessage(resp.message);
+      setMessage(`${resp.message} (canonical: ${resp.seeded.canonical}, exceptions: ${resp.seeded.exceptions}, movements: ${resp.seeded.movements})`);
       onLoaded();
     } catch (e: unknown) {
       setMessage(e instanceof Error ? e.message : 'Failed to load demo data');

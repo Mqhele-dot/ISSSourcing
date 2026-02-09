@@ -1,5 +1,6 @@
 export type ApiErrorEntry = {
   route: string;
+  url?: string;
   status: number | null;
   message: string;
   time: string;

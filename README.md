@@ -47,6 +47,12 @@ Wait for postCreate to finish (it runs once automatically)
 Then run:
 
 ```bash
+./scripts/preview.sh
+```
+
+Alternative manual flow:
+
+```bash
 ./scripts/smoke-codespaces.sh
 ./scripts/dev-codespaces.sh
 ```
@@ -59,27 +65,34 @@ API-only preview (no UI needed):
 
 In Codespaces preview, the UI calls the API via `/api` (Vite proxy), not direct port URLs in browser code.
 
-If you refresh and get redirected to /login, just click Login again (token is stored, but role state resets on reload).
+## If installs fail
 
-If installs fail due to corporate proxy, fallback:
+1. Wait for Codespaces provisioning/postCreate to finish, then retry.
+2. Check whether your org enforces a restricted npm/pip proxy/index policy.
+3. Run API-only first:
+
+```bash
+./services/api/scripts/preview_api.sh
+```
+
+4. Then launch full preview:
+
+```bash
+./scripts/dev-codespaces.sh
+```
+
+5. If needed, set mirrors:
+   - `PIP_INDEX_URL` for pip
+   - npm registry to your org mirror (`npm config set registry <url>`)
+
+6. Backend fallback command (if your mirror supports it):
 
 ```bash
 cd services/api
-python -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -e ".[dev]" --no-use-pep517 || true
-# repo-root equivalent interpreter path: services/api/.venv/bin/python
-PYTHONPATH=. .venv/bin/python -m pytest -q
+.venv/bin/python -m pip install -e ".[dev]" --no-use-pep517
 ```
 
-
-```bash
-cd apps/desktop/frontend
-npm config set fund false
-npm config set audit false
-npm ci || npm install
-npm run build
-```
+If you refresh and get redirected to /login, click Login again.
 
 Expected ports:
 

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ConnectorRun, detectExceptions, ExceptionCase, fetchConnectorRuns, fetchExceptions, fetchHealth, loginDemo, runConnector } from './api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { API_BASE, ConnectorRun, detectExceptions, ExceptionCase, fetchConnectorRuns, fetchExceptions, fetchHealth, loginDemo, runConnector } from './api';
 import { ApiErrorEntry, getApiErrors, subscribeApiErrors } from './state/apiErrors';
 import { LoginPrompt } from './pages/common';
 import { can, currentRole, requiresText } from './utils/rbac';
@@ -14,7 +14,7 @@ function DevDebugPanel({ open }: { open: boolean }) {
     <details open>
       <summary>Dev Debug ({errors.length})</summary>
       {errors.length === 0 ? <p>No API errors recorded</p> : null}
-      {errors.map((e, i) => <div key={i}><small>{e.time} | {e.route} | {e.status ?? 'network'} | {e.message}</small></div>)}
+      {errors.map((e, i) => <div key={i}><small>{e.time} | {e.url ?? e.route} | {e.status ?? 'network'} | {e.message}</small></div>)}
     </details>
   );
 }
@@ -22,19 +22,24 @@ function DevDebugPanel({ open }: { open: boolean }) {
 function HeaderStatusStrip() {
   const [apiStatus, setApiStatus] = useState<'connected' | 'disconnected'>('disconnected');
   const [lastError, setLastError] = useState<ApiErrorEntry | null>(getApiErrors()[0] ?? null);
+  const [pinging, setPinging] = useState(false);
   const loggedIn = Boolean(sessionStorage.getItem('sct_token'));
 
+  const ping = async () => {
+    setPinging(true);
+    try {
+      await fetchHealth();
+      setApiStatus('connected');
+    } catch {
+      setApiStatus('disconnected');
+    } finally {
+      setPinging(false);
+    }
+  };
+
   useEffect(() => {
-    const poll = async () => {
-      try {
-        await fetchHealth();
-        setApiStatus('connected');
-      } catch {
-        setApiStatus('disconnected');
-      }
-    };
-    void poll();
-    const id = window.setInterval(poll, 5000);
+    void ping();
+    const id = window.setInterval(() => { void ping(); }, 5000);
     const unsub = subscribeApiErrors(() => setLastError(getApiErrors()[0] ?? null));
     return () => {
       window.clearInterval(id);
@@ -44,8 +49,9 @@ function HeaderStatusStrip() {
 
   return (
     <div style={{ padding: '6px 10px', border: '1px solid #d1d5db', marginBottom: 8, background: '#f8fafc' }}>
-      <strong>API:</strong> {apiStatus} | <strong>Auth:</strong> {loggedIn ? 'logged in' : 'not logged in'}
-      {lastError ? <span> | <strong>Last API error:</strong> {lastError.route} ({lastError.status ?? 'network'}) {lastError.message}</span> : null}
+      <strong>API:</strong> {apiStatus} | <strong>Auth:</strong> {loggedIn ? 'logged in' : 'not logged in'} | <strong>API_BASE:</strong> {API_BASE}
+      <span> | <button onClick={() => void ping()} disabled={pinging}>{pinging ? 'Pinging…' : 'Ping API'}</button></span>
+      {lastError ? <div><strong>Last fetch:</strong> {lastError.url ?? lastError.route} | <strong>Status:</strong> {lastError.status ?? 'network'}</div> : null}
     </div>
   );
 }
@@ -86,6 +92,8 @@ export function Navbar() {
 export function LoginView({ onLogin }: { onLogin: (role: 'Planner' | 'Ops' | 'Admin') => void }) {
   const [role, setRole] = useState<'Planner' | 'Ops' | 'Admin'>('Planner');
   const [error, setError] = useState<string | null>(null);
+  const location = useLocation();
+  const refreshMessage = useMemo(() => new URLSearchParams(location.search).get('message'), [location.search]);
 
   const handleLogin = async () => {
     try {
@@ -98,7 +106,16 @@ export function LoginView({ onLogin }: { onLogin: (role: 'Planner' | 'Ops' | 'Ad
     }
   };
 
-  return <div><Navbar /><h2>SupplyChain Control Tower</h2><select value={role} onChange={(e) => setRole(e.target.value as 'Planner' | 'Ops' | 'Admin')}><option>Planner</option><option>Ops</option><option>Admin</option></select><button onClick={handleLogin}>Login (Demo)</button>{error ? <p>{error}</p> : null}</div>;
+  return (
+    <div>
+      <Navbar />
+      <h2>SupplyChain Control Tower</h2>
+      {refreshMessage === 'session-refresh' ? <p>Session needs refresh — please login again.</p> : null}
+      <select value={role} onChange={(e) => setRole(e.target.value as 'Planner' | 'Ops' | 'Admin')}><option>Planner</option><option>Ops</option><option>Admin</option></select>
+      <button onClick={handleLogin}>Login (Demo)</button>
+      {error ? <p>{error}</p> : null}
+    </div>
+  );
 }
 
 export const HomeView = () => {

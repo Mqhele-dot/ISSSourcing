@@ -39,6 +39,7 @@ required_paths=(
   "services/api/scripts/smoke_no_deps.py"
   "services/api/scripts/demo_walkthrough.py"
   "services/api/scripts/preview_api.sh"
+  "scripts/preview.sh"
 )
 
 for rel in "${required_paths[@]}"; do
@@ -56,7 +57,8 @@ done
 bash -n \
   "$ROOT/scripts/dev-codespaces.sh" \
   "$ROOT/scripts/smoke-codespaces.sh" \
-  "$ROOT/scripts/wait-for.sh"
+  "$ROOT/scripts/wait-for.sh" \
+  "$ROOT/scripts/preview.sh"
 
 bash -n "$ROOT/services/api/scripts/dev.sh" "$ROOT/services/api/scripts/preview_api.sh"
 python -m py_compile \

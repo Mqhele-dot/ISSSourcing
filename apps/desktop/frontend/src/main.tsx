@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { ErrorBoundary } from './ErrorBoundary';
 import { ExceptionDetailPage } from './pages/ExceptionDetailPage';
 import { InventoryDetailPage } from './pages/InventoryDetailPage';
 import { InventoryPage } from './pages/InventoryPage';
@@ -8,7 +9,6 @@ import { LogisticsDetailPage } from './pages/LogisticsDetailPage';
 import { LogisticsPage } from './pages/LogisticsPage';
 import { PurchaseDetailPage } from './pages/PurchaseDetailPage';
 import { PurchasePage } from './pages/PurchasePage';
-import { ErrorBoundary } from './ErrorBoundary';
 import { ExceptionsView, HomeView, IntegrationsView, LoginView, Navbar } from './views';
 
 type Role = 'Planner' | 'Ops' | 'Admin';
@@ -20,7 +20,8 @@ function PageMountedBanner() {
 function Guard({ role, allowed, children }: { role: Role | null; allowed: Role[]; children: JSX.Element }) {
   const token = sessionStorage.getItem('sct_token');
   if (!token) return <Navigate to="/login" replace />;
-  if (!role || !allowed.includes(role)) return <div>Forbidden</div>;
+  if (token && !role) return <Navigate to="/login?message=session-refresh" replace />;
+  if (!allowed.includes(role as Role)) return <div>Forbidden</div>;
   return children;
 }
 
@@ -33,7 +34,8 @@ function RouteBoundary({ children }: { children: JSX.Element }) {
 }
 
 function App() {
-  const [role, setRole] = useState<Role | null>((sessionStorage.getItem('sct_role') as Role | null) ?? null);
+  const initialRole = sessionStorage.getItem('sct_role') as Role | null;
+  const [role, setRole] = useState<Role | null>(initialRole);
 
   return (
     <HashRouter>

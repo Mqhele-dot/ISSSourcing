@@ -142,7 +142,7 @@ def set_demo_mode(enabled: str, user=Depends(auth_user)):
 
 
 @app.post("/demo/reset")
-def demo_reset():
+def demo_reset(user=Depends(auth_user)):
     if os.getenv("SCT_ENV", "dev").lower() == "prod":
         raise HTTPException(status_code=403, detail="/demo/reset disabled outside dev")
     with get_conn() as conn:
@@ -156,8 +156,15 @@ def demo_reset():
         conn.execute("DELETE FROM batches")
         conn.execute("DELETE FROM audit_event")
     seed_demo_data()
-    append_audit_event("demo.reset", "system", "settings", "demo_mode", {"enabled": "true"})
-    return {"ok": True, "message": "Demo data reloaded"}
+    with get_conn() as conn:
+        seeded = {
+            "canonical": conn.execute("SELECT COUNT(*) AS c FROM canonical_records").fetchone()["c"],
+            "exceptions": conn.execute("SELECT COUNT(*) AS c FROM exception_cases").fetchone()["c"],
+            "movements": conn.execute("SELECT COUNT(*) AS c FROM inventory_movement").fetchone()["c"],
+            "users": conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"],
+        }
+    append_audit_event("demo.reset", user["username"], "settings", "demo_mode", {"enabled": "true"})
+    return {"ok": True, "message": "Demo data reloaded", "seeded": seeded}
 
 @app.post("/connectors/run/{connector_name}")
 def run_connector(connector_name: str, detect_after: bool = Query(default=True), user=Depends(auth_user)):
