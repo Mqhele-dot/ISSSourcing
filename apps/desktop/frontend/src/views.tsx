@@ -91,8 +91,8 @@ export const ExceptionsView = () => {
       {error ? (error === 'Not logged in' ? <LoginPrompt /> : <p>Error: {error}</p>) : null}
       {!loading && !error && cases.length === 0 ? <p>No open exceptions</p> : null}
       {!loading && !error && cases.length > 0 ? (
-        <table><thead><tr><th>ID</th><th>Type</th><th>Severity</th><th>Status</th><th>Source</th></tr></thead><tbody>
-          {cases.map((c) => <tr key={c.id}><td><Link to={`/exceptions/${c.id}`}>{c.id}</Link></td><td>{c.type}</td><td>{c.severity}</td><td>{c.status}</td><td>{c.source}</td></tr>)}
+        <table><thead><tr><th>ID</th><th>Type</th><th>Severity</th><th>Status</th><th>Source</th><th>SLA</th></tr></thead><tbody>
+          {cases.map((c) => <tr key={c.id}><td><Link to={`/exceptions/${c.id}`}>{c.id}</Link></td><td>{c.type}</td><td>{c.severity}</td><td>{c.status}</td><td>{c.source}</td><td>{c.sla_due_at ?? '-'}</td></tr>)}
         </tbody></table>
       ) : null}
     </div>

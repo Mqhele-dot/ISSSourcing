@@ -18,9 +18,11 @@ from .services.audit import append_audit_event, verify_chain
 from .services.cases import create_case_comment
 from .services.exceptions import (
     detect_demo_exceptions,
+    compute_sla_due_at,
     detect_response,
     normalize_exception_detail,
     normalize_exception_row,
+    normalize_related_refs,
 )
 from .services.jobs import run_with_retry, start_scheduler
 
@@ -70,6 +72,19 @@ class InventoryAdjustRequest(BaseModel):
 
 class StatusUpdateRequest(BaseModel):
     status: str
+
+
+class SnoozeRequest(BaseModel):
+    hours: int = 4
+
+
+class ReceiveLineRequest(BaseModel):
+    sku: str
+    qty: int
+
+
+class ReceivePORequest(BaseModel):
+    lines: list[ReceiveLineRequest] | None = None
 
 
 def auth_user(authorization: str | None = Header(default=None)):
@@ -169,14 +184,29 @@ def _latest_inventory_positions() -> list[dict]:
     return list(latest.values())
 
 
-def _exception_source_and_refs(item: dict[str, Any]) -> tuple[str, dict[str, str]]:
+def _standard_related_refs(sku: list[str] | None = None, po: list[str] | None = None, shipment: list[str] | None = None) -> dict[str, list[str]]:
+    return {"sku": sku or [], "po": po or [], "shipment": shipment or []}
+
+
+def _exception_source_and_refs(item: dict[str, Any]) -> tuple[str, dict[str, list[str]]]:
     linked = str(item.get("linked_entity_id", "unknown"))
     exc_type = str(item.get("type", ""))
     if "shipment" in exc_type or "delay" in exc_type:
-        return "logistics", {"shipment_id": linked}
+        return "logistics", _standard_related_refs(shipment=[linked])
     if "po" in exc_type:
-        return "purchase", {"po_number": linked}
-    return "inventory", {"sku": linked}
+        return "purchase", _standard_related_refs(po=[linked])
+    return "inventory", _standard_related_refs(sku=[linked])
+
+
+def _validate_exception_transition(current: str, target: str) -> None:
+    allowed = {
+        "open": {"investigating"},
+        "investigating": {"resolved"},
+        "resolved": {"closed", "open"},
+        "closed": {"open"},
+    }
+    if target not in allowed.get(current, set()):
+        raise HTTPException(status_code=400, detail=f"Invalid exception transition: {current} -> {target}")
 
 
 def _get_exception_detail_or_404(exception_id: int) -> dict[str, Any]:
@@ -228,7 +258,7 @@ def detect_exceptions(user=Depends(auth_user)):
                         "unassigned",
                         source,
                         json.dumps(refs),
-                        (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+                        compute_sla_due_at(item.get("type", "unknown")),
                         item.get("reason", ""),
                         linked,
                         now,
@@ -276,15 +306,15 @@ def assign_exception(exception_id: int, payload: ExceptionAssignRequest, user=De
 
 @app.post("/exceptions/{exception_id}/status")
 def update_exception_status(exception_id: int, payload: StatusUpdateRequest, user=Depends(auth_user)):
-    allowed = {"open", "investigating", "resolved"}
     next_status = payload.status.lower()
-    if next_status not in allowed:
-        raise HTTPException(status_code=400, detail="Invalid exception status")
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
-        updated = conn.execute("UPDATE exception_cases SET status=?, updated_at=? WHERE id=?", (next_status, now, exception_id)).rowcount
-    if updated == 0:
-        raise HTTPException(status_code=404, detail="Exception not found")
+        row = conn.execute("SELECT status FROM exception_cases WHERE id=?", (exception_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Exception not found")
+        current = str(row["status"] or "open").lower()
+        _validate_exception_transition(current, next_status)
+        conn.execute("UPDATE exception_cases SET status=?, updated_at=? WHERE id=?", (next_status, now, exception_id))
     append_audit_event("case.status", user["username"], "exception_case", str(exception_id), {"status": next_status})
     return _get_exception_detail_or_404(exception_id)
 
@@ -293,6 +323,18 @@ def update_exception_status(exception_id: int, payload: StatusUpdateRequest, use
 def add_exception_comment(exception_id: int, payload: CommentRequest, user=Depends(auth_user)):
     create_case_comment(exception_id, payload.comment, user["username"])
     append_audit_event("case.comment", user["username"], "exception_case", str(exception_id), {"comment": payload.comment})
+    return _get_exception_detail_or_404(exception_id)
+
+
+@app.post("/exceptions/{exception_id}/snooze")
+def snooze_exception(exception_id: int, payload: SnoozeRequest, user=Depends(auth_user)):
+    hours = max(1, min(payload.hours, 168))
+    due = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+    with get_conn() as conn:
+        updated = conn.execute("UPDATE exception_cases SET sla_due_at=?, updated_at=? WHERE id=?", (due, datetime.now(timezone.utc).isoformat(), exception_id)).rowcount
+    if updated == 0:
+        raise HTTPException(status_code=404, detail="Exception not found")
+    append_audit_event("case.snooze", user["username"], "exception_case", str(exception_id), {"hours": hours})
     return _get_exception_detail_or_404(exception_id)
 
 
@@ -349,8 +391,8 @@ def inventory_adjust(payload: InventoryAdjustRequest, user=Depends(auth_user)):
                     "open",
                     "unassigned",
                     "inventory",
-                    json.dumps({"sku": payload.sku}),
-                    (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+                    json.dumps(_standard_related_refs(sku=[payload.sku])),
+                    compute_sla_due_at(item.get("type", "unknown")),
                     "Inventory available quantity is negative",
                     payload.sku,
                     now,
@@ -413,20 +455,27 @@ def update_purchase_order_status(po_number: str, payload: StatusUpdateRequest, u
 
 
 @app.post("/purchase/orders/{po_number}/receive")
-def receive_purchase_order(po_number: str, user=Depends(auth_user)):
+def receive_purchase_order(po_number: str, payload: ReceivePORequest | None = None, user=Depends(auth_user)):
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         po_row = conn.execute("SELECT payload FROM canonical_records WHERE entity_type='purchase_order' AND json_extract(payload, '$.po_number')=? ORDER BY id DESC LIMIT 1", (po_number,)).fetchone()
         if not po_row:
             raise HTTPException(status_code=404, detail="Purchase order not found")
         po = json.loads(po_row["payload"])
+        current_status = str(po.get("status", "")).lower()
+        if current_status not in {"approved", "sent"}:
+            raise HTTPException(status_code=400, detail="PO must be approved or sent before receive")
         po["status"] = "received"
         conn.execute("INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)", ("purchase_order", po_number, json.dumps(po), "receive_po", 0, now))
 
         inventory_updates: list[dict[str, Any]] = []
+        created_exceptions: list[dict[str, Any]] = []
+        requested_qty = {line.sku: line.qty for line in (payload.lines or [])} if payload and payload.lines else {}
+
         for line in po.get("lines", []):
             sku = line.get("sku")
-            qty = int(line.get("qty", 0) or 0)
+            expected_qty = int(line.get("qty", 0) or 0)
+            qty = int(requested_qty.get(sku, expected_qty))
             if not sku or qty == 0:
                 continue
             location = "WH-JHB"
@@ -441,10 +490,29 @@ def receive_purchase_order(po_number: str, user=Depends(auth_user)):
             conn.execute("INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)", ("inventory_position", f"{sku}:{location}", json.dumps(inv), "receive_po", 0, now))
             conn.execute(
                 "INSERT INTO inventory_movement(sku, location, delta, reason, movement_type, source_ref, created_at, created_by) VALUES(?,?,?,?,?,?,?,?)",
-                (sku, location, qty, f"PO {po_number} received", "receive", po_number, now, user["username"]),
+                (sku, location, qty, f"PO {po_number} received", "receive_po", po_number, now, user["username"]),
             )
             inventory_updates.append(inv)
 
+            if qty != expected_qty:
+                exc_id = conn.execute(
+                    "INSERT INTO exception_cases(type,severity,status,assignee,source,related_refs,sla_due_at,reason,linked_entity_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        "po_mismatch",
+                        "high",
+                        "open",
+                        "unassigned",
+                        "purchase",
+                        json.dumps(_standard_related_refs(sku=[sku], po=[po_number])),
+                        compute_sla_due_at("po_mismatch"),
+                        f"Received qty {qty} differs from expected {expected_qty} for {sku}",
+                        po_number,
+                        now,
+                        now,
+                    ),
+                ).lastrowid
+                created_row = conn.execute("SELECT * FROM exception_cases WHERE id=?", (exc_id,)).fetchone()
+                created_exceptions.append(normalize_exception_row(dict(created_row)))
         shipment_rows = conn.execute(
             "SELECT payload FROM canonical_records WHERE entity_type='shipment' AND json_extract(payload, '$.po_number')=? ORDER BY id DESC LIMIT 20",
             (po_number,),
@@ -460,7 +528,7 @@ def receive_purchase_order(po_number: str, user=Depends(auth_user)):
             updated_shipments.append(shipment)
 
     append_audit_event("po.receive", user["username"], "purchase_order", po_number, {"inventory_updates": len(inventory_updates), "shipments_updated": len(updated_shipments)})
-    return {"ok": True, "po_number": po_number, "status": "received", "inventory_updates": inventory_updates, "shipments_updated": updated_shipments, "exceptions_created": 0}
+    return {"message": f"PO {po_number} received", "changed": {"inventory": inventory_updates, "shipments": updated_shipments, "exceptions": created_exceptions}}
 
 
 @app.get("/logistics/shipments")

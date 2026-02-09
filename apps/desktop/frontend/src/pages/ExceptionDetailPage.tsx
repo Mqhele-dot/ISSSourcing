@@ -1,7 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { addCaseComment, assignException, ExceptionDetail, fetchExceptionDetail, updateExceptionStatus } from '../api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { addCaseComment, assignException, ExceptionDetail, fetchExceptionDetail, snoozeException, updateExceptionStatus } from '../api';
 import { LoginPrompt } from './common';
+
+function hoursRemaining(slaDueAt?: string) {
+  if (!slaDueAt) return null;
+  const diffMs = new Date(slaDueAt).getTime() - Date.now();
+  return Math.round(diffMs / (1000 * 60 * 60));
+}
 
 export function ExceptionDetailPage() {
   const { exception_id = '' } = useParams();
@@ -13,6 +19,7 @@ export function ExceptionDetailPage() {
   const [savingAssign, setSavingAssign] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
   const [savingComment, setSavingComment] = useState(false);
+  const [savingSnooze, setSavingSnooze] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
@@ -39,15 +46,23 @@ export function ExceptionDetailPage() {
 
   useEffect(() => { load(); }, [exception_id]);
 
+  const relatedLinks = useMemo(() => {
+    if (!detail) return [] as JSX.Element[];
+    const links: JSX.Element[] = [];
+    detail.related_refs.sku.forEach((sku) => links.push(<li key={`sku-${sku}`}><Link to={`/inventory/${sku}`}>Inventory {sku}</Link></li>));
+    detail.related_refs.po.forEach((po) => links.push(<li key={`po-${po}`}><Link to={`/purchase/${po}`}>Purchase {po}</Link></li>));
+    detail.related_refs.shipment.forEach((shipment) => links.push(<li key={`shipment-${shipment}`}><Link to={`/logistics/${shipment}`}>Shipment {shipment}</Link></li>));
+    return links;
+  }, [detail]);
+
   const onAssign = async () => {
     if (!detail) return;
     setSavingAssign(true);
     setActionError(null);
     try {
-      await assignException(detail.id, assignee);
+      const updated = await assignException(detail.id, assignee);
+      setDetail(updated);
       setLastSavedAt(new Date().toISOString());
-      setLoading(true);
-      await load();
     } catch (e: unknown) {
       setActionError(e instanceof Error ? e.message : 'Assign failed');
     } finally {
@@ -60,10 +75,9 @@ export function ExceptionDetailPage() {
     setSavingStatus(true);
     setActionError(null);
     try {
-      await updateExceptionStatus(detail.id, status);
+      const updated = await updateExceptionStatus(detail.id, status);
+      setDetail(updated);
       setLastSavedAt(new Date().toISOString());
-      setLoading(true);
-      await load();
     } catch (e: unknown) {
       setActionError(e instanceof Error ? e.message : 'Status update failed');
     } finally {
@@ -76,11 +90,10 @@ export function ExceptionDetailPage() {
     setSavingComment(true);
     setActionError(null);
     try {
-      await addCaseComment(detail.id, comment);
+      const updated = await addCaseComment(detail.id, comment);
+      setDetail(updated);
       setComment('');
       setLastSavedAt(new Date().toISOString());
-      setLoading(true);
-      await load();
     } catch (e: unknown) {
       setActionError(e instanceof Error ? e.message : 'Comment failed');
     } finally {
@@ -88,9 +101,27 @@ export function ExceptionDetailPage() {
     }
   };
 
+  const onSnooze = async () => {
+    if (!detail) return;
+    setSavingSnooze(true);
+    setActionError(null);
+    try {
+      const updated = await snoozeException(detail.id, 8);
+      setDetail(updated);
+      setLastSavedAt(new Date().toISOString());
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : 'Snooze failed');
+    } finally {
+      setSavingSnooze(false);
+    }
+  };
+
   if (loading) return <p>Loading…</p>;
   if (error) return <>{error === 'Not logged in' ? <LoginPrompt /> : <p>Error: {error}</p>}</>;
   if (!detail) return <p>No exception found</p>;
+
+  const slaHours = hoursRemaining(detail.sla_due_at);
+  const slaColor = slaHours === null ? 'inherit' : slaHours < 0 ? 'red' : slaHours < 4 ? 'orange' : 'green';
 
   return (
     <div>
@@ -98,8 +129,13 @@ export function ExceptionDetailPage() {
       <p><strong>{detail.type}</strong> ({detail.severity}) - {detail.status}</p>
       <p>Source: {detail.source}</p>
       <p>Reason: {detail.reason ?? 'n/a'}</p>
+      <p style={{ color: slaColor }}>SLA remaining: {slaHours === null ? 'n/a' : `${slaHours}h`}</p>
       {lastSavedAt ? <p>Last saved: {lastSavedAt}</p> : null}
       {actionError ? <p>Error: {actionError}</p> : null}
+
+      <h4>Related</h4>
+      {relatedLinks.length === 0 ? <p>No related links</p> : <ul>{relatedLinks}</ul>}
+
       <h4>Actions</h4>
       <div>
         <input value={assignee} onChange={(e) => setAssignee(e.target.value)} />
@@ -110,8 +146,10 @@ export function ExceptionDetailPage() {
           <option value="open">open</option>
           <option value="investigating">investigating</option>
           <option value="resolved">resolved</option>
+          <option value="closed">closed</option>
         </select>
         <button onClick={onStatus} disabled={savingStatus}>{savingStatus ? 'Saving…' : 'Update status'}</button>
+        <button onClick={onSnooze} disabled={savingSnooze}>{savingSnooze ? 'Saving…' : 'Snooze +8h'}</button>
       </div>
       <div>
         <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add comment" />

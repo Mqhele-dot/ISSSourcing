@@ -99,3 +99,25 @@ curl -s http://127.0.0.1:8000/health/deep
    - Click a shipment for detail and update status.
 
 All operational endpoints require auth and show a **Not logged in** prompt on 401 in the UI.
+
+
+## Preview fallback (no Node required)
+
+If frontend install is blocked, you can still verify backend operational flow:
+
+```bash
+cd services/api
+PYTHONPATH=. .venv/bin/python scripts/demo_walkthrough.py
+```
+
+This walkthrough performs login, exception detection, PO receive, and inventory movement validation via HTTP calls.
+
+
+## Single-command Codespaces preview
+
+```bash
+./scripts/dev-codespaces.sh
+```
+
+This script starts API first, waits for `/health`, then starts UI.
+API is proxied to the UI as `/api` in Codespaces.

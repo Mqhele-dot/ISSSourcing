@@ -29,6 +29,8 @@ API_PID=$!
 
 trap 'kill $API_PID 2>/dev/null || true' EXIT
 
+"$ROOT/scripts/wait-for.sh" "http://127.0.0.1:8000/health" 45
+
 echo "==> Frontend bootstrap"
 cd "$ROOT/apps/desktop/frontend"
 if [ ! -d "node_modules" ]; then
@@ -36,4 +38,6 @@ if [ ! -d "node_modules" ]; then
 fi
 
 echo "==> Starting frontend"
+echo "UI URL: https://<your-codespace-name>-5173.app.github.dev"
+echo "API proxy base in UI: /api"
 npm run dev:codespaces
