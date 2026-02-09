@@ -125,3 +125,12 @@ tbody tr:nth-child(even) { background: hsl(from var(--surface2) h s l / .45); }
   .main-wrap { padding: var(--space-3); }
   .grid-2, .grid-4 { grid-template-columns: 1fr; }
 }
+
+
+.page-header { padding: var(--space-4); border:1px solid var(--border); border-radius: var(--radius); background: linear-gradient(135deg, hsl(from var(--accent) h s l / .2), hsl(from var(--accent2) h s l / .08)); margin-bottom: var(--space-3); }
+.toolbar { display:flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.swatches { display:flex; gap:10px; flex-wrap: wrap; }
+.swatch { width:38px; height:38px; border-radius:12px; border:2px solid var(--border); cursor:pointer; box-shadow: var(--shadow-sm); }
+.swatch.active { outline: 2px solid var(--text); }
+.toast { position: fixed; right: 16px; bottom: 16px; z-index: 1000; }
+.panel { display:grid; gap: var(--space-3); }

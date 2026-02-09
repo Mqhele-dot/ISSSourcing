@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchInventory, InventoryRow } from '../api';
 import { LoadDemoDataButton, LoginPrompt } from './common';
-import { Card, Input, Select, Table } from '../components/ui';
+import { Card, Input, Select, Table, Skeleton } from '../components/ui';
 
 export function InventoryPage() {
   const [rows, setRows] = useState<InventoryRow[]>([]);
@@ -16,14 +16,14 @@ export function InventoryPage() {
 
   const filtered = rows.filter((r) => `${r.sku} ${r.location}`.toLowerCase().includes(filter.toLowerCase())).filter((r) => location === 'all' || r.location === location);
 
-  if (loading) return <p>Loading…</p>;
+  if (loading) return <Skeleton />;
   if (error) return <>{error === 'Not logged in' ? <LoginPrompt /> : <p>Error: {error}</p>}</>;
   if (filtered.length === 0) return <Card><p>No inventory records found</p><LoadDemoDataButton onLoaded={() => { setLoading(true); void load(); }} /></Card>;
 
   const locations = ['all', ...Array.from(new Set(rows.map((r) => r.location)))];
 
-  return <Card><h3>Inventory</h3><div className="grid-2"><Input placeholder="Search SKU/location" value={filter} onChange={(e) => setFilter(e.target.value)} /><Select value={location} onChange={(e) => setLocation(e.target.value)}>{locations.map((l) => <option key={l} value={l}>{l}</option>)}</Select></div>
+  return <div className="panel"><div className="page-header"><h2 style={{ margin: 0 }}>Inventory</h2><p className="muted" style={{ margin: '6px 0 0' }}>Stock positions, filters, and drill-down.</p></div><Card><h3>Inventory</h3><div className="grid-2"><Input placeholder="Search SKU/location" value={filter} onChange={(e) => setFilter(e.target.value)} /><Select value={location} onChange={(e) => setLocation(e.target.value)}>{locations.map((l) => <option key={l} value={l}>{l}</option>)}</Select></div>
     <Table><thead><tr><th>SKU</th><th>Location</th><th>On hand</th><th>Available</th></tr></thead><tbody>
       {filtered.map((row) => <tr key={`${row.sku}-${row.location}`}><td><Link to={`/inventory/${row.sku}`}>{row.sku}</Link></td><td>{row.location}</td><td>{row.on_hand}</td><td>{row.available}</td></tr>)}
-    </tbody></Table></Card>;
+    </tbody></Table></Card></div>;
 }
