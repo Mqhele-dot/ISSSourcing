@@ -1,0 +1,2 @@
+entity_type,sku,location,on_hand,available,updated_at
+inventory_position,SKU-9,WH-JHB,25,20,2026-01-01T00:00:00+00:00

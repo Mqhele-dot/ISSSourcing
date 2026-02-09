@@ -1,33 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ConnectorRun, detectExceptions, ExceptionCase, fetchConnectorRuns, fetchExceptions, fetchHealth, loginDemo } from './api';
+import { ConnectorRun, detectExceptions, ExceptionCase, fetchConnectorRuns, fetchExceptions, fetchHealth, loginDemo, runConnector } from './api';
 import { ApiErrorEntry, getApiErrors, subscribeApiErrors } from './state/apiErrors';
 import { LoginPrompt } from './pages/common';
+import { can, currentRole, requiresText } from './utils/rbac';
 
 function DevDebugPanel({ open }: { open: boolean }) {
   const [errors, setErrors] = useState<ApiErrorEntry[]>(getApiErrors());
   useEffect(() => subscribeApiErrors(() => setErrors(getApiErrors())), []);
   if (!import.meta.env.DEV || !open) return null;
-  return (
-    <details open>
-      <summary>Dev Debug ({errors.length})</summary>
-      {errors.length === 0 ? <p>No API errors recorded</p> : null}
-      {errors.map((e, i) => <div key={i}><small>{e.time} | {e.route} | {e.status ?? 'network'} | {e.message}</small></div>)}
-    </details>
-  );
+  return (<details open><summary>Dev Debug ({errors.length})</summary>{errors.length === 0 ? <p>No API errors recorded</p> : null}{errors.map((e, i) => <div key={i}><small>{e.time} | {e.route} | {e.status ?? 'network'} | {e.message}</small></div>)}</details>);
 }
 
 export function Navbar() {
   const loggedIn = Boolean(sessionStorage.getItem('sct_token'));
   const [debugOpen, setDebugOpen] = useState(false);
-
-  const onLogout = () => {
-    sessionStorage.removeItem('sct_token');
-    sessionStorage.removeItem('sct_role');
-    sessionStorage.removeItem('sct_username');
-    window.location.hash = '#/login';
-  };
-
+  const onLogout = () => { sessionStorage.removeItem('sct_token'); sessionStorage.removeItem('sct_role'); sessionStorage.removeItem('sct_username'); window.location.hash = '#/login'; };
   return <><nav><Link to="/">Home</Link> | <Link to="/login">Login</Link>{loggedIn ? <><span> | </span><Link to="/inventory">Inventory</Link><span> | </span><Link to="/purchase">Purchase</Link><span> | </span><Link to="/logistics">Logistics</Link><span> | </span><Link to="/exceptions">Exceptions</Link><span> | </span><Link to="/integrations">Integrations</Link><span> | </span><button onClick={onLogout}>Logout</button></> : null}{import.meta.env.DEV ? <><span> | </span><button onClick={() => setDebugOpen((v) => !v)}>Dev Debug</button></> : null}</nav><DevDebugPanel open={debugOpen} /></>;
 }
 
@@ -48,12 +36,34 @@ export const IntegrationsView = () => {
   const [runs, setRuns] = useState<ConnectorRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
 
-  useEffect(() => {
-    fetchConnectorRuns().then((data) => { setRuns(data); setError(null); }).catch((e: unknown) => setError(e instanceof Error ? e.message : 'failed')).finally(() => setLoading(false));
-  }, []);
+  const load = () => fetchConnectorRuns().then((data) => { setRuns(data); setError(null); }).catch((e: unknown) => setError(e instanceof Error ? e.message : 'failed')).finally(() => setLoading(false));
+  useEffect(() => { load(); }, []);
 
-  return <div><Navbar /><h3>Integrations</h3>{loading ? <p>Loading…</p> : null}{error ? (error === 'Not logged in' ? <LoginPrompt /> : <p>Error: {error}</p>) : null}{!loading && !error && runs.length === 0 ? <p>No connector runs yet</p> : null}{!loading && !error && runs.length > 0 ? <table><tbody>{runs.map((r, i) => <tr key={i}><td>{r.connector_name}</td><td>{r.status}</td></tr>)}</tbody></table> : null}</div>;
+  const run = async (name: string) => {
+    setRunning(true);
+    try {
+      await runConnector(name);
+      setLoading(true);
+      await load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'run failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const role = currentRole();
+  const canRun = can(role, 'connector.run');
+
+  return <div><Navbar /><h3>Integrations</h3>
+    <button onClick={() => run('csv')} disabled={!canRun || running} title={!canRun ? requiresText('connector.run') : ''}>{running ? 'Running…' : 'Run connector now (CSV)'}</button>
+    {loading ? <p>Loading…</p> : null}
+    {error ? (error === 'Not logged in' ? <LoginPrompt /> : <p>Error: {error}</p>) : null}
+    {!loading && !error && runs.length === 0 ? <p>No connector runs yet</p> : null}
+    {!loading && !error && runs.length > 0 ? <table><thead><tr><th>Connector</th><th>Status</th><th>Output</th><th>Error</th></tr></thead><tbody>{runs.map((r, i) => <tr key={i}><td>{r.connector_name}</td><td>{r.status}</td><td>{r.output_summary ?? '-'}</td><td>{r.error ?? '-'}</td></tr>)}</tbody></table> : null}
+  </div>;
 };
 
 export const ExceptionsView = () => {
@@ -81,20 +91,5 @@ export const ExceptionsView = () => {
     }
   };
 
-  return (
-    <div>
-      <Navbar />
-      <h3>Exceptions / Cases</h3>
-      <button onClick={runDetect} disabled={detecting}>{detecting ? 'Detecting…' : 'Detect exceptions'}</button>
-      {message ? <p>{message}</p> : null}
-      {loading ? <p>Loading…</p> : null}
-      {error ? (error === 'Not logged in' ? <LoginPrompt /> : <p>Error: {error}</p>) : null}
-      {!loading && !error && cases.length === 0 ? <p>No open exceptions</p> : null}
-      {!loading && !error && cases.length > 0 ? (
-        <table><thead><tr><th>ID</th><th>Type</th><th>Severity</th><th>Status</th><th>Source</th><th>SLA</th></tr></thead><tbody>
-          {cases.map((c) => <tr key={c.id}><td><Link to={`/exceptions/${c.id}`}>{c.id}</Link></td><td>{c.type}</td><td>{c.severity}</td><td>{c.status}</td><td>{c.source}</td><td>{c.sla_due_at ?? '-'}</td></tr>)}
-        </tbody></table>
-      ) : null}
-    </div>
-  );
+  return <div><Navbar /><h3>Exceptions / Cases</h3><button onClick={runDetect} disabled={detecting}>{detecting ? 'Detecting…' : 'Detect exceptions'}</button>{message ? <p>{message}</p> : null}{loading ? <p>Loading…</p> : null}{error ? (error === 'Not logged in' ? <LoginPrompt /> : <p>Error: {error}</p>) : null}{!loading && !error && cases.length === 0 ? <p>No open exceptions</p> : null}{!loading && !error && cases.length > 0 ? <table><thead><tr><th>ID</th><th>Type</th><th>Severity</th><th>Status</th><th>Source</th><th>SLA</th></tr></thead><tbody>{cases.map((c) => <tr key={c.id}><td><Link to={`/exceptions/${c.id}`}>{c.id}</Link></td><td>{c.type}</td><td>{c.severity}</td><td>{c.status}</td><td>{c.source}</td><td>{c.sla_due_at ?? '-'}</td></tr>)}</tbody></table> : null}</div>;
 };

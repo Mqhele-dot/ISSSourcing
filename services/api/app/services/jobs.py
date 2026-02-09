@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 from apscheduler.schedulers.background import BackgroundScheduler
 from ..db import get_conn
 
@@ -12,10 +13,25 @@ def run_with_retry(connector, retries: int = 2):
         start = datetime.now(timezone.utc).isoformat()
         try:
             result = connector.run()
+            output_summary = {
+                "status": result.status,
+                "processed": result.processed,
+                "message": getattr(result, "message", ""),
+            }
             with get_conn() as conn:
                 conn.execute(
-                    "INSERT INTO connector_runs(connector_name,status,retries,error,started_at,ended_at) VALUES(?,?,?,?,?,?)",
-                    (connector.name, result.status, attempts - 1, None, start, datetime.now(timezone.utc).isoformat()),
+                    "INSERT INTO connector_runs(connector_name,status,retries,error,input_ref,output_summary,batch_id,started_at,ended_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (
+                        connector.name,
+                        result.status,
+                        attempts - 1,
+                        None,
+                        getattr(connector, "input_ref", ""),
+                        json.dumps(output_summary),
+                        getattr(result, "batch_id", None),
+                        start,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
                 )
                 conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (f"freshness_{connector.name}", datetime.now(timezone.utc).isoformat()))
             return result
@@ -23,8 +39,18 @@ def run_with_retry(connector, retries: int = 2):
             if attempts > retries:
                 with get_conn() as conn:
                     conn.execute(
-                        "INSERT INTO connector_runs(connector_name,status,retries,error,started_at,ended_at) VALUES(?,?,?,?,?,?)",
-                        (connector.name, "failed", attempts - 1, str(exc), start, datetime.now(timezone.utc).isoformat()),
+                        "INSERT INTO connector_runs(connector_name,status,retries,error,input_ref,output_summary,batch_id,started_at,ended_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (
+                            connector.name,
+                            "failed",
+                            attempts - 1,
+                            str(exc),
+                            getattr(connector, "input_ref", ""),
+                            json.dumps({"status": "failed", "processed": 0, "message": str(exc)}),
+                            None,
+                            start,
+                            datetime.now(timezone.utc).isoformat(),
+                        ),
                     )
                     conn.execute(
                         "INSERT INTO dead_letter_queue(connector_name,payload,error,created_at) VALUES(?,?,?,?)",

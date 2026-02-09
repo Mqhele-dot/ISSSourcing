@@ -60,7 +60,7 @@ cd services/api
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -e .[dev] --no-build-isolation || pip install -e .[dev] --use-pep517=false || true
+pip install -e .[dev] --no-build-isolation || pip install -e .[dev] --no-use-pep517 || true
 PYTHONPATH=. pytest -q
 ```
 
@@ -121,3 +121,22 @@ This walkthrough performs login, exception detection, PO receive, and inventory 
 
 This script starts API first, waits for `/health`, then starts UI.
 API is proxied to the UI as `/api` in Codespaces.
+
+
+## Codespaces verification checklist
+
+Run one script to validate backend + frontend prerequisites and health checks:
+
+```bash
+./scripts/verify-codespaces.sh
+```
+
+If dependency install is blocked by proxy/index restrictions, run backend-only fallback:
+
+```bash
+cd services/api
+PYTHONPATH=. .venv/bin/python scripts/smoke_no_deps.py
+PYTHONPATH=. .venv/bin/python scripts/demo_walkthrough.py
+```
+
+Sample connector CSV files for demos are in `services/api/sample_drop/`.

@@ -38,3 +38,12 @@ def test_shipment_status_update_success(tmp_path, monkeypatch):
     body = response.json()
     assert body['ok'] is True
     assert body['status'] == 'delivered'
+
+def test_shipment_deliver_returns_change_summary(tmp_path, monkeypatch):
+    client = _client_with_seed(tmp_path, monkeypatch)
+    headers = _auth_headers(client)
+    response = client.post('/logistics/shipments/SHIP-2001/deliver', headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert 'changed' in body
+    assert 'shipments' in body['changed']

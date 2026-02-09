@@ -1,0 +1,2 @@
+entity_type,po_number,supplier,status,requested_date,lines
+purchase_order,PO-909,Demo Supplier,open,2026-01-05,"[{\"sku\":\"SKU-9\",\"qty\":5,\"uom\":\"EA\"}]"

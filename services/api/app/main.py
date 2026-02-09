@@ -139,19 +139,31 @@ def set_demo_mode(enabled: str, user=Depends(auth_user)):
 
 
 @app.post("/connectors/run/{connector_name}")
-def run_connector(connector_name: str, user=Depends(auth_user)):
+def run_connector(connector_name: str, detect_after: bool = Query(default=True), user=Depends(auth_user)):
     folder = Path(__file__).resolve().parents[1] / "sample_drop"
     folder.mkdir(exist_ok=True)
     connector = CSVDropFolderConnector(folder) if connector_name == "csv" else ERPExportConnector(folder)
     result = run_with_retry(connector)
-    append_audit_event("connector.run", user["username"], "connector", connector.name, {"processed": result.processed})
-    return result
+    append_audit_event("connector.run", user["username"], "connector", connector.name, {"processed": result.processed, "batch_id": result.batch_id})
+
+    detect_out = {"created": 0}
+    if detect_after:
+        detect_out = detect_exceptions(user)
+
+    return {
+        "status": result.status,
+        "processed": result.processed,
+        "errors": result.errors,
+        "batch_id": result.batch_id,
+        "message": result.message,
+        "detect": {"created": detect_out.get("created", 0)},
+    }
 
 
 @app.get("/connectors/runs")
 def connector_runs(limit: int = Query(default=100, ge=1, le=500), user=Depends(auth_user)):
     with get_conn() as conn:
-        rows = conn.execute("SELECT id, connector_name, status, retries, error, started_at, ended_at FROM connector_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        rows = conn.execute("SELECT id, connector_name, status, retries, error, input_ref, output_summary, batch_id, started_at, ended_at FROM connector_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -343,6 +355,16 @@ def list_inventory(limit: int = Query(default=100, ge=1, le=500), user=Depends(a
     return {"items": _latest_inventory_positions()[:limit]}
 
 
+@app.get("/inventory/{sku}/movements")
+def inventory_movements(sku: str, limit: int = Query(default=100, ge=1, le=500), user=Depends(auth_user)):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, sku, location, movement_type, delta, source_ref, created_at, created_by as actor, reason FROM inventory_movement WHERE sku=? ORDER BY id DESC LIMIT ?",
+            (sku, limit),
+        ).fetchall()
+    return {"items": [dict(r) for r in rows]}
+
+
 @app.get("/inventory/{sku}")
 def inventory_detail(sku: str, user=Depends(auth_user)):
     positions = [row for row in _latest_inventory_positions() if row.get("sku") == sku]
@@ -400,7 +422,13 @@ def inventory_adjust(payload: InventoryAdjustRequest, user=Depends(auth_user)):
                 ),
             )
 
-    return {"ok": True, "position": current, "movement": dict(movement_row)}
+    changed = {"inventory": [current], "shipments": [], "exceptions": []}
+    if current["available"] < 0:
+        with get_conn() as conn:
+            created = conn.execute("SELECT * FROM exception_cases ORDER BY id DESC LIMIT 1").fetchone()
+        if created:
+            changed["exceptions"].append(normalize_exception_row(dict(created)))
+    return {"ok": True, "position": current, "movement": dict(movement_row), "changed": changed}
 
 
 @app.get("/purchase/orders")
@@ -564,6 +592,46 @@ def update_shipment_status(shipment_id: str, payload: StatusUpdateRequest, user=
         now = datetime.now(timezone.utc).isoformat()
         conn.execute("INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)", ("shipment", shipment_id, json.dumps(shipment), "manual_status_update", 0, now))
     return {"ok": True, "shipment_id": shipment_id, "status": shipment["status"]}
+
+
+@app.post("/logistics/shipments/{shipment_id}/deliver")
+def deliver_shipment(shipment_id: str, user=Depends(auth_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    created_exceptions: list[dict[str, Any]] = []
+    with get_conn() as conn:
+        row = conn.execute("SELECT payload FROM canonical_records WHERE entity_type='shipment' AND json_extract(payload, '$.shipment_id')=? ORDER BY id DESC LIMIT 1", (shipment_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Shipment not found")
+        shipment = json.loads(row["payload"])
+        shipment["status"] = "delivered"
+        events = shipment.get("events") or []
+        events.append({"status": "delivered", "at": now})
+        shipment["events"] = events
+        conn.execute("INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)", ("shipment", shipment_id, json.dumps(shipment), "manual_deliver", 0, now))
+
+        eta = shipment.get("eta")
+        if eta and isinstance(eta, str) and eta < now:
+            exc_id = conn.execute(
+                "INSERT INTO exception_cases(type,severity,status,assignee,source,related_refs,sla_due_at,reason,linked_entity_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "late_shipment",
+                    "high",
+                    "open",
+                    "unassigned",
+                    "logistics",
+                    json.dumps(_standard_related_refs(shipment=[shipment_id], po=[shipment.get('po_number')] if shipment.get('po_number') else [])),
+                    compute_sla_due_at("late_shipment"),
+                    "Shipment delivered after expected date",
+                    shipment_id,
+                    now,
+                    now,
+                ),
+            ).lastrowid
+            created_row = conn.execute("SELECT * FROM exception_cases WHERE id=?", (exc_id,)).fetchone()
+            created_exceptions.append(normalize_exception_row(dict(created_row)))
+
+    append_audit_event("shipment.deliver", user["username"], "shipment", shipment_id, {"exceptions_created": len(created_exceptions)})
+    return {"message": f"Shipment {shipment_id} delivered", "changed": {"inventory": [], "shipments": [shipment], "exceptions": created_exceptions}}
 
 
 @app.post("/cases/{case_id}/comment")

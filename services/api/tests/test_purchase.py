@@ -46,3 +46,18 @@ def test_purchase_order_status_update_invalid_transition_400(tmp_path, monkeypat
 
     response = client.post('/purchase/orders/PO-1001/status', json={'status': 'received'}, headers=headers)
     assert response.status_code == 400
+
+def test_purchase_receive_requires_approved_or_sent(tmp_path, monkeypatch):
+    client = _client_with_seed(tmp_path, monkeypatch)
+    headers = _auth_headers(client)
+    response = client.post('/purchase/orders/PO-1001/receive', json={'lines':[{'sku':'SKU-1','qty':1}]}, headers=headers)
+    assert response.status_code == 400
+
+
+def test_purchase_receive_success_after_status_update(tmp_path, monkeypatch):
+    client = _client_with_seed(tmp_path, monkeypatch)
+    headers = _auth_headers(client)
+    client.post('/purchase/orders/PO-1001/status', json={'status':'approved'}, headers=headers)
+    response = client.post('/purchase/orders/PO-1001/receive', json={'lines':[{'sku':'SKU-1','qty':2}]}, headers=headers)
+    assert response.status_code == 200
+    assert 'changed' in response.json()

@@ -46,3 +46,12 @@ def seed_demo_data() -> None:
                     "INSERT INTO canonical_records(entity_type, entity_id, payload, source_of_record, lineage_batch_id, updated_at) VALUES(?,?,?,?,?,?)",
                     ("shipment", f"SHIP-{idx}", json.dumps(payload), "seed", 0, now.isoformat()),
                 )
+
+            conn.execute(
+                "INSERT INTO inventory_movement(sku, location, delta, reason, movement_type, source_ref, created_at, created_by) VALUES(?,?,?,?,?,?,?,?)",
+                ("SKU-1", "WH-JHB", 5, "Initial receive", "receive_po", "PO-1000", now.isoformat(), "seed"),
+            )
+            conn.execute(
+                "INSERT INTO inventory_movement(sku, location, delta, reason, movement_type, source_ref, created_at, created_by) VALUES(?,?,?,?,?,?,?,?)",
+                ("SKU-1", "WH-JHB", -2, "Cycle adjust", "reconcile", "CC-1", (now - timedelta(hours=1)).isoformat(), "seed"),
+            )

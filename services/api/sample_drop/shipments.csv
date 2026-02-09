@@ -1,0 +1,2 @@
+entity_type,shipment_id,po_number,status,eta,origin,dest,eta_drift_hours
+shipment,SHIP-909,PO-909,in_transit,2026-01-06T12:00:00+00:00,Durban,Cape Town,9

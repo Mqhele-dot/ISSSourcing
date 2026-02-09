@@ -55,3 +55,10 @@ def test_inventory_adjust_rejects_zero_delta_400(tmp_path, monkeypatch):
 
     response = client.post('/inventory/adjust', json={'sku': 'SKU-1', 'location': 'WH-JHB', 'delta': 0, 'reason': 'bad'}, headers=headers)
     assert response.status_code == 400
+
+def test_inventory_movements_endpoint(tmp_path, monkeypatch):
+    client = _client_with_seed(tmp_path, monkeypatch)
+    headers = _auth_headers(client)
+    response = client.get('/inventory/SKU-1/movements?limit=10', headers=headers)
+    assert response.status_code == 200
+    assert isinstance(response.json()['items'], list)

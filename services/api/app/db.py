@@ -7,7 +7,7 @@ DB_PATH = Path(__file__).resolve().parents[1] / "control_tower.db"
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, username TEXT UNIQUE, role TEXT NOT NULL, password TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, username TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS connector_runs(id INTEGER PRIMARY KEY AUTOINCREMENT, connector_name TEXT, status TEXT, retries INTEGER DEFAULT 0, error TEXT, started_at TEXT, ended_at TEXT);
+CREATE TABLE IF NOT EXISTS connector_runs(id INTEGER PRIMARY KEY AUTOINCREMENT, connector_name TEXT, status TEXT, retries INTEGER DEFAULT 0, error TEXT, input_ref TEXT, output_summary TEXT, batch_id INTEGER, started_at TEXT, ended_at TEXT);
 CREATE TABLE IF NOT EXISTS dead_letter_queue(id INTEGER PRIMARY KEY AUTOINCREMENT, connector_name TEXT, payload TEXT, error TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS batches(id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, created_at TEXT, status TEXT);
 CREATE TABLE IF NOT EXISTS staging_records(id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id INTEGER, entity_type TEXT, payload TEXT, source_system TEXT, source_timestamp TEXT);
@@ -65,3 +65,15 @@ def init_db() -> None:
         conn.execute("UPDATE exception_cases SET related_refs='{}' WHERE related_refs IS NULL OR related_refs='' ")
         conn.execute("UPDATE inventory_movement SET movement_type='adjust' WHERE movement_type IS NULL OR movement_type='' ")
         conn.execute("UPDATE inventory_movement SET source_ref='' WHERE source_ref IS NULL")
+
+        ensure_columns(
+            conn,
+            "connector_runs",
+            {
+                "input_ref": "TEXT DEFAULT ''",
+                "output_summary": "TEXT DEFAULT '{}'",
+                "batch_id": "INTEGER",
+            },
+        )
+        conn.execute("UPDATE connector_runs SET output_summary='{}' WHERE output_summary IS NULL OR output_summary='' ")
+        conn.execute("UPDATE connector_runs SET input_ref='' WHERE input_ref IS NULL ")
