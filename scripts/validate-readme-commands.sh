@@ -21,7 +21,7 @@ if ! echo "$pip_lines" | rg -q -- '--no-use-pep517'; then
   exit 1
 fi
 
-if ! rg -q -- '\.venv/bin/python -m pip install -e "\.\[dev\]" --no-use-pep517' "$README"; then
+if ! rg -q -- 'pip install -e "\.\[dev\]" --no-use-pep517' "$README"; then
   echo "README fallback install command is missing expected editable install with --no-use-pep517"
   exit 1
 fi
@@ -38,6 +38,7 @@ required_paths=(
   "services/api/scripts/dev.sh"
   "services/api/scripts/smoke_no_deps.py"
   "services/api/scripts/demo_walkthrough.py"
+  "services/api/scripts/preview_api.sh"
 )
 
 for rel in "${required_paths[@]}"; do
@@ -57,7 +58,7 @@ bash -n \
   "$ROOT/scripts/smoke-codespaces.sh" \
   "$ROOT/scripts/wait-for.sh"
 
-bash -n "$ROOT/services/api/scripts/dev.sh"
+bash -n "$ROOT/services/api/scripts/dev.sh" "$ROOT/services/api/scripts/preview_api.sh"
 python -m py_compile \
   "$ROOT/services/api/scripts/smoke_no_deps.py" \
   "$ROOT/services/api/scripts/demo_walkthrough.py"

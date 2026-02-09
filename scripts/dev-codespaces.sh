@@ -37,7 +37,14 @@ if [ ! -d "node_modules" ]; then
   npm install
 fi
 
+echo "==> Reviewer instructions"
+echo "1) Open the Codespaces Ports tab"
+echo "2) Open port 5173 in browser"
+echo "3) API is behind /api (no need to open 8000 directly)"
+echo "Quick verification:"
+echo "  curl -s http://127.0.0.1:8000/health"
+echo "  curl -s http://127.0.0.1:8000/health/deep"
+echo "UI URL format: https://<your-codespace-name>-5173.app.github.dev"
+
 echo "==> Starting frontend"
-echo "UI URL: https://<your-codespace-name>-5173.app.github.dev"
-echo "API proxy base in UI: /api"
 npm run dev:codespaces

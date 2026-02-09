@@ -51,6 +51,12 @@ Then run:
 ./scripts/dev-codespaces.sh
 ```
 
+API-only preview (no UI needed):
+
+```bash
+./services/api/scripts/preview_api.sh
+```
+
 In Codespaces preview, the UI calls the API via `/api` (Vite proxy), not direct port URLs in browser code.
 
 If you refresh and get redirected to /login, just click Login again (token is stored, but role state resets on reload).
@@ -61,10 +67,11 @@ If installs fail due to corporate proxy, fallback:
 cd services/api
 python -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
-# From repo root, the same interpreter path is: services/api/.venv/bin/python
 .venv/bin/python -m pip install -e ".[dev]" --no-use-pep517 || true
+# repo-root equivalent interpreter path: services/api/.venv/bin/python
 PYTHONPATH=. .venv/bin/python -m pytest -q
 ```
+
 
 ```bash
 cd apps/desktop/frontend
@@ -131,6 +138,7 @@ This validates README commands, runs smoke checks, and then launches the preview
 
 This script starts API first, waits for `/health`, then starts UI.
 API is proxied to the UI as `/api` in Codespaces.
+It also prints reviewer steps: open port 5173 in the Ports tab and use `/api` for backend calls.
 
 
 ## Codespaces verification checklist

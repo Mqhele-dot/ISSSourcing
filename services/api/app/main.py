@@ -1,3 +1,4 @@
+import os
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -33,7 +34,7 @@ app.add_middleware(
     allow_origin_regex=r"^https://.*\.app\.github\.dev$",
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
 
 
@@ -137,6 +138,26 @@ def set_demo_mode(enabled: str, user=Depends(auth_user)):
     append_audit_event("setting.update", user["username"], "settings", "demo_mode", {"enabled": enabled})
     return {"ok": True}
 
+
+
+
+@app.post("/demo/reset")
+def demo_reset():
+    if os.getenv("SCT_ENV", "dev").lower() == "prod":
+        raise HTTPException(status_code=403, detail="/demo/reset disabled outside dev")
+    with get_conn() as conn:
+        conn.execute("DELETE FROM staging_records")
+        conn.execute("DELETE FROM canonical_records")
+        conn.execute("DELETE FROM inventory_movement")
+        conn.execute("DELETE FROM exception_cases")
+        conn.execute("DELETE FROM case_comments")
+        conn.execute("DELETE FROM connector_runs")
+        conn.execute("DELETE FROM dead_letter_queue")
+        conn.execute("DELETE FROM batches")
+        conn.execute("DELETE FROM audit_event")
+    seed_demo_data()
+    append_audit_event("demo.reset", "system", "settings", "demo_mode", {"enabled": "true"})
+    return {"ok": True, "message": "Demo data reloaded"}
 
 @app.post("/connectors/run/{connector_name}")
 def run_connector(connector_name: str, detect_after: bool = Query(default=True), user=Depends(auth_user)):

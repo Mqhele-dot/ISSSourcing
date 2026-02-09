@@ -107,3 +107,5 @@ export async function fetchShipments(params?: { status?: string; po_number?: str
 export const fetchShipment = (id: string) => authedGet<ShipmentDetail>(`/logistics/shipments/${encodeURIComponent(id)}`);
 export const updateShipmentStatus = (id: string, status: string) => authedPost<{ ok: boolean }>(`/logistics/shipments/${encodeURIComponent(id)}/status`, { status });
 export const deliverShipment = (id: string) => authedPost<{ message: string; changed: { inventory: InventoryRow[]; shipments: ShipmentRow[]; exceptions: ExceptionCase[] } }>(`/logistics/shipments/${encodeURIComponent(id)}/deliver`);
+
+export const resetDemoData = () => apiFetch('/demo/reset', { method: 'POST' }).then((r) => r.json() as Promise<{ ok: boolean; message: string }>);
