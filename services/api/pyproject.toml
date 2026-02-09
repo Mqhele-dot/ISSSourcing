@@ -11,5 +11,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.2.0"]
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["sample_drop*"]
+
 [tool.pytest.ini_options]
 pythonpath = ["app"]
