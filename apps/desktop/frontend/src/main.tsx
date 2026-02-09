@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ErrorBoundary } from './ErrorBoundary';
+import { AppShell } from './layout/AppShell';
+import { ThemeProvider } from './theme/ThemeProvider';
+import { SettingsPage } from './pages/SettingsPage';
 import { ExceptionDetailPage } from './pages/ExceptionDetailPage';
 import { InventoryDetailPage } from './pages/InventoryDetailPage';
 import { InventoryPage } from './pages/InventoryPage';
@@ -9,24 +12,16 @@ import { LogisticsDetailPage } from './pages/LogisticsDetailPage';
 import { LogisticsPage } from './pages/LogisticsPage';
 import { PurchaseDetailPage } from './pages/PurchaseDetailPage';
 import { PurchasePage } from './pages/PurchasePage';
-import { ExceptionsView, HomeView, IntegrationsView, LoginView, Navbar } from './views';
+import { ExceptionsView, HomeView, IntegrationsView, LoginView } from './views';
+import './styles/theme.css';
 
 type Role = 'Planner' | 'Ops' | 'Admin';
 
-function PageMountedBanner() {
-  return <header><small>Page mounted</small></header>;
-}
-
-function Guard({ role, allowed, children }: { role: Role | null; allowed: Role[]; children: JSX.Element }) {
+function Guard({ role, children }: { role: Role | null; children: JSX.Element }) {
   const token = sessionStorage.getItem('sct_token');
   if (!token) return <Navigate to="/login" replace />;
   if (token && !role) return <Navigate to="/login?message=session-refresh" replace />;
-  if (!allowed.includes(role as Role)) return <div>Forbidden</div>;
   return children;
-}
-
-function WithNav({ children }: { children: JSX.Element }) {
-  return <div><Navbar /><PageMountedBanner />{children}</div>;
 }
 
 function RouteBoundary({ children }: { children: JSX.Element }) {
@@ -37,22 +32,27 @@ function App() {
   const initialRole = sessionStorage.getItem('sct_role') as Role | null;
   const [role, setRole] = useState<Role | null>(initialRole);
 
+  const withShell = (node: JSX.Element) => <RouteBoundary><Guard role={role}><AppShell>{node}</AppShell></Guard></RouteBoundary>;
+
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/login" element={<RouteBoundary><LoginView onLogin={setRole} /></RouteBoundary>} />
-        <Route path="/" element={<RouteBoundary><HomeView /></RouteBoundary>} />
-        <Route path="/inventory" element={<RouteBoundary><Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><WithNav><InventoryPage /></WithNav></Guard></RouteBoundary>} />
-        <Route path="/inventory/:sku" element={<RouteBoundary><Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><WithNav><InventoryDetailPage /></WithNav></Guard></RouteBoundary>} />
-        <Route path="/purchase" element={<RouteBoundary><Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><WithNav><PurchasePage /></WithNav></Guard></RouteBoundary>} />
-        <Route path="/purchase/:po_number" element={<RouteBoundary><Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><WithNav><PurchaseDetailPage /></WithNav></Guard></RouteBoundary>} />
-        <Route path="/logistics" element={<RouteBoundary><Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><WithNav><LogisticsPage /></WithNav></Guard></RouteBoundary>} />
-        <Route path="/logistics/:shipment_id" element={<RouteBoundary><Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><WithNav><LogisticsDetailPage /></WithNav></Guard></RouteBoundary>} />
-        <Route path="/integrations" element={<RouteBoundary><Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><IntegrationsView /></Guard></RouteBoundary>} />
-        <Route path="/exceptions" element={<RouteBoundary><Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><ExceptionsView /></Guard></RouteBoundary>} />
-        <Route path="/exceptions/:exception_id" element={<RouteBoundary><Guard role={role} allowed={['Planner', 'Ops', 'Admin']}><WithNav><ExceptionDetailPage /></WithNav></Guard></RouteBoundary>} />
-      </Routes>
-    </HashRouter>
+    <ThemeProvider>
+      <HashRouter>
+        <Routes>
+          <Route path="/login" element={<RouteBoundary><LoginView onLogin={setRole} /></RouteBoundary>} />
+          <Route path="/" element={withShell(<HomeView />)} />
+          <Route path="/inventory" element={withShell(<InventoryPage />)} />
+          <Route path="/inventory/:sku" element={withShell(<InventoryDetailPage />)} />
+          <Route path="/purchase" element={withShell(<PurchasePage />)} />
+          <Route path="/purchase/:po_number" element={withShell(<PurchaseDetailPage />)} />
+          <Route path="/logistics" element={withShell(<LogisticsPage />)} />
+          <Route path="/logistics/:shipment_id" element={withShell(<LogisticsDetailPage />)} />
+          <Route path="/integrations" element={withShell(<IntegrationsView />)} />
+          <Route path="/exceptions" element={withShell(<ExceptionsView />)} />
+          <Route path="/exceptions/:exception_id" element={withShell(<ExceptionDetailPage />)} />
+          <Route path="/settings" element={withShell(<SettingsPage />)} />
+        </Routes>
+      </HashRouter>
+    </ThemeProvider>
   );
 }
 
