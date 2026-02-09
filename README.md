@@ -51,6 +51,8 @@ Then run:
 ./scripts/dev-codespaces.sh
 ```
 
+In Codespaces preview, the UI calls the API via `/api` (Vite proxy), not direct port URLs in browser code.
+
 If you refresh and get redirected to /login, just click Login again (token is stored, but role state resets on reload).
 
 If installs fail due to corporate proxy, fallback:
@@ -58,10 +60,10 @@ If installs fail due to corporate proxy, fallback:
 ```bash
 cd services/api
 python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -e .[dev] --no-build-isolation || pip install -e .[dev] --no-use-pep517 || true
-PYTHONPATH=. pytest -q
+.venv/bin/python -m pip install --upgrade pip
+# From repo root, the same interpreter path is: services/api/.venv/bin/python
+.venv/bin/python -m pip install -e ".[dev]" --no-use-pep517 || true
+PYTHONPATH=. .venv/bin/python -m pytest -q
 ```
 
 ```bash
@@ -112,6 +114,14 @@ PYTHONPATH=. .venv/bin/python scripts/demo_walkthrough.py
 
 This walkthrough performs login, exception detection, PO receive, and inventory movement validation via HTTP calls.
 
+
+## Docs-first Codespaces flow
+
+```bash
+./scripts/docs-flow-codespaces.sh
+```
+
+This validates README commands, runs smoke checks, and then launches the preview. If smoke exits `2`, the script explains proxy/index limitations and still starts the dev flow.
 
 ## Single-command Codespaces preview
 

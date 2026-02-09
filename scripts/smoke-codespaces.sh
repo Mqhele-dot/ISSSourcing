@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! "$SCRIPT_DIR"/validate-readme-commands.sh; then
+  echo "README command validation failed; fix docs before running Codespaces smoke."
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API_DIR="$ROOT/services/api"
 API_PY="$API_DIR/.venv/bin/python"
