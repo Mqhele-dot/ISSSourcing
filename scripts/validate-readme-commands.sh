@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ ! -d .git ]; then
+  echo "Run this from repo root: cd /workspaces/ISSSourcing && ./scripts/validate-readme-commands.sh"
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 README="$ROOT/README.md"
 DEVCONTAINER="$ROOT/.devcontainer/devcontainer.json"
@@ -36,13 +41,13 @@ if printf '%s' "$pip_lines" | grep -Eq -- '--use-pep517=false'; then
   exit 1
 fi
 
-if ! printf '%s' "$pip_lines" | grep -Eq -- '--no-use-pep517'; then
-  echo "README is missing expected fallback pip flag: --no-use-pep517"
+if ! matches 'requirements-runtime\.txt' "$README"; then
+  echo "README is missing runtime requirements guidance"
   exit 1
 fi
 
-if ! matches 'pip install -e "\.\[dev\]" --no-use-pep517' "$README"; then
-  echo "README fallback install command is missing expected editable install with --no-use-pep517"
+if ! matches 'pip install -e \.' "$README"; then
+  echo "README is missing editable app install guidance"
   exit 1
 fi
 
@@ -60,6 +65,7 @@ required_paths=(
   "services/api/scripts/demo_walkthrough.py"
   "services/api/scripts/preview_api.sh"
   "scripts/preview.sh"
+  "scripts/api.sh"
 )
 
 for rel in "${required_paths[@]}"; do
@@ -78,7 +84,8 @@ bash -n \
   "$ROOT/scripts/dev-codespaces.sh" \
   "$ROOT/scripts/smoke-codespaces.sh" \
   "$ROOT/scripts/wait-for.sh" \
-  "$ROOT/scripts/preview.sh"
+  "$ROOT/scripts/preview.sh" \
+  "$ROOT/scripts/api.sh"
 
 bash -n "$ROOT/services/api/scripts/dev.sh" "$ROOT/services/api/scripts/preview_api.sh"
 python -m py_compile \

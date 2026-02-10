@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ ! -d .git ]; then
+  echo "Run this from repo root: cd /workspaces/ISSSourcing && ./scripts/preview.sh"
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 "$ROOT/scripts/validate-readme-commands.sh"

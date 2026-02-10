@@ -23,21 +23,19 @@
 
 ## Run backend
 ```bash
-cd services/api
-python -m venv .venv && source .venv/bin/activate
-pip install -e .[dev]
-uvicorn app.main:app --reload
+cd /workspaces/ISSSourcing
+./scripts/api.sh
 ```
 
 ## Run backend tests
 ```bash
-cd services/api
-.venv/bin/python -m pip install -e ".[dev]"
+cd /workspaces/ISSSourcing/services/api
+.venv/bin/python -m pip install -c constraints.txt pytest
 PYTHONPATH=. .venv/bin/python -m pytest -q
 ```
 
 > Codespaces guardrail: always use `services/api/.venv/bin/python` and `services/api/.venv/bin/pip` for backend installs and test runs.
-> Backend installs use `services/api/constraints.txt`; if your org blocks public indexes, place prebuilt wheels in `services/api/vendor/` and scripts will auto-retry from local wheels.
+> Backend installs use `services/api/constraints.txt` + `services/api/requirements-runtime.txt`; if your org blocks public indexes, place prebuilt wheels in `services/api/vendor/` and scripts will auto-retry from local wheels. Set `SCT_DEV=1` only when you need dev tooling (pytest/ruff/black).
 
 ## Run in GitHub Codespaces
 
@@ -45,9 +43,10 @@ Open in Codespaces
 
 Wait for postCreate to finish (it runs once automatically)
 
-Then run:
+Then run from repo root:
 
 ```bash
+cd /workspaces/ISSSourcing
 ./scripts/preview.sh
 ```
 
@@ -89,8 +88,9 @@ In Codespaces preview, the UI calls the API via `/api` (Vite proxy), not direct 
 6. Backend fallback command (if your mirror supports it):
 
 ```bash
-cd services/api
-.venv/bin/python -m pip install -e ".[dev]" --no-use-pep517
+cd /workspaces/ISSSourcing/services/api
+.venv/bin/python -m pip install -c constraints.txt -r requirements-runtime.txt
+.venv/bin/python -m pip install -e . --no-deps --no-build-isolation
 ```
 
 If you refresh and get redirected to /login, click Login again.
@@ -183,3 +183,15 @@ Sample connector CSV files for demos are in `services/api/sample_drop/`.
 ```
 
 UI "Load demo data" buttons call this endpoint and refetch list data after success.
+
+
+## Backend quick start (API only)
+
+Run from repo root:
+
+```bash
+cd /workspaces/ISSSourcing
+./scripts/api.sh
+```
+
+If runtime deps are already installed (`import fastapi, uvicorn` succeeds), scripts skip reinstall and start immediately.
