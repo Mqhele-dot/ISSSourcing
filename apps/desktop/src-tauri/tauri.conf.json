@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/1",
+  "package": {
+    "productName": "SupplyChain Control Tower",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "bundle": {
+      "identifier": "com.local.supplychain.controltower",
+      "active": true,
+      "targets": "all"
+    },
+    "windows": [
+      {
+        "title": "SupplyChain Control Tower",
+        "width": 1280,
+        "height": 840
+      }
+    ]
+  },
+  "build": {
+    "beforeDevCommand": "cd ../frontend && npm run dev",
+    "beforeBuildCommand": "cd ../frontend && npm run build",
+    "devPath": "http://localhost:5173",
+    "distDir": "../frontend/dist"
+  }
+}

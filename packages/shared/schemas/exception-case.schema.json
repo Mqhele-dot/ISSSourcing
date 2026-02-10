@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.supplychain/schemas/exception-case.schema.json",
+  "type": "object",
+  "required": ["id", "type", "severity", "status", "linked_entity_id"],
+  "properties": {
+    "id": {"type": "integer"},
+    "type": {"type": "string"},
+    "severity": {"type": "string", "enum": ["low", "medium", "high"]},
+    "status": {"type": "string", "enum": ["open", "closed"]},
+    "linked_entity_id": {"type": "string"},
+    "assignee": {"type": "string"},
+    "reason": {"type": "string"}
+  }
+}

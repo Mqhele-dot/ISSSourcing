@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+services/api/control_tower.db
+services/api/.venv/
+apps/desktop/frontend/node_modules/
+apps/desktop/frontend/dist/
+.pytest_cache/
+logs/
+
+apps/desktop/frontend/package-lock.json
+services/api/*.egg-info/
