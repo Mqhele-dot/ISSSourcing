@@ -245,8 +245,16 @@ def _validate_exception_transition(current: str, target: str) -> None:
         "resolved": {"closed", "open"},
         "closed": {"open"},
     }
+    allowed_targets = sorted(allowed.get(current, set()))
     if target not in allowed.get(current, set()):
-        raise HTTPException(status_code=400, detail=f"Invalid exception transition: {current} -> {target}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": f"Invalid exception transition: {current} -> {target}",
+                "allowed": allowed_targets,
+                "from": current,
+            },
+        )
 
 
 def _get_exception_detail_or_404(exception_id: int) -> dict[str, Any]:

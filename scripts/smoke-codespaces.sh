@@ -11,6 +11,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API_DIR="$ROOT/services/api"
 API_PY="$API_DIR/.venv/bin/python"
 API_PIP="$API_DIR/.venv/bin/pip"
+API_CONSTRAINTS="$API_DIR/constraints.txt"
+API_VENDOR="$API_DIR/vendor"
+
+install_backend_editable() {
+  if "$API_PIP" install -c "$API_CONSTRAINTS" -e ".[dev]"; then
+    return 0
+  fi
+  if [ -d "$API_VENDOR" ] && compgen -G "$API_VENDOR/*.whl" >/dev/null; then
+    "$API_PIP" install --no-index --find-links "$API_VENDOR" -c "$API_CONSTRAINTS" -e ".[dev]"
+    return 0
+  fi
+  return 1
+}
 
 echo "==> Backend no-deps smoke"
 cd "$API_DIR"
@@ -21,7 +34,7 @@ PYTHONPATH=. "$API_PY" scripts/smoke_no_deps.py
 
 echo "==> Backend tests"
 "$API_PY" -m pip install -U pip setuptools wheel || true
-"$API_PIP" install -e ".[dev]" || {
+install_backend_editable || {
   echo "Dependency install blocked; run inside Codespaces or configure proxy"
   exit 2
 }

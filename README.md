@@ -37,6 +37,7 @@ PYTHONPATH=. .venv/bin/python -m pytest -q
 ```
 
 > Codespaces guardrail: always use `services/api/.venv/bin/python` and `services/api/.venv/bin/pip` for backend installs and test runs.
+> Backend installs use `services/api/constraints.txt`; if your org blocks public indexes, place prebuilt wheels in `services/api/vendor/` and scripts will auto-retry from local wheels.
 
 ## Run in GitHub Codespaces
 
@@ -171,3 +172,14 @@ PYTHONPATH=. .venv/bin/python scripts/demo_walkthrough.py
 ```
 
 Sample connector CSV files for demos are in `services/api/sample_drop/`.
+
+
+## Demo reset endpoint
+
+`POST /demo/reset` requires a valid `Authorization: Bearer <token>` header and returns seeded counts:
+
+```json
+{ "ok": true, "message": "Demo data reloaded", "seeded": { "canonical": 0, "exceptions": 0, "movements": 0, "users": 0 } }
+```
+
+UI "Load demo data" buttons call this endpoint and refetch list data after success.

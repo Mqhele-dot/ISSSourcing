@@ -5,6 +5,22 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API_DIR="$ROOT/services/api"
 API_PY="$API_DIR/.venv/bin/python"
 API_PIP="$API_DIR/.venv/bin/pip"
+API_CONSTRAINTS="$API_DIR/constraints.txt"
+API_VENDOR="$API_DIR/vendor"
+
+install_backend_editable() {
+  if "$API_PIP" install -c "$API_CONSTRAINTS" -e ".[dev]"; then
+    return 0
+  fi
+
+  if [ -d "$API_VENDOR" ] && compgen -G "$API_VENDOR/*.whl" >/dev/null; then
+    echo "==> Retrying backend install from local vendor wheels"
+    "$API_PIP" install --no-index --find-links "$API_VENDOR" -c "$API_CONSTRAINTS" -e ".[dev]"
+    return 0
+  fi
+
+  return 1
+}
 
 ensure_backend_deps() {
   cd "$API_DIR"
@@ -14,7 +30,7 @@ ensure_backend_deps() {
 
   echo "==> Backend dependency install"
   "$API_PY" -m pip install -U pip setuptools wheel || true
-  if ! "$API_PIP" install -e ".[dev]"; then
+  if ! install_backend_editable; then
     echo "Backend deps could not be installed (likely proxy/index policy)."
     echo "Try API-only preview: services/api/scripts/preview_api.sh"
     echo "Or set PIP_INDEX_URL / NPM registry to your org mirror."
