@@ -5,6 +5,7 @@ import { initializeWebSocketService, checkLowStockAlerts } from "./websocket-ser
 import { storage } from "./storage";
 import { pool } from "./db";
 import { initializeDatabase } from "./init-db";
+import { seedDatabaseIfEmpty } from "./seed";
 import type { PoolClient } from "pg";
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
@@ -20,6 +21,19 @@ pool.connect()
     try {
       await initializeDatabase();
       console.log("✅ Database schema initialized");
+
+      const autoSeedEnabled =
+        process.env.AUTO_SEED_ON_EMPTY_DB === "true" ||
+        (process.env.AUTO_SEED_ON_EMPTY_DB !== "false" && process.env.NODE_ENV !== "production");
+
+      if (autoSeedEnabled) {
+        const seeded = await seedDatabaseIfEmpty();
+        if (seeded) {
+          console.log("✅ Demo data seeded (database was empty)");
+        } else {
+          console.log("ℹ️ Demo data seeding skipped (existing data detected)");
+        }
+      }
     } catch (schemaError) {
       console.error("⚠️ Database schema initialization failed:", schemaError);
       console.error("The application may not function correctly without a properly initialized database");

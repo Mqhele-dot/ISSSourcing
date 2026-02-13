@@ -14,13 +14,39 @@ This repository now includes a `.devcontainer` configuration so it can boot in G
    - install dependencies with `npm ci`
    - wait for PostgreSQL
    - run `npm run db:push` to initialize the schema
-4. Start the app:
+4. Start the app with one command:
 
 ```bash
-npm run dev
+npm run codespaces:up
 ```
 
-The app runs on port `5000`, which is forwarded automatically.
+The command will:
+- verify you are in the repository root
+- install dependencies
+- wait for PostgreSQL readiness
+- apply schema (`npm run db:push`)
+- start the development server
+
+On first boot, the server auto-seeds demo data when the database is empty.
+You can also seed manually with:
+
+```bash
+npm run db:seed
+```
+
+## Ports and URLs
+
+| Service | Port | Notes |
+|---|---:|---|
+| Server | 5000 | Express + Vite middleware |
+| Client | 5000 | Same URL as server in development |
+| PostgreSQL | 5432 | `db` service in devcontainer |
+
+Health endpoint for smoke tests:
+
+```text
+GET /health
+```
 
 ## Default environment
 

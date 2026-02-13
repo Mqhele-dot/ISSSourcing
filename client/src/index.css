@@ -2,10 +2,113 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --radius: 0.75rem;
+
+  /* Core design tokens */
+  --background: 220 20% 98%;
+  --foreground: 222 47% 11%;
+  --surface: 0 0% 100%;
+  --surface-elevated: 220 16% 96%;
+  --text: var(--foreground);
+  --muted-text: 215 16% 47%;
+  --border: 214 24% 90%;
+
+  /* shadcn token compatibility */
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface);
+  --popover-foreground: var(--foreground);
+  --secondary: 216 33% 97%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: var(--surface-elevated);
+  --muted-foreground: var(--muted-text);
+  --input: var(--border);
+  --ring: 221 83% 53%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 210 40% 98%;
+
+  /* Accent system */
+  --accent-500: 221 83% 53%;
+  --accent-600: 224 76% 48%;
+  --accent-gradient: linear-gradient(
+    135deg,
+    hsl(var(--accent-500)),
+    hsl(var(--accent-600))
+  );
+  --shadow-elev-1: 0 10px 24px -18px hsl(222 47% 11% / 0.35);
+  --shadow-elev-2: 0 22px 52px -28px hsl(222 47% 11% / 0.45);
+  --primary: var(--accent-500);
+  --primary-foreground: 210 40% 98%;
+  --accent: 216 33% 97%;
+  --accent-foreground: 222 47% 11%;
+
+  --chart-1: 221 83% 53%;
+  --chart-2: 173 80% 40%;
+  --chart-3: 266 85% 58%;
+  --chart-4: 31 95% 57%;
+  --chart-5: 198 93% 60%;
+
+  --sidebar-background: var(--surface);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+.dark {
+  --background: 222 47% 8%;
+  --foreground: 210 40% 98%;
+  --surface: 222 41% 11%;
+  --surface-elevated: 223 30% 14%;
+  --text: var(--foreground);
+  --muted-text: 215 20% 70%;
+  --border: 217 33% 20%;
+
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface);
+  --popover-foreground: var(--foreground);
+  --secondary: 217 33% 18%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: var(--surface-elevated);
+  --muted-foreground: var(--muted-text);
+  --input: var(--border);
+  --destructive: 0 63% 46%;
+  --destructive-foreground: 210 40% 98%;
+  --accent: 222 31% 18%;
+  --accent-foreground: 210 40% 98%;
+  --shadow-elev-1: 0 10px 24px -18px hsl(221 39% 4% / 0.7);
+  --shadow-elev-2: 0 22px 52px -28px hsl(221 39% 4% / 0.85);
+}
+
+[data-accent="blue"] {
+  --accent-500: 221 83% 53%;
+  --accent-600: 224 76% 48%;
+}
+
+[data-accent="teal"] {
+  --accent-500: 173 80% 40%;
+  --accent-600: 173 82% 33%;
+}
+
+[data-accent="purple"] {
+  --accent-500: 266 85% 58%;
+  --accent-600: 270 84% 52%;
+}
+
+[data-accent="orange"] {
+  --accent-500: 28 96% 53%;
+  --accent-600: 24 95% 46%;
+}
+
 /* Custom Shepherd Tour styling */
 .shepherd-theme-custom {
   border-radius: 0.5rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-elev-1);
   background: white;
   color: #1f2937;
   z-index: 9999;
@@ -60,22 +163,22 @@
   border-width: 8px;
 }
 
-.shepherd-theme-custom[data-popper-placement^='top'] .shepherd-arrow {
+.shepherd-theme-custom[data-popper-placement^="top"] .shepherd-arrow {
   border-bottom-width: 0;
   border-top-color: white;
 }
 
-.shepherd-theme-custom[data-popper-placement^='bottom'] .shepherd-arrow {
+.shepherd-theme-custom[data-popper-placement^="bottom"] .shepherd-arrow {
   border-top-width: 0;
   border-bottom-color: white;
 }
 
-.shepherd-theme-custom[data-popper-placement^='left'] .shepherd-arrow {
+.shepherd-theme-custom[data-popper-placement^="left"] .shepherd-arrow {
   border-right-width: 0;
   border-left-color: white;
 }
 
-.shepherd-theme-custom[data-popper-placement^='right'] .shepherd-arrow {
+.shepherd-theme-custom[data-popper-placement^="right"] .shepherd-arrow {
   border-left-width: 0;
   border-right-color: white;
 }
@@ -97,8 +200,42 @@
 }
 
 @layer components {
+  .app-shell {
+    @apply bg-background text-foreground;
+  }
+
+  .surface-card {
+    box-shadow: var(--shadow-elev-1);
+  }
+
+  .topbar-glass {
+    background-color: hsl(var(--background) / 0.88);
+    backdrop-filter: blur(10px);
+  }
+
+  .accent-gradient-bg {
+    background-image: var(--accent-gradient);
+  }
+
+  .elev-1 {
+    box-shadow: var(--shadow-elev-1);
+  }
+
+  .elev-2 {
+    box-shadow: var(--shadow-elev-2);
+  }
+
+  .empty-state {
+    @apply flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-8 text-center;
+  }
+
+  .empty-state__icon {
+    @apply flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground;
+  }
+
   /* Custom Electron title bar styles */
-  .drag, .drag-region {
+  .drag,
+  .drag-region {
     -webkit-app-region: drag;
     app-region: drag;
   }

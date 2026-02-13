@@ -24,8 +24,8 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
           className={cn(
             "flex items-center px-4 py-2.5 text-sm font-medium rounded-md cursor-pointer",
             isActive(path)
-              ? "bg-primary text-white hover:bg-primary/90"
-              : "text-neutral-800 dark:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "text-foreground/90 hover:bg-muted"
           )}
         >
           {icon}
@@ -48,11 +48,11 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-neutral-800 border-r border-neutral-200 dark:border-neutral-700 shadow-sm transition-transform duration-200 transform md:translate-x-0 md:static md:z-0",
+          "fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border shadow-[var(--shadow-elev-1)] transition-transform duration-200 transform md:translate-x-0 md:static md:z-0",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+        <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <svg className="h-8 w-8 text-primary" fill="currentColor" viewBox="0 0 24 24">
@@ -61,7 +61,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
                 <path d="M6 11H18V13H6V11Z" />
                 <path d="M6 8H18V10H6V8Z" />
               </svg>
-              <h1 className="ml-2 text-xl font-semibold text-primary dark:text-white">InvTrack</h1>
+              <h1 className="ml-2 text-xl font-semibold text-primary">InvTrack</h1>
             </div>
             <Button
               variant="ghost"
@@ -130,7 +130,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
           </div>
         </nav>
         
-        <div className="p-4 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="p-4 border-t border-border">
           <Button
             variant="ghost"
             className="w-full justify-start"

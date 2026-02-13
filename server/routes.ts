@@ -4124,9 +4124,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Health Check
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+  const getHealthPayload = () => ({
+    status: "ok",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+
+  // Health checks for app monitors and CI smoke tests.
+  app.get("/health", (_req, res) => {
+    res.json(getHealthPayload());
+  });
+
+  app.get("/api/health", (_req, res) => {
+    res.json(getHealthPayload());
   });
   
   // Initialize image recognition routes

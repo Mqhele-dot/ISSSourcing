@@ -21,7 +21,7 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="app-shell flex flex-col min-h-screen">
       {isElectron && <TitleBar title={title} />}
       
       <div className="flex flex-1">

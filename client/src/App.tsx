@@ -29,6 +29,7 @@ import ImageRecognitionPage from "@/pages/image-recognition-page";
 import DocumentExtractorPage from "@/pages/document-extractor-page";
 import WarehousesPage from "@/pages/warehouses";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AccentProvider } from "@/components/accent-provider";
 import { useState, useEffect } from "react";
 import { TutorialProvider } from "@/contexts/tutorial-context";
 import { TutorialSteps } from "@/components/tutorial/tutorial-steps";
@@ -144,33 +145,35 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light" storageKey="invtrack-theme">
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <TutorialProvider>
-              <ElectronProvider>
-                <div className="relative min-h-screen">
-                  <Route path="/auth">
-                    <Router />
-                  </Route>
-                  <Route path="*">
-                    {(params) => {
-                      // Don't wrap non-auth routes with AppLayout
-                      const pathname = params["*"] || "";
-                      if (pathname === "auth") return null;
-                      return (
-                        <AppLayout>
-                          <Router />
-                        </AppLayout>
-                      );
-                    }}
-                  </Route>
-                </div>
-                <TutorialSteps />
-                <Toaster />
-              </ElectronProvider>
-            </TutorialProvider>
-          </AuthProvider>
-        </QueryClientProvider>
+        <AccentProvider>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <TutorialProvider>
+                <ElectronProvider>
+                  <div className="app-shell relative min-h-screen">
+                    <Route path="/auth">
+                      <Router />
+                    </Route>
+                    <Route path="*">
+                      {(params) => {
+                        // Don't wrap non-auth routes with AppLayout
+                        const pathname = params["*"] || "";
+                        if (pathname === "auth") return null;
+                        return (
+                          <AppLayout>
+                            <Router />
+                          </AppLayout>
+                        );
+                      }}
+                    </Route>
+                  </div>
+                  <TutorialSteps />
+                  <Toaster />
+                </ElectronProvider>
+              </TutorialProvider>
+            </AuthProvider>
+          </QueryClientProvider>
+        </AccentProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );
