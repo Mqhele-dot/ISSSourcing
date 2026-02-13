@@ -5,7 +5,7 @@ import { initializeWebSocketService, checkLowStockAlerts } from "./websocket-ser
 import { storage } from "./storage";
 import { pool } from "./db";
 import { initializeDatabase } from "./init-db";
-import { PoolClient } from '@neondatabase/serverless';
+import type { PoolClient } from "pg";
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 

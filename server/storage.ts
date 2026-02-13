@@ -54,7 +54,6 @@ import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, 
 const MemoryStore = memorystore(session);
 const PostgresSessionStore = connectPgSimple(session);
 import crypto from "crypto";
-import { Pool } from "@neondatabase/serverless";
 
 export interface IStorage {
   // Session store for Express sessions
