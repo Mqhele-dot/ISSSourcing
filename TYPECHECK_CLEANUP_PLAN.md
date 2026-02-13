@@ -6,6 +6,7 @@ This plan tracks an incremental cleanup strategy without blocking delivery.
 ## Phase A - Stop the bleeding (1 day)
 
 - Keep strict check mode visible in CI (`npm run check`) but non-blocking.
+- Add lint reporting (`npm run lint`) with TypeScript-focused warnings (non-blocking).
 - Keep compiler safety baseline:
   - `skipLibCheck: true`
   - `noEmit: true`

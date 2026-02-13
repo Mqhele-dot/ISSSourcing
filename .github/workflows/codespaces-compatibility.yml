@@ -73,6 +73,10 @@ jobs:
       - name: Build app
         run: npm run build
 
+      - name: Lint (non-blocking, report-only)
+        continue-on-error: true
+        run: npm run lint
+
       - name: Typecheck (non-blocking, tracked)
         id: typecheck
         continue-on-error: true
