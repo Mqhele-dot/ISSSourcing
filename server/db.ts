@@ -1,6 +1,9 @@
-import { Pool } from "pg";
+import type { Pool as PgPool } from "pg";
+import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
+
+const { Pool } = pg;
 
 // Default connection string format: postgresql://username:password@host:port/database
 const DEFAULT_CONNECTION_STRING = "postgresql://username:password@host:port/database";
@@ -63,7 +66,7 @@ const poolOptions = {
   connectionTimeoutMillis: 5000,
 };
 
-let pool: Pool;
+let pool: PgPool;
 let db: ReturnType<typeof drizzle>;
 
 try {
