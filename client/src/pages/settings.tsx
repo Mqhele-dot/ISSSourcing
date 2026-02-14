@@ -11,10 +11,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { resetDemoData } from "@/api/client";
 import { Can } from "@/components/auth/can";
+import { useAccent } from "@/components/accent-provider";
+import { useDensity } from "@/components/density-provider";
+import { useAuth } from "@/hooks/use-auth";
 import { GeneralSettingsForm } from "@/components/settings/general-settings-form";
 import { InventorySettingsForm } from "@/components/settings/inventory-settings-form";
 import { RealtimeSettingsForm } from "@/components/settings/realtime-settings-form";
@@ -41,9 +45,22 @@ import {
 
 export default function SettingsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { accent, accentConfig, setAccentConfig, setPreset } = useAccent();
+  const { density, setDensity } = useDensity();
   const isDevMode = import.meta.env.DEV;
   const [isResetDialogOpen, setIsResetDialogOpen] = React.useState(false);
   const [isResettingDemoData, setIsResettingDemoData] = React.useState(false);
+
+  const capabilitiesByRole: Record<string, string[]> = {
+    admin: ["Approve/send/receive POs", "Manage users and settings", "Reset demo data"],
+    manager: ["Approve/send/receive POs", "Assign and resolve exceptions", "Update shipment status"],
+    warehouse_staff: ["Adjust inventory", "Receive inbound shipments", "Review low stock alerts"],
+    viewer: ["View dashboards and reports", "Track shipments and exceptions", "Read-only access"],
+    supplier: ["View assigned POs", "Track shipment progress", "Comment on exceptions"],
+  };
+  const roleKey = (user?.role || "viewer").toLowerCase();
+  const roleCapabilities = capabilitiesByRole[roleKey] ?? capabilitiesByRole.viewer;
 
   const handleResetDemoData = async () => {
     setIsResettingDemoData(true);
@@ -103,6 +120,106 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Appearance studio</CardTitle>
+          <CardDescription>
+            Dynamic accent and density controls for reviewer demos.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="accent-hue">Hue ({Math.round(accentConfig.hue)})</Label>
+              <Input
+                id="accent-hue"
+                type="range"
+                min={0}
+                max={360}
+                value={accentConfig.hue}
+                onChange={(event) => setAccentConfig({ hue: Number(event.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="accent-sat">Vividness ({Math.round(accentConfig.saturation)}%)</Label>
+              <Input
+                id="accent-sat"
+                type="range"
+                min={20}
+                max={100}
+                value={accentConfig.saturation}
+                onChange={(event) => setAccentConfig({ saturation: Number(event.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="accent-light">Contrast ({Math.round(accentConfig.lightness)}%)</Label>
+              <Input
+                id="accent-light"
+                type="range"
+                min={25}
+                max={75}
+                value={accentConfig.lightness}
+                onChange={(event) => setAccentConfig({ lightness: Number(event.target.value) })}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Use brand presets</Label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: "blue", label: "Ocean" },
+                { key: "teal", label: "Teal" },
+                { key: "purple", label: "Violet" },
+                { key: "orange", label: "Sunset" },
+                { key: "rose", label: "Rose" },
+              ].map((preset) => (
+                <Button
+                  key={preset.key}
+                  type="button"
+                  variant={accent === preset.key ? "default" : "outline"}
+                  onClick={() => setPreset(preset.key as "blue" | "teal" | "purple" | "orange" | "rose")}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Density mode</Label>
+            <div className="flex flex-wrap gap-2">
+              {(["compact", "comfortable", "spacious"] as const).map((mode) => (
+                <Button
+                  key={mode}
+                  type="button"
+                  variant={density === mode ? "default" : "outline"}
+                  onClick={() => setDensity(mode)}
+                >
+                  {mode}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">What can I do?</CardTitle>
+          <CardDescription>
+            Signed in as <span className="font-medium uppercase">{user?.role || "viewer"}</span>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            {roleCapabilities.map((capability) => (
+              <li key={capability}>{capability}</li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="general" className="space-y-6">
         <TabsList className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 h-auto">

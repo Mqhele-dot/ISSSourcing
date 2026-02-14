@@ -194,6 +194,36 @@ async function ensureAdminUser(): Promise<void> {
     .onConflictDoNothing({ target: users.username });
 }
 
+async function ensureDemoUsers(): Promise<void> {
+  const hashedPassword = await hashPassword("Admin123!");
+  const demoUsers = [
+    {
+      username: "planner",
+      email: "planner@example.com",
+      fullName: "Demo Planner",
+      role: "manager" as const,
+    },
+    {
+      username: "viewer",
+      email: "viewer@example.com",
+      fullName: "Demo Viewer",
+      role: "viewer" as const,
+    },
+  ];
+
+  for (const demoUser of demoUsers) {
+    await db
+      .insert(users)
+      .values({
+        ...demoUser,
+        emailVerified: true,
+        password: hashedPassword,
+        active: true,
+      })
+      .onConflictDoNothing({ target: users.username });
+  }
+}
+
 async function ensureInventoryItems(
   defaultWarehouseId: number,
   categoryMap: Map<string, number>,
@@ -315,6 +345,7 @@ export async function seedDatabase(): Promise<DemoDataSummary> {
 
   await ensureSettings();
   await ensureAdminUser();
+  await ensureDemoUsers();
   await ensureInventoryItems(defaultWarehouseId, categoryMap, supplierMap);
 
   return getDemoDataSummary();
@@ -361,7 +392,7 @@ async function runSeedCli(): Promise<void> {
     const summary = shouldReset ? await resetAndSeedDemoData() : await seedDatabase();
     console.log(shouldReset ? "Demo data reset complete." : "Demo data seeded successfully.");
     console.log(summary);
-    console.log("Default admin credentials: admin / Admin123!");
+    console.log("Default demo credentials: admin|planner|viewer / Admin123!");
   } finally {
     await pool.end();
   }

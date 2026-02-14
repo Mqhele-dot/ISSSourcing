@@ -246,6 +246,12 @@ function LoginForm({
       setLoginError("An error occurred during login. Please try again.");
     }
   });
+
+  const demoUsers = [
+    { label: "Admin", username: "admin", password: "Admin123!", role: "Full access" },
+    { label: "Planner", username: "planner", password: "Admin123!", role: "Planning + execution" },
+    { label: "Viewer", username: "viewer", password: "Admin123!", role: "Read-only" },
+  ];
   
   return (
     <Card>
@@ -319,6 +325,30 @@ function LoginForm({
             </AlertDescription>
           </Alert>
         )}
+
+        <div className="mb-4 rounded-md border border-border bg-muted/40 p-3">
+          <p className="text-sm font-medium">Demo users</p>
+          <p className="text-xs text-muted-foreground mb-2">
+            Click to autofill credentials for reviewer walkthroughs.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {demoUsers.map((demoUser) => (
+              <Button
+                key={demoUser.label}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  form.setValue("username", demoUser.username);
+                  form.setValue("password", demoUser.password);
+                  form.setValue("rememberMe", true);
+                }}
+              >
+                {demoUser.label} · {demoUser.role}
+              </Button>
+            ))}
+          </div>
+        </div>
         
         <Form {...form}>
           <form onSubmit={onSubmit} className="space-y-4">

@@ -25,6 +25,15 @@ export const Header: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const { accent, cycleAccent } = useAccent();
   const environmentLabel = import.meta.env.DEV ? "DEV" : "PROD";
+  const roleLabel = user?.role ? user.role.toUpperCase() : "GUEST";
+  const permissionSummaryByRole: Record<string, string> = {
+    admin: "Full access",
+    manager: "Planner privileges",
+    warehouse_staff: "Warehouse operations",
+    viewer: "Read only",
+  };
+  const permissionSummary =
+    permissionSummaryByRole[(user?.role || "viewer").toLowerCase()] || "Custom role";
 
   const breadcrumb = location
     .split("/")
@@ -62,6 +71,9 @@ export const Header: React.FC = () => {
       <div className="flex items-center space-x-4">
         <Badge variant="outline" className="hidden md:inline-flex">
           {environmentLabel}
+        </Badge>
+        <Badge variant="secondary" className="hidden md:inline-flex">
+          {roleLabel}
         </Badge>
 
         <Button 
@@ -116,6 +128,7 @@ export const Header: React.FC = () => {
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium leading-none">{user?.fullName || user?.username}</p>
                 <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                <p className="text-[11px] leading-none text-muted-foreground pt-1">{permissionSummary}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

@@ -4,6 +4,20 @@
 
 :root {
   --radius: 0.75rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --font-sans: "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 2rem;
+  --space-8: 2.5rem;
+  --row-height: 2.5rem;
 
   /* Core design tokens */
   --background: 220 20% 98%;
@@ -29,13 +43,21 @@
   --destructive-foreground: 210 40% 98%;
 
   /* Accent system */
+  --accent-100: 221 80% 92%;
+  --accent-200: 221 80% 84%;
+  --accent-300: 221 82% 74%;
+  --accent-400: 221 84% 64%;
   --accent-500: 221 83% 53%;
   --accent-600: 224 76% 48%;
+  --accent-700: 226 72% 40%;
+  --accent-800: 229 68% 32%;
+  --accent-900: 232 64% 24%;
   --accent-gradient: linear-gradient(
     135deg,
     hsl(var(--accent-500)),
     hsl(var(--accent-600))
   );
+  --accent-glow: 0 0 0 1px hsl(var(--accent-500) / 0.16), 0 18px 45px -28px hsl(var(--accent-500) / 0.58);
   --shadow-elev-1: 0 10px 24px -18px hsl(222 47% 11% / 0.35);
   --shadow-elev-2: 0 22px 52px -28px hsl(222 47% 11% / 0.45);
   --primary: var(--accent-500);
@@ -103,6 +125,28 @@
 [data-accent="orange"] {
   --accent-500: 28 96% 53%;
   --accent-600: 24 95% 46%;
+}
+
+[data-density="compact"] {
+  --space-2: 0.35rem;
+  --space-3: 0.55rem;
+  --space-4: 0.8rem;
+  --space-5: 1rem;
+  --space-6: 1.2rem;
+  --row-height: 2.15rem;
+}
+
+[data-density="comfortable"] {
+  --row-height: 2.5rem;
+}
+
+[data-density="spacious"] {
+  --space-2: 0.7rem;
+  --space-3: 0.95rem;
+  --space-4: 1.2rem;
+  --space-5: 1.4rem;
+  --space-6: 1.75rem;
+  --row-height: 2.9rem;
 }
 
 /* Custom Shepherd Tour styling */
@@ -189,7 +233,8 @@
   }
 
   body {
-    @apply font-sans antialiased bg-background text-foreground;
+    font-family: var(--font-sans);
+    @apply antialiased bg-background text-foreground;
   }
 
   /* Apply no margin to body in Electron to avoid scrollbars */
@@ -225,6 +270,10 @@
     box-shadow: var(--shadow-elev-2);
   }
 
+  .accent-glow {
+    box-shadow: var(--accent-glow);
+  }
+
   .empty-state {
     @apply flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-8 text-center;
   }
@@ -247,6 +296,16 @@
 
   .status-badge--info {
     @apply border border-sky-500/30 bg-sky-500/15 text-sky-700 dark:text-sky-300;
+  }
+
+  [data-density="compact"] table :is(th, td) {
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+
+  [data-density="spacious"] table :is(th, td) {
+    padding-top: 0.9rem;
+    padding-bottom: 0.9rem;
   }
 
   /* Custom Electron title bar styles */

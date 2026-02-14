@@ -77,7 +77,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border shadow-[var(--shadow-elev-1)] transition-transform duration-200 transform md:translate-x-0 md:static md:z-0",
+          "fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border shadow-[var(--shadow-elev-1)] accent-glow transition-transform duration-200 transform md:translate-x-0 md:static md:z-0",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
