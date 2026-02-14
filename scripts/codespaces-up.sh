@@ -50,7 +50,7 @@ DB_URL_NAME=""
 DB_URL_USER=""
 DB_URL_PASSWORD=""
 if [[ -n "${DATABASE_URL:-}" ]]; then
-  IFS="|" read -r DB_URL_HOST DB_URL_PORT DB_URL_NAME DB_URL_USER DB_URL_PASSWORD < <(
+  DB_URL_PARSED="$(
     node -e '
       try {
         const raw = process.env.DATABASE_URL || "";
@@ -61,20 +61,23 @@ if [[ -n "${DATABASE_URL:-}" ]]; then
         const db = (u.pathname || "").replace(/^\//, "");
         const user = decodeURIComponent(u.username || "");
         const pass = decodeURIComponent(u.password || "");
-        process.stdout.write(`${host}|${port}|${db}|${user}|${pass}`);
+        process.stdout.write(`${host}|${port}|${db}|${user}|${pass}\n`);
       } catch {
-        process.stdout.write("||||");
+        process.stdout.write("||||\n");
       }
     '
-  )
+  )"
+  IFS="|" read -r DB_URL_HOST DB_URL_PORT DB_URL_NAME DB_URL_USER DB_URL_PASSWORD <<<"${DB_URL_PARSED}"
 fi
 
 echo "Installing dependencies..."
 npm ci
 
-if ! command -v pg_isready >/dev/null 2>&1; then
-  echo "pg_isready is required but was not found in PATH." >&2
-  exit 1
+HAS_PG_ISREADY="false"
+if command -v pg_isready >/dev/null 2>&1; then
+  HAS_PG_ISREADY="true"
+else
+  echo "pg_isready not found; falling back to Node.js connection checks."
 fi
 
 declare -a DB_ENDPOINTS=()
@@ -114,7 +117,28 @@ for attempt in {1..60}; do
   for endpoint in "${DB_ENDPOINTS[@]}"; do
     host="${endpoint%%:*}"
     port="${endpoint##*:}"
-    if pg_isready -h "${host}" -p "${port}" -U "${PGUSER}" -d "${PGDATABASE}" >/dev/null 2>&1; then
+    if [[ "${HAS_PG_ISREADY}" == "true" ]]; then
+      pg_isready -h "${host}" -p "${port}" -U "${PGUSER}" -d "${PGDATABASE}" >/dev/null 2>&1
+      status=$?
+    else
+      DB_WAIT_URL="postgresql://${PGUSER}:${PGPASSWORD}@${host}:${port}/${PGDATABASE}"
+      DB_WAIT_URL="${DB_WAIT_URL}" node -e '
+        import pg from "pg";
+        const { Client } = pg;
+        const client = new Client({ connectionString: process.env.DB_WAIT_URL });
+        try {
+          await client.connect();
+          await client.end();
+          process.exit(0);
+        } catch {
+          try { await client.end(); } catch {}
+          process.exit(1);
+        }
+      ' >/dev/null 2>&1
+      status=$?
+    fi
+
+    if [[ "${status}" -eq 0 ]]; then
       READY_HOST="${host}"
       READY_PORT="${port}"
       break 2
