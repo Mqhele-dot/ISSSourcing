@@ -9,6 +9,10 @@
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "lint": "eslint \"client/src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"shared/**/*.ts\"",
+    "doctor": "bash scripts/doctor.sh",
+    "docs:validate": "bash scripts/validate-readme.sh",
+    "test:contracts": "tsx scripts/test-api-contract.ts",
+    "test:deeplinks": "tsx scripts/test-kpi-deeplinks.ts",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx server/seed.ts",
     "codespaces:up": "bash scripts/codespaces-up.sh"
