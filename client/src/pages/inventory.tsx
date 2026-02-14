@@ -202,7 +202,7 @@ export default function InventoryPage() {
                 <TableRow
                   key={item.sku}
                   className="cursor-pointer"
-                  onClick={() => setLocation(`/inventory/${item.id ?? item.sku}`)}
+                  onClick={() => setLocation(`/inventory/${item.sku}`)}
                 >
                   <TableCell className="font-medium">{item.sku}</TableCell>
                   <TableCell>{item.name}</TableCell>

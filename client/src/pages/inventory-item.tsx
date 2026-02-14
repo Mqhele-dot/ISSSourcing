@@ -1,410 +1,410 @@
-import { useState, useEffect } from "react";
-import { useRoute, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Edit, Trash2, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useMemo, useState } from "react";
+import { useLocation, useRoute } from "wouter";
+import { AlertTriangle, ArrowLeft, ArrowUpDown, Loader2 } from "lucide-react";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { getItemStatus, getStatusColor, formatCurrency } from "@/lib/utils";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { PageHeader } from "@/components/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { DataState } from "@/components/ui/data-state";
 import { useToast } from "@/hooks/use-toast";
-import { StockMovementsList } from "@/components/inventory/stock-movements-list";
-import ItemForm from "@/components/inventory/item-form";
-import { DemandForecast } from "@/components/analytics/demand-forecast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type InventoryItem, type Category } from "@shared/schema";
+import { useAsyncResource } from "@/hooks/use-async-resource";
+import { apiRequest } from "@/lib/queryClient";
 
-export default function InventoryItemDetail() {
-  const [_, params] = useRoute<{ id: string }>("/inventory/:id");
-  const [location, setLocation] = useLocation();
+type InventoryPosition = {
+  location: string;
+  onHand: number;
+  allocated: number;
+  available: number;
+  updatedAt: string | null;
+};
+
+type InventoryMovement = {
+  id: number;
+  location: string;
+  delta: number;
+  reason: string;
+  ref: string | null;
+  createdBy: string | null;
+  createdAt: string | null;
+};
+
+type InventoryDetail = {
+  id: number;
+  sku: string;
+  name: string;
+  summary: {
+    onHand: number;
+    allocated: number;
+    available: number;
+  };
+  positions: InventoryPosition[];
+  movements: InventoryMovement[];
+  location?: string | null;
+};
+
+type AdjustResponse = {
+  summary: {
+    onHand: number;
+    allocated: number;
+    available: number;
+  };
+  exception: null | {
+    id: number;
+    created: boolean;
+  };
+};
+
+const ADJUST_REASONS = [
+  "Adjust",
+  "Count correction",
+  "Damage",
+  "Transfer",
+  "Receipt correction",
+];
+
+function formatDate(value: string | null) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleString();
+}
+
+export default function InventoryDetailPage() {
+  const [, setLocation] = useLocation();
+  const [match, params] = useRoute<{ sku: string }>("/inventory/:sku");
+  const sku = params?.sku ?? "";
   const { toast } = useToast();
-  const itemId = params ? parseInt(params.id, 10) : 0;
-  
-  // State
-  const [activeTab, setActiveTab] = useState("overview");
-  const [showEditForm, setShowEditForm] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  
-  // Redirect to inventory if no valid ID
-  useEffect(() => {
-    if (!params || isNaN(itemId)) {
-      setLocation("/inventory");
+
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjustLocation, setAdjustLocation] = useState("");
+  const [adjustDelta, setAdjustDelta] = useState<string>("0");
+  const [adjustReason, setAdjustReason] = useState(ADJUST_REASONS[0]);
+  const [adjustRef, setAdjustRef] = useState("");
+
+  const fetchDetail = async (): Promise<InventoryDetail> => {
+    const response = await fetch(`/api/inventory/${sku}`, { credentials: "include" });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch inventory detail (${response.status})`);
     }
-  }, [params, itemId, setLocation]);
-  
-  // Fetch item details
-  const { data: item, isLoading: itemLoading } = useQuery({
-    queryKey: ["/api/inventory", itemId],
-    queryFn: async () => {
-      const response = await fetch(`/api/inventory/${itemId}`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch inventory item");
+    return (await response.json()) as InventoryDetail;
+  };
+
+  const {
+    loading,
+    error,
+    data,
+    refetch,
+  } = useAsyncResource(fetchDetail, { immediate: Boolean(match && sku) });
+
+  const locationOptions = useMemo(() => {
+    const options = new Set<string>();
+    for (const position of data?.positions ?? []) {
+      if (position.location) {
+        options.add(position.location);
       }
-      return response.json() as Promise<InventoryItem>;
-    },
-    enabled: !!itemId && !isNaN(itemId),
-  });
-  
-  // Fetch category data
-  const { data: categories } = useQuery({
-    queryKey: ["/api/categories"],
-    queryFn: async () => {
-      const response = await fetch("/api/categories");
-      if (!response.ok) {
-        throw new Error("Failed to fetch categories");
-      }
-      return response.json() as Promise<Category[]>;
-    },
-  });
-  
-  // Handle delete item
-  const handleDeleteItem = async () => {
-    try {
-      await apiRequest(
-        "DELETE",
-        `/api/inventory/${itemId}`
-      );
-      
-      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
-      
+    }
+    if (data?.location) {
+      options.add(data.location);
+    }
+    if (options.size === 0) {
+      options.add("Main Warehouse");
+    }
+    return Array.from(options);
+  }, [data?.location, data?.positions]);
+
+  const openAdjustModal = () => {
+    const defaultLocation = locationOptions[0] ?? data?.location ?? "";
+    setAdjustLocation(defaultLocation);
+    setAdjustDelta("0");
+    setAdjustReason(ADJUST_REASONS[0]);
+    setAdjustRef("");
+    setAdjustOpen(true);
+  };
+
+  const submitAdjustment = async () => {
+    const numericDelta = Number(adjustDelta);
+    if (!Number.isFinite(numericDelta) || numericDelta === 0) {
       toast({
-        title: "Item Deleted",
-        description: "The inventory item has been deleted successfully.",
-      });
-      
-      // Redirect back to inventory
-      setLocation("/inventory");
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete item",
+        title: "Invalid adjustment",
+        description: "Delta must be a non-zero number.",
         variant: "destructive",
       });
+      return;
     }
-  };
-  
-  // Handle reorder
-  const handleReorderItem = async () => {
+
+    setAdjusting(true);
     try {
-      const quantity = item?.lowStockThreshold || 10;
-      
-      await apiRequest(
-        "POST",
-        "/api/reorder-requests",
-        {
-          itemId: itemId,
-          quantity: quantity
-        }
-      );
-      
-      toast({
-        title: "Reorder Request Created",
-        description: "A reorder request has been created successfully.",
+      const response = await apiRequest("POST", `/api/inventory/${sku}/adjust`, {
+        location: adjustLocation,
+        delta: numericDelta,
+        reason: adjustReason,
+        ref: adjustRef || undefined,
       });
-    } catch (error) {
+
+      const payload = (await response.json()) as AdjustResponse;
+      await refetch();
+      setAdjustOpen(false);
+
       toast({
-        title: "Error",
-        description: "Failed to create reorder request",
+        title: "Inventory updated",
+        description: `New available stock: ${payload.summary.available}`,
+      });
+
+      if (payload.exception?.created) {
+        toast({
+          title: "Exception created",
+          description: "A shortage exception was created for this SKU.",
+          variant: "destructive",
+        });
+      }
+    } catch (adjustError) {
+      toast({
+        title: "Adjustment failed",
+        description:
+          adjustError instanceof Error ? adjustError.message : "Failed to apply adjustment",
         variant: "destructive",
       });
+    } finally {
+      setAdjusting(false);
     }
   };
-  
-  // Get category name
-  const getCategoryName = (categoryId: number | null) => {
-    if (!categoryId) return "Uncategorized";
-    const category = categories?.find(c => c.id === categoryId);
-    return category?.name || "Uncategorized";
-  };
-  
-  // If loading, show skeleton
-  if (itemLoading) {
-    return (
-      <div className="max-w-7xl mx-auto p-4">
-        <div className="mb-6">
-          <Button 
-            variant="ghost" 
-            className="mb-4"
-            onClick={() => setLocation("/inventory")}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Inventory
-          </Button>
-          <Skeleton className="h-8 w-64 mb-2" />
-          <Skeleton className="h-4 w-48" />
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Skeleton className="h-40" />
-          <Skeleton className="h-40" />
-          <Skeleton className="h-40" />
-        </div>
-        
-        <Skeleton className="h-96" />
-      </div>
-    );
-  }
-  
-  // If item not found
-  if (!item) {
-    return (
-      <div className="max-w-7xl mx-auto p-4">
-        <div className="mb-6">
-          <Button 
-            variant="ghost" 
-            className="mb-4"
-            onClick={() => setLocation("/inventory")}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Inventory
-          </Button>
-          <h2 className="text-2xl font-semibold text-neutral-900 dark:text-white">Item Not Found</h2>
-          <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
-            The inventory item you are looking for does not exist or has been deleted.
-          </p>
-        </div>
-        
-        <Button onClick={() => setLocation("/inventory")}>
-          Return to Inventory
-        </Button>
-      </div>
-    );
-  }
-  
-  // Get item status and style
-  const status = getItemStatus(item);
-  const statusStyle = getStatusColor(status);
-  
+
   return (
-    <div className="max-w-7xl mx-auto p-4">
-      <div className="mb-6">
-        <Button 
-          variant="ghost" 
-          className="mb-4"
-          onClick={() => setLocation("/inventory")}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Inventory
-        </Button>
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold text-neutral-900 dark:text-white">{item.name}</h2>
-            <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
-              SKU: {item.sku}
-            </p>
-          </div>
-          <div className="mt-4 md:mt-0 space-x-2">
-            <Button 
-              variant="outline" 
-              className="text-warning hover:text-warning/80"
-              onClick={handleReorderItem}
-            >
-              <RefreshCw className="h-4 w-4 mr-1" />
-              Reorder
-            </Button>
-            <Button 
-              variant="outline" 
-              className="text-primary hover:text-primary/80"
-              onClick={() => setShowEditForm(true)}
-            >
-              <Edit className="h-4 w-4 mr-1" />
-              Edit
-            </Button>
-            <Button 
-              variant="outline" 
-              className="text-error hover:text-error/80"
-              onClick={() => setDeleteDialogOpen(true)}
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              Delete
-            </Button>
-          </div>
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Badge className={`${statusStyle.bg} ${statusStyle.text} ${statusStyle.pulse ? "animate-pulse" : ""} px-3 py-1 text-sm`}>
-              {status}
-            </Badge>
-            <div className="mt-2 text-2xl font-bold">{item.quantity}</div>
-            <CardDescription>Current Stock</CardDescription>
-            
-            {item.lowStockThreshold !== null && (
-              <div className="mt-4 text-sm">
-                <span className="text-neutral-500 dark:text-neutral-400">Low Stock Threshold: </span>
-                <span className="font-medium">{item.lowStockThreshold}</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Pricing</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(item.price)}</div>
-            <CardDescription>Selling Price</CardDescription>
-            
-            {item.cost !== null && (
-              <div className="mt-4">
-                <div className="text-sm">
-                  <span className="text-neutral-500 dark:text-neutral-400">Cost: </span>
-                  <span className="font-medium">{formatCurrency(item.cost)}</span>
-                </div>
-                
-                {item.cost > 0 && (
-                  <div className="text-sm">
-                    <span className="text-neutral-500 dark:text-neutral-400">Margin: </span>
-                    <span className="font-medium">
-                      {Math.round(((item.price - item.cost) / item.price) * 100)}%
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Details</CardTitle>
-          </CardHeader>
-          <CardContent>
+    <div className="mx-auto max-w-7xl space-y-4">
+      <Button variant="ghost" onClick={() => setLocation("/inventory")} className="w-fit">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to inventory
+      </Button>
+
+      <DataState
+        loading={loading}
+        error={error}
+        data={data}
+        isEmpty={() => false}
+        emptyTitle="Inventory detail unavailable"
+        onRetry={refetch}
+      >
+        {(detail) => (
+          <>
+            <PageHeader
+              title={detail.name}
+              subtitle={`SKU ${detail.sku}`}
+              breadcrumb={<span>Operations / Inventory / {detail.sku}</span>}
+              actions={
+                <Button onClick={openAdjustModal} className="gap-2">
+                  <ArrowUpDown className="h-4 w-4" />
+                  Adjust stock
+                </Button>
+              }
+            />
+
+            {detail.summary.available < 0 ? (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Negative available stock</AlertTitle>
+                <AlertDescription>
+                  This SKU currently has negative available stock and requires operational attention.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">On hand</CardTitle>
+                </CardHeader>
+                <CardContent className="text-3xl font-semibold">{detail.summary.onHand}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Allocated</CardTitle>
+                </CardHeader>
+                <CardContent className="text-3xl font-semibold">{detail.summary.allocated}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Available</CardTitle>
+                </CardHeader>
+                <CardContent className="flex items-center gap-3 text-3xl font-semibold">
+                  <span>{detail.summary.available}</span>
+                  <StatusBadge
+                    status={detail.summary.available < 0 ? "error" : detail.summary.available === 0 ? "low" : "active"}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Positions by location</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Location</TableHead>
+                      <TableHead className="text-right">On hand</TableHead>
+                      <TableHead className="text-right">Allocated</TableHead>
+                      <TableHead className="text-right">Available</TableHead>
+                      <TableHead className="text-right">Updated</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.positions.map((position) => (
+                      <TableRow key={`${detail.sku}-${position.location}`}>
+                        <TableCell>{position.location}</TableCell>
+                        <TableCell className="text-right">{position.onHand}</TableCell>
+                        <TableCell className="text-right">{position.allocated}</TableCell>
+                        <TableCell className="text-right">{position.available}</TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {formatDate(position.updatedAt)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Movement timeline</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Timestamp</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead className="text-right">Delta</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Reference</TableHead>
+                      <TableHead>User</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.movements.map((movement) => (
+                      <TableRow key={movement.id}>
+                        <TableCell>{formatDate(movement.createdAt)}</TableCell>
+                        <TableCell>{movement.location}</TableCell>
+                        <TableCell className="text-right">
+                          {movement.delta > 0 ? `+${movement.delta}` : movement.delta}
+                        </TableCell>
+                        <TableCell>{movement.reason}</TableCell>
+                        <TableCell>{movement.ref || "-"}</TableCell>
+                        <TableCell>{movement.createdBy || "-"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </DataState>
+
+      <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adjust stock</DialogTitle>
+            <DialogDescription>
+              Record a stock adjustment for SKU {sku}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
             <div className="space-y-2">
-              <div>
-                <span className="text-sm text-neutral-500 dark:text-neutral-400">Category: </span>
-                <span className="font-medium">{getCategoryName(item.categoryId)}</span>
-              </div>
-              
-              {item.location && (
-                <div>
-                  <span className="text-sm text-neutral-500 dark:text-neutral-400">Location: </span>
-                  <span className="font-medium">{item.location}</span>
-                </div>
-              )}
-              
-              {item.supplierId && (
-                <div>
-                  <span className="text-sm text-neutral-500 dark:text-neutral-400">Supplier ID: </span>
-                  <span className="font-medium">{item.supplierId}</span>
-                </div>
-              )}
-              
-              {item.barcode && (
-                <div>
-                  <span className="text-sm text-neutral-500 dark:text-neutral-400">Barcode: </span>
-                  <span className="font-medium">{item.barcode}</span>
-                </div>
-              )}
+              <Label htmlFor="adjust-location">Location</Label>
+              <Select value={adjustLocation} onValueChange={setAdjustLocation}>
+                <SelectTrigger id="adjust-location">
+                  <SelectValue placeholder="Select location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locationOptions.map((location) => (
+                    <SelectItem key={location} value={location}>
+                      {location}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </CardContent>
-        </Card>
-      </div>
-      
-      <Card className="mb-6">
-        <CardHeader className="pb-2">
-          <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="movements">Stock Movements</TabsTrigger>
-              <TabsTrigger value="warehouses">Warehouse Inventory</TabsTrigger>
-              <TabsTrigger value="forecast">Demand Forecast</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </CardHeader>
-        <CardContent>
-          <TabsContent value="overview" className="p-0 mt-0">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Description</h3>
-                <p className="text-neutral-700 dark:text-neutral-300">
-                  {item.description || "No description available."}
-                </p>
-              </div>
-              
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Additional Details</h3>
-                {item.dimensions && (
-                  <div className="mb-2">
-                    <span className="text-sm font-medium">Dimensions: </span>
-                    <span>{item.dimensions}</span>
-                  </div>
-                )}
-                
-                {item.weight && (
-                  <div className="mb-2">
-                    <span className="text-sm font-medium">Weight: </span>
-                    <span>{item.weight}</span>
-                  </div>
-                )}
-                
-                {/* Add more details as needed */}
-              </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="adjust-delta">Delta</Label>
+              <Input
+                id="adjust-delta"
+                type="number"
+                value={adjustDelta}
+                onChange={(event) => setAdjustDelta(event.target.value)}
+              />
             </div>
-          </TabsContent>
-          
-          <TabsContent value="movements" className="p-0 mt-0">
-            <StockMovementsList itemId={itemId} />
-          </TabsContent>
-          
-          <TabsContent value="warehouses" className="p-0 mt-0">
-            {/* This would be warehouse inventory component - not implemented yet */}
-            <div className="text-center py-8 text-neutral-500">
-              Warehouse inventory details will be shown here.
+
+            <div className="space-y-2">
+              <Label htmlFor="adjust-reason">Reason</Label>
+              <Select value={adjustReason} onValueChange={setAdjustReason}>
+                <SelectTrigger id="adjust-reason">
+                  <SelectValue placeholder="Select reason" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ADJUST_REASONS.map((reason) => (
+                    <SelectItem key={reason} value={reason}>
+                      {reason}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </TabsContent>
-          
-          <TabsContent value="forecast" className="p-0 mt-0">
-            <DemandForecast itemId={itemId} itemName={item.name} />
-          </TabsContent>
-        </CardContent>
-      </Card>
-      
-      {/* Edit Item Form */}
-      <ItemForm 
-        open={showEditForm} 
-        setOpen={setShowEditForm} 
-        initialData={item}
-      />
-      
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the item 
-              <span className="font-medium text-neutral-900 dark:text-white">
-                {" "}{item.name}{" "}
-              </span>
-              from your inventory. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDeleteItem}
-              className="bg-error hover:bg-error/90 text-white"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+
+            <div className="space-y-2">
+              <Label htmlFor="adjust-ref">Reference (optional)</Label>
+              <Textarea
+                id="adjust-ref"
+                value={adjustRef}
+                onChange={(event) => setAdjustRef(event.target.value)}
+                placeholder="Ticket, count sheet, transfer ref..."
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdjustOpen(false)} disabled={adjusting}>
+              Cancel
+            </Button>
+            <Button onClick={submitAdjustment} disabled={adjusting}>
+              {adjusting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Apply adjustment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
