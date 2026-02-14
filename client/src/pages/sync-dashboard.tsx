@@ -29,14 +29,14 @@ export default function SyncDashboard() {
   const { toast } = useToast();
   
   // Query database info (only in Electron environment)
-  const { data: dbInfo, isLoading: dbInfoLoading, refetch: refetchDbInfo } = useQuery<DatabaseInfo>({
+  const { data: dbInfo, isLoading: dbInfoLoading, refetch: refetchDbInfo } = useQuery<DatabaseInfo | null>({
     queryKey: ['databaseInfo'],
-    queryFn: async () => {
+    queryFn: async (): Promise<DatabaseInfo | null> => {
       if (!isElectronEnvironment()) {
         return null;
       }
       const electronBridge = new ElectronBridge();
-      return await electronBridge.getDatabaseInfo();
+      return await electronBridge.getDatabaseInfo<DatabaseInfo>();
     },
     enabled: isElectronEnvironment(), // Only run in Electron environment
     refetchInterval: false,

@@ -51,6 +51,11 @@ type SupplierLogoForm = {
   logoUrl: string;
 };
 
+async function requestJson<T>(method: string, url: string, data?: unknown): Promise<T> {
+  const response = await apiRequest(method, url, data);
+  return (await response.json()) as T;
+}
+
 export default function SuppliersPage() {
   const { toast } = useToast();
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
@@ -58,18 +63,24 @@ export default function SuppliersPage() {
   const [logoUrl, setLogoUrl] = useState("");
 
   // Get all suppliers
-  const { data: suppliers, isLoading } = useQuery({
+  const { data: suppliers, isLoading } = useQuery<Supplier[]>({
     queryKey: ['/api/suppliers'],
     retry: 1,
   });
 
   // Get logo for selected supplier
-  const { data: selectedLogo, isLoading: isLogoLoading } = useQuery({
+  const { data: selectedLogo, isLoading: isLogoLoading } = useQuery<SupplierLogo | null>({
     queryKey: ['/api/suppliers', selectedSupplierId, 'logo'],
-    queryFn: () => 
-      selectedSupplierId 
-        ? apiRequest(`/api/suppliers/${selectedSupplierId}/logo`) 
-        : Promise.resolve(null),
+    queryFn: async () => {
+      if (!selectedSupplierId) {
+        return null;
+      }
+      try {
+        return await requestJson<SupplierLogo>("GET", `/api/suppliers/${selectedSupplierId}/logo`);
+      } catch {
+        return null;
+      }
+    },
     enabled: !!selectedSupplierId,
     retry: 0,
   });
@@ -77,7 +88,7 @@ export default function SuppliersPage() {
   // Create supplier
   const createSupplier = useMutation({
     mutationFn: (supplier: SupplierForm) => 
-      apiRequest('/api/suppliers', { method: 'POST', data: supplier }),
+      requestJson<Supplier>('POST', '/api/suppliers', supplier),
     onSuccess: () => {
       toast({
         title: "Supplier created",
@@ -97,7 +108,7 @@ export default function SuppliersPage() {
   // Update supplier
   const updateSupplier = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<SupplierForm> }) => 
-      apiRequest(`/api/suppliers/${id}`, { method: 'PATCH', data }),
+      requestJson<Supplier>('PATCH', `/api/suppliers/${id}`, data),
     onSuccess: (_, variables) => {
       toast({
         title: "Supplier updated",
@@ -118,7 +129,7 @@ export default function SuppliersPage() {
   // Delete supplier
   const deleteSupplier = useMutation({
     mutationFn: (id: number) => 
-      apiRequest(`/api/suppliers/${id}`, { method: 'DELETE' }),
+      requestJson<{ success: boolean }>('DELETE', `/api/suppliers/${id}`),
     onSuccess: () => {
       toast({
         title: "Supplier deleted",
@@ -139,10 +150,7 @@ export default function SuppliersPage() {
   // Create logo
   const createLogo = useMutation({
     mutationFn: ({ supplierId, logoUrl }: { supplierId: number; logoUrl: string }) => 
-      apiRequest(`/api/suppliers/${supplierId}/logo`, { 
-        method: 'POST', 
-        data: { logoUrl } 
-      }),
+      requestJson<SupplierLogo>('POST', `/api/suppliers/${supplierId}/logo`, { logoUrl }),
     onSuccess: (_, variables) => {
       toast({
         title: "Logo added",
@@ -163,10 +171,7 @@ export default function SuppliersPage() {
   // Update logo
   const updateLogo = useMutation({
     mutationFn: ({ supplierId, logoUrl }: { supplierId: number; logoUrl: string }) => 
-      apiRequest(`/api/suppliers/${supplierId}/logo`, { 
-        method: 'PUT', 
-        data: { logoUrl } 
-      }),
+      requestJson<SupplierLogo>('PUT', `/api/suppliers/${supplierId}/logo`, { logoUrl }),
     onSuccess: (_, variables) => {
       toast({
         title: "Logo updated",
@@ -187,7 +192,7 @@ export default function SuppliersPage() {
   // Delete logo
   const deleteLogo = useMutation({
     mutationFn: (supplierId: number) => 
-      apiRequest(`/api/suppliers/${supplierId}/logo`, { method: 'DELETE' }),
+      requestJson<{ success: boolean }>('DELETE', `/api/suppliers/${supplierId}/logo`),
     onSuccess: (_, supplierId) => {
       toast({
         title: "Logo removed",

@@ -26,21 +26,23 @@ export function usePermissions() {
 
   // Fetch permissions for the current user's role
   const { data: permissions, isLoading, error } = useQuery<Permission[]>({
-    queryKey: user ? ["/api/roles", user.role, "permissions"] : null,
+    queryKey: ["/api/roles", user?.role ?? "unknown", "permissions"],
     enabled: !!user,
   });
 
   // For custom roles, fetch the custom role permissions
   const { data: customRolePermissions } = useQuery<Permission[]>({
-    queryKey: user && user.role === "custom" ? ["/api/custom-roles", "permissions"] : null,
+    queryKey: ["/api/custom-roles", user?.role ?? "unknown", "permissions"],
     enabled: !!user && user.role === "custom",
   });
   
   // Organize permissions by resource for easier checking
   useEffect(() => {
     if (!permissions && !customRolePermissions) return;
-    
-    const allPermissions = [...(permissions || []), ...(customRolePermissions || [])];
+
+    const rolePermissions: Permission[] = permissions ?? [];
+    const customPermissions: Permission[] = customRolePermissions ?? [];
+    const allPermissions: Permission[] = [...rolePermissions, ...customPermissions];
     const byResource: PermissionsByResource = {};
     
     allPermissions.forEach((perm) => {
@@ -73,7 +75,7 @@ export function usePermissions() {
     if (!user) return false;
     
     const roleList = Array.isArray(roles) ? roles : [roles];
-    return roleList.includes(user.role);
+    return typeof user.role === "string" ? roleList.includes(user.role) : false;
   };
 
   // Refresh permissions
