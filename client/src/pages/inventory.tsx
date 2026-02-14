@@ -43,6 +43,11 @@ function getAvailabilityStatus(item: InventoryListItem): string {
   return "active";
 }
 
+function isLowFilterEnabled(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+}
+
 export default function InventoryPage() {
   const [, setLocation] = useLocation();
   const { queryState, setQueryState } = useQueryState({
@@ -53,11 +58,12 @@ export default function InventoryPage() {
   });
 
   const inventoryFetcher = useCallback(async () => {
+    const lowEnabled = isLowFilterEnabled(String(queryState.low || ""));
     return fetchInventory({
       q: String(queryState.q || ""),
       location: String(queryState.location || ""),
       category: String(queryState.category || ""),
-      lowStock: String(queryState.low || "") === "true",
+      lowStock: lowEnabled,
     });
   }, [queryState.category, queryState.location, queryState.low, queryState.q]);
 
@@ -162,10 +168,10 @@ export default function InventoryPage() {
         }
         right={
           <Button
-            variant={String(queryState.low || "") === "true" ? "default" : "outline"}
+            variant={isLowFilterEnabled(String(queryState.low || "")) ? "default" : "outline"}
             onClick={() =>
               setQueryState({
-                low: String(queryState.low || "") === "true" ? "" : "true",
+                low: isLowFilterEnabled(String(queryState.low || "")) ? "" : "1",
               })
             }
           >

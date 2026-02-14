@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
+import { Can } from "@/components/auth/can";
 import {
   approvePurchaseOrder,
   fetchPurchaseOrder,
@@ -138,7 +139,7 @@ function PurchaseOrdersList() {
                 <TableRow
                   key={order.poNumber}
                   className="cursor-pointer"
-                  onClick={() => setLocation(`/orders/${order.poNumber}`)}
+                  onClick={() => setLocation(`/purchase/${order.poNumber}`)}
                 >
                   <TableCell className="font-medium">{order.poNumber}</TableCell>
                   <TableCell>{order.supplierName || `Supplier #${order.supplierId}`}</TableCell>
@@ -242,7 +243,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
-      <Button variant="ghost" onClick={() => setLocation("/orders")} className="w-fit">
+      <Button variant="ghost" onClick={() => setLocation("/purchase")} className="w-fit">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to purchase orders
       </Button>
@@ -263,24 +264,28 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
               breadcrumb={<span>Operations / Purchase Orders / {detail.poNumber}</span>}
               actions={
                 <>
-                  <Button
-                    variant="outline"
-                    className="gap-2"
-                    disabled={!canApprove(detail.status) || statusUpdating}
-                    onClick={() => updateStatus("approve")}
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Approve
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="gap-2"
-                    disabled={!canSend(detail.status) || statusUpdating}
-                    onClick={() => updateStatus("send")}
-                  >
-                    <Send className="h-4 w-4" />
-                    Send
-                  </Button>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      disabled={!canApprove(detail.status) || statusUpdating}
+                      onClick={() => updateStatus("approve")}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      Approve
+                    </Button>
+                  </Can>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      disabled={!canSend(detail.status) || statusUpdating}
+                      onClick={() => updateStatus("send")}
+                    >
+                      <Send className="h-4 w-4" />
+                      Send
+                    </Button>
+                  </Can>
                 </>
               }
             />
@@ -360,10 +365,12 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                 </Table>
 
                 <div className="flex justify-end">
-                  <Button onClick={submitReceive} disabled={!canReceive(detail.status) || receiving}>
-                    <Truck className="mr-2 h-4 w-4" />
-                    Receive selected
-                  </Button>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button onClick={submitReceive} disabled={!canReceive(detail.status) || receiving}>
+                      <Truck className="mr-2 h-4 w-4" />
+                      Receive selected
+                    </Button>
+                  </Can>
                 </div>
               </CardContent>
             </Card>
@@ -478,10 +485,17 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
 }
 
 export default function OrdersPage() {
-  const [detailMatch, detailParams] = useRoute<{ po: string }>("/orders/:po");
+  const [ordersDetailMatch, ordersDetailParams] = useRoute<{ po: string }>("/orders/:po");
+  const [purchaseDetailMatch, purchaseDetailParams] = useRoute<{ po: string }>("/purchase/:po");
 
-  if (detailMatch && detailParams?.po) {
-    return <PurchaseOrderDetailView po={detailParams.po} />;
+  const po = ordersDetailMatch
+    ? ordersDetailParams?.po
+    : purchaseDetailMatch
+      ? purchaseDetailParams?.po
+      : undefined;
+
+  if (po) {
+    return <PurchaseOrderDetailView po={po} />;
   }
 
   return <PurchaseOrdersList />;

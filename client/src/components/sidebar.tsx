@@ -128,7 +128,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             </NavItem>
 
             <SectionTitle>Purchase Orders</SectionTitle>
-            <NavItem path="/orders" icon={<ShoppingCart className="mr-3 h-5 w-5" />}>
+            <NavItem path="/purchase" icon={<ShoppingCart className="mr-3 h-5 w-5" />}>
               Purchase Orders
             </NavItem>
 

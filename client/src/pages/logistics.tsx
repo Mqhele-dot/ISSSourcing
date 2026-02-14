@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
+import { Can } from "@/components/auth/can";
 import {
   fetchShipment,
   fetchShipments,
@@ -48,6 +49,7 @@ function ShipmentListView() {
     status: "",
     po: "",
     carrier: "",
+    risk: "",
   });
 
   const fetcher = async (): Promise<ShipmentListItem[]> =>
@@ -55,6 +57,7 @@ function ShipmentListView() {
       status: String(queryState.status || ""),
       po: String(queryState.po || ""),
       carrier: String(queryState.carrier || ""),
+      risk: String(queryState.risk || ""),
     });
 
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
@@ -88,6 +91,18 @@ function ShipmentListView() {
               placeholder="Carrier"
               className="w-52"
             />
+            <Select
+              value={String(queryState.risk || "") || "all"}
+              onValueChange={(value) => setQueryState({ risk: value === "all" ? "" : value })}
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Risk" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All risk</SelectItem>
+                <SelectItem value="late">Late risk</SelectItem>
+              </SelectContent>
+            </Select>
           </>
         }
         right={
@@ -256,9 +271,11 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                     onChange={(event) => setNote(event.target.value)}
                     placeholder="Optional note"
                   />
-                  <Button onClick={submitStatus} disabled={updating}>
-                    Update
-                  </Button>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button onClick={submitStatus} disabled={updating}>
+                      Update
+                    </Button>
+                  </Can>
                 </div>
               </CardContent>
             </Card>

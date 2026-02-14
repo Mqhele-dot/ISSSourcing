@@ -95,6 +95,8 @@ function Router() {
       <ProtectedRoute path="/inventory/:sku" component={InventoryItemDetail} />
       <ProtectedRoute path="/orders" component={OrdersPage} />
       <ProtectedRoute path="/orders/:po" component={OrdersPage} />
+      <ProtectedRoute path="/purchase" component={OrdersPage} />
+      <ProtectedRoute path="/purchase/:po" component={OrdersPage} />
       <ProtectedRoute path="/logistics" component={LogisticsPage} />
       <ProtectedRoute path="/logistics/:id" component={LogisticsPage} />
       <ProtectedRoute path="/exceptions" component={ExceptionsPage} />
