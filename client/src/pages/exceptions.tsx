@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
@@ -24,10 +24,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { Can } from "@/components/auth/can";
+import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
   addExceptionComment,
   assignException,
@@ -42,6 +43,21 @@ function formatDate(value: string | null) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "-";
   return parsed.toLocaleString();
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows
+    .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
 }
 
 function ExceptionListView() {
@@ -60,6 +76,38 @@ function ExceptionListView() {
     });
 
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const {
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
+    lastRefreshedAt,
+    lastRefreshedLabel,
+    refreshNow,
+    markRefreshed,
+  } = useAutoRefresh(refetch);
+
+  useEffect(() => {
+    if (data && !lastRefreshedAt) {
+      markRefreshed();
+    }
+  }, [data, lastRefreshedAt, markRefreshed]);
+
+  const handleExportCsv = () => {
+    const exceptions = data ?? [];
+    const rows: string[][] = [
+      ["id", "type", "severity", "status", "title", "assignee", "created_at", "updated_at"],
+      ...exceptions.map((exception) => [
+        String(exception.id),
+        exception.type,
+        exception.severity,
+        exception.status,
+        exception.title,
+        exception.assignee || "",
+        exception.createdAt || "",
+        exception.updatedAt || "",
+      ]),
+    ];
+    downloadCsv("exceptions-export.csv", rows);
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -70,6 +118,7 @@ function ExceptionListView() {
       />
 
       <Toolbar
+        sticky
         left={
           <>
             <Input
@@ -93,9 +142,29 @@ function ExceptionListView() {
           </>
         }
         right={
-          <Button variant="outline" onClick={refetch}>
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={autoRefreshEnabled ? "default" : "outline"}
+              onClick={() => setAutoRefreshEnabled((current) => !current)}
+            >
+              Auto-refresh: {autoRefreshEnabled ? "On" : "Off"}
+            </Button>
+            <Button variant="outline" onClick={refreshNow}>
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleExportCsv}
+              disabled={!data || data.length === 0}
+              className="gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Last refreshed: {lastRefreshedLabel}
+            </span>
+          </div>
         }
       />
 
@@ -106,7 +175,7 @@ function ExceptionListView() {
         isEmpty={(exceptions) => exceptions.length === 0}
         emptyTitle="No exceptions found"
         emptyDescription="No issues match the current filters."
-        onRetry={refetch}
+        onRetry={refreshNow}
       >
         {(exceptions) => (
           <Table>
@@ -149,7 +218,6 @@ function ExceptionListView() {
 
 function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
   const [nextStatus, setNextStatus] = useState("in_progress");
   const [assignee, setAssignee] = useState("");
   const [comment, setComment] = useState("");
@@ -174,21 +242,13 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
     return links;
   }, [data]);
 
-  const runWithToast = async (action: () => Promise<void>, successMessage: string) => {
+  const runWithToast = async (action: () => Promise<void>) => {
     setSaving(true);
     try {
       await action();
       await refetch();
-      toast({
-        title: "Updated",
-        description: successMessage,
-      });
     } catch (updateError) {
-      toast({
-        title: "Update failed",
-        description: updateError instanceof Error ? updateError.message : "Request failed",
-        variant: "destructive",
-      });
+      console.error("Exception update failed:", updateError);
     } finally {
       setSaving(false);
     }
@@ -275,12 +335,9 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                       variant="outline"
                       disabled={saving}
                       onClick={() =>
-                        runWithToast(
-                          async () => {
-                            await updateExceptionStatus(exception.id, nextStatus);
-                          },
-                          `Status moved to ${nextStatus}`,
-                        )
+                        runWithToast(async () => {
+                          await updateExceptionStatus(exception.id, nextStatus);
+                        })
                       }
                     >
                       Update status
@@ -290,12 +347,9 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                     <Button
                       disabled={saving}
                       onClick={() =>
-                        runWithToast(
-                          async () => {
-                            await assignException(exception.id, assignee);
-                          },
-                          assignee ? `Assigned to ${assignee}` : "Assignment cleared",
-                        )
+                        runWithToast(async () => {
+                          await assignException(exception.id, assignee);
+                        })
                       }
                     >
                       Assign
@@ -320,13 +374,10 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                     <Button
                       disabled={saving || !comment.trim()}
                       onClick={() =>
-                        runWithToast(
-                          async () => {
-                            await addExceptionComment(exception.id, comment);
-                            setComment("");
-                          },
-                          "Comment added",
-                        )
+                        runWithToast(async () => {
+                          await addExceptionComment(exception.id, comment);
+                          setComment("");
+                        })
                       }
                     >
                       Post
@@ -387,6 +438,8 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                 </p>
               </CardContent>
             </Card>
+
+            <EntityActivityPanel entityType="exception" entityId={exception.id} />
           </>
         )}
       </DataState>

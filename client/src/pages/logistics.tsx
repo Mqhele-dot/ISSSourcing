@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -24,10 +24,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { Can } from "@/components/auth/can";
+import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
   fetchShipment,
   fetchShipments,
@@ -61,6 +62,20 @@ function ShipmentListView() {
     });
 
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const {
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
+    lastRefreshedAt,
+    lastRefreshedLabel,
+    refreshNow,
+    markRefreshed,
+  } = useAutoRefresh(refetch);
+
+  useEffect(() => {
+    if (data && !lastRefreshedAt) {
+      markRefreshed();
+    }
+  }, [data, lastRefreshedAt, markRefreshed]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -71,6 +86,7 @@ function ShipmentListView() {
       />
 
       <Toolbar
+        sticky
         left={
           <>
             <Input
@@ -106,9 +122,20 @@ function ShipmentListView() {
           </>
         }
         right={
-          <Button variant="outline" onClick={refetch}>
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={autoRefreshEnabled ? "default" : "outline"}
+              onClick={() => setAutoRefreshEnabled((current) => !current)}
+            >
+              Auto-refresh: {autoRefreshEnabled ? "On" : "Off"}
+            </Button>
+            <Button variant="outline" onClick={refreshNow}>
+              Refresh
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Last refreshed: {lastRefreshedLabel}
+            </span>
+          </div>
         }
       />
 
@@ -119,7 +146,7 @@ function ShipmentListView() {
         isEmpty={(shipments) => shipments.length === 0}
         emptyTitle="No shipments found"
         emptyDescription="Try broadening your filters."
-        onRetry={refetch}
+        onRetry={refreshNow}
       >
         {(shipments) => (
           <Table>
@@ -160,7 +187,6 @@ function ShipmentListView() {
 
 function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
   const [toStatus, setToStatus] = useState("in_transit");
   const [note, setNote] = useState("");
   const [updating, setUpdating] = useState(false);
@@ -178,16 +204,8 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
       });
       setNote("");
       await refetch();
-      toast({
-        title: "Shipment updated",
-        description: `Status moved to ${toStatus}`,
-      });
     } catch (statusError) {
-      toast({
-        title: "Update failed",
-        description: statusError instanceof Error ? statusError.message : "Request failed",
-        variant: "destructive",
-      });
+      console.error("Shipment status update failed:", statusError);
     } finally {
       setUpdating(false);
     }
@@ -307,6 +325,8 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                 </Table>
               </CardContent>
             </Card>
+
+            <EntityActivityPanel entityType="shipment" entityId={shipment.id} />
           </>
         )}
       </DataState>

@@ -8,6 +8,7 @@ import {
   getOperationalInventoryDetail,
   getOperationalPurchaseOrderDetail,
   getOperationalShipmentDetail,
+  listOperationalActivity,
   listOperationalExceptions,
   listOperationalIntegrationRuns,
   listOperationalInventory,
@@ -50,6 +51,10 @@ function parseBooleanFlag(value: unknown): boolean {
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "unknown_error";
+}
+
+function resolveActor(req: Request): string {
+  return req.user?.username || req.user?.email || "system";
 }
 
 function mapAdjustInventoryError(error: unknown): never {
@@ -302,7 +307,11 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             ? req.body.status
             : "";
       try {
-        const detail = await transitionOperationalPurchaseOrderStatus(req.params.po, toStatus);
+        const detail = await transitionOperationalPurchaseOrderStatus(
+          req.params.po,
+          toStatus,
+          resolveActor(req),
+        );
         respondOk(res, detail);
       } catch (error) {
         mapPurchaseStatusError(error);
@@ -315,7 +324,11 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
       try {
-        const detail = await transitionOperationalPurchaseOrderStatus(req.params.po, "approved");
+        const detail = await transitionOperationalPurchaseOrderStatus(
+          req.params.po,
+          "approved",
+          resolveActor(req),
+        );
         respondOk(res, detail);
       } catch (error) {
         mapPurchaseStatusError(error);
@@ -328,7 +341,11 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
       try {
-        const detail = await transitionOperationalPurchaseOrderStatus(req.params.po, "sent");
+        const detail = await transitionOperationalPurchaseOrderStatus(
+          req.params.po,
+          "sent",
+          resolveActor(req),
+        );
         respondOk(res, detail);
       } catch (error) {
         mapPurchaseStatusError(error);
@@ -349,7 +366,11 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       );
 
       try {
-        const result = await receiveOperationalPurchaseOrder(req.params.po, lines);
+        const result = await receiveOperationalPurchaseOrder(
+          req.params.po,
+          lines,
+          resolveActor(req),
+        );
         respondOk(res, {
           ...result,
           changed: {
@@ -400,6 +421,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           shipmentId: req.params.id,
           toStatus,
           note,
+          actor: resolveActor(req),
         });
         respondOk(res, detail);
       } catch (error) {
@@ -465,6 +487,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const detail = await transitionOperationalExceptionStatus(
           req.params.id,
           normalizedTarget,
+          resolveActor(req),
         );
         respondOk(res, detail);
       } catch (error) {
@@ -479,7 +502,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     withApiContract(async (req: Request, res: Response) => {
       try {
         const assignee = typeof req.body?.assignee === "string" ? req.body.assignee : "";
-        const detail = await assignOperationalException(req.params.id, assignee);
+        const detail = await assignOperationalException(req.params.id, assignee, resolveActor(req));
         respondOk(res, detail);
       } catch (error) {
         mapExceptionMutationError(error);
@@ -503,6 +526,23 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       } catch (error) {
         mapExceptionMutationError(error);
       }
+    }),
+  );
+
+  app.get(
+    "/api/activity",
+    withApiContract(async (req: Request, res: Response) => {
+      const limitRaw = Number(req.query.limit);
+      const entityType = typeof req.query.entity_type === "string" ? req.query.entity_type : "";
+      const entityId = typeof req.query.entity_id === "string" ? req.query.entity_id : "";
+
+      const records = await listOperationalActivity({
+        limit: Number.isFinite(limitRaw) ? limitRaw : 20,
+        entityType,
+        entityId,
+      });
+
+      respondOk(res, records);
     }),
   );
 

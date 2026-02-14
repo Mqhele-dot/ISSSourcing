@@ -239,6 +239,16 @@ export type ControlTowerOverview = {
 
 export type ActivityItem = ControlTowerOverview["activity"][number];
 
+export type ActivityRecord = {
+  id: number;
+  createdAt: string | null;
+  actor: string;
+  entityType: string;
+  entityId: string;
+  action: string;
+  summary: Record<string, unknown>;
+};
+
 export type DemoWalkthroughResult = {
   steps: Array<{
     id: string;

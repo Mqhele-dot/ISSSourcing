@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
-import { Boxes, RefreshCw, Search } from "lucide-react";
+import { Boxes, Download, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -48,6 +48,24 @@ function isLowFilterEnabled(value: string): boolean {
   return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
 }
 
+function downloadCsv(filename: string, rows: string[][]) {
+  const escaped = rows.map((row) =>
+    row
+      .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
+      .join(","),
+  );
+  const csv = escaped.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
+}
+
 export default function InventoryPage() {
   const [, setLocation] = useLocation();
   const { queryState, setQueryState } = useQueryState({
@@ -91,6 +109,23 @@ export default function InventoryPage() {
   const selectedLocation = String(queryState.location || "");
   const selectedCategory = String(queryState.category || "");
 
+  const handleExportCsv = () => {
+    const items = inventoryData ?? [];
+    const rows: string[][] = [
+      ["sku", "name", "location", "on_hand", "allocated", "available", "updated_at"],
+      ...items.map((item) => [
+        item.sku,
+        item.name,
+        item.location || "",
+        String(item.onHand),
+        String(item.allocated),
+        String(item.available),
+        item.updatedAt || "",
+      ]),
+    ];
+    downloadCsv("inventory-export.csv", rows);
+  };
+
   const knownLocations = useMemo(() => {
     const locationSet = new Set<string>();
     for (const item of inventoryData ?? []) {
@@ -110,14 +145,26 @@ export default function InventoryPage() {
         icon={<Boxes className="h-6 w-6 text-primary" />}
         breadcrumb={<span>Operations / Inventory</span>}
         actions={
-          <Button variant="outline" onClick={refetchInventory} className="gap-2">
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleExportCsv}
+              disabled={!inventoryData || inventoryData.length === 0}
+              className="gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </Button>
+            <Button variant="outline" onClick={refetchInventory} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         }
       />
 
       <Toolbar
+        sticky
         left={
           <>
             <div className="relative w-full min-w-[220px] max-w-sm">

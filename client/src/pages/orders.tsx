@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
-import { ArrowLeft, CheckCircle2, Send, Truck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Printer, Send, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { Can } from "@/components/auth/can";
+import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
   approvePurchaseOrder,
   fetchPurchaseOrder,
@@ -58,6 +59,68 @@ function canReceive(status: string) {
   return status === "approved" || status === "sent";
 }
 
+function openPurchaseOrderPrintView(detail: PurchaseOrderDetail) {
+  const html = `
+    <html>
+      <head>
+        <title>PO ${detail.poNumber}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
+          h1 { margin-bottom: 4px; }
+          .meta { color: #555; margin-bottom: 18px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background: #f5f5f5; }
+          .right { text-align: right; }
+        </style>
+      </head>
+      <body>
+        <h1>Purchase Order ${detail.poNumber}</h1>
+        <div class="meta">
+          Supplier: ${detail.supplierName || `Supplier #${detail.supplierId}`}<br/>
+          Status: ${detail.status}<br/>
+          Requested: ${formatDate(detail.requestedDate)}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Item</th>
+              <th class="right">Ordered</th>
+              <th class="right">Received</th>
+              <th class="right">Unit Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${detail.lines
+              .map(
+                (line) => `
+                  <tr>
+                    <td>${line.sku}</td>
+                    <td>${line.itemName}</td>
+                    <td class="right">${line.qtyOrdered}</td>
+                    <td class="right">${line.qtyReceived}</td>
+                    <td class="right">$${line.unitPrice.toFixed(2)}</td>
+                  </tr>
+                `,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=1000,height=760");
+  if (!printWindow) {
+    return;
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
 function PurchaseOrdersList() {
   const [, setLocation] = useLocation();
   const { queryState, setQueryState } = useQueryState({
@@ -84,6 +147,7 @@ function PurchaseOrdersList() {
       />
 
       <Toolbar
+        sticky
         left={
           <>
             <Input
@@ -188,16 +252,8 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
         await sendPurchaseOrder(po);
       }
       await refetch();
-      toast({
-        title: "Status updated",
-        description: `PO moved to ${action === "approve" ? "approved" : "sent"}.`,
-      });
     } catch (statusError) {
-      toast({
-        title: "Status update failed",
-        description: statusError instanceof Error ? statusError.message : "Request failed",
-        variant: "destructive",
-      });
+      console.error("Status update failed:", statusError);
     } finally {
       setStatusUpdating(false);
     }
@@ -218,24 +274,8 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
       setLastChangeSummary(result);
       setReceiveState({});
       await refetch();
-      toast({
-        title: "Receive complete",
-        description: `Processed ${receivePayload.length} line(s).`,
-      });
-
-      if (result.mismatchExceptions.some((entry) => entry.created)) {
-        toast({
-          title: "Mismatch exception created",
-          description: "At least one line produced a PO mismatch exception.",
-          variant: "destructive",
-        });
-      }
     } catch (receiveError) {
-      toast({
-        title: "Receive failed",
-        description: receiveError instanceof Error ? receiveError.message : "Request failed",
-        variant: "destructive",
-      });
+      console.error("Receive failed:", receiveError);
     } finally {
       setReceiving(false);
     }
@@ -264,6 +304,10 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
               breadcrumb={<span>Operations / Purchase Orders / {detail.poNumber}</span>}
               actions={
                 <>
+                  <Button variant="outline" className="gap-2" onClick={() => openPurchaseOrderPrintView(detail)}>
+                    <Printer className="h-4 w-4" />
+                    Print view
+                  </Button>
                   <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
                     <Button
                       variant="outline"
@@ -437,6 +481,8 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                 </CardContent>
               </Card>
             ) : null}
+
+            <EntityActivityPanel entityType="purchase_order" entityId={detail.poNumber} />
 
             <Card>
               <CardHeader>

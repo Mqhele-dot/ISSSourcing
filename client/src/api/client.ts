@@ -1,7 +1,9 @@
 import {
   apiRequest,
 } from "@/lib/queryClient";
+import { toastStore } from "@/lib/toast-store";
 import type {
+  ActivityRecord,
   ApiErrorPayload,
   ApiResponse,
   ControlTowerOverview,
@@ -20,6 +22,7 @@ import type {
 } from "./types";
 
 export type {
+  ActivityRecord,
   ActivityItem,
   ApiErrorPayload,
   ControlTowerOverview,
@@ -79,6 +82,11 @@ async function unwrapEnvelope<T>(response: Response): Promise<T> {
     if (payload.ok) {
       return payload.data as T;
     }
+    toastStore.push({
+      type: "error",
+      title: payload.error.code || "Request failed",
+      message: payload.error.message,
+    });
     throw new ApiError(payload.error, response.status || 400);
   }
 
@@ -254,7 +262,7 @@ export async function receivePurchaseOrder(
   po: string,
   lines: Array<{ sku: string; qtyReceivedNow: number }>,
 ): Promise<PurchaseReceiveResult> {
-  return apiMutate<PurchaseReceiveResult>(
+  const result = await apiMutate<PurchaseReceiveResult>(
     "POST",
     `/api/purchase/orders/${encodeURIComponent(po)}/receive`,
     {
@@ -264,6 +272,19 @@ export async function receivePurchaseOrder(
       })),
     },
   );
+  const firstChange = result.inventoryChanges[0];
+  const mismatchCreated = result.mismatchExceptions.some((entry) => entry.created);
+  const baseMessage = firstChange
+    ? `Received (partial): ${firstChange.sku} +${firstChange.delta}`
+    : `Received (partial): ${result.changed.inventoryChanges} inventory updates`;
+  toastStore.push({
+    type: mismatchCreated ? "warning" : "success",
+    title: "PO receive processed",
+    message: mismatchCreated
+      ? `${baseMessage}, mismatch exception created`
+      : baseMessage,
+  });
+  return result;
 }
 
 export async function fetchShipments(params?: {
@@ -350,4 +371,23 @@ export async function runIntegration(connector: string): Promise<IntegrationRun>
 
 export async function fetchControlTowerOverview(): Promise<ControlTowerOverview> {
   return apiFetch<ControlTowerOverview>("/api/control-tower/overview");
+}
+
+export async function fetchActivity(params?: {
+  limit?: number;
+  entityType?: string;
+  entityId?: string | number;
+}): Promise<ActivityRecord[]> {
+  const search = new URLSearchParams();
+  if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
+    search.set("limit", String(params.limit));
+  }
+  if (params?.entityType) {
+    search.set("entity_type", params.entityType);
+  }
+  if (params?.entityId !== undefined && params?.entityId !== null) {
+    search.set("entity_id", String(params.entityId));
+  }
+  const url = search.size > 0 ? `/api/activity?${search.toString()}` : "/api/activity";
+  return apiFetch<ActivityRecord[]>(url);
 }

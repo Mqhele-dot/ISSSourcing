@@ -71,6 +71,20 @@ type ExceptionPayload = {
   slaHours?: number;
 };
 
+type ActivityInput = {
+  actor?: string;
+  entityType: string;
+  entityId: string | number;
+  action: string;
+  summary: Record<string, unknown>;
+};
+
+type ActivityListFilters = {
+  limit?: number;
+  entityType?: string;
+  entityId?: string;
+};
+
 const OPERATIONAL_TABLE_DDLS = [
   `
   ALTER TABLE inventory_items
@@ -127,6 +141,17 @@ const OPERATIONAL_TABLE_DDLS = [
     details text,
     related_refs jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamp NOT NULL DEFAULT now()
+  )
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS ops_activity (
+    id serial PRIMARY KEY,
+    created_at timestamp NOT NULL DEFAULT now(),
+    actor text NOT NULL DEFAULT 'system',
+    entity_type text NOT NULL,
+    entity_id text NOT NULL,
+    action text NOT NULL,
+    summary_json jsonb NOT NULL DEFAULT '{}'::jsonb
   )
   `,
   `
@@ -211,6 +236,51 @@ async function logActivity(
     VALUES ($1, $2, $3, $4::jsonb)
     `,
     [eventType, title, details, JSON.stringify(relatedRefs)],
+  );
+
+  const entityType =
+    typeof relatedRefs.exception_id === "number"
+      ? "exception"
+      : typeof relatedRefs.po_number === "string"
+        ? "purchase_order"
+        : typeof relatedRefs.shipment_id === "number"
+          ? "shipment"
+          : typeof relatedRefs.sku === "string"
+            ? "inventory"
+            : "system";
+  const entityId =
+    relatedRefs.exception_id ??
+    relatedRefs.po_number ??
+    relatedRefs.shipment_id ??
+    relatedRefs.sku ??
+    "global";
+
+  await recordActivity({
+    actor: "system",
+    entityType,
+    entityId: String(entityId),
+    action: eventType,
+    summary: {
+      title,
+      details,
+      relatedRefs,
+    },
+  });
+}
+
+export async function recordActivity(input: ActivityInput) {
+  await pool.query(
+    `
+    INSERT INTO ops_activity (actor, entity_type, entity_id, action, summary_json)
+    VALUES ($1, $2, $3, $4, $5::jsonb)
+    `,
+    [
+      input.actor?.trim() || "system",
+      input.entityType,
+      String(input.entityId),
+      input.action,
+      JSON.stringify(input.summary ?? {}),
+    ],
   );
 }
 
@@ -755,12 +825,22 @@ export async function adjustOperationalInventory(input: AdjustInventoryInput) {
     });
   }
 
-  await logActivity(
-    "inventory_adjustment",
-    `Adjusted ${item.sku} by ${input.delta > 0 ? "+" : ""}${input.delta}`,
-    `${input.reason}${input.ref ? ` (ref: ${input.ref})` : ""}`,
-    { sku: item.sku, location: normalizedLocation },
-  );
+  await recordActivity({
+    actor: input.createdBy ?? "system",
+    entityType: "inventory",
+    entityId: item.sku,
+    action: "adjust",
+    summary: {
+      sku: item.sku,
+      delta: input.delta,
+      location: normalizedLocation,
+      reason: input.reason,
+      ref: input.ref ?? null,
+      available: summary.available,
+      onHand: summary.onHand,
+      shortageExceptionId: shortageException?.id ?? null,
+    },
+  });
 
   return {
     sku: item.sku,
@@ -1092,6 +1172,7 @@ export async function getOperationalPurchaseOrderDetail(poOrId: string) {
 export async function transitionOperationalPurchaseOrderStatus(
   poOrId: string,
   toStatusInput: string,
+  actor = "system",
 ) {
   const order = await resolvePurchaseOrder(poOrId);
   if (!order) {
@@ -1135,12 +1216,23 @@ export async function transitionOperationalPurchaseOrderStatus(
     ],
   );
 
-  await logActivity(
-    "po_status_transition",
-    `PO ${order.order_number} moved to ${toStatus}`,
-    `${currentStatus} -> ${toStatus}`,
-    { po_number: order.order_number },
-  );
+  const action =
+    toStatus === "approved"
+      ? "approve"
+      : toStatus === "sent"
+        ? "send"
+        : "status_change";
+  await recordActivity({
+    actor,
+    entityType: "purchase_order",
+    entityId: order.order_number,
+    action,
+    summary: {
+      poNumber: order.order_number,
+      fromStatus: currentStatus,
+      toStatus,
+    },
+  });
 
   const updated = await getOperationalPurchaseOrderDetail(order.order_number);
   if (!updated) {
@@ -1152,6 +1244,7 @@ export async function transitionOperationalPurchaseOrderStatus(
 export async function receiveOperationalPurchaseOrder(
   poOrId: string,
   lines: ReceivePurchaseLineInput[],
+  actor = "system",
 ) {
   const order = await resolvePurchaseOrder(poOrId);
   if (!order) {
@@ -1316,12 +1409,20 @@ export async function receiveOperationalPurchaseOrder(
     ],
   );
 
-  await logActivity(
-    "po_receive",
-    `PO ${order.order_number} received`,
-    `Received ${lines.length} line(s)`,
-    { po_number: order.order_number },
-  );
+  await recordActivity({
+    actor,
+    entityType: "purchase_order",
+    entityId: order.order_number,
+    action: "receive",
+    summary: {
+      poNumber: order.order_number,
+      linesReceived: lines.length,
+      inventoryChanges: inventoryChanges.length,
+      shipmentUpdates: shipmentUpdates.length,
+      mismatchExceptions: mismatchExceptions.length,
+      nextStatus,
+    },
+  });
 
   const updatedOrder = await getOperationalPurchaseOrderDetail(order.order_number);
   if (!updatedOrder) {
@@ -1527,6 +1628,7 @@ export async function updateOperationalShipmentStatus(input: {
   shipmentId: string;
   toStatus: string;
   note?: string;
+  actor?: string;
 }) {
   const shipment = await getOperationalShipmentDetail(input.shipmentId);
   const fromStatus = shipment.status;
@@ -1556,12 +1658,19 @@ export async function updateOperationalShipmentStatus(input: {
     [shipment.id, toStatus, input.note ?? null],
   );
 
-  await logActivity(
-    "shipment_status_change",
-    `Shipment ${shipment.id} moved to ${toStatus}`,
-    input.note ?? `${fromStatus} -> ${toStatus}`,
-    { shipment_id: shipment.id, po_number: shipment.poNumber },
-  );
+  await recordActivity({
+    actor: input.actor ?? "system",
+    entityType: "shipment",
+    entityId: shipment.id,
+    action: "status_change",
+    summary: {
+      shipmentId: shipment.id,
+      poNumber: shipment.poNumber,
+      fromStatus,
+      toStatus,
+      note: input.note ?? null,
+    },
+  });
 
   return getOperationalShipmentDetail(String(shipment.id));
 }
@@ -1665,6 +1774,7 @@ const EXCEPTION_TRANSITIONS: Record<string, string[]> = {
 export async function transitionOperationalExceptionStatus(
   idOrRef: string,
   toStatusInput: string,
+  actor = "system",
 ) {
   const detail = await getOperationalExceptionDetail(idOrRef);
   const toStatus = toStatusInput.toLowerCase();
@@ -1689,17 +1799,26 @@ export async function transitionOperationalExceptionStatus(
     [detail.id, toStatus],
   );
 
-  await logActivity(
-    "exception_status_change",
-    `Exception #${detail.id} moved to ${toStatus}`,
-    `${currentStatus} -> ${toStatus}`,
-    { exception_id: detail.id },
-  );
+  await recordActivity({
+    actor,
+    entityType: "exception",
+    entityId: detail.id,
+    action: "status_change",
+    summary: {
+      exceptionId: detail.id,
+      fromStatus: currentStatus,
+      toStatus,
+    },
+  });
 
   return getOperationalExceptionDetail(String(detail.id));
 }
 
-export async function assignOperationalException(idOrRef: string, assignee: string) {
+export async function assignOperationalException(
+  idOrRef: string,
+  assignee: string,
+  actor = "system",
+) {
   const detail = await getOperationalExceptionDetail(idOrRef);
 
   await pool.query(
@@ -1711,12 +1830,16 @@ export async function assignOperationalException(idOrRef: string, assignee: stri
     [detail.id, assignee || null],
   );
 
-  await logActivity(
-    "exception_assigned",
-    `Exception #${detail.id} assigned`,
-    assignee ? `Assigned to ${assignee}` : "Assignment cleared",
-    { exception_id: detail.id },
-  );
+  await recordActivity({
+    actor,
+    entityType: "exception",
+    entityId: detail.id,
+    action: "assign",
+    summary: {
+      exceptionId: detail.id,
+      assignee: assignee || null,
+    },
+  });
 
   return getOperationalExceptionDetail(String(detail.id));
 }
@@ -1746,12 +1869,16 @@ export async function addOperationalExceptionComment(input: {
     [detail.id, JSON.stringify([commentEntry])],
   );
 
-  await logActivity(
-    "exception_comment",
-    `Comment added to exception #${detail.id}`,
-    commentEntry.comment,
-    { exception_id: detail.id },
-  );
+  await recordActivity({
+    actor: input.author || "system",
+    entityType: "exception",
+    entityId: detail.id,
+    action: "comment",
+    summary: {
+      exceptionId: detail.id,
+      comment: commentEntry.comment,
+    },
+  });
 
   return getOperationalExceptionDetail(String(detail.id));
 }
@@ -1826,6 +1953,55 @@ export async function runOperationalConnector(connectorInput: string) {
   return runs[0];
 }
 
+export async function listOperationalActivity(filters: ActivityListFilters = {}) {
+  const whereClauses: string[] = [];
+  const params: Array<string | number> = [];
+
+  if (filters.entityType && filters.entityType.trim()) {
+    params.push(filters.entityType.trim().toLowerCase());
+    whereClauses.push(`lower(entity_type) = $${params.length}`);
+  }
+
+  if (filters.entityId && filters.entityId.trim()) {
+    params.push(filters.entityId.trim());
+    whereClauses.push(`entity_id = $${params.length}`);
+  }
+
+  const limit = Math.min(Math.max(filters.limit ?? 20, 1), 200);
+  params.push(limit);
+  const limitParam = `$${params.length}`;
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+  const result = await pool.query<{
+    id: number;
+    created_at: Date | null;
+    actor: string;
+    entity_type: string;
+    entity_id: string;
+    action: string;
+    summary_json: Record<string, unknown>;
+  }>(
+    `
+    SELECT id, created_at, actor, entity_type, entity_id, action, summary_json
+    FROM ops_activity
+    ${whereSql}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${limitParam}
+    `,
+    params,
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    createdAt: row.created_at,
+    actor: row.actor,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    action: row.action,
+    summary: row.summary_json ?? {},
+  }));
+}
+
 export async function getOperationalControlTowerOverview() {
   const openExceptionsResult = await pool.query<{
     severity: string;
@@ -1874,21 +2050,7 @@ export async function getOperationalControlTowerOverview() {
     `,
   );
 
-  const activityResult = await pool.query<{
-    id: number;
-    event_type: string;
-    title: string;
-    details: string | null;
-    related_refs: Record<string, unknown>;
-    created_at: Date | null;
-  }>(
-    `
-    SELECT id, event_type, title, details, related_refs, created_at
-    FROM ops_activity_feed
-    ORDER BY created_at DESC
-    LIMIT 20
-    `,
-  );
+  const activity = await listOperationalActivity({ limit: 20 });
 
   const exceptionsBySeverity: Record<string, number> = {};
   for (const row of openExceptionsResult.rows) {
@@ -1902,13 +2064,25 @@ export async function getOperationalControlTowerOverview() {
       posAwaitingAction: toNumber(poAwaitingActionResult.rows[0]?.count, 0),
       lowStockSkus: toNumber(lowStockResult.rows[0]?.count, 0),
     },
-    activity: activityResult.rows.map((row) => ({
-      id: row.id,
-      eventType: row.event_type,
-      title: row.title,
-      details: row.details,
-      relatedRefs: row.related_refs || {},
-      createdAt: row.created_at,
+    activity: activity.map((entry) => ({
+      id: entry.id,
+      eventType: entry.action,
+      title:
+        typeof entry.summary.title === "string"
+          ? entry.summary.title
+          : `${entry.entityType} ${entry.action}`,
+      details:
+        typeof entry.summary.details === "string"
+          ? entry.summary.details
+          : typeof entry.summary.message === "string"
+            ? entry.summary.message
+            : null,
+      relatedRefs: {
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        ...(typeof entry.summary === "object" && entry.summary !== null ? entry.summary : {}),
+      },
+      createdAt: entry.createdAt,
     })),
   };
 }
@@ -2039,6 +2213,7 @@ export async function runOperationalDemoWalkthrough(actor: string) {
     shipmentId: String(shipmentId),
     toStatus: "in_transit",
     note: "Demo walkthrough status update",
+    actor,
   });
   steps.push({
     id: "flip-shipment",
@@ -2047,12 +2222,16 @@ export async function runOperationalDemoWalkthrough(actor: string) {
     details: `Shipment #${shipmentId} -> in_transit`,
   });
 
-  const receiveResult = await receiveOperationalPurchaseOrder(poNumber, [
-    {
-      sku: firstInventoryItem.sku,
-      qty_received_now: 4,
-    },
-  ]);
+  const receiveResult = await receiveOperationalPurchaseOrder(
+    poNumber,
+    [
+      {
+        sku: firstInventoryItem.sku,
+        qty_received_now: 4,
+      },
+    ],
+    actor,
+  );
   const mismatchExceptionId = receiveResult.mismatchExceptions[0]?.id ?? null;
   steps.push({
     id: "partial-receive",

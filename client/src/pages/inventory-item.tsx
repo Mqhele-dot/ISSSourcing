@@ -33,6 +33,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DataState } from "@/components/ui/data-state";
+import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { apiRequest } from "@/lib/queryClient";
@@ -327,6 +328,8 @@ export default function InventoryDetailPage() {
                 </Table>
               </CardContent>
             </Card>
+
+            <EntityActivityPanel entityType="inventory" entityId={detail.sku} />
           </>
         )}
       </DataState>

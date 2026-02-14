@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { AlertTriangle, Boxes, CheckCircle2, Clock3, PackageCheck, PlayCircle } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAsyncResource } from "@/hooks/use-async-resource";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import {
   fetchControlTowerOverview,
   runDemoWalkthrough,
@@ -56,6 +57,14 @@ export default function HomePage() {
   const { toast } = useToast();
   const fetcher = async (): Promise<ControlTowerOverview> => fetchControlTowerOverview();
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const {
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
+    lastRefreshedAt,
+    lastRefreshedLabel,
+    refreshNow,
+    markRefreshed,
+  } = useAutoRefresh(refetch);
   const [walkthrough, setWalkthrough] = useState<DemoWalkthroughResult | null>(null);
   const [runningWalkthrough, setRunningWalkthrough] = useState(false);
 
@@ -63,12 +72,18 @@ export default function HomePage() {
     ? Object.values(data.kpis.exceptionsBySeverity).reduce((sum, count) => sum + count, 0)
     : 0;
 
+  useEffect(() => {
+    if (data && !lastRefreshedAt) {
+      markRefreshed();
+    }
+  }, [data, lastRefreshedAt, markRefreshed]);
+
   const handleRunWalkthrough = async () => {
     setRunningWalkthrough(true);
     try {
       const result = await runDemoWalkthrough();
       setWalkthrough(result);
-      await refetch();
+      await refreshNow();
       toast({
         title: "Demo walkthrough complete",
         description: "Operational demo data has been prepared.",
@@ -103,9 +118,18 @@ export default function HomePage() {
               <PlayCircle className="h-4 w-4" />
               Run Demo Walkthrough
             </Button>
-            <Button variant="outline" onClick={refetch}>
+            <Button
+              variant={autoRefreshEnabled ? "default" : "outline"}
+              onClick={() => setAutoRefreshEnabled((current) => !current)}
+            >
+              Auto-refresh: {autoRefreshEnabled ? "On" : "Off"}
+            </Button>
+            <Button variant="outline" onClick={refreshNow}>
               Refresh
             </Button>
+            <span className="self-center text-xs text-muted-foreground">
+              Last refreshed: {lastRefreshedLabel}
+            </span>
           </div>
         }
       />
@@ -116,7 +140,7 @@ export default function HomePage() {
         data={data}
         isEmpty={() => false}
         emptyTitle="No dashboard data available"
-        onRetry={refetch}
+        onRetry={refreshNow}
       >
         {(overview) => (
           <>
