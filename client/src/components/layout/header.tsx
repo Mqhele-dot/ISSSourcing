@@ -1,7 +1,10 @@
 import React from "react";
 import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -12,14 +15,23 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, User, Settings, Bell, Moon, Palette, Sun } from "lucide-react";
+import { LogOut, User, Settings, Bell, Moon, Palette, Search, Sun } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { useAccent } from "@/components/accent-provider";
 
 export const Header: React.FC = () => {
+  const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
   const { theme, setTheme } = useTheme();
   const { accent, cycleAccent } = useAccent();
+  const environmentLabel = import.meta.env.DEV ? "DEV" : "PROD";
+
+  const breadcrumb = location
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => segment.replace(/-/g, " "))
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" / ");
 
   const handleLogout = () => {
     logoutMutation.mutate();
@@ -36,10 +48,22 @@ export const Header: React.FC = () => {
 
   return (
     <header className="topbar-glass h-16 px-4 border-b border-border sticky top-0 z-30 flex items-center justify-between">
-      <div className="flex-1">
-        {/* You can add page title or breadcrumbs here */}
+      <div className="flex-1 min-w-0 pr-4">
+        <p className="text-xs text-muted-foreground truncate">{breadcrumb || "Overview"}</p>
+        <div className="relative mt-1 max-w-md">
+          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            aria-label="Global search"
+            placeholder="Search SKU, supplier, PO, shipment..."
+            className="h-9 pl-8"
+          />
+        </div>
       </div>
       <div className="flex items-center space-x-4">
+        <Badge variant="outline" className="hidden md:inline-flex">
+          {environmentLabel}
+        </Badge>
+
         <Button 
           variant="ghost" 
           size="icon" 

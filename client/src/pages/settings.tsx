@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { resetDemoData } from "@/api/client";
 import { GeneralSettingsForm } from "@/components/settings/general-settings-form";
 import { InventorySettingsForm } from "@/components/settings/inventory-settings-form";
 import { RealtimeSettingsForm } from "@/components/settings/realtime-settings-form";
@@ -37,14 +38,6 @@ import {
   RotateCcw,
 } from "lucide-react";
 
-type DemoResetSummary = {
-  users: number;
-  warehouses: number;
-  suppliers: number;
-  items: number;
-  settings: number;
-};
-
 export default function SettingsPage() {
   const { toast } = useToast();
   const isDevMode = import.meta.env.DEV;
@@ -55,21 +48,7 @@ export default function SettingsPage() {
     setIsResettingDemoData(true);
 
     try {
-      const response = await fetch("/admin/demo/reset", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        const errorPayload = await response
-          .json()
-          .catch(() => ({ message: "Unable to reset demo data" }));
-        throw new Error(errorPayload.message || "Unable to reset demo data");
-      }
-
-      const summary = (await response.json()) as DemoResetSummary;
+      const summary = await resetDemoData();
       toast({
         title: "Demo data reset complete",
         description: `Users: ${summary.users}, Warehouses: ${summary.warehouses}, Suppliers: ${summary.suppliers}, Items: ${summary.items}, Settings: ${summary.settings}`,

@@ -34,3 +34,4 @@ Fix in this order:
 - Promote `npm run check` to required CI once green.
 - Add optional pre-commit hooks (`lint-staged`) for changed files.
 - Keep CI smoke checks (`/health`) and app build as a fast guardrail.
+- Track progress against `TYPECHECK_STATUS.md` on each cleanup pass.

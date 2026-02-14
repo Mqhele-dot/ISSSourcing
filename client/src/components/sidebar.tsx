@@ -2,7 +2,24 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
-import { Archive, BarChart3, Building, ChevronRight, FileText, Home, Moon, Settings, ShoppingCart, Sun, Users, X, LayoutDashboard, RefreshCw, QrCode, Activity, Zap, FileUp, Camera } from "lucide-react";
+import {
+  Activity,
+  Archive,
+  Building,
+  Camera,
+  FileText,
+  FileUp,
+  Home,
+  LayoutDashboard,
+  Moon,
+  QrCode,
+  RefreshCw,
+  Settings,
+  ShoppingCart,
+  Sun,
+  Users,
+  X,
+} from "lucide-react";
 
 interface SidebarProps {
   open: boolean;
@@ -22,9 +39,9 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
       <Link href={path}>
         <div
           className={cn(
-            "flex items-center px-4 py-2.5 text-sm font-medium rounded-md cursor-pointer",
+            "flex items-center px-4 py-2.5 text-sm font-medium rounded-md cursor-pointer transition-all",
             isActive(path)
-              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              ? "accent-gradient-bg text-primary-foreground elev-2"
               : "text-foreground/90 hover:bg-muted"
           )}
         >
@@ -34,6 +51,12 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
       </Link>
     );
   };
+
+  const SectionTitle = ({ children }: { children: React.ReactNode }) => (
+    <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground/90">
+      {children}
+    </p>
+  );
 
   return (
     <>
@@ -75,7 +98,8 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
         </div>
         
         <nav className="flex-1 px-2 py-4 overflow-y-auto">
-          <div className="space-y-2">
+          <div className="space-y-1">
+            <SectionTitle>Overview</SectionTitle>
             <NavItem path="/" icon={<Home className="mr-3 h-5 w-5" />}>
               Home
             </NavItem>
@@ -83,47 +107,53 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             <NavItem path="/dashboard" icon={<LayoutDashboard className="mr-3 h-5 w-5" />}>
               Dashboard
             </NavItem>
-            
+
+            <SectionTitle>Inventory</SectionTitle>
             <NavItem path="/inventory" icon={<Archive className="mr-3 h-5 w-5" />}>
               Inventory
             </NavItem>
-            
-            <NavItem path="/orders" icon={<ShoppingCart className="mr-3 h-5 w-5" />}>
-              Orders
-            </NavItem>
-            
-            <NavItem path="/reorder" icon={<RefreshCw className="mr-3 h-5 w-5" />}>
-              Reorder Requests
-            </NavItem>
-            
-            <NavItem path="/suppliers" icon={<Users className="mr-3 h-5 w-5" />}>
-              Suppliers
-            </NavItem>
-            
-            <NavItem path="/warehouses" icon={<Building className="mr-3 h-5 w-5" />}>
-              Warehouses
-            </NavItem>
-            
-            <NavItem path="/reports" icon={<FileText className="mr-3 h-5 w-5" />}>
-              Reports
-            </NavItem>
-            
+
             <NavItem path="/barcode-scanner" icon={<QrCode className="mr-3 h-5 w-5" />}>
               Barcode Scanner
-            </NavItem>
-            
-            <NavItem path="/real-time-updates" icon={<Activity className="mr-3 h-5 w-5" />}>
-              Real-Time Updates
             </NavItem>
             
             <NavItem path="/image-recognition" icon={<Camera className="mr-3 h-5 w-5" />}>
               Image Recognition
             </NavItem>
-            
+
+            <SectionTitle>Purchase Orders</SectionTitle>
+            <NavItem path="/orders" icon={<ShoppingCart className="mr-3 h-5 w-5" />}>
+              Purchase Orders
+            </NavItem>
+
+            <NavItem path="/suppliers" icon={<Users className="mr-3 h-5 w-5" />}>
+              Suppliers
+            </NavItem>
+
+            <SectionTitle>Logistics</SectionTitle>
+            <NavItem path="/warehouses" icon={<Building className="mr-3 h-5 w-5" />}>
+              Warehouses
+            </NavItem>
+
+            <NavItem path="/reorder" icon={<RefreshCw className="mr-3 h-5 w-5" />}>
+              Reorder Requests
+            </NavItem>
+
+            <SectionTitle>Exceptions</SectionTitle>
+            <NavItem path="/real-time-updates" icon={<Activity className="mr-3 h-5 w-5" />}>
+              Exception Monitor
+            </NavItem>
+
+            <SectionTitle>Integrations</SectionTitle>
             <NavItem path="/document-extractor" icon={<FileUp className="mr-3 h-5 w-5" />}>
               Document Extractor
             </NavItem>
-            
+
+            <SectionTitle>Settings</SectionTitle>
+            <NavItem path="/reports" icon={<FileText className="mr-3 h-5 w-5" />}>
+              Reports
+            </NavItem>
+
             <NavItem path="/settings" icon={<Settings className="mr-3 h-5 w-5" />}>
               Settings
             </NavItem>
