@@ -11,6 +11,7 @@
     "lint": "eslint \"client/src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"shared/**/*.ts\"",
     "doctor": "bash scripts/doctor.sh",
     "docs:validate": "bash scripts/validate-readme.sh",
+    "test:runtime": "bash scripts/test-runtime.sh",
     "test:contracts": "tsx scripts/test-api-contract.ts",
     "test:deeplinks": "tsx scripts/test-kpi-deeplinks.ts",
     "db:push": "drizzle-kit push",

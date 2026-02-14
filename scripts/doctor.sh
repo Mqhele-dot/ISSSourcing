@@ -29,6 +29,7 @@ echo "✅ $PYTHON_VERSION"
 required_scripts=(
   "$ROOT_DIR/scripts/codespaces-up.sh"
   "$ROOT_DIR/scripts/doctor.sh"
+  "$ROOT_DIR/scripts/test-runtime.sh"
   "$ROOT_DIR/scripts/validate-readme.sh"
 )
 
