@@ -3,6 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+IS_CODESPACES="false"
+if [[ "${CODESPACES:-}" == "true" || -n "${CODESPACE_NAME:-}" ]]; then
+  IS_CODESPACES="true"
+fi
 
 if [[ "$(pwd)" != "${REPO_ROOT}" ]]; then
   echo "Run this command from the repository root: ${REPO_ROOT}" >&2
@@ -34,6 +38,31 @@ export PGPASSWORD="${PGPASSWORD:-postgres}"
 export PORT="${PORT:-5000}"
 export DATABASE_URL="${DATABASE_URL:-postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}}"
 
+DB_URL_HOST=""
+DB_URL_PORT=""
+DB_URL_NAME=""
+DB_URL_USER=""
+DB_URL_PASSWORD=""
+if [[ -n "${DATABASE_URL:-}" ]]; then
+  IFS="|" read -r DB_URL_HOST DB_URL_PORT DB_URL_NAME DB_URL_USER DB_URL_PASSWORD < <(
+    node -e '
+      try {
+        const raw = process.env.DATABASE_URL || "";
+        if (!raw) process.exit(0);
+        const u = new URL(raw);
+        const host = u.hostname || "";
+        const port = u.port || "";
+        const db = (u.pathname || "").replace(/^\//, "");
+        const user = decodeURIComponent(u.username || "");
+        const pass = decodeURIComponent(u.password || "");
+        process.stdout.write(`${host}|${port}|${db}|${user}|${pass}`);
+      } catch {
+        process.stdout.write("||||");
+      }
+    '
+  )
+fi
+
 echo "Installing dependencies..."
 npm ci
 
@@ -42,20 +71,71 @@ if ! command -v pg_isready >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Waiting for PostgreSQL at ${PGHOST}:${PGPORT}..."
-for attempt in {1..45}; do
-  if pg_isready -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" >/dev/null 2>&1; then
-    echo "PostgreSQL is ready."
-    break
+declare -a DB_ENDPOINTS=()
+add_db_endpoint() {
+  local host="$1"
+  local port="$2"
+  if [[ -z "${host}" || -z "${port}" ]]; then
+    return
   fi
+  local endpoint="${host}:${port}"
+  local existing
+  for existing in "${DB_ENDPOINTS[@]}"; do
+    if [[ "${existing}" == "${endpoint}" ]]; then
+      return
+    fi
+  done
+  DB_ENDPOINTS+=("${endpoint}")
+}
 
-  if [[ "${attempt}" -eq 45 ]]; then
-    echo "Timed out waiting for PostgreSQL." >&2
+add_db_endpoint "${DB_URL_HOST}" "${DB_URL_PORT:-${PGPORT}}"
+add_db_endpoint "${PGHOST}" "${PGPORT}"
+if [[ "${IS_CODESPACES}" == "true" ]]; then
+  add_db_endpoint "db" "5432"
+fi
+add_db_endpoint "localhost" "${PGPORT}"
+add_db_endpoint "127.0.0.1" "${PGPORT}"
+
+if [[ "${#DB_ENDPOINTS[@]}" -eq 0 ]]; then
+  echo "No PostgreSQL endpoints were configured." >&2
+  exit 1
+fi
+
+echo "Waiting for PostgreSQL (candidates: ${DB_ENDPOINTS[*]})..."
+READY_HOST=""
+READY_PORT=""
+for attempt in {1..60}; do
+  for endpoint in "${DB_ENDPOINTS[@]}"; do
+    host="${endpoint%%:*}"
+    port="${endpoint##*:}"
+    if pg_isready -h "${host}" -p "${port}" -U "${PGUSER}" -d "${PGDATABASE}" >/dev/null 2>&1; then
+      READY_HOST="${host}"
+      READY_PORT="${port}"
+      break 2
+    fi
+  done
+
+  if [[ "${attempt}" -eq 60 ]]; then
+    echo "Timed out waiting for PostgreSQL at all configured endpoints." >&2
     exit 1
   fi
 
   sleep 2
 done
+
+export PGHOST="${READY_HOST}"
+export PGPORT="${READY_PORT}"
+if [[ -n "${DB_URL_NAME}" ]]; then
+  export PGDATABASE="${DB_URL_NAME}"
+fi
+if [[ -n "${DB_URL_USER}" ]]; then
+  export PGUSER="${DB_URL_USER}"
+fi
+if [[ -n "${DB_URL_PASSWORD}" ]]; then
+  export PGPASSWORD="${DB_URL_PASSWORD}"
+fi
+export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}"
+echo "PostgreSQL is ready at ${PGHOST}:${PGPORT}."
 
 echo "Applying database schema..."
 npm run db:push
