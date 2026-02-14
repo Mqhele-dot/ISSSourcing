@@ -152,4 +152,22 @@ echo "Client URL: ${APP_URL} (Vite is served through Express in this project)"
 echo "Ports => server/client: ${PORT}, db: ${PGPORT}"
 echo
 
-exec npm run dev
+npm run dev &
+APP_PID=$!
+
+cleanup() {
+  if kill -0 "${APP_PID}" >/dev/null 2>&1; then
+    kill "${APP_PID}" >/dev/null 2>&1 || true
+    wait "${APP_PID}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+if ! curl --retry 20 --retry-connrefused --retry-delay 1 --silent --show-error --fail "http://127.0.0.1:${PORT}/health" >/dev/null; then
+  echo "Server not reachable inside container; check HOST binding" >&2
+  exit 1
+fi
+
+echo "✅ In-container health check passed at http://127.0.0.1:${PORT}/health"
+
+wait "${APP_PID}"

@@ -8,8 +8,6 @@ import { initializeDatabase } from "./init-db";
 import { seedDatabaseIfEmpty } from "./seed";
 import { initializeOperationalData } from "./operations-core";
 import type { PoolClient } from "pg";
-import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
 
 // Test database connection and initialize schema on startup
 pool.connect()
@@ -167,15 +165,22 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // Try to listen on port 5000 first (Replit expected port)
-  const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
-  
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
+  const portFromEnv = Number.parseInt(process.env.PORT ?? "", 10);
+  const port = Number.isFinite(portFromEnv) && portFromEnv > 0 ? portFromEnv : 5000;
+  const host = process.env.HOST?.trim() || "0.0.0.0";
+  const localReachableHost = host === "0.0.0.0" ? "127.0.0.1" : host;
+  const localUrl = `http://${localReachableHost}:${port}`;
+  const forwardedUrl =
+    process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN
+      ? `https://${process.env.CODESPACE_NAME}-${port}.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`
+      : null;
+
+  server.listen(port, host, () => {
+    log(`serving on ${host}:${port}`);
+    log(`Startup URL (local): ${localUrl}`);
+    if (forwardedUrl) {
+      log(`Startup URL (Codespaces): ${forwardedUrl}`);
+    }
     log(`WebSocket server for real-time inventory sync is active`);
   });
   

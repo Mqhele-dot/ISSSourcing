@@ -42,6 +42,8 @@ npm run db:seed
 | Client | 5000 | Same URL as server in development |
 | PostgreSQL | 5432 | `db` service in devcontainer |
 
+If you open the forwarded URL in an external browser session, set port **5000** visibility to **Public** in the Codespaces **Ports** tab.
+
 Health endpoint for smoke tests:
 
 ```text
