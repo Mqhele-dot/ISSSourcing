@@ -28,6 +28,9 @@ import ProfilePage from "@/pages/profile";
 import ImageRecognitionPage from "@/pages/image-recognition-page";
 import DocumentExtractorPage from "@/pages/document-extractor-page";
 import WarehousesPage from "@/pages/warehouses";
+import LogisticsPage from "@/pages/logistics";
+import ExceptionsPage from "@/pages/exceptions";
+import IntegrationsPage from "@/pages/integrations";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AccentProvider } from "@/components/accent-provider";
 import { useState, useEffect } from "react";
@@ -92,6 +95,11 @@ function Router() {
       <ProtectedRoute path="/inventory/:sku" component={InventoryItemDetail} />
       <ProtectedRoute path="/orders" component={OrdersPage} />
       <ProtectedRoute path="/orders/:po" component={OrdersPage} />
+      <ProtectedRoute path="/logistics" component={LogisticsPage} />
+      <ProtectedRoute path="/logistics/:id" component={LogisticsPage} />
+      <ProtectedRoute path="/exceptions" component={ExceptionsPage} />
+      <ProtectedRoute path="/exceptions/:id" component={ExceptionsPage} />
+      <ProtectedRoute path="/integrations" component={IntegrationsPage} />
       <ProtectedRoute path="/suppliers" component={SuppliersPage} />
       <ProtectedRoute path="/reports" component={Reports} />
       <ProtectedRoute path="/reorder" component={ReorderPage} />

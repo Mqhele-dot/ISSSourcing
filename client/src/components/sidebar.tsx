@@ -31,7 +31,13 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
   const { theme, setTheme } = useTheme();
 
   const isActive = (path: string) => {
-    return location === path;
+    if (location === path) {
+      return true;
+    }
+    if (path !== "/" && location.startsWith(`${path}/`)) {
+      return true;
+    }
+    return false;
   };
 
   const NavItem = ({ path, icon, children }: { path: string, icon: React.ReactNode, children: React.ReactNode }) => {
@@ -131,6 +137,10 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             </NavItem>
 
             <SectionTitle>Logistics</SectionTitle>
+            <NavItem path="/logistics" icon={<Building className="mr-3 h-5 w-5" />}>
+              Shipments
+            </NavItem>
+
             <NavItem path="/warehouses" icon={<Building className="mr-3 h-5 w-5" />}>
               Warehouses
             </NavItem>
@@ -140,11 +150,15 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             </NavItem>
 
             <SectionTitle>Exceptions</SectionTitle>
-            <NavItem path="/real-time-updates" icon={<Activity className="mr-3 h-5 w-5" />}>
-              Exception Monitor
+            <NavItem path="/exceptions" icon={<Activity className="mr-3 h-5 w-5" />}>
+              Exceptions
             </NavItem>
 
             <SectionTitle>Integrations</SectionTitle>
+            <NavItem path="/integrations" icon={<FileUp className="mr-3 h-5 w-5" />}>
+              Connectors
+            </NavItem>
+
             <NavItem path="/document-extractor" icon={<FileUp className="mr-3 h-5 w-5" />}>
               Document Extractor
             </NavItem>
