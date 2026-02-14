@@ -11,21 +11,38 @@ import { PaymentsList } from "@/components/billing/payments-list";
 import { InvoiceDialog } from "@/components/billing/invoice-dialog";
 import { PaymentDialog } from "@/components/billing/payment-dialog";
 
+type BillingInvoice = {
+  id: number;
+  status: string;
+  total: number;
+  amountPaid: number;
+  invoiceNumber?: string | null;
+  customerId: number;
+  dueDate: string | Date;
+  createdAt: string | Date;
+  items?: Array<Record<string, unknown>>;
+};
+
+type BillingPayment = {
+  id: number;
+  invoiceId: number;
+};
+
 export default function BillingPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("invoices");
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<BillingInvoice | null>(null);
   
   // Fetch invoices with nested customer data
   const { 
     data: invoices = [], 
     isLoading: isLoadingInvoices, 
     refetch: refetchInvoices 
-  } = useQuery({
+  } = useQuery<BillingInvoice[]>({
     queryKey: ["/api/invoices"],
-    queryFn: getQueryFn(),
+    queryFn: getQueryFn({ on401: "throw" }),
   });
   
   // Fetch payments with nested invoice data
@@ -33,9 +50,9 @@ export default function BillingPage() {
     data: payments = [], 
     isLoading: isLoadingPayments, 
     refetch: refetchPayments 
-  } = useQuery({
+  } = useQuery<BillingPayment[]>({
     queryKey: ["/api/payments"],
-    queryFn: getQueryFn(),
+    queryFn: getQueryFn({ on401: "throw" }),
   });
   
   // Handle dialog open/close and operations
@@ -44,12 +61,12 @@ export default function BillingPage() {
     setInvoiceDialogOpen(true);
   };
   
-  const handleEditInvoice = (invoice) => {
+  const handleEditInvoice = (invoice: BillingInvoice) => {
     setSelectedInvoice(invoice);
     setInvoiceDialogOpen(true);
   };
   
-  const handleInvoiceDialogClose = (success) => {
+  const handleInvoiceDialogClose = (success: boolean) => {
     setInvoiceDialogOpen(false);
     if (success) {
       refetchInvoices();
@@ -66,7 +83,7 @@ export default function BillingPage() {
     setPaymentDialogOpen(true);
   };
   
-  const handlePaymentDialogClose = (success) => {
+  const handlePaymentDialogClose = (success: boolean) => {
     setPaymentDialogOpen(false);
     if (success) {
       refetchPayments();
@@ -132,7 +149,9 @@ export default function BillingPage() {
             <InvoicesList
               invoices={invoices}
               onRefresh={refetchInvoices}
-              onEdit={handleEditInvoice}
+              onCreateInvoice={handleCreateInvoice}
+              onPayInvoice={() => setPaymentDialogOpen(true)}
+              onEditInvoice={handleEditInvoice}
             />
           )}
         </TabsContent>

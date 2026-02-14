@@ -9,12 +9,21 @@ import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
 import { downloadFile, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { type ReportFilter, type Category, type InventoryItem, type InventoryStats, type Warehouse, type Supplier, DocumentType, ReportType } from "@shared/schema";
+import { type ReportFilter, type Category, type InventoryItem, type InventoryStats, type Warehouse, type Supplier, DocumentType } from "@shared/schema";
 import { ReportFilters } from "@/components/reports/report-filters";
+
+type ReportTab =
+  | "inventory"
+  | "low-stock"
+  | "value"
+  | "purchase-orders"
+  | "purchase-requisitions"
+  | "suppliers"
+  | "reorder-requests";
 
 export default function Reports() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<ReportType>("inventory");
+  const [activeTab, setActiveTab] = useState<ReportTab>("inventory");
   const [exportFormat, setExportFormat] = useState<DocumentType>("pdf");
   const [filter, setFilter] = useState<ReportFilter>({});
 
@@ -163,7 +172,7 @@ export default function Reports() {
   };
 
   // Helper function to get report title
-  const getReportTitle = (reportType: ReportType): string => {
+  const getReportTitle = (reportType: ReportTab): string => {
     switch (reportType) {
       case "inventory":
         return "Inventory Report";
@@ -225,7 +234,7 @@ export default function Reports() {
         </div>
       </div>
       
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportType)} className="mb-6">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportTab)} className="mb-6">
         <TabsList className="mb-4">
           <TabsTrigger value="inventory" className="flex items-center">
             <FileText className="mr-2 h-4 w-4" />

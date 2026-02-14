@@ -70,7 +70,7 @@ export interface IStorage {
   getUserByResetToken(token: string): Promise<User | undefined>;
   getUserCustomRoleId(userId: number): Promise<number | null>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
+  updateUser(id: number, user: Partial<User>): Promise<User | undefined>;
   updateProfilePicture(userId: number, profilePictureUrl: string | null): Promise<User>;
   getUserPreferences(userId: number): Promise<UserPreference | undefined>;
   updateUserPreferences(userId: number, preferences: Partial<InsertUserPreference>): Promise<UserPreference | undefined>;
@@ -1709,7 +1709,7 @@ export class MemStorage implements IStorage {
     return user;
   }
   
-  async updateUser(id: number, updateData: Partial<InsertUser>): Promise<User | undefined> {
+  async updateUser(id: number, updateData: Partial<User>): Promise<User | undefined> {
     const existingUser = this.users.get(id);
     if (!existingUser) return undefined;
     
@@ -5719,7 +5719,7 @@ export class DatabaseStorage implements IStorage {
     return newUser;
   }
 
-  async updateUser(id: number, userData: Partial<InsertUser>): Promise<User | undefined> {
+  async updateUser(id: number, userData: Partial<User>): Promise<User | undefined> {
     const [updatedUser] = await db
       .update(users)
       .set({ ...userData, updatedAt: new Date() })
@@ -5938,7 +5938,7 @@ export class DatabaseStorage implements IStorage {
     return this.memStorage.getUserCustomRoleId(userId);
   }
   
-  async updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined> {
+  async updateUser(id: number, user: Partial<User>): Promise<User | undefined> {
     try {
       const [updatedUser] = await db
         .update(users)

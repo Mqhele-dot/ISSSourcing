@@ -78,7 +78,7 @@ function ensureRole(role: string | string[]) {
 
     const roles = Array.isArray(role) ? role : [role];
     
-    if (roles.includes(req.user.role)) {
+    if (typeof req.user.role === "string" && roles.includes(req.user.role)) {
       return next();
     }
     
@@ -333,10 +333,6 @@ export function setupAuth(app: Express) {
     
     // Don't send sensitive data to client
     const safeUser = { ...req.user };
-    delete safeUser.password;
-    delete safeUser.twoFactorSecret;
-    delete safeUser.passwordResetToken;
-    delete safeUser.passwordResetExpires;
     
     res.json({
       ...safeUser,
@@ -684,10 +680,6 @@ export function setupAuth(app: Express) {
       
       // Don't send sensitive data to client
       const safeUser = { ...req.user };
-      delete safeUser.password;
-      delete safeUser.twoFactorSecret;
-      delete safeUser.passwordResetToken;
-      delete safeUser.passwordResetExpires;
       
       res.json({ 
         message: "Two-factor authentication successful",

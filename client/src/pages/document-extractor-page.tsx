@@ -73,6 +73,20 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
+async function postFormData(url: string, formData: FormData) {
+  const response = await fetch(url, {
+    method: 'POST',
+    body: formData,
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
 type SupportedFormats = {
   supportedFileTypes: string[];
   supportedExportFormats: string[];
@@ -160,12 +174,7 @@ const DocumentExtractorPage: React.FC = () => {
   // Single file upload mutation
   const singleFileUploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      const response = await apiRequest('POST', '/api/document-extractor/upload', formData, {
-        headers: {
-          // Don't set Content-Type here, let the browser set it with the boundary
-        },
-      });
-      return response.json();
+      return postFormData('/api/document-extractor/upload', formData);
     },
     onSuccess: (data: ExtractionResult) => {
       setExtractionResult(data);
@@ -187,12 +196,7 @@ const DocumentExtractorPage: React.FC = () => {
   // Batch files upload mutation
   const batchFilesUploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      const response = await apiRequest('POST', '/api/document-extractor/batch-upload', formData, {
-        headers: {
-          // Don't set Content-Type here, let the browser set it with the boundary
-        },
-      });
-      return response.json();
+      return postFormData('/api/document-extractor/batch-upload', formData);
     },
     onSuccess: (data: BatchExtractionResult) => {
       setBatchExtractionResult(data);
@@ -240,12 +244,7 @@ const DocumentExtractorPage: React.FC = () => {
   // Database import mutation
   const databaseImportMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      const response = await apiRequest('POST', '/api/document-extractor/import-to-database', formData, {
-        headers: {
-          // Don't set Content-Type here, let the browser set it with the boundary
-        },
-      });
-      return response.json();
+      return postFormData('/api/document-extractor/import-to-database', formData);
     },
     onError: (error: Error) => {
       toast({
@@ -782,7 +781,7 @@ const DocumentExtractorPage: React.FC = () => {
                                       <TableHeader>
                                         <TableRow>
                                           {result.data.columns ? (
-                                            result.data.columns.map((column, colIndex) => (
+                                            result.data.columns.map((column: string, colIndex: number) => (
                                               <TableHead key={colIndex}>{column}</TableHead>
                                             ))
                                           ) : (
@@ -793,7 +792,7 @@ const DocumentExtractorPage: React.FC = () => {
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
-                                        {result.data.data.slice(0, 5).map((row, rowIndex) => (
+                                        {result.data.data.slice(0, 5).map((row: Record<string, unknown>, rowIndex: number) => (
                                           <TableRow key={rowIndex}>
                                             {Object.entries(row).map(([key, value], cellIndex) => (
                                               <TableCell key={cellIndex}>
@@ -945,7 +944,7 @@ const DocumentExtractorPage: React.FC = () => {
                                       <TableHeader>
                                         <TableRow>
                                           {result.data.columns ? (
-                                            result.data.columns.map((column, colIndex) => (
+                                            result.data.columns.map((column: string, colIndex: number) => (
                                               <TableHead key={colIndex}>{column}</TableHead>
                                             ))
                                           ) : (
@@ -956,7 +955,7 @@ const DocumentExtractorPage: React.FC = () => {
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
-                                        {result.data.data.slice(0, 5).map((row, rowIndex) => (
+                                        {result.data.data.slice(0, 5).map((row: Record<string, unknown>, rowIndex: number) => (
                                           <TableRow key={rowIndex}>
                                             {Object.entries(row).map(([key, value], cellIndex) => (
                                               <TableCell key={cellIndex}>

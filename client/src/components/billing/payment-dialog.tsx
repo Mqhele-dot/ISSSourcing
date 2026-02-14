@@ -63,9 +63,28 @@ const paymentFormSchema = z.object({
 
 type PaymentFormValues = z.infer<typeof paymentFormSchema>;
 
-export function PaymentDialog({ open, onClose, invoices }) {
+type PaymentInvoiceOption = {
+  id: number;
+  status: string;
+  total: number;
+  amountPaid: number;
+  invoiceNumber?: string | null;
+  dueDate: string | Date;
+  customerId: number;
+  customer?: {
+    name?: string;
+  } | null;
+};
+
+type PaymentDialogProps = {
+  open: boolean;
+  onClose: (saved: boolean) => void;
+  invoices: PaymentInvoiceOption[];
+};
+
+export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
   const { toast } = useToast();
-  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<PaymentInvoiceOption | null>(null);
   
   // Default form values
   const defaultValues: Partial<PaymentFormValues> = {
@@ -85,7 +104,7 @@ export function PaymentDialog({ open, onClose, invoices }) {
   
   // Update the amount when invoice changes
   const handleInvoiceChange = (invoiceId: number) => {
-    const invoice = invoices.find(inv => inv.id === invoiceId);
+    const invoice = invoices.find((inv: PaymentInvoiceOption) => inv.id === invoiceId);
     setSelectedInvoice(invoice);
     
     if (invoice) {
@@ -97,12 +116,12 @@ export function PaymentDialog({ open, onClose, invoices }) {
   // Get invoice options with status badges
   const getInvoiceOptions = () => {
     return invoices
-      .filter(invoice => 
+      .filter((invoice: PaymentInvoiceOption) => 
         invoice.status !== "PAID" && 
         invoice.status !== "CANCELLED" && 
         invoice.status !== "VOID"
       )
-      .map(invoice => ({
+      .map((invoice: PaymentInvoiceOption) => ({
         id: invoice.id,
         label: `#${invoice.invoiceNumber || invoice.id} - ${format(new Date(invoice.dueDate), "MMM d, yyyy")}`,
         dueAmount: invoice.total - (invoice.amountPaid || 0),
@@ -189,7 +208,7 @@ export function PaymentDialog({ open, onClose, invoices }) {
   // Create payment with Stripe
   const processPaymentWithStripe = () => {
     const values = form.getValues();
-    const invoice = invoices.find(invoice => invoice.id === values.invoiceId);
+    const invoice = invoices.find((invoice: PaymentInvoiceOption) => invoice.id === values.invoiceId);
     
     // Check if we have Stripe keys configured
     if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
@@ -260,7 +279,7 @@ export function PaymentDialog({ open, onClose, invoices }) {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {getInvoiceOptions().map((option) => (
+                      {getInvoiceOptions().map((option: { id: number; label: string; dueAmount: number; status: string; customerName: string }) => (
                         <SelectItem
                           key={option.id}
                           value={option.id.toString()}

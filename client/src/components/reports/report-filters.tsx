@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, addDays, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
-import { type ReportFilter, type Category, type Warehouse, type Supplier, type ReportType } from "@shared/schema";
+import { type ReportFilter, type Category, type Warehouse, type Supplier } from "@shared/schema";
 
 interface ReportFiltersProps {
   filter: ReportFilter;
@@ -15,7 +15,7 @@ interface ReportFiltersProps {
   categories?: Category[];
   warehouses?: Warehouse[];
   suppliers?: Supplier[];
-  reportType: ReportType;
+  reportType: string;
 }
 
 export function ReportFilters({ 
@@ -26,6 +26,7 @@ export function ReportFilters({
   suppliers,
   reportType 
 }: ReportFiltersProps) {
+  const reportTypeKey = reportType as string;
   const [dateRange, setDateRange] = useState<{
     from: Date | undefined;
     to: Date | undefined;
@@ -170,7 +171,7 @@ export function ReportFilters({
         </div>
         
         {/* Category filter - for inventory reports */}
-        {(reportType === "inventory" || reportType === "low-stock" || reportType === "value") && categories && categories.length > 0 && (
+        {(["inventory", "low-stock", "value"].includes(reportTypeKey)) && categories && categories.length > 0 && (
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Category</div>
             <Select
@@ -198,7 +199,7 @@ export function ReportFilters({
         )}
         
         {/* Warehouse filter - for inventory and reorder reports */}
-        {(reportType === "inventory" || reportType === "reorder-requests") && warehouses && warehouses.length > 0 && (
+        {(["inventory", "reorder-requests", "reorder_requests"].includes(reportTypeKey)) && warehouses && warehouses.length > 0 && (
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Warehouse</div>
             <Select
@@ -226,7 +227,7 @@ export function ReportFilters({
         )}
         
         {/* Supplier filter - for orders, requisitions, and reorder requests */}
-        {(reportType === "purchase-orders" || reportType === "purchase-requisitions" || reportType === "reorder-requests") && 
+        {(["purchase-orders", "purchase_orders", "purchase-requisitions", "purchase_requisitions", "reorder-requests", "reorder_requests"].includes(reportTypeKey)) && 
           suppliers && suppliers.length > 0 && (
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Supplier</div>
@@ -255,7 +256,7 @@ export function ReportFilters({
         )}
         
         {/* Status filter - for orders, requisitions, and reorder requests */}
-        {(reportType === "purchase-orders" || reportType === "purchase-requisitions" || reportType === "reorder-requests") && (
+        {(["purchase-orders", "purchase_orders", "purchase-requisitions", "purchase_requisitions", "reorder-requests", "reorder_requests"].includes(reportTypeKey)) && (
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Status</div>
             <Select
@@ -272,7 +273,7 @@ export function ReportFilters({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">All statuses</SelectItem>
-                {reportType === "purchase-orders" && (
+                {(["purchase-orders", "purchase_orders"].includes(reportTypeKey)) && (
                   <>
                     <SelectItem value="DRAFT">Draft</SelectItem>
                     <SelectItem value="SENT">Sent</SelectItem>
@@ -283,7 +284,7 @@ export function ReportFilters({
                     <SelectItem value="CANCELLED">Cancelled</SelectItem>
                   </>
                 )}
-                {reportType === "purchase-requisitions" && (
+                {(["purchase-requisitions", "purchase_requisitions"].includes(reportTypeKey)) && (
                   <>
                     <SelectItem value="DRAFT">Draft</SelectItem>
                     <SelectItem value="PENDING">Pending</SelectItem>
@@ -292,7 +293,7 @@ export function ReportFilters({
                     <SelectItem value="CONVERTED">Converted</SelectItem>
                   </>
                 )}
-                {reportType === "reorder-requests" && (
+                {(["reorder-requests", "reorder_requests"].includes(reportTypeKey)) && (
                   <>
                     <SelectItem value="PENDING">Pending</SelectItem>
                     <SelectItem value="APPROVED">Approved</SelectItem>

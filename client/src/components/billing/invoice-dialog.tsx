@@ -107,18 +107,50 @@ const invoiceItemSchema = z.object({
 
 type InvoiceItemValues = z.infer<typeof invoiceItemSchema>;
 
-export function InvoiceDialog({ open, onClose, invoice }) {
+type InvoiceLineItem = InvoiceItemValues & {
+  id?: number;
+  totalPrice: number;
+  taxAmount?: number | null;
+};
+
+type InvoiceDialogInvoice = InvoiceFormValues & {
+  id: number;
+  createdAt: string | Date;
+  invoiceNumber?: string | null;
+  amountPaid: number;
+  total: number;
+  items: InvoiceLineItem[];
+};
+
+type InventoryOption = {
+  id: number;
+  name: string;
+  price: number;
+};
+
+type CustomerOption = {
+  id: number;
+  name: string;
+};
+
+type InvoiceDialogProps = {
+  open: boolean;
+  onClose: (saved: boolean) => void;
+  invoice?: InvoiceDialogInvoice | null;
+};
+
+export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
   const { toast } = useToast();
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<InvoiceLineItem[]>([]);
   const [newItemDialogOpen, setNewItemDialogOpen] = useState(false);
   
   // Calculate totals
-  const calculateSubtotal = (items) => {
-    return items.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+  const calculateSubtotal = (lineItems: InvoiceLineItem[]) => {
+    return lineItems.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
   };
   
-  const calculateTaxTotal = (items) => {
-    return items.reduce((sum, item) => sum + (item.taxAmount || 0), 0);
+  const calculateTaxTotal = (lineItems: InvoiceLineItem[]) => {
+    return lineItems.reduce((sum, item) => sum + (item.taxAmount || 0), 0);
   };
   
   // Calculate item total price
@@ -144,27 +176,27 @@ export function InvoiceDialog({ open, onClose, invoice }) {
   };
   
   // Fetch inventory items query
-  const { data: inventoryItems = [] } = useQuery({
+  const { data: inventoryItems = [] } = useQuery<InventoryOption[]>({
     queryKey: ["/api/inventory"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/inventory");
       if (!response.ok) {
         throw new Error("Failed to fetch inventory items");
       }
-      return response.json();
+      return (await response.json()) as InventoryOption[];
     },
     enabled: open,
   });
   
   // Fetch customers query
-  const { data: customers = [] } = useQuery({
+  const { data: customers = [] } = useQuery<CustomerOption[]>({
     queryKey: ["/api/customers"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/customers");
       if (!response.ok) {
         throw new Error("Failed to fetch customers");
       }
-      return response.json();
+      return (await response.json()) as CustomerOption[];
     },
     enabled: open,
   });
@@ -222,8 +254,7 @@ export function InvoiceDialog({ open, onClose, invoice }) {
       const taxRate = parseFloat(value.taxRate?.toString() || "0");
       
       if (quantity && unitPrice) {
-        const { totalPrice, taxAmount } = calculateItemTotalPrice(quantity, unitPrice, discount, taxRate);
-        newItemForm.setValue("totalPrice", totalPrice);
+        calculateItemTotalPrice(quantity, unitPrice, discount, taxRate);
       }
     });
     
@@ -658,10 +689,10 @@ export function InvoiceDialog({ open, onClose, invoice }) {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    items.map((item, index) => (
+                    items.map((item: InvoiceLineItem, index) => (
                       <TableRow key={index}>
                         <TableCell>
-                          {inventoryItems.find(invItem => invItem.id === item.itemId)?.name || `Item #${item.itemId}`}
+                          {inventoryItems.find((invItem) => invItem.id === item.itemId)?.name || `Item #${item.itemId}`}
                         </TableCell>
                         <TableCell className="max-w-[200px] truncate">
                           {item.description}

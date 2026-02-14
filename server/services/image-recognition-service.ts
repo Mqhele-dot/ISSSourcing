@@ -114,6 +114,24 @@ async function simulateImageAnalysis(imageBuffer: Buffer): Promise<RecognizedIte
     const category = await storage.getCategory(recognizedItem.categoryId);
     categoryName = category?.name;
   }
+
+  const rawDimensions =
+    typeof recognizedItem.dimensions === "object" && recognizedItem.dimensions !== null
+      ? (recognizedItem.dimensions as Record<string, unknown>)
+      : null;
+  const baseLength =
+    rawDimensions && typeof rawDimensions.length === "number" ? rawDimensions.length : undefined;
+  const baseWidth =
+    rawDimensions && typeof rawDimensions.width === "number" ? rawDimensions.width : undefined;
+  const baseHeight =
+    rawDimensions && typeof rawDimensions.height === "number" ? rawDimensions.height : undefined;
+  const baseUnit =
+    rawDimensions && typeof rawDimensions.unit === "string" ? rawDimensions.unit : undefined;
+
+  const rawAttributes =
+    typeof recognizedItem.customFields === "object" && recognizedItem.customFields !== null
+      ? (recognizedItem.customFields as Record<string, unknown>)
+      : undefined;
   
   // Find some "similar" items for recommendations
   const similarItems = items
@@ -131,24 +149,23 @@ async function simulateImageAnalysis(imageBuffer: Buffer): Promise<RecognizedIte
   return {
     name: recognizedItem.name,
     sku: recognizedItem.sku,
-    description: recognizedItem.description,
+    description: recognizedItem.description ?? undefined,
     price: recognizedItem.price,
     quantity: 1, // Default suggestion for quantity is 1
     category: categoryName,
     categoryId: recognizedItem.categoryId,
-    barcode: recognizedItem.barcode,
-    dimensions: recognizedItem.dimensions ? {
-      ...recognizedItem.dimensions,
+    barcode: recognizedItem.barcode ?? undefined,
+    dimensions: rawDimensions ? {
       // Add slight variations to simulate AI inference
-      length: recognizedItem.dimensions.length ? 
-        Number((recognizedItem.dimensions.length * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
-      width: recognizedItem.dimensions.width ? 
-        Number((recognizedItem.dimensions.width * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
-      height: recognizedItem.dimensions.height ? 
-        Number((recognizedItem.dimensions.height * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
-      unit: recognizedItem.dimensions.unit
+      length: baseLength ?
+        Number((baseLength * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
+      width: baseWidth ?
+        Number((baseWidth * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
+      height: baseHeight ?
+        Number((baseHeight * (0.95 + Math.random() * 0.1)).toFixed(1)) : undefined,
+      unit: baseUnit,
     } : undefined,
-    attributes: recognizedItem.attributes,
+    attributes: rawAttributes,
     confidence: Number((0.5 + Math.random() * 0.25).toFixed(2)), // Lower confidence for simulation
     similarItems
   };
