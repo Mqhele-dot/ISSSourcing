@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { pool } from "./db";
+import { getDemoDataSummary, getSchemaStatus, resetAndSeedDemoData } from "./seed";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { Buffer } from "buffer";
@@ -4138,6 +4140,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/health", (_req, res) => {
     res.json(getHealthPayload());
   });
+
+  const getDeepHealthPayload = async () => {
+    const startedAt = Date.now();
+    let databaseOk = true;
+    let databaseError: string | null = null;
+
+    try {
+      await pool.query("SELECT 1");
+    } catch (error) {
+      databaseOk = false;
+      databaseError = error instanceof Error ? error.message : "Unknown database error";
+    }
+
+    let schemaStatus = {
+      ok: false,
+      status: "schema_incomplete" as const,
+      missingTables: [] as string[],
+    };
+    let seedSummary = {
+      users: 0,
+      warehouses: 0,
+      suppliers: 0,
+      items: 0,
+      settings: 0,
+    };
+
+    if (databaseOk) {
+      schemaStatus = await getSchemaStatus();
+      seedSummary = await getDemoDataSummary();
+    }
+
+    const overallStatus = databaseOk && schemaStatus.ok ? "ok" : "degraded";
+
+    return {
+      status: overallStatus,
+      uptimeSeconds: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+      responseTimeMs: Date.now() - startedAt,
+      checks: {
+        database: {
+          ok: databaseOk,
+          error: databaseError,
+        },
+        schema: schemaStatus,
+        seed: seedSummary,
+      },
+      migrationsStatus: schemaStatus.status,
+    };
+  };
+
+  app.get("/health/deep", async (_req, res) => {
+    const payload = await getDeepHealthPayload();
+    res.status(payload.status === "ok" ? 200 : 503).json(payload);
+  });
+
+  app.get("/api/health/deep", async (_req, res) => {
+    const payload = await getDeepHealthPayload();
+    res.status(payload.status === "ok" ? 200 : 503).json(payload);
+  });
+
+  const handleDemoReset = async (_req: Request, res: Response) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(404).json({ message: "Not found" });
+    }
+
+    try {
+      const summary = await resetAndSeedDemoData();
+      return res.json(summary);
+    } catch (error) {
+      console.error("Failed to reset demo data:", error);
+      return res.status(500).json({ message: "Failed to reset demo data" });
+    }
+  };
+
+  app.post("/admin/demo/reset", auth.ensureAuthenticated, auth.ensureAdmin, handleDemoReset);
+  app.post("/api/admin/demo/reset", auth.ensureAuthenticated, auth.ensureAdmin, handleDemoReset);
   
   // Initialize image recognition routes
   registerImageRecognitionRoutes(app);

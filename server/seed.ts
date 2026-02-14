@@ -1,7 +1,7 @@
 import { randomBytes, scrypt } from "node:crypto";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   appSettings,
   categories,
@@ -19,15 +19,65 @@ import { db, pool } from "./db";
 
 const scryptAsync = promisify(scrypt);
 
-type SeedSummary = {
-  seeded: boolean;
-  usersCreated: number;
-  categoriesCreated: number;
-  suppliersCreated: number;
-  warehousesCreated: number;
-  inventoryItemsCreated: number;
-  settingsCreated: number;
+export type DemoDataSummary = {
+  users: number;
+  warehouses: number;
+  suppliers: number;
+  items: number;
+  settings: number;
 };
+
+export type SchemaStatus = {
+  ok: boolean;
+  missingTables: string[];
+  status: "schema_ok" | "schema_incomplete";
+};
+
+const DEFAULT_CATEGORIES: InsertCategory[] = [
+  { name: "Electronics", description: "Devices, accessories, and components" },
+  { name: "Office Supplies", description: "Everyday office essentials" },
+  { name: "Furniture", description: "Workspace furniture and fixtures" },
+  { name: "Networking", description: "Network and connectivity equipment" },
+];
+
+const DEFAULT_SUPPLIERS: InsertSupplier[] = [
+  {
+    name: "Tech Solutions Inc.",
+    contactName: "John Smith",
+    email: "john@techsolutions.example",
+    phone: "+1-555-1001",
+    address: "123 Tech Blvd, San Francisco, CA",
+    notes: "Primary electronics supplier",
+  },
+  {
+    name: "Office Supply Co.",
+    contactName: "Jane Doe",
+    email: "jane@officesupply.example",
+    phone: "+1-555-1002",
+    address: "456 Office Park, Chicago, IL",
+    notes: "Stationery and printing supplies",
+  },
+  {
+    name: "Furniture Warehouse",
+    contactName: "Robert Johnson",
+    email: "robert@furniturewarehouse.example",
+    phone: "+1-555-1003",
+    address: "789 Warehouse Ave, Atlanta, GA",
+    notes: "Furniture and storage fixtures",
+  },
+];
+
+const REQUIRED_SCHEMA_TABLES = [
+  "users",
+  "warehouses",
+  "suppliers",
+  "inventory_items",
+  "app_settings",
+];
+
+function toCount(value: unknown): number {
+  return Number(value ?? 0);
+}
 
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -35,31 +85,32 @@ async function hashPassword(password: string): Promise<string> {
   return `${hash.toString("hex")}.${salt}`;
 }
 
-async function ensureDefaultWarehouse(summary: SeedSummary): Promise<number> {
-  const [existingDefault] = await db
+async function getOrCreateDefaultWarehouse(): Promise<number> {
+  const [defaultWarehouse] = await db
     .select({ id: warehouses.id })
     .from(warehouses)
     .where(eq(warehouses.isDefault, true))
     .limit(1);
 
-  if (existingDefault) {
-    return existingDefault.id;
+  if (defaultWarehouse) {
+    return defaultWarehouse.id;
   }
 
-  const [existingWarehouse] = await db
+  const [mainWarehouse] = await db
     .select({ id: warehouses.id })
     .from(warehouses)
+    .where(eq(warehouses.name, "Main Warehouse"))
     .limit(1);
 
-  if (existingWarehouse) {
+  if (mainWarehouse) {
     await db
       .update(warehouses)
       .set({ isDefault: true, updatedAt: new Date() })
-      .where(eq(warehouses.id, existingWarehouse.id));
-    return existingWarehouse.id;
+      .where(eq(warehouses.id, mainWarehouse.id));
+    return mainWarehouse.id;
   }
 
-  const defaultWarehouse: InsertWarehouse = {
+  const warehousePayload: InsertWarehouse = {
     name: "Main Warehouse",
     location: "HQ",
     address: "100 Inventory Way",
@@ -68,79 +119,43 @@ async function ensureDefaultWarehouse(summary: SeedSummary): Promise<number> {
     isDefault: true,
   };
 
-  const [createdWarehouse] = await db.insert(warehouses).values(defaultWarehouse).returning({
+  const [createdWarehouse] = await db.insert(warehouses).values(warehousePayload).returning({
     id: warehouses.id,
   });
 
-  summary.warehousesCreated += 1;
   return createdWarehouse.id;
 }
 
-async function ensureCategories(summary: SeedSummary): Promise<Map<string, number>> {
-  const existingCategories = await db
-    .select({ id: categories.id, name: categories.name })
-    .from(categories);
-
-  if (existingCategories.length === 0) {
-    const defaultCategories: InsertCategory[] = [
-      { name: "Electronics", description: "Devices, accessories, and components" },
-      { name: "Office Supplies", description: "Everyday office essentials" },
-      { name: "Furniture", description: "Workspace furniture and fixtures" },
-      { name: "Networking", description: "Network and connectivity equipment" },
-    ];
-
-    await db.insert(categories).values(defaultCategories);
-    summary.categoriesCreated += defaultCategories.length;
-  }
+async function ensureCategories(): Promise<Map<string, number>> {
+  await db
+    .insert(categories)
+    .values(DEFAULT_CATEGORIES)
+    .onConflictDoNothing({ target: categories.name });
 
   const rows = await db.select({ id: categories.id, name: categories.name }).from(categories);
   return new Map(rows.map((row) => [row.name, row.id]));
 }
 
-async function ensureSuppliers(summary: SeedSummary): Promise<Map<string, number>> {
-  const existingSuppliers = await db
-    .select({ id: suppliers.id, name: suppliers.name })
-    .from(suppliers);
+async function ensureSuppliers(): Promise<Map<string, number>> {
+  for (const supplier of DEFAULT_SUPPLIERS) {
+    const [existing] = await db
+      .select({ id: suppliers.id })
+      .from(suppliers)
+      .where(eq(suppliers.name, supplier.name))
+      .limit(1);
 
-  if (existingSuppliers.length === 0) {
-    const defaultSuppliers: InsertSupplier[] = [
-      {
-        name: "Tech Solutions Inc.",
-        contactName: "John Smith",
-        email: "john@techsolutions.example",
-        phone: "+1-555-1001",
-        address: "123 Tech Blvd, San Francisco, CA",
-        notes: "Primary electronics supplier",
-      },
-      {
-        name: "Office Supply Co.",
-        contactName: "Jane Doe",
-        email: "jane@officesupply.example",
-        phone: "+1-555-1002",
-        address: "456 Office Park, Chicago, IL",
-        notes: "Stationery and printing supplies",
-      },
-      {
-        name: "Furniture Warehouse",
-        contactName: "Robert Johnson",
-        email: "robert@furniturewarehouse.example",
-        phone: "+1-555-1003",
-        address: "789 Warehouse Ave, Atlanta, GA",
-        notes: "Furniture and storage fixtures",
-      },
-    ];
-
-    await db.insert(suppliers).values(defaultSuppliers);
-    summary.suppliersCreated += defaultSuppliers.length;
+    if (!existing) {
+      await db.insert(suppliers).values(supplier);
+    }
   }
 
   const rows = await db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers);
   return new Map(rows.map((row) => [row.name, row.id]));
 }
 
-async function ensureSettings(summary: SeedSummary): Promise<void> {
-  const [settings] = await db.select({ id: appSettings.id }).from(appSettings).limit(1);
-  if (settings) {
+async function ensureSettings(): Promise<void> {
+  const [existingSettings] = await db.select({ id: appSettings.id }).from(appSettings).limit(1);
+  if (existingSettings) {
     return;
   }
 
@@ -161,49 +176,29 @@ async function ensureSettings(summary: SeedSummary): Promise<void> {
   };
 
   await db.insert(appSettings).values(defaultSettings);
-  summary.settingsCreated += 1;
 }
 
-async function ensureAdminUser(summary: SeedSummary): Promise<void> {
-  const [admin] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.username, "admin"))
-    .limit(1);
-
-  if (admin) {
-    return;
-  }
-
+async function ensureAdminUser(): Promise<void> {
   const hashedPassword = await hashPassword("Admin123!");
-  await db.insert(users).values({
-    username: "admin",
-    email: "admin@example.com",
-    fullName: "System Administrator",
-    role: "admin",
-    emailVerified: true,
-    password: hashedPassword,
-    active: true,
-  });
-
-  summary.usersCreated += 1;
+  await db
+    .insert(users)
+    .values({
+      username: "admin",
+      email: "admin@example.com",
+      fullName: "System Administrator",
+      role: "admin",
+      emailVerified: true,
+      password: hashedPassword,
+      active: true,
+    })
+    .onConflictDoNothing({ target: users.username });
 }
 
 async function ensureInventoryItems(
   defaultWarehouseId: number,
   categoryMap: Map<string, number>,
   supplierMap: Map<string, number>,
-  summary: SeedSummary,
 ): Promise<void> {
-  const [existingItem] = await db
-    .select({ id: inventoryItems.id })
-    .from(inventoryItems)
-    .limit(1);
-
-  if (existingItem) {
-    return;
-  }
-
   const demoItems: InsertInventoryItem[] = [
     {
       name: 'MacBook Pro 16"',
@@ -249,61 +244,124 @@ async function ensureInventoryItems(
     },
   ];
 
-  await db.insert(inventoryItems).values(demoItems);
-  summary.inventoryItemsCreated += demoItems.length;
+  for (const item of demoItems) {
+    await db
+      .insert(inventoryItems)
+      .values(item)
+      .onConflictDoUpdate({
+        target: inventoryItems.sku,
+        set: {
+          name: item.name,
+          description: item.description,
+          categoryId: item.categoryId,
+          supplierId: item.supplierId,
+          quantity: item.quantity,
+          price: item.price,
+          cost: item.cost,
+          lowStockThreshold: item.lowStockThreshold,
+          location: item.location,
+          defaultWarehouseId: item.defaultWarehouseId,
+          status: item.status,
+          updatedAt: new Date(),
+        },
+      });
+  }
 }
 
-export async function seedDatabase(): Promise<SeedSummary> {
-  const summary: SeedSummary = {
-    seeded: false,
-    usersCreated: 0,
-    categoriesCreated: 0,
-    suppliersCreated: 0,
-    warehousesCreated: 0,
-    inventoryItemsCreated: 0,
-    settingsCreated: 0,
+export async function getDemoDataSummary(): Promise<DemoDataSummary> {
+  const [usersCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(users);
+  const [warehousesCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(warehouses);
+  const [suppliersCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(suppliers);
+  const [itemsCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(inventoryItems);
+  const [settingsCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(appSettings);
+
+  return {
+    users: toCount(usersCount?.count),
+    warehouses: toCount(warehousesCount?.count),
+    suppliers: toCount(suppliersCount?.count),
+    items: toCount(itemsCount?.count),
+    settings: toCount(settingsCount?.count),
   };
+}
 
-  const defaultWarehouseId = await ensureDefaultWarehouse(summary);
-  const categoryMap = await ensureCategories(summary);
-  const supplierMap = await ensureSuppliers(summary);
-  await ensureSettings(summary);
-  await ensureAdminUser(summary);
-  await ensureInventoryItems(defaultWarehouseId, categoryMap, supplierMap, summary);
+export async function getSchemaStatus(): Promise<SchemaStatus> {
+  const { rows } = await pool.query<{ table_name: string }>(
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
+  );
+  const existing = new Set(rows.map((row) => row.table_name));
+  const missingTables = REQUIRED_SCHEMA_TABLES.filter((table) => !existing.has(table));
 
-  summary.seeded =
-    summary.usersCreated > 0 ||
-    summary.categoriesCreated > 0 ||
-    summary.suppliersCreated > 0 ||
-    summary.warehousesCreated > 0 ||
-    summary.inventoryItemsCreated > 0 ||
-    summary.settingsCreated > 0;
+  return {
+    ok: missingTables.length === 0,
+    missingTables,
+    status: missingTables.length === 0 ? "schema_ok" : "schema_incomplete",
+  };
+}
 
-  return summary;
+export async function seedDatabase(): Promise<DemoDataSummary> {
+  const defaultWarehouseId = await getOrCreateDefaultWarehouse();
+  const categoryMap = await ensureCategories();
+  const supplierMap = await ensureSuppliers();
+
+  await ensureSettings();
+  await ensureAdminUser();
+  await ensureInventoryItems(defaultWarehouseId, categoryMap, supplierMap);
+
+  return getDemoDataSummary();
 }
 
 export async function seedDatabaseIfEmpty(): Promise<boolean> {
-  const [existingUser] = await db.select({ id: users.id }).from(users).limit(1);
-  const [existingItem] = await db.select({ id: inventoryItems.id }).from(inventoryItems).limit(1);
+  const summary = await getDemoDataSummary();
+  const hasData = summary.users > 0 || summary.items > 0;
 
-  if (existingUser || existingItem) {
+  if (hasData) {
     return false;
   }
 
-  const summary = await seedDatabase();
-  return summary.seeded;
+  await seedDatabase();
+  return true;
+}
+
+async function truncatePublicTables(): Promise<void> {
+  const { rows } = await pool.query<{ tablename: string }>(
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
+  );
+
+  const tableNames = rows
+    .map((row) => row.tablename)
+    .filter((name) => name !== "__drizzle_migrations");
+
+  if (tableNames.length === 0) {
+    return;
+  }
+
+  const quotedNames = tableNames.map((name) => `"${name}"`).join(", ");
+  await pool.query(`TRUNCATE TABLE ${quotedNames} RESTART IDENTITY CASCADE`);
+}
+
+export async function resetAndSeedDemoData(): Promise<DemoDataSummary> {
+  await truncatePublicTables();
+  return seedDatabase();
 }
 
 async function runSeedCli(): Promise<void> {
+  const shouldReset = process.argv.includes("--reset");
+
   try {
-    const summary = await seedDatabase();
-    if (summary.seeded) {
-      console.log("Demo data seeded successfully.");
-      console.log(summary);
-      console.log("Default admin credentials: admin / Admin123!");
-    } else {
-      console.log("Database already contains seed data. No changes were made.");
-    }
+    const summary = shouldReset ? await resetAndSeedDemoData() : await seedDatabase();
+    console.log(shouldReset ? "Demo data reset complete." : "Demo data seeded successfully.");
+    console.log(summary);
+    console.log("Default admin credentials: admin / Admin123!");
   } finally {
     await pool.end();
   }

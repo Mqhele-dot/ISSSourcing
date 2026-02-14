@@ -91,21 +91,28 @@ jobs:
             echo "Typecheck passed."
           fi
 
-      - name: Smoke test health endpoint
+      - name: Smoke test health endpoints
         run: |
           set -euo pipefail
           npm run dev > /tmp/app.log 2>&1 &
           APP_PID=$!
           trap 'kill "$APP_PID" >/dev/null 2>&1 || true' EXIT
 
+          READY="false"
           for attempt in {1..40}; do
             if curl -fsS "http://127.0.0.1:5000/health" >/dev/null; then
-              echo "Health endpoint is reachable."
-              exit 0
+              READY="true"
+              break
             fi
             sleep 2
           done
 
-          echo "Health endpoint did not become ready in time."
-          cat /tmp/app.log
-          exit 1
+          if [ "$READY" != "true" ]; then
+            echo "Health endpoint did not become ready in time."
+            cat /tmp/app.log
+            exit 1
+          fi
+
+          echo "Health endpoint is reachable."
+          curl -fsS "http://127.0.0.1:5000/health/deep" >/dev/null
+          echo "Deep health endpoint is reachable."

@@ -46,6 +46,13 @@ Health endpoint for smoke tests:
 
 ```text
 GET /health
+GET /health/deep
+```
+
+Development-only demo reset endpoint:
+
+```text
+POST /admin/demo/reset
 ```
 
 ## Default environment
