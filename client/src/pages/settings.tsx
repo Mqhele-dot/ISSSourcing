@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { resetDemoData } from "@/api/client";
+import { Can } from "@/components/auth/can";
 import { GeneralSettingsForm } from "@/components/settings/general-settings-form";
 import { InventorySettingsForm } from "@/components/settings/inventory-settings-form";
 import { RealtimeSettingsForm } from "@/components/settings/realtime-settings-form";
@@ -89,14 +90,16 @@ export default function SettingsPage() {
             <p className="text-sm text-muted-foreground">
               This operation truncates current data and reseeds deterministic demo records.
             </p>
-            <Button
-              variant="destructive"
-              className="sm:w-auto"
-              onClick={() => setIsResetDialogOpen(true)}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Reset demo data
-            </Button>
+            <Can roles={["admin"]} reason="Requires Admin">
+              <Button
+                variant="destructive"
+                className="sm:w-auto"
+                onClick={() => setIsResetDialogOpen(true)}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset demo data
+              </Button>
+            </Can>
           </CardContent>
         </Card>
       )}

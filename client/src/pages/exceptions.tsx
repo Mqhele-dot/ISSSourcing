@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
+import { Can } from "@/components/auth/can";
 import {
   addExceptionComment,
   assignException,
@@ -269,33 +270,37 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                   placeholder="Assign to user"
                 />
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    disabled={saving}
-                    onClick={() =>
-                      runWithToast(
-                        async () => {
-                          await updateExceptionStatus(exception.id, nextStatus);
-                        },
-                        `Status moved to ${nextStatus}`,
-                      )
-                    }
-                  >
-                    Update status
-                  </Button>
-                  <Button
-                    disabled={saving}
-                    onClick={() =>
-                      runWithToast(
-                        async () => {
-                          await assignException(exception.id, assignee);
-                        },
-                        assignee ? `Assigned to ${assignee}` : "Assignment cleared",
-                      )
-                    }
-                  >
-                    Assign
-                  </Button>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button
+                      variant="outline"
+                      disabled={saving}
+                      onClick={() =>
+                        runWithToast(
+                          async () => {
+                            await updateExceptionStatus(exception.id, nextStatus);
+                          },
+                          `Status moved to ${nextStatus}`,
+                        )
+                      }
+                    >
+                      Update status
+                    </Button>
+                  </Can>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button
+                      disabled={saving}
+                      onClick={() =>
+                        runWithToast(
+                          async () => {
+                            await assignException(exception.id, assignee);
+                          },
+                          assignee ? `Assigned to ${assignee}` : "Assignment cleared",
+                        )
+                      }
+                    >
+                      Assign
+                    </Button>
+                  </Can>
                 </div>
               </CardContent>
             </Card>
@@ -311,20 +316,22 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                     onChange={(event) => setComment(event.target.value)}
                     placeholder="Add comment"
                   />
-                  <Button
-                    disabled={saving || !comment.trim()}
-                    onClick={() =>
-                      runWithToast(
-                        async () => {
-                          await addExceptionComment(exception.id, comment);
-                          setComment("");
-                        },
-                        "Comment added",
-                      )
-                    }
-                  >
-                    Post
-                  </Button>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button
+                      disabled={saving || !comment.trim()}
+                      onClick={() =>
+                        runWithToast(
+                          async () => {
+                            await addExceptionComment(exception.id, comment);
+                            setComment("");
+                          },
+                          "Comment added",
+                        )
+                      }
+                    >
+                      Post
+                    </Button>
+                  </Can>
                 </div>
 
                 <Table>
