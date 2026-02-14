@@ -44,6 +44,22 @@ export class ElectronBridge {
     }
     return window.electron!.on(channel, callback);
   }
+
+  async getDatabaseInfo<T = any>(): Promise<T> {
+    return this.invoke<T>('db:get-info');
+  }
+
+  async createDatabaseBackup<T = any>(): Promise<T> {
+    return this.invoke<T>('db:create-backup');
+  }
+
+  async syncDatabase<T = { success: boolean } | void>(): Promise<T> {
+    return this.invoke<T>('db:sync');
+  }
+
+  async checkNetworkStatus(): Promise<boolean> {
+    return this.invoke<boolean>('network:status');
+  }
 }
 
 // App control helpers

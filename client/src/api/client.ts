@@ -21,6 +21,7 @@ export type {
   OperationalException,
   PurchaseOrderDetail,
   PurchaseOrderListItem,
+  PurchaseReceiveResult,
   ShipmentDetail,
   ShipmentListItem,
 } from "./types";

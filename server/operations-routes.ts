@@ -240,9 +240,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     async (req: Request, res: Response) => {
       try {
         const bodyLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
-        const lines = bodyLines.map((line) => ({
-          sku: typeof line?.sku === "string" ? line.sku : "",
-          qty_received_now: Number(line?.qty_received_now ?? line?.qtyReceivedNow),
+        const lines = bodyLines.map((line: { sku?: unknown; qty_received_now?: unknown; qtyReceivedNow?: unknown }) => ({
+          sku: typeof line.sku === "string" ? line.sku : "",
+          qty_received_now: Number(line.qty_received_now ?? line.qtyReceivedNow),
         }));
 
         const result = await receiveOperationalPurchaseOrder(req.params.po, lines);

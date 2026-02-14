@@ -1,5 +1,5 @@
 import { ReactNode, createContext, useContext, useEffect, useState } from "react";
-import { appControls, isElectron } from "@/lib/electron-bridge";
+import { appControls, isElectronEnvironment } from "@/lib/electron-bridge";
 
 interface UpdateInfo {
   version: string;
@@ -30,6 +30,7 @@ interface ElectronProviderProps {
 }
 
 export const ElectronProvider = ({ children }: ElectronProviderProps) => {
+  const inElectron = isElectronEnvironment();
   const [appVersion, setAppVersion] = useState("");
   const [updateAvailable, setUpdateAvailable] = useState<UpdateInfo | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState<UpdateInfo | null>(null);
@@ -37,7 +38,7 @@ export const ElectronProvider = ({ children }: ElectronProviderProps) => {
   useEffect(() => {
     // Get application version
     const getAppVersion = async () => {
-      if (isElectron) {
+      if (inElectron) {
         const version = await appControls.getVersion();
         setAppVersion(version);
       }
@@ -46,7 +47,7 @@ export const ElectronProvider = ({ children }: ElectronProviderProps) => {
     getAppVersion();
 
     // Set up update listeners
-    if (isElectron) {
+    if (inElectron) {
       const removeUpdateAvailableListener = appControls.onUpdateAvailable((info) => {
         setUpdateAvailable(info);
       });
@@ -60,10 +61,10 @@ export const ElectronProvider = ({ children }: ElectronProviderProps) => {
         removeUpdateDownloadedListener();
       };
     }
-  }, []);
+  }, [inElectron]);
 
   const installUpdate = () => {
-    if (isElectron && updateDownloaded) {
+    if (inElectron && updateDownloaded) {
       appControls.installUpdate();
     }
   };
@@ -71,7 +72,7 @@ export const ElectronProvider = ({ children }: ElectronProviderProps) => {
   return (
     <ElectronContext.Provider
       value={{
-        isElectron,
+        isElectron: inElectron,
         appVersion,
         updateAvailable,
         updateDownloaded,
