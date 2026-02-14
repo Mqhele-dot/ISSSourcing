@@ -2,7 +2,11 @@ import type { Express, NextFunction, Request, Response } from "express";
 import {
   adjustOperationalInventory,
   getOperationalInventoryDetail,
+  getOperationalPurchaseOrderDetail,
   listOperationalInventory,
+  listOperationalPurchaseOrders,
+  receiveOperationalPurchaseOrder,
+  transitionOperationalPurchaseOrderStatus,
 } from "./operations-core";
 
 type AuthGuards = {
@@ -119,4 +123,139 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       return res.status(500).json({ message: "Failed to fetch inventory detail" });
     }
   });
+
+  app.get("/api/purchase/orders", async (req: Request, res: Response) => {
+    try {
+      const status = typeof req.query.status === "string" ? req.query.status : "";
+      const supplier = typeof req.query.supplier === "string" ? req.query.supplier : "";
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+
+      const orders = await listOperationalPurchaseOrders({ status, supplier, q });
+      res.json(orders);
+    } catch (error) {
+      console.error("Operational purchase order list error:", error);
+      res.status(500).json({ message: "Failed to fetch purchase orders" });
+    }
+  });
+
+  app.get("/api/purchase/orders/:po", async (req: Request, res: Response) => {
+    try {
+      const detail = await getOperationalPurchaseOrderDetail(req.params.po);
+      if (!detail) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+      return res.json(detail);
+    } catch (error) {
+      console.error("Operational purchase order detail error:", error);
+      return res.status(500).json({ message: "Failed to fetch purchase order detail" });
+    }
+  });
+
+  app.post(
+    "/api/purchase/orders/:po/status",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const toStatus =
+          typeof req.body?.toStatus === "string"
+            ? req.body.toStatus
+            : typeof req.body?.status === "string"
+              ? req.body.status
+              : "";
+        const detail = await transitionOperationalPurchaseOrderStatus(req.params.po, toStatus);
+        return res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "status_update_failed";
+        if (message === "po_not_found") {
+          return res.status(404).json({ message: "Purchase order not found" });
+        }
+        if (message === "invalid_target_status") {
+          return res.status(400).json({ message: "toStatus is required" });
+        }
+        if (message === "invalid_transition") {
+          return res.status(400).json({ message: "Invalid status transition" });
+        }
+        console.error("Operational purchase status update error:", error);
+        return res.status(500).json({ message: "Failed to update purchase order status" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/purchase/orders/:po/approve",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const detail = await transitionOperationalPurchaseOrderStatus(req.params.po, "approved");
+        return res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "approve_failed";
+        if (message === "po_not_found") {
+          return res.status(404).json({ message: "Purchase order not found" });
+        }
+        if (message === "invalid_transition") {
+          return res.status(400).json({ message: "Invalid status transition" });
+        }
+        console.error("Operational PO approve error:", error);
+        return res.status(500).json({ message: "Failed to approve purchase order" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/purchase/orders/:po/send",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const detail = await transitionOperationalPurchaseOrderStatus(req.params.po, "sent");
+        return res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "send_failed";
+        if (message === "po_not_found") {
+          return res.status(404).json({ message: "Purchase order not found" });
+        }
+        if (message === "invalid_transition") {
+          return res.status(400).json({ message: "Invalid status transition" });
+        }
+        console.error("Operational PO send error:", error);
+        return res.status(500).json({ message: "Failed to mark purchase order as sent" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/purchase/orders/:po/receive",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const bodyLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+        const lines = bodyLines.map((line) => ({
+          sku: typeof line?.sku === "string" ? line.sku : "",
+          qty_received_now: Number(line?.qty_received_now ?? line?.qtyReceivedNow),
+        }));
+
+        const result = await receiveOperationalPurchaseOrder(req.params.po, lines);
+        return res.json(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "receive_failed";
+        if (message === "po_not_found") {
+          return res.status(404).json({ message: "Purchase order not found" });
+        }
+        if (message === "invalid_receive_state") {
+          return res.status(400).json({ message: "Only approved/sent purchase orders can receive" });
+        }
+        if (message === "lines_required") {
+          return res.status(400).json({ message: "lines are required" });
+        }
+        if (message.startsWith("line_not_found:")) {
+          return res.status(400).json({ message: `Unknown SKU in receive payload: ${message.split(":")[1]}` });
+        }
+        if (message.startsWith("invalid_receive_qty:")) {
+          return res.status(400).json({ message: `Invalid receive quantity for SKU: ${message.split(":")[1]}` });
+        }
+        console.error("Operational purchase receive error:", error);
+        return res.status(500).json({ message: "Failed to receive purchase order lines" });
+      }
+    },
+  );
 }

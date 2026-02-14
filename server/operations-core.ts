@@ -58,6 +58,7 @@ type AdjustInventoryInput = {
   reason: string;
   ref?: string;
   createdBy?: string;
+  skipLocationValidation?: boolean;
 };
 
 type ExceptionPayload = {
@@ -282,6 +283,31 @@ export async function initializeOperationalData() {
     FROM inventory_items i
     ON CONFLICT (sku, location) DO NOTHING
   `);
+
+  const shipmentCountResult = await pool.query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM shipments`,
+  );
+  const shipmentCount = Number(shipmentCountResult.rows[0]?.count ?? "0");
+
+  if (shipmentCount === 0) {
+    await pool.query(`
+      INSERT INTO shipments (po_number, carrier, status, eta, created_at, updated_at)
+      SELECT
+        po.order_number,
+        'Demo Carrier',
+        CASE
+          WHEN lower(po.status) = 'received' THEN 'delivered'
+          WHEN lower(po.status) IN ('approved', 'sent') THEN 'in_transit'
+          ELSE 'created'
+        END AS status,
+        now() + interval '2 days' AS eta,
+        now(),
+        now()
+      FROM purchase_orders po
+      ORDER BY po.created_at DESC
+      LIMIT 10
+    `);
+  }
 }
 
 export async function listOperationalInventory(filters: InventoryFilterInput) {
@@ -613,37 +639,39 @@ export async function adjustOperationalInventory(input: AdjustInventoryInput) {
     throw new Error("sku_not_found");
   }
 
-  const locationValidation = await pool.query(
-    `
-    SELECT 1
-    FROM warehouses
-    WHERE lower(name) = lower($1)
-    LIMIT 1
-    `,
-    [normalizedLocation],
-  );
+  if (!input.skipLocationValidation) {
+    const locationValidation = await pool.query(
+      `
+      SELECT 1
+      FROM warehouses
+      WHERE lower(name) = lower($1)
+      LIMIT 1
+      `,
+      [normalizedLocation],
+    );
 
-  const existingPositionValidation = await pool.query(
-    `
-    SELECT 1
-    FROM inventory_positions
-    WHERE sku = $1
-      AND lower(location) = lower($2)
-    LIMIT 1
-    `,
-    [item.sku, normalizedLocation],
-  );
+    const existingPositionValidation = await pool.query(
+      `
+      SELECT 1
+      FROM inventory_positions
+      WHERE sku = $1
+        AND lower(location) = lower($2)
+      LIMIT 1
+      `,
+      [item.sku, normalizedLocation],
+    );
 
-  const matchesItemDefault =
-    (item.defaultLocation ?? item.location ?? "").toLowerCase() ===
-    normalizedLocation.toLowerCase();
+    const matchesItemDefault =
+      (item.defaultLocation ?? item.location ?? "").toLowerCase() ===
+      normalizedLocation.toLowerCase();
 
-  if (
-    locationValidation.rows.length === 0 &&
-    existingPositionValidation.rows.length === 0 &&
-    !matchesItemDefault
-  ) {
-    throw new Error("location_not_found");
+    if (
+      locationValidation.rows.length === 0 &&
+      existingPositionValidation.rows.length === 0 &&
+      !matchesItemDefault
+    ) {
+      throw new Error("location_not_found");
+    }
   }
 
   await pool.query(
@@ -745,6 +773,565 @@ export async function adjustOperationalInventory(input: AdjustInventoryInput) {
     position,
     summary,
     exception: shortageException,
+  };
+}
+
+type PurchaseOrderListItem = {
+  id: number;
+  poNumber: string;
+  supplierId: number;
+  supplierName: string | null;
+  status: string;
+  requestedDate: Date | null;
+  createdAt: Date | null;
+  totalAmount: number;
+  linesCount: number;
+  qtyOrdered: number;
+  qtyReceived: number;
+  receivedProgress: number;
+};
+
+type PurchaseOrderLine = {
+  id: number;
+  itemId: number;
+  sku: string;
+  itemName: string;
+  qtyOrdered: number;
+  qtyReceived: number;
+  unitPrice: number;
+  expectedRemaining: number;
+};
+
+type PurchaseOrderShipment = {
+  id: number;
+  carrier: string | null;
+  status: string;
+  eta: Date | null;
+  driftMinutes: number;
+  updatedAt: Date | null;
+};
+
+type ReceivePurchaseLineInput = {
+  sku: string;
+  qty_received_now: number;
+};
+
+const PURCHASE_TRANSITIONS: Record<string, string[]> = {
+  draft: ["open"],
+  open: ["approved"],
+  approved: ["sent"],
+  sent: ["received"],
+};
+
+function normalizePurchaseStatus(rawStatus: string | null | undefined): string {
+  const normalized = (rawStatus ?? "").toLowerCase();
+  if (normalized === "acknowledged" || normalized === "partially_received") {
+    return "sent";
+  }
+  if (normalized === "completed") {
+    return "received";
+  }
+  return normalized;
+}
+
+async function resolvePurchaseOrder(poOrId: string) {
+  const numericId = Number(poOrId);
+  const byIdResult = Number.isFinite(numericId)
+    ? await pool.query<{
+        id: number;
+        order_number: string;
+        supplier_id: number;
+        status: string;
+        order_date: Date | null;
+        created_at: Date | null;
+        total_amount: number | null;
+      }>(
+        `
+        SELECT id, order_number, supplier_id, status, order_date, created_at, total_amount
+        FROM purchase_orders
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [numericId],
+      )
+    : { rows: [] };
+
+  if (byIdResult.rows.length > 0) {
+    return byIdResult.rows[0];
+  }
+
+  const byNumberResult = await pool.query<{
+    id: number;
+    order_number: string;
+    supplier_id: number;
+    status: string;
+    order_date: Date | null;
+    created_at: Date | null;
+    total_amount: number | null;
+  }>(
+    `
+    SELECT id, order_number, supplier_id, status, order_date, created_at, total_amount
+    FROM purchase_orders
+    WHERE order_number = $1
+    LIMIT 1
+    `,
+    [poOrId],
+  );
+
+  return byNumberResult.rows[0] ?? null;
+}
+
+async function getPurchaseOrderLines(orderId: number): Promise<PurchaseOrderLine[]> {
+  const lineResult = await pool.query<{
+    id: number;
+    item_id: number;
+    quantity: number;
+    received_quantity: number | null;
+    unit_price: number;
+    sku: string | null;
+    item_name: string | null;
+  }>(
+    `
+    SELECT
+      pol.id,
+      pol.item_id,
+      pol.quantity,
+      pol.received_quantity,
+      pol.unit_price,
+      i.sku,
+      i.name AS item_name
+    FROM purchase_order_items pol
+    LEFT JOIN inventory_items i ON i.id = pol.item_id
+    WHERE pol.order_id = $1
+    ORDER BY pol.id ASC
+    `,
+    [orderId],
+  );
+
+  return lineResult.rows.map((line) => {
+    const qtyOrdered = toNumber(line.quantity, 0);
+    const qtyReceived = toNumber(line.received_quantity, 0);
+    return {
+      id: line.id,
+      itemId: line.item_id,
+      sku: line.sku ?? `ITEM-${line.item_id}`,
+      itemName: line.item_name ?? `Item #${line.item_id}`,
+      qtyOrdered,
+      qtyReceived,
+      unitPrice: toNumber(line.unit_price, 0),
+      expectedRemaining: Math.max(qtyOrdered - qtyReceived, 0),
+    };
+  });
+}
+
+async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrderShipment[]> {
+  const shipmentResult = await pool.query<{
+    id: number;
+    carrier: string | null;
+    status: string;
+    eta: Date | null;
+    drift_minutes: number;
+    updated_at: Date | null;
+  }>(
+    `
+    SELECT id, carrier, status, eta, drift_minutes, updated_at
+    FROM shipments
+    WHERE po_number = $1
+    ORDER BY updated_at DESC
+    `,
+    [poNumber],
+  );
+
+  return shipmentResult.rows.map((shipment) => ({
+    id: shipment.id,
+    carrier: shipment.carrier,
+    status: shipment.status,
+    eta: shipment.eta,
+    driftMinutes: toNumber(shipment.drift_minutes, 0),
+    updatedAt: shipment.updated_at,
+  }));
+}
+
+export async function listOperationalPurchaseOrders(filters: {
+  status?: string;
+  supplier?: string;
+  q?: string;
+}): Promise<PurchaseOrderListItem[]> {
+  const whereClauses: string[] = [];
+  const params: Array<string | number> = [];
+
+  if (filters.supplier && filters.supplier.trim()) {
+    const supplier = filters.supplier.trim();
+    const parsedSupplierId = Number(supplier);
+    if (Number.isFinite(parsedSupplierId)) {
+      params.push(parsedSupplierId);
+      whereClauses.push(`po.supplier_id = $${params.length}`);
+    } else {
+      params.push(`%${supplier.toLowerCase()}%`);
+      whereClauses.push(`lower(s.name) LIKE $${params.length}`);
+    }
+  }
+
+  if (filters.q && filters.q.trim()) {
+    params.push(`%${filters.q.trim().toLowerCase()}%`);
+    whereClauses.push(
+      `(lower(po.order_number) LIKE $${params.length} OR lower(COALESCE(s.name, '')) LIKE $${params.length})`,
+    );
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  const result = await pool.query<{
+    id: number;
+    order_number: string;
+    supplier_id: number;
+    supplier_name: string | null;
+    status: string;
+    order_date: Date | null;
+    created_at: Date | null;
+    total_amount: number | null;
+    lines_count: number;
+    qty_ordered_total: number;
+    qty_received_total: number;
+  }>(
+    `
+    SELECT
+      po.id,
+      po.order_number,
+      po.supplier_id,
+      s.name AS supplier_name,
+      po.status,
+      po.order_date,
+      po.created_at,
+      po.total_amount,
+      COUNT(pol.id)::int AS lines_count,
+      COALESCE(SUM(pol.quantity), 0)::int AS qty_ordered_total,
+      COALESCE(SUM(pol.received_quantity), 0)::int AS qty_received_total
+    FROM purchase_orders po
+    LEFT JOIN suppliers s ON s.id = po.supplier_id
+    LEFT JOIN purchase_order_items pol ON pol.order_id = po.id
+    ${whereSql}
+    GROUP BY po.id, s.name
+    ORDER BY po.created_at DESC
+    `,
+    params,
+  );
+
+  const statusFilter = normalizePurchaseStatus(filters.status);
+
+  return result.rows
+    .map((row) => {
+      const qtyOrdered = toNumber(row.qty_ordered_total, 0);
+      const qtyReceived = toNumber(row.qty_received_total, 0);
+      const receivedProgress =
+        qtyOrdered > 0 ? Math.round((qtyReceived / qtyOrdered) * 100) : 0;
+
+      return {
+        id: row.id,
+        poNumber: row.order_number,
+        supplierId: row.supplier_id,
+        supplierName: row.supplier_name,
+        status: normalizePurchaseStatus(row.status),
+        requestedDate: row.order_date,
+        createdAt: row.created_at,
+        totalAmount: toNumber(row.total_amount, 0),
+        linesCount: toNumber(row.lines_count, 0),
+        qtyOrdered,
+        qtyReceived,
+        receivedProgress,
+      };
+    })
+    .filter((order) => {
+      if (!statusFilter) {
+        return true;
+      }
+      return order.status === statusFilter;
+    });
+}
+
+export async function getOperationalPurchaseOrderDetail(poOrId: string) {
+  const order = await resolvePurchaseOrder(poOrId);
+  if (!order) {
+    return null;
+  }
+
+  const supplierResult = await pool.query<{ id: number; name: string }>(
+    `
+    SELECT id, name
+    FROM suppliers
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [order.supplier_id],
+  );
+
+  const lines = await getPurchaseOrderLines(order.id);
+  const shipments = await getPurchaseOrderShipments(order.order_number);
+  const qtyOrdered = lines.reduce((sum, line) => sum + line.qtyOrdered, 0);
+  const qtyReceived = lines.reduce((sum, line) => sum + line.qtyReceived, 0);
+
+  return {
+    id: order.id,
+    poNumber: order.order_number,
+    supplierId: order.supplier_id,
+    supplierName: supplierResult.rows[0]?.name ?? null,
+    status: normalizePurchaseStatus(order.status),
+    requestedDate: order.order_date,
+    createdAt: order.created_at,
+    totalAmount: toNumber(order.total_amount, 0),
+    lines,
+    shipments,
+    progress: {
+      qtyOrdered,
+      qtyReceived,
+      percent: qtyOrdered > 0 ? Math.round((qtyReceived / qtyOrdered) * 100) : 0,
+    },
+  };
+}
+
+export async function transitionOperationalPurchaseOrderStatus(
+  poOrId: string,
+  toStatusInput: string,
+) {
+  const order = await resolvePurchaseOrder(poOrId);
+  if (!order) {
+    throw new Error("po_not_found");
+  }
+
+  const currentStatus = normalizePurchaseStatus(order.status);
+  const toStatus = normalizePurchaseStatus(toStatusInput);
+
+  if (!toStatus) {
+    throw new Error("invalid_target_status");
+  }
+
+  if (currentStatus === toStatus) {
+    return getOperationalPurchaseOrderDetail(order.order_number);
+  }
+
+  const allowedTransitions = PURCHASE_TRANSITIONS[currentStatus] ?? [];
+  if (!allowedTransitions.includes(toStatus)) {
+    throw new Error("invalid_transition");
+  }
+
+  await pool.query(
+    `
+    UPDATE purchase_orders
+    SET status = $2, updated_at = now()
+    WHERE id = $1
+    `,
+    [order.id, toStatus],
+  );
+
+  await pool.query(
+    `
+    INSERT INTO purchase_order_events (po_number, event_type, note, payload)
+    VALUES ($1, 'status_transition', $2, $3::jsonb)
+    `,
+    [
+      order.order_number,
+      `${currentStatus} -> ${toStatus}`,
+      JSON.stringify({ from: currentStatus, to: toStatus }),
+    ],
+  );
+
+  await logActivity(
+    "po_status_transition",
+    `PO ${order.order_number} moved to ${toStatus}`,
+    `${currentStatus} -> ${toStatus}`,
+    { po_number: order.order_number },
+  );
+
+  const updated = await getOperationalPurchaseOrderDetail(order.order_number);
+  if (!updated) {
+    throw new Error("po_not_found");
+  }
+  return updated;
+}
+
+export async function receiveOperationalPurchaseOrder(
+  poOrId: string,
+  lines: ReceivePurchaseLineInput[],
+) {
+  const order = await resolvePurchaseOrder(poOrId);
+  if (!order) {
+    throw new Error("po_not_found");
+  }
+
+  const currentStatus = normalizePurchaseStatus(order.status);
+  if (!["approved", "sent"].includes(currentStatus)) {
+    throw new Error("invalid_receive_state");
+  }
+
+  if (!Array.isArray(lines) || lines.length === 0) {
+    throw new Error("lines_required");
+  }
+
+  const currentLines = await getPurchaseOrderLines(order.id);
+  const lineBySku = new Map(currentLines.map((line) => [line.sku, line]));
+
+  const inventoryChanges: Array<{
+    sku: string;
+    location: string;
+    delta: number;
+    available: number;
+    onHand: number;
+  }> = [];
+  const mismatchExceptions: Array<{ id: number; sku: string; created: boolean }> = [];
+
+  for (const lineInput of lines) {
+    const sku = lineInput.sku;
+    const receiveNow = Number(lineInput.qty_received_now);
+    const line = lineBySku.get(sku);
+
+    if (!line) {
+      throw new Error(`line_not_found:${sku}`);
+    }
+    if (!Number.isFinite(receiveNow) || receiveNow <= 0) {
+      throw new Error(`invalid_receive_qty:${sku}`);
+    }
+
+    const remaining = Math.max(line.qtyOrdered - line.qtyReceived, 0);
+    const appliedQty = Math.min(remaining, receiveNow);
+
+    await pool.query(
+      `
+      UPDATE purchase_order_items
+      SET received_quantity = LEAST(quantity, COALESCE(received_quantity, 0) + $2)
+      WHERE id = $1
+      `,
+      [line.id, receiveNow],
+    );
+
+    if (receiveNow !== remaining) {
+      const mismatch = await createOrGetOperationalException({
+        type: "po_mismatch",
+        severity: "medium",
+        title: `PO mismatch on ${order.order_number}`,
+        description: `Expected remaining ${remaining}, received now ${receiveNow}`,
+        relatedRefs: {
+          po_number: order.order_number,
+          sku: line.sku,
+        },
+        slaHours: 12,
+      });
+      mismatchExceptions.push({ id: mismatch.id, sku: line.sku, created: mismatch.created });
+    }
+
+    if (appliedQty > 0) {
+      const itemLocationResult = await pool.query<{
+        default_location: string | null;
+        location: string | null;
+      }>(
+        `
+        SELECT default_location, location
+        FROM inventory_items
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [line.itemId],
+      );
+
+      const location =
+        itemLocationResult.rows[0]?.default_location ||
+        itemLocationResult.rows[0]?.location ||
+        "Main Warehouse";
+
+      const adjustment = await adjustOperationalInventory({
+        skuOrId: line.sku,
+        location,
+        delta: appliedQty,
+        reason: "PO Receive",
+        ref: order.order_number,
+        createdBy: "po-receive",
+        skipLocationValidation: true,
+      });
+
+      inventoryChanges.push({
+        sku: line.sku,
+        location,
+        delta: appliedQty,
+        available: adjustment.summary.available,
+        onHand: adjustment.summary.onHand,
+      });
+    }
+  }
+
+  const refreshedLines = await getPurchaseOrderLines(order.id);
+  const fullyReceived = refreshedLines.every((line) => line.qtyReceived >= line.qtyOrdered);
+  const nextStatus = fullyReceived ? "received" : "sent";
+
+  await pool.query(
+    `
+    UPDATE purchase_orders
+    SET status = $2, updated_at = now()
+    WHERE id = $1
+    `,
+    [order.id, nextStatus],
+  );
+
+  const shipmentCandidates = await pool.query<{
+    id: number;
+    status: string;
+  }>(
+    `
+    SELECT id, status
+    FROM shipments
+    WHERE po_number = $1
+    `,
+    [order.order_number],
+  );
+
+  const shipmentUpdates: Array<{ shipmentId: number; toStatus: string }> = [];
+  for (const shipment of shipmentCandidates.rows) {
+    if (shipment.status !== "delivered") {
+      await pool.query(
+        `
+        UPDATE shipments
+        SET status = 'delivered', updated_at = now()
+        WHERE id = $1
+        `,
+        [shipment.id],
+      );
+      await pool.query(
+        `
+        INSERT INTO shipment_events (shipment_id, status, note)
+        VALUES ($1, 'delivered', $2)
+        `,
+        [shipment.id, `Auto-delivered from PO receipt ${order.order_number}`],
+      );
+      shipmentUpdates.push({ shipmentId: shipment.id, toStatus: "delivered" });
+    }
+  }
+
+  await pool.query(
+    `
+    INSERT INTO purchase_order_events (po_number, event_type, note, payload)
+    VALUES ($1, 'receive', $2, $3::jsonb)
+    `,
+    [
+      order.order_number,
+      "PO receive processed",
+      JSON.stringify({ lines, inventoryChanges, shipmentUpdates }),
+    ],
+  );
+
+  await logActivity(
+    "po_receive",
+    `PO ${order.order_number} received`,
+    `Received ${lines.length} line(s)`,
+    { po_number: order.order_number },
+  );
+
+  const updatedOrder = await getOperationalPurchaseOrderDetail(order.order_number);
+  if (!updatedOrder) {
+    throw new Error("po_not_found");
+  }
+
+  return {
+    order: updatedOrder,
+    inventoryChanges,
+    shipmentUpdates,
+    mismatchExceptions,
   };
 }
 
