@@ -1,15 +1,29 @@
 import { apiRequest } from "@/lib/queryClient";
 import type {
+  ControlTowerOverview,
   DeepHealthCheck,
   DemoDataSummary,
   HealthCheck,
+  IntegrationRun,
   InventoryListItem,
+  OperationalException,
   PurchaseOrderDetail,
   PurchaseOrderListItem,
   PurchaseReceiveResult,
+  ShipmentDetail,
+  ShipmentListItem,
 } from "./types";
 
-export type { InventoryListItem, PurchaseOrderDetail, PurchaseOrderListItem } from "./types";
+export type {
+  ControlTowerOverview,
+  IntegrationRun,
+  InventoryListItem,
+  OperationalException,
+  PurchaseOrderDetail,
+  PurchaseOrderListItem,
+  ShipmentDetail,
+  ShipmentListItem,
+} from "./types";
 
 async function parseJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
@@ -155,4 +169,112 @@ export async function receivePurchaseOrder(
     })),
   });
   return parseJson<PurchaseReceiveResult>(response);
+}
+
+export async function fetchShipments(params?: {
+  status?: string;
+  po?: string;
+  carrier?: string;
+}): Promise<ShipmentListItem[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (params?.po) search.set("po", params.po);
+  if (params?.carrier) search.set("carrier", params.carrier);
+  const url =
+    search.size > 0 ? `/api/logistics/shipments?${search.toString()}` : "/api/logistics/shipments";
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) {
+    throw new Error(`Shipments request failed: ${response.status}`);
+  }
+  return parseJson<ShipmentListItem[]>(response);
+}
+
+export async function fetchShipment(id: string | number): Promise<ShipmentDetail> {
+  const response = await fetch(`/api/logistics/shipments/${id}`, { credentials: "include" });
+  if (!response.ok) {
+    throw new Error(`Shipment detail request failed: ${response.status}`);
+  }
+  return parseJson<ShipmentDetail>(response);
+}
+
+export async function updateShipmentStatus(input: {
+  id: string | number;
+  toStatus: string;
+  note?: string;
+}): Promise<ShipmentDetail> {
+  const response = await apiRequest("POST", `/api/logistics/shipments/${input.id}/status`, {
+    toStatus: input.toStatus,
+    note: input.note,
+  });
+  return parseJson<ShipmentDetail>(response);
+}
+
+export async function fetchExceptions(params?: {
+  severity?: string;
+  status?: string;
+  type?: string;
+}): Promise<OperationalException[]> {
+  const search = new URLSearchParams();
+  if (params?.severity) search.set("severity", params.severity);
+  if (params?.status) search.set("status", params.status);
+  if (params?.type) search.set("type", params.type);
+  const url = search.size > 0 ? `/api/exceptions?${search.toString()}` : "/api/exceptions";
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) {
+    throw new Error(`Exceptions request failed: ${response.status}`);
+  }
+  return parseJson<OperationalException[]>(response);
+}
+
+export async function fetchException(id: string | number): Promise<OperationalException> {
+  const response = await fetch(`/api/exceptions/${id}`, { credentials: "include" });
+  if (!response.ok) {
+    throw new Error(`Exception detail request failed: ${response.status}`);
+  }
+  return parseJson<OperationalException>(response);
+}
+
+export async function updateExceptionStatus(
+  id: string | number,
+  toStatus: string,
+): Promise<OperationalException> {
+  const response = await apiRequest("POST", `/api/exceptions/${id}/status`, { toStatus });
+  return parseJson<OperationalException>(response);
+}
+
+export async function assignException(
+  id: string | number,
+  assignee: string,
+): Promise<OperationalException> {
+  const response = await apiRequest("POST", `/api/exceptions/${id}/assign`, { assignee });
+  return parseJson<OperationalException>(response);
+}
+
+export async function addExceptionComment(
+  id: string | number,
+  comment: string,
+): Promise<OperationalException> {
+  const response = await apiRequest("POST", `/api/exceptions/${id}/comment`, { comment });
+  return parseJson<OperationalException>(response);
+}
+
+export async function fetchIntegrationRuns(): Promise<IntegrationRun[]> {
+  const response = await fetch("/api/integrations/runs", { credentials: "include" });
+  if (!response.ok) {
+    throw new Error(`Integration runs request failed: ${response.status}`);
+  }
+  return parseJson<IntegrationRun[]>(response);
+}
+
+export async function runIntegration(connector: string): Promise<IntegrationRun> {
+  const response = await apiRequest("POST", `/api/integrations/${encodeURIComponent(connector)}/run`);
+  return parseJson<IntegrationRun>(response);
+}
+
+export async function fetchControlTowerOverview(): Promise<ControlTowerOverview> {
+  const response = await fetch("/api/control-tower/overview", { credentials: "include" });
+  if (!response.ok) {
+    throw new Error(`Control tower request failed: ${response.status}`);
+  }
+  return parseJson<ControlTowerOverview>(response);
 }

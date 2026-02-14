@@ -1,12 +1,23 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import {
+  addOperationalExceptionComment,
   adjustOperationalInventory,
+  assignOperationalException,
+  getOperationalControlTowerOverview,
+  getOperationalExceptionDetail,
   getOperationalInventoryDetail,
   getOperationalPurchaseOrderDetail,
+  getOperationalShipmentDetail,
+  listOperationalExceptions,
+  listOperationalIntegrationRuns,
   listOperationalInventory,
   listOperationalPurchaseOrders,
+  listOperationalShipments,
   receiveOperationalPurchaseOrder,
+  runOperationalConnector,
+  transitionOperationalExceptionStatus,
   transitionOperationalPurchaseOrderStatus,
+  updateOperationalShipmentStatus,
 } from "./operations-core";
 
 type AuthGuards = {
@@ -258,4 +269,197 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       }
     },
   );
+
+  app.get("/api/logistics/shipments", async (req: Request, res: Response) => {
+    try {
+      const status = typeof req.query.status === "string" ? req.query.status : "";
+      const po = typeof req.query.po === "string" ? req.query.po : "";
+      const carrier = typeof req.query.carrier === "string" ? req.query.carrier : "";
+      const shipments = await listOperationalShipments({ status, po, carrier });
+      res.json(shipments);
+    } catch (error) {
+      console.error("Operational shipments list error:", error);
+      res.status(500).json({ message: "Failed to fetch shipments" });
+    }
+  });
+
+  app.get("/api/logistics/shipments/:id", async (req: Request, res: Response) => {
+    try {
+      const detail = await getOperationalShipmentDetail(req.params.id);
+      res.json(detail);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "shipment_failed";
+      if (message === "shipment_not_found") {
+        return res.status(404).json({ message: "Shipment not found" });
+      }
+      console.error("Operational shipment detail error:", error);
+      return res.status(500).json({ message: "Failed to fetch shipment detail" });
+    }
+  });
+
+  app.post(
+    "/api/logistics/shipments/:id/status",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const toStatus = typeof req.body?.toStatus === "string" ? req.body.toStatus : "";
+        const note = typeof req.body?.note === "string" ? req.body.note : "";
+        const detail = await updateOperationalShipmentStatus({
+          shipmentId: req.params.id,
+          toStatus,
+          note,
+        });
+        res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "shipment_status_failed";
+        if (message === "shipment_not_found") {
+          return res.status(404).json({ message: "Shipment not found" });
+        }
+        if (message === "invalid_target_status") {
+          return res.status(400).json({ message: "toStatus is required" });
+        }
+        if (message === "invalid_transition") {
+          return res.status(400).json({ message: "Invalid shipment status transition" });
+        }
+        console.error("Operational shipment status update error:", error);
+        return res.status(500).json({ message: "Failed to update shipment status" });
+      }
+    },
+  );
+
+  app.get("/api/exceptions", async (req: Request, res: Response) => {
+    try {
+      const severity = typeof req.query.severity === "string" ? req.query.severity : "";
+      const status = typeof req.query.status === "string" ? req.query.status : "";
+      const type = typeof req.query.type === "string" ? req.query.type : "";
+      const exceptions = await listOperationalExceptions({ severity, status, type });
+      res.json(exceptions);
+    } catch (error) {
+      console.error("Operational exceptions list error:", error);
+      res.status(500).json({ message: "Failed to fetch exceptions" });
+    }
+  });
+
+  app.get("/api/exceptions/:id", async (req: Request, res: Response) => {
+    try {
+      const detail = await getOperationalExceptionDetail(req.params.id);
+      res.json(detail);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "exception_failed";
+      if (message === "exception_not_found") {
+        return res.status(404).json({ message: "Exception not found" });
+      }
+      console.error("Operational exception detail error:", error);
+      return res.status(500).json({ message: "Failed to fetch exception detail" });
+    }
+  });
+
+  app.post(
+    "/api/exceptions/:id/status",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const toStatus = typeof req.body?.toStatus === "string" ? req.body.toStatus : "";
+        const detail = await transitionOperationalExceptionStatus(req.params.id, toStatus);
+        res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "exception_status_failed";
+        if (message === "exception_not_found") {
+          return res.status(404).json({ message: "Exception not found" });
+        }
+        if (message === "invalid_target_status") {
+          return res.status(400).json({ message: "toStatus is required" });
+        }
+        if (message === "invalid_transition") {
+          return res.status(400).json({ message: "Invalid exception status transition" });
+        }
+        console.error("Operational exception status update error:", error);
+        return res.status(500).json({ message: "Failed to update exception status" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/exceptions/:id/assign",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const assignee = typeof req.body?.assignee === "string" ? req.body.assignee : "";
+        const detail = await assignOperationalException(req.params.id, assignee);
+        res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "exception_assign_failed";
+        if (message === "exception_not_found") {
+          return res.status(404).json({ message: "Exception not found" });
+        }
+        console.error("Operational exception assign error:", error);
+        return res.status(500).json({ message: "Failed to assign exception" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/exceptions/:id/comment",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const comment = typeof req.body?.comment === "string" ? req.body.comment : "";
+        const author = req.user?.username || req.user?.email || "system";
+        const detail = await addOperationalExceptionComment({
+          idOrRef: req.params.id,
+          author,
+          comment,
+        });
+        res.json(detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "exception_comment_failed";
+        if (message === "exception_not_found") {
+          return res.status(404).json({ message: "Exception not found" });
+        }
+        if (message === "comment_required") {
+          return res.status(400).json({ message: "comment is required" });
+        }
+        console.error("Operational exception comment error:", error);
+        return res.status(500).json({ message: "Failed to add comment" });
+      }
+    },
+  );
+
+  app.get("/api/integrations/runs", async (_req: Request, res: Response) => {
+    try {
+      const runs = await listOperationalIntegrationRuns(20);
+      res.json(runs);
+    } catch (error) {
+      console.error("Operational integrations list error:", error);
+      res.status(500).json({ message: "Failed to fetch integration runs" });
+    }
+  });
+
+  app.post(
+    "/api/integrations/:connector/run",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const run = await runOperationalConnector(req.params.connector);
+        res.status(201).json(run);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "run_failed";
+        if (message === "unsupported_connector") {
+          return res.status(400).json({ message: "Unsupported connector" });
+        }
+        console.error("Operational integration run error:", error);
+        return res.status(500).json({ message: "Failed to run connector" });
+      }
+    },
+  );
+
+  app.get("/api/control-tower/overview", async (_req: Request, res: Response) => {
+    try {
+      const overview = await getOperationalControlTowerOverview();
+      res.json(overview);
+    } catch (error) {
+      console.error("Operational control tower overview error:", error);
+      res.status(500).json({ message: "Failed to fetch control tower overview" });
+    }
+  });
 }

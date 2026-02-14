@@ -115,3 +115,67 @@ export type PurchaseReceiveResult = {
     created: boolean;
   }>;
 };
+
+export type ShipmentListItem = {
+  id: number;
+  poNumber: string;
+  carrier: string | null;
+  status: string;
+  eta: string | null;
+  driftMinutes: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+  atRisk: boolean;
+};
+
+export type ShipmentTimelineEvent = {
+  id: number;
+  status: string;
+  note: string | null;
+  eventAt: string | null;
+};
+
+export type ShipmentDetail = ShipmentListItem & {
+  timeline: ShipmentTimelineEvent[];
+};
+
+export type OperationalException = {
+  id: number;
+  type: string;
+  severity: string;
+  status: string;
+  title: string;
+  description: string | null;
+  relatedRefs: Record<string, unknown>;
+  assignee: string | null;
+  slaHours: number;
+  comments: Array<Record<string, unknown>>;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type IntegrationRun = {
+  id: number;
+  connector: string;
+  status: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  message: string | null;
+};
+
+export type ControlTowerOverview = {
+  kpis: {
+    exceptionsBySeverity: Record<string, number>;
+    lateShipments: number;
+    posAwaitingAction: number;
+    lowStockSkus: number;
+  };
+  activity: Array<{
+    id: number;
+    eventType: string;
+    title: string;
+    details: string | null;
+    relatedRefs: Record<string, unknown>;
+    createdAt: string | null;
+  }>;
+};

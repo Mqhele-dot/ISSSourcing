@@ -1335,6 +1335,578 @@ export async function receiveOperationalPurchaseOrder(
   };
 }
 
+async function ensureLateShipmentException(shipment: {
+  id: number;
+  poNumber: string;
+  status: string;
+  eta: Date | null;
+}) {
+  if (!shipment.eta) {
+    return null;
+  }
+  const isLate = shipment.eta.getTime() < Date.now() && shipment.status !== "delivered";
+  if (!isLate) {
+    return null;
+  }
+
+  return createOrGetOperationalException({
+    type: "late_shipment",
+    severity: "high",
+    title: `Late shipment ${shipment.id}`,
+    description: `Shipment ${shipment.id} for ${shipment.poNumber} is past ETA`,
+    relatedRefs: {
+      shipment_id: shipment.id,
+      po_number: shipment.poNumber,
+    },
+    slaHours: 2,
+  });
+}
+
+export async function listOperationalShipments(filters: {
+  status?: string;
+  po?: string;
+  carrier?: string;
+}) {
+  const whereClauses: string[] = [];
+  const params: string[] = [];
+
+  if (filters.status && filters.status.trim()) {
+    params.push(filters.status.trim().toLowerCase());
+    whereClauses.push(`lower(s.status) = $${params.length}`);
+  }
+  if (filters.po && filters.po.trim()) {
+    params.push(`%${filters.po.trim().toLowerCase()}%`);
+    whereClauses.push(`lower(s.po_number) LIKE $${params.length}`);
+  }
+  if (filters.carrier && filters.carrier.trim()) {
+    params.push(`%${filters.carrier.trim().toLowerCase()}%`);
+    whereClauses.push(`lower(COALESCE(s.carrier, '')) LIKE $${params.length}`);
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  const result = await pool.query<{
+    id: number;
+    po_number: string;
+    carrier: string | null;
+    status: string;
+    eta: Date | null;
+    drift_minutes: number;
+    created_at: Date | null;
+    updated_at: Date | null;
+  }>(
+    `
+    SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at
+    FROM shipments s
+    ${whereSql}
+    ORDER BY s.updated_at DESC
+    `,
+    params,
+  );
+
+  const shipments = [];
+  for (const row of result.rows) {
+    const status = row.status.toLowerCase();
+    const atRisk = Boolean(row.eta && row.eta.getTime() < Date.now() && status !== "delivered");
+    if (atRisk) {
+      await ensureLateShipmentException({
+        id: row.id,
+        poNumber: row.po_number,
+        status,
+        eta: row.eta,
+      });
+    }
+
+    shipments.push({
+      id: row.id,
+      poNumber: row.po_number,
+      carrier: row.carrier,
+      status,
+      eta: row.eta,
+      driftMinutes: toNumber(row.drift_minutes, 0),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      atRisk,
+    });
+  }
+
+  return shipments;
+}
+
+export async function getOperationalShipmentDetail(idOrRef: string) {
+  const id = Number(idOrRef);
+  if (!Number.isFinite(id)) {
+    throw new Error("shipment_not_found");
+  }
+
+  const shipmentResult = await pool.query<{
+    id: number;
+    po_number: string;
+    carrier: string | null;
+    status: string;
+    eta: Date | null;
+    drift_minutes: number;
+    created_at: Date | null;
+    updated_at: Date | null;
+  }>(
+    `
+    SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at
+    FROM shipments
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [id],
+  );
+
+  const shipment = shipmentResult.rows[0];
+  if (!shipment) {
+    throw new Error("shipment_not_found");
+  }
+
+  const timelineResult = await pool.query<{
+    id: number;
+    status: string;
+    note: string | null;
+    event_at: Date | null;
+  }>(
+    `
+    SELECT id, status, note, event_at
+    FROM shipment_events
+    WHERE shipment_id = $1
+    ORDER BY event_at DESC
+    `,
+    [shipment.id],
+  );
+
+  const status = shipment.status.toLowerCase();
+  const atRisk = Boolean(
+    shipment.eta && shipment.eta.getTime() < Date.now() && status !== "delivered",
+  );
+  if (atRisk) {
+    await ensureLateShipmentException({
+      id: shipment.id,
+      poNumber: shipment.po_number,
+      status,
+      eta: shipment.eta,
+    });
+  }
+
+  return {
+    id: shipment.id,
+    poNumber: shipment.po_number,
+    carrier: shipment.carrier,
+    status,
+    eta: shipment.eta,
+    driftMinutes: toNumber(shipment.drift_minutes, 0),
+    createdAt: shipment.created_at,
+    updatedAt: shipment.updated_at,
+    atRisk,
+    timeline: timelineResult.rows.map((event) => ({
+      id: event.id,
+      status: event.status,
+      note: event.note,
+      eventAt: event.event_at,
+    })),
+  };
+}
+
+const SHIPMENT_TRANSITIONS: Record<string, string[]> = {
+  created: ["in_transit", "cancelled"],
+  in_transit: ["delivered", "delayed", "cancelled"],
+  delayed: ["in_transit", "delivered", "cancelled"],
+  delivered: [],
+  cancelled: [],
+};
+
+export async function updateOperationalShipmentStatus(input: {
+  shipmentId: string;
+  toStatus: string;
+  note?: string;
+}) {
+  const shipment = await getOperationalShipmentDetail(input.shipmentId);
+  const fromStatus = shipment.status;
+  const toStatus = input.toStatus.toLowerCase();
+  const allowed = SHIPMENT_TRANSITIONS[fromStatus] ?? [];
+
+  if (!toStatus) {
+    throw new Error("invalid_target_status");
+  }
+  if (toStatus !== fromStatus && !allowed.includes(toStatus)) {
+    throw new Error("invalid_transition");
+  }
+
+  await pool.query(
+    `
+    UPDATE shipments
+    SET status = $2, updated_at = now()
+    WHERE id = $1
+    `,
+    [shipment.id, toStatus],
+  );
+  await pool.query(
+    `
+    INSERT INTO shipment_events (shipment_id, status, note)
+    VALUES ($1, $2, $3)
+    `,
+    [shipment.id, toStatus, input.note ?? null],
+  );
+
+  await logActivity(
+    "shipment_status_change",
+    `Shipment ${shipment.id} moved to ${toStatus}`,
+    input.note ?? `${fromStatus} -> ${toStatus}`,
+    { shipment_id: shipment.id, po_number: shipment.poNumber },
+  );
+
+  return getOperationalShipmentDetail(String(shipment.id));
+}
+
+type ExceptionListFilters = {
+  severity?: string;
+  status?: string;
+  type?: string;
+};
+
+export async function listOperationalExceptions(filters: ExceptionListFilters) {
+  const whereClauses: string[] = [];
+  const params: string[] = [];
+
+  if (filters.severity && filters.severity.trim()) {
+    params.push(filters.severity.trim().toLowerCase());
+    whereClauses.push(`lower(e.severity) = $${params.length}`);
+  }
+  if (filters.status && filters.status.trim()) {
+    params.push(filters.status.trim().toLowerCase());
+    whereClauses.push(`lower(e.status) = $${params.length}`);
+  }
+  if (filters.type && filters.type.trim()) {
+    params.push(filters.type.trim().toLowerCase());
+    whereClauses.push(`lower(e.type) = $${params.length}`);
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  const result = await pool.query<{
+    id: number;
+    type: string;
+    severity: string;
+    status: string;
+    title: string;
+    description: string | null;
+    related_refs: Record<string, unknown>;
+    assignee: string | null;
+    sla_hours: number;
+    comments: Array<Record<string, unknown>>;
+    created_at: Date | null;
+    updated_at: Date | null;
+  }>(
+    `
+    SELECT
+      e.id,
+      e.type,
+      e.severity,
+      e.status,
+      e.title,
+      e.description,
+      e.related_refs,
+      e.assignee,
+      e.sla_hours,
+      e.comments,
+      e.created_at,
+      e.updated_at
+    FROM operational_exceptions e
+    ${whereSql}
+    ORDER BY e.created_at DESC
+    `,
+    params,
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    severity: row.severity,
+    status: row.status,
+    title: row.title,
+    description: row.description,
+    relatedRefs: row.related_refs || {},
+    assignee: row.assignee,
+    slaHours: toNumber(row.sla_hours, 24),
+    comments: Array.isArray(row.comments) ? row.comments : [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function getOperationalExceptionDetail(idOrRef: string) {
+  const id = Number(idOrRef);
+  if (!Number.isFinite(id)) {
+    throw new Error("exception_not_found");
+  }
+
+  const list = await listOperationalExceptions({});
+  const found = list.find((exception) => exception.id === id);
+  if (!found) {
+    throw new Error("exception_not_found");
+  }
+  return found;
+}
+
+const EXCEPTION_TRANSITIONS: Record<string, string[]> = {
+  open: ["in_progress", "resolved", "closed"],
+  in_progress: ["resolved", "closed", "open"],
+  resolved: ["closed", "open"],
+  closed: ["open"],
+};
+
+export async function transitionOperationalExceptionStatus(
+  idOrRef: string,
+  toStatusInput: string,
+) {
+  const detail = await getOperationalExceptionDetail(idOrRef);
+  const toStatus = toStatusInput.toLowerCase();
+  const currentStatus = detail.status.toLowerCase();
+
+  if (!toStatus) {
+    throw new Error("invalid_target_status");
+  }
+  if (toStatus !== currentStatus) {
+    const allowed = EXCEPTION_TRANSITIONS[currentStatus] ?? [];
+    if (!allowed.includes(toStatus)) {
+      throw new Error("invalid_transition");
+    }
+  }
+
+  await pool.query(
+    `
+    UPDATE operational_exceptions
+    SET status = $2, updated_at = now()
+    WHERE id = $1
+    `,
+    [detail.id, toStatus],
+  );
+
+  await logActivity(
+    "exception_status_change",
+    `Exception #${detail.id} moved to ${toStatus}`,
+    `${currentStatus} -> ${toStatus}`,
+    { exception_id: detail.id },
+  );
+
+  return getOperationalExceptionDetail(String(detail.id));
+}
+
+export async function assignOperationalException(idOrRef: string, assignee: string) {
+  const detail = await getOperationalExceptionDetail(idOrRef);
+
+  await pool.query(
+    `
+    UPDATE operational_exceptions
+    SET assignee = $2, updated_at = now()
+    WHERE id = $1
+    `,
+    [detail.id, assignee || null],
+  );
+
+  await logActivity(
+    "exception_assigned",
+    `Exception #${detail.id} assigned`,
+    assignee ? `Assigned to ${assignee}` : "Assignment cleared",
+    { exception_id: detail.id },
+  );
+
+  return getOperationalExceptionDetail(String(detail.id));
+}
+
+export async function addOperationalExceptionComment(input: {
+  idOrRef: string;
+  author: string;
+  comment: string;
+}) {
+  if (!input.comment.trim()) {
+    throw new Error("comment_required");
+  }
+  const detail = await getOperationalExceptionDetail(input.idOrRef);
+  const commentEntry = {
+    author: input.author || "system",
+    comment: input.comment.trim(),
+    at: new Date().toISOString(),
+  };
+
+  await pool.query(
+    `
+    UPDATE operational_exceptions
+    SET comments = COALESCE(comments, '[]'::jsonb) || $2::jsonb,
+        updated_at = now()
+    WHERE id = $1
+    `,
+    [detail.id, JSON.stringify([commentEntry])],
+  );
+
+  await logActivity(
+    "exception_comment",
+    `Comment added to exception #${detail.id}`,
+    commentEntry.comment,
+    { exception_id: detail.id },
+  );
+
+  return getOperationalExceptionDetail(String(detail.id));
+}
+
+export async function listOperationalIntegrationRuns(limit = 20) {
+  const cappedLimit = Math.min(Math.max(limit, 1), 100);
+  const result = await pool.query<{
+    id: number;
+    connector: string;
+    status: string;
+    started_at: Date | null;
+    finished_at: Date | null;
+    message: string | null;
+  }>(
+    `
+    SELECT id, connector, status, started_at, finished_at, message
+    FROM integration_runs
+    ORDER BY started_at DESC
+    LIMIT $1
+    `,
+    [cappedLimit],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    connector: row.connector,
+    status: row.status,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    message: row.message,
+  }));
+}
+
+const SUPPORTED_CONNECTORS = new Set(["erp", "wms", "tms"]);
+
+export async function runOperationalConnector(connectorInput: string) {
+  const connector = connectorInput.toLowerCase();
+  if (!SUPPORTED_CONNECTORS.has(connector)) {
+    throw new Error("unsupported_connector");
+  }
+
+  const startResult = await pool.query<{ id: number }>(
+    `
+    INSERT INTO integration_runs (connector, status, started_at, message)
+    VALUES ($1, 'running', now(), 'Connector run started')
+    RETURNING id
+    `,
+    [connector],
+  );
+  const runId = startResult.rows[0].id;
+
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  const message = `Connector ${connector.toUpperCase()} run completed successfully`;
+  await pool.query(
+    `
+    UPDATE integration_runs
+    SET status = 'success', finished_at = now(), message = $2
+    WHERE id = $1
+    `,
+    [runId, message],
+  );
+
+  await logActivity(
+    "integration_run",
+    `${connector.toUpperCase()} run completed`,
+    message,
+    { connector, run_id: runId },
+  );
+
+  const runs = await listOperationalIntegrationRuns(1);
+  return runs[0];
+}
+
+export async function getOperationalControlTowerOverview() {
+  const openExceptionsResult = await pool.query<{
+    severity: string;
+    count: number;
+  }>(
+    `
+    SELECT severity, count(*)::int AS count
+    FROM operational_exceptions
+    WHERE status IN ('open', 'in_progress')
+    GROUP BY severity
+    `,
+  );
+
+  const lateShipmentsResult = await pool.query<{ count: number }>(
+    `
+    SELECT count(*)::int AS count
+    FROM shipments
+    WHERE eta IS NOT NULL
+      AND eta < now()
+      AND status <> 'delivered'
+    `,
+  );
+
+  const poAwaitingActionResult = await pool.query<{ count: number }>(
+    `
+    SELECT count(*)::int AS count
+    FROM purchase_orders
+    WHERE lower(status) = 'approved'
+    `,
+  );
+
+  const lowStockResult = await pool.query<{ count: number }>(
+    `
+    SELECT count(*)::int AS count
+    FROM (
+      SELECT
+        i.sku,
+        COALESCE(SUM(p.on_hand), COALESCE(i.quantity, 0)) AS on_hand,
+        COALESCE(SUM(p.allocated), 0) AS allocated,
+        COALESCE(i.low_stock_threshold, 0) AS threshold
+      FROM inventory_items i
+      LEFT JOIN inventory_positions p ON p.sku = i.sku
+      GROUP BY i.id
+    ) stock
+    WHERE (stock.on_hand - stock.allocated) <= stock.threshold
+    `,
+  );
+
+  const activityResult = await pool.query<{
+    id: number;
+    event_type: string;
+    title: string;
+    details: string | null;
+    related_refs: Record<string, unknown>;
+    created_at: Date | null;
+  }>(
+    `
+    SELECT id, event_type, title, details, related_refs, created_at
+    FROM ops_activity_feed
+    ORDER BY created_at DESC
+    LIMIT 20
+    `,
+  );
+
+  const exceptionsBySeverity: Record<string, number> = {};
+  for (const row of openExceptionsResult.rows) {
+    exceptionsBySeverity[row.severity] = toNumber(row.count, 0);
+  }
+
+  return {
+    kpis: {
+      exceptionsBySeverity,
+      lateShipments: toNumber(lateShipmentsResult.rows[0]?.count, 0),
+      posAwaitingAction: toNumber(poAwaitingActionResult.rows[0]?.count, 0),
+      lowStockSkus: toNumber(lowStockResult.rows[0]?.count, 0),
+    },
+    activity: activityResult.rows.map((row) => ({
+      id: row.id,
+      eventType: row.event_type,
+      title: row.title,
+      details: row.details,
+      relatedRefs: row.related_refs || {},
+      createdAt: row.created_at,
+    })),
+  };
+}
+
 export async function getOperationalExceptionSummary() {
   const result = await pool.query<{
     users: number;
