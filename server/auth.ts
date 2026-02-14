@@ -492,44 +492,99 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Route to authenticate user with rate limiting
-  app.post("/api/login", loginRateLimiter, (req, res, next) => {
-    // Remember me flag
+  const authenticateLogin = (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    options: { envelope: boolean },
+  ) => {
     const rememberMe = req.body.rememberMe === true;
-    
-    passport.authenticate("local", (err: Error | null, user: Express.User | false, info: { message: string, requiresEmailVerification?: boolean } | undefined) => {
-      if (err) {
-        return next(err);
-      }
-      
-      if (!user) {
-        return res.status(401).json({ 
-          message: info?.message || "Invalid username or password",
-          requiresEmailVerification: info?.requiresEmailVerification || false
-        });
-      }
 
-      req.login(user, (err: Error | null) => {
+    passport.authenticate(
+      "local",
+      (
+        err: Error | null,
+        user: Express.User | false,
+        info: { message: string; requiresEmailVerification?: boolean } | undefined,
+      ) => {
         if (err) {
+          if (options.envelope) {
+            return res.status(500).json({
+              ok: false,
+              error: {
+                code: "AUTH_ERROR",
+                message: "Authentication failed",
+              },
+            });
+          }
           return next(err);
         }
-        
-        // Set session expiration based on remember me flag
-        if (rememberMe && req.session) {
-          req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
-        }
-        
-        // If user has 2FA enabled, don't set twoFactorAuthenticated flag yet
-        if (user.twoFactorEnabled) {
-          return res.status(200).json({
-            ...user,
-            requiresTwoFactor: true
+
+        if (!user) {
+          if (options.envelope) {
+            return res.status(401).json({
+              ok: false,
+              error: {
+                code: "AUTH_INVALID",
+                message: info?.message || "Invalid username or password",
+                details: {
+                  requiresEmailVerification: info?.requiresEmailVerification || false,
+                },
+              },
+            });
+          }
+          return res.status(401).json({
+            message: info?.message || "Invalid username or password",
+            requiresEmailVerification: info?.requiresEmailVerification || false,
           });
         }
-        
-        return res.status(200).json(user);
-      });
-    })(req, res, next);
+
+        req.login(user, (loginError: Error | null) => {
+          if (loginError) {
+            if (options.envelope) {
+              return res.status(500).json({
+                ok: false,
+                error: {
+                  code: "LOGIN_SESSION_ERROR",
+                  message: "Failed to create login session",
+                },
+              });
+            }
+            return next(loginError);
+          }
+
+          if (rememberMe && req.session) {
+            req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
+          }
+
+          if (user.twoFactorEnabled) {
+            const twoFactorPayload = {
+              ...user,
+              requiresTwoFactor: true,
+            };
+            if (options.envelope) {
+              return res.status(200).json({ ok: true, data: twoFactorPayload });
+            }
+            return res.status(200).json(twoFactorPayload);
+          }
+
+          if (options.envelope) {
+            return res.status(200).json({ ok: true, data: user });
+          }
+          return res.status(200).json(user);
+        });
+      },
+    )(req, res, next);
+  };
+
+  // Legacy login route used by the main web app.
+  app.post("/api/login", loginRateLimiter, (req, res, next) => {
+    authenticateLogin(req, res, next, { envelope: false });
+  });
+
+  // API-contract login route used by runtime tests and integrations.
+  app.post("/api/auth/login", loginRateLimiter, (req, res, next) => {
+    authenticateLogin(req, res, next, { envelope: true });
   });
 
   // Route to setup two-factor authentication
