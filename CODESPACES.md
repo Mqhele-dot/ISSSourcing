@@ -44,6 +44,18 @@ npm run db:seed
 
 If you open the forwarded URL in an external browser session, set port **5000** visibility to **Public** in the Codespaces **Ports** tab.
 
+## Troubleshooting (502 / app not reachable)
+
+1. Keep the dev server terminal running (do not close it).
+2. Verify in-container health:
+
+```bash
+curl http://127.0.0.1:5000/health
+```
+
+3. In the **Ports** tab, confirm port `5000` exists and open it from that row (avoid stale browser tabs).
+4. For external browser access, ensure visibility is **Public**.
+
 Health endpoint for smoke tests:
 
 ```text

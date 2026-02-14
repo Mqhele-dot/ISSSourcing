@@ -37,6 +37,12 @@ export PGUSER="${PGUSER:-postgres}"
 export PGPASSWORD="${PGPASSWORD:-postgres}"
 export PORT="${PORT:-5000}"
 export DATABASE_URL="${DATABASE_URL:-postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}}"
+export HOST="${HOST:-0.0.0.0}"
+
+if [[ "${IS_CODESPACES}" == "true" && ( "${HOST}" == "127.0.0.1" || "${HOST}" == "localhost" ) ]]; then
+  echo "HOST was set to ${HOST}; overriding to 0.0.0.0 for Codespaces reachability."
+  export HOST="0.0.0.0"
+fi
 
 DB_URL_HOST=""
 DB_URL_PORT=""
@@ -138,7 +144,11 @@ export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${
 echo "PostgreSQL is ready at ${PGHOST}:${PGPORT}."
 
 echo "Applying database schema..."
-npm run db:push
+if [[ "${IS_CODESPACES}" == "true" || "${DB_PUSH_FORCE:-}" == "true" ]]; then
+  npm run db:push -- --force
+else
+  npm run db:push
+fi
 
 APP_URL="http://localhost:${PORT}"
 if [[ -n "${CODESPACE_NAME:-}" && -n "${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}" ]]; then
@@ -163,7 +173,16 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if ! curl --retry 20 --retry-connrefused --retry-delay 1 --silent --show-error --fail "http://127.0.0.1:${PORT}/health" >/dev/null; then
+SERVER_READY="false"
+for attempt in {1..90}; do
+  if curl --silent --show-error --fail "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+    SERVER_READY="true"
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${SERVER_READY}" != "true" ]]; then
   echo "Server not reachable inside container; check HOST binding" >&2
   exit 1
 fi
