@@ -3,6 +3,13 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 
+function formatErrorMessage(error: Error) {
+  const coded = error as Error & { code?: string; hint?: string };
+  const codePart = coded.code ? `[${coded.code}] ` : "";
+  const hintPart = coded.hint ? ` (${coded.hint})` : "";
+  return `${codePart}${error.message}${hintPart}`;
+}
+
 type DataStateProps<T> = {
   loading: boolean;
   error: Error | null;
@@ -40,11 +47,7 @@ export function DataState<T>({
       <EmptyState
         icon={<AlertCircle className="h-5 w-5" />}
         title="Something went wrong"
-        description={
-          import.meta.env.DEV
-            ? `${error.message}`
-            : "We could not load this data right now."
-        }
+        description={formatErrorMessage(error)}
         action={
           onRetry ? (
             <Button onClick={onRetry} variant="outline" size="sm">

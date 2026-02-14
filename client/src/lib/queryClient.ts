@@ -1,9 +1,56 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+type ApiErrorEnvelope = {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    hint?: string;
+  };
+};
+
+type ApiSuccessEnvelope<T> = {
+  ok: true;
+  data: T;
+};
+
+function isApiEnvelope<T>(value: unknown): value is ApiErrorEnvelope | ApiSuccessEnvelope<T> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "ok" in value &&
+    typeof (value as { ok?: unknown }).ok === "boolean"
+  );
+}
+
+async function parseJsonOrText(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    const payload = await parseJsonOrText(res);
+    if (isApiEnvelope(payload) && !payload.ok) {
+      const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
+      throw new Error(`${res.status}: ${codePrefix}${payload.error.message}`);
+    }
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "message" in payload &&
+      typeof (payload as { message?: unknown }).message === "string"
+    ) {
+      throw new Error(`${res.status}: ${String((payload as { message: string }).message)}`);
+    }
+    throw new Error(`${res.status}: ${typeof payload === "string" ? payload : res.statusText}`);
   }
 }
 
@@ -38,7 +85,15 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    const payload = await parseJsonOrText(res);
+    if (isApiEnvelope<T>(payload)) {
+      if (payload.ok) {
+        return payload.data as T;
+      }
+      const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
+      throw new Error(`${codePrefix}${payload.error.message}`);
+    }
+    return payload as T;
   };
 
 export const queryClient = new QueryClient({

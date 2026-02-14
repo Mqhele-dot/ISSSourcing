@@ -1,3 +1,22 @@
+export type ApiErrorPayload = {
+  code: string;
+  message: string;
+  hint?: string;
+  details?: unknown;
+};
+
+export type ApiSuccessResponse<T> = {
+  ok: true;
+  data: T;
+};
+
+export type ApiErrorResponse = {
+  ok: false;
+  error: ApiErrorPayload;
+};
+
+export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
+
 export type DemoDataSummary = {
   users: number;
   warehouses: number;
@@ -41,6 +60,33 @@ export type InventoryListItem = {
   available: number;
   location: string | null;
   updatedAt?: string | Date | null;
+};
+
+export type InventoryItem = InventoryListItem;
+
+export type InventoryDetail = {
+  item: InventoryListItem;
+  positions: Array<{
+    location: string;
+    onHand: number;
+    allocated: number;
+    available: number;
+    updatedAt: string | null;
+  }>;
+  movements: Array<{
+    id: number;
+    location: string;
+    delta: number;
+    reason: string;
+    ref: string | null;
+    createdBy: string | null;
+    createdAt: string | null;
+  }>;
+  summary: {
+    onHand: number;
+    allocated: number;
+    available: number;
+  };
 };
 
 export type PurchaseOrderListItem = {
@@ -96,6 +142,8 @@ export type PurchaseOrderDetail = {
   };
 };
 
+export type PurchaseOrder = PurchaseOrderDetail;
+
 export type PurchaseReceiveResult = {
   order: PurchaseOrderDetail;
   inventoryChanges: Array<{
@@ -114,6 +162,11 @@ export type PurchaseReceiveResult = {
     sku: string;
     created: boolean;
   }>;
+  changed: {
+    inventoryChanges: number;
+    shipmentUpdates: number;
+    mismatchExceptions: number;
+  };
 };
 
 export type ShipmentListItem = {
@@ -139,6 +192,8 @@ export type ShipmentDetail = ShipmentListItem & {
   timeline: ShipmentTimelineEvent[];
 };
 
+export type Shipment = ShipmentDetail;
+
 export type OperationalException = {
   id: number;
   type: string;
@@ -153,6 +208,8 @@ export type OperationalException = {
   createdAt: string | null;
   updatedAt: string | null;
 };
+
+export type ExceptionCase = OperationalException;
 
 export type IntegrationRun = {
   id: number;
@@ -178,4 +235,27 @@ export type ControlTowerOverview = {
     relatedRefs: Record<string, unknown>;
     createdAt: string | null;
   }>;
+};
+
+export type ActivityItem = ControlTowerOverview["activity"][number];
+
+export type DemoWalkthroughResult = {
+  steps: Array<{
+    id: string;
+    label: string;
+    completed: boolean;
+    details?: string;
+  }>;
+  context: {
+    sku: string;
+    poNumber: string;
+    shipmentId: number;
+    exceptionId: number | null;
+  };
+  links: {
+    inventory: string;
+    purchase: string;
+    logistics: string;
+    exception: string | null;
+  };
 };

@@ -1,4 +1,5 @@
 import { pool } from "./db";
+import { resetAndSeedDemoData } from "./seed";
 
 type InventoryFilterInput = {
   location?: string;
@@ -1366,6 +1367,7 @@ export async function listOperationalShipments(filters: {
   status?: string;
   po?: string;
   carrier?: string;
+  risk?: string;
 }) {
   const whereClauses: string[] = [];
   const params: string[] = [];
@@ -1427,6 +1429,10 @@ export async function listOperationalShipments(filters: {
       updatedAt: row.updated_at,
       atRisk,
     });
+  }
+
+  if (filters.risk?.trim().toLowerCase() === "late") {
+    return shipments.filter((shipment) => shipment.atRisk);
   }
 
   return shipments;
@@ -1904,6 +1910,183 @@ export async function getOperationalControlTowerOverview() {
       relatedRefs: row.related_refs || {},
       createdAt: row.created_at,
     })),
+  };
+}
+
+export async function runOperationalDemoWalkthrough(actor: string) {
+  const steps: Array<{ id: string; label: string; completed: boolean; details?: string }> = [];
+
+  const resetSummary = await resetAndSeedDemoData();
+  await initializeOperationalData();
+  steps.push({
+    id: "reset-demo",
+    label: "Reset demo data",
+    completed: true,
+    details: `Users ${resetSummary.users}, Items ${resetSummary.items}`,
+  });
+
+  const inventoryItems = await listOperationalInventory({});
+  const firstInventoryItem = inventoryItems[0];
+  if (!firstInventoryItem) {
+    throw new Error("inventory_empty");
+  }
+
+  const shortageDelta = -Math.max(firstInventoryItem.available + 1, 1);
+  const shortageAdjustment = await adjustOperationalInventory({
+    skuOrId: firstInventoryItem.sku,
+    location: firstInventoryItem.location ?? "Main Warehouse",
+    delta: shortageDelta,
+    reason: "Demo Walkthrough - force shortage",
+    ref: "DEMO-WALKTHROUGH",
+    createdBy: actor,
+    skipLocationValidation: true,
+  });
+  const shortageExceptionId = shortageAdjustment.exception?.id ?? null;
+  steps.push({
+    id: "create-shortage",
+    label: "Create inventory shortage",
+    completed: true,
+    details:
+      shortageExceptionId !== null
+        ? `Exception #${shortageExceptionId}`
+        : `Available ${shortageAdjustment.summary.available}`,
+  });
+
+  const supplierResult = await pool.query<{ id: number }>(
+    `
+    SELECT id
+    FROM suppliers
+    ORDER BY id ASC
+    LIMIT 1
+    `,
+  );
+  const supplierId = supplierResult.rows[0]?.id;
+  if (!supplierId) {
+    throw new Error("supplier_not_found");
+  }
+
+  const itemLookup = await pool.query<{ id: number; price: number }>(
+    `
+    SELECT id, price
+    FROM inventory_items
+    WHERE sku = $1
+    LIMIT 1
+    `,
+    [firstInventoryItem.sku],
+  );
+  const itemId = itemLookup.rows[0]?.id;
+  const itemPrice = toNumber(itemLookup.rows[0]?.price, 10);
+  if (!itemId) {
+    throw new Error("item_not_found");
+  }
+
+  const now = Date.now();
+  const poNumber = `PO-DEMO-${now}`;
+  const lineQuantity = 10;
+  const lineUnitPrice = Math.max(itemPrice, 1);
+  const lineTotal = lineQuantity * lineUnitPrice;
+
+  const poInsert = await pool.query<{ id: number; order_number: string }>(
+    `
+    INSERT INTO purchase_orders (
+      order_number,
+      supplier_id,
+      status,
+      order_date,
+      total_amount,
+      created_at,
+      updated_at
+    )
+    VALUES ($1, $2, 'sent', now(), $3, now(), now())
+    RETURNING id, order_number
+    `,
+    [poNumber, supplierId, lineTotal],
+  );
+  const poId = poInsert.rows[0].id;
+
+  await pool.query(
+    `
+    INSERT INTO purchase_order_items (
+      order_id,
+      item_id,
+      quantity,
+      unit_price,
+      total_price,
+      received_quantity
+    )
+    VALUES ($1, $2, $3, $4, $5, 0)
+    `,
+    [poId, itemId, lineQuantity, lineUnitPrice, lineTotal],
+  );
+  steps.push({
+    id: "create-po",
+    label: "Create demo purchase order",
+    completed: true,
+    details: poNumber,
+  });
+
+  const shipmentInsert = await pool.query<{ id: number }>(
+    `
+    INSERT INTO shipments (po_number, carrier, status, eta, created_at, updated_at)
+    VALUES ($1, 'Demo Carrier', 'created', now() + interval '2 days', now(), now())
+    RETURNING id
+    `,
+    [poNumber],
+  );
+  const shipmentId = shipmentInsert.rows[0].id;
+
+  await updateOperationalShipmentStatus({
+    shipmentId: String(shipmentId),
+    toStatus: "in_transit",
+    note: "Demo walkthrough status update",
+  });
+  steps.push({
+    id: "flip-shipment",
+    label: "Flip shipment status",
+    completed: true,
+    details: `Shipment #${shipmentId} -> in_transit`,
+  });
+
+  const receiveResult = await receiveOperationalPurchaseOrder(poNumber, [
+    {
+      sku: firstInventoryItem.sku,
+      qty_received_now: 4,
+    },
+  ]);
+  const mismatchExceptionId = receiveResult.mismatchExceptions[0]?.id ?? null;
+  steps.push({
+    id: "partial-receive",
+    label: "Partial receive causing mismatch",
+    completed: true,
+    details: `Mismatches ${receiveResult.mismatchExceptions.length}`,
+  });
+
+  const chosenExceptionId = mismatchExceptionId ?? shortageExceptionId;
+  if (chosenExceptionId !== null) {
+    await getOperationalExceptionDetail(String(chosenExceptionId));
+    steps.push({
+      id: "open-exception",
+      label: "Open created exception detail",
+      completed: true,
+      details: `Exception #${chosenExceptionId}`,
+    });
+  }
+
+  return {
+    steps,
+    context: {
+      sku: firstInventoryItem.sku,
+      poNumber,
+      shipmentId,
+      exceptionId: chosenExceptionId,
+    },
+    links: {
+      inventory: `/inventory/${encodeURIComponent(firstInventoryItem.sku)}`,
+      purchase: `/purchase/${encodeURIComponent(poNumber)}`,
+      logistics: `/logistics/${shipmentId}`,
+      exception:
+        chosenExceptionId !== null ? `/exceptions/${chosenExceptionId}` : null,
+    },
   };
 }
 
