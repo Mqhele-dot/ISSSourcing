@@ -30,10 +30,15 @@ export type DeepHealthCheck = HealthCheck & {
 };
 
 export type InventoryListItem = {
-  id: number;
+  id?: number;
   name: string;
   sku: string;
-  quantity: number;
-  lowStockThreshold: number | null;
+  categoryId?: number | null;
+  quantity?: number;
+  lowStockThreshold: number;
+  onHand: number;
+  allocated: number;
+  available: number;
   location: string | null;
+  updatedAt?: string | Date | null;
 };
