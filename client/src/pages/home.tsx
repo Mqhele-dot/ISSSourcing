@@ -1,13 +1,26 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
-import { AlertTriangle, Boxes, Clock3, PackageCheck } from "lucide-react";
+import { AlertTriangle, Boxes, CheckCircle2, Clock3, PackageCheck, PlayCircle } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataState } from "@/components/ui/data-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 import { useAsyncResource } from "@/hooks/use-async-resource";
-import { fetchControlTowerOverview, type ControlTowerOverview } from "@/api/client";
+import {
+  fetchControlTowerOverview,
+  runDemoWalkthrough,
+  type ControlTowerOverview,
+  type DemoWalkthroughResult,
+} from "@/api/client";
+
+export const KPI_DEEP_LINKS = {
+  exceptions: "/exceptions?status=open&severity=high",
+  logistics: "/logistics?status=in_transit&risk=late",
+  purchase: "/purchase?status=approved",
+  inventory: "/inventory?low=1",
+} as const;
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -40,12 +53,39 @@ function KpiCard({ title, value, href, icon }: KpiCardProps) {
 }
 
 export default function HomePage() {
+  const { toast } = useToast();
   const fetcher = async (): Promise<ControlTowerOverview> => fetchControlTowerOverview();
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const [walkthrough, setWalkthrough] = useState<DemoWalkthroughResult | null>(null);
+  const [runningWalkthrough, setRunningWalkthrough] = useState(false);
 
   const openExceptions = data
     ? Object.values(data.kpis.exceptionsBySeverity).reduce((sum, count) => sum + count, 0)
     : 0;
+
+  const handleRunWalkthrough = async () => {
+    setRunningWalkthrough(true);
+    try {
+      const result = await runDemoWalkthrough();
+      setWalkthrough(result);
+      await refetch();
+      toast({
+        title: "Demo walkthrough complete",
+        description: "Operational demo data has been prepared.",
+      });
+    } catch (walkthroughError) {
+      toast({
+        title: "Walkthrough failed",
+        description:
+          walkthroughError instanceof Error
+            ? walkthroughError.message
+            : "Failed to run walkthrough",
+        variant: "destructive",
+      });
+    } finally {
+      setRunningWalkthrough(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -54,9 +94,19 @@ export default function HomePage() {
         subtitle="Operational command center"
         breadcrumb={<span>Overview / Control Tower</span>}
         actions={
-          <Button variant="outline" onClick={refetch}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={handleRunWalkthrough}
+              disabled={runningWalkthrough}
+              className="gap-2"
+            >
+              <PlayCircle className="h-4 w-4" />
+              Run Demo Walkthrough
+            </Button>
+            <Button variant="outline" onClick={refetch}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -74,28 +124,77 @@ export default function HomePage() {
               <KpiCard
                 title="Open exceptions"
                 value={openExceptions}
-                href="/exceptions?status=open"
+                href={KPI_DEEP_LINKS.exceptions}
                 icon={<AlertTriangle className="h-8 w-8" />}
               />
               <KpiCard
                 title="Late shipments"
                 value={overview.kpis.lateShipments}
-                href="/logistics?status=in_transit"
+                href={KPI_DEEP_LINKS.logistics}
                 icon={<Clock3 className="h-8 w-8" />}
               />
               <KpiCard
                 title="POs awaiting action"
                 value={overview.kpis.posAwaitingAction}
-                href="/orders?status=approved"
+                href={KPI_DEEP_LINKS.purchase}
                 icon={<PackageCheck className="h-8 w-8" />}
               />
               <KpiCard
                 title="Low stock SKUs"
                 value={overview.kpis.lowStockSkus}
-                href="/inventory?low=true"
+                href={KPI_DEEP_LINKS.inventory}
                 icon={<Boxes className="h-8 w-8" />}
               />
             </div>
+
+            {walkthrough ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Demo walkthrough checklist</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {walkthrough.steps.map((step) => (
+                    <div
+                      key={step.id}
+                      className="flex items-start justify-between gap-4 rounded-md border border-border px-3 py-2"
+                    >
+                      <div>
+                        <p className="font-medium">{step.label}</p>
+                        {step.details ? (
+                          <p className="text-xs text-muted-foreground">{step.details}</p>
+                        ) : null}
+                      </div>
+                      <Badge variant={step.completed ? "default" : "outline"}>
+                        {step.completed ? (
+                          <span className="inline-flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3" />
+                            done
+                          </span>
+                        ) : (
+                          "pending"
+                        )}
+                      </Badge>
+                    </div>
+                  ))}
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={walkthrough.links.inventory}>View inventory</Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={walkthrough.links.purchase}>View purchase</Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={walkthrough.links.logistics}>View logistics</Link>
+                    </Button>
+                    {walkthrough.links.exception ? (
+                      <Button asChild size="sm">
+                        <Link href={walkthrough.links.exception}>Open exception</Link>
+                      </Button>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
 
             <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
               <Card>
