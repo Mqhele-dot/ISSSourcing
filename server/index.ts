@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 import { initializeDatabase } from "./init-db";
 import { seedDatabaseIfEmpty } from "./seed";
+import { initializeOperationalData } from "./operations-core";
 import type { PoolClient } from "pg";
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
@@ -34,6 +35,9 @@ pool.connect()
           console.log("ℹ️ Demo data seeding skipped (existing data detected)");
         }
       }
+
+      await initializeOperationalData();
+      console.log("✅ Operational workflow schema initialized");
     } catch (schemaError) {
       console.error("⚠️ Database schema initialization failed:", schemaError);
       console.error("The application may not function correctly without a properly initialized database");

@@ -24,6 +24,7 @@ import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } f
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument } from "./services/document-generator-service";
 import { ReportFormat, ReportType, reportTypeEnum, reportFormatEnum } from "@shared/schema";
+import { registerOperationalRoutes } from "./operations-routes";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -75,6 +76,7 @@ async function workbookToBuffer(workbook: Excel.Workbook): Promise<Buffer> {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication routes and middleware
   const auth = setupAuth(app);
+  registerOperationalRoutes(app, auth);
   
   // Role and permission routes
   
