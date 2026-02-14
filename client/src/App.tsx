@@ -89,8 +89,9 @@ function Router() {
       <ProtectedRoute path="/" component={Home} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
       <ProtectedRoute path="/inventory" component={Inventory} />
-      <ProtectedRoute path="/inventory/:id" component={InventoryItemDetail} />
+      <ProtectedRoute path="/inventory/:sku" component={InventoryItemDetail} />
       <ProtectedRoute path="/orders" component={OrdersPage} />
+      <ProtectedRoute path="/orders/:po" component={OrdersPage} />
       <ProtectedRoute path="/suppliers" component={SuppliersPage} />
       <ProtectedRoute path="/reports" component={Reports} />
       <ProtectedRoute path="/reorder" component={ReorderPage} />

@@ -1,8 +1,13 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useLocation, useRoute } from "wouter";
+import { ArrowLeft, CheckCircle2, Send, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/page-header";
+import { Toolbar } from "@/components/ui/toolbar";
+import { DataState } from "@/components/ui/data-state";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -11,386 +16,473 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ClipboardEdit, File, FileCheck, FilePlus, FileText, Search, ShoppingCart } from "lucide-react";
-import { type PurchaseRequisition, type PurchaseOrder, PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus } from "@shared/schema";
-import { formatDate } from "@/lib/utils";
-import TutorialStep from "@/components/ui/tutorial-button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryState } from "@/hooks/use-query-state";
+import { useAsyncResource } from "@/hooks/use-async-resource";
+import {
+  approvePurchaseOrder,
+  fetchPurchaseOrder,
+  fetchPurchaseOrders,
+  receivePurchaseOrder,
+  sendPurchaseOrder,
+  type PurchaseOrderDetail,
+  type PurchaseOrderListItem,
+  type PurchaseReceiveResult,
+} from "@/api/client";
 
-export default function OrdersPage() {
-  const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("requisitions");
-  
-  // Get requisitions
-  const { 
-    data: requisitions, 
-    isLoading: requisitionsLoading 
-  } = useQuery({
-    queryKey: ['/api/purchase-requisitions'],
-    retry: 1,
+function formatDate(value: string | null) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleDateString();
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleString();
+}
+
+function canApprove(status: string) {
+  return status === "open";
+}
+
+function canSend(status: string) {
+  return status === "approved";
+}
+
+function canReceive(status: string) {
+  return status === "approved" || status === "sent";
+}
+
+function PurchaseOrdersList() {
+  const [, setLocation] = useLocation();
+  const { queryState, setQueryState } = useQueryState({
+    status: "",
+    supplier: "",
+    q: "",
   });
-  
-  // Get purchase orders
-  const { 
-    data: purchaseOrders, 
-    isLoading: ordersLoading 
-  } = useQuery({
-    queryKey: ['/api/purchase-orders'],
-    retry: 1,
-  });
-  
-  // Status badge colors for requisitions
-  const getRequisitionStatusColor = (status: string) => {
-    switch (status) {
-      case PurchaseRequisitionStatus.DRAFT:
-        return "bg-gray-500";
-      case PurchaseRequisitionStatus.PENDING:
-        return "bg-yellow-500";
-      case PurchaseRequisitionStatus.APPROVED:
-        return "bg-green-500";
-      case PurchaseRequisitionStatus.REJECTED:
-        return "bg-red-500";
-      case PurchaseRequisitionStatus.CONVERTED:
-        return "bg-blue-500";
-      default:
-        return "bg-gray-500";
-    }
-  };
-  
-  // Status badge colors for purchase orders
-  const getOrderStatusColor = (status: string) => {
-    switch (status) {
-      case PurchaseOrderStatus.DRAFT:
-        return "bg-gray-500";
-      case PurchaseOrderStatus.SENT:
-        return "bg-blue-500";
-      case PurchaseOrderStatus.ACKNOWLEDGED:
-        return "bg-indigo-500";
-      case PurchaseOrderStatus.PARTIALLY_RECEIVED:
-        return "bg-amber-500";
-      case PurchaseOrderStatus.RECEIVED:
-        return "bg-green-500";
-      case PurchaseOrderStatus.CANCELLED:
-        return "bg-red-500";
-      case PurchaseOrderStatus.COMPLETED:
-        return "bg-emerald-600";
-      default:
-        return "bg-gray-500";
-    }
-  };
-  
-  // Payment status badge colors
-  const getPaymentStatusColor = (status: string) => {
-    switch (status) {
-      case PaymentStatus.UNPAID:
-        return "bg-red-500";
-      case PaymentStatus.PARTIALLY_PAID:
-        return "bg-yellow-500";
-      case PaymentStatus.PAID:
-        return "bg-green-500";
-      default:
-        return "bg-gray-500";
-    }
-  };
-  
-  // Handle view requisition details
-  const handleViewRequisition = (requisition: PurchaseRequisition) => {
-    toast({
-      title: "Feature coming soon",
-      description: `View details for requisition ${requisition.requisitionNumber}`,
+
+  const fetcher = async (): Promise<PurchaseOrderListItem[]> =>
+    fetchPurchaseOrders({
+      status: String(queryState.status || ""),
+      supplier: String(queryState.supplier || ""),
+      q: String(queryState.q || ""),
     });
-  };
-  
-  // Handle view order details
-  const handleViewOrder = (order: PurchaseOrder) => {
-    toast({
-      title: "Feature coming soon",
-      description: `View details for purchase order ${order.orderNumber}`,
-    });
-  };
-  
-  // Create a new requisition
-  const handleCreateRequisition = () => {
-    toast({
-      title: "Feature coming soon",
-      description: "Create a new purchase requisition",
-    });
-  };
-  
-  // Create a new purchase order
-  const handleCreateOrder = () => {
-    toast({
-      title: "Feature coming soon",
-      description: "Create a new purchase order",
-    });
-  };
-  
+
+  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Orders Management</h1>
-          <p className="text-muted-foreground">
-            Manage purchase requisitions and orders
-          </p>
-        </div>
-        <TutorialStep page="orders" />
-      </div>
-      
-      <Tabs 
-        defaultValue="requisitions" 
-        className="space-y-6"
-        value={activeTab}
-        onValueChange={setActiveTab}
-      >
-        <div className="flex justify-between items-center">
-          <TabsList className="grid w-[400px] grid-cols-2">
-            <TabsTrigger value="requisitions">Purchase Requisitions</TabsTrigger>
-            <TabsTrigger value="orders">Purchase Orders</TabsTrigger>
-          </TabsList>
-          
-          <Button 
-            onClick={activeTab === "requisitions" ? handleCreateRequisition : handleCreateOrder}
-          >
-            {activeTab === "requisitions" ? (
-              <>
-                <FilePlus className="mr-2 h-4 w-4" />
-                New Requisition
-              </>
-            ) : (
-              <>
-                <ShoppingCart className="mr-2 h-4 w-4" />
-                New Purchase Order
-              </>
-            )}
+    <div className="mx-auto max-w-7xl space-y-4">
+      <PageHeader
+        title="Purchase Orders"
+        subtitle="Operational purchasing workflow"
+        breadcrumb={<span>Operations / Purchase Orders</span>}
+      />
+
+      <Toolbar
+        left={
+          <>
+            <Input
+              value={String(queryState.q || "")}
+              onChange={(event) => setQueryState({ q: event.target.value })}
+              placeholder="Search PO number or supplier"
+              className="w-[260px]"
+            />
+            <Input
+              value={String(queryState.supplier || "")}
+              onChange={(event) => setQueryState({ supplier: event.target.value })}
+              placeholder="Supplier id or name"
+              className="w-[220px]"
+            />
+            <Input
+              value={String(queryState.status || "")}
+              onChange={(event) => setQueryState({ status: event.target.value })}
+              placeholder="Status (draft/open/approved/sent/received)"
+              className="w-[250px]"
+            />
+          </>
+        }
+        right={
+          <Button variant="outline" onClick={refetch}>
+            Refresh
           </Button>
-        </div>
-        
-        {/* Purchase Requisitions Tab */}
-        <TabsContent value="requisitions">
-          <Card>
-            <CardHeader>
-              <CardTitle>Purchase Requisitions</CardTitle>
-              <CardDescription>
-                View and manage your purchase requisitions
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {requisitionsLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex space-x-4 items-center p-4 border rounded-md">
-                      <Skeleton className="h-10 w-10 rounded-full" />
-                      <div className="space-y-2 flex-1">
-                        <Skeleton className="h-4 w-40" />
-                        <Skeleton className="h-4 w-24" />
-                      </div>
-                      <Skeleton className="h-8 w-24" />
-                    </div>
-                  ))}
-                </div>
-              ) : requisitions && requisitions.length > 0 ? (
-                <ScrollArea className="h-[550px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Requisition #</TableHead>
-                        <TableHead>Supplier</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {requisitions.map((req: PurchaseRequisition) => (
-                        <TableRow key={req.id}>
-                          <TableCell className="font-medium">{req.requisitionNumber}</TableCell>
-                          <TableCell>
-                            {req.supplierId ? (
-                              <span>{req.supplier?.name || `Supplier #${req.supplierId}`}</span>
-                            ) : (
-                              <span className="text-muted-foreground">Not specified</span>
-                            )}
-                          </TableCell>
-                          <TableCell>{formatDate(new Date(req.createdAt))}</TableCell>
-                          <TableCell>
-                            <Badge className={getRequisitionStatusColor(req.status)}>
-                              {req.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">${req.totalAmount.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleViewRequisition(req)}
-                            >
-                              <Search className="h-4 w-4" />
-                            </Button>
-                            {req.status === PurchaseRequisitionStatus.DRAFT && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => toast({
-                                  title: "Feature coming soon",
-                                  description: "Edit requisition",
-                                })}
-                              >
-                                <ClipboardEdit className="h-4 w-4" />
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => toast({
-                                title: "Feature coming soon",
-                                description: "Generate PDF for this requisition",
-                              })}
-                            >
-                              <FileText className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              ) : (
-                <div className="text-center py-8">
-                  <FileText className="mx-auto h-12 w-12 text-muted-foreground mb-3 opacity-50" />
-                  <h3 className="font-medium text-lg mb-2">No Requisitions Found</h3>
-                  <p className="text-muted-foreground mb-4">
-                    You haven't created any purchase requisitions yet.
-                  </p>
-                  <Button onClick={handleCreateRequisition}>
-                    <FilePlus className="mr-2 h-4 w-4" />
-                    Create Your First Requisition
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        {/* Purchase Orders Tab */}
-        <TabsContent value="orders">
-          <Card>
-            <CardHeader>
-              <CardTitle>Purchase Orders</CardTitle>
-              <CardDescription>
-                View and manage your purchase orders
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {ordersLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex space-x-4 items-center p-4 border rounded-md">
-                      <Skeleton className="h-10 w-10 rounded-full" />
-                      <div className="space-y-2 flex-1">
-                        <Skeleton className="h-4 w-40" />
-                        <Skeleton className="h-4 w-24" />
-                      </div>
-                      <Skeleton className="h-8 w-24" />
-                    </div>
-                  ))}
-                </div>
-              ) : purchaseOrders && purchaseOrders.length > 0 ? (
-                <ScrollArea className="h-[550px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Order #</TableHead>
-                        <TableHead>Supplier</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Payment</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {purchaseOrders.map((order: PurchaseOrder) => (
-                        <TableRow key={order.id}>
-                          <TableCell className="font-medium">{order.orderNumber}</TableCell>
-                          <TableCell>
-                            {order.supplierId ? (
-                              <span>{order.supplier?.name || `Supplier #${order.supplierId}`}</span>
-                            ) : (
-                              <span className="text-muted-foreground">Not specified</span>
-                            )}
-                          </TableCell>
-                          <TableCell>{formatDate(new Date(order.createdAt))}</TableCell>
-                          <TableCell>
-                            <Badge className={getOrderStatusColor(order.status)}>
-                              {order.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {order.paymentStatus && (
-                              <Badge className={getPaymentStatusColor(order.paymentStatus)}>
-                                {order.paymentStatus}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">${order.totalAmount.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleViewOrder(order)}
-                            >
-                              <Search className="h-4 w-4" />
-                            </Button>
-                            {order.status === PurchaseOrderStatus.DRAFT && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => toast({
-                                  title: "Feature coming soon",
-                                  description: "Edit purchase order",
-                                })}
-                              >
-                                <ClipboardEdit className="h-4 w-4" />
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => toast({
-                                title: "Feature coming soon", 
-                                description: "Generate PDF for this purchase order",
-                              })}
-                            >
-                              <FileText className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              ) : (
-                <div className="text-center py-8">
-                  <File className="mx-auto h-12 w-12 text-muted-foreground mb-3 opacity-50" />
-                  <h3 className="font-medium text-lg mb-2">No Purchase Orders Found</h3>
-                  <p className="text-muted-foreground mb-4">
-                    You haven't created any purchase orders yet.
-                  </p>
-                  <Button onClick={handleCreateOrder}>
-                    <ShoppingCart className="mr-2 h-4 w-4" />
-                    Create Your First Purchase Order
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+        }
+      />
+
+      <DataState
+        loading={loading}
+        error={error}
+        data={data}
+        isEmpty={(orders) => orders.length === 0}
+        emptyTitle="No purchase orders found"
+        emptyDescription="Try broadening your filters."
+        onRetry={refetch}
+      >
+        {(orders) => (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>PO</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Requested</TableHead>
+                <TableHead className="text-right">Lines</TableHead>
+                <TableHead className="text-right">Progress</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {orders.map((order) => (
+                <TableRow
+                  key={order.poNumber}
+                  className="cursor-pointer"
+                  onClick={() => setLocation(`/orders/${order.poNumber}`)}
+                >
+                  <TableCell className="font-medium">{order.poNumber}</TableCell>
+                  <TableCell>{order.supplierName || `Supplier #${order.supplierId}`}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={order.status} />
+                  </TableCell>
+                  <TableCell>{formatDate(order.requestedDate)}</TableCell>
+                  <TableCell className="text-right">{order.linesCount}</TableCell>
+                  <TableCell className="text-right">{order.receivedProgress}%</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </DataState>
     </div>
   );
+}
+
+function PurchaseOrderDetailView({ po }: { po: string }) {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+
+  const [receiving, setReceiving] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [receiveState, setReceiveState] = useState<Record<string, number>>({});
+  const [lastChangeSummary, setLastChangeSummary] = useState<PurchaseReceiveResult | null>(null);
+
+  const fetcher = async (): Promise<PurchaseOrderDetail> => fetchPurchaseOrder(po);
+  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+
+  const receivePayload = useMemo(
+    () =>
+      Object.entries(receiveState)
+        .filter(([, qty]) => qty > 0)
+        .map(([sku, qty]) => ({ sku, qtyReceivedNow: qty })),
+    [receiveState],
+  );
+
+  const updateStatus = async (action: "approve" | "send") => {
+    setStatusUpdating(true);
+    try {
+      if (action === "approve") {
+        await approvePurchaseOrder(po);
+      } else {
+        await sendPurchaseOrder(po);
+      }
+      await refetch();
+      toast({
+        title: "Status updated",
+        description: `PO moved to ${action === "approve" ? "approved" : "sent"}.`,
+      });
+    } catch (statusError) {
+      toast({
+        title: "Status update failed",
+        description: statusError instanceof Error ? statusError.message : "Request failed",
+        variant: "destructive",
+      });
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  const submitReceive = async () => {
+    if (receivePayload.length === 0) {
+      toast({
+        title: "No lines selected",
+        description: "Enter at least one receive quantity.",
+      });
+      return;
+    }
+
+    setReceiving(true);
+    try {
+      const result = await receivePurchaseOrder(po, receivePayload);
+      setLastChangeSummary(result);
+      setReceiveState({});
+      await refetch();
+      toast({
+        title: "Receive complete",
+        description: `Processed ${receivePayload.length} line(s).`,
+      });
+
+      if (result.mismatchExceptions.some((entry) => entry.created)) {
+        toast({
+          title: "Mismatch exception created",
+          description: "At least one line produced a PO mismatch exception.",
+          variant: "destructive",
+        });
+      }
+    } catch (receiveError) {
+      toast({
+        title: "Receive failed",
+        description: receiveError instanceof Error ? receiveError.message : "Request failed",
+        variant: "destructive",
+      });
+    } finally {
+      setReceiving(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-4">
+      <Button variant="ghost" onClick={() => setLocation("/orders")} className="w-fit">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to purchase orders
+      </Button>
+
+      <DataState
+        loading={loading}
+        error={error}
+        data={data}
+        isEmpty={() => false}
+        emptyTitle="PO detail unavailable"
+        onRetry={refetch}
+      >
+        {(detail) => (
+          <>
+            <PageHeader
+              title={`PO ${detail.poNumber}`}
+              subtitle={detail.supplierName || `Supplier #${detail.supplierId}`}
+              breadcrumb={<span>Operations / Purchase Orders / {detail.poNumber}</span>}
+              actions={
+                <>
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    disabled={!canApprove(detail.status) || statusUpdating}
+                    onClick={() => updateStatus("approve")}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Approve
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    disabled={!canSend(detail.status) || statusUpdating}
+                    onClick={() => updateStatus("send")}
+                  >
+                    <Send className="h-4 w-4" />
+                    Send
+                  </Button>
+                </>
+              }
+            />
+
+            <div className="grid gap-4 md:grid-cols-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Status</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <StatusBadge status={detail.status} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Requested</CardTitle>
+                </CardHeader>
+                <CardContent>{formatDate(detail.requestedDate)}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Progress</CardTitle>
+                </CardHeader>
+                <CardContent>{detail.progress.percent}%</CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Total</CardTitle>
+                </CardHeader>
+                <CardContent>${detail.totalAmount.toFixed(2)}</CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Receive panel</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="text-right">Ordered</TableHead>
+                      <TableHead className="text-right">Received</TableHead>
+                      <TableHead className="text-right">Remaining</TableHead>
+                      <TableHead className="text-right">Receive now</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.lines.map((line) => (
+                      <TableRow key={line.id}>
+                        <TableCell className="font-medium">{line.sku}</TableCell>
+                        <TableCell>{line.itemName}</TableCell>
+                        <TableCell className="text-right">{line.qtyOrdered}</TableCell>
+                        <TableCell className="text-right">{line.qtyReceived}</TableCell>
+                        <TableCell className="text-right">{line.expectedRemaining}</TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            className="ml-auto w-28 text-right"
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={receiveState[line.sku] ?? 0}
+                            onChange={(event) =>
+                              setReceiveState((current) => ({
+                                ...current,
+                                [line.sku]: Number(event.target.value),
+                              }))
+                            }
+                            disabled={!canReceive(detail.status)}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+
+                <div className="flex justify-end">
+                  <Button onClick={submitReceive} disabled={!canReceive(detail.status) || receiving}>
+                    <Truck className="mr-2 h-4 w-4" />
+                    Receive selected
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {lastChangeSummary ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>What changed</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label>Inventory deltas</Label>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>SKU</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead className="text-right">Delta</TableHead>
+                          <TableHead className="text-right">On hand</TableHead>
+                          <TableHead className="text-right">Available</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lastChangeSummary.inventoryChanges.map((change, index) => (
+                          <TableRow key={`${change.sku}-${index}`}>
+                            <TableCell>{change.sku}</TableCell>
+                            <TableCell>{change.location}</TableCell>
+                            <TableCell className="text-right">+{change.delta}</TableCell>
+                            <TableCell className="text-right">{change.onHand}</TableCell>
+                            <TableCell className="text-right">{change.available}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <div>
+                    <Label>Shipment updates</Label>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Shipment ID</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lastChangeSummary.shipmentUpdates.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={2} className="text-sm text-muted-foreground">
+                              No linked shipment changes
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          lastChangeSummary.shipmentUpdates.map((update) => (
+                            <TableRow key={update.shipmentId}>
+                              <TableCell>{update.shipmentId}</TableCell>
+                              <TableCell>{update.toStatus}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Linked shipments</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Carrier</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>ETA</TableHead>
+                      <TableHead>Updated</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.shipments.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                          No linked shipments
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      detail.shipments.map((shipment) => (
+                        <TableRow key={shipment.id}>
+                          <TableCell>{shipment.id}</TableCell>
+                          <TableCell>{shipment.carrier || "-"}</TableCell>
+                          <TableCell>
+                            <StatusBadge status={shipment.status} />
+                          </TableCell>
+                          <TableCell>{formatDate(shipment.eta)}</TableCell>
+                          <TableCell>{formatDateTime(shipment.updatedAt)}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </DataState>
+    </div>
+  );
+}
+
+export default function OrdersPage() {
+  const [detailMatch, detailParams] = useRoute<{ po: string }>("/orders/:po");
+
+  if (detailMatch && detailParams?.po) {
+    return <PurchaseOrderDetailView po={detailParams.po} />;
+  }
+
+  return <PurchaseOrdersList />;
 }
