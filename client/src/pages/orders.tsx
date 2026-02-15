@@ -181,12 +181,14 @@ function PurchaseOrdersList() {
         loading={loading}
         error={error}
         data={data}
-        isEmpty={(orders) => orders.length === 0}
+        isEmpty={(orders) => (Array.isArray(orders) ? orders : []).length === 0}
         emptyTitle="No purchase orders found"
         emptyDescription="Try broadening your filters."
         onRetry={refetch}
       >
-        {(orders) => (
+        {(orders) => {
+          const list = Array.isArray(orders) ? orders : [];
+          return (
           <Table>
             <TableHeader>
               <TableRow>
@@ -199,7 +201,7 @@ function PurchaseOrdersList() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.map((order) => (
+              {list.map((order) => (
                 <TableRow
                   key={order.poNumber}
                   className="cursor-pointer"
@@ -217,7 +219,8 @@ function PurchaseOrdersList() {
               ))}
             </TableBody>
           </Table>
-        )}
+          );
+        }}
       </DataState>
     </div>
   );

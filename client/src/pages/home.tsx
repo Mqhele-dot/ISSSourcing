@@ -68,7 +68,7 @@ export default function HomePage() {
   const [walkthrough, setWalkthrough] = useState<DemoWalkthroughResult | null>(null);
   const [runningWalkthrough, setRunningWalkthrough] = useState(false);
 
-  const openExceptions = data
+  const openExceptions = data?.kpis?.exceptionsBySeverity
     ? Object.values(data.kpis.exceptionsBySeverity).reduce((sum, count) => sum + count, 0)
     : 0;
 
@@ -153,19 +153,19 @@ export default function HomePage() {
               />
               <KpiCard
                 title="Late shipments"
-                value={overview.kpis.lateShipments}
+                value={overview.kpis?.lateShipments ?? 0}
                 href={KPI_DEEP_LINKS.logistics}
                 icon={<Clock3 className="h-8 w-8" />}
               />
               <KpiCard
                 title="POs awaiting action"
-                value={overview.kpis.posAwaitingAction}
+                value={overview.kpis?.posAwaitingAction ?? 0}
                 href={KPI_DEEP_LINKS.purchase}
                 icon={<PackageCheck className="h-8 w-8" />}
               />
               <KpiCard
                 title="Low stock SKUs"
-                value={overview.kpis.lowStockSkus}
+                value={overview.kpis?.lowStockSkus ?? 0}
                 href={KPI_DEEP_LINKS.inventory}
                 icon={<Boxes className="h-8 w-8" />}
               />
@@ -226,10 +226,10 @@ export default function HomePage() {
                   <CardTitle>Recent activity</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {overview.activity.length === 0 ? (
+                  {(overview.activity ?? []).length === 0 ? (
                     <p className="text-sm text-muted-foreground">No recent activity events.</p>
                   ) : (
-                    overview.activity.map((event) => (
+                    (overview.activity ?? []).map((event) => (
                       <div key={event.id} className="rounded-md border border-border p-3">
                         <div className="flex items-center justify-between gap-4">
                           <p className="font-medium">{event.title}</p>
@@ -250,10 +250,10 @@ export default function HomePage() {
                   <CardTitle>Exception severity mix</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  {Object.entries(overview.kpis.exceptionsBySeverity).length === 0 ? (
+                  {Object.entries(overview.kpis?.exceptionsBySeverity ?? {}).length === 0 ? (
                     <p className="text-sm text-muted-foreground">No open exceptions.</p>
                   ) : (
-                    Object.entries(overview.kpis.exceptionsBySeverity).map(([severity, count]) => (
+                    Object.entries(overview.kpis?.exceptionsBySeverity ?? {}).map(([severity, count]) => (
                       <Link key={severity} href={`/exceptions?severity=${encodeURIComponent(severity)}&status=open`}>
                         <div className="flex cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 hover:bg-accent/40">
                           <span className="capitalize">{severity}</span>
