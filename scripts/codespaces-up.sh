@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 IS_CODESPACES="false"
-if [[ "${CODESPACES:-}" == "true" || -n "${CODESPACE_NAME:-}" ]]; then
+if [[ "${CODESPACES:-}" == "true" || -n "${CODESPACE_NAME:-}" || -n "${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}" ]]; then
   IS_CODESPACES="true"
 fi
 
@@ -99,9 +99,7 @@ add_db_endpoint() {
 
 add_db_endpoint "${DB_URL_HOST}" "${DB_URL_PORT:-${PGPORT}}"
 add_db_endpoint "${PGHOST}" "${PGPORT}"
-if [[ "${IS_CODESPACES}" == "true" ]]; then
-  add_db_endpoint "db" "5432"
-fi
+add_db_endpoint "db" "5432"
 add_db_endpoint "localhost" "${PGPORT}"
 add_db_endpoint "127.0.0.1" "${PGPORT}"
 
@@ -118,24 +116,30 @@ for attempt in {1..60}; do
     host="${endpoint%%:*}"
     port="${endpoint##*:}"
     if [[ "${HAS_PG_ISREADY}" == "true" ]]; then
-      pg_isready -h "${host}" -p "${port}" -U "${PGUSER}" -d "${PGDATABASE}" >/dev/null 2>&1
-      status=$?
+      if pg_isready -h "${host}" -p "${port}" -U "${PGUSER}" -d "${PGDATABASE}" >/dev/null 2>&1; then
+        status=0
+      else
+        status=1
+      fi
     else
       DB_WAIT_URL="postgresql://${PGUSER}:${PGPASSWORD}@${host}:${port}/${PGDATABASE}"
-      DB_WAIT_URL="${DB_WAIT_URL}" node -e '
-        import pg from "pg";
-        const { Client } = pg;
-        const client = new Client({ connectionString: process.env.DB_WAIT_URL });
-        try {
-          await client.connect();
-          await client.end();
-          process.exit(0);
-        } catch {
-          try { await client.end(); } catch {}
-          process.exit(1);
-        }
-      ' >/dev/null 2>&1
-      status=$?
+      if DB_WAIT_URL="${DB_WAIT_URL}" node -e '
+          import pg from "pg";
+          const { Client } = pg;
+          const client = new Client({ connectionString: process.env.DB_WAIT_URL });
+          try {
+            await client.connect();
+            await client.end();
+            process.exit(0);
+          } catch {
+            try { await client.end(); } catch {}
+            process.exit(1);
+          }
+        ' >/dev/null 2>&1; then
+        status=0
+      else
+        status=1
+      fi
     fi
 
     if [[ "${status}" -eq 0 ]]; then
@@ -200,8 +204,17 @@ trap cleanup EXIT INT TERM
 SERVER_READY="false"
 for attempt in {1..90}; do
   if curl --silent --show-error --fail "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+    if ! kill -0 "${APP_PID}" >/dev/null 2>&1; then
+      echo "Server process exited quickly. This is often a port conflict (EADDRINUSE)." >&2
+      exit 1
+    fi
     SERVER_READY="true"
     break
+  fi
+
+  if ! kill -0 "${APP_PID}" >/dev/null 2>&1; then
+    echo "Server process exited before health endpoint became ready." >&2
+    exit 1
   fi
   sleep 1
 done
