@@ -4128,13 +4128,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Lightweight payload: no DB or other deps — always returns 200 for proxy/CI.
   const getHealthPayload = () => ({
     status: "ok",
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
   });
 
-  // Health checks for app monitors and CI smoke tests.
+  // Health checks for app monitors and CI smoke tests. /health must never fail (no DB).
   app.get("/health", (_req, res) => {
     res.json(getHealthPayload());
   });
@@ -4192,6 +4193,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     };
   };
 
+  // Deep health: reports DB status; returns 503 when degraded.
   app.get("/health/deep", async (_req, res) => {
     const payload = await getDeepHealthPayload();
     res.status(payload.status === "ok" ? 200 : 503).json(payload);

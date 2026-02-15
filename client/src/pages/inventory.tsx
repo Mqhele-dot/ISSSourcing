@@ -24,6 +24,7 @@ import { DataState } from "@/components/ui/data-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
+import { useToast } from "@/hooks/use-toast";
 import { fetchInventory, type InventoryListItem } from "@/api/client";
 
 type Category = {
@@ -54,7 +55,7 @@ function downloadCsv(filename: string, rows: string[][]) {
       .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
       .join(","),
   );
-  const csv = escaped.join("\n");
+  const csv = "sep=,\n" + escaped.join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const href = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -68,6 +69,7 @@ function downloadCsv(filename: string, rows: string[][]) {
 
 export default function InventoryPage() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const { queryState, setQueryState } = useQueryState({
     q: "",
     location: "",
@@ -110,20 +112,29 @@ export default function InventoryPage() {
   const selectedCategory = String(queryState.category || "");
 
   const handleExportCsv = () => {
-    const items = inventoryData ?? [];
-    const rows: string[][] = [
-      ["sku", "name", "location", "on_hand", "allocated", "available", "updated_at"],
-      ...items.map((item) => [
-        item.sku,
-        item.name,
-        item.location || "",
-        String(item.onHand),
-        String(item.allocated),
-        String(item.available),
-        item.updatedAt || "",
-      ]),
-    ];
-    downloadCsv("inventory-export.csv", rows);
+    try {
+      const items = inventoryData ?? [];
+      const rows: string[][] = [
+        ["sku", "name", "location", "on_hand", "allocated", "available", "updated_at"],
+        ...items.map((item) => [
+          item.sku,
+          item.name,
+          item.location || "",
+          String(item.onHand),
+          String(item.allocated),
+          String(item.available),
+          item.updatedAt || "",
+        ]),
+      ];
+      downloadCsv("inventory-export.csv", rows);
+      toast({ title: "Export complete", description: "inventory-export.csv downloaded." });
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : "Failed to export CSV",
+        variant: "destructive",
+      });
+    }
   };
 
   const knownLocations = useMemo(() => {

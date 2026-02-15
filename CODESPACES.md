@@ -20,6 +20,8 @@ This repository now includes a `.devcontainer` configuration so it can boot in G
 npm run codespaces:up
 ```
 
+5. **If the browser shows HTTP 502:** In VS Code, open the **PORTS** tab (next to Terminal), find port **5000**, click the visibility dropdown, set it to **Public**, then reload the page. The app is only reachable from your browser when the port is Public.
+
 The command will:
 - verify you are in the repository root
 - install dependencies
@@ -49,15 +51,15 @@ If you open the forwarded URL in an external browser session, set port **5000** 
 
 ## Troubleshooting (502 / app not reachable)
 
+**Most common fix:** If you see **HTTP 502** when opening the `*.app.github.dev` URL in your browser, the port is likely not Public. In VS Code, open the **PORTS** tab (beside the Terminal), find **5000**, set visibility to **Public**, then reload the page.
+
 1. Keep the dev server terminal running (do not close it).
-2. Verify in-container health:
-
-```bash
-curl http://127.0.0.1:5000/health
-```
-
-3. In the **Ports** tab, confirm port `5000` exists and open it from that row (avoid stale browser tabs).
-4. For external browser access, ensure visibility is **Public**.
+2. If 502 persists: verify the server is listening and the health endpoint responds:
+   - `lsof -i :5000` (or your `PORT`) to confirm the process is bound.
+   - `curl http://127.0.0.1:5000/health` — should return 200 JSON.
+3. Set port visibility to **Public** in the Codespaces **Ports** tab (required for `*.app.github.dev`).
+4. Restart the dev server with explicit binding: `HOST=0.0.0.0 PORT=5000 npm run dev`.
+5. In the **Ports** tab, confirm port `5000` exists and open it from that row (avoid stale browser tabs).
 
 Health endpoint for smoke tests:
 

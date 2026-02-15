@@ -110,12 +110,38 @@ async function unwrapEnvelope<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
+const API_TIMEOUT_MS = 15000;
+
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    credentials: "include",
-    ...init,
-  });
-  return unwrapEnvelope<T>(response);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  if (init?.signal) {
+    init.signal.addEventListener("abort", () => controller.abort());
+  }
+
+  try {
+    const response = await fetch(url, {
+      credentials: "include",
+      ...init,
+      signal: controller.signal,
+    });
+    return unwrapEnvelope<T>(response);
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      toastStore.push({
+        type: "error",
+        title: "Request timeout",
+        message: `Request timed out after ${API_TIMEOUT_MS / 1000}s. Check network or try again.`,
+      });
+      throw new ApiError(
+        { code: "REQUEST_TIMEOUT", message: `Request timed out after ${API_TIMEOUT_MS / 1000}s` },
+        408,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function apiMutate<T>(method: string, url: string, data?: unknown): Promise<T> {

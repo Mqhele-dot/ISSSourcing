@@ -29,6 +29,7 @@ import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
+import { useToast } from "@/hooks/use-toast";
 import {
   addExceptionComment,
   assignException,
@@ -46,9 +47,11 @@ function formatDate(value: string | null) {
 }
 
 function downloadCsv(filename: string, rows: string[][]) {
-  const csv = rows
-    .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(","))
-    .join("\n");
+  const csv =
+    "sep=,\n" +
+    rows
+      .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(","))
+      .join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const href = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -62,6 +65,7 @@ function downloadCsv(filename: string, rows: string[][]) {
 
 function ExceptionListView() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const { queryState, setQueryState } = useQueryState({
     severity: "",
     status: "",
@@ -92,21 +96,30 @@ function ExceptionListView() {
   }, [data, lastRefreshedAt, markRefreshed]);
 
   const handleExportCsv = () => {
-    const exceptions = data ?? [];
-    const rows: string[][] = [
-      ["id", "type", "severity", "status", "title", "assignee", "created_at", "updated_at"],
-      ...exceptions.map((exception) => [
-        String(exception.id),
-        exception.type,
-        exception.severity,
-        exception.status,
-        exception.title,
-        exception.assignee || "",
-        exception.createdAt || "",
-        exception.updatedAt || "",
-      ]),
-    ];
-    downloadCsv("exceptions-export.csv", rows);
+    try {
+      const exceptions = data ?? [];
+      const rows: string[][] = [
+        ["id", "type", "severity", "status", "title", "assignee", "created_at", "updated_at"],
+        ...exceptions.map((exception) => [
+          String(exception.id),
+          exception.type,
+          exception.severity,
+          exception.status,
+          exception.title,
+          exception.assignee || "",
+          exception.createdAt || "",
+          exception.updatedAt || "",
+        ]),
+      ];
+      downloadCsv("exceptions-export.csv", rows);
+      toast({ title: "Export complete", description: "exceptions-export.csv downloaded." });
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : "Failed to export CSV",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

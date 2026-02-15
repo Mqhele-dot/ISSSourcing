@@ -261,7 +261,11 @@ echo "✅ In-container app shell warm-up passed at http://127.0.0.1:${PORT}/"
 
 if [[ -n "${FORWARDED_HOST}" ]]; then
   if command -v gh >/dev/null 2>&1 && [[ "${CODESPACES_AUTO_PUBLIC_PORT:-true}" == "true" ]]; then
-    gh codespace ports visibility "${PORT}:public" -c "${CODESPACE_NAME}" >/dev/null 2>&1 || true
+    if gh codespace ports visibility "${PORT}:public" -c "${CODESPACE_NAME}" 2>/dev/null; then
+      echo "Port ${PORT} set to Public via gh."
+    else
+      echo "Could not set port ${PORT} to Public automatically. If you see 502 in the browser, set it in the Ports tab."
+    fi
   fi
 
   echo "Checking forwarded URL reachability..."
@@ -269,10 +273,10 @@ if [[ -n "${FORWARDED_HOST}" ]]; then
   LAST_STATUS="000"
   for attempt in {1..45}; do
     LAST_STATUS="$(
-      curl --silent --output /dev/null --write-out "%{http_code}" --max-time 10 "${APP_URL}/health" || true
+      curl -I --silent --output /dev/null --write-out "%{http_code}" --max-time 10 "${APP_URL}/health" 2>/dev/null || true
     )"
     case "${LAST_STATUS}" in
-      200|301|302|307|308|401|403)
+      200|302)
         FORWARDED_READY="true"
         break
         ;;
@@ -287,14 +291,17 @@ if [[ -n "${FORWARDED_HOST}" ]]; then
 
   if [[ "${FORWARDED_READY}" == "true" ]]; then
     echo "✅ Forwarded URL check passed (${APP_URL}/health -> HTTP ${LAST_STATUS})."
+    echo ""
+    echo "  → Open in browser: ${APP_URL}"
+    echo "  → If you see 502: In VS Code, open the PORTS tab → find port ${PORT} → set visibility to Public → reload the page."
+    echo ""
   else
-    echo "⚠️ Forwarded URL still not ready (${APP_URL}/health -> HTTP ${LAST_STATUS})."
-    echo "   Open port ${PORT} from the Codespaces Ports tab and use that exact URL."
-    echo "   If using an external browser tab, ensure the port visibility is Public."
+    echo "Port ${PORT} not reachable from proxy. Ensure PORTS tab forwards ${PORT} and visibility is Public." >&2
     if command -v gh >/dev/null 2>&1; then
-      echo "   Current forwarded ports:"
-      gh codespace ports -c "${CODESPACE_NAME}" --json sourcePort,visibility,browseUrl || true
+      echo "Current forwarded ports:" >&2
+      gh codespace ports -c "${CODESPACE_NAME}" --json sourcePort,visibility,browseUrl 2>/dev/null || true
     fi
+    exit 1
   fi
 fi
 

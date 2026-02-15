@@ -188,8 +188,10 @@ export default function ReorderRequestsPage() {
   };
   
   const exportReport = async (format: string) => {
+    const url = `/api/export/reorder-requests/${format}`;
+    if (process.env.NODE_ENV === "development") console.debug("[Export]", url);
     try {
-      const response = await fetch(`/api/export/reorder-requests/${format}`);
+      const response = await fetch(url);
       if (!response.ok) throw new Error(`Failed to export ${format}`);
       
       const blob = await response.blob();

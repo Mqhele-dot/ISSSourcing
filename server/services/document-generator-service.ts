@@ -189,29 +189,27 @@ export async function generateInventoryPdf(items: InventoryItem[], title: string
  * Generate a CSV document from inventory data
  */
 export async function generateInventoryCsv(items: InventoryItem[], title: string, _columns?: any[]): Promise<Buffer> {
-  // Create CSV headers
-  const csvContent = [
-    ['SKU', 'Name', 'Description', 'Category', 'Quantity', 'Price', 'Cost', 'Status', 'Low Stock Threshold'].join(','),
-    ...items.map(item => {
-      const status = item.quantity <= 0 ? 'Out of Stock' : 
-                    (item.lowStockThreshold && item.quantity <= item.lowStockThreshold) ? 'Low Stock' : 
-                    'In Stock';
-      
-      return [
-        item.sku || '',
-        item.name,
-        item.description || '',
-        item.categoryId || '',
-        item.quantity,
-        item.price.toFixed(2),
-        item.cost?.toFixed(2) || '',
-        status,
-        item.lowStockThreshold || ''
-      ].map(value => `"${value}"`).join(',');
-    })
-  ].join('\n');
-  
-  return Buffer.from(csvContent);
+  // Excel-friendly: sep=, ensures columns split correctly in all locales
+  const lines = ['sep=,'];
+  lines.push(['SKU', 'Name', 'Description', 'Category', 'Quantity', 'Price', 'Cost', 'Status', 'Low Stock Threshold'].join(','));
+  items.forEach(item => {
+    const status = item.quantity <= 0 ? 'Out of Stock' : 
+                  (item.lowStockThreshold && item.quantity <= item.lowStockThreshold) ? 'Low Stock' : 
+                  'In Stock';
+    lines.push([
+      item.sku || '',
+      item.name,
+      item.description || '',
+      item.categoryId || '',
+      item.quantity,
+      item.price.toFixed(2),
+      item.cost?.toFixed(2) || '',
+      status,
+      item.lowStockThreshold || ''
+    ].map(value => `"${String(value).replace(/"/g, '""')}"`).join(','));
+  });
+
+  return Buffer.from(lines.join('\n'));
 }
 
 /**
@@ -398,25 +396,16 @@ export async function generateGenericPdf(data: any[], title: string, columns: {h
  * Generic CSV generator for any data array
  */
 export async function generateGenericCsv(data: any[], title: string, columns: {header: string; key: string}[]): Promise<Buffer> {
-  // Create CSV headers
-  const csvContent = [
-    columns.map(col => col.header).join(','),
-    ...data.map(item => {
-      return columns.map(col => {
-        let value = item[col.key] !== undefined && item[col.key] !== null ? item[col.key] : '';
-        
-        // Convert dates to readable format
-        if (value instanceof Date) {
-          value = format(value, 'yyyy-MM-dd HH:mm');
-        }
-        
-        // Escape quotes and wrap in quotes
-        return `"${String(value).replace(/"/g, '""')}"`;
-      }).join(',');
-    })
-  ].join('\n');
-  
-  return Buffer.from(csvContent);
+  const lines = ['sep=,'];
+  lines.push(columns.map(col => `"${String(col.header).replace(/"/g, '""')}"`).join(','));
+  data.forEach(item => {
+    lines.push(columns.map(col => {
+      let value = item[col.key] !== undefined && item[col.key] !== null ? item[col.key] : '';
+      if (value instanceof Date) value = format(value, 'yyyy-MM-dd HH:mm');
+      return `"${String(value).replace(/"/g, '""')}"`;
+    }).join(','));
+  });
+  return Buffer.from(lines.join('\n'));
 }
 
 /**
@@ -429,15 +418,14 @@ export async function generateGenericExcel(data: any[], title: string, columns: 
   
   // Set up the columns
   worksheet.columns = columns;
-  
-  // Style the header row
   worksheet.getRow(1).font = { bold: true };
-  
-  // Add title as a merged cell before the headers
   worksheet.insertRow(1, [title]);
   worksheet.getCell('A1').font = { bold: true, size: 14 };
   worksheet.mergeCells(`A1:${String.fromCharCode(64 + columns.length)}1`);
-  
+  // Freeze header row (row 2) so it stays visible when scrolling
+  worksheet.views = [{ state: "frozen", ySplit: 2, activeCell: "A3" }];
+  worksheet.getRow(2).font = { bold: true };
+
   // Add data
   data.forEach(item => {
     const row: any = {};

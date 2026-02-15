@@ -172,29 +172,26 @@ export async function generateReorderRequestsPdfReport(requests: any[], title: s
 }
 
 export async function generateReorderRequestsCsvReport(requests: any[], title: string): Promise<Buffer> {
-  // Create CSV headers
-  const csvContent = [
-    ['Request #', 'Item', 'Status', 'Quantity', 'Created Date', 'Created By', 'Approval Date', 'Notes'].join(','),
-    ...requests.map(request => {
+  const lines = ['sep=,'];
+  lines.push(['Request #', 'Item', 'Status', 'Quantity', 'Created Date', 'Created By', 'Approval Date', 'Notes'].map(h => `"${String(h).replace(/"/g, '""')}"`).join(','));
+  requests.forEach(request => {
       const createdDate = new Date(request.createdAt).toLocaleDateString();
       const approvalDate = request.approvalDate ? new Date(request.approvalDate).toLocaleDateString() : '';
       const itemName = request.item ? request.item.name : `Item #${request.itemId}`;
       const requestorName = request.requestor ? request.requestor.name : '';
       
-      return [
-        request.requestNumber,
-        itemName,
-        request.status,
-        request.quantity,
-        createdDate,
-        requestorName,
-        approvalDate,
-        request.notes || ''
-      ].map(value => `"${value}"`).join(',');
-    })
-  ].join('\n');
-  
-  return Buffer.from(csvContent);
+    lines.push([
+      request.requestNumber,
+      itemName,
+      request.status,
+      request.quantity,
+      createdDate,
+      requestorName,
+      approvalDate,
+      request.notes || ''
+    ].map(value => `"${String(value).replace(/"/g, '""')}"`).join(','));
+  });
+  return Buffer.from(lines.join('\n'));
 }
 
 export async function generateReorderRequestsExcelReport(requests: any[], title: string): Promise<Buffer> {

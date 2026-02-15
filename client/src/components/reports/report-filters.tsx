@@ -97,6 +97,10 @@ export function ReportFilters({
     setDateRange({ from: undefined, to: undefined });
   };
 
+  // Radix Select disallows value=""; use sentinel and normalize to undefined
+  const ALL_SENTINEL = "__all__";
+  const norm = (v: string) => (v === ALL_SENTINEL || v === "" ? undefined : v);
+
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-4 mb-4">
       <div className="flex items-center justify-between mb-4">
@@ -175,11 +179,12 @@ export function ReportFilters({
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Category</div>
             <Select
-              value={filter.categoryId?.toString() || ""}
+              value={filter.categoryId?.toString() ?? ALL_SENTINEL}
               onValueChange={(value) => {
+                const id = norm(value);
                 setFilter({
                   ...filter,
-                  categoryId: value ? parseInt(value) : undefined
+                  categoryId: id ? parseInt(id) : undefined
                 });
               }}
             >
@@ -187,7 +192,7 @@ export function ReportFilters({
                 <SelectValue placeholder="All categories" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All categories</SelectItem>
+                <SelectItem value={ALL_SENTINEL}>All categories</SelectItem>
                 {categories.map((category) => (
                   <SelectItem key={category.id} value={category.id.toString()}>
                     {category.name}
@@ -203,11 +208,12 @@ export function ReportFilters({
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Warehouse</div>
             <Select
-              value={filter.warehouseId?.toString() || ""}
+              value={filter.warehouseId?.toString() ?? ALL_SENTINEL}
               onValueChange={(value) => {
+                const id = norm(value);
                 setFilter({
                   ...filter,
-                  warehouseId: value ? parseInt(value) : undefined
+                  warehouseId: id ? parseInt(id) : undefined
                 });
               }}
             >
@@ -215,7 +221,7 @@ export function ReportFilters({
                 <SelectValue placeholder="All warehouses" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All warehouses</SelectItem>
+                <SelectItem value={ALL_SENTINEL}>All warehouses</SelectItem>
                 {warehouses.map((warehouse) => (
                   <SelectItem key={warehouse.id} value={warehouse.id.toString()}>
                     {warehouse.name}
@@ -232,11 +238,12 @@ export function ReportFilters({
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Supplier</div>
             <Select
-              value={filter.supplierId?.toString() || ""}
+              value={filter.supplierId?.toString() ?? ALL_SENTINEL}
               onValueChange={(value) => {
+                const id = norm(value);
                 setFilter({
                   ...filter,
-                  supplierId: value ? parseInt(value) : undefined
+                  supplierId: id ? parseInt(id) : undefined
                 });
               }}
             >
@@ -244,7 +251,7 @@ export function ReportFilters({
                 <SelectValue placeholder="All suppliers" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All suppliers</SelectItem>
+                <SelectItem value={ALL_SENTINEL}>All suppliers</SelectItem>
                 {suppliers.map((supplier) => (
                   <SelectItem key={supplier.id} value={supplier.id.toString()}>
                     {supplier.name}
@@ -260,11 +267,11 @@ export function ReportFilters({
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Status</div>
             <Select
-              value={filter.status || ""}
+              value={filter.status ?? ALL_SENTINEL}
               onValueChange={(value) => {
                 setFilter({
                   ...filter,
-                  status: value || undefined
+                  status: norm(value)
                 });
               }}
             >
@@ -272,7 +279,7 @@ export function ReportFilters({
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All statuses</SelectItem>
+                <SelectItem value={ALL_SENTINEL}>All statuses</SelectItem>
                 {(["purchase-orders", "purchase_orders"].includes(reportTypeKey)) && (
                   <>
                     <SelectItem value="DRAFT">Draft</SelectItem>

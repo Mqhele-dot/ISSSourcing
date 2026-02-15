@@ -168,9 +168,8 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  const portFromEnv = Number.parseInt(process.env.PORT ?? "", 10);
-  const port = Number.isFinite(portFromEnv) && portFromEnv > 0 ? portFromEnv : 5000;
-  const host = process.env.HOST?.trim() || "0.0.0.0";
+  const host = process.env.HOST ?? "0.0.0.0";
+  const port = Number(process.env.PORT ?? 5000);
   const localReachableHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   const localUrl = `http://${localReachableHost}:${port}`;
   const forwardedUrl =

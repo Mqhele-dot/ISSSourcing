@@ -14,6 +14,7 @@
     "test:runtime": "bash scripts/test-runtime.sh",
     "test:contracts": "tsx scripts/test-api-contract.ts",
     "test:deeplinks": "tsx scripts/test-kpi-deeplinks.ts",
+    "test:csv": "tsx server/services/document-generator-service.test.ts",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx server/seed.ts",
     "codespaces:up": "bash scripts/codespaces-up.sh"
