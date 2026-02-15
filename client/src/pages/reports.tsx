@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format } from "date-fns";
 import { downloadFile, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -28,15 +29,16 @@ export default function Reports() {
   const [filter, setFilter] = useState<ReportFilter>({});
   const [exporting, setExporting] = useState(false);
 
-  // Fetch inventory items
-  const { data: inventoryItems, isLoading: itemsLoading } = useQuery({
+  // Fetch inventory items (normalize to array so reduce/map never see non-array)
+  const { data: inventoryItems, isLoading: itemsLoading, isError: itemsError, error: itemsErrorDetail } = useQuery({
     queryKey: ["/api/inventory"],
     queryFn: async () => {
       const response = await fetch("/api/inventory");
       if (!response.ok) {
         throw new Error("Failed to fetch inventory items");
       }
-      return response.json() as Promise<InventoryItem[]>;
+      const raw = await response.json();
+      return Array.isArray(raw) ? raw : [];
     },
   });
 
@@ -48,11 +50,12 @@ export default function Reports() {
       if (!response.ok) {
         throw new Error("Failed to fetch low stock items");
       }
-      return response.json() as Promise<InventoryItem[]>;
+      const raw = await response.json();
+      return Array.isArray(raw) ? raw : [];
     },
   });
 
-  // Fetch categories
+  // Fetch categories (normalize to array)
   const { data: categories } = useQuery({
     queryKey: ["/api/categories"],
     queryFn: async () => {
@@ -60,7 +63,8 @@ export default function Reports() {
       if (!response.ok) {
         throw new Error("Failed to fetch categories");
       }
-      return response.json() as Promise<Category[]>;
+      const raw = await response.json();
+      return Array.isArray(raw) ? raw : [];
     },
   });
 
@@ -76,7 +80,7 @@ export default function Reports() {
     },
   });
   
-  // Fetch warehouses for filtering
+  // Fetch warehouses for filtering (normalize to array)
   const { data: warehouses } = useQuery({
     queryKey: ["/api/warehouses"],
     queryFn: async () => {
@@ -84,11 +88,12 @@ export default function Reports() {
       if (!response.ok) {
         throw new Error("Failed to fetch warehouses");
       }
-      return response.json() as Promise<Warehouse[]>;
+      const raw = await response.json();
+      return Array.isArray(raw) ? raw : [];
     },
   });
-  
-  // Fetch suppliers for filtering
+
+  // Fetch suppliers for filtering (normalize to array)
   const { data: suppliers } = useQuery({
     queryKey: ["/api/suppliers"],
     queryFn: async () => {
@@ -96,9 +101,17 @@ export default function Reports() {
       if (!response.ok) {
         throw new Error("Failed to fetch suppliers");
       }
-      return response.json() as Promise<Supplier[]>;
+      const raw = await response.json();
+      return Array.isArray(raw) ? raw : [];
     },
   });
+
+  // Ensure API responses are always arrays (avoid "x?.reduce is not a function" when API returns error object)
+  const safeInventoryItems = Array.isArray(inventoryItems) ? inventoryItems : [];
+  const safeLowStockItems = Array.isArray(lowStockItems) ? lowStockItems : [];
+  const safeCategories = Array.isArray(categories) ? categories : [];
+  const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
+  const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
 
   // Handle filter change
   const handleFilterChange = (newFilter: ReportFilter) => {
@@ -201,17 +214,24 @@ export default function Reports() {
   // Helper function to get category name
   const getCategoryName = (categoryId: number | null | undefined): string => {
     if (!categoryId) return "Uncategorized";
-    const category = categories?.find(c => c.id === categoryId);
+    const category = safeCategories.find(c => c.id === categoryId);
     return category?.name || "Uncategorized";
   };
 
-  // Calculate total value
-  const calculateTotalValue = (items: InventoryItem[] = []): number => {
-    return items.reduce((total, item) => total + item.price * item.quantity, 0);
+  // Calculate total value (items must be array)
+  const calculateTotalValue = (items: unknown): number => {
+    const arr = Array.isArray(items) ? items : [];
+    return arr.reduce((total: number, item: { price?: number; quantity?: number }) => total + (Number(item?.price) || 0) * (Number(item?.quantity) || 0), 0);
   };
 
   return (
     <div className="max-w-7xl mx-auto">
+      {itemsError && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTitle>Could not load report data</AlertTitle>
+          <AlertDescription>{itemsErrorDetail instanceof Error ? itemsErrorDetail.message : "Failed to fetch inventory data."}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
         <div>
           <h2 className="text-2xl font-semibold text-neutral-900 dark:text-white">Reports</h2>
@@ -260,8 +280,8 @@ export default function Reports() {
           <ReportFilters 
             filter={filter} 
             setFilter={handleFilterChange} 
-            categories={categories} 
-            warehouses={warehouses}
+            categories={safeCategories} 
+            warehouses={safeWarehouses}
             reportType="inventory"
           />
           
@@ -307,8 +327,8 @@ export default function Reports() {
                             Loading inventory data...
                           </td>
                         </tr>
-                      ) : inventoryItems && inventoryItems.length > 0 ? (
-                        inventoryItems.slice(0, 5).map((item) => (
+                      ) : safeInventoryItems.length > 0 ? (
+                        safeInventoryItems.slice(0, 5).map((item) => (
                           <tr key={item.id}>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-white">
                               {item.name}
@@ -337,10 +357,10 @@ export default function Reports() {
                           </td>
                         </tr>
                       )}
-                      {inventoryItems && inventoryItems.length > 5 && (
+                      {safeInventoryItems.length > 5 && (
                         <tr>
                           <td colSpan={6} className="px-6 py-4 text-center text-sm text-neutral-500 dark:text-neutral-400 italic">
-                            ... and {inventoryItems.length - 5} more items
+                            ... and {safeInventoryItems.length - 5} more items
                           </td>
                         </tr>
                       )}
@@ -351,13 +371,13 @@ export default function Reports() {
                           Total
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                          {inventoryItems?.reduce((sum, item) => sum + item.quantity, 0) || 0}
+                          {safeInventoryItems.reduce((sum, item) => sum + (item.quantity ?? 0), 0)}
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400">
                           
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                          {formatCurrency(calculateTotalValue(inventoryItems))}
+                          {formatCurrency(calculateTotalValue(safeInventoryItems))}
                         </th>
                       </tr>
                     </tfoot>
@@ -378,8 +398,8 @@ export default function Reports() {
           <ReportFilters 
             filter={filter} 
             setFilter={handleFilterChange} 
-            categories={categories} 
-            warehouses={warehouses}
+            categories={safeCategories} 
+            warehouses={safeWarehouses}
             reportType="low-stock"
           />
           
@@ -424,8 +444,8 @@ export default function Reports() {
                             Loading low stock data...
                           </td>
                         </tr>
-                      ) : lowStockItems && lowStockItems.length > 0 ? (
-                        lowStockItems.slice(0, 5).map((item) => (
+                      ) : safeLowStockItems.length > 0 ? (
+                        safeLowStockItems.slice(0, 5).map((item) => (
                           <tr key={item.id}>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-white">
                               {item.name}
@@ -456,10 +476,10 @@ export default function Reports() {
                           </td>
                         </tr>
                       )}
-                      {lowStockItems && lowStockItems.length > 5 && (
+                      {safeLowStockItems.length > 5 && (
                         <tr>
                           <td colSpan={6} className="px-6 py-4 text-center text-sm text-neutral-500 dark:text-neutral-400 italic">
-                            ... and {lowStockItems.length - 5} more items
+                            ... and {safeLowStockItems.length - 5} more items
                           </td>
                         </tr>
                       )}
@@ -481,7 +501,7 @@ export default function Reports() {
           <ReportFilters 
             filter={filter} 
             setFilter={handleFilterChange} 
-            categories={categories}
+            categories={safeCategories}
             reportType="value"
           />
           
