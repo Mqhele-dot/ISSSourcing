@@ -417,3 +417,26 @@ export async function fetchActivity(params?: {
   const url = search.size > 0 ? `/api/activity?${search.toString()}` : "/api/activity";
   return apiFetch<ActivityRecord[]>(url);
 }
+
+export type DiagnosticsScanResult = {
+  database: string[];
+  configuration: string[];
+  data: string[];
+  system: string[];
+};
+
+export async function fetchDiagnosticsScan(): Promise<DiagnosticsScanResult> {
+  return apiFetch<DiagnosticsScanResult>("/api/diagnostics/scan");
+}
+
+export type DiagnosticsFixResult = {
+  success: boolean;
+  message?: string;
+  fixed?: string[];
+};
+
+export async function fixDiagnostics(category: string): Promise<DiagnosticsFixResult> {
+  const response = await apiRequest("POST", "/api/diagnostics/fix", { category });
+  const data = await response.json();
+  return data as DiagnosticsFixResult;
+}

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { fetchDiagnosticsScan, fixDiagnostics } from "@/api/client";
 
 // Define the tutorial step interface
 interface TutorialStep {
@@ -28,7 +29,7 @@ interface TutorialContextType {
   currentStep: number;
   registerTutorial: (tourId: string, steps: TutorialStep[]) => void;
   scanForErrors: () => Promise<{ [key: string]: string[] }>;
-  fixErrors: (errorType: string) => Promise<boolean>;
+  fixErrors: (errorType: string) => Promise<{ success: boolean; message?: string }>;
   activeTourSteps: TutorialStep[] | null;
   goToNextStep: () => void;
   goToPreviousStep: () => void;
@@ -96,42 +97,64 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
     setCurrentStep(0);
   };
 
-  // Scan for common errors in the application
+  // Scan for common errors (server + client checks)
   const scanForErrors = async (): Promise<{ [key: string]: string[] }> => {
-    // This would normally make API calls to check for various system issues
-    // For now, we'll simulate a scan with some sample error types
-    
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate a delay
-    
-    // Return object with error types and specific errors
-    return {
-      "database": ["Corrupted settings schema", "Missing index on inventory table"],
-      "configuration": ["Stripe API key not set", "Email configuration incomplete"],
-      "data": ["2 duplicate SKUs found", "3 items with negative stock"],
-      "system": ["Camera access not granted", "Local storage nearly full"]
+    const result: { [key: string]: string[] } = {
+      database: [],
+      configuration: [],
+      data: [],
+      system: [],
     };
+    try {
+      const serverResult = await fetchDiagnosticsScan();
+      result.database = serverResult.database ?? [];
+      result.configuration = serverResult.configuration ?? [];
+      result.data = serverResult.data ?? [];
+      result.system = serverResult.system ?? [];
+    } catch {
+      result.database = ["Could not reach server to run diagnostics"];
+    }
+    // Client-only system checks (no camera prompt; use Permissions API when available)
+    if (typeof navigator !== "undefined") {
+      if (navigator.permissions?.query) {
+        try {
+          const perm = await navigator.permissions.query({ name: "camera" as PermissionName });
+          if (perm.state === "denied") {
+            result.system.push("Camera access not granted");
+          }
+        } catch {
+          result.system.push("Camera access not granted");
+        }
+      } else if (!navigator.mediaDevices?.getUserMedia) {
+        result.system.push("Camera access not granted");
+      }
+    }
+    try {
+      const used = typeof localStorage !== "undefined" ? localStorage.length : 0;
+      const quota = 5000;
+      if (used > quota) {
+        result.system.push("Local storage nearly full");
+      }
+    } catch {
+      result.system.push("Local storage nearly full");
+    }
+    const filtered: { [key: string]: string[] } = {};
+    for (const [key, arr] of Object.entries(result)) {
+      if (Array.isArray(arr) && arr.length > 0) filtered[key] = arr;
+    }
+    return filtered;
   };
 
-  // Attempt to fix errors automatically
-  const fixErrors = async (errorType: string): Promise<boolean> => {
-    // This would normally make API calls to fix specific issues
-    // For now, we'll simulate the fix process
-    
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate a delay
-    
-    // Return success based on error type
-    // In a real implementation, this would call actual API endpoints to fix issues
-    switch(errorType) {
-      case "database":
-        return Math.random() > 0.3; // 70% success rate
-      case "configuration":
-        return Math.random() > 0.2; // 80% success rate
-      case "data":
-        return Math.random() > 0.1; // 90% success rate
-      case "system":
-        return Math.random() > 0.5; // 50% success rate
-      default:
-        return false;
+  // Attempt to fix errors via API (returns success and optional message for manual fixes)
+  const fixErrors = async (errorType: string): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const fixResult = await fixDiagnostics(errorType);
+      const success = fixResult.success;
+      const message = fixResult.message ?? (success && fixResult.fixed?.length ? `Fixed: ${fixResult.fixed.length} item(s).` : undefined);
+      return { success, message };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Fix failed.";
+      return { success: false, message };
     }
   };
 

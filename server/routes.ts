@@ -1666,6 +1666,165 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Diagnostics: scan for issues
+  app.get("/api/diagnostics/scan", async (_req: Request, res: Response) => {
+    const result: { database: string[]; configuration: string[]; data: string[]; system: string[] } = {
+      database: [],
+      configuration: [],
+      data: [],
+      system: [],
+    };
+    try {
+      // Database
+      try {
+        await storage.getAppSettings();
+      } catch {
+        result.database.push("Corrupted settings schema");
+      }
+      try {
+        const indexCheck = await pool.query<{ indexname: string }>(
+          "SELECT indexname FROM pg_indexes WHERE tablename = 'inventory_items' LIMIT 1"
+        );
+        if (indexCheck.rows.length === 0) {
+          result.database.push("Missing index on inventory table");
+        }
+      } catch {
+        // Not PostgreSQL or table doesn't exist yet; skip index check
+      }
+
+      // Configuration
+      if (!process.env.STRIPE_SECRET_KEY?.trim()) {
+        result.configuration.push("Stripe API key not set");
+      }
+      if (!process.env.EMAIL_HOST?.trim() || !process.env.EMAIL_USER?.trim() || !process.env.EMAIL_PASS?.trim()) {
+        result.configuration.push("Email configuration incomplete");
+      }
+
+      // Data
+      const items = await storage.getAllInventoryItems();
+      const bySku = new Map<string, { id: number; sku: string }[]>();
+      for (const item of items) {
+        const sku = String(item.sku ?? "").trim();
+        if (!sku) continue;
+        const list = bySku.get(sku) ?? [];
+        list.push({ id: item.id, sku });
+        bySku.set(sku, list);
+      }
+      const duplicateSkus = Array.from(bySku.values()).filter((list) => list.length > 1);
+      if (duplicateSkus.length > 0) {
+        const totalDuplicates = duplicateSkus.reduce((sum, list) => sum + list.length - 1, 0);
+        result.data.push(`${totalDuplicates} duplicate SKU(s) found`);
+      }
+      const settings = await storage.getAppSettings();
+      const allowNegative = settings?.allowNegativeInventory ?? false;
+      if (!allowNegative) {
+        const negativeCount = items.filter((i) => Number(i.quantity) < 0).length;
+        if (negativeCount > 0) {
+          result.data.push(`${negativeCount} item(s) with negative stock`);
+        }
+      }
+
+      const filtered: Record<string, string[]> = {};
+      for (const [key, arr] of Object.entries(result)) {
+        if (Array.isArray(arr) && arr.length > 0) filtered[key] = arr;
+      }
+      res.json(filtered);
+    } catch (err) {
+      console.error("Diagnostics scan error:", err);
+      res.status(500).json({ message: "Scan failed", error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Diagnostics: fix issues by category
+  app.post("/api/diagnostics/fix", async (req: Request, res: Response) => {
+    const category = typeof req.body?.category === "string" ? req.body.category : "";
+    const result: { success: boolean; message?: string; fixed?: string[] } = { success: false };
+
+    try {
+      if (category === "database") {
+        const fixed: string[] = [];
+        try {
+          const settings = await storage.getAppSettings();
+          if (!settings) {
+            await storage.updateAppSettings({});
+            fixed.push("Initialized app settings");
+          }
+        } catch (e) {
+          result.message = "Could not repair settings. Check database connection and schema.";
+          return res.status(200).json(result);
+        }
+        try {
+          await pool.query(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_items_sku ON inventory_items(sku)"
+          );
+          await pool.query(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_items_quantity ON inventory_items(quantity)"
+          );
+          fixed.push("Ensured inventory indexes exist");
+        } catch {
+          // Ignore if not PostgreSQL or already exist
+        }
+        result.success = fixed.length > 0;
+        result.fixed = fixed;
+        return res.json(result);
+      }
+
+      if (category === "configuration") {
+        result.message =
+          "Set Stripe API key (STRIPE_SECRET_KEY) and email (EMAIL_HOST, EMAIL_USER, EMAIL_PASS) in environment or in Settings.";
+        return res.json(result);
+      }
+
+      if (category === "data") {
+        const fixed: string[] = [];
+        const items = await storage.getAllInventoryItems();
+        const bySku = new Map<string, { id: number; sku: string }[]>();
+        for (const item of items) {
+          const sku = String(item.sku ?? "").trim();
+          if (!sku) continue;
+          const list = bySku.get(sku) ?? [];
+          list.push({ id: item.id, sku });
+          bySku.set(sku, list);
+        }
+        for (const list of Array.from(bySku.values())) {
+          if (list.length <= 1) continue;
+          for (let i = 1; i < list.length; i++) {
+            const { id, sku } = list[i];
+            const newSku = `${sku}_dedup_${id}`;
+            await storage.updateInventoryItem(id, { sku: newSku });
+            fixed.push(`Renamed duplicate SKU to ${newSku}`);
+          }
+        }
+        const settings = await storage.getAppSettings();
+        const allowNegative = settings?.allowNegativeInventory ?? false;
+        if (!allowNegative) {
+          for (const item of items) {
+            if (Number(item.quantity) < 0) {
+              await storage.updateInventoryItem(item.id, { quantity: 0 });
+              fixed.push(`Set quantity to 0 for item ${item.sku} (id ${item.id})`);
+            }
+          }
+        }
+        result.success = fixed.length > 0;
+        result.fixed = fixed;
+        return res.json(result);
+      }
+
+      if (category === "system") {
+        result.message =
+          "Camera: grant permission in browser. Local storage: clear site data or old keys in Application/Storage.";
+        return res.json(result);
+      }
+
+      result.message = "Unknown category. Use: database, configuration, data, or system.";
+      res.status(400).json(result);
+    } catch (err) {
+      console.error("Diagnostics fix error:", err);
+      result.message = err instanceof Error ? err.message : String(err);
+      res.status(500).json(result);
+    }
+  });
+
   // Supplier Logo endpoints
   app.get("/api/suppliers/:id/logo", async (req: Request, res: Response) => {
     try {

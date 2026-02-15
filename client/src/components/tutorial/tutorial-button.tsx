@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useTutorial } from "@/contexts/tutorial-context";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +46,7 @@ import {
  */
 export function TutorialButton() {
   const { startTutorial, scanForErrors, fixErrors } = useTutorial();
+  const { toast } = useToast();
   const [isScanning, setIsScanning] = useState(false);
   const [scanResults, setScanResults] = useState<{ [key: string]: string[] } | null>(null);
   const [isFixing, setIsFixing] = useState<string | null>(null);
@@ -164,16 +166,18 @@ export function TutorialButton() {
   // Attempt to fix errors of a specific type
   const handleFixErrors = async (errorType: string) => {
     setIsFixing(errorType);
-    
     try {
-      const success = await fixErrors(errorType);
-      
-      // Update results by removing fixed errors if successful
+      const { success, message } = await fixErrors(errorType);
+      if (message) {
+        toast({
+          title: success ? "Fix applied" : "Could not auto-fix",
+          description: message,
+          variant: success ? "default" : "destructive",
+        });
+      }
       if (success && scanResults) {
         const updatedResults = { ...scanResults };
         delete updatedResults[errorType];
-        
-        // Reset if all errors are fixed
         if (Object.keys(updatedResults).length === 0) {
           setScanResults(null);
         } else {
@@ -182,6 +186,11 @@ export function TutorialButton() {
       }
     } catch (error) {
       console.error(`Error fixing ${errorType} issues:`, error);
+      toast({
+        title: "Fix failed",
+        description: error instanceof Error ? error.message : "Something went wrong",
+        variant: "destructive",
+      });
     } finally {
       setIsFixing(null);
     }
