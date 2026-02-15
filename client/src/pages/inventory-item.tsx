@@ -111,11 +111,20 @@ export default function InventoryDetailPage() {
   const [adjustRef, setAdjustRef] = useState("");
 
   const fetchDetail = async (): Promise<InventoryDetail> => {
-    const response = await fetch(`/api/inventory/${sku}`, { credentials: "include" });
+    const response = await fetch(`/api/inventory/${encodeURIComponent(sku)}`, { credentials: "include" });
     if (!response.ok) {
       throw new Error(`Failed to fetch inventory detail (${response.status})`);
     }
-    return (await response.json()) as InventoryDetail;
+    const raw = (await response.json()) as { ok?: boolean; data?: InventoryDetail } | InventoryDetail;
+    const detail = raw && typeof raw === "object" && "ok" in raw && raw.ok && raw.data ? raw.data : (raw as InventoryDetail);
+    const summary = detail.summary ?? {
+      onHand: detail.onHand ?? (detail as { quantity?: number }).quantity ?? 0,
+      allocated: detail.allocated ?? 0,
+      available: detail.available ?? (detail.onHand ?? (detail as { quantity?: number }).quantity ?? 0) - (detail.allocated ?? 0),
+    };
+    const positions = Array.isArray(detail.positions) ? detail.positions : [];
+    const movements = Array.isArray(detail.movements) ? detail.movements : [];
+    return { ...detail, summary, positions, movements };
   };
 
   const {
@@ -170,13 +179,15 @@ export default function InventoryDetailPage() {
         ref: adjustRef || undefined,
       });
 
-      const payload = (await response.json()) as AdjustResponse;
+      const raw = (await response.json()) as { ok?: boolean; data?: AdjustResponse } | AdjustResponse;
+      const payload = raw && typeof raw === "object" && "ok" in raw && raw.ok && raw.data ? raw.data : (raw as AdjustResponse);
       await refetch();
       setAdjustOpen(false);
 
+      const avail = payload?.summary?.available ?? (payload?.summary as { available?: number } | undefined)?.available;
       toast({
         title: "Inventory updated",
-        description: `New available stock: ${payload.summary.available}`,
+        description: typeof avail === "number" ? `New available stock: ${avail}` : "Stock updated.",
       });
 
       if (payload.exception?.created) {
@@ -213,10 +224,14 @@ export default function InventoryDetailPage() {
         emptyTitle="Inventory detail unavailable"
         onRetry={refetch}
       >
-        {(detail) => (
+        {(detail) => {
+          const summary = detail.summary ?? { onHand: 0, allocated: 0, available: 0 };
+          const positions = Array.isArray(detail.positions) ? detail.positions : [];
+          const movements = Array.isArray(detail.movements) ? detail.movements : [];
+          return (
           <>
             <PageHeader
-              title={detail.name}
+              title={detail.name ?? detail.sku ?? "Item"}
               subtitle={`SKU ${detail.sku}`}
               breadcrumb={<span>Operations / Inventory / {detail.sku}</span>}
               actions={
@@ -227,7 +242,7 @@ export default function InventoryDetailPage() {
               }
             />
 
-            {detail.summary.available < 0 ? (
+            {summary.available < 0 ? (
               <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Negative available stock</AlertTitle>
@@ -242,22 +257,22 @@ export default function InventoryDetailPage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">On hand</CardTitle>
                 </CardHeader>
-                <CardContent className="text-3xl font-semibold">{detail.summary.onHand}</CardContent>
+                <CardContent className="text-3xl font-semibold">{summary.onHand}</CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Allocated</CardTitle>
                 </CardHeader>
-                <CardContent className="text-3xl font-semibold">{detail.summary.allocated}</CardContent>
+                <CardContent className="text-3xl font-semibold">{summary.allocated}</CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Available</CardTitle>
                 </CardHeader>
                 <CardContent className="flex items-center gap-3 text-3xl font-semibold">
-                  <span>{detail.summary.available}</span>
+                  <span>{summary.available}</span>
                   <StatusBadge
-                    status={detail.summary.available < 0 ? "error" : detail.summary.available === 0 ? "low" : "active"}
+                    status={summary.available < 0 ? "error" : summary.available === 0 ? "low" : "active"}
                   />
                 </CardContent>
               </Card>
@@ -279,7 +294,7 @@ export default function InventoryDetailPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {detail.positions.map((position) => (
+                    {positions.map((position) => (
                       <TableRow key={`${detail.sku}-${position.location}`}>
                         <TableCell>{position.location}</TableCell>
                         <TableCell className="text-right">{position.onHand}</TableCell>
@@ -312,7 +327,7 @@ export default function InventoryDetailPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {detail.movements.map((movement) => (
+                    {movements.map((movement) => (
                       <TableRow key={movement.id}>
                         <TableCell>{formatDate(movement.createdAt)}</TableCell>
                         <TableCell>{movement.location}</TableCell>
@@ -331,7 +346,8 @@ export default function InventoryDetailPage() {
 
             <EntityActivityPanel entityType="inventory" entityId={detail.sku} />
           </>
-        )}
+          );
+        }}
       </DataState>
 
       <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Boxes, Download, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -111,6 +111,11 @@ export default function InventoryPage() {
   const selectedLocation = String(queryState.location || "");
   const selectedCategory = String(queryState.category || "");
 
+  const [searchInput, setSearchInput] = useState(String(queryState.q ?? ""));
+  useEffect(() => {
+    setSearchInput(String(queryState.q ?? ""));
+  }, [queryState.q]);
+
   const handleExportCsv = () => {
     try {
       const items = inventoryData ?? [];
@@ -181,8 +186,12 @@ export default function InventoryPage() {
             <div className="relative w-full min-w-[220px] max-w-sm">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                value={String(queryState.q || "")}
-                onChange={(event) => setQueryState({ q: event.target.value })}
+                value={searchInput}
+                onChange={(event) => {
+                  const v = event.target.value;
+                  setSearchInput(v);
+                  setQueryState({ q: v });
+                }}
                 placeholder="Search SKU or item name"
                 className="pl-8"
               />

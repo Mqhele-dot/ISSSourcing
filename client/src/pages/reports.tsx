@@ -33,11 +33,15 @@ export default function Reports() {
   const { data: inventoryItems, isLoading: itemsLoading, isError: itemsError, error: itemsErrorDetail } = useQuery({
     queryKey: ["/api/inventory"],
     queryFn: async () => {
-      const response = await fetch("/api/inventory");
+      const response = await fetch("/api/inventory", { credentials: "include" });
       if (!response.ok) {
         throw new Error("Failed to fetch inventory items");
       }
       const raw = await response.json();
+      if (raw && typeof raw === "object" && "ok" in raw && (raw as { data?: unknown }).data !== undefined) {
+        const data = (raw as { data: unknown }).data;
+        return Array.isArray(data) ? data : [];
+      }
       return Array.isArray(raw) ? raw : [];
     },
   });
@@ -304,8 +308,9 @@ export default function Reports() {
                     </p>
                   </div>
                   <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                    {stats?.totalItems || 0} items • 
-                    Total Value: {formatCurrency(stats?.inventoryValue || 0)}
+                    {safeInventoryItems.length > 0
+                      ? `${safeInventoryItems.length} items • Total Value: ${formatCurrency(calculateTotalValue(safeInventoryItems))}`
+                      : `${stats?.totalItems || 0} items • Total Value: ${formatCurrency(stats?.inventoryValue || 0)}`}
                   </div>
                 </div>
                 <div className="overflow-x-auto">

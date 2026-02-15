@@ -681,20 +681,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/suppliers/:id", async (req: Request, res: Response) => {
+  const handleUpdateSupplier = async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
-      
       const validatedData = insertSupplierSchema.partial().parse(req.body);
       const updatedSupplier = await storage.updateSupplier(id, validatedData);
-      
       if (!updatedSupplier) {
         return res.status(404).json({ message: "Supplier not found" });
       }
-      
       res.json(updatedSupplier);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -705,7 +702,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(500).json({ message: "Failed to update supplier" });
       }
     }
-  });
+  };
+
+  app.put("/api/suppliers/:id", handleUpdateSupplier);
+  app.patch("/api/suppliers/:id", handleUpdateSupplier);
 
   app.delete("/api/suppliers/:id", async (req: Request, res: Response) => {
     try {
