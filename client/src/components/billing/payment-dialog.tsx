@@ -105,7 +105,7 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
   // Update the amount when invoice changes
   const handleInvoiceChange = (invoiceId: number) => {
     const invoice = invoices.find((inv: PaymentInvoiceOption) => inv.id === invoiceId);
-    setSelectedInvoice(invoice);
+    setSelectedInvoice(invoice ?? null);
     
     if (invoice) {
       const dueAmount = invoice.total - (invoice.amountPaid || 0);
