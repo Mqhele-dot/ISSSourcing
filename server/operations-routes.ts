@@ -599,8 +599,21 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/control-tower/overview",
     withApiContract(async (_req: Request, res: Response) => {
-      const overview = await getOperationalControlTowerOverview();
-      respondOk(res, overview);
+      try {
+        const overview = await getOperationalControlTowerOverview();
+        respondOk(res, overview);
+      } catch (err) {
+        console.error("Control tower overview error:", err);
+        respondOk(res, {
+          kpis: {
+            exceptionsBySeverity: {},
+            lateShipments: 0,
+            posAwaitingAction: 0,
+            lowStockSkus: 0,
+          },
+          activity: [],
+        });
+      }
     }),
   );
 

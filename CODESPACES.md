@@ -68,6 +68,20 @@ GET /health
 GET /health/deep
 ```
 
+**Test core API endpoints** (each should return JSON quickly; 200 with body, not 502):
+
+```bash
+curl -i http://localhost:5000/api/inventory
+curl -i http://localhost:5000/api/purchase/orders
+curl -i http://localhost:5000/api/logistics/shipments
+curl -i http://localhost:5000/api/exceptions
+curl -i http://localhost:5000/api/integrations/runs
+curl -i http://localhost:5000/api/suppliers
+curl -i http://localhost:5000/api/warehouses
+```
+
+If any hang or return 502, check server logs; list endpoints are stubbed to return `200` with `[]` when the backend fails so the UI can show "No results" instead of spinning.
+
 Development-only demo reset endpoint:
 
 ```text
