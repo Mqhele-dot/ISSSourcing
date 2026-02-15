@@ -69,14 +69,22 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
               <div className="mb-4 text-sm">
                 {this.state.error?.message || "An unexpected error occurred"}
               </div>
-              <Button 
-                variant="outline" 
-                onClick={() => window.location.reload()}
-                className="w-full"
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Reload Application
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => window.location.reload()}
+                  className="gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Reload Application
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => (window.location.href = "/")}
+                >
+                  Go back
+                </Button>
+              </div>
             </AlertDescription>
           </Alert>
         </div>

@@ -516,14 +516,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid inventory item ID" });
       }
-      
+
       const item = await storage.getInventoryItem(id);
-      
+
       if (!item) {
         return res.status(404).json({ message: "Inventory item not found" });
       }
-      
-      res.json(item);
+
+      const qty = Number((item as { quantity?: number }).quantity ?? 0);
+      const payload = {
+        ...item,
+        onHand: qty,
+        allocated: 0,
+        available: qty,
+        summary: {
+          onHand: qty,
+          allocated: 0,
+          available: qty,
+        },
+        positions: [{ location: (item as { location?: string }).location ?? "Main Warehouse", onHand: qty, allocated: 0, available: qty, updatedAt: (item as { updatedAt?: Date }).updatedAt }],
+        movements: [] as unknown[],
+      };
+      res.json(payload);
     } catch (error) {
       console.error("Error fetching inventory item:", error);
       res.status(500).json({ message: "Failed to fetch inventory item" });

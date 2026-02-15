@@ -273,11 +273,16 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/purchase/orders",
     withApiContract(async (req: Request, res: Response) => {
-      const status = typeof req.query.status === "string" ? req.query.status : "";
-      const supplier = typeof req.query.supplier === "string" ? req.query.supplier : "";
-      const q = typeof req.query.q === "string" ? req.query.q : "";
-      const orders = await listOperationalPurchaseOrders({ status, supplier, q });
-      respondOk(res, orders);
+      try {
+        const status = typeof req.query.status === "string" ? req.query.status : "";
+        const supplier = typeof req.query.supplier === "string" ? req.query.supplier : "";
+        const q = typeof req.query.q === "string" ? req.query.q : "";
+        const orders = await listOperationalPurchaseOrders({ status, supplier, q });
+        respondOk(res, orders);
+      } catch (err) {
+        console.error("List purchase orders error:", err);
+        respondOk(res, []);
+      }
     }),
   );
 
@@ -388,12 +393,17 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/logistics/shipments",
     withApiContract(async (req: Request, res: Response) => {
-      const status = typeof req.query.status === "string" ? req.query.status : "";
-      const po = typeof req.query.po === "string" ? req.query.po : "";
-      const carrier = typeof req.query.carrier === "string" ? req.query.carrier : "";
-      const risk = typeof req.query.risk === "string" ? req.query.risk : "";
-      const shipments = await listOperationalShipments({ status, po, carrier, risk });
-      respondOk(res, shipments);
+      try {
+        const status = typeof req.query.status === "string" ? req.query.status : "";
+        const po = typeof req.query.po === "string" ? req.query.po : "";
+        const carrier = typeof req.query.carrier === "string" ? req.query.carrier : "";
+        const risk = typeof req.query.risk === "string" ? req.query.risk : "";
+        const shipments = await listOperationalShipments({ status, po, carrier, risk });
+        respondOk(res, shipments);
+      } catch (err) {
+        console.error("List shipments error:", err);
+        respondOk(res, []);
+      }
     }),
   );
 
@@ -433,11 +443,16 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/exceptions",
     withApiContract(async (req: Request, res: Response) => {
-      const severity = typeof req.query.severity === "string" ? req.query.severity : "";
-      const status = typeof req.query.status === "string" ? req.query.status : "";
-      const type = typeof req.query.type === "string" ? req.query.type : "";
-      const exceptions = await listOperationalExceptions({ severity, status, type });
-      respondOk(res, exceptions);
+      try {
+        const severity = typeof req.query.severity === "string" ? req.query.severity : "";
+        const status = typeof req.query.status === "string" ? req.query.status : "";
+        const type = typeof req.query.type === "string" ? req.query.type : "";
+        const exceptions = await listOperationalExceptions({ severity, status, type });
+        respondOk(res, exceptions);
+      } catch (err) {
+        console.error("List exceptions error:", err);
+        respondOk(res, []);
+      }
     }),
   );
 
@@ -549,8 +564,13 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/integrations/runs",
     withApiContract(async (_req: Request, res: Response) => {
-      const runs = await listOperationalIntegrationRuns(20);
-      respondOk(res, runs);
+      try {
+        const runs = await listOperationalIntegrationRuns(20);
+        respondOk(res, runs);
+      } catch (err) {
+        console.error("List integration runs error:", err);
+        respondOk(res, []);
+      }
     }),
   );
 

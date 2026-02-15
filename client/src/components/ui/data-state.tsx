@@ -19,6 +19,8 @@ type DataStateProps<T> = {
   emptyDescription?: string;
   emptyAction?: React.ReactNode;
   onRetry?: () => void;
+  /** Shown next to Retry when there is an error (e.g. "Go back" link) */
+  errorAction?: React.ReactNode;
   children: (data: T) => React.ReactNode;
 };
 
@@ -31,6 +33,7 @@ export function DataState<T>({
   emptyDescription,
   emptyAction,
   onRetry,
+  errorAction,
   children,
 }: DataStateProps<T>) {
   if (loading) {
@@ -49,11 +52,14 @@ export function DataState<T>({
         title="Something went wrong"
         description={formatErrorMessage(error)}
         action={
-          onRetry ? (
-            <Button onClick={onRetry} variant="outline" size="sm">
-              Retry
-            </Button>
-          ) : null
+          <div className="flex flex-wrap gap-2">
+            {onRetry ? (
+              <Button onClick={onRetry} variant="outline" size="sm">
+                Retry
+              </Button>
+            ) : null}
+            {errorAction ?? null}
+          </div>
         }
       />
     );

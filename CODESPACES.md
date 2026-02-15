@@ -86,3 +86,8 @@ Inside Codespaces, these DB values are preconfigured for the app container:
 - `PGPASSWORD=postgres`
 
 For local non-Codespaces development, copy `.env.example` to `.env` and adjust values as needed.
+
+## Build and static assets
+
+- **Vite** (client) builds to **`dist/public`** (see `vite.config.ts`: `build.outDir`).
+- **Express** in production serves static files from **`server/public`** when the server runs from the repo root, or from **`dist/public`** when the server runs from `dist/` (e.g. `node dist/index.js`). The `serveStatic` function in `server/vite.ts` uses `path.resolve(__dirname, "public")`, so the executable’s directory must contain a `public` folder with the built client (e.g. run from project root after copying client build into `server/public`, or run from `dist/` so `dist/public` is used). Do not change Vite’s `outDir` without updating the server’s static path so both stay in sync.
