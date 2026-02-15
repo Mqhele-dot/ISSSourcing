@@ -182,6 +182,10 @@ APP_URL="http://localhost:${PORT}"
 if [[ -n "${CODESPACE_NAME:-}" && -n "${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}" ]]; then
   APP_URL="https://${CODESPACE_NAME}-${PORT}.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
 fi
+FORWARDED_HOST=""
+if [[ "${APP_URL}" == https://* ]]; then
+  FORWARDED_HOST="${APP_URL#https://}"
+fi
 
 echo
 echo "Starting application..."
@@ -225,5 +229,73 @@ if [[ "${SERVER_READY}" != "true" ]]; then
 fi
 
 echo "✅ In-container health check passed at http://127.0.0.1:${PORT}/health"
+
+echo "Warming app shell route..."
+SHELL_READY="false"
+for attempt in {1..120}; do
+  if [[ -n "${FORWARDED_HOST}" ]]; then
+    if curl --silent --show-error --fail --max-time 10 -H "Host: ${FORWARDED_HOST}" "http://127.0.0.1:${PORT}/" >/dev/null 2>&1; then
+      SHELL_READY="true"
+      break
+    fi
+  else
+    if curl --silent --show-error --fail --max-time 10 "http://127.0.0.1:${PORT}/" >/dev/null 2>&1; then
+      SHELL_READY="true"
+      break
+    fi
+  fi
+
+  if ! kill -0 "${APP_PID}" >/dev/null 2>&1; then
+    echo "Server process exited while warming app shell route." >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+if [[ "${SHELL_READY}" != "true" ]]; then
+  echo "App shell route did not become ready in time." >&2
+  exit 1
+fi
+
+echo "✅ In-container app shell warm-up passed at http://127.0.0.1:${PORT}/"
+
+if [[ -n "${FORWARDED_HOST}" ]]; then
+  if command -v gh >/dev/null 2>&1 && [[ "${CODESPACES_AUTO_PUBLIC_PORT:-true}" == "true" ]]; then
+    gh codespace ports visibility "${PORT}:public" -c "${CODESPACE_NAME}" >/dev/null 2>&1 || true
+  fi
+
+  echo "Checking forwarded URL reachability..."
+  FORWARDED_READY="false"
+  LAST_STATUS="000"
+  for attempt in {1..45}; do
+    LAST_STATUS="$(
+      curl --silent --output /dev/null --write-out "%{http_code}" --max-time 10 "${APP_URL}/health" || true
+    )"
+    case "${LAST_STATUS}" in
+      200|301|302|307|308|401|403)
+        FORWARDED_READY="true"
+        break
+        ;;
+    esac
+
+    if ! kill -0 "${APP_PID}" >/dev/null 2>&1; then
+      echo "Server process exited while checking forwarded URL." >&2
+      exit 1
+    fi
+    sleep 2
+  done
+
+  if [[ "${FORWARDED_READY}" == "true" ]]; then
+    echo "✅ Forwarded URL check passed (${APP_URL}/health -> HTTP ${LAST_STATUS})."
+  else
+    echo "⚠️ Forwarded URL still not ready (${APP_URL}/health -> HTTP ${LAST_STATUS})."
+    echo "   Open port ${PORT} from the Codespaces Ports tab and use that exact URL."
+    echo "   If using an external browser tab, ensure the port visibility is Public."
+    if command -v gh >/dev/null 2>&1; then
+      echo "   Current forwarded ports:"
+      gh codespace ports -c "${CODESPACE_NAME}" --json sourcePort,visibility,browseUrl || true
+    fi
+  fi
+fi
 
 wait "${APP_PID}"

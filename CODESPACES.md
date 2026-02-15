@@ -26,6 +26,8 @@ The command will:
 - wait for PostgreSQL readiness
 - apply schema (`npm run db:push`)
 - start the development server
+- warm both `/health` and `/` before reporting ready
+- check forwarded URL reachability in Codespaces
 
 On first boot, the server auto-seeds demo data when the database is empty.
 You can also seed manually with:
@@ -43,6 +45,7 @@ npm run db:seed
 | PostgreSQL | 5432 | `db` service in devcontainer |
 
 If you open the forwarded URL in an external browser session, set port **5000** visibility to **Public** in the Codespaces **Ports** tab.
+`codespaces:up` will also attempt to make port 5000 public automatically (best-effort). Disable this with `CODESPACES_AUTO_PUBLIC_PORT=false`.
 
 ## Troubleshooting (502 / app not reachable)
 
