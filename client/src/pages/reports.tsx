@@ -26,6 +26,7 @@ export default function Reports() {
   const [activeTab, setActiveTab] = useState<ReportTab>("inventory");
   const [exportFormat, setExportFormat] = useState<DocumentType>("pdf");
   const [filter, setFilter] = useState<ReportFilter>({});
+  const [exporting, setExporting] = useState(false);
 
   // Fetch inventory items
   const { data: inventoryItems, isLoading: itemsLoading } = useQuery({
@@ -106,6 +107,8 @@ export default function Reports() {
 
   // Handle export with filters
   const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
     try {
       // Build URL with filter parameters
       let url = `/api/export/${activeTab}/${exportFormat}`;
@@ -168,6 +171,8 @@ export default function Reports() {
         description: error instanceof Error ? error.message : "Failed to export report",
         variant: "destructive",
       });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -227,9 +232,9 @@ export default function Reports() {
             </SelectContent>
           </Select>
           
-          <Button onClick={handleExport}>
+          <Button onClick={handleExport} disabled={exporting}>
             <FileDown className="mr-2 h-4 w-4" />
-            Export Report
+            {exporting ? "Exporting…" : "Export Report"}
           </Button>
         </div>
       </div>

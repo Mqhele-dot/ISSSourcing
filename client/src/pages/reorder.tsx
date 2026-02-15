@@ -53,7 +53,8 @@ export default function ReorderRequestsPage() {
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [conversionDialogOpen, setConversionDialogOpen] = useState(false);
-  
+  const [exporting, setExporting] = useState(false);
+
   // Fetch all reorder requests
   const { data: reorderRequests, isLoading: requestsLoading } = useQuery({
     queryKey: ["/api/reorder-requests"],
@@ -188,6 +189,8 @@ export default function ReorderRequestsPage() {
   };
   
   const exportReport = async (format: string) => {
+    if (exporting) return;
+    setExporting(true);
     const url = `/api/export/reorder-requests/${format}`;
     if (process.env.NODE_ENV === "development") console.debug("[Export]", url);
     try {
@@ -222,9 +225,11 @@ export default function ReorderRequestsPage() {
         description: error instanceof Error ? error.message : "Failed to export report",
         variant: "destructive",
       });
+    } finally {
+      setExporting(false);
     }
   };
-  
+
   return (
     <div className="max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
@@ -235,15 +240,15 @@ export default function ReorderRequestsPage() {
           </p>
         </div>
         <div className="mt-4 md:mt-0 flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => exportReport("pdf")}>
+          <Button variant="outline" onClick={() => exportReport("pdf")} disabled={exporting}>
             <FileDown className="mr-2 h-4 w-4" />
             Export PDF
           </Button>
-          <Button variant="outline" onClick={() => exportReport("excel")}>
+          <Button variant="outline" onClick={() => exportReport("excel")} disabled={exporting}>
             <FileDown className="mr-2 h-4 w-4" />
             Export Excel
           </Button>
-          <Button variant="outline" onClick={() => exportReport("csv")}>
+          <Button variant="outline" onClick={() => exportReport("csv")} disabled={exporting}>
             <FileDown className="mr-2 h-4 w-4" />
             Export CSV
           </Button>

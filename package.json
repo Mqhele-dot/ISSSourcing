@@ -15,6 +15,7 @@
     "test:contracts": "tsx scripts/test-api-contract.ts",
     "test:deeplinks": "tsx scripts/test-kpi-deeplinks.ts",
     "test:csv": "tsx server/services/document-generator-service.test.ts",
+    "test:endpoints": "node scripts/test-button-endpoints.js http://127.0.0.1:5000",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx server/seed.ts",
     "codespaces:up": "bash scripts/codespaces-up.sh"
