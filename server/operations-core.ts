@@ -404,6 +404,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
     id: number;
     sku: string;
     name: string;
+    price: string | number | null;
     category_id: number | null;
     quantity: number | null;
     low_stock_threshold: number | null;
@@ -416,6 +417,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
       i.id,
       i.sku,
       i.name,
+      i.price,
       i.category_id,
       i.quantity,
       i.low_stock_threshold,
@@ -488,6 +490,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
         id: row.id,
         sku: row.sku,
         name: row.name,
+        price: toNumber(row.price, 0),
         categoryId: row.category_id,
         quantity: fallbackOnHand,
         lowStockThreshold,
