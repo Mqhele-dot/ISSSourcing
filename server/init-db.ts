@@ -1,4 +1,4 @@
-import { db } from './db';
+import { db, pool } from './db';
 import { 
   inventoryItems,
   warehouses,
@@ -15,13 +15,35 @@ import { PgTable } from 'drizzle-orm/pg-core';
 
 const execAsync = promisify(exec);
 
+/** Create the "session" table required by connect-pg-simple (Express session store). */
+async function ensureSessionTable(): Promise<void> {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS "session" (
+        "sid" varchar NOT NULL,
+        "sess" json NOT NULL,
+        "expire" timestamp(6) NOT NULL,
+        PRIMARY KEY ("sid")
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+    `);
+    console.log('Session table (connect-pg-simple) ready');
+  } catch (err) {
+    console.warn('Could not ensure session table:', err instanceof Error ? err.message : err);
+  }
+}
+
 /**
  * Initializes the database by ensuring all required tables exist
  * This is called during application startup to prepare the database
  */
 export async function initializeDatabase(): Promise<boolean> {
   console.log('Initializing database schema...');
-  
+
+  await ensureSessionTable();
+
   try {
     // Check if users table exists by trying to query it
     const userCount = await db.select().from(users).limit(1);
