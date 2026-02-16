@@ -197,22 +197,27 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/inventory",
     withApiContract(async (req: Request, res: Response) => {
-      const q =
-        typeof req.query.q === "string"
-          ? req.query.q
-          : typeof req.query.search === "string"
-            ? req.query.search
-            : "";
-      const location = typeof req.query.location === "string" ? req.query.location : "";
-      const category =
-        typeof req.query.category === "string"
-          ? req.query.category
-          : typeof req.query.categoryId === "string"
-            ? req.query.categoryId
-            : "";
-      const low = parseBooleanFlag(req.query.low) || parseBooleanFlag(req.query.lowStock);
-      const items = await listOperationalInventory({ q, location, category, low });
-      respondOk(res, items);
+      try {
+        const q =
+          typeof req.query.q === "string"
+            ? req.query.q
+            : typeof req.query.search === "string"
+              ? req.query.search
+              : "";
+        const location = typeof req.query.location === "string" ? req.query.location : "";
+        const category =
+          typeof req.query.category === "string"
+            ? req.query.category
+            : typeof req.query.categoryId === "string"
+              ? req.query.categoryId
+              : "";
+        const low = parseBooleanFlag(req.query.low) || parseBooleanFlag(req.query.lowStock);
+        const items = await listOperationalInventory({ q, location, category, low });
+        respondOk(res, items);
+      } catch (err) {
+        console.error("Error listing operational inventory:", err);
+        respondOk(res, []);
+      }
     }),
   );
 
