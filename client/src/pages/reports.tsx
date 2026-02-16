@@ -29,6 +29,23 @@ export default function Reports() {
   const [filter, setFilter] = useState<ReportFilter>({});
   const [exporting, setExporting] = useState(false);
 
+  const unwrapApiData = async <T,>(response: Response): Promise<T> => {
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`);
+    }
+
+    const raw = await response.json();
+    if (raw && typeof raw === "object" && "ok" in raw) {
+      const envelope = raw as { ok: boolean; data?: T; error?: { message?: string } };
+      if (envelope.ok) {
+        return envelope.data as T;
+      }
+      throw new Error(envelope.error?.message || "Request failed");
+    }
+
+    return raw as T;
+  };
+
   // Fetch inventory items (normalize to array so reduce/map never see non-array)
   const { data: inventoryItems, isLoading: itemsLoading, isError: itemsError, error: itemsErrorDetail } = useQuery({
     queryKey: ["/api/inventory"],
@@ -50,11 +67,8 @@ export default function Reports() {
   const { data: lowStockItems, isLoading: lowStockLoading } = useQuery({
     queryKey: ["/api/inventory/low-stock"],
     queryFn: async () => {
-      const response = await fetch("/api/inventory/low-stock");
-      if (!response.ok) {
-        throw new Error("Failed to fetch low stock items");
-      }
-      const raw = await response.json();
+      const response = await fetch("/api/inventory/low-stock", { credentials: "include" });
+      const raw = await unwrapApiData<unknown>(response);
       return Array.isArray(raw) ? raw : [];
     },
   });
@@ -63,11 +77,8 @@ export default function Reports() {
   const { data: categories } = useQuery({
     queryKey: ["/api/categories"],
     queryFn: async () => {
-      const response = await fetch("/api/categories");
-      if (!response.ok) {
-        throw new Error("Failed to fetch categories");
-      }
-      const raw = await response.json();
+      const response = await fetch("/api/categories", { credentials: "include" });
+      const raw = await unwrapApiData<unknown>(response);
       return Array.isArray(raw) ? raw : [];
     },
   });
@@ -76,11 +87,14 @@ export default function Reports() {
   const { data: stats } = useQuery({
     queryKey: ["/api/inventory/stats"],
     queryFn: async () => {
-      const response = await fetch("/api/inventory/stats");
-      if (!response.ok) {
-        throw new Error("Failed to fetch inventory stats");
-      }
-      return response.json() as Promise<InventoryStats>;
+      const response = await fetch("/api/inventory/stats", { credentials: "include" });
+      const rawStats = await unwrapApiData<Partial<InventoryStats>>(response);
+      return {
+        totalItems: Number(rawStats?.totalItems ?? 0),
+        lowStockItems: Number(rawStats?.lowStockItems ?? 0),
+        outOfStockItems: Number(rawStats?.outOfStockItems ?? 0),
+        inventoryValue: Number(rawStats?.inventoryValue ?? 0),
+      } as InventoryStats;
     },
   });
   
@@ -88,11 +102,8 @@ export default function Reports() {
   const { data: warehouses } = useQuery({
     queryKey: ["/api/warehouses"],
     queryFn: async () => {
-      const response = await fetch("/api/warehouses");
-      if (!response.ok) {
-        throw new Error("Failed to fetch warehouses");
-      }
-      const raw = await response.json();
+      const response = await fetch("/api/warehouses", { credentials: "include" });
+      const raw = await unwrapApiData<unknown>(response);
       return Array.isArray(raw) ? raw : [];
     },
   });
@@ -101,11 +112,8 @@ export default function Reports() {
   const { data: suppliers } = useQuery({
     queryKey: ["/api/suppliers"],
     queryFn: async () => {
-      const response = await fetch("/api/suppliers");
-      if (!response.ok) {
-        throw new Error("Failed to fetch suppliers");
-      }
-      const raw = await response.json();
+      const response = await fetch("/api/suppliers", { credentials: "include" });
+      const raw = await unwrapApiData<unknown>(response);
       return Array.isArray(raw) ? raw : [];
     },
   });
@@ -308,9 +316,7 @@ export default function Reports() {
                     </p>
                   </div>
                   <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                    {safeInventoryItems.length > 0
-                      ? `${safeInventoryItems.length} items • Total Value: ${formatCurrency(calculateTotalValue(safeInventoryItems))}`
-                      : `${stats?.totalItems || 0} items • Total Value: ${formatCurrency(stats?.inventoryValue || 0)}`}
+                    {`${safeInventoryItems.length} items • Total Value: ${formatCurrency(calculateTotalValue(safeInventoryItems))}`}
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -348,10 +354,10 @@ export default function Reports() {
                               {item.quantity}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                              {formatCurrency(item.price)}
+                              {formatCurrency(Number(item.price) || 0)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                              {formatCurrency(item.price * item.quantity)}
+                              {formatCurrency((Number(item.price) || 0) * (Number(item.quantity) || 0))}
                             </td>
                           </tr>
                         ))
@@ -392,7 +398,7 @@ export default function Reports() {
             </CardContent>
             <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t border-neutral-200 dark:border-neutral-700 flex justify-between">
               <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                The complete report will include all {stats?.totalItems || 0} inventory items.
+                The complete report includes all {safeInventoryItems.length} inventory items from the current inventory feed.
               </div>
             </CardFooter>
           </Card>

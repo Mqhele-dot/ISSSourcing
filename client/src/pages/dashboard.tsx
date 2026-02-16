@@ -24,15 +24,27 @@ export default function Dashboard() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const { toast } = useToast();
 
+  const unwrapApiData = async <T,>(response: Response): Promise<T> => {
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`);
+    }
+    const raw = await response.json();
+    if (raw && typeof raw === "object" && "ok" in raw) {
+      const envelope = raw as { ok: boolean; data?: T; error?: { message?: string } };
+      if (envelope.ok) {
+        return envelope.data as T;
+      }
+      throw new Error(envelope.error?.message || "Request failed");
+    }
+    return raw as T;
+  };
+
   // Fetch inventory stats
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/inventory/stats"],
     queryFn: async () => {
-      const response = await fetch("/api/inventory/stats");
-      if (!response.ok) {
-        throw new Error("Failed to fetch inventory stats");
-      }
-      return response.json() as Promise<InventoryStats>;
+      const response = await fetch("/api/inventory/stats", { credentials: "include" });
+      return unwrapApiData<InventoryStats>(response);
     },
   });
 
@@ -41,10 +53,7 @@ export default function Dashboard() {
     queryKey: ["/api/categories"],
     queryFn: async () => {
       const response = await fetch("/api/categories");
-      if (!response.ok) {
-        throw new Error("Failed to fetch categories");
-      }
-      return response.json() as Promise<Category[]>;
+      return unwrapApiData<Category[]>(response);
     },
   });
 
@@ -57,10 +66,7 @@ export default function Dashboard() {
         : "/api/inventory";
       
       const response = await fetch(endpoint);
-      if (!response.ok) {
-        throw new Error("Failed to fetch inventory items");
-      }
-      return response.json() as Promise<InventoryItem[]>;
+      return unwrapApiData<InventoryItem[]>(response);
     },
   });
 

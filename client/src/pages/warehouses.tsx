@@ -154,16 +154,35 @@ export default function WarehousesPage() {
     },
   });
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    createWarehouse.mutate(formData);
+  const handleCreateSubmit = () => {
+    if (!formData.name.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Warehouse name is required',
+        description: 'Enter a name before creating a warehouse.',
+      });
+      return;
+    }
+
+    createWarehouse.mutate({ ...formData, name: formData.name.trim() });
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (selectedWarehouse) {
-      updateWarehouse.mutate({ id: selectedWarehouse.id, data: formData });
+  const handleEditSubmit = () => {
+    if (!selectedWarehouse) return;
+
+    if (!formData.name.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Warehouse name is required',
+        description: 'Enter a name before saving changes.',
+      });
+      return;
     }
+
+    updateWarehouse.mutate({
+      id: selectedWarehouse.id,
+      data: { ...formData, name: formData.name.trim() },
+    });
   };
 
   const handleDeleteConfirm = () => {
@@ -317,7 +336,7 @@ export default function WarehousesPage() {
               Enter the details for the new warehouse location.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateSubmit}>
+          <form noValidate>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="name">Warehouse Name *</Label>
@@ -385,7 +404,7 @@ export default function WarehousesPage() {
               <Button variant="outline" type="button" onClick={() => setIsCreateDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createWarehouse.isPending}>
+              <Button type="button" onClick={handleCreateSubmit} disabled={createWarehouse.isPending}>
                 {createWarehouse.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Create Warehouse
               </Button>
@@ -403,7 +422,7 @@ export default function WarehousesPage() {
               Update the warehouse details.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleEditSubmit}>
+          <form noValidate>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="edit-name">Warehouse Name *</Label>
@@ -466,7 +485,7 @@ export default function WarehousesPage() {
               <Button variant="outline" type="button" onClick={() => setIsEditDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={updateWarehouse.isPending}>
+              <Button type="button" onClick={handleEditSubmit} disabled={updateWarehouse.isPending}>
                 {updateWarehouse.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Save Changes
               </Button>
