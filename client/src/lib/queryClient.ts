@@ -12,6 +12,7 @@ type ApiErrorEnvelope = {
 type ApiSuccessEnvelope<T> = {
   ok: true;
   data: T;
+  meta?: { fallback?: string };
 };
 
 function isApiEnvelope<T>(value: unknown): value is ApiErrorEnvelope | ApiSuccessEnvelope<T> {
@@ -54,7 +55,8 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-const REQUEST_TIMEOUT_MS = 15000;
+/** Slightly above server operational timeout (8s) so server fallback returns first */
+const REQUEST_TIMEOUT_MS = 12000;
 
 export async function apiRequest(
   method: string,
@@ -114,13 +116,35 @@ export const getQueryFn: <T>(options: {
     const payload = await parseJsonOrText(res);
     if (isApiEnvelope<T>(payload)) {
       if (payload.ok) {
-        return payload.data as T;
+        const success = payload as ApiSuccessEnvelope<T>;
+        if (success.meta?.fallback) {
+          return { data: success.data, meta: success.meta } as T;
+        }
+        return success.data as T;
       }
       const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
       throw new Error(`${codePrefix}${payload.error.message}`);
     }
     return payload as T;
   };
+
+/** Unwrap operational list response that may include meta.fallback (timeout | db-error | degraded) */
+export function unwrapOperationalResponse<T>(
+  payload: T | { data: T; meta?: { fallback?: string } },
+): { data: T; fallback?: string } {
+  if (Array.isArray(payload)) {
+    return { data: payload };
+  }
+  if (
+    payload != null &&
+    typeof payload === "object" &&
+    "data" in payload
+  ) {
+    const p = payload as { data: T; meta?: { fallback?: string } };
+    return { data: p.data, fallback: p.meta?.fallback };
+  }
+  return { data: payload as T };
+}
 
 export const queryClient = new QueryClient({
   defaultOptions: {

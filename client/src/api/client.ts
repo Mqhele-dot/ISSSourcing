@@ -110,7 +110,8 @@ async function unwrapEnvelope<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-const API_TIMEOUT_MS = 15000;
+/** Align with server operational timeout (8s); client gives up at 12s */
+const API_TIMEOUT_MS = 12000;
 
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();

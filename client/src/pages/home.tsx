@@ -89,12 +89,18 @@ export default function HomePage() {
         description: "Operational demo data has been prepared.",
       });
     } catch (walkthroughError) {
+      const msg =
+        walkthroughError instanceof Error ? walkthroughError.message : "Failed to run walkthrough";
+      const isServiceUnavailable =
+        msg.includes("503") ||
+        msg.includes("DB_UNAVAILABLE") ||
+        msg.includes("DEMO_WALKTHROUGH_TIMEOUT") ||
+        msg.includes("Service temporarily unavailable");
       toast({
         title: "Walkthrough failed",
-        description:
-          walkthroughError instanceof Error
-            ? walkthroughError.message
-            : "Failed to run walkthrough",
+        description: isServiceUnavailable
+          ? "Service temporarily unavailable. Please retry in a moment."
+          : msg,
         variant: "destructive",
       });
     } finally {

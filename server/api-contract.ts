@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 export type ApiSuccessEnvelope<T> = {
   ok: true;
   data: T;
+  meta?: { fallback?: string };
 };
 
 export type ApiErrorDetails = Record<string, unknown> | unknown[] | null;
@@ -51,8 +52,16 @@ export function contractError(
   return new ApiContractError(status, code, message, hint, details);
 }
 
-export function respondOk<T>(res: Response, data: T, status = 200) {
-  const payload: ApiSuccessEnvelope<T> = { ok: true, data };
+export function respondOk<T>(
+  res: Response,
+  data: T,
+  status = 200,
+  meta?: { fallback: string },
+) {
+  if (meta) {
+    res.setHeader("Cache-Control", "no-store");
+  }
+  const payload: ApiSuccessEnvelope<T> = meta ? { ok: true, data, meta } : { ok: true, data };
   return res.status(status).json(payload);
 }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
-const FETCH_TIMEOUT_MS = 20000;
+/** Align with client apiRequest (12s); server operational timeout is 8s */
+const FETCH_TIMEOUT_MS = 12000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([

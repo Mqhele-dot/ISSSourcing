@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient } from '@/lib/queryClient';
-import { apiRequest } from '@/lib/queryClient';
+import { queryClient, apiRequest, unwrapOperationalResponse } from '@/lib/queryClient';
 import { Plus, Pencil, MoreHorizontal, Trash2, Loader2, Building } from 'lucide-react';
 import {
   Table,
@@ -82,10 +81,16 @@ export default function WarehousesPage() {
     isDefault: false,
   });
 
-  // Fetch warehouses
-  const { data: warehouses = [], isLoading, error } = useQuery<Warehouse[]>({
+  // Fetch warehouses (response may include meta.fallback when server used fallback)
+  const { data: warehousesRaw, isLoading, error } = useQuery<
+    Warehouse[] | { data: Warehouse[]; meta: { fallback?: string } }
+  >({
     queryKey: ['/api/warehouses'],
   });
+  const { data: warehouseList, fallback: listFallback } = unwrapOperationalResponse(
+    warehousesRaw ?? [],
+  );
+  const list = Array.isArray(warehouseList) ? warehouseList : [];
 
   // Create warehouse mutation
   const createWarehouse = useMutation({
@@ -264,13 +269,21 @@ export default function WarehousesPage() {
         </Button>
       </div>
 
+      {listFallback ? (
+        <Alert variant="default" className="mb-4 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+          <AlertTitle>Temporary data outage</AlertTitle>
+          <AlertDescription>
+            Data could not be loaded from the server. You may see empty or cached results. Try refreshing in a moment.
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="flex justify-center items-center h-64">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : warehouses.length === 0 ? (
+          ) : list.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center px-4">
               <Building className="h-12 w-12 text-gray-400 mb-4" />
               <h3 className="text-lg font-medium mb-2">No warehouses found</h3>
@@ -298,7 +311,7 @@ export default function WarehousesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {warehouses.map((warehouse) => (
+                {list.map((warehouse) => (
                   <TableRow key={warehouse.id}>
                     <TableCell className="font-medium">{warehouse.name}</TableCell>
                     <TableCell>{warehouse.location || warehouse.address || '—'}</TableCell>

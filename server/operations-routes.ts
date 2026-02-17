@@ -64,9 +64,26 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "unknown_error";
 }
 
+const OPERATIONS_DEGRADED = process.env.OPERATIONS_DEGRADED === "true";
+
+function isOperationsDegraded(): boolean {
+  return OPERATIONS_DEGRADED;
+}
+
+function setEndpointHeader(res: Response, path: string): void {
+  res.setHeader("X-InvTrack-Endpoint", path);
+}
+
+function getFallbackValue(err: unknown): "timeout" | "db-error" {
+  return toErrorMessage(err) === "OPERATIONS_QUERY_TIMEOUT" ? "timeout" : "db-error";
+}
+
 function setFallbackHeader(res: Response, err: unknown): void {
-  const value = toErrorMessage(err) === "OPERATIONS_QUERY_TIMEOUT" ? "timeout" : "db-error";
-  res.setHeader("X-InvTrack-Fallback", value);
+  res.setHeader("X-InvTrack-Fallback", getFallbackValue(err));
+}
+
+function logOperationalError(path: string, elapsedMs: number, err: unknown): void {
+  console.error("[operations]", path, "elapsed_ms", elapsedMs, toErrorMessage(err));
 }
 
 function resolveActor(req: Request): string {
@@ -213,6 +230,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/inventory",
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        return respondOk(res, [], 200, { fallback: "degraded" });
+      }
       try {
         const q =
           typeof req.query.q === "string"
@@ -234,9 +257,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         );
         respondOk(res, items);
       } catch (err) {
-        console.error("Error listing operational inventory:", err);
+        logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
-        respondOk(res, []);
+        respondOk(res, [], 200, { fallback: getFallbackValue(err) });
       }
     }),
   );
@@ -245,6 +268,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/inventory/:sku/adjust",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       const sku = req.params.sku;
       const location = typeof req.body?.location === "string" ? req.body.location : "";
       const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
@@ -262,16 +291,24 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       }
 
       try {
-        const result = await adjustOperationalInventory({
-          skuOrId: sku,
-          location,
-          delta,
-          reason,
-          ref,
-          createdBy,
-        });
+        const result = await withTimeout(
+          adjustOperationalInventory({
+            skuOrId: sku,
+            location,
+            delta,
+            reason,
+            ref,
+            createdBy,
+          }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, result);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         mapAdjustInventoryError(error);
       }
     }),
@@ -280,17 +317,24 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/inventory/:sku",
     withApiContract(async (req: Request, res: Response, next: NextFunction) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
       const sku = req.params.sku;
       if (INVENTORY_ROUTE_RESERVED_SEGMENTS.has(sku)) {
         next();
         return;
+      }
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(404, "INVENTORY_NOT_FOUND", "Inventory item not found");
       }
 
       let detail;
       try {
         detail = await withTimeout(getOperationalInventoryDetail(sku), OPERATIONS_QUERY_TIMEOUT_MS);
       } catch (err) {
-        console.error("Inventory detail error:", err);
+        logOperationalError(req.path, Date.now() - start, err);
+        setFallbackHeader(res, err);
         throw contractError(404, "INVENTORY_NOT_FOUND", "Inventory item not found");
       }
       if (!detail) {
@@ -304,6 +348,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/purchase/orders",
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        return respondOk(res, [], 200, { fallback: "degraded" });
+      }
       try {
         const status = typeof req.query.status === "string" ? req.query.status : "";
         const supplier = typeof req.query.supplier === "string" ? req.query.supplier : "";
@@ -314,9 +364,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         );
         respondOk(res, orders);
       } catch (err) {
-        console.error("List purchase orders error:", err);
+        logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
-        respondOk(res, []);
+        respondOk(res, [], 200, { fallback: getFallbackValue(err) });
       }
     }),
   );
@@ -324,13 +374,27 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/purchase/orders/:po",
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
+      }
       try {
-        const detail = await getOperationalPurchaseOrderDetail(req.params.po);
+        const detail = await withTimeout(
+          getOperationalPurchaseOrderDetail(req.params.po),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         if (!detail) {
           throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
         }
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
+        }
         mapPurchaseStatusError(error);
       }
     }),
@@ -340,6 +404,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/purchase/orders/:po/status",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       const toStatus =
         typeof req.body?.toStatus === "string"
           ? req.body.toStatus
@@ -347,13 +417,21 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             ? req.body.status
             : "";
       try {
-        const detail = await transitionOperationalPurchaseOrderStatus(
-          req.params.po,
-          toStatus,
-          resolveActor(req),
+        const detail = await withTimeout(
+          transitionOperationalPurchaseOrderStatus(
+            req.params.po,
+            toStatus,
+            resolveActor(req),
+          ),
+          OPERATIONS_QUERY_TIMEOUT_MS,
         );
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         mapPurchaseStatusError(error);
       }
     }),
@@ -363,14 +441,28 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/purchase/orders/:po/approve",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       try {
-        const detail = await transitionOperationalPurchaseOrderStatus(
-          req.params.po,
-          "approved",
-          resolveActor(req),
+        const detail = await withTimeout(
+          transitionOperationalPurchaseOrderStatus(
+            req.params.po,
+            "approved",
+            resolveActor(req),
+          ),
+          OPERATIONS_QUERY_TIMEOUT_MS,
         );
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         mapPurchaseStatusError(error);
       }
     }),
@@ -380,14 +472,28 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/purchase/orders/:po/send",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       try {
-        const detail = await transitionOperationalPurchaseOrderStatus(
-          req.params.po,
-          "sent",
-          resolveActor(req),
+        const detail = await withTimeout(
+          transitionOperationalPurchaseOrderStatus(
+            req.params.po,
+            "sent",
+            resolveActor(req),
+          ),
+          OPERATIONS_QUERY_TIMEOUT_MS,
         );
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         mapPurchaseStatusError(error);
       }
     }),
@@ -397,6 +503,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/purchase/orders/:po/receive",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       const bodyLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
       const lines = bodyLines.map(
         (line: { sku?: unknown; qty_received_now?: unknown; qtyReceivedNow?: unknown }) => ({
@@ -406,10 +518,13 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       );
 
       try {
-        const result = await receiveOperationalPurchaseOrder(
-          req.params.po,
-          lines,
-          resolveActor(req),
+        const result = await withTimeout(
+          receiveOperationalPurchaseOrder(
+            req.params.po,
+            lines,
+            resolveActor(req),
+          ),
+          OPERATIONS_QUERY_TIMEOUT_MS,
         );
         respondOk(res, {
           ...result,
@@ -420,6 +535,11 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           },
         });
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         mapPurchaseReceiveError(error);
       }
     }),
@@ -428,6 +548,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/logistics/shipments",
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        return respondOk(res, [], 200, { fallback: "degraded" });
+      }
       try {
         const status = typeof req.query.status === "string" ? req.query.status : "";
         const po = typeof req.query.po === "string" ? req.query.po : "";
@@ -439,9 +565,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         );
         respondOk(res, shipments);
       } catch (err) {
-        console.error("List shipments error:", err);
+        logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
-        respondOk(res, []);
+        respondOk(res, [], 200, { fallback: getFallbackValue(err) });
       }
     }),
   );
@@ -449,10 +575,24 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/logistics/shipments/:id",
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(404, "SHIPMENT_NOT_FOUND", "Shipment not found");
+      }
       try {
-        const detail = await getOperationalShipmentDetail(req.params.id);
+        const detail = await withTimeout(
+          getOperationalShipmentDetail(req.params.id),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(404, "SHIPMENT_NOT_FOUND", "Shipment not found");
+        }
         mapShipmentError(error);
       }
     }),
@@ -462,18 +602,32 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/logistics/shipments/:id/status",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       const toStatus = typeof req.body?.toStatus === "string" ? req.body.toStatus : "";
       const note = typeof req.body?.note === "string" ? req.body.note : "";
 
       try {
-        const detail = await updateOperationalShipmentStatus({
-          shipmentId: req.params.id,
-          toStatus,
-          note,
-          actor: resolveActor(req),
-        });
+        const detail = await withTimeout(
+          updateOperationalShipmentStatus({
+            shipmentId: req.params.id,
+            toStatus,
+            note,
+            actor: resolveActor(req),
+          }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         mapShipmentError(error);
       }
     }),
@@ -482,6 +636,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/exceptions",
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        return respondOk(res, [], 200, { fallback: "degraded" });
+      }
       try {
         const severity = typeof req.query.severity === "string" ? req.query.severity : "";
         const status = typeof req.query.status === "string" ? req.query.status : "";
@@ -492,9 +652,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         );
         respondOk(res, exceptions);
       } catch (err) {
-        console.error("List exceptions error:", err);
+        logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
-        respondOk(res, []);
+        respondOk(res, [], 200, { fallback: getFallbackValue(err) });
       }
     }),
   );
@@ -502,10 +662,24 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/exceptions/:id",
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(404, "EXCEPTION_NOT_FOUND", "Exception not found");
+      }
       try {
-        const detail = await getOperationalExceptionDetail(req.params.id);
+        const detail = await withTimeout(
+          getOperationalExceptionDetail(req.params.id),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(404, "EXCEPTION_NOT_FOUND", "Exception not found");
+        }
         mapExceptionLookupError(error);
       }
     }),
@@ -515,9 +689,18 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/exceptions/:id/status",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       const toStatus = typeof req.body?.toStatus === "string" ? req.body.toStatus : "";
       try {
-        const current = await getOperationalExceptionDetail(req.params.id);
+        const current = await withTimeout(
+          getOperationalExceptionDetail(req.params.id),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         const currentStatus = current.status.toLowerCase();
         const normalizedTarget = toStatus.trim().toLowerCase();
         const allowedTargets = EXCEPTION_STATUS_TRANSITIONS[currentStatus] ?? [];
@@ -542,13 +725,21 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           );
         }
 
-        const detail = await transitionOperationalExceptionStatus(
-          req.params.id,
-          normalizedTarget,
-          resolveActor(req),
+        const detail = await withTimeout(
+          transitionOperationalExceptionStatus(
+            req.params.id,
+            normalizedTarget,
+            resolveActor(req),
+          ),
+          OPERATIONS_QUERY_TIMEOUT_MS,
         );
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         mapExceptionMutationError(error);
       }
     }),
@@ -558,11 +749,25 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/exceptions/:id/assign",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       try {
         const assignee = typeof req.body?.assignee === "string" ? req.body.assignee : "";
-        const detail = await assignOperationalException(req.params.id, assignee, resolveActor(req));
+        const detail = await withTimeout(
+          assignOperationalException(req.params.id, assignee, resolveActor(req)),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         mapExceptionMutationError(error);
       }
     }),
@@ -572,16 +777,30 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/exceptions/:id/comment",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       try {
         const comment = typeof req.body?.comment === "string" ? req.body.comment : "";
         const author = req.user?.username || req.user?.email || "system";
-        const detail = await addOperationalExceptionComment({
-          idOrRef: req.params.id,
-          author,
-          comment,
-        });
+        const detail = await withTimeout(
+          addOperationalExceptionComment({
+            idOrRef: req.params.id,
+            author,
+            comment,
+          }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, detail);
       } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         mapExceptionMutationError(error);
       }
     }),
@@ -590,23 +809,42 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/activity",
     withApiContract(async (req: Request, res: Response) => {
-      const limitRaw = Number(req.query.limit);
-      const entityType = typeof req.query.entity_type === "string" ? req.query.entity_type : "";
-      const entityId = typeof req.query.entity_id === "string" ? req.query.entity_id : "";
-
-      const records = await listOperationalActivity({
-        limit: Number.isFinite(limitRaw) ? limitRaw : 20,
-        entityType,
-        entityId,
-      });
-
-      respondOk(res, records);
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        return respondOk(res, [], 200, { fallback: "degraded" });
+      }
+      try {
+        const limitRaw = Number(req.query.limit);
+        const entityType = typeof req.query.entity_type === "string" ? req.query.entity_type : "";
+        const entityId = typeof req.query.entity_id === "string" ? req.query.entity_id : "";
+        const records = await withTimeout(
+          listOperationalActivity({
+            limit: Number.isFinite(limitRaw) ? limitRaw : 20,
+            entityType,
+            entityId,
+          }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
+        respondOk(res, records);
+      } catch (err) {
+        logOperationalError(req.path, Date.now() - start, err);
+        setFallbackHeader(res, err);
+        respondOk(res, [], 200, { fallback: getFallbackValue(err) });
+      }
     }),
   );
 
   app.get(
     "/api/integrations/runs",
-    withApiContract(async (_req: Request, res: Response) => {
+    withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        return respondOk(res, [], 200, { fallback: "degraded" });
+      }
       try {
         const runs = await withTimeout(
           listOperationalIntegrationRuns(20),
@@ -614,9 +852,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         );
         respondOk(res, runs);
       } catch (err) {
-        console.error("List integration runs error:", err);
+        logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
-        respondOk(res, []);
+        respondOk(res, [], 200, { fallback: getFallbackValue(err) });
       }
     }),
   );
@@ -625,11 +863,25 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/integrations/:connector/run",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       try {
-        const run = await runOperationalConnector(req.params.connector);
+        const run = await withTimeout(
+          runOperationalConnector(req.params.connector),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, run, 201);
       } catch (error) {
         const message = toErrorMessage(error);
+        if (message === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
         if (message === "unsupported_connector") {
           throw contractError(
             400,
@@ -645,7 +897,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
 
   app.get(
     "/api/control-tower/overview",
-    withApiContract(async (_req: Request, res: Response) => {
+    withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
       const stubOverview = {
         kpis: {
           exceptionsBySeverity: {} as Record<string, number>,
@@ -655,6 +909,10 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         },
         activity: [] as Array<{ id: string; eventType: string; title: string; details: string | null; relatedRefs: Record<string, unknown>; createdAt: string }>,
       };
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        return respondOk(res, stubOverview, 200, { fallback: "degraded" });
+      }
       try {
         const overview = await withTimeout(
           getOperationalControlTowerOverview(),
@@ -662,9 +920,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         );
         respondOk(res, overview);
       } catch (err) {
-        console.error("Control tower overview error:", err);
+        logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
-        respondOk(res, stubOverview);
+        respondOk(res, stubOverview, 200, { fallback: getFallbackValue(err) });
       }
     }),
   );
@@ -673,12 +931,30 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/demo/walkthrough/run",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
       const actor = req.user?.username || req.user?.email || "demo-user";
       try {
-        const result = await runOperationalDemoWalkthrough(actor);
+        const result = await withTimeout(
+          runOperationalDemoWalkthrough(actor),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, result);
       } catch (error) {
         const message = toErrorMessage(error);
+        if (message === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(
+            503,
+            "DEMO_WALKTHROUGH_TIMEOUT",
+            "Demo walkthrough timed out. Check database and try again.",
+          );
+        }
         if (message === "inventory_empty") {
           throw contractError(400, "INVENTORY_EMPTY", "Cannot run walkthrough: no inventory");
         }
