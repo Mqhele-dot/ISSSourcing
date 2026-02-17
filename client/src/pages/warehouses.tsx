@@ -39,7 +39,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 
-// Warehouse interface
+// Warehouse interface (API returns ISO date strings, not Date objects)
 interface Warehouse {
   id: number;
   name: string;
@@ -48,8 +48,8 @@ interface Warehouse {
   contactPerson: string | null;
   contactPhone: string | null;
   isDefault: boolean | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface FormData {
@@ -59,6 +59,12 @@ interface FormData {
   contactPerson: string;
   contactPhone: string;
   isDefault: boolean;
+}
+
+/** Centralized validation for create/edit. Returns error message or null if valid. */
+function validateWarehouseForm(data: FormData): string | null {
+  if (!data.name.trim()) return "Warehouse name is required";
+  return null;
 }
 
 export default function WarehousesPage() {
@@ -87,7 +93,8 @@ export default function WarehousesPage() {
       const res = await apiRequest('POST', '/api/warehouses', data);
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      const createdName = variables.name.trim();
       queryClient.invalidateQueries({ queryKey: ['/api/warehouses'] });
       setIsCreateDialogOpen(false);
       resetForm();
@@ -95,11 +102,22 @@ export default function WarehousesPage() {
         title: 'Warehouse created',
         description: 'Warehouse has been created successfully',
       });
+      // Post-create verification: if refetched list doesn't include the new item, warn
+      queryClient.fetchQuery({ queryKey: ['/api/warehouses'] }).then((list: unknown) => {
+        const arr = Array.isArray(list) ? list : [];
+        if (!arr.some((w: { name?: string }) => w.name === createdName)) {
+          toast({
+            variant: 'destructive',
+            title: 'Created but not visible yet',
+            description: 'Check backend persistence.',
+          });
+        }
+      }).catch(() => {});
     },
     onError: (error: Error) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to create warehouse',
+        title: 'Failed to create warehouse (POST /api/warehouses)',
         description: error.message,
       });
     },
@@ -123,7 +141,7 @@ export default function WarehousesPage() {
     onError: (error: Error) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to update warehouse',
+        title: `Failed to update warehouse (PATCH /api/warehouses/${selectedWarehouse?.id ?? '?'})`,
         description: error.message,
       });
     },
@@ -148,37 +166,36 @@ export default function WarehousesPage() {
     onError: (error: Error) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to delete warehouse',
+        title: `Failed to delete warehouse (DELETE /api/warehouses/${selectedWarehouse?.id ?? '?'})`,
         description: error.message,
       });
     },
   });
 
   const handleCreateSubmit = () => {
-    if (!formData.name.trim()) {
+    const err = validateWarehouseForm(formData);
+    if (err) {
       toast({
         variant: 'destructive',
-        title: 'Warehouse name is required',
-        description: 'Enter a name before creating a warehouse.',
+        title: 'Validation',
+        description: err,
       });
       return;
     }
-
     createWarehouse.mutate({ ...formData, name: formData.name.trim() });
   };
 
   const handleEditSubmit = () => {
     if (!selectedWarehouse) return;
-
-    if (!formData.name.trim()) {
+    const err = validateWarehouseForm(formData);
+    if (err) {
       toast({
         variant: 'destructive',
-        title: 'Warehouse name is required',
-        description: 'Enter a name before saving changes.',
+        title: 'Validation',
+        description: err,
       });
       return;
     }
-
     updateWarehouse.mutate({
       id: selectedWarehouse.id,
       data: { ...formData, name: formData.name.trim() },
@@ -224,7 +241,7 @@ export default function WarehousesPage() {
     return (
       <Alert variant="destructive" className="max-w-4xl mx-auto mt-4">
         <AlertTitle>Error</AlertTitle>
-        <AlertDescription>Failed to load warehouses: {(error as Error).message}</AlertDescription>
+        <AlertDescription>Failed to load warehouses (GET /api/warehouses): {(error as Error).message}</AlertDescription>
       </Alert>
     );
   }
@@ -336,6 +353,7 @@ export default function WarehousesPage() {
               Enter the details for the new warehouse location.
             </DialogDescription>
           </DialogHeader>
+          {/* We use custom toast validation; native HTML validation is disabled. */}
           <form
             noValidate
             onSubmit={(e) => {
@@ -343,11 +361,13 @@ export default function WarehousesPage() {
               handleCreateSubmit();
             }}
           >
-            <div className="grid gap-4 py-4">
+            <fieldset className="grid gap-4 py-4" disabled={createWarehouse.isPending}>
               <div className="grid gap-2">
                 <Label htmlFor="name">Warehouse Name *</Label>
                 <Input
                   id="name"
+                  name="name"
+                  required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Main Warehouse"
@@ -359,6 +379,7 @@ export default function WarehousesPage() {
                 <Label htmlFor="location">Location</Label>
                 <Input
                   id="location"
+                  name="location"
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                   placeholder="Building A, Floor 2"
@@ -369,6 +390,7 @@ export default function WarehousesPage() {
                 <Label htmlFor="address">Address</Label>
                 <Textarea
                   id="address"
+                  name="address"
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   placeholder="123 Main Street, City, Country"
@@ -381,6 +403,7 @@ export default function WarehousesPage() {
                   <Label htmlFor="contactPerson">Contact Person</Label>
                   <Input
                     id="contactPerson"
+                    name="contactPerson"
                     value={formData.contactPerson}
                     onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
                     placeholder="John Doe"
@@ -390,6 +413,7 @@ export default function WarehousesPage() {
                   <Label htmlFor="contactPhone">Contact Phone</Label>
                   <Input
                     id="contactPhone"
+                    name="contactPhone"
                     value={formData.contactPhone}
                     onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })}
                     placeholder="+1 (555) 123-4567"
@@ -405,7 +429,7 @@ export default function WarehousesPage() {
                 />
                 <Label htmlFor="isDefault">Set as default warehouse</Label>
               </div>
-            </div>
+            </fieldset>
             <DialogFooter>
               <Button variant="outline" type="button" onClick={() => setIsCreateDialogOpen(false)}>
                 Cancel
@@ -428,6 +452,7 @@ export default function WarehousesPage() {
               Update the warehouse details.
             </DialogDescription>
           </DialogHeader>
+          {/* We use custom toast validation; native HTML validation is disabled. */}
           <form
             noValidate
             onSubmit={(e) => {
@@ -435,11 +460,13 @@ export default function WarehousesPage() {
               handleEditSubmit();
             }}
           >
-            <div className="grid gap-4 py-4">
+            <fieldset className="grid gap-4 py-4" disabled={updateWarehouse.isPending}>
               <div className="grid gap-2">
                 <Label htmlFor="edit-name">Warehouse Name *</Label>
                 <Input
                   id="edit-name"
+                  name="name"
+                  required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   aria-required="true"
@@ -450,6 +477,7 @@ export default function WarehousesPage() {
                 <Label htmlFor="edit-location">Location</Label>
                 <Input
                   id="edit-location"
+                  name="location"
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                 />
@@ -459,6 +487,7 @@ export default function WarehousesPage() {
                 <Label htmlFor="edit-address">Address</Label>
                 <Textarea
                   id="edit-address"
+                  name="address"
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   rows={2}
@@ -470,6 +499,7 @@ export default function WarehousesPage() {
                   <Label htmlFor="edit-contactPerson">Contact Person</Label>
                   <Input
                     id="edit-contactPerson"
+                    name="contactPerson"
                     value={formData.contactPerson}
                     onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
                   />
@@ -478,6 +508,7 @@ export default function WarehousesPage() {
                   <Label htmlFor="edit-contactPhone">Contact Phone</Label>
                   <Input
                     id="edit-contactPhone"
+                    name="contactPhone"
                     value={formData.contactPhone}
                     onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })}
                   />
@@ -492,7 +523,7 @@ export default function WarehousesPage() {
                 />
                 <Label htmlFor="edit-isDefault">Set as default warehouse</Label>
               </div>
-            </div>
+            </fieldset>
             <DialogFooter>
               <Button variant="outline" type="button" onClick={() => setIsEditDialogOpen(false)}>
                 Cancel
