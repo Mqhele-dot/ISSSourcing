@@ -336,7 +336,13 @@ export default function WarehousesPage() {
               Enter the details for the new warehouse location.
             </DialogDescription>
           </DialogHeader>
-          <form noValidate>
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleCreateSubmit();
+            }}
+          >
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="name">Warehouse Name *</Label>
@@ -345,7 +351,7 @@ export default function WarehousesPage() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Main Warehouse"
-                  required
+                  aria-required="true"
                 />
               </div>
               
@@ -404,7 +410,7 @@ export default function WarehousesPage() {
               <Button variant="outline" type="button" onClick={() => setIsCreateDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="button" onClick={handleCreateSubmit} disabled={createWarehouse.isPending}>
+              <Button type="submit" disabled={createWarehouse.isPending}>
                 {createWarehouse.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Create Warehouse
               </Button>
@@ -422,7 +428,13 @@ export default function WarehousesPage() {
               Update the warehouse details.
             </DialogDescription>
           </DialogHeader>
-          <form noValidate>
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleEditSubmit();
+            }}
+          >
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="edit-name">Warehouse Name *</Label>
@@ -430,7 +442,7 @@ export default function WarehousesPage() {
                   id="edit-name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
+                  aria-required="true"
                 />
               </div>
               
@@ -485,7 +497,7 @@ export default function WarehousesPage() {
               <Button variant="outline" type="button" onClick={() => setIsEditDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="button" onClick={handleEditSubmit} disabled={updateWarehouse.isPending}>
+              <Button type="submit" disabled={updateWarehouse.isPending}>
                 {updateWarehouse.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Save Changes
               </Button>

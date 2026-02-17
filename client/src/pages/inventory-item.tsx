@@ -119,7 +119,8 @@ export default function InventoryDetailPage() {
   const fetchDetail = async (): Promise<InventoryDetail> => {
     const response = await fetch(`/api/inventory/${encodeURIComponent(sku)}`, { credentials: "include" });
     if (!response.ok) {
-      throw new Error(`Failed to fetch inventory detail (${response.status})`);
+      const msg = response.status === 404 ? "Item not found" : `Failed to fetch inventory detail (${response.status})`;
+      throw new Error(msg);
     }
     const raw = (await response.json()) as { ok?: boolean; data?: InventoryDetail } | InventoryDetail;
     const detail = raw && typeof raw === "object" && "ok" in raw && raw.ok && raw.data ? raw.data : (raw as InventoryDetail);

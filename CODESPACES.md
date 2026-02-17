@@ -61,6 +61,12 @@ If you open the forwarded URL in an external browser session, set port **5000** 
 4. Restart the dev server with explicit binding: `HOST=0.0.0.0 PORT=5000 npm run dev`.
 5. In the **Ports** tab, confirm port `5000` exists and open it from that row (avoid stale browser tabs).
 
+**Database / “Loading…” forever:** If the Control Tower, Purchase Orders, Shipments, or Exceptions pages never load:
+
+- Ensure the Postgres service is running (`db` in the devcontainer).
+- Run `npm run codespaces:up` so that schema and seed run; the app expects `DATABASE_URL=postgresql://postgres:postgres@db:5432/inventory_dev` (or equivalent) so it does not fall back to `localhost:5432`, which does not exist in Codespaces.
+- Operational API calls time out after 8 seconds and return empty data so the UI can show “No results” instead of spinning indefinitely.
+
 Health endpoint for smoke tests:
 
 ```text
@@ -98,6 +104,8 @@ Inside Codespaces, these DB values are preconfigured for the app container:
 - `PGDATABASE=inventory_dev`
 - `PGUSER=postgres`
 - `PGPASSWORD=postgres`
+
+**Important:** The app must use the `db` host (the Postgres service in the devcontainer). If `DATABASE_URL` is unset, the server falls back to `db:5432` when running in Codespaces so that operational routes (inventory, purchase orders, shipments, exceptions, connectors) can connect. Without a working database, those pages will show empty lists or time out after ~8 seconds and then show empty state.
 
 For local non-Codespaces development, copy `.env.example` to `.env` and adjust values as needed.
 

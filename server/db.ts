@@ -40,6 +40,12 @@ if (!connectionString) {
       throw new Error(
         "No valid database connection parameters found. Please set DATABASE_URL or individual Postgres parameters (PGHOST, PGUSER, PGPASSWORD, PGDATABASE, PGPORT)",
       );
+    }
+    // In Codespaces, .devcontainer sets DATABASE_URL; if missing, use db:5432 so the DB service is used
+    if (process.env.CODESPACES === "true" || process.env.GITHUB_CODESPACES === "true") {
+      connectionString = "postgresql://postgres:postgres@db:5432/inventory_dev";
+      process.env.DATABASE_URL = connectionString;
+      console.log("Using Codespaces default database (db:5432)");
     } else {
       // Use a default local database URL for development
       connectionString = "postgresql://postgres:postgres@localhost:5432/inventory_dev";

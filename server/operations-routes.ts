@@ -49,8 +49,24 @@ function parseBooleanFlag(value: unknown): boolean {
   return ["true", "1", "yes", "on"].includes(value.toLowerCase());
 }
 
+const OPERATIONS_QUERY_TIMEOUT_MS = 8000;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("OPERATIONS_QUERY_TIMEOUT")), ms),
+    ),
+  ]);
+}
+
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "unknown_error";
+}
+
+function setFallbackHeader(res: Response, err: unknown): void {
+  const value = toErrorMessage(err) === "OPERATIONS_QUERY_TIMEOUT" ? "timeout" : "db-error";
+  res.setHeader("X-InvTrack-Fallback", value);
 }
 
 function resolveActor(req: Request): string {
@@ -212,10 +228,14 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
               ? req.query.categoryId
               : "";
         const low = parseBooleanFlag(req.query.low) || parseBooleanFlag(req.query.lowStock);
-        const items = await listOperationalInventory({ q, location, category, low });
+        const items = await withTimeout(
+          listOperationalInventory({ q, location, category, low }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, items);
       } catch (err) {
         console.error("Error listing operational inventory:", err);
+        setFallbackHeader(res, err);
         respondOk(res, []);
       }
     }),
@@ -266,7 +286,13 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         return;
       }
 
-      const detail = await getOperationalInventoryDetail(sku);
+      let detail;
+      try {
+        detail = await withTimeout(getOperationalInventoryDetail(sku), OPERATIONS_QUERY_TIMEOUT_MS);
+      } catch (err) {
+        console.error("Inventory detail error:", err);
+        throw contractError(404, "INVENTORY_NOT_FOUND", "Inventory item not found");
+      }
       if (!detail) {
         throw contractError(404, "INVENTORY_NOT_FOUND", "Inventory item not found");
       }
@@ -282,10 +308,14 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const status = typeof req.query.status === "string" ? req.query.status : "";
         const supplier = typeof req.query.supplier === "string" ? req.query.supplier : "";
         const q = typeof req.query.q === "string" ? req.query.q : "";
-        const orders = await listOperationalPurchaseOrders({ status, supplier, q });
+        const orders = await withTimeout(
+          listOperationalPurchaseOrders({ status, supplier, q }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, orders);
       } catch (err) {
         console.error("List purchase orders error:", err);
+        setFallbackHeader(res, err);
         respondOk(res, []);
       }
     }),
@@ -403,10 +433,14 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const po = typeof req.query.po === "string" ? req.query.po : "";
         const carrier = typeof req.query.carrier === "string" ? req.query.carrier : "";
         const risk = typeof req.query.risk === "string" ? req.query.risk : "";
-        const shipments = await listOperationalShipments({ status, po, carrier, risk });
+        const shipments = await withTimeout(
+          listOperationalShipments({ status, po, carrier, risk }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, shipments);
       } catch (err) {
         console.error("List shipments error:", err);
+        setFallbackHeader(res, err);
         respondOk(res, []);
       }
     }),
@@ -452,10 +486,14 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const severity = typeof req.query.severity === "string" ? req.query.severity : "";
         const status = typeof req.query.status === "string" ? req.query.status : "";
         const type = typeof req.query.type === "string" ? req.query.type : "";
-        const exceptions = await listOperationalExceptions({ severity, status, type });
+        const exceptions = await withTimeout(
+          listOperationalExceptions({ severity, status, type }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, exceptions);
       } catch (err) {
         console.error("List exceptions error:", err);
+        setFallbackHeader(res, err);
         respondOk(res, []);
       }
     }),
@@ -570,10 +608,14 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/integrations/runs",
     withApiContract(async (_req: Request, res: Response) => {
       try {
-        const runs = await listOperationalIntegrationRuns(20);
+        const runs = await withTimeout(
+          listOperationalIntegrationRuns(20),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, runs);
       } catch (err) {
         console.error("List integration runs error:", err);
+        setFallbackHeader(res, err);
         respondOk(res, []);
       }
     }),
@@ -604,20 +646,25 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/control-tower/overview",
     withApiContract(async (_req: Request, res: Response) => {
+      const stubOverview = {
+        kpis: {
+          exceptionsBySeverity: {} as Record<string, number>,
+          lateShipments: 0,
+          posAwaitingAction: 0,
+          lowStockSkus: 0,
+        },
+        activity: [] as Array<{ id: string; eventType: string; title: string; details: string | null; relatedRefs: Record<string, unknown>; createdAt: string }>,
+      };
       try {
-        const overview = await getOperationalControlTowerOverview();
+        const overview = await withTimeout(
+          getOperationalControlTowerOverview(),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
         respondOk(res, overview);
       } catch (err) {
         console.error("Control tower overview error:", err);
-        respondOk(res, {
-          kpis: {
-            exceptionsBySeverity: {},
-            lateShipments: 0,
-            posAwaitingAction: 0,
-            lowStockSkus: 0,
-          },
-          activity: [],
-        });
+        setFallbackHeader(res, err);
+        respondOk(res, stubOverview);
       }
     }),
   );

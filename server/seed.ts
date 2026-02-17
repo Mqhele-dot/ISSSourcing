@@ -324,6 +324,10 @@ async function ensureInventoryItems(
         },
       });
   }
+  // Ensure no inventory item has null price (avoids NaN in reports)
+  await pool.query(
+    `UPDATE inventory_items SET price = COALESCE(price, 0) WHERE price IS NULL`,
+  );
 }
 
 export async function getDemoDataSummary(): Promise<DemoDataSummary> {
