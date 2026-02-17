@@ -4,7 +4,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { initializeWebSocketService, checkLowStockAlerts } from "./websocket-service";
 import { storage } from "./storage";
 import { pool } from "./db";
-import { initializeDatabase } from "./init-db";
+import { initializeDatabase, ensureSessionTable } from "./init-db";
 import { seedDatabaseIfEmpty } from "./seed";
 import { initializeOperationalData } from "./operations-core";
 import type { PoolClient } from "pg";
@@ -176,6 +176,13 @@ app.use((req, res, next) => {
     process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN
       ? `https://${process.env.CODESPACE_NAME}-${port}.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`
       : null;
+
+  // Ensure Express session table exists before accepting requests (avoids "relation session does not exist")
+  try {
+    await ensureSessionTable();
+  } catch (err) {
+    console.warn("Session table check failed (server will still start):", err instanceof Error ? err.message : err);
+  }
 
   server.listen(port, host, () => {
     log(`serving on ${host}:${port}`);

@@ -16,7 +16,7 @@ import { PgTable } from 'drizzle-orm/pg-core';
 const execAsync = promisify(exec);
 
 /** Create the "session" table required by connect-pg-simple (Express session store). */
-async function ensureSessionTable(): Promise<void> {
+export async function ensureSessionTable(): Promise<void> {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS "session" (
