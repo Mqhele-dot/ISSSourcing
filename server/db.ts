@@ -57,10 +57,11 @@ if (!connectionString) {
   }
 }
 
+// Use SSL only when explicitly required (PGSSLMODE=require) or when using Neon. Many Postgres servers (e.g. Codespaces) do not support SSL.
+const sslMode = process.env.PGSSLMODE ?? process.env.DATABASE_URL?.match(/[?&]sslmode=(\w+)/)?.[1];
 const shouldUseSsl =
-  process.env.NODE_ENV === "production" ||
-  process.env.PGSSLMODE === "require" ||
-  process.env.DATABASE_URL?.includes("neon.tech") === true;
+  (process.env.DATABASE_URL?.includes("neon.tech") === true && sslMode !== "disable") ||
+  process.env.PGSSLMODE === "require";
 
 // Create the database pool with the connection string
 const poolOptions = {

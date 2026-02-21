@@ -102,6 +102,22 @@ If you encounter connection errors:
 3. Check network connectivity to the database server
 4. Verify firewall settings allow connections to PostgreSQL port
 
+### "The server does not support SSL connections"
+
+If your PostgreSQL server does not use SSL (common in development or GitHub Codespaces), set:
+
+- **Option A:** `PGSSLMODE=disable` in your environment (e.g. in `.env` or Codespaces secrets).
+- **Option B:** Append `?sslmode=disable` to your `DATABASE_URL` (e.g. `postgresql://user:pass@host:5432/db?sslmode=disable`).
+
+The app only enables SSL when `PGSSLMODE=require` or when using a Neon database URL.
+
+### "EADDRINUSE: address already in use" (port 5000)
+
+Another process is already using port 5000 (often a previous `npm run dev` or `npm run start`). Fix it by:
+
+1. Stopping the other process (close the other terminal or run `pkill -f "node dist/index"` / `pkill -f "tsx server"` in the Codespace), or
+2. Setting `PORT=5001` (or another free port) before `npm run start` if you want to use a different port.
+
 ### Schema Issues
 
 If you encounter schema errors:

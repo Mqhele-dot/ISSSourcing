@@ -2153,16 +2153,6 @@ export class MemStorage implements IStorage {
       .filter(permission => permission.resource === resource);
   }
   
-  async checkPermission(role: UserRole, resource: Resource, permissionType: PermissionType): Promise<boolean> {
-    // Admin always has access to everything
-    if (role === UserRoleEnum.ADMIN) return true;
-    
-    const foundPermission = Array.from(this.permissions.values())
-      .find(p => p.role === role && p.resource === resource && p.permissionType === permissionType);
-      
-    return !!foundPermission;
-  }
-  
   createPermission(insertPermission: InsertPermission): Permission {
     const id = this.permissionCurrentId++;
     const now = new Date();
@@ -4542,83 +4532,6 @@ export class MemStorage implements IStorage {
   // Custom Role Methods
   async getAllCustomRoles(): Promise<CustomRole[]> {
     return Array.from(this.customRoles.values());
-  }
-  
-  async getCustomRole(id: number): Promise<CustomRole | undefined> {
-    return this.customRoles.get(id);
-  }
-  
-  async getCustomRoleByName(name: string): Promise<CustomRole | undefined> {
-    return Array.from(this.customRoles.values()).find(
-      (role) => role.name.toLowerCase() === name.toLowerCase()
-    );
-  }
-  
-  async createCustomRole(role: InsertCustomRole): Promise<CustomRole> {
-    const now = new Date();
-    const customRole: CustomRole = {
-      id: this.customRoleCurrentId++,
-      createdAt: now,
-      updatedAt: now,
-      isSystemRole: role.isSystemRole || false,
-      ...role
-    };
-    
-    this.customRoles.set(customRole.id, customRole);
-    
-    // Log the action
-    await this.createActivityLog({
-      action: "Custom Role Created",
-      description: `Created custom role: ${customRole.name}`,
-      referenceType: "custom_role",
-      referenceId: customRole.id,
-      userId: role.createdBy
-    });
-    
-    return customRole;
-  }
-  
-  async updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined> {
-    const existingRole = await this.getCustomRole(id);
-    if (!existingRole) return undefined;
-    
-    const updatedRole: CustomRole = {
-      ...existingRole,
-      ...role,
-      updatedAt: new Date()
-    };
-    
-    this.customRoles.set(id, updatedRole);
-    
-    // Log the action
-    if (role.createdBy) {
-      await this.createActivityLog({
-        action: "Custom Role Updated",
-        description: `Updated custom role: ${updatedRole.name}`,
-        referenceType: "custom_role",
-        referenceId: id,
-        userId: role.createdBy
-      });
-    }
-    
-    return updatedRole;
-  }
-  
-  async deleteCustomRole(id: number): Promise<boolean> {
-    // Check if the role exists
-    const role = await this.getCustomRole(id);
-    if (!role) return false;
-    
-    // Delete the role
-    const result = this.customRoles.delete(id);
-    
-    // Delete all associated permissions
-    const permissions = await this.getAllCustomRolePermissions(id);
-    for (const permission of permissions) {
-      await this.deleteCustomRolePermission(permission.id);
-    }
-    
-    return result;
   }
   
   // Custom Role Permission Methods
