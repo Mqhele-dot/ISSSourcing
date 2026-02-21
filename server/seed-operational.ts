@@ -5,6 +5,7 @@
  *
  * Usage: npx tsx server/seed-operational.ts
  */
+import { pathToFileURL } from "node:url";
 import { pool } from "./db";
 import { initializeOperationalData } from "./operations-core";
 
@@ -133,4 +134,13 @@ async function run() {
   }
 }
 
-run();
+const isDirectRun =
+  typeof process.argv[1] === "string" &&
+  pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (isDirectRun) {
+  run().catch((err) => {
+    console.error("Operational seed failed:", err);
+    process.exit(1);
+  });
+}
