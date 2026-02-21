@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { AlertTriangle, Boxes, CheckCircle2, Clock3, PackageCheck, PlayCircle } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -55,7 +55,10 @@ function KpiCard({ title, value, href, icon }: KpiCardProps) {
 
 export default function HomePage() {
   const { toast } = useToast();
-  const fetcher = async (): Promise<ControlTowerOverview> => fetchControlTowerOverview();
+  const fetcher = useCallback(
+    (): Promise<ControlTowerOverview> => fetchControlTowerOverview(),
+    [],
+  );
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
   const {
     autoRefreshEnabled,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, Download } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -72,12 +72,15 @@ function ExceptionListView() {
     type: "",
   });
 
-  const fetcher = async (): Promise<OperationalException[]> =>
-    fetchExceptions({
-      severity: String(queryState.severity || ""),
-      status: String(queryState.status || ""),
-      type: String(queryState.type || ""),
-    });
+  const fetcher = useCallback(
+    (): Promise<OperationalException[]> =>
+      fetchExceptions({
+        severity: String(queryState.severity || ""),
+        status: String(queryState.status || ""),
+        type: String(queryState.type || ""),
+      }),
+    [queryState.severity, queryState.status, queryState.type],
+  );
 
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
   const {
@@ -185,12 +188,14 @@ function ExceptionListView() {
         loading={loading}
         error={error}
         data={data}
-        isEmpty={(exceptions) => exceptions.length === 0}
+        isEmpty={(exceptions) => (Array.isArray(exceptions) ? exceptions : []).length === 0}
         emptyTitle="No exceptions found"
         emptyDescription="No issues match the current filters."
         onRetry={refreshNow}
       >
-        {(exceptions) => (
+        {(exceptions) => {
+          const list = Array.isArray(exceptions) ? exceptions : [];
+          return (
           <Table>
             <TableHeader>
               <TableRow>
@@ -203,7 +208,7 @@ function ExceptionListView() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {exceptions.map((exception) => (
+              {list.map((exception) => (
                 <TableRow
                   key={exception.id}
                   className="cursor-pointer"
@@ -223,7 +228,8 @@ function ExceptionListView() {
               ))}
             </TableBody>
           </Table>
-        )}
+          );
+        }}
       </DataState>
     </div>
   );
@@ -236,7 +242,10 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const fetcher = async (): Promise<OperationalException> => fetchException(exceptionId);
+  const fetcher = useCallback(
+    (): Promise<OperationalException> => fetchException(exceptionId),
+    [exceptionId],
+  );
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
 
   const relatedLinks = useMemo(() => {

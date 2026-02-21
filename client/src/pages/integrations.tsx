@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Play } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataState } from "@/components/ui/data-state";
@@ -30,7 +30,7 @@ export default function IntegrationsPage() {
   const { toast } = useToast();
   const [runningConnector, setRunningConnector] = useState<string | null>(null);
 
-  const fetcher = async (): Promise<IntegrationRun[]> => fetchIntegrationRuns();
+  const fetcher = useCallback((): Promise<IntegrationRun[]> => fetchIntegrationRuns(), []);
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
 
   const latestByConnector = useMemo(() => {
@@ -84,7 +84,9 @@ export default function IntegrationsPage() {
         emptyTitle="No integration runs yet"
         onRetry={refetch}
       >
-        {(runs) => (
+        {(runs) => {
+          const runList = Array.isArray(runs) ? runs : [];
+          return (
           <>
             <div className="grid gap-4 md:grid-cols-3">
               {CONNECTORS.map((connector) => {
@@ -133,7 +135,7 @@ export default function IntegrationsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {runs.slice(0, 20).map((run) => (
+                    {runList.slice(0, 20).map((run) => (
                       <TableRow key={run.id}>
                         <TableCell>{run.id}</TableCell>
                         <TableCell className="uppercase">{run.connector}</TableCell>
@@ -150,7 +152,8 @@ export default function IntegrationsPage() {
               </CardContent>
             </Card>
           </>
-        )}
+          );
+        }}
       </DataState>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -53,13 +53,16 @@ function ShipmentListView() {
     risk: "",
   });
 
-  const fetcher = async (): Promise<ShipmentListItem[]> =>
-    fetchShipments({
-      status: String(queryState.status || ""),
-      po: String(queryState.po || ""),
-      carrier: String(queryState.carrier || ""),
-      risk: String(queryState.risk || ""),
-    });
+  const fetcher = useCallback(
+    (): Promise<ShipmentListItem[]> =>
+      fetchShipments({
+        status: String(queryState.status || ""),
+        po: String(queryState.po || ""),
+        carrier: String(queryState.carrier || ""),
+        risk: String(queryState.risk || ""),
+      }),
+    [queryState.status, queryState.po, queryState.carrier, queryState.risk],
+  );
 
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
   const {
@@ -143,12 +146,14 @@ function ShipmentListView() {
         loading={loading}
         error={error}
         data={data}
-        isEmpty={(shipments) => shipments.length === 0}
+        isEmpty={(shipments) => (Array.isArray(shipments) ? shipments : []).length === 0}
         emptyTitle="No shipments found"
         emptyDescription="Try broadening your filters."
         onRetry={refreshNow}
       >
-        {(shipments) => (
+        {(shipments) => {
+          const list = Array.isArray(shipments) ? shipments : [];
+          return (
           <Table>
             <TableHeader>
               <TableRow>
@@ -161,7 +166,7 @@ function ShipmentListView() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {shipments.map((shipment) => (
+              {list.map((shipment) => (
                 <TableRow
                   key={shipment.id}
                   className="cursor-pointer"
@@ -179,7 +184,8 @@ function ShipmentListView() {
               ))}
             </TableBody>
           </Table>
-        )}
+          );
+        }}
       </DataState>
     </div>
   );
@@ -191,7 +197,10 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
   const [note, setNote] = useState("");
   const [updating, setUpdating] = useState(false);
 
-  const fetcher = async (): Promise<ShipmentDetail> => fetchShipment(shipmentId);
+  const fetcher = useCallback(
+    (): Promise<ShipmentDetail> => fetchShipment(shipmentId),
+    [shipmentId],
+  );
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
 
   const submitStatus = async () => {

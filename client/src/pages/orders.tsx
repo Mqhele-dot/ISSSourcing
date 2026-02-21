@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, CheckCircle2, Printer, Send, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -129,12 +129,15 @@ function PurchaseOrdersList() {
     q: "",
   });
 
-  const fetcher = async (): Promise<PurchaseOrderListItem[]> =>
-    fetchPurchaseOrders({
-      status: String(queryState.status || ""),
-      supplier: String(queryState.supplier || ""),
-      q: String(queryState.q || ""),
-    });
+  const fetcher = useCallback(
+    (): Promise<PurchaseOrderListItem[]> =>
+      fetchPurchaseOrders({
+        status: String(queryState.status || ""),
+        supplier: String(queryState.supplier || ""),
+        q: String(queryState.q || ""),
+      }),
+    [queryState.status, queryState.supplier, queryState.q],
+  );
 
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
 
@@ -235,7 +238,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
   const [receiveState, setReceiveState] = useState<Record<string, number>>({});
   const [lastChangeSummary, setLastChangeSummary] = useState<PurchaseReceiveResult | null>(null);
 
-  const fetcher = async (): Promise<PurchaseOrderDetail> => fetchPurchaseOrder(po);
+  const fetcher = useCallback((): Promise<PurchaseOrderDetail> => fetchPurchaseOrder(po), [po]);
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
 
   const receivePayload = useMemo(
