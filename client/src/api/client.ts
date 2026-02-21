@@ -21,6 +21,8 @@ import type {
   PurchaseReceiveResult,
   ShipmentDetail,
   ShipmentListItem,
+  TutorialStartResult,
+  TutorialStatus,
 } from "./types";
 
 export type {
@@ -233,6 +235,14 @@ export async function resetDemoData(): Promise<DemoDataSummary> {
 
 export async function runDemoWalkthrough(): Promise<DemoWalkthroughResult> {
   return apiMutate<DemoWalkthroughResult>("POST", "/api/demo/walkthrough/run");
+}
+
+export async function getTutorialStatus(): Promise<TutorialStatus> {
+  return apiFetch<TutorialStatus>("/api/tutorial/status");
+}
+
+export async function startTutorialPrep(): Promise<TutorialStartResult> {
+  return apiMutate<TutorialStartResult>("POST", "/api/tutorial/start");
 }
 
 export async function fetchInventoryDetail(sku: string): Promise<InventoryDetailBySku> {

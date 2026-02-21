@@ -13,10 +13,12 @@ import {
   fetchControlTowerOverviewEnvelope,
   fetchReady,
   runDemoWalkthrough,
+  startTutorialPrep,
   type ControlTowerOverview,
   type DemoWalkthroughResult,
 } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
+import { useTutorial } from "@/contexts/tutorial-context";
 
 export const KPI_DEEP_LINKS = {
   exceptions: "/exceptions?status=open&severity=high",
@@ -95,6 +97,8 @@ export default function HomePage() {
   } = useAutoRefresh(refetch);
   const [walkthrough, setWalkthrough] = useState<DemoWalkthroughResult | null>(null);
   const [runningWalkthrough, setRunningWalkthrough] = useState(false);
+  const [startingTutorial, setStartingTutorial] = useState(false);
+  const { startTutorial } = useTutorial();
 
   const openExceptions = data?.kpis?.exceptionsBySeverity
     ? Object.values(data.kpis.exceptionsBySeverity).reduce((sum, count) => sum + count, 0)
@@ -105,6 +109,36 @@ export default function HomePage() {
       markRefreshed();
     }
   }, [data, lastRefreshedAt, markRefreshed]);
+
+  const handleStartTutorial = async () => {
+    setStartingTutorial(true);
+    try {
+      const { systemStatus } = await startTutorialPrep();
+      const isOk = systemStatus === "ok";
+      toast({
+        title: isOk ? "Demo ready" : "Demo mode",
+        description: isOk
+          ? "DB connected. Starting the guided tour."
+          : "Running in demo mode (degraded). Tour uses demo storage and stubbed operations.",
+      });
+      const started = startTutorial("full-app");
+      if (!started) {
+        toast({
+          title: "Tour loading",
+          description: "Guided tour will be ready in a moment. Click Start Tutorial again.",
+          variant: "destructive",
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Tutorial could not start",
+        description: err instanceof Error ? err.message : "Check connection and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setStartingTutorial(false);
+    }
+  };
 
   const handleRunWalkthrough = async () => {
     setRunningWalkthrough(true);
@@ -145,11 +179,19 @@ export default function HomePage() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
+              onClick={handleStartTutorial}
+              disabled={startingTutorial}
+              className="gap-2"
+            >
+              <PlayCircle className="h-4 w-4" />
+              Start Tutorial
+            </Button>
+            <Button
+              variant="outline"
               onClick={handleRunWalkthrough}
               disabled={runningWalkthrough}
               className="gap-2"
             >
-              <PlayCircle className="h-4 w-4" />
               Run Demo Walkthrough
             </Button>
             <Button
@@ -164,7 +206,9 @@ export default function HomePage() {
             <span className="self-center text-xs text-muted-foreground">
               Last refreshed: {lastRefreshedLabel}
             </span>
-            <SystemStatusBadge />
+            <span data-tour="system-status">
+              <SystemStatusBadge />
+            </span>
           </div>
         }
       />
@@ -180,7 +224,7 @@ export default function HomePage() {
       >
         {(overview) => (
           <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-tour="dashboard-summary">
               <KpiCard
                 title="Open exceptions"
                 value={openExceptions}

@@ -363,6 +363,64 @@ export function TutorialSteps() {
       }
     ]);
     
+    // Full app guided tour (Start Tutorial from Control Tower)
+    registerTutorial("full-app", [
+      {
+        id: "tour-dashboard",
+        title: "Here's your command center",
+        text: "Total items, low stock, out of stock, and inventory value are summarized here. The System badge shows Live or Demo Mode. Use the KPI cards to jump to Exceptions, Shipments, Purchase Orders, or Inventory.",
+        attachTo: { element: "[data-tour=dashboard-summary]", on: "bottom" },
+      },
+      {
+        id: "tour-inventory",
+        title: "Find items and see stock health",
+        text: "Go to Inventory and use the search box to find items by SKU or name. Try the 'Low stock only' toggle. Click a row to open item details.",
+        attachTo: { element: "[data-tour=inventory-search]", on: "bottom" },
+      },
+      {
+        id: "tour-inventory-detail",
+        title: "Understand on-hand vs allocated",
+        text: "On-hand, allocated, and available quantities are shown. Positions show stock by location; the movements timeline shows receipts, issues, and adjustments. Use Adjust Stock to apply a cycle count or correction.",
+        attachTo: { element: "[data-tour=inventory-detail-summary]", on: "bottom" },
+      },
+      {
+        id: "tour-exceptions",
+        title: "Issues are tracked, assigned, resolved",
+        text: "Exceptions track shortages, mismatches, and other issues. Use filters and status tabs, open an exception to assign it, add a comment, or change status to In Progress.",
+        attachTo: { element: "[data-tour=exceptions-list]", on: "bottom" },
+      },
+      {
+        id: "tour-purchase",
+        title: "Procure and receive stock",
+        text: "Purchase orders show supplier, lines, and status. Use 'Receive selected' to record receipt; receiving creates inventory movements and can trigger exceptions if quantities don't match.",
+        attachTo: { element: "[data-tour=po-list]", on: "bottom" },
+      },
+      {
+        id: "tour-shipments",
+        title: "Track inbound/outbound",
+        text: "Shipments move from Created → In Transit → Delivered. Update status or mark as Delivered to keep logistics in sync.",
+        attachTo: { element: "[data-tour=shipments-list]", on: "bottom" },
+      },
+      {
+        id: "tour-integrations",
+        title: "Automate data syncing",
+        text: "Connector run history shows ERP/WMS sync. Click 'Run now' to trigger a sync. In demo mode you may see a simulated run.",
+        attachTo: { element: "[data-tour=integrations-runs]", on: "bottom" },
+      },
+      {
+        id: "tour-reports",
+        title: "Export and audit",
+        text: "Use Reports for inventory valuation and low stock. Export to CSV or other formats for auditing.",
+        attachTo: { element: "[data-tour=reports-section]", on: "bottom" },
+      },
+      {
+        id: "tour-complete",
+        title: "You're ready",
+        text: "You can keep the demo data to explore further, or reset it from Settings (Development Utilities) if you want a clean slate.",
+        attachTo: { element: "[data-tour=system-status]", on: "bottom" },
+      },
+    ]);
+
     // Database Management tutorial
     registerTutorial("database", [
       {

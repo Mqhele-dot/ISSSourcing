@@ -23,7 +23,7 @@ interface TutorialStep {
 }
 
 interface TutorialContextType {
-  startTutorial: (tourId?: string) => void;
+  startTutorial: (tourId?: string) => boolean;
   endTutorial: () => void;
   isTutorialActive: boolean;
   currentStep: number;
@@ -78,16 +78,17 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
     }
   };
 
-  // Start a tutorial
-  const startTutorial = (tourId = "main") => {
+  // Start a tutorial. Returns true if the tour was found and started, false otherwise.
+  const startTutorial = (tourId = "main"): boolean => {
     if (!tutorials[tourId]) {
-      console.error(`Tutorial with ID "${tourId}" not found.`);
-      return;
+      console.warn(`Tutorial with ID "${tourId}" not found.`);
+      return false;
     }
 
     setActiveTour(tourId);
     setCurrentStep(0);
     setIsTutorialActive(true);
+    return true;
   };
 
   // End the current tutorial

@@ -22,6 +22,9 @@ import {
   updateOperationalShipmentStatus,
 } from "./operations-core";
 import { contractError, respondOk, withApiContract } from "./api-contract";
+import { readiness } from "./readiness";
+import { seedOperationalIfEmpty } from "./seed-operational";
+import { seedDatabaseIfEmpty } from "./seed";
 
 type AuthGuards = {
   ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => void;
@@ -924,6 +927,62 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         setFallbackHeader(res, err);
         respondOk(res, stubOverview, 200, { fallback: getFallbackValue(err) });
       }
+    }),
+  );
+
+  app.get(
+    "/api/tutorial/status",
+    auth.ensureAuthenticated,
+    withApiContract(async (_req: Request, res: Response) => {
+      setEndpointHeader(res, "/api/tutorial/status");
+      const degraded = isOperationsDegraded();
+      const dbOk = readiness.dbReady && readiness.schemaReady;
+      const systemStatus = degraded ? "degraded" : dbOk ? "ok" : "degraded";
+      respondOk(res, {
+        systemStatus,
+        demoReady: true,
+      });
+    }),
+  );
+
+  app.post(
+    "/api/tutorial/start",
+    auth.ensureAuthenticated,
+    withApiContract(async (_req: Request, res: Response) => {
+      setEndpointHeader(res, "/api/tutorial/start");
+      const degraded = isOperationsDegraded();
+      const dbOk = readiness.dbReady && readiness.schemaReady;
+      const systemStatus = degraded ? "degraded" : dbOk ? "ok" : "degraded";
+
+      const plan: {
+        suggestedSku?: string;
+        exceptionId?: number;
+        poNumber?: string;
+        shipmentId?: number;
+      } = {};
+
+      if (!degraded && dbOk) {
+        try {
+          await seedDatabaseIfEmpty();
+          const opSeed = await seedOperationalIfEmpty();
+          const inventory = await listOperationalInventory({});
+          const firstSku = inventory[0]?.sku;
+          if (firstSku) plan.suggestedSku = firstSku;
+          const exceptions = await listOperationalExceptions({});
+          const firstEx = exceptions[0];
+          if (firstEx?.id) plan.exceptionId = firstEx.id;
+          const orders = await listOperationalPurchaseOrders({});
+          const firstPo = orders[0];
+          if (firstPo?.poNumber) plan.poNumber = firstPo.poNumber;
+          const shipments = await listOperationalShipments({});
+          const firstShip = shipments[0];
+          if (firstShip?.id) plan.shipmentId = firstShip.id;
+        } catch {
+          // still return status so client can show degraded and run tour
+        }
+      }
+
+      respondOk(res, { systemStatus, plan });
     }),
   );
 

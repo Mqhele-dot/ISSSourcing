@@ -25,6 +25,21 @@ export type DemoDataSummary = {
   settings: number;
 };
 
+export type TutorialStatus = {
+  systemStatus: "ok" | "degraded";
+  demoReady: boolean;
+};
+
+export type TutorialStartResult = {
+  systemStatus: "ok" | "degraded";
+  plan: {
+    suggestedSku?: string;
+    exceptionId?: number;
+    poNumber?: string;
+    shipmentId?: number;
+  };
+};
+
 export type HealthCheck = {
   status: "ok" | "degraded";
   uptimeSeconds: number;
