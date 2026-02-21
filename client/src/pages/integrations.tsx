@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useAsyncResource } from "@/hooks/use-async-resource";
-import { fetchIntegrationRuns, runIntegration, type IntegrationRun } from "@/api/client";
+import { fetchIntegrationRunsEnvelope, runIntegration, type IntegrationRun } from "@/api/client";
+import type { FallbackKind } from "@/components/ui/data-state";
 
 const CONNECTORS = ["erp", "wms", "tms"] as const;
 
@@ -30,8 +31,10 @@ export default function IntegrationsPage() {
   const { toast } = useToast();
   const [runningConnector, setRunningConnector] = useState<string | null>(null);
 
-  const fetcher = useCallback((): Promise<IntegrationRun[]> => fetchIntegrationRuns(), []);
-  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const fetcher = useCallback(() => fetchIntegrationRunsEnvelope(), []);
+  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const data = envelope?.data ?? null;
+  const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
 
   const latestByConnector = useMemo(() => {
     const map = new Map<string, IntegrationRun>();
@@ -53,9 +56,16 @@ export default function IntegrationsPage() {
         description: `${connector.toUpperCase()} finished successfully.`,
       });
     } catch (runError) {
+      const err = runError as Error & { status?: number };
+      const msg =
+        err.status === 503
+          ? "Service unavailable (operations degraded)"
+          : err.status === 408 || (err.message && String(err.message).toLowerCase().includes("timeout"))
+            ? "Timed out — DB may be down"
+            : err.message || "Request failed";
       toast({
         title: "Connector run failed",
-        description: runError instanceof Error ? runError.message : "Request failed",
+        description: msg,
         variant: "destructive",
       });
     } finally {
@@ -80,8 +90,9 @@ export default function IntegrationsPage() {
         loading={loading}
         error={error}
         data={data}
-        isEmpty={() => false}
+        isEmpty={(runs) => (Array.isArray(runs) ? runs : []).length === 0}
         emptyTitle="No integration runs yet"
+        fallback={fallback}
         onRetry={refetch}
       >
         {(runs) => {

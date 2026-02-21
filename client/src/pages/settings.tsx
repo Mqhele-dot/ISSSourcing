@@ -68,9 +68,14 @@ export default function SettingsPage() {
 
     try {
       const summary = await resetDemoData();
+      const op = (summary as { operational?: { purchaseOrders: number; shipments: number; exceptions: number; integrationRuns: number; activity: number } }).operational;
+      const baseDesc = `Users: ${summary.users}, Warehouses: ${summary.warehouses}, Suppliers: ${summary.suppliers}, Items: ${summary.items}, Settings: ${summary.settings}`;
+      const desc = op
+        ? `${baseDesc}. Operational: ${op.purchaseOrders} POs, ${op.shipments} shipments, ${op.exceptions} exceptions, ${op.integrationRuns} runs, ${op.activity} activity.`
+        : baseDesc;
       toast({
         title: "Demo data reset complete",
-        description: `Users: ${summary.users}, Warehouses: ${summary.warehouses}, Suppliers: ${summary.suppliers}, Items: ${summary.items}, Settings: ${summary.settings}`,
+        description: desc,
       });
       setIsResetDialogOpen(false);
     } catch (error) {

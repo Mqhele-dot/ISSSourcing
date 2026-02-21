@@ -10,6 +10,9 @@ function formatErrorMessage(error: Error) {
   return `${codePart}${error.message}${hintPart}`;
 }
 
+/** When present and data is empty, show "Temporarily unavailable" or "Degraded mode" instead of normal empty copy */
+export type FallbackKind = "timeout" | "db-error" | "degraded";
+
 type DataStateProps<T> = {
   loading: boolean;
   error: Error | null;
@@ -21,6 +24,8 @@ type DataStateProps<T> = {
   onRetry?: () => void;
   /** Shown next to Retry when there is an error (e.g. "Go back" link) */
   errorAction?: React.ReactNode;
+  /** When set and data is empty, show fallback empty state instead of emptyTitle/emptyDescription */
+  fallback?: FallbackKind;
   children: (data: T) => React.ReactNode;
 };
 
@@ -34,6 +39,7 @@ export function DataState<T>({
   emptyAction,
   onRetry,
   errorAction,
+  fallback,
   children,
 }: DataStateProps<T>) {
   if (loading) {
@@ -66,6 +72,20 @@ export function DataState<T>({
   }
 
   if (!data || isEmpty(data)) {
+    if (fallback) {
+      const isDegraded = fallback === "degraded";
+      return (
+        <EmptyState
+          title={isDegraded ? "Degraded mode" : "Temporarily unavailable"}
+          description={
+            isDegraded
+              ? "Operations endpoints are disabled by configuration."
+              : "Operations DB is unavailable. Showing empty results."
+          }
+          action={emptyAction}
+        />
+      );
+    }
     return (
       <EmptyState
         title={emptyTitle}

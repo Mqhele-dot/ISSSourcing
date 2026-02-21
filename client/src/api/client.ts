@@ -12,6 +12,8 @@ import type {
   DemoWalkthroughResult,
   HealthCheck,
   IntegrationRun,
+  InventoryDetail,
+  InventoryDetailBySku,
   InventoryListItem,
   OperationalException,
   PurchaseOrderDetail,
@@ -113,20 +115,47 @@ async function unwrapEnvelope<T>(response: Response): Promise<T> {
 /** Align with server operational timeout (8s); client gives up at 12s */
 const API_TIMEOUT_MS = 12000;
 
-async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
+export type ApiEnvelopeResult<T> = { data: T; meta?: { fallback?: string } };
+
+async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnvelopeResult<T>> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   if (init?.signal) {
     init.signal.addEventListener("abort", () => controller.abort());
   }
-
   try {
     const response = await fetch(url, {
       credentials: "include",
       ...init,
       signal: controller.signal,
     });
-    return unwrapEnvelope<T>(response);
+    const payload = await parseJsonOrNull(response);
+    if (isApiEnvelope<T>(payload)) {
+      if (payload.ok) {
+        const meta = (payload as { meta?: { fallback?: string } }).meta;
+        return { data: payload.data as T, meta };
+      }
+      toastStore.push({
+        type: "error",
+        title: payload.error.code || "Request failed",
+        message: payload.error.message,
+      });
+      throw new ApiError(payload.error, response.status || 400);
+    }
+    if (!response.ok) {
+      const fallbackMessage =
+        typeof payload === "object" &&
+        payload !== null &&
+        "message" in payload &&
+        typeof (payload as { message?: unknown }).message === "string"
+          ? String((payload as { message: string }).message)
+          : `Request failed: ${response.status}`;
+      throw new ApiError(
+        { code: "UNEXPECTED_RESPONSE", message: fallbackMessage },
+        response.status,
+      );
+    }
+    return { data: payload as T, meta: undefined };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       toastStore.push({
@@ -145,9 +174,27 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   }
 }
 
+async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  const { data } = await fetchWithMeta<T>(url, init);
+  return data;
+}
+
 async function apiMutate<T>(method: string, url: string, data?: unknown): Promise<T> {
   const response = await apiRequest(method, url, data);
   return unwrapEnvelope<T>(response);
+}
+
+export type ReadyState = { dbReady: boolean; schemaReady: boolean };
+
+export async function fetchReady(): Promise<ReadyState> {
+  const response = await fetch("/api/ready", { credentials: "include" });
+  if (!response.ok) {
+    throw new ApiError({
+      code: "READY_REQUEST_FAILED",
+      message: `Ready check failed: ${response.status}`,
+    });
+  }
+  return (await response.json()) as ReadyState;
 }
 
 export async function fetchHealth(): Promise<HealthCheck> {
@@ -186,6 +233,28 @@ export async function resetDemoData(): Promise<DemoDataSummary> {
 
 export async function runDemoWalkthrough(): Promise<DemoWalkthroughResult> {
   return apiMutate<DemoWalkthroughResult>("POST", "/api/demo/walkthrough/run");
+}
+
+export async function fetchInventoryDetail(sku: string): Promise<InventoryDetailBySku> {
+  const raw = await apiFetch<Record<string, unknown>>(
+    `/api/inventory/${encodeURIComponent(sku)}`,
+  );
+  const d = raw as Record<string, unknown>;
+  const item = d.item as Record<string, unknown> | undefined;
+  const summary = d.summary as Record<string, unknown> | undefined;
+  const onHand = Number(summary?.onHand ?? d.onHand ?? d.quantity ?? 0);
+  const allocated = Number(summary?.allocated ?? d.allocated ?? 0);
+  const available =
+    Number(summary?.available ?? d.available ?? 0) || Math.max(onHand - allocated, 0);
+  return {
+    id: Number(d.id ?? item?.id ?? 0),
+    sku: String(d.sku ?? item?.sku ?? sku),
+    name: String(d.name ?? item?.name ?? ""),
+    summary: { onHand, allocated, available },
+    positions: Array.isArray(d.positions) ? d.positions as InventoryDetail["positions"] : [],
+    movements: Array.isArray(d.movements) ? d.movements as InventoryDetail["movements"] : [],
+    location: (d.location ?? item?.location) as string | null | undefined,
+  };
 }
 
 export async function fetchInventory(params?: {
@@ -247,13 +316,22 @@ export async function fetchPurchaseOrders(params?: {
   supplier?: string;
   q?: string;
 }): Promise<PurchaseOrderListItem[]> {
+  const { data } = await fetchPurchaseOrdersEnvelope(params);
+  return data;
+}
+
+export async function fetchPurchaseOrdersEnvelope(params?: {
+  status?: string;
+  supplier?: string;
+  q?: string;
+}): Promise<ApiEnvelopeResult<PurchaseOrderListItem[]>> {
   const search = new URLSearchParams();
   if (params?.status) search.set("status", params.status);
   if (params?.supplier) search.set("supplier", params.supplier);
   if (params?.q) search.set("q", params.q);
   const url =
     search.size > 0 ? `/api/purchase/orders?${search.toString()}` : "/api/purchase/orders";
-  return apiFetch<PurchaseOrderListItem[]>(url);
+  return fetchWithMeta<PurchaseOrderListItem[]>(url);
 }
 
 export async function fetchPurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
@@ -320,15 +398,24 @@ export async function fetchShipments(params?: {
   carrier?: string;
   risk?: string;
 }): Promise<ShipmentListItem[]> {
+  const { data } = await fetchShipmentsEnvelope(params);
+  return data;
+}
+
+export async function fetchShipmentsEnvelope(params?: {
+  status?: string;
+  po?: string;
+  carrier?: string;
+  risk?: string;
+}): Promise<ApiEnvelopeResult<ShipmentListItem[]>> {
   const search = new URLSearchParams();
   if (params?.status) search.set("status", params.status);
   if (params?.po) search.set("po", params.po);
   if (params?.carrier) search.set("carrier", params.carrier);
   if (params?.risk) search.set("risk", params.risk);
-
   const url =
     search.size > 0 ? `/api/logistics/shipments?${search.toString()}` : "/api/logistics/shipments";
-  return apiFetch<ShipmentListItem[]>(url);
+  return fetchWithMeta<ShipmentListItem[]>(url);
 }
 
 export async function fetchShipment(id: string | number): Promise<ShipmentDetail> {
@@ -351,13 +438,21 @@ export async function fetchExceptions(params?: {
   status?: string;
   type?: string;
 }): Promise<OperationalException[]> {
+  const { data } = await fetchExceptionsEnvelope(params);
+  return data;
+}
+
+export async function fetchExceptionsEnvelope(params?: {
+  severity?: string;
+  status?: string;
+  type?: string;
+}): Promise<ApiEnvelopeResult<OperationalException[]>> {
   const search = new URLSearchParams();
   if (params?.severity) search.set("severity", params.severity);
   if (params?.status) search.set("status", params.status);
   if (params?.type) search.set("type", params.type);
-
   const url = search.size > 0 ? `/api/exceptions?${search.toString()}` : "/api/exceptions";
-  return apiFetch<OperationalException[]>(url);
+  return fetchWithMeta<OperationalException[]>(url);
 }
 
 export async function fetchException(id: string | number): Promise<OperationalException> {
@@ -386,7 +481,12 @@ export async function addExceptionComment(
 }
 
 export async function fetchIntegrationRuns(): Promise<IntegrationRun[]> {
-  return apiFetch<IntegrationRun[]>("/api/integrations/runs");
+  const { data } = await fetchIntegrationRunsEnvelope();
+  return data;
+}
+
+export async function fetchIntegrationRunsEnvelope(): Promise<ApiEnvelopeResult<IntegrationRun[]>> {
+  return fetchWithMeta<IntegrationRun[]>("/api/integrations/runs");
 }
 
 export async function runIntegration(connector: string): Promise<IntegrationRun> {
@@ -397,7 +497,14 @@ export async function runIntegration(connector: string): Promise<IntegrationRun>
 }
 
 export async function fetchControlTowerOverview(): Promise<ControlTowerOverview> {
-  return apiFetch<ControlTowerOverview>("/api/control-tower/overview");
+  const { data } = await fetchControlTowerOverviewEnvelope();
+  return data;
+}
+
+export async function fetchControlTowerOverviewEnvelope(): Promise<
+  ApiEnvelopeResult<ControlTowerOverview>
+> {
+  return fetchWithMeta<ControlTowerOverview>("/api/control-tower/overview");
 }
 
 export async function fetchActivity(params?: {
@@ -405,6 +512,15 @@ export async function fetchActivity(params?: {
   entityType?: string;
   entityId?: string | number;
 }): Promise<ActivityRecord[]> {
+  const { data } = await fetchActivityEnvelope(params);
+  return data;
+}
+
+export async function fetchActivityEnvelope(params?: {
+  limit?: number;
+  entityType?: string;
+  entityId?: string | number;
+}): Promise<ApiEnvelopeResult<ActivityRecord[]>> {
   const search = new URLSearchParams();
   if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
     search.set("limit", String(params.limit));
@@ -416,7 +532,7 @@ export async function fetchActivity(params?: {
     search.set("entity_id", String(params.entityId));
   }
   const url = search.size > 0 ? `/api/activity?${search.toString()}` : "/api/activity";
-  return apiFetch<ActivityRecord[]>(url);
+  return fetchWithMeta<ActivityRecord[]>(url);
 }
 
 export type DiagnosticsScanResult = {

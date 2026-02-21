@@ -2,7 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
 import { Badge } from "@/components/ui/badge";
 import { useAsyncResource } from "@/hooks/use-async-resource";
-import { fetchActivity, type ActivityRecord } from "@/api/client";
+import { fetchActivityEnvelope, type ActivityRecord } from "@/api/client";
+import type { FallbackKind } from "@/components/ui/data-state";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -37,14 +38,16 @@ export function EntityActivityPanel({
   title = "Activity",
   limit = 20,
 }: EntityActivityPanelProps) {
-  const fetcher = async (): Promise<ActivityRecord[]> =>
-    fetchActivity({
+  const fetcher = async () =>
+    fetchActivityEnvelope({
       limit,
       entityType,
       entityId,
     });
 
-  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const data = envelope?.data ?? null;
+  const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
 
   return (
     <Card>
@@ -59,6 +62,7 @@ export function EntityActivityPanel({
           isEmpty={(items) => items.length === 0}
           emptyTitle="No activity recorded"
           emptyDescription="Actions for this record will appear here."
+          fallback={fallback}
           onRetry={refetch}
         >
           {(items) => (

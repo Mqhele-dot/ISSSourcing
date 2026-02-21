@@ -89,6 +89,17 @@ export type InventoryDetail = {
   };
 };
 
+/** Flat shape returned by GET /api/inventory/:sku and fetchInventoryDetail */
+export type InventoryDetailBySku = {
+  id: number;
+  sku: string;
+  name: string;
+  summary: { onHand: number; allocated: number; available: number };
+  positions: InventoryDetail["positions"];
+  movements: InventoryDetail["movements"];
+  location?: string | null;
+};
+
 export type PurchaseOrderListItem = {
   id: number;
   poNumber: string;

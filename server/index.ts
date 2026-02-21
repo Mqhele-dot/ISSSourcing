@@ -7,16 +7,24 @@ import { pool } from "./db";
 import { initializeDatabase, ensureSessionTable } from "./init-db";
 import { seedDatabaseIfEmpty } from "./seed";
 import { initializeOperationalData } from "./operations-core";
+import { seedOperationalIfEmpty } from "./seed-operational";
+import { setDbReady, setSchemaReady } from "./readiness";
 import type { PoolClient } from "pg";
 
-// Test database connection and initialize schema on startup
+// Non-blocking: init DB and schema in background so server can start immediately.
 pool.connect()
   .then(async (client: PoolClient) => {
+    setDbReady(true);
     console.log("✅ Database connection successful");
     console.log(`Connection format: postgresql://username:password@host:port/database`);
     client.release();
-    
-    // Initialize database schema
+
+    try {
+      await ensureSessionTable();
+    } catch (sessionErr) {
+      console.warn("Session table check failed:", sessionErr instanceof Error ? sessionErr.message : sessionErr);
+    }
+
     try {
       await initializeDatabase();
       console.log("✅ Database schema initialized");
@@ -35,7 +43,12 @@ pool.connect()
       }
 
       await initializeOperationalData();
+      const opSeed = await seedOperationalIfEmpty();
+      setSchemaReady(true);
       console.log("✅ Operational workflow schema initialized");
+      if (opSeed.purchaseOrders > 0 || opSeed.shipments > 0) {
+        console.log("✅ Operational demo data seeded:", opSeed);
+      }
     } catch (schemaError) {
       console.error("⚠️ Database schema initialization failed:", schemaError);
       console.error("The application may not function correctly without a properly initialized database");
@@ -46,8 +59,6 @@ pool.connect()
     console.error("Please check your DATABASE_URL connection string in the format:");
     console.error("postgresql://username:password@host:port/database");
     console.error("For more details, see DATABASE_SETUP.md");
-    
-    // Application will continue running but database-dependent features will fail
     console.warn("⚠️ Running with limited functionality due to database connection failure");
   });
 
@@ -176,13 +187,6 @@ app.use((req, res, next) => {
     process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN
       ? `https://${process.env.CODESPACE_NAME}-${port}.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`
       : null;
-
-  // Ensure Express session table exists before accepting requests (avoids "relation session does not exist")
-  try {
-    await ensureSessionTable();
-  } catch (err) {
-    console.warn("Session table check failed (server will still start):", err instanceof Error ? err.message : err);
-  }
 
   server.listen(port, host, () => {
     log(`serving on ${host}:${port}`);

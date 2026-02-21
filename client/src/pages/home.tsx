@@ -10,11 +10,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import {
-  fetchControlTowerOverview,
+  fetchControlTowerOverviewEnvelope,
+  fetchReady,
   runDemoWalkthrough,
   type ControlTowerOverview,
   type DemoWalkthroughResult,
 } from "@/api/client";
+import type { FallbackKind } from "@/components/ui/data-state";
 
 export const KPI_DEEP_LINKS = {
   exceptions: "/exceptions?status=open&severity=high",
@@ -22,6 +24,30 @@ export const KPI_DEEP_LINKS = {
   purchase: "/purchase?status=approved",
   inventory: "/inventory?low=1",
 } as const;
+
+function SystemStatusBadge() {
+  const [ready, setReady] = useState<{ dbReady: boolean; schemaReady: boolean } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchReady()
+      .then((r) => {
+        if (!cancelled) setReady(r);
+      })
+      .catch(() => {
+        if (!cancelled) setReady(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (ready === null) return null;
+  const ok = ready.dbReady && ready.schemaReady;
+  return (
+    <Badge variant={ok ? "default" : "destructive"} className="text-xs">
+      System: {ready.dbReady ? "DB ✓" : "DB ✗"} {ready.schemaReady ? "Schema ✓" : "Schema ✗"}
+    </Badge>
+  );
+}
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -55,11 +81,10 @@ function KpiCard({ title, value, href, icon }: KpiCardProps) {
 
 export default function HomePage() {
   const { toast } = useToast();
-  const fetcher = useCallback(
-    (): Promise<ControlTowerOverview> => fetchControlTowerOverview(),
-    [],
-  );
-  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const fetcher = useCallback(() => fetchControlTowerOverviewEnvelope(), []);
+  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const data = envelope?.data ?? null;
+  const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
   const {
     autoRefreshEnabled,
     setAutoRefreshEnabled,
@@ -139,6 +164,7 @@ export default function HomePage() {
             <span className="self-center text-xs text-muted-foreground">
               Last refreshed: {lastRefreshedLabel}
             </span>
+            <SystemStatusBadge />
           </div>
         }
       />
@@ -149,6 +175,7 @@ export default function HomePage() {
         data={data}
         isEmpty={() => false}
         emptyTitle="No dashboard data available"
+        fallback={fallback}
         onRetry={refreshNow}
       >
         {(overview) => (

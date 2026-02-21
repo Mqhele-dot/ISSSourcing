@@ -34,10 +34,11 @@ import {
   addExceptionComment,
   assignException,
   fetchException,
-  fetchExceptions,
+  fetchExceptionsEnvelope,
   updateExceptionStatus,
   type OperationalException,
 } from "@/api/client";
+import type { FallbackKind } from "@/components/ui/data-state";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -73,8 +74,8 @@ function ExceptionListView() {
   });
 
   const fetcher = useCallback(
-    (): Promise<OperationalException[]> =>
-      fetchExceptions({
+    () =>
+      fetchExceptionsEnvelope({
         severity: String(queryState.severity || ""),
         status: String(queryState.status || ""),
         type: String(queryState.type || ""),
@@ -82,7 +83,9 @@ function ExceptionListView() {
     [queryState.severity, queryState.status, queryState.type],
   );
 
-  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const data = envelope?.data ?? null;
+  const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
   const {
     autoRefreshEnabled,
     setAutoRefreshEnabled,
@@ -191,6 +194,7 @@ function ExceptionListView() {
         isEmpty={(exceptions) => (Array.isArray(exceptions) ? exceptions : []).length === 0}
         emptyTitle="No exceptions found"
         emptyDescription="No issues match the current filters."
+        fallback={fallback}
         onRetry={refreshNow}
       >
         {(exceptions) => {
@@ -237,6 +241,7 @@ function ExceptionListView() {
 
 function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [nextStatus, setNextStatus] = useState("in_progress");
   const [assignee, setAssignee] = useState("");
   const [comment, setComment] = useState("");
@@ -271,6 +276,18 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
       await refetch();
     } catch (updateError) {
       console.error("Exception update failed:", updateError);
+      const err = updateError as Error & { status?: number };
+      const msg =
+        err.status === 503
+          ? "Service unavailable (operations degraded)"
+          : err.status === 408 || (err.message && String(err.message).toLowerCase().includes("timeout"))
+            ? "Timed out — DB may be down"
+            : err.message || "Exception update failed";
+      toast({
+        title: "Update failed",
+        description: msg,
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }

@@ -37,6 +37,7 @@ import { EntityActivityPanel } from "@/components/activity/entity-activity-panel
 import { useToast } from "@/hooks/use-toast";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchInventoryDetail } from "@/api/client";
 
 type InventoryPosition = {
   location: string;
@@ -116,29 +117,7 @@ export default function InventoryDetailPage() {
   const [adjustReason, setAdjustReason] = useState(ADJUST_REASONS[0]);
   const [adjustRef, setAdjustRef] = useState("");
 
-  const fetchDetail = async (): Promise<InventoryDetail> => {
-    const response = await fetch(`/api/inventory/${encodeURIComponent(sku)}`, { credentials: "include" });
-    if (!response.ok) {
-      const msg = response.status === 404 ? "Item not found" : `Failed to fetch inventory detail (${response.status})`;
-      throw new Error(msg);
-    }
-    const raw = (await response.json()) as { ok?: boolean; data?: InventoryDetail } | InventoryDetail;
-    const detail = raw && typeof raw === "object" && "ok" in raw && raw.ok && raw.data ? raw.data : (raw as InventoryDetail);
-    const onHand = detail.summary?.onHand ?? detail.onHand ?? (detail as { quantity?: number }).quantity ?? 0;
-    const allocated = detail.summary?.allocated ?? detail.allocated ?? 0;
-    const available =
-      detail.summary?.available ??
-      detail.available ??
-      Math.max(Number(onHand) - Number(allocated), 0);
-    const summary = {
-      onHand: Number(onHand),
-      allocated: Number(allocated),
-      available: Number(available),
-    };
-    const positions = Array.isArray(detail.positions) ? detail.positions : [];
-    const movements = Array.isArray(detail.movements) ? detail.movements : [];
-    return { ...detail, summary, positions, movements };
-  };
+  const fetchDetail = (): Promise<InventoryDetail> => fetchInventoryDetail(sku);
 
   const {
     loading,

@@ -25,13 +25,14 @@ import { EntityActivityPanel } from "@/components/activity/entity-activity-panel
 import {
   approvePurchaseOrder,
   fetchPurchaseOrder,
-  fetchPurchaseOrders,
+  fetchPurchaseOrdersEnvelope,
   receivePurchaseOrder,
   sendPurchaseOrder,
   type PurchaseOrderDetail,
   type PurchaseOrderListItem,
   type PurchaseReceiveResult,
 } from "@/api/client";
+import type { FallbackKind } from "@/components/ui/data-state";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -130,8 +131,8 @@ function PurchaseOrdersList() {
   });
 
   const fetcher = useCallback(
-    (): Promise<PurchaseOrderListItem[]> =>
-      fetchPurchaseOrders({
+    () =>
+      fetchPurchaseOrdersEnvelope({
         status: String(queryState.status || ""),
         supplier: String(queryState.supplier || ""),
         q: String(queryState.q || ""),
@@ -139,7 +140,9 @@ function PurchaseOrdersList() {
     [queryState.status, queryState.supplier, queryState.q],
   );
 
-  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const data = envelope?.data ?? null;
+  const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -187,6 +190,7 @@ function PurchaseOrdersList() {
         isEmpty={(orders) => (Array.isArray(orders) ? orders : []).length === 0}
         emptyTitle="No purchase orders found"
         emptyDescription="Try broadening your filters."
+        fallback={fallback}
         onRetry={refetch}
       >
         {(orders) => {
@@ -260,6 +264,18 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
       await refetch();
     } catch (statusError) {
       console.error("Status update failed:", statusError);
+      const err = statusError as Error & { status?: number };
+      const msg =
+        err.status === 503
+          ? "Service unavailable (operations degraded)"
+          : err.status === 408 || (err.message && String(err.message).toLowerCase().includes("timeout"))
+            ? "Timed out — DB may be down"
+            : err.message || "Status update failed";
+      toast({
+        title: "Update failed",
+        description: msg,
+        variant: "destructive",
+      });
     } finally {
       setStatusUpdating(false);
     }
@@ -282,6 +298,18 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
       await refetch();
     } catch (receiveError) {
       console.error("Receive failed:", receiveError);
+      const err = receiveError as Error & { status?: number };
+      const msg =
+        err.status === 503
+          ? "Service unavailable (operations degraded)"
+          : err.status === 408 || (err.message && String(err.message).toLowerCase().includes("timeout"))
+            ? "Timed out — DB may be down"
+            : err.message || "Receive failed";
+      toast({
+        title: "Receive failed",
+        description: msg,
+        variant: "destructive",
+      });
     } finally {
       setReceiving(false);
     }

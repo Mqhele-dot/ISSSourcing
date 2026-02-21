@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
 import { getDemoDataSummary, getSchemaStatus, resetAndSeedDemoData } from "./seed";
+import { seedOperationalIfEmpty } from "./seed-operational";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { Buffer } from "buffer";
@@ -25,6 +26,7 @@ import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument } from "./services/document-generator-service";
 import { ReportFormat, ReportType, reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { registerOperationalRoutes } from "./operations-routes";
+import { readiness } from "./readiness";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -4333,6 +4335,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(getHealthPayload());
   });
 
+  app.get("/ready", (_req, res) => {
+    res.json({
+      dbReady: readiness.dbReady,
+      schemaReady: readiness.schemaReady,
+    });
+  });
+  app.get("/api/ready", (_req, res) => {
+    res.json({
+      dbReady: readiness.dbReady,
+      schemaReady: readiness.schemaReady,
+    });
+  });
+
   const getDeepHealthPayload = async () => {
     const startedAt = Date.now();
     let databaseOk = true;
@@ -4400,7 +4415,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const summary = await resetAndSeedDemoData();
-      return res.json(summary);
+      const operational = await seedOperationalIfEmpty();
+      return res.json({ ...summary, operational });
     } catch (error) {
       console.error("Failed to reset demo data:", error);
       return res.status(500).json({ message: "Failed to reset demo data" });

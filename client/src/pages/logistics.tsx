@@ -26,16 +26,18 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
+import { useToast } from "@/hooks/use-toast";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
   fetchShipment,
-  fetchShipments,
+  fetchShipmentsEnvelope,
   updateShipmentStatus,
   type ShipmentDetail,
   type ShipmentListItem,
 } from "@/api/client";
+import type { FallbackKind } from "@/components/ui/data-state";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -54,8 +56,8 @@ function ShipmentListView() {
   });
 
   const fetcher = useCallback(
-    (): Promise<ShipmentListItem[]> =>
-      fetchShipments({
+    () =>
+      fetchShipmentsEnvelope({
         status: String(queryState.status || ""),
         po: String(queryState.po || ""),
         carrier: String(queryState.carrier || ""),
@@ -64,7 +66,9 @@ function ShipmentListView() {
     [queryState.status, queryState.po, queryState.carrier, queryState.risk],
   );
 
-  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const data = envelope?.data ?? null;
+  const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
   const {
     autoRefreshEnabled,
     setAutoRefreshEnabled,
@@ -149,6 +153,7 @@ function ShipmentListView() {
         isEmpty={(shipments) => (Array.isArray(shipments) ? shipments : []).length === 0}
         emptyTitle="No shipments found"
         emptyDescription="Try broadening your filters."
+        fallback={fallback}
         onRetry={refreshNow}
       >
         {(shipments) => {
@@ -193,6 +198,7 @@ function ShipmentListView() {
 
 function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [toStatus, setToStatus] = useState("in_transit");
   const [note, setNote] = useState("");
   const [updating, setUpdating] = useState(false);
@@ -215,6 +221,18 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
       await refetch();
     } catch (statusError) {
       console.error("Shipment status update failed:", statusError);
+      const err = statusError as Error & { status?: number };
+      const msg =
+        err.status === 503
+          ? "Service unavailable (operations degraded)"
+          : err.status === 408 || (err.message && String(err.message).toLowerCase().includes("timeout"))
+            ? "Timed out — DB may be down"
+            : err.message || "Shipment status update failed";
+      toast({
+        title: "Status update failed",
+        description: msg,
+        variant: "destructive",
+      });
     } finally {
       setUpdating(false);
     }
