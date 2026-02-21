@@ -1,4 +1,4 @@
-﻿import {
+import {
   UserRoleEnum, ResourceEnum, PermissionTypeEnum,
   users, type User, type InsertUser,
   categories, type Category, type InsertCategory,
@@ -52,6 +52,8 @@ import { db, pool } from "./db";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
 import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
+
+const PostgresSessionStore = connectPgSimple(session);
 
 // DatabaseStorage implementation with PostgreSQL
 export class DatabaseStorage implements IStorage {
