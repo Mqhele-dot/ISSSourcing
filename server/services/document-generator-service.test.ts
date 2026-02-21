@@ -21,14 +21,17 @@ async function run() {
     ],
   );
   const genericStr = genericBuf.toString("utf-8");
-  assert(genericStr.startsWith("sep=,"), "Generic CSV must start with sep=,");
+  // UTF-8 BOM (Excel recognizes encoding)
+  assert(genericBuf[0] === 0xef && genericBuf[1] === 0xbb && genericBuf[2] === 0xbf, "Generic CSV must start with UTF-8 BOM");
+  assert(genericStr.includes("sep=,"), "Generic CSV must contain sep=, line");
+  assert(genericStr.includes("\r\n"), "Generic CSV must use CRLF line endings for Excel");
   assert(genericStr.includes("ID") && genericStr.includes("Name"), "Generic CSV must contain headers");
-  const genericLines = genericStr.split("\n");
+  const genericLines = genericStr.split(/\r?\n/);
   assert(genericLines.length >= 2, "Generic CSV must have header + at least one data row");
   const headerCols = genericLines[1].split(",").length;
   const dataCols = genericLines[2] ? genericLines[2].split(",").length : 0;
   assert(headerCols === dataCols || genericLines.length === 2, "Generic CSV column count must match");
-  console.log("OK generateGenericCsv: sep=,, headers, consistent columns");
+  console.log("OK generateGenericCsv: BOM, sep=,, CRLF, headers, consistent columns");
   passed++;
 
   // generateInventoryCsv: must start with sep=,
@@ -54,14 +57,16 @@ async function run() {
     "Inventory",
   );
   const inventoryStr = inventoryBuf.toString("utf-8");
-  assert(inventoryStr.startsWith("sep=,"), "Inventory CSV must start with sep=,");
+  assert(inventoryBuf[0] === 0xef && inventoryBuf[1] === 0xbb && inventoryBuf[2] === 0xbf, "Inventory CSV must start with UTF-8 BOM");
+  assert(inventoryStr.includes("sep=,"), "Inventory CSV must contain sep=, line");
+  assert(inventoryStr.includes("\r\n"), "Inventory CSV must use CRLF line endings for Excel");
   assert(
     inventoryStr.includes("SKU") && inventoryStr.includes("Name"),
     "Inventory CSV must contain expected headers",
   );
-  const invLines = inventoryStr.split("\n");
+  const invLines = inventoryStr.split(/\r?\n/);
   assert(invLines.length >= 2, "Inventory CSV must have header + data");
-  console.log("OK generateInventoryCsv: sep=,, headers present");
+  console.log("OK generateInventoryCsv: BOM, sep=,, CRLF, headers present");
   passed++;
 
   console.log(`\n${passed} tests passed.`);

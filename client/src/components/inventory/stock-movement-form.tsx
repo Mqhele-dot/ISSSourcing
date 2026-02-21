@@ -316,8 +316,10 @@ export function StockMovementForm({ open, onClose, type, itemId, warehouseId }: 
                   <FormLabel>Reference Type</FormLabel>
                   <Select
                     disabled={isSubmitting}
-                    onValueChange={field.onChange}
-                    value={field.value || ""}
+                    onValueChange={(value) =>
+                      field.onChange(value === "__none__" ? null : value)
+                    }
+                    value={field.value ?? "__none__"}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -325,7 +327,7 @@ export function StockMovementForm({ open, onClose, type, itemId, warehouseId }: 
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="__none__">None</SelectItem>
                       {type === "RECEIPT" && (
                         <>
                           <SelectItem value="PURCHASE_ORDER">Purchase Order</SelectItem>

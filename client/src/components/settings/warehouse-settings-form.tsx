@@ -145,10 +145,10 @@ export function WarehouseSettingsForm() {
                     <FormItem>
                       <FormLabel>Default Warehouse</FormLabel>
                       <Select
-                        onValueChange={(value) => 
-                          field.onChange(value ? parseInt(value) : null)
+                        onValueChange={(value) =>
+                          field.onChange(value && value !== "__none__" ? parseInt(value) : null)
                         }
-                        value={field.value?.toString() || ""}
+                        value={field.value != null ? field.value.toString() : "__none__"}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -156,7 +156,7 @@ export function WarehouseSettingsForm() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">No Default</SelectItem>
+                          <SelectItem value="__none__">No Default</SelectItem>
                           {warehouses.map((warehouse) => (
                             <SelectItem 
                               key={warehouse.id} 

@@ -15,6 +15,8 @@
     "test:contracts": "tsx scripts/test-api-contract.ts",
     "test:deeplinks": "tsx scripts/test-kpi-deeplinks.ts",
     "test:csv": "tsx server/services/document-generator-service.test.ts",
+    "test:e2e": "playwright test",
+    "verify:changes": "node scripts/verify-recent-changes.js",
     "test:endpoints": "node scripts/test-button-endpoints.js http://127.0.0.1:5000",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx server/seed.ts",
@@ -131,6 +133,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
     "@replit/vite-plugin-cartographer": "^0.0.11",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
     "@tailwindcss/typography": "^0.5.15",

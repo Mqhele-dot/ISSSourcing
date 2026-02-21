@@ -73,6 +73,12 @@ async function workbookToBuffer(workbook: Excel.Workbook): Promise<Buffer> {
   return Buffer.from(excelBuffer);
 }
 
+/** Prepend UTF-8 BOM + sep=, and use CRLF so Excel opens CSV as a clean table */
+function csvBufferForExcel(buffer: Buffer): Buffer {
+  const content = buffer.toString("utf8").replace(/\r?\n/g, "\r\n");
+  return Buffer.from("\uFEFFsep=,\r\n" + content, "utf8");
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication routes and middleware
   const auth = setupAuth(app);
@@ -4691,12 +4697,8 @@ async function generateInventoryCsvReport(items: any[], title: string): Promise<
   
   await csvWriter.writeRecords(records);
   
-  // Read the file and return as buffer
-  const buffer = fs.readFileSync(filePath);
-  
-  // Clean up the temporary file
+  const buffer = csvBufferForExcel(fs.readFileSync(filePath));
   fs.unlinkSync(filePath);
-  
   return buffer;
 }
 
@@ -4983,12 +4985,8 @@ async function generatePurchaseOrdersCsvReport(items: any[], title: string): Pro
   
   await csvWriter.writeRecords(records);
   
-  // Read the file and return as buffer
-  const buffer = fs.readFileSync(filePath);
-  
-  // Clean up the temporary file
+  const buffer = csvBufferForExcel(fs.readFileSync(filePath));
   fs.unlinkSync(filePath);
-  
   return buffer;
 }
 
@@ -5275,12 +5273,8 @@ async function generatePurchaseRequisitionsCsvReport(items: any[], title: string
   
   await csvWriter.writeRecords(records);
   
-  // Read the file and return as buffer
-  const buffer = fs.readFileSync(filePath);
-  
-  // Clean up the temporary file
+  const buffer = csvBufferForExcel(fs.readFileSync(filePath));
   fs.unlinkSync(filePath);
-  
   return buffer;
 }
 
@@ -5562,12 +5556,8 @@ async function generateSuppliersCsvReport(items: any[], title: string): Promise<
   
   await csvWriter.writeRecords(records);
   
-  // Read the file and return as buffer
-  const buffer = fs.readFileSync(filePath);
-  
-  // Clean up the temporary file
+  const buffer = csvBufferForExcel(fs.readFileSync(filePath));
   fs.unlinkSync(filePath);
-  
   return buffer;
 }
 

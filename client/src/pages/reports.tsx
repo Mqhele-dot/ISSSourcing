@@ -12,6 +12,7 @@ import { downloadFile, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { type ReportFilter, type Category, type InventoryItem, type InventoryStats, type Warehouse, type Supplier, DocumentType } from "@shared/schema";
 import { ReportFilters } from "@/components/reports/report-filters";
+import { QueryState } from "@/components/ui/query-state";
 
 type ReportTab =
   | "inventory"
@@ -46,8 +47,14 @@ export default function Reports() {
     return raw as T;
   };
 
-  // Fetch inventory items (normalize to array so reduce/map never see non-array)
-  const { data: inventoryItems, isLoading: itemsLoading, isError: itemsError, error: itemsErrorDetail } = useQuery({
+  // Fetch inventory items (primary query for page-level loading/error; normalize to array)
+  const {
+    data: inventoryItems,
+    isLoading: itemsLoading,
+    isError: itemsError,
+    error: itemsErrorDetail,
+    refetch: refetchInventory,
+  } = useQuery({
     queryKey: ["/api/inventory"],
     queryFn: async () => {
       const response = await fetch("/api/inventory", { credentials: "include" });
@@ -237,13 +244,13 @@ export default function Reports() {
   };
 
   return (
+    <QueryState
+      isLoading={itemsLoading}
+      isError={itemsError}
+      error={itemsErrorDetail instanceof Error ? itemsErrorDetail : null}
+      refetch={refetchInventory}
+    >
     <div className="max-w-7xl mx-auto">
-      {itemsError && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertTitle>Could not load report data</AlertTitle>
-          <AlertDescription>{itemsErrorDetail instanceof Error ? itemsErrorDetail.message : "Failed to fetch inventory data."}</AlertDescription>
-        </Alert>
-      )}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
         <div>
           <h2 className="text-2xl font-semibold text-neutral-900 dark:text-white">Reports</h2>
@@ -590,5 +597,6 @@ export default function Reports() {
         </TabsContent>
       </Tabs>
     </div>
+    </QueryState>
   );
 }

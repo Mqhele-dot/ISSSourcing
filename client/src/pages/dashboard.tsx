@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Archive, AlertTriangle, ShoppingCart, DollarSign, Plus, FileDown, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -10,6 +10,7 @@ import StockAlerts from "@/components/inventory/stock-alerts";
 import RecentActivity from "@/components/inventory/recent-activity";
 import ItemForm from "@/components/inventory/item-form";
 import { DataTable } from "@/components/ui/data-table";
+import { QueryState } from "@/components/ui/query-state";
 import { formatCurrency, getItemStatus, getStatusColor } from "@/lib/utils";
 import { downloadFile } from "@/lib/utils";
 import { type InventoryItem, type InventoryStats, type Category, type DocumentType } from "@shared/schema";
@@ -39,8 +40,14 @@ export default function Dashboard() {
     return raw as T;
   };
 
-  // Fetch inventory stats
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  // Fetch inventory stats (primary query for page-level loading/error)
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isError: statsError,
+    error: statsErrorDetail,
+    refetch: refetchStats,
+  } = useQuery({
     queryKey: ["/api/inventory/stats"],
     queryFn: async () => {
       const response = await fetch("/api/inventory/stats", { credentials: "include" });
@@ -191,6 +198,12 @@ export default function Dashboard() {
   ];
 
   return (
+    <QueryState
+      isLoading={statsLoading}
+      isError={statsError}
+      error={statsErrorDetail ?? null}
+      refetch={refetchStats}
+    >
     <div className="max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
         <div>
@@ -348,5 +361,6 @@ export default function Dashboard() {
       {/* Add/Edit Item Form Dialog */}
       <ItemForm open={showItemForm} setOpen={setShowItemForm} />
     </div>
+    </QueryState>
   );
 }

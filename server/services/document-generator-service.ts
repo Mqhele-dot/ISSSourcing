@@ -185,13 +185,17 @@ export async function generateInventoryPdf(items: InventoryItem[], title: string
   return Buffer.from(pdfBytes);
 }
 
+/** UTF-8 BOM so Excel recognizes encoding */
+const CSV_BOM = '\uFEFF';
+/** CRLF for Excel-friendly line endings */
+const CSV_EOL = '\r\n';
+
 /**
- * Generate a CSV document from inventory data
+ * Generate a CSV document from inventory data.
+ * Uses UTF-8 BOM + sep=, + CRLF so Excel opens as a clean table.
  */
 export async function generateInventoryCsv(items: InventoryItem[], title: string, _columns?: any[]): Promise<Buffer> {
-  // Excel-friendly: sep=, ensures columns split correctly in all locales
-  const lines = ['sep=,'];
-  lines.push(['SKU', 'Name', 'Description', 'Category', 'Quantity', 'Price', 'Cost', 'Status', 'Low Stock Threshold'].join(','));
+  const lines = [CSV_BOM + 'sep=,', ['SKU', 'Name', 'Description', 'Category', 'Quantity', 'Price', 'Cost', 'Status', 'Low Stock Threshold'].join(',')];
   items.forEach(item => {
     const status = item.quantity <= 0 ? 'Out of Stock' : 
                   (item.lowStockThreshold && item.quantity <= item.lowStockThreshold) ? 'Low Stock' : 
@@ -208,8 +212,7 @@ export async function generateInventoryCsv(items: InventoryItem[], title: string
       item.lowStockThreshold || ''
     ].map(value => `"${String(value).replace(/"/g, '""')}"`).join(','));
   });
-
-  return Buffer.from(lines.join('\n'));
+  return Buffer.from(lines.join(CSV_EOL), 'utf8');
 }
 
 /**
@@ -393,11 +396,11 @@ export async function generateGenericPdf(data: any[], title: string, columns: {h
 }
 
 /**
- * Generic CSV generator for any data array
+ * Generic CSV generator for any data array.
+ * Uses UTF-8 BOM + sep=, + CRLF so Excel opens as a clean table.
  */
 export async function generateGenericCsv(data: any[], title: string, columns: {header: string; key: string}[]): Promise<Buffer> {
-  const lines = ['sep=,'];
-  lines.push(columns.map(col => `"${String(col.header).replace(/"/g, '""')}"`).join(','));
+  const lines = [CSV_BOM + 'sep=,', columns.map(col => `"${String(col.header).replace(/"/g, '""')}"`).join(',')];
   data.forEach(item => {
     lines.push(columns.map(col => {
       let value = item[col.key] !== undefined && item[col.key] !== null ? item[col.key] : '';
@@ -405,7 +408,7 @@ export async function generateGenericCsv(data: any[], title: string, columns: {h
       return `"${String(value).replace(/"/g, '""')}"`;
     }).join(','));
   });
-  return Buffer.from(lines.join('\n'));
+  return Buffer.from(lines.join(CSV_EOL), 'utf8');
 }
 
 /**
