@@ -2915,6 +2915,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/analytics/stock-usage", async (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit ? Math.min(Number(req.query.limit), 20) : 10;
+      const items = await storage.getAllInventoryItems();
+      const movements = await storage.getAllStockMovements();
+
+      const demandByItem: Map<number, number> = new Map();
+      movements.forEach((m: { itemId: number; type: string; quantity: number }) => {
+        if (m.type === "SALE" || m.type === "ISSUE") {
+          const current = demandByItem.get(m.itemId) || 0;
+          demandByItem.set(m.itemId, current + Math.abs(m.quantity));
+        }
+      });
+
+      const byItem = items
+        .filter((item: { id: number }) => demandByItem.has(item.id))
+        .map((item: { id: number; name: string }) => ({
+          itemId: item.id,
+          itemName: item.name,
+          quantityUsed: demandByItem.get(item.id) || 0,
+        }))
+        .sort((a: { quantityUsed: number }, b: { quantityUsed: number }) => b.quantityUsed - a.quantityUsed)
+        .slice(0, limit);
+
+      res.json({ byItem });
+    } catch (error) {
+      console.error("Error getting stock usage:", error);
+      res.status(500).json({ message: "Failed to get stock usage" });
+    }
+  });
+
   // ================== USER MANAGEMENT ENDPOINTS ==================
   
   app.get("/api/users", async (_req: Request, res: Response) => {

@@ -267,6 +267,32 @@ async function main() {
     "Invalid transition did not return err envelope with allowedTargets",
   );
 
+  // Dashboard analytics: stock usage (used by Stock Use chart)
+  const stockUsage = await requestApi("/analytics/stock-usage?limit=5");
+  assert(stockUsage.ok, `Stock usage request failed with status ${stockUsage.status}`);
+  assert(
+    typeof stockUsage.json === "object" && stockUsage.json !== null && "byItem" in stockUsage.json,
+    "Stock usage response must have byItem",
+  );
+  const byItem = (stockUsage.json as { byItem: unknown }).byItem;
+  assert(Array.isArray(byItem), "Stock usage byItem must be an array");
+  if (byItem.length > 0) {
+    const first = (byItem as Array<{ itemId?: unknown; itemName?: unknown; quantityUsed?: unknown }>)[0];
+    assert(typeof first.itemId === "number", "Stock usage item must have itemId");
+    assert(typeof first.quantityUsed === "number", "Stock usage item must have quantityUsed");
+  }
+
+  // Dashboard: inventory value (used by Value by Category / Inventory Value)
+  const inventoryValue = await requestApi("/analytics/inventory-value");
+  assert(inventoryValue.ok, "Inventory value request failed");
+  assert(
+    typeof inventoryValue.json === "object" &&
+      inventoryValue.json !== null &&
+      "items" in inventoryValue.json &&
+      "totalValue" in inventoryValue.json,
+    "Inventory value response must have items and totalValue",
+  );
+
   console.log("✅ API contract tests passed");
 }
 

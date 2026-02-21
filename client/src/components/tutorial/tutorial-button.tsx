@@ -143,8 +143,15 @@ export function TutorialButton() {
   
   // Start a tutorial with the given ID
   const handleStartTutorial = (tourId: string) => {
-    startTutorial(tourId);
+    const started = startTutorial(tourId);
     setShowDialog(false);
+    if (!started) {
+      toast({
+        title: "Tutorial not available",
+        description: `Tour "${tourId}" is not loaded yet. Try again in a moment.`,
+        variant: "destructive",
+      });
+    }
   };
   
   // Scan for errors in the system

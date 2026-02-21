@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Archive, AlertTriangle, ShoppingCart, DollarSign, Plus, FileDown, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -9,6 +10,7 @@ import { StatsCard } from "@/components/inventory/stats-card";
 import StockAlerts from "@/components/inventory/stock-alerts";
 import RecentActivity from "@/components/inventory/recent-activity";
 import ItemForm from "@/components/inventory/item-form";
+import ViewItemDialog from "@/components/inventory/view-item-dialog";
 import { DataTable } from "@/components/ui/data-table";
 import { QueryState } from "@/components/ui/query-state";
 import { formatCurrency, getItemStatus, getStatusColor } from "@/lib/utils";
@@ -18,11 +20,17 @@ import { useToast } from "@/hooks/use-toast";
 import TutorialButton from "@/components/ui/tutorial-button";
 import { TopItems } from "@/components/analytics/top-items";
 import { InventoryValue } from "@/components/analytics/inventory-value";
+import { StockUseChart } from "@/components/analytics/stock-use-chart";
+import { ValueByCategoryChart } from "@/components/analytics/value-by-category-chart";
 import { RealTimeInventory } from "@/components/inventory/real-time-inventory";
+import { RecentOrders } from "@/components/dashboard/recent-orders";
 
 export default function Dashboard() {
   const [showItemForm, setShowItemForm] = useState(false);
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   const unwrapApiData = async <T,>(response: Response): Promise<T> => {
@@ -185,10 +193,20 @@ export default function Dashboard() {
         const item = row.original as InventoryItem;
         return (
           <div className="text-right">
-            <Button variant="link" size="sm" className="text-primary hover:text-primary/80 mr-3">
+            <Button
+              variant="link"
+              size="sm"
+              className="text-primary hover:text-primary/80 mr-3"
+              onClick={(e) => { e.stopPropagation(); setEditingItem(item); setShowItemForm(true); }}
+            >
               Edit
             </Button>
-            <Button variant="link" size="sm" className="text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300">
+            <Button
+              variant="link"
+              size="sm"
+              className="text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+              onClick={(e) => { e.stopPropagation(); setViewingItem(item); }}
+            >
               View
             </Button>
           </div>
@@ -347,6 +365,17 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Stock use & value charts */}
+      <div className="mt-8 mb-6">
+        <h3 className="text-xl font-semibold mb-4 text-neutral-900 dark:text-white">
+          Stock Use & Value
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <StockUseChart />
+          <ValueByCategoryChart />
+        </div>
+      </div>
+
       {/* Analytics Section */}
       <div className="mt-8 mb-6">
         <h3 className="text-xl font-semibold mb-4 text-neutral-900 dark:text-white">
@@ -358,8 +387,51 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Recent Orders & quick access */}
+      <div className="mt-8 mb-6">
+        <h3 className="text-xl font-semibold mb-4 text-neutral-900 dark:text-white">
+          Orders & Inventory
+        </h3>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <RecentOrders />
+          </div>
+          <Card>
+            <div className="px-5 py-4 border-b border-neutral-200 dark:border-neutral-700">
+              <h4 className="font-medium text-neutral-900 dark:text-white">Quick actions</h4>
+            </div>
+            <div className="p-4 space-y-2">
+              <Button variant="outline" className="w-full justify-start" onClick={() => { setEditingItem(null); setShowItemForm(true); }}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add inventory item
+              </Button>
+              <Button variant="outline" className="w-full justify-start" onClick={() => setLocation("/orders")}>
+                View all orders
+              </Button>
+              <Button variant="outline" className="w-full justify-start" onClick={() => setLocation("/inventory")}>
+                Browse inventory
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+
       {/* Add/Edit Item Form Dialog */}
-      <ItemForm open={showItemForm} setOpen={setShowItemForm} />
+      <ItemForm
+        open={showItemForm}
+        setOpen={(open) => {
+          setShowItemForm(open);
+          if (!open) setEditingItem(null);
+        }}
+        initialData={editingItem ?? undefined}
+      />
+      <ViewItemDialog
+        open={!!viewingItem}
+        onOpenChange={(open) => !open && setViewingItem(null)}
+        item={viewingItem}
+        categories={categories}
+        onEdit={() => { if (viewingItem) { setViewingItem(null); setEditingItem(viewingItem); setShowItemForm(true); } }}
+      />
     </div>
     </QueryState>
   );
