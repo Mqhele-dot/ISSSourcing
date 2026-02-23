@@ -57,10 +57,10 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
       <Link href={path}>
         <div
           className={cn(
-            "flex items-center px-4 py-2.5 text-sm font-medium rounded-md cursor-pointer transition-all",
+            "flex items-center gap-3 px-4 py-2.5 rounded-md cursor-pointer transition-all",
             isActive(path)
               ? "accent-gradient-bg text-primary-foreground elev-2"
-              : "text-foreground/90 hover:bg-muted"
+              : "text-foreground hover:bg-muted"
           )}
           {...(helpTitle
             ? {
@@ -69,15 +69,19 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
               }
             : {})}
         >
-          {icon}
-          {children}
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center [&>svg]:h-5 [&>svg]:w-5">
+            {icon}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-inherit" title={helpTitle ?? (typeof children === "string" ? children : undefined)}>
+            {children}
+          </span>
         </div>
       </Link>
     );
   };
 
   const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground/90">
+    <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
       {children}
     </p>
   );
@@ -124,34 +128,34 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
         <nav className="flex-1 px-2 py-4 overflow-y-auto">
           <div className="space-y-1">
             <SectionTitle>Overview</SectionTitle>
-            <NavItem path="/" icon={<Home className="mr-3 h-5 w-5" />} helpTitle="Home" helpDescription="Landing page and quick overview of the app." />
-            <NavItem path="/dashboard" icon={<LayoutDashboard className="mr-3 h-5 w-5" />} helpTitle="Dashboard" helpDescription="Overview of inventory status, stats, charts, and recent orders." />
+            <NavItem path="/" icon={<Home className="h-5 w-5" />} helpTitle="Home" helpDescription="Landing page and quick overview of the app.">Home</NavItem>
+            <NavItem path="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} helpTitle="Dashboard" helpDescription="Overview of inventory status, stats, charts, and recent orders.">Dashboard</NavItem>
 
             <SectionTitle>Inventory</SectionTitle>
-            <NavItem path="/inventory" icon={<Archive className="mr-3 h-5 w-5" />} helpTitle="Inventory" helpDescription="Manage products, stock levels, and item details." />
-            <NavItem path="/barcode-scanner" icon={<QrCode className="mr-3 h-5 w-5" />} helpTitle="Barcode Scanner" helpDescription="Scan and generate barcodes for inventory items." />
-            <NavItem path="/image-recognition" icon={<Camera className="mr-3 h-5 w-5" />} helpTitle="Image Recognition" helpDescription="Identify items or extract data from product images." />
+            <NavItem path="/inventory" icon={<Archive className="h-5 w-5" />} helpTitle="Inventory" helpDescription="Manage products, stock levels, and item details.">Inventory</NavItem>
+            <NavItem path="/barcode-scanner" icon={<QrCode className="h-5 w-5" />} helpTitle="Barcode Scanner" helpDescription="Scan and generate barcodes for inventory items.">Barcode Scanner</NavItem>
+            <NavItem path="/image-recognition" icon={<Camera className="h-5 w-5" />} helpTitle="Image Recognition" helpDescription="Identify items or extract data from product images.">Image Recognition</NavItem>
 
             <SectionTitle>Purchase Orders</SectionTitle>
-            <NavItem path="/purchase" icon={<ShoppingCart className="mr-3 h-5 w-5" />} helpTitle="Purchase Orders" helpDescription="Create and manage purchase orders and requisitions." />
-            <NavItem path="/suppliers" icon={<Users className="mr-3 h-5 w-5" />} helpTitle="Suppliers" helpDescription="Manage vendor information and contacts." />
-            <NavItem path="/contracts" icon={<FileText className="mr-3 h-5 w-5" />} helpTitle="Contracts" helpDescription="Manage contracts with each supplier, view summaries, and find copies." />
+            <NavItem path="/purchase" icon={<ShoppingCart className="h-5 w-5" />} helpTitle="Purchase Orders" helpDescription="Create and manage purchase orders and requisitions.">Purchase Orders</NavItem>
+            <NavItem path="/suppliers" icon={<Users className="h-5 w-5" />} helpTitle="Suppliers" helpDescription="Manage vendor information and contacts.">Suppliers</NavItem>
+            <NavItem path="/contracts" icon={<FileText className="h-5 w-5" />} helpTitle="Contracts" helpDescription="Manage contracts with each supplier, view summaries, and find copies.">Contracts</NavItem>
 
             <SectionTitle>Logistics</SectionTitle>
-            <NavItem path="/logistics" icon={<Building className="mr-3 h-5 w-5" />} helpTitle="Shipments" helpDescription="Track shipments and logistics." />
-            <NavItem path="/warehouses" icon={<Building className="mr-3 h-5 w-5" />} helpTitle="Warehouses" helpDescription="Manage warehouse locations and stock." />
-            <NavItem path="/reorder" icon={<RefreshCw className="mr-3 h-5 w-5" />} helpTitle="Reorder Requests" helpDescription="View and manage reorder requests." />
+            <NavItem path="/logistics" icon={<Building className="h-5 w-5" />} helpTitle="Shipments" helpDescription="Track shipments and logistics.">Shipments</NavItem>
+            <NavItem path="/warehouses" icon={<Building className="h-5 w-5" />} helpTitle="Warehouses" helpDescription="Manage warehouse locations and stock.">Warehouses</NavItem>
+            <NavItem path="/reorder" icon={<RefreshCw className="h-5 w-5" />} helpTitle="Reorder Requests" helpDescription="View and manage reorder requests.">Reorder Requests</NavItem>
 
             <SectionTitle>Exceptions</SectionTitle>
-            <NavItem path="/exceptions" icon={<Activity className="mr-3 h-5 w-5" />} helpTitle="Exceptions" helpDescription="View and resolve inventory or order exceptions." />
+            <NavItem path="/exceptions" icon={<Activity className="h-5 w-5" />} helpTitle="Exceptions" helpDescription="View and resolve inventory or order exceptions.">Exceptions</NavItem>
 
             <SectionTitle>Integrations</SectionTitle>
-            <NavItem path="/integrations" icon={<FileUp className="mr-3 h-5 w-5" />} helpTitle="Connectors" helpDescription="Connect external systems and data sources." />
-            <NavItem path="/document-extractor" icon={<FileUp className="mr-3 h-5 w-5" />} helpTitle="Document Extractor" helpDescription="Extract data from documents (e.g. invoices)." />
+            <NavItem path="/integrations" icon={<FileUp className="h-5 w-5" />} helpTitle="Connectors" helpDescription="Connect external systems and data sources.">Connectors</NavItem>
+            <NavItem path="/document-extractor" icon={<FileUp className="h-5 w-5" />} helpTitle="Document Extractor" helpDescription="Extract data from documents (e.g. invoices).">Document Extractor</NavItem>
 
             <SectionTitle>Settings</SectionTitle>
-            <NavItem path="/reports" icon={<FileText className="mr-3 h-5 w-5" />} helpTitle="Reports" helpDescription="Analytics and custom reports (PDF, Excel, CSV)." />
-            <NavItem path="/settings" icon={<Settings className="mr-3 h-5 w-5" />} helpTitle="Settings" helpDescription="Configure application preferences." />
+            <NavItem path="/reports" icon={<FileText className="h-5 w-5" />} helpTitle="Reports" helpDescription="Analytics and custom reports (PDF, Excel, CSV).">Reports</NavItem>
+            <NavItem path="/settings" icon={<Settings className="h-5 w-5" />} helpTitle="Settings" helpDescription="Configure application preferences.">Settings</NavItem>
           </div>
         </nav>
         

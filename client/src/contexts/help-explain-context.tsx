@@ -24,20 +24,31 @@ interface HelpExplainProviderProps {
   children: React.ReactNode;
 }
 
+const HOVER_SHOW_MS = 120;
+const HOVER_HIDE_MS = 280;
+const POPOVER_OFFSET = 6;
+const POPOVER_MAX_WIDTH = 320;
+const POPOVER_EST_HEIGHT = 80;
+
 export function HelpExplainProvider({ children }: HelpExplainProviderProps) {
   const [explainMode, setExplainModeState] = useState(false);
-  const [tooltip, setTooltip] = useState<{ title: string; description: string; x: number; y: number; width: number; height: number } | null>(null);
+  const [tooltip, setTooltip] = useState<{ title: string; description: string; x: number; y: number; width: number; height: number; above?: boolean } | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinnedElementRef = useRef<Element | null>(null);
 
   const setExplainMode = useCallback((on: boolean) => {
     setExplainModeState(on);
-    if (!on) setTooltip(null);
+    if (!on) {
+      setTooltip(null);
+      pinnedElementRef.current = null;
+    }
   }, []);
 
   const toggleExplainMode = useCallback(() => {
     setExplainModeState((prev) => {
       if (!prev) setTooltip(null);
+      pinnedElementRef.current = null;
       return !prev;
     });
   }, []);
@@ -47,7 +58,7 @@ export function HelpExplainProvider({ children }: HelpExplainProviderProps) {
     return target.closest(`[${HELP_ATTR_TITLE}]`);
   }, []);
 
-  const showForElement = useCallback((el: Element | null) => {
+  const showForElement = useCallback((el: Element | null, pinned: boolean = false) => {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
@@ -58,22 +69,28 @@ export function HelpExplainProvider({ children }: HelpExplainProviderProps) {
     }
     if (!el) {
       setTooltip(null);
+      pinnedElementRef.current = null;
       return;
     }
     const title = el.getAttribute(HELP_ATTR_TITLE);
     const description = el.getAttribute(HELP_ATTR_DESC) || "";
     if (!title) {
       setTooltip(null);
+      pinnedElementRef.current = null;
       return;
     }
+    pinnedElementRef.current = pinned ? el : null;
     const rect = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const above = spaceBelow < POPOVER_EST_HEIGHT + POPOVER_OFFSET;
     setTooltip({
       title,
       description,
       x: rect.left,
-      y: rect.bottom + 4,
+      y: above ? rect.top - POPOVER_OFFSET : rect.bottom + POPOVER_OFFSET,
       width: rect.width,
       height: rect.height,
+      above,
     });
   }, []);
 
@@ -84,13 +101,16 @@ export function HelpExplainProvider({ children }: HelpExplainProviderProps) {
       const el = getHelpElement(e.target);
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       if (!el) {
-        hoverTimeoutRef.current = setTimeout(() => setTooltip(null), 100);
+        hoverTimeoutRef.current = setTimeout(() => {
+          if (!pinnedElementRef.current) setTooltip(null);
+        }, HOVER_HIDE_MS);
         return;
       }
-      hoverTimeoutRef.current = setTimeout(() => showForElement(el), 150);
+      hoverTimeoutRef.current = setTimeout(() => showForElement(el, false), HOVER_SHOW_MS);
     };
 
     const handleMouseOut = (e: MouseEvent) => {
+      if (pinnedElementRef.current) return;
       const related = e.relatedTarget as Node | null;
       const el = getHelpElement(e.target);
       if (el && related && el.contains(related)) return;
@@ -100,15 +120,22 @@ export function HelpExplainProvider({ children }: HelpExplainProviderProps) {
         clearTimeout(hoverTimeoutRef.current);
         hoverTimeoutRef.current = null;
       }
-      hideTimeoutRef.current = setTimeout(() => setTooltip(null), 200);
+      hideTimeoutRef.current = setTimeout(() => setTooltip(null), HOVER_HIDE_MS);
     };
 
     const handleClick = (e: MouseEvent) => {
       const el = getHelpElement(e.target);
+      const popoverEl = document.querySelector("[data-help-popover]");
+      const clickedInPopover = popoverEl && (e.target instanceof Node && popoverEl.contains(e.target));
       if (el) {
         e.preventDefault();
         e.stopPropagation();
-        showForElement(el);
+        showForElement(el, true);
+        return;
+      }
+      if (pinnedElementRef.current && !clickedInPopover) {
+        pinnedElementRef.current = null;
+        setTooltip(null);
       }
     };
 
@@ -161,8 +188,9 @@ export function HelpExplainProvider({ children }: HelpExplainProviderProps) {
                 data-help-popover
                 className="fixed z-[101] max-w-sm rounded-lg border bg-popover p-3 text-popover-foreground shadow-md"
                 style={{
-                  left: Math.min(tooltip.x, window.innerWidth - 320),
-                  top: tooltip.y,
+                  left: Math.max(8, Math.min(tooltip.x, window.innerWidth - POPOVER_MAX_WIDTH - 8)),
+                  top: tooltip.above ? undefined : tooltip.y,
+                  bottom: tooltip.above ? window.innerHeight - tooltip.y : undefined,
                 }}
               >
                 <p className="font-semibold text-sm">{tooltip.title}</p>

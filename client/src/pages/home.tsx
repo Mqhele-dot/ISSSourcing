@@ -312,8 +312,8 @@ export default function HomePage() {
                     (overview.activity ?? []).map((event) => (
                       <div key={event.id} className="rounded-md border border-border p-3">
                         <div className="flex items-center justify-between gap-4">
-                          <p className="font-medium">{event.title}</p>
-                          <Badge variant="outline">{event.eventType}</Badge>
+                          <p className="min-w-0 flex-1 truncate font-medium" title={event.title}>{event.title}</p>
+                          <Badge variant="outline" className="shrink-0">{event.eventType}</Badge>
                         </div>
                         {event.details ? (
                           <p className="mt-1 text-sm text-muted-foreground">{event.details}</p>

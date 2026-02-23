@@ -24,6 +24,7 @@ import { StockUseChart } from "@/components/analytics/stock-use-chart";
 import { ValueByCategoryChart } from "@/components/analytics/value-by-category-chart";
 import { RealTimeInventory } from "@/components/inventory/real-time-inventory";
 import { RecentOrders } from "@/components/dashboard/recent-orders";
+import { CustomGraphBuilder } from "@/components/dashboard/custom-graph-builder";
 
 export default function Dashboard() {
   const [showItemForm, setShowItemForm] = useState(false);
@@ -397,6 +398,17 @@ export default function Dashboard() {
           <StockUseChart />
           <ValueByCategoryChart />
         </div>
+      </div>
+
+      {/* Custom graphs */}
+      <div className="mt-8 mb-6">
+        <h3 className="text-xl font-semibold mb-4 text-neutral-900 dark:text-white">
+          Custom Graphs
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Build a custom chart from current data: choose a data source and chart type below.
+        </p>
+        <CustomGraphBuilder />
       </div>
 
       {/* Analytics Section */}
