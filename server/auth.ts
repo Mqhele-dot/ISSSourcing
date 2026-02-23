@@ -181,8 +181,8 @@ export function setupAuth(app: Express) {
     }
   };
 
-  // Trust first proxy if in production
-  if (process.env.NODE_ENV === "production") {
+  // Trust first proxy in production or when running in Codespaces (behind HTTPS proxy)
+  if (process.env.NODE_ENV === "production" || process.env.CODESPACES === "true") {
     app.set("trust proxy", 1);
   }
 
@@ -508,16 +508,20 @@ export function setupAuth(app: Express) {
         info: { message: string; requiresEmailVerification?: boolean } | undefined,
       ) => {
         if (err) {
+          const authMessage =
+            err.message?.includes("ECONNREFUSED") || err.message?.includes("connect")
+              ? "Authentication service unavailable. Check database connection."
+              : "Authentication failed";
           if (options.envelope) {
-            return res.status(500).json({
+            return res.status(503).json({
               ok: false,
               error: {
                 code: "AUTH_ERROR",
-                message: "Authentication failed",
+                message: authMessage,
               },
             });
           }
-          return next(err);
+          return res.status(503).json({ message: authMessage });
         }
 
         if (!user) {
@@ -541,16 +545,20 @@ export function setupAuth(app: Express) {
 
         req.login(user, (loginError: Error | null) => {
           if (loginError) {
+            const sessionMessage =
+              "Failed to create login session. Check that the database is running and reachable (session store).";
             if (options.envelope) {
-              return res.status(500).json({
+              return res.status(503).json({
                 ok: false,
                 error: {
                   code: "LOGIN_SESSION_ERROR",
-                  message: "Failed to create login session",
+                  message: sessionMessage,
                 },
               });
             }
-            return next(loginError);
+            return res.status(503).json({
+              message: sessionMessage,
+            });
           }
 
           if (rememberMe && req.session) {

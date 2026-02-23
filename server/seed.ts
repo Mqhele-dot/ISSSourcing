@@ -1,6 +1,5 @@
 import { randomBytes, scrypt } from "node:crypto";
 import { promisify } from "node:util";
-import { pathToFileURL } from "node:url";
 import { eq, sql } from "drizzle-orm";
 import {
   appSettings,
@@ -435,11 +434,12 @@ async function runSeedCli(): Promise<void> {
   }
 }
 
-const isDirectRun =
-  typeof process.argv[1] === "string" &&
-  pathToFileURL(process.argv[1]).href === import.meta.url;
+// Only run CLI (and pool.end()) when this file was explicitly executed (e.g. npx tsx server/seed.ts).
+// When imported by the server we must never call pool.end() or the shared pool becomes unusable.
+const entryScript = typeof process.argv[1] === "string" ? process.argv[1] : "";
+const isSeedCli = entryScript.includes("seed") && !entryScript.includes("seed-operational");
 
-if (isDirectRun) {
+if (isSeedCli) {
   runSeedCli().catch((error) => {
     console.error("Failed to seed database:", error);
     process.exit(1);

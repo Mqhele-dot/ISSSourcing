@@ -13,6 +13,7 @@
     "docs:validate": "bash scripts/validate-readme.sh",
     "test:runtime": "bash scripts/test-runtime.sh",
     "test:contracts": "tsx scripts/test-api-contract.ts",
+    "test:login": "tsx scripts/test-login.ts",
     "test:deeplinks": "tsx scripts/test-kpi-deeplinks.ts",
     "test:csv": "tsx server/services/document-generator-service.test.ts",
     "test:e2e": "playwright test",

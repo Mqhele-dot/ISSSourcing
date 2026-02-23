@@ -5,7 +5,6 @@
  *
  * Usage: npx tsx server/seed-operational.ts
  */
-import { pathToFileURL } from "node:url";
 import { pool } from "./db";
 import { initializeOperationalData } from "./operations-core";
 
@@ -134,9 +133,10 @@ async function run() {
   }
 }
 
-const isDirectRun =
-  typeof process.argv[1] === "string" &&
-  pathToFileURL(process.argv[1]).href === import.meta.url;
+// Only run CLI (and pool.end()) when this file was explicitly executed (e.g. npx tsx server/seed-operational.ts).
+// When imported by the server we must never call pool.end() or the shared pool becomes unusable.
+const entryScript = typeof process.argv[1] === "string" ? process.argv[1] : "";
+const isDirectRun = entryScript.includes("seed-operational");
 
 if (isDirectRun) {
   run().catch((err) => {

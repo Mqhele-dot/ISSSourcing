@@ -231,16 +231,23 @@ function LoginForm({
             onTwoFactorRequired(userData);
           }
         },
-        onError: (error: any) => {
-          if (error.response?.data) {
-            setLoginError(error.response.data.message);
-            if (error.response.data.requiresEmailVerification) {
-              setRequiresEmailVerification(true);
+onError: (error: unknown) => {
+            const msg =
+              error instanceof Error
+                ? error.message
+                : typeof error === "object" && error !== null && "message" in error
+                ? String((error as { message: unknown }).message)
+                : "An error occurred during login. Please try again.";
+            setLoginError(msg);
+            if (
+              typeof error === "object" &&
+              error !== null &&
+              "response" in error &&
+              typeof (error as { response?: { data?: { requiresEmailVerification?: boolean } } }).response?.data?.requiresEmailVerification === "boolean"
+            ) {
+              setRequiresEmailVerification((error as { response: { data: { requiresEmailVerification: boolean } } }).response.data.requiresEmailVerification);
             }
-          } else {
-            setLoginError("An error occurred during login. Please try again.");
           }
-        }
       });
     } catch (error) {
       setLoginError("An error occurred during login. Please try again.");
@@ -266,6 +273,16 @@ function LoginForm({
             <AlertTitle className="text-red-600">Login Failed</AlertTitle>
             <AlertDescription className="text-red-600">
               {loginError}
+              {(loginError.includes("Invalid username or password") || loginError.includes("401")) && (
+                <span className="block mt-2 text-sm opacity-90">
+                  Demo users (admin / planner / viewer) use password <strong>Admin123!</strong>. If you use a database, ensure it is seeded: <code className="text-xs bg-red-100/50 px-1 rounded">npm run db:seed</code>.
+                </span>
+              )}
+              {loginError.includes("session") && (
+                <span className="block mt-2 text-sm opacity-90">
+                  Session could not be created. Check that the server database and SESSION_SECRET are configured.
+                </span>
+              )}
             </AlertDescription>
           </Alert>
         )}
