@@ -85,6 +85,15 @@ export async function apiRequest(
   }
 }
 
+/** Run apiRequest and parse JSON. Use for APIs that return JSON bodies. Handles 204 No Content. */
+export async function requestJson<T>(method: string, url: string, data?: unknown): Promise<T> {
+  const res = await apiRequest(method, url, data);
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
+  return (await res.json()) as T;
+}
+
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;

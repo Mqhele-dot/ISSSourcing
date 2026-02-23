@@ -11,6 +11,7 @@ import {
   activityLogs, type ActivityLog, type InsertActivityLog,
   appSettings, type AppSettings, type InsertAppSettings,
   supplierLogos, type SupplierLogo, type InsertSupplierLogo,
+  supplierContracts, type SupplierContract, type InsertSupplierContract,
   vatRates, type VatRate, type InsertVatRate,
   reorderRequests, type ReorderRequest, type InsertReorderRequest,
   warehouses, type Warehouse, type InsertWarehouse,
@@ -1475,6 +1476,26 @@ export class DatabaseStorage implements IStorage {
   
   async deleteSupplierLogo(supplierId: number): Promise<boolean> {
     return this.memStorage.deleteSupplierLogo(supplierId);
+  }
+
+  async getContracts(supplierId?: number): Promise<SupplierContract[]> {
+    return this.memStorage.getContracts(supplierId);
+  }
+
+  async getContract(id: number): Promise<SupplierContract | undefined> {
+    return this.memStorage.getContract(id);
+  }
+
+  async createContract(contract: InsertSupplierContract): Promise<SupplierContract> {
+    return this.memStorage.createContract(contract);
+  }
+
+  async updateContract(id: number, contract: Partial<InsertSupplierContract>): Promise<SupplierContract | undefined> {
+    return this.memStorage.updateContract(id, contract);
+  }
+
+  async deleteContract(id: number): Promise<boolean> {
+    return this.memStorage.deleteContract(id);
   }
   
   async deleteInventoryItem(id: number): Promise<boolean> {

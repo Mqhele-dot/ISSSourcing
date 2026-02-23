@@ -32,6 +32,7 @@ import {
   insertCategorySchema, 
   insertActivityLogSchema,
   insertSupplierSchema,
+  insertSupplierContractSchema,
   insertPurchaseRequisitionSchema,
   insertPurchaseRequisitionItemSchema,
   insertPurchaseOrderSchema,
@@ -749,6 +750,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting supplier:", error);
       res.status(500).json({ message: "Failed to delete supplier" });
+    }
+  });
+
+  // Supplier contracts
+  app.get("/api/contracts", async (req: Request, res: Response) => {
+    try {
+      const supplierId = req.query.supplierId;
+      const id = typeof supplierId === "string" ? Number(supplierId) : undefined;
+      const contracts = await storage.getContracts(isNaN(id as number) ? undefined : id);
+      res.json(contracts);
+    } catch (error) {
+      console.error("Error fetching contracts:", error);
+      res.status(500).json({ message: "Failed to fetch contracts" });
+    }
+  });
+
+  app.get("/api/contracts/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
+      const contract = await storage.getContract(id);
+      if (!contract) return res.status(404).json({ message: "Contract not found" });
+      res.json(contract);
+    } catch (error) {
+      console.error("Error fetching contract:", error);
+      res.status(500).json({ message: "Failed to fetch contract" });
+    }
+  });
+
+  app.post("/api/contracts", async (req: Request, res: Response) => {
+    try {
+      const validated = insertSupplierContractSchema.parse(req.body);
+      const contract = await storage.createContract(validated);
+      res.status(201).json(contract);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ message: validationError.message });
+      }
+      console.error("Error creating contract:", error);
+      res.status(500).json({ message: "Failed to create contract" });
+    }
+  });
+
+  app.patch("/api/contracts/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
+      const validated = insertSupplierContractSchema.partial().parse(req.body);
+      const contract = await storage.updateContract(id, validated);
+      if (!contract) return res.status(404).json({ message: "Contract not found" });
+      res.json(contract);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ message: validationError.message });
+      }
+      console.error("Error updating contract:", error);
+      res.status(500).json({ message: "Failed to update contract" });
+    }
+  });
+
+  app.delete("/api/contracts/:id", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
+      const ok = await storage.deleteContract(id);
+      if (!ok) return res.status(404).json({ message: "Contract not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting contract:", error);
+      res.status(500).json({ message: "Failed to delete contract" });
     }
   });
 

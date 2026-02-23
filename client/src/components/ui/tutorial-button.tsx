@@ -31,6 +31,8 @@ export default function TutorialStep({ page, pageName, className = "" }: Tutoria
       size="sm"
       onClick={handleClick}
       className={`gap-1 ${className}`}
+      data-help-title="Page tutorial"
+      data-help-description="Start the step-by-step tutorial for this page (e.g. Dashboard)."
     >
       <HelpCircle className="h-4 w-4" />
       <span>Tutorial</span>

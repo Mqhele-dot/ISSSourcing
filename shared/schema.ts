@@ -247,6 +247,41 @@ export const insertSupplierSchema = createInsertSchema(suppliers).omit({
   updatedAt: true,
 });
 
+// Supplier contract schema - manage contracts with each supplier
+export const supplierContracts = pgTable("supplier_contracts", {
+  id: serial("id").primaryKey(),
+  supplierId: integer("supplier_id").notNull(),
+  title: text("title").notNull(),
+  contractType: text("contract_type").notNull().default("master"), // master, framework, one-off, renewal
+  referenceNumber: text("reference_number"),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  value: real("value"),
+  currency: text("currency").default("USD"),
+  summary: text("summary"),
+  status: text("status").notNull().default("active"), // draft, active, expired, terminated
+  notes: text("notes"),
+  attachments: jsonb("attachments").$type<{ name: string; url: string }[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertSupplierContractSchema = createInsertSchema(supplierContracts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const supplierContractFormSchema = insertSupplierContractSchema.extend({
+  title: z.string().min(2, "Title must be at least 2 characters"),
+  supplierId: z.number().int().positive("Supplier is required"),
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date().nullable().optional(),
+  value: z.number().min(0).nullable().optional(),
+  contractType: z.enum(["master", "framework", "one-off", "renewal"]).default("master"),
+  status: z.enum(["draft", "active", "expired", "terminated"]).default("active"),
+});
+
 // Inventory item schema
 export const inventoryItems = pgTable("inventory_items", {
   id: serial("id").primaryKey(),
@@ -551,6 +586,10 @@ export type InventoryItemForm = z.infer<typeof inventoryItemFormSchema>;
 export type Supplier = typeof suppliers.$inferSelect;
 export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
 export type SupplierForm = z.infer<typeof supplierFormSchema>;
+
+export type SupplierContract = typeof supplierContracts.$inferSelect;
+export type InsertSupplierContract = z.infer<typeof insertSupplierContractSchema>;
+export type SupplierContractForm = z.infer<typeof supplierContractFormSchema>;
 
 export type PurchaseRequisition = typeof purchaseRequisitions.$inferSelect;
 export type InsertPurchaseRequisition = z.infer<typeof insertPurchaseRequisitionSchema>;

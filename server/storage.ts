@@ -1,9 +1,10 @@
-﻿import {
+import {
   UserRoleEnum, ResourceEnum, PermissionTypeEnum,
   users, type User, type InsertUser,
   categories, type Category, type InsertCategory,
   inventoryItems, type InventoryItem, type InsertInventoryItem,
   suppliers, type Supplier, type InsertSupplier,
+  supplierContracts, type SupplierContract, type InsertSupplierContract,
   purchaseRequisitions, type PurchaseRequisition, type InsertPurchaseRequisition,
   purchaseRequisitionItems, type PurchaseRequisitionItem, type InsertPurchaseRequisitionItem,
   purchaseOrders, type PurchaseOrder, type InsertPurchaseOrder,
@@ -138,7 +139,6 @@ export interface IStorage {
   getPermission(id: number): Promise<Permission | undefined>;
   getPermissionsByRole(role: keyof typeof UserRoleEnum): Promise<Permission[]>;
   getPermissionsByResource(resource: keyof typeof ResourceEnum): Promise<Permission[]>;
-  checkPermission(role: string, resource: string, permissionType: string): Promise<boolean>;
   createPermission(permission: InsertPermission): Permission;
   updatePermission(id: number, permission: Partial<InsertPermission>): Promise<Permission | undefined>;
   deletePermission(id: number): Promise<boolean>;
@@ -254,11 +254,18 @@ export interface IStorage {
   updateAppSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings>;
   
   // Supplier Logo methods
-  getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined>;
+getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined>;
   createSupplierLogo(logo: InsertSupplierLogo): Promise<SupplierLogo>;
   updateSupplierLogo(supplierId: number, logoUrl: string): Promise<SupplierLogo | undefined>;
   deleteSupplierLogo(supplierId: number): Promise<boolean>;
-  
+
+  // Supplier contract methods
+  getContracts(supplierId?: number): Promise<SupplierContract[]>;
+  getContract(id: number): Promise<SupplierContract | undefined>;
+  createContract(contract: InsertSupplierContract): Promise<SupplierContract>;
+  updateContract(id: number, contract: Partial<InsertSupplierContract>): Promise<SupplierContract | undefined>;
+  deleteContract(id: number): Promise<boolean>;
+
   // Inventory item methods
   getAllInventoryItems(): Promise<InventoryItem[]>;
   getInventoryItem(id: number): Promise<InventoryItem | undefined>;
@@ -483,6 +490,7 @@ export class MemStorage implements IStorage {
   private purchaseOrderItems: Map<number, PurchaseOrderItem>;
   private appSettings: Map<number, AppSettings>;
   private supplierLogos: Map<number, SupplierLogo>;
+  private supplierContracts: Map<number, SupplierContract>;
   private vatRates: Map<number, VatRate>;
   private reorderRequests: Map<number, ReorderRequest>;
   private warehouses: Map<number, Warehouse>;
@@ -532,6 +540,7 @@ export class MemStorage implements IStorage {
   private orderItemCurrentId: number;
   private settingsCurrentId: number;
   private supplierLogoCurrentId: number;
+  private supplierContractCurrentId: number;
   private vatRateCurrentId: number;
   private reorderRequestCurrentId: number;
   private warehouseCurrentId: number;
@@ -573,6 +582,7 @@ export class MemStorage implements IStorage {
     this.purchaseOrderItems = new Map();
     this.appSettings = new Map();
     this.supplierLogos = new Map();
+    this.supplierContracts = new Map();
     this.userVerificationTokens = new Map();
     this.sessions = new Map();
     this.failedLoginAttempts = new Map();
@@ -623,6 +633,7 @@ export class MemStorage implements IStorage {
     this.orderItemCurrentId = 1;
     this.settingsCurrentId = 1;
     this.supplierLogoCurrentId = 1;
+    this.supplierContractCurrentId = 1;
     this.vatRateCurrentId = 1;
     this.reorderRequestCurrentId = 1;
     this.warehouseCurrentId = 1;
@@ -4164,6 +4175,42 @@ export class MemStorage implements IStorage {
     });
     
     return this.supplierLogos.delete(logo.id);
+  }
+
+  async getContracts(supplierId?: number): Promise<SupplierContract[]> {
+    const list = Array.from(this.supplierContracts.values());
+    if (supplierId != null) return list.filter(c => c.supplierId === supplierId);
+    return list;
+  }
+
+  async getContract(id: number): Promise<SupplierContract | undefined> {
+    return this.supplierContracts.get(id);
+  }
+
+  async createContract(insert: InsertSupplierContract): Promise<SupplierContract> {
+    const id = this.supplierContractCurrentId++;
+    const now = new Date();
+    const contract: SupplierContract = {
+      ...insert,
+      id,
+      attachments: (insert.attachments as SupplierContract["attachments"]) ?? [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.supplierContracts.set(id, contract);
+    return contract;
+  }
+
+  async updateContract(id: number, data: Partial<InsertSupplierContract>): Promise<SupplierContract | undefined> {
+    const existing = this.supplierContracts.get(id);
+    if (!existing) return undefined;
+    const updated: SupplierContract = { ...existing, ...data, updatedAt: new Date() };
+    this.supplierContracts.set(id, updated);
+    return updated;
+  }
+
+  async deleteContract(id: number): Promise<boolean> {
+    return this.supplierContracts.delete(id);
   }
   
   // Reorder request methods

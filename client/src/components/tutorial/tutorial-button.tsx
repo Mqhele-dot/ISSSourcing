@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useTutorial } from "@/contexts/tutorial-context";
+import { useHelpExplain } from "@/contexts/help-explain-context";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -46,6 +47,7 @@ import {
  */
 export function TutorialButton() {
   const { startTutorial, scanForErrors, fixErrors } = useTutorial();
+  const { setExplainMode } = useHelpExplain();
   const { toast } = useToast();
   const [isScanning, setIsScanning] = useState(false);
   const [scanResults, setScanResults] = useState<{ [key: string]: string[] } | null>(null);
@@ -205,10 +207,12 @@ export function TutorialButton() {
   
   return (
     <>
-      <Button 
-        variant="outline" 
-        size="icon" 
+      <Button
+        variant="outline"
+        size="icon"
         className="rounded-full w-9 h-9"
+        data-help-title="Help & Tutorials"
+        data-help-description="Open this menu to start a tutorial, turn on Explain mode (hover any control to see what it does), or run diagnostics."
         onClick={() => {
           setShowDialog(true);
           setActiveTab("tutorials");
@@ -257,7 +261,18 @@ export function TutorialButton() {
                 ))}
               </div>
               
-              <div className="flex justify-center">
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="default"
+                  className="w-full"
+                  onClick={() => {
+                    setExplainMode(true);
+                    setShowDialog(false);
+                  }}
+                >
+                  <HelpCircle className="h-4 w-4 mr-2" />
+                  What's this? — Explain buttons
+                </Button>
                 <Button
                   variant="outline"
                   className="w-full"

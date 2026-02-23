@@ -197,6 +197,8 @@ export default function Dashboard() {
               variant="link"
               size="sm"
               className="text-primary hover:text-primary/80 mr-3"
+              data-help-title="Edit item"
+              data-help-description="Open the item form to change name, SKU, category, quantity, or price."
               onClick={(e) => { e.stopPropagation(); setEditingItem(item); setShowItemForm(true); }}
             >
               Edit
@@ -205,6 +207,8 @@ export default function Dashboard() {
               variant="link"
               size="sm"
               className="text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
+              data-help-title="View item"
+              data-help-description="Open a read-only view of this item; you can then click Edit to change it."
               onClick={(e) => { e.stopPropagation(); setViewingItem(item); }}
             >
               View
@@ -234,14 +238,23 @@ export default function Dashboard() {
         <div className="mt-4 md:mt-0 flex space-x-3">
           <TutorialButton pageName="dashboard" className="mr-2" />
           
-          <Button onClick={() => setShowItemForm(true)} className="add-item-button">
+          <Button
+            onClick={() => setShowItemForm(true)}
+            className="add-item-button"
+            data-help-title="Add Item"
+            data-help-description="Opens a form to add a new inventory item (name, SKU, category, quantity, price)."
+          >
             <Plus className="mr-2 h-4 w-4" />
             Add Item
           </Button>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline">
+              <Button
+                variant="outline"
+                data-help-title="Export"
+                data-help-description="Download the inventory overview as PDF, CSV, or Excel."
+              >
                 <FileDown className="mr-2 h-4 w-4" />
                 Export
               </Button>
@@ -310,7 +323,11 @@ export default function Dashboard() {
               </h3>
               
               <div className="flex space-x-2">
-                <div className="relative category-filter">
+                <div
+                className="relative category-filter"
+                data-help-title="Category filter"
+                data-help-description="Show only items from the selected category in the table below."
+              >
                   <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                     <SelectTrigger className="w-[180px]">
                       <SelectValue placeholder="All Categories" />
@@ -326,7 +343,13 @@ export default function Dashboard() {
                   </Select>
                 </div>
                 
-                <Button variant="outline" size="icon" className="filter-button">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="filter-button"
+                  data-help-title="Filter"
+                  data-help-description="Apply additional filters to the inventory table (used with category)."
+                >
                   <Filter className="h-4 w-4" />
                 </Button>
               </div>
@@ -401,14 +424,32 @@ export default function Dashboard() {
               <h4 className="font-medium text-neutral-900 dark:text-white">Quick actions</h4>
             </div>
             <div className="p-4 space-y-2">
-              <Button variant="outline" className="w-full justify-start" onClick={() => { setEditingItem(null); setShowItemForm(true); }}>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                data-help-title="Add inventory item"
+                data-help-description="Opens the form to add a new item to inventory."
+                onClick={() => { setEditingItem(null); setShowItemForm(true); }}
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 Add inventory item
               </Button>
-              <Button variant="outline" className="w-full justify-start" onClick={() => setLocation("/orders")}>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                data-help-title="View all orders"
+                data-help-description="Go to the Purchase Orders page to see and manage all orders."
+                onClick={() => setLocation("/orders")}
+              >
                 View all orders
               </Button>
-              <Button variant="outline" className="w-full justify-start" onClick={() => setLocation("/inventory")}>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                data-help-title="Browse inventory"
+                data-help-description="Go to the full Inventory page to search and manage all items."
+                onClick={() => setLocation("/inventory")}
+              >
                 Browse inventory
               </Button>
             </div>

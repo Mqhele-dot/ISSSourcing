@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, requestJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -51,11 +51,6 @@ type SupplierLogoForm = {
   logoUrl: string;
 };
 
-async function requestJson<T>(method: string, url: string, data?: unknown): Promise<T> {
-  const response = await apiRequest(method, url, data);
-  return (await response.json()) as T;
-}
-
 export default function SuppliersPage() {
   const { toast } = useToast();
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
@@ -99,7 +94,7 @@ export default function SuppliersPage() {
     onError: (error) => {
       toast({
         title: "Error creating supplier",
-        description: error.message || "An unexpected error occurred",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
       });
     },
@@ -120,7 +115,7 @@ export default function SuppliersPage() {
     onError: (error) => {
       toast({
         title: "Error updating supplier",
-        description: error.message || "An unexpected error occurred",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
       });
     },
@@ -141,7 +136,7 @@ export default function SuppliersPage() {
     onError: (error) => {
       toast({
         title: "Error deleting supplier",
-        description: error.message || "An unexpected error occurred",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
       });
     },
@@ -162,7 +157,7 @@ export default function SuppliersPage() {
     onError: (error) => {
       toast({
         title: "Error adding logo",
-        description: error.message || "An unexpected error occurred",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
       });
     },
@@ -183,7 +178,7 @@ export default function SuppliersPage() {
     onError: (error) => {
       toast({
         title: "Error updating logo",
-        description: error.message || "An unexpected error occurred",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
       });
     },
@@ -203,7 +198,7 @@ export default function SuppliersPage() {
     onError: (error) => {
       toast({
         title: "Error removing logo",
-        description: error.message || "An unexpected error occurred",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
       });
     },

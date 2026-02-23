@@ -12,6 +12,7 @@ import Inventory from "@/pages/inventory";
 import InventoryItemDetail from "@/pages/inventory-item";
 import OrdersPage from "@/pages/orders";
 import SuppliersPage from "@/pages/suppliers";
+import ContractsPage from "@/pages/contracts";
 import Reports from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
 import UserRolesPage from "@/pages/user-roles";
@@ -36,6 +37,7 @@ import { AccentProvider } from "@/components/accent-provider";
 import { DensityProvider } from "@/components/density-provider";
 import { useState, useEffect } from "react";
 import { TutorialProvider } from "@/contexts/tutorial-context";
+import { HelpExplainProvider } from "@/contexts/help-explain-context";
 import { TutorialSteps } from "@/components/tutorial/tutorial-steps";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/lib/protected-route";
@@ -112,6 +114,7 @@ function Router() {
       <ProtectedRoute path="/exceptions/:id" component={ExceptionsPage} />
       <ProtectedRoute path="/integrations" component={IntegrationsPage} />
       <ProtectedRoute path="/suppliers" component={SuppliersPage} />
+      <ProtectedRoute path="/contracts" component={ContractsPage} />
       <ProtectedRoute path="/reports" component={Reports} />
       <ProtectedRoute path="/reorder" component={ReorderPage} />
       <ProtectedRoute path="/barcode-scanner" component={BarcodeScannerPage} />
@@ -170,6 +173,7 @@ function App() {
             <QueryClientProvider client={queryClient}>
               <AuthProvider>
                 <TutorialProvider>
+                  <HelpExplainProvider>
                   <ElectronProvider>
                     <div className="app-shell relative min-h-screen">
                       <Route path="/auth">
@@ -191,6 +195,7 @@ function App() {
                     <TutorialSteps />
                     <Toaster />
                   </ElectronProvider>
+                  </HelpExplainProvider>
                 </TutorialProvider>
               </AuthProvider>
             </QueryClientProvider>
