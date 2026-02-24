@@ -781,7 +781,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/contracts", async (req: Request, res: Response) => {
     try {
-      const validated = insertSupplierContractSchema.parse(req.body);
+      const body = { ...req.body };
+      if (typeof body.startDate === "string") body.startDate = new Date(body.startDate);
+      if (body.endDate != null && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const validated = insertSupplierContractSchema.parse(body);
       const contract = await storage.createContract(validated);
       res.status(201).json(contract);
     } catch (error) {
@@ -798,7 +801,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
-      const validated = insertSupplierContractSchema.partial().parse(req.body);
+      const body = { ...req.body };
+      if (typeof body.startDate === "string") body.startDate = new Date(body.startDate);
+      if (body.endDate != null && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const validated = insertSupplierContractSchema.partial().parse(body);
       const contract = await storage.updateContract(id, validated);
       if (!contract) return res.status(404).json({ message: "Contract not found" });
       res.json(contract);
@@ -1549,15 +1555,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let title: string;
       
       switch (normalizedReportType) {
-        case 'inventory':
+        case 'inventory': {
           // Apply category filter if provided
+          let inventoryItems;
           if (filter.categoryId) {
-            data = (await storage.getAllInventoryItems()).filter(item => item.categoryId === filter.categoryId);
+            inventoryItems = (await storage.getAllInventoryItems()).filter(item => item.categoryId === filter.categoryId);
           } else {
-            data = await storage.getAllInventoryItems();
+            inventoryItems = await storage.getAllInventoryItems();
           }
+          const categories = await storage.getAllCategories();
+          const categoryById = new Map(categories.map((c) => [c.id, c.name]));
+          data = inventoryItems.map((item) => ({
+            ...item,
+            categoryName: item.categoryId != null ? (categoryById.get(item.categoryId) ?? '—') : '—',
+          }));
           title = 'Inventory Report' + filterText;
           break;
+        }
           
         case 'categories':
           data = await storage.getAllCategories();

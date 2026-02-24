@@ -224,13 +224,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllActivityLogs(limit?: number): Promise<ActivityLog[]> {
-    const query = db.select().from(activityLogs).orderBy(desc(activityLogs.timestamp));
-    
-    if (limit) {
-      query.limit(limit);
-    }
-    
-    return query;
+    const base = db.select().from(activityLogs).orderBy(desc(activityLogs.timestamp));
+    return limit ? base.limit(limit) : base;
   }
 
   // Additional methods would be implemented here following the same pattern
@@ -1279,27 +1274,32 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllSuppliers(): Promise<Supplier[]> {
-    return this.memStorage.getAllSuppliers();
+    return db.select().from(suppliers);
   }
   
   async getSupplier(id: number): Promise<Supplier | undefined> {
-    return this.memStorage.getSupplier(id);
+    const [row] = await db.select().from(suppliers).where(eq(suppliers.id, id));
+    return row;
   }
   
   async getSupplierByName(name: string): Promise<Supplier | undefined> {
-    return this.memStorage.getSupplierByName(name);
+    const [row] = await db.select().from(suppliers).where(eq(suppliers.name, name));
+    return row;
   }
   
   async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
-    return this.memStorage.createSupplier(supplier);
+    const [created] = await db.insert(suppliers).values(supplier).returning();
+    return created;
   }
   
   async updateSupplier(id: number, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined> {
-    return this.memStorage.updateSupplier(id, supplier);
+    const [updated] = await db.update(suppliers).set(supplier).where(eq(suppliers.id, id)).returning();
+    return updated;
   }
   
   async deleteSupplier(id: number): Promise<boolean> {
-    return this.memStorage.deleteSupplier(id);
+    const result = await db.delete(suppliers).where(eq(suppliers.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async getAllBarcodes(): Promise<Barcode[]> {
@@ -1335,31 +1335,38 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllWarehouses(): Promise<Warehouse[]> {
-    return this.memStorage.getAllWarehouses();
+    return db.select().from(warehouses);
   }
   
   async getWarehouse(id: number): Promise<Warehouse | undefined> {
-    return this.memStorage.getWarehouse(id);
+    const [row] = await db.select().from(warehouses).where(eq(warehouses.id, id));
+    return row;
   }
   
   async getDefaultWarehouse(): Promise<Warehouse | undefined> {
-    return this.memStorage.getDefaultWarehouse();
+    const [row] = await db.select().from(warehouses).where(eq(warehouses.isDefault, true)).limit(1);
+    return row;
   }
   
   async createWarehouse(warehouse: InsertWarehouse): Promise<Warehouse> {
-    return this.memStorage.createWarehouse(warehouse);
+    const [created] = await db.insert(warehouses).values(warehouse).returning();
+    return created;
   }
   
   async updateWarehouse(id: number, warehouse: Partial<InsertWarehouse>): Promise<Warehouse | undefined> {
-    return this.memStorage.updateWarehouse(id, warehouse);
+    const [updated] = await db.update(warehouses).set({ ...warehouse, updatedAt: new Date() }).where(eq(warehouses.id, id)).returning();
+    return updated;
   }
   
   async deleteWarehouse(id: number): Promise<boolean> {
-    return this.memStorage.deleteWarehouse(id);
+    const result = await db.delete(warehouses).where(eq(warehouses.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async setDefaultWarehouse(id: number): Promise<Warehouse | undefined> {
-    return this.memStorage.setDefaultWarehouse(id);
+    await db.update(warehouses).set({ isDefault: false, updatedAt: new Date() });
+    const [updated] = await db.update(warehouses).set({ isDefault: true, updatedAt: new Date() }).where(eq(warehouses.id, id)).returning();
+    return updated;
   }
   
   async getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]> {
@@ -1387,23 +1394,25 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllStockMovements(): Promise<StockMovement[]> {
-    return this.memStorage.getAllStockMovements();
+    return db.select().from(stockMovements).orderBy(desc(stockMovements.timestamp));
   }
   
   async getStockMovement(id: number): Promise<StockMovement | undefined> {
-    return this.memStorage.getStockMovement(id);
+    const [row] = await db.select().from(stockMovements).where(eq(stockMovements.id, id));
+    return row;
   }
   
   async getStockMovementsByItemId(itemId: number): Promise<StockMovement[]> {
-    return this.memStorage.getStockMovementsByItemId(itemId);
+    return db.select().from(stockMovements).where(eq(stockMovements.itemId, itemId)).orderBy(desc(stockMovements.timestamp));
   }
   
   async getStockMovementsByWarehouseId(warehouseId: number): Promise<StockMovement[]> {
-    return this.memStorage.getStockMovementsByWarehouseId(warehouseId);
+    return db.select().from(stockMovements).where(or(eq(stockMovements.warehouseId, warehouseId), eq(stockMovements.sourceWarehouseId, warehouseId), eq(stockMovements.destinationWarehouseId, warehouseId))).orderBy(desc(stockMovements.timestamp));
   }
   
   async createStockMovement(movement: InsertStockMovement): Promise<StockMovement> {
-    return this.memStorage.createStockMovement(movement);
+    const [created] = await db.insert(stockMovements).values(movement).returning();
+    return created;
   }
   
   async transferStock(sourceWarehouseId: number, destinationWarehouseId: number, itemId: number, quantity: number, userId?: number, reason?: string): Promise<StockMovement> {
@@ -1411,39 +1420,47 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllReorderRequests(): Promise<ReorderRequest[]> {
-    return this.memStorage.getAllReorderRequests();
+    return db.select().from(reorderRequests).orderBy(desc(reorderRequests.createdAt));
   }
   
   async getReorderRequestsByDateRange(startDate: Date, endDate: Date): Promise<ReorderRequest[]> {
-    return this.memStorage.getReorderRequestsByDateRange(startDate, endDate);
+    return db.select().from(reorderRequests).where(and(gte(reorderRequests.createdAt, startDate), lte(reorderRequests.createdAt, endDate))).orderBy(desc(reorderRequests.createdAt));
   }
   
   async getReorderRequest(id: number): Promise<ReorderRequest | undefined> {
-    return this.memStorage.getReorderRequest(id);
+    const [row] = await db.select().from(reorderRequests).where(eq(reorderRequests.id, id));
+    return row;
   }
   
   async getReorderRequestByNumber(requestNumber: string): Promise<ReorderRequest | undefined> {
-    return this.memStorage.getReorderRequestByNumber(requestNumber);
+    const [row] = await db.select().from(reorderRequests).where(eq(reorderRequests.requestNumber, requestNumber));
+    return row;
   }
   
   async createReorderRequest(request: InsertReorderRequest): Promise<ReorderRequest> {
-    return this.memStorage.createReorderRequest(request);
+    const reqNumber = request.requestNumber ?? `RO-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 1000)}`;
+    const [created] = await db.insert(reorderRequests).values({ ...request, requestNumber: reqNumber, updatedAt: new Date() }).returning();
+    return created;
   }
   
   async updateReorderRequest(id: number, request: Partial<InsertReorderRequest>): Promise<ReorderRequest | undefined> {
-    return this.memStorage.updateReorderRequest(id, request);
+    const [updated] = await db.update(reorderRequests).set({ ...request, updatedAt: new Date() }).where(eq(reorderRequests.id, id)).returning();
+    return updated;
   }
   
   async deleteReorderRequest(id: number): Promise<boolean> {
-    return this.memStorage.deleteReorderRequest(id);
+    const result = await db.delete(reorderRequests).where(eq(reorderRequests.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async approveReorderRequest(id: number, approverId: number): Promise<ReorderRequest | undefined> {
-    return this.memStorage.approveReorderRequest(id, approverId);
+    const [updated] = await db.update(reorderRequests).set({ status: "APPROVED", approverId, approvalDate: new Date(), updatedAt: new Date() }).where(eq(reorderRequests.id, id)).returning();
+    return updated;
   }
   
   async rejectReorderRequest(id: number, approverId: number, reason: string): Promise<ReorderRequest | undefined> {
-    return this.memStorage.rejectReorderRequest(id, approverId, reason);
+    const [updated] = await db.update(reorderRequests).set({ status: "REJECTED", approverId, rejectionReason: reason, updatedAt: new Date() }).where(eq(reorderRequests.id, id)).returning();
+    return updated;
   }
   
   async convertReorderRequestToRequisition(id: number): Promise<PurchaseRequisition | undefined> {
@@ -1451,15 +1468,21 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getReorderRequestWithDetails(id: number): Promise<(ReorderRequest & { item: InventoryItem; requestor?: User; approver?: User; }) | undefined> {
-    return this.memStorage.getReorderRequestWithDetails(id);
+    const [req] = await db.select().from(reorderRequests).where(eq(reorderRequests.id, id));
+    if (!req) return undefined;
+    const item = await this.getInventoryItem(req.itemId);
+    if (!item) return { ...req, item: {} as InventoryItem };
+    const requestor = req.requestorId ? await this.getUser(req.requestorId) : undefined;
+    const approver = req.approverId ? await this.getUser(req.approverId) : undefined;
+    return { ...req, item, requestor, approver };
   }
   
   async getAppSettings(): Promise<AppSettings | undefined> {
-    return this.memStorage.getAppSettings();
+    return this.getSettings();
   }
   
   async updateAppSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings> {
-    return this.memStorage.updateAppSettings(settings);
+    return this.updateSettings(settings);
   }
   
   async getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined> {
@@ -1479,43 +1502,94 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getContracts(supplierId?: number): Promise<SupplierContract[]> {
-    return this.memStorage.getContracts(supplierId);
+    const base = db.select().from(supplierContracts).orderBy(desc(supplierContracts.createdAt));
+    if (supplierId != null) {
+      return base.where(eq(supplierContracts.supplierId, supplierId));
+    }
+    return base;
   }
 
   async getContract(id: number): Promise<SupplierContract | undefined> {
-    return this.memStorage.getContract(id);
+    const [row] = await db.select().from(supplierContracts).where(eq(supplierContracts.id, id));
+    return row;
   }
 
   async createContract(contract: InsertSupplierContract): Promise<SupplierContract> {
-    return this.memStorage.createContract(contract);
+    const payload = {
+      ...contract,
+      startDate: contract.startDate instanceof Date ? contract.startDate : new Date(contract.startDate as string),
+      endDate: contract.endDate != null ? (contract.endDate instanceof Date ? contract.endDate : new Date(contract.endDate as string)) : null,
+      attachments: contract.attachments ?? [],
+      updatedAt: new Date(),
+    };
+    const [created] = await db.insert(supplierContracts).values(payload).returning();
+    return created;
   }
 
   async updateContract(id: number, contract: Partial<InsertSupplierContract>): Promise<SupplierContract | undefined> {
-    return this.memStorage.updateContract(id, contract);
+    const payload: Record<string, unknown> = { ...contract, updatedAt: new Date() };
+    if (contract.startDate !== undefined) {
+      payload.startDate = contract.startDate instanceof Date ? contract.startDate : new Date(contract.startDate as string);
+    }
+    if (contract.endDate !== undefined) {
+      payload.endDate = contract.endDate != null ? (contract.endDate instanceof Date ? contract.endDate : new Date(contract.endDate as string)) : null;
+    }
+    const [updated] = await db.update(supplierContracts).set(payload as Partial<InsertSupplierContract>).where(eq(supplierContracts.id, id)).returning();
+    return updated;
   }
 
   async deleteContract(id: number): Promise<boolean> {
-    return this.memStorage.deleteContract(id);
+    const result = await db.delete(supplierContracts).where(eq(supplierContracts.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async deleteInventoryItem(id: number): Promise<boolean> {
-    return this.memStorage.deleteInventoryItem(id);
+    const result = await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async searchInventoryItems(query: string, categoryId?: number): Promise<InventoryItem[]> {
-    return this.memStorage.searchInventoryItems(query, categoryId);
+    const q = `%${query.trim()}%`;
+    const textMatch = query.trim()
+      ? or(like(inventoryItems.name, q), like(inventoryItems.sku, q))
+      : undefined;
+    const whereClause =
+      textMatch && categoryId != null
+        ? and(textMatch, eq(inventoryItems.categoryId, categoryId))
+        : textMatch ?? (categoryId != null ? eq(inventoryItems.categoryId, categoryId) : undefined);
+    if (!whereClause) return db.select().from(inventoryItems);
+    return db.select().from(inventoryItems).where(whereClause);
   }
   
   async getLowStockItems(): Promise<InventoryItem[]> {
-    return this.memStorage.getLowStockItems();
+    const items = await db.select().from(inventoryItems);
+    return items.filter(
+      (item) =>
+        (item.quantity ?? 0) > 0 &&
+        (item.lowStockThreshold != null && (item.quantity ?? 0) <= item.lowStockThreshold)
+    );
   }
   
   async getOutOfStockItems(): Promise<InventoryItem[]> {
-    return this.memStorage.getOutOfStockItems();
+    return db.select().from(inventoryItems).where(eq(inventoryItems.quantity, 0));
   }
   
   async getInventoryStats(): Promise<InventoryStats> {
-    return this.memStorage.getInventoryStats();
+    const items = await db.select().from(inventoryItems);
+    const inventoryValue = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (item.quantity ?? 0), 0);
+    const lowStockItems = items.filter(
+      (item) =>
+        (item.quantity ?? 0) > 0 &&
+        item.lowStockThreshold != null &&
+        (item.quantity ?? 0) <= item.lowStockThreshold
+    ).length;
+    const outOfStockItems = items.filter((item) => (item.quantity ?? 0) === 0).length;
+    return {
+      totalItems: items.length,
+      lowStockItems,
+      outOfStockItems,
+      inventoryValue: Number(inventoryValue.toFixed(2)),
+    };
   }
   
   async bulkImportInventory(items: BulkImportInventory): Promise<{ created: InventoryItem[]; updated: InventoryItem[]; errors: { row: number; sku: string; message: string; }[]; }> {
@@ -1523,31 +1597,47 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllPurchaseRequisitions(): Promise<PurchaseRequisition[]> {
-    return this.memStorage.getAllPurchaseRequisitions();
+    return db.select().from(purchaseRequisitions).orderBy(desc(purchaseRequisitions.createdAt));
   }
   
   async getPurchaseRequisition(id: number): Promise<PurchaseRequisition | undefined> {
-    return this.memStorage.getPurchaseRequisition(id);
+    const [row] = await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.id, id));
+    return row;
   }
   
   async getPurchaseRequisitionByNumber(requisitionNumber: string): Promise<PurchaseRequisition | undefined> {
-    return this.memStorage.getPurchaseRequisitionByNumber(requisitionNumber);
+    const [row] = await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.requisitionNumber, requisitionNumber));
+    return row;
   }
   
   async createPurchaseRequisition(requisition: InsertPurchaseRequisition, items: Omit<InsertPurchaseRequisitionItem, "requisitionId">[]): Promise<PurchaseRequisition> {
-    return this.memStorage.createPurchaseRequisition(requisition, items);
+    const [created] = await db.insert(purchaseRequisitions).values({ ...requisition, updatedAt: new Date() }).returning();
+    let totalAmount = 0;
+    for (const item of items) {
+      const totalPrice = (Number(item.unitPrice) || 0) * (item.quantity || 0);
+      totalAmount += totalPrice;
+      await db.insert(purchaseRequisitionItems).values({ ...item, requisitionId: created.id, totalPrice });
+    }
+    if (totalAmount > 0) {
+      await db.update(purchaseRequisitions).set({ totalAmount, updatedAt: new Date() }).where(eq(purchaseRequisitions.id, created.id));
+      return (await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.id, created.id)))[0];
+    }
+    return created;
   }
   
   async updatePurchaseRequisition(id: number, requisition: Partial<InsertPurchaseRequisition>): Promise<PurchaseRequisition | undefined> {
-    return this.memStorage.updatePurchaseRequisition(id, requisition);
+    const [updated] = await db.update(purchaseRequisitions).set({ ...requisition, updatedAt: new Date() }).where(eq(purchaseRequisitions.id, id)).returning();
+    return updated;
   }
   
   async deletePurchaseRequisition(id: number): Promise<boolean> {
-    return this.memStorage.deletePurchaseRequisition(id);
+    await db.delete(purchaseRequisitionItems).where(eq(purchaseRequisitionItems.requisitionId, id));
+    const result = await db.delete(purchaseRequisitions).where(eq(purchaseRequisitions.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async getPurchaseRequisitionItems(requisitionId: number): Promise<PurchaseRequisitionItem[]> {
-    return this.memStorage.getPurchaseRequisitionItems(requisitionId);
+    return db.select().from(purchaseRequisitionItems).where(eq(purchaseRequisitionItems.requisitionId, requisitionId));
   }
   
   async addPurchaseRequisitionItem(item: InsertPurchaseRequisitionItem): Promise<PurchaseRequisitionItem> {
@@ -1571,31 +1661,47 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
-    return this.memStorage.getAllPurchaseOrders();
+    return db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
   }
   
   async getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> {
-    return this.memStorage.getPurchaseOrder(id);
+    const [row] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    return row;
   }
   
   async getPurchaseOrderByNumber(orderNumber: string): Promise<PurchaseOrder | undefined> {
-    return this.memStorage.getPurchaseOrderByNumber(orderNumber);
+    const [row] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.orderNumber, orderNumber));
+    return row;
   }
   
   async createPurchaseOrder(order: InsertPurchaseOrder, items: Omit<InsertPurchaseOrderItem, "orderId">[]): Promise<PurchaseOrder> {
-    return this.memStorage.createPurchaseOrder(order, items);
+    const [created] = await db.insert(purchaseOrders).values({ ...order, updatedAt: new Date() }).returning();
+    let totalAmount = 0;
+    for (const item of items) {
+      const totalPrice = (Number(item.unitPrice) || 0) * (item.quantity || 0);
+      totalAmount += totalPrice;
+      await db.insert(purchaseOrderItems).values({ ...item, orderId: created.id, totalPrice });
+    }
+    if (totalAmount > 0) {
+      await db.update(purchaseOrders).set({ totalAmount, updatedAt: new Date() }).where(eq(purchaseOrders.id, created.id));
+      return (await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, created.id)))[0];
+    }
+    return created;
   }
   
   async updatePurchaseOrder(id: number, order: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined> {
-    return this.memStorage.updatePurchaseOrder(id, order);
+    const [updated] = await db.update(purchaseOrders).set({ ...order, updatedAt: new Date() }).where(eq(purchaseOrders.id, id)).returning();
+    return updated;
   }
   
   async deletePurchaseOrder(id: number): Promise<boolean> {
-    return this.memStorage.deletePurchaseOrder(id);
+    await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));
+    const result = await db.delete(purchaseOrders).where(eq(purchaseOrders.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async getPurchaseOrderItems(orderId: number): Promise<PurchaseOrderItem[]> {
-    return this.memStorage.getPurchaseOrderItems(orderId);
+    return db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, orderId));
   }
   
   async addPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem> {

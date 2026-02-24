@@ -8,11 +8,25 @@ import {
   suppliers,
   users,
   warehouses,
+  reorderRequests,
+  stockMovements,
+  activityLogs,
+  purchaseRequisitions,
+  purchaseRequisitionItems,
+  purchaseOrders,
+  purchaseOrderItems,
   type InsertAppSettings,
   type InsertCategory,
   type InsertInventoryItem,
   type InsertSupplier,
   type InsertWarehouse,
+  type InsertReorderRequest,
+  type InsertStockMovement,
+  type InsertActivityLog,
+  type InsertPurchaseRequisition,
+  type InsertPurchaseRequisitionItem,
+  type InsertPurchaseOrder,
+  type InsertPurchaseOrderItem,
 } from "@shared/schema";
 import { db, pool } from "./db";
 
@@ -106,6 +120,7 @@ async function getOrCreateDefaultWarehouse(): Promise<number> {
       .update(warehouses)
       .set({ isDefault: true, updatedAt: new Date() })
       .where(eq(warehouses.id, mainWarehouse.id));
+    await ensureSecondaryWarehouse();
     return mainWarehouse.id;
   }
 
@@ -121,8 +136,25 @@ async function getOrCreateDefaultWarehouse(): Promise<number> {
   const [createdWarehouse] = await db.insert(warehouses).values(warehousePayload).returning({
     id: warehouses.id,
   });
-
+  await ensureSecondaryWarehouse();
   return createdWarehouse.id;
+}
+
+async function ensureSecondaryWarehouse(): Promise<void> {
+  const [existing] = await db
+    .select({ id: warehouses.id })
+    .from(warehouses)
+    .where(eq(warehouses.name, "Secondary Warehouse"))
+    .limit(1);
+  if (existing) return;
+  await db.insert(warehouses).values({
+    name: "Secondary Warehouse",
+    location: "Site B",
+    address: "200 Distribution Rd",
+    contactPerson: "Site B Manager",
+    contactPhone: "+1-555-0200",
+    isDefault: false,
+  });
 }
 
 async function ensureCategories(): Promise<Map<string, number>> {
@@ -334,6 +366,117 @@ async function ensureInventoryItems(
   );
 }
 
+async function ensureActivityLogs(): Promise<void> {
+  const count = await db.select().from(activityLogs).limit(1);
+  if (count.length > 0) return;
+  const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.username, "admin")).limit(1);
+  const userId = admin?.id ?? 1;
+  const logs: InsertActivityLog[] = [
+    { action: "System initialized", description: "Demo data seeded", userId, referenceType: "system", referenceId: null },
+    { action: "Inventory loaded", description: "Sample inventory items loaded for testing", userId, referenceType: "inventory", referenceId: null },
+    { action: "Categories created", description: "Default categories added", userId, referenceType: "category", referenceId: null },
+    { action: "Suppliers added", description: "Default suppliers configured", userId, referenceType: "supplier", referenceId: null },
+    { action: "Warehouses configured", description: "Main and secondary warehouses set up", userId, referenceType: "warehouse", referenceId: null },
+  ];
+  for (const log of logs) {
+    await db.insert(activityLogs).values(log);
+  }
+}
+
+async function ensureReorderRequests(supplierMap: Map<string, number>): Promise<void> {
+  const existing = await db.select().from(reorderRequests).limit(1);
+  if (existing.length > 0) return;
+  const items = await db.select({ id: inventoryItems.id }).from(inventoryItems).limit(4);
+  const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.username, "admin")).limit(1);
+  const [mainWh] = await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.name, "Main Warehouse")).limit(1);
+  const supplierId = supplierMap.get("Tech Solutions Inc.") ?? null;
+  const warehouseId = mainWh?.id ?? null;
+  const requestorId = admin?.id ?? null;
+  const reqs: InsertReorderRequest[] = [
+    { requestNumber: "RO-DEMO-001", itemId: items[0]?.id ?? 1, quantity: 10, supplierId, warehouseId, requestorId, status: "PENDING" },
+    { requestNumber: "RO-DEMO-002", itemId: items[1]?.id ?? 2, quantity: 5, supplierId, warehouseId, requestorId, status: "APPROVED" },
+    { requestNumber: "RO-DEMO-003", itemId: items[2]?.id ?? 3, quantity: 20, supplierId, warehouseId, requestorId, status: "PENDING" },
+  ];
+  for (const r of reqs) {
+    await db.insert(reorderRequests).values(r);
+  }
+}
+
+async function ensureStockMovements(): Promise<void> {
+  const existing = await db.select().from(stockMovements).limit(1);
+  if (existing.length > 0) return;
+  const items = await db.select({ id: inventoryItems.id }).from(inventoryItems).limit(3);
+  const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.username, "admin")).limit(1);
+  const whs = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
+  const userId = admin?.id ?? null;
+  const movements: InsertStockMovement[] = [
+    { itemId: items[0]?.id ?? 1, type: "RECEIPT", quantity: 15, userId, notes: "Demo receipt", previousQuantity: 0, newQuantity: 15 },
+    { itemId: items[1]?.id ?? 2, type: "ADJUSTMENT", quantity: -2, userId, notes: "Demo adjustment", previousQuantity: 10, newQuantity: 8 },
+    { itemId: items[2]?.id ?? 3, type: "RECEIPT", quantity: 30, userId, notes: "Demo restock", previousQuantity: 20, newQuantity: 50 },
+  ];
+  if (whs.length >= 2) {
+    movements.push({
+      itemId: items[0]?.id ?? 1,
+      type: "TRANSFER",
+      quantity: 5,
+      userId,
+      notes: "Demo transfer",
+      sourceWarehouseId: whs[0].id,
+      destinationWarehouseId: whs[1].id,
+      previousQuantity: 15,
+      newQuantity: 10,
+    });
+  }
+  for (const m of movements) {
+    await db.insert(stockMovements).values(m);
+  }
+}
+
+async function ensurePurchaseRequisitionsAndOrders(supplierMap: Map<string, number>): Promise<void> {
+  const existingPr = await db.select().from(purchaseRequisitions).limit(1);
+  if (existingPr.length > 0) return;
+  const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.username, "admin")).limit(1);
+  const items = await db.select({ id: inventoryItems.id, price: inventoryItems.price }).from(inventoryItems).limit(2);
+  const supId = supplierMap.get("Tech Solutions Inc.") ?? (await db.select({ id: suppliers.id }).from(suppliers).limit(1))[0]?.id ?? 1;
+  const reqNum = `REQ-${Date.now()}-001`;
+  const [pr] = await db.insert(purchaseRequisitions).values({
+    requisitionNumber: reqNum,
+    requestorId: admin?.id ?? 1,
+    status: "APPROVED",
+    notes: "Demo requisition for testing",
+    requiredDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    supplierId: supId,
+    totalAmount: (Number(items[0]?.price) || 100) * 2 + (Number(items[1]?.price) || 50) * 1,
+    approverId: admin?.id ?? 1,
+    approvalDate: new Date(),
+  }).returning({ id: purchaseRequisitions.id });
+  if (pr && items.length >= 2) {
+    await db.insert(purchaseRequisitionItems).values([
+      { requisitionId: pr.id, itemId: items[0].id, quantity: 2, unitPrice: Number(items[0].price) || 100, totalPrice: (Number(items[0].price) || 100) * 2 },
+      { requisitionId: pr.id, itemId: items[1].id, quantity: 1, unitPrice: Number(items[1].price) || 50, totalPrice: Number(items[1].price) || 50 },
+    ]);
+  }
+  const existingPo = await db.select().from(purchaseOrders).limit(1);
+  if (existingPo.length > 0) return;
+  const poNum = `PO-${Date.now()}-001`;
+  const totalAmount = (Number(items[0]?.price) || 100) * 3 + (Number(items[1]?.price) || 50) * 2;
+  const [po] = await db.insert(purchaseOrders).values({
+    orderNumber: poNum,
+    supplierId: supId,
+    status: "SENT",
+    orderDate: new Date(),
+    expectedDeliveryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    totalAmount,
+    paymentStatus: "UNPAID",
+  }).returning({ id: purchaseOrders.id });
+  if (po && items.length >= 2) {
+    await db.insert(purchaseOrderItems).values([
+      { orderId: po.id, itemId: items[0].id, quantity: 3, unitPrice: Number(items[0].price) || 100, totalPrice: (Number(items[0].price) || 100) * 3, receivedQuantity: 0 },
+      { orderId: po.id, itemId: items[1].id, quantity: 2, unitPrice: Number(items[1].price) || 50, totalPrice: (Number(items[1].price) || 50) * 2, receivedQuantity: 0 },
+    ]);
+  }
+}
+
 export async function getDemoDataSummary(): Promise<DemoDataSummary> {
   const [usersCount] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -383,6 +526,10 @@ export async function seedDatabase(): Promise<DemoDataSummary> {
   await ensureAdminUser();
   await ensureDemoUsers();
   await ensureInventoryItems(defaultWarehouseId, categoryMap, supplierMap);
+  await ensureActivityLogs();
+  await ensureReorderRequests(supplierMap);
+  await ensureStockMovements();
+  await ensurePurchaseRequisitionsAndOrders(supplierMap);
 
   return getDemoDataSummary();
 }

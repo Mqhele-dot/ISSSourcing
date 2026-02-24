@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, requestJson } from "@/lib/queryClient";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Archive, AlertTriangle, ShoppingCart, DollarSign, Plus, FileDown, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,8 +32,21 @@ export default function Dashboard() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [, setLocation] = useLocation();
+  const [location] = useLocation();
   const { toast } = useToast();
+
+  // When navigating to /dashboard#analytics (e.g. from sidebar "Analytics"), scroll to section
+  const scrollToAnalytics = () => {
+    if (typeof window !== "undefined" && window.location.hash === "#analytics") {
+      const el = document.getElementById("analytics");
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+  useEffect(() => {
+    scrollToAnalytics();
+    window.addEventListener("hashchange", scrollToAnalytics);
+    return () => window.removeEventListener("hashchange", scrollToAnalytics);
+  }, [location]);
 
   // Fetch inventory stats (primary query for page-level loading/error)
   const {
@@ -362,8 +375,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stock use & value charts */}
-      <div className="mt-8 mb-6">
+      {/* Stock use & value charts – analytics section start (sidebar "Analytics" scrolls here) */}
+      <div id="analytics" className="mt-8 mb-6 scroll-mt-6">
         <h3 className="text-xl font-semibold mb-4 text-neutral-900 dark:text-white">
           Stock Use & Value
         </h3>
@@ -384,7 +397,7 @@ export default function Dashboard() {
         <CustomGraphBuilder />
       </div>
 
-      {/* Analytics Section */}
+      {/* Analytics & Insights */}
       <div className="mt-8 mb-6">
         <h3 className="text-xl font-semibold mb-4 text-neutral-900 dark:text-white">
           Analytics & Insights

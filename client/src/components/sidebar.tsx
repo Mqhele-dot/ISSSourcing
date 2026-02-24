@@ -5,6 +5,7 @@ import { useTheme } from "@/components/theme-provider";
 import {
   Activity,
   Archive,
+  BarChart2,
   Building,
   Camera,
   FileText,
@@ -130,6 +131,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             <SectionTitle>Overview</SectionTitle>
             <NavItem path="/" icon={<Home className="h-5 w-5" />} helpTitle="Home" helpDescription="Landing page and quick overview of the app.">Home</NavItem>
             <NavItem path="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} helpTitle="Dashboard" helpDescription="Overview of inventory status, stats, charts, and recent orders.">Dashboard</NavItem>
+            <NavItem path="/dashboard#analytics" icon={<BarChart2 className="h-5 w-5" />} helpTitle="Analytics" helpDescription="Charts, top items, inventory value, and custom graphs.">Analytics</NavItem>
 
             <SectionTitle>Inventory</SectionTitle>
             <NavItem path="/inventory" icon={<Archive className="h-5 w-5" />} helpTitle="Inventory" helpDescription="Manage products, stock levels, and item details.">Inventory</NavItem>
