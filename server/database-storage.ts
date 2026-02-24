@@ -1370,27 +1370,31 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]> {
-    return this.memStorage.getWarehouseInventory(warehouseId);
+    return db.select().from(warehouseInventory).where(eq(warehouseInventory.warehouseId, warehouseId));
   }
   
   async getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined> {
-    return this.memStorage.getWarehouseInventoryItem(warehouseId, itemId);
+    const [row] = await db.select().from(warehouseInventory).where(and(eq(warehouseInventory.warehouseId, warehouseId), eq(warehouseInventory.itemId, itemId)));
+    return row;
   }
   
   async getItemWarehouseInventory(itemId: number): Promise<WarehouseInventory[]> {
-    return this.memStorage.getItemWarehouseInventory(itemId);
+    return db.select().from(warehouseInventory).where(eq(warehouseInventory.itemId, itemId));
   }
   
-  async createWarehouseInventory(warehouseInventory: InsertWarehouseInventory): Promise<WarehouseInventory> {
-    return this.memStorage.createWarehouseInventory(warehouseInventory);
+  async createWarehouseInventory(wi: InsertWarehouseInventory): Promise<WarehouseInventory> {
+    const [created] = await db.insert(warehouseInventory).values({ ...wi, updatedAt: new Date() }).returning();
+    return created;
   }
   
-  async updateWarehouseInventory(id: number, warehouseInventory: Partial<InsertWarehouseInventory>): Promise<WarehouseInventory | undefined> {
-    return this.memStorage.updateWarehouseInventory(id, warehouseInventory);
+  async updateWarehouseInventory(id: number, wi: Partial<InsertWarehouseInventory>): Promise<WarehouseInventory | undefined> {
+    const [updated] = await db.update(warehouseInventory).set({ ...wi, updatedAt: new Date() }).where(eq(warehouseInventory.id, id)).returning();
+    return updated;
   }
   
   async deleteWarehouseInventory(id: number): Promise<boolean> {
-    return this.memStorage.deleteWarehouseInventory(id);
+    const result = await db.delete(warehouseInventory).where(eq(warehouseInventory.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async getAllStockMovements(): Promise<StockMovement[]> {
@@ -1416,7 +1420,36 @@ export class DatabaseStorage implements IStorage {
   }
   
   async transferStock(sourceWarehouseId: number, destinationWarehouseId: number, itemId: number, quantity: number, userId?: number, reason?: string): Promise<StockMovement> {
-    return this.memStorage.transferStock(sourceWarehouseId, destinationWarehouseId, itemId, quantity, userId, reason);
+    const sourceWarehouse = await this.getWarehouse(sourceWarehouseId);
+    if (!sourceWarehouse) throw new Error("Source warehouse not found");
+    const destinationWarehouse = await this.getWarehouse(destinationWarehouseId);
+    if (!destinationWarehouse) throw new Error("Destination warehouse not found");
+    const item = await this.getInventoryItem(itemId);
+    if (!item) throw new Error("Inventory item not found");
+    const sourceInv = await this.getWarehouseInventoryItem(sourceWarehouseId, itemId);
+    if (!sourceInv || (sourceInv.quantity ?? 0) < quantity) throw new Error("Insufficient quantity in source warehouse");
+    await this.updateWarehouseInventory(sourceInv.id, { quantity: (sourceInv.quantity ?? 0) - quantity });
+    let destInv = await this.getWarehouseInventoryItem(destinationWarehouseId, itemId);
+    if (destInv) {
+      await this.updateWarehouseInventory(destInv.id, { quantity: (destInv.quantity ?? 0) + quantity });
+    } else {
+      await this.createWarehouseInventory({ warehouseId: destinationWarehouseId, itemId, quantity, updatedAt: new Date() });
+    }
+    const notes = reason
+      ? `Transfer from ${sourceWarehouse.name} to ${destinationWarehouse.name}: ${reason}`
+      : `Transfer from ${sourceWarehouse.name} to ${destinationWarehouse.name}`;
+    const [movement] = await db.insert(stockMovements).values({
+      itemId,
+      quantity,
+      type: "TRANSFER",
+      sourceWarehouseId,
+      destinationWarehouseId,
+      userId: userId ?? null,
+      notes,
+      previousQuantity: sourceInv.quantity ?? 0,
+      newQuantity: (sourceInv.quantity ?? 0) - quantity,
+    }).returning();
+    return movement;
   }
   
   async getAllReorderRequests(): Promise<ReorderRequest[]> {
@@ -1464,7 +1497,42 @@ export class DatabaseStorage implements IStorage {
   }
   
   async convertReorderRequestToRequisition(id: number): Promise<PurchaseRequisition | undefined> {
-    return this.memStorage.convertReorderRequestToRequisition(id);
+    const request = await this.getReorderRequest(id);
+    if (!request) return undefined;
+    const item = await this.getInventoryItem(request.itemId);
+    if (!item) return undefined;
+    const unitPrice = Number(item.cost ?? item.price ?? 0);
+    const totalAmount = unitPrice * request.quantity;
+    const requisitionNumber = `REQ-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+    const requisitionData: InsertPurchaseRequisition = {
+      requisitionNumber,
+      requestorId: request.requestorId ?? undefined,
+      status: PurchaseRequisitionStatus.PENDING,
+      notes: `Created from reorder request ${request.requestNumber}. ${request.notes ?? ""}`.trim(),
+      supplierId: request.supplierId ?? item.supplierId ?? undefined,
+      totalAmount,
+    };
+    const requisitionItemData: Omit<InsertPurchaseRequisitionItem, "requisitionId"> = {
+      itemId: request.itemId,
+      quantity: request.quantity,
+      unitPrice,
+      totalPrice: totalAmount,
+      notes: `From reorder request ${request.requestNumber}`,
+    };
+    const requisition = await this.createPurchaseRequisition(requisitionData, [requisitionItemData]);
+    await this.updateReorderRequest(id, {
+      status: "CONVERTED",
+      convertedToRequisition: true,
+      requisitionId: requisition.id,
+    });
+    await this.createActivityLog({
+      action: "Reorder Request Converted",
+      description: `Converted reorder request ${request.requestNumber} to purchase requisition ${requisition.requisitionNumber}`,
+      referenceType: "reorder_request",
+      referenceId: id,
+      userId: request.requestorId ?? undefined,
+    });
+    return requisition;
   }
   
   async getReorderRequestWithDetails(id: number): Promise<(ReorderRequest & { item: InventoryItem; requestor?: User; approver?: User; }) | undefined> {
