@@ -1,5 +1,6 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
+import { requestJson } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -24,12 +25,8 @@ interface StockUsageData {
 
 export function StockUseChart() {
   const { data, isLoading, error } = useQuery({
-    queryKey: ["/api/analytics/stock-usage"],
-    queryFn: async () => {
-      const response = await fetch("/api/analytics/stock-usage?limit=10");
-      if (!response.ok) throw new Error("Failed to fetch stock usage");
-      return response.json() as Promise<StockUsageData>;
-    },
+    queryKey: ["/api/analytics/stock-usage?limit=10"],
+    queryFn: () => requestJson<StockUsageData>("GET", "/api/analytics/stock-usage?limit=10"),
   });
 
   const chartData =

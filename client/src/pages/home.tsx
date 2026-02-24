@@ -290,6 +290,9 @@ export default function HomePage() {
                     <Button asChild size="sm" variant="outline">
                       <Link href={walkthrough.links.logistics}>View logistics</Link>
                     </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/dashboard">Custom graphs &amp; analytics</Link>
+                    </Button>
                     {walkthrough.links.exception ? (
                       <Button asChild size="sm">
                         <Link href={walkthrough.links.exception}>Open exception</Link>

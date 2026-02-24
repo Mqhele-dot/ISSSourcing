@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format } from "date-fns";
+import { apiRequest, requestJson } from "@/lib/queryClient";
 import { downloadFile, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { type ReportFilter, type Category, type InventoryItem, type InventoryStats, type Warehouse, type Supplier, DocumentType } from "@shared/schema";
@@ -30,23 +31,6 @@ export default function Reports() {
   const [filter, setFilter] = useState<ReportFilter>({});
   const [exporting, setExporting] = useState(false);
 
-  const unwrapApiData = async <T,>(response: Response): Promise<T> => {
-    if (!response.ok) {
-      throw new Error(`Request failed (${response.status})`);
-    }
-
-    const raw = await response.json();
-    if (raw && typeof raw === "object" && "ok" in raw) {
-      const envelope = raw as { ok: boolean; data?: T; error?: { message?: string } };
-      if (envelope.ok) {
-        return envelope.data as T;
-      }
-      throw new Error(envelope.error?.message || "Request failed");
-    }
-
-    return raw as T;
-  };
-
   // Fetch inventory items (primary query for page-level loading/error; normalize to array)
   const {
     data: inventoryItems,
@@ -57,16 +41,8 @@ export default function Reports() {
   } = useQuery({
     queryKey: ["/api/inventory"],
     queryFn: async () => {
-      const response = await fetch("/api/inventory", { credentials: "include" });
-      if (!response.ok) {
-        throw new Error("Failed to fetch inventory items");
-      }
-      const raw = await response.json();
-      if (raw && typeof raw === "object" && "ok" in raw && (raw as { data?: unknown }).data !== undefined) {
-        const data = (raw as { data: unknown }).data;
-        return Array.isArray(data) ? data : [];
-      }
-      return Array.isArray(raw) ? raw : [];
+      const raw = await requestJson<InventoryItem[] | { data: InventoryItem[] }>("GET", "/api/inventory");
+      return Array.isArray(raw) ? raw : (raw as { data?: InventoryItem[] })?.data ?? [];
     },
   });
 
@@ -74,8 +50,7 @@ export default function Reports() {
   const { data: lowStockItems, isLoading: lowStockLoading } = useQuery({
     queryKey: ["/api/inventory/low-stock"],
     queryFn: async () => {
-      const response = await fetch("/api/inventory/low-stock", { credentials: "include" });
-      const raw = await unwrapApiData<unknown>(response);
+      const raw = await requestJson<InventoryItem[]>("GET", "/api/inventory/low-stock");
       return Array.isArray(raw) ? raw : [];
     },
   });
@@ -84,8 +59,7 @@ export default function Reports() {
   const { data: categories } = useQuery({
     queryKey: ["/api/categories"],
     queryFn: async () => {
-      const response = await fetch("/api/categories", { credentials: "include" });
-      const raw = await unwrapApiData<unknown>(response);
+      const raw = await requestJson<Category[]>("GET", "/api/categories");
       return Array.isArray(raw) ? raw : [];
     },
   });
@@ -94,8 +68,7 @@ export default function Reports() {
   const { data: stats } = useQuery({
     queryKey: ["/api/inventory/stats"],
     queryFn: async () => {
-      const response = await fetch("/api/inventory/stats", { credentials: "include" });
-      const rawStats = await unwrapApiData<Partial<InventoryStats>>(response);
+      const rawStats = await requestJson<Partial<InventoryStats>>("GET", "/api/inventory/stats");
       return {
         totalItems: Number(rawStats?.totalItems ?? 0),
         lowStockItems: Number(rawStats?.lowStockItems ?? 0),
@@ -104,13 +77,12 @@ export default function Reports() {
       } as InventoryStats;
     },
   });
-  
+
   // Fetch warehouses for filtering (normalize to array)
   const { data: warehouses } = useQuery({
     queryKey: ["/api/warehouses"],
     queryFn: async () => {
-      const response = await fetch("/api/warehouses", { credentials: "include" });
-      const raw = await unwrapApiData<unknown>(response);
+      const raw = await requestJson<Warehouse[]>("GET", "/api/warehouses");
       return Array.isArray(raw) ? raw : [];
     },
   });
@@ -119,8 +91,7 @@ export default function Reports() {
   const { data: suppliers } = useQuery({
     queryKey: ["/api/suppliers"],
     queryFn: async () => {
-      const response = await fetch("/api/suppliers", { credentials: "include" });
-      const raw = await unwrapApiData<unknown>(response);
+      const raw = await requestJson<Supplier[]>("GET", "/api/suppliers");
       return Array.isArray(raw) ? raw : [];
     },
   });
@@ -177,13 +148,7 @@ export default function Reports() {
       if (queryParams.toString()) {
         url += `?${queryParams.toString()}`;
       }
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to export ${exportFormat} report`);
-      }
-      
+      const response = await apiRequest("GET", url);
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       

@@ -46,6 +46,8 @@ const CHART_TYPES = [
 type DataSourceId = (typeof DATA_SOURCES)[number]["id"];
 type ChartTypeId = (typeof CHART_TYPES)[number]["id"];
 
+import { requestJson } from "@/lib/queryClient";
+
 const CHART_COLORS = [
   "hsl(var(--chart-1, 220 70% 50%))",
   "hsl(var(--chart-2, 160 60% 45%))",
@@ -55,55 +57,36 @@ const CHART_COLORS = [
   "hsl(var(--primary))",
 ];
 
-function unwrap<T>(raw: unknown): T {
-  if (raw && typeof raw === "object" && "ok" in (raw as object)) {
-    const envelope = raw as { ok: boolean; data?: T };
-    return envelope.data as T;
-  }
-  return raw as T;
-}
-
 export function CustomGraphBuilder() {
   const [dataSource, setDataSource] = useState<DataSourceId>("value-by-category");
   const [chartType, setChartType] = useState<ChartTypeId>("bar");
   const [limit, setLimit] = useState(10);
 
-  const { data: inventory, isLoading: invLoading } = useQuery({
+  const { data: inventoryData, isLoading: invLoading } = useQuery({
     queryKey: ["/api/inventory"],
-    queryFn: async () => {
-      const res = await fetch("/api/inventory", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch inventory");
-      return unwrap<InventoryItem[]>(await res.json());
-    },
+    queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory"),
   });
+  const inventory = Array.isArray(inventoryData) ? inventoryData : [];
 
-  const { data: categories, isLoading: catLoading } = useQuery({
+  const { data: categoriesData, isLoading: catLoading } = useQuery({
     queryKey: ["/api/categories"],
-    queryFn: async () => {
-      const res = await fetch("/api/categories");
-      if (!res.ok) throw new Error("Failed to fetch categories");
-      return unwrap<Category[]>(await res.json());
-    },
+    queryFn: () => requestJson<Category[]>("GET", "/api/categories"),
   });
+  const categories = Array.isArray(categoriesData) ? categoriesData : [];
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/inventory/stats"],
-    queryFn: async () => {
-      const res = await fetch("/api/inventory/stats", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch stats");
-      return unwrap<InventoryStats>(await res.json());
-    },
+    queryFn: () => requestJson<InventoryStats>("GET", "/api/inventory/stats"),
   });
 
-  const { data: stockUsage, isLoading: usageLoading } = useQuery({
+  const { data: stockUsageData, isLoading: usageLoading } = useQuery({
     queryKey: ["/api/analytics/stock-usage", limit],
     queryFn: async () => {
-      const res = await fetch(`/api/analytics/stock-usage?limit=${limit}`);
-      if (!res.ok) throw new Error("Failed to fetch stock usage");
-      const json = await res.json();
-      return (json?.byItem ?? []) as { itemId: number; itemName: string; quantityUsed: number }[];
+      const json = await requestJson<{ byItem?: { itemId: number; itemName: string; quantityUsed: number }[] }>("GET", `/api/analytics/stock-usage?limit=${limit}`);
+      return json?.byItem ?? [];
     },
   });
+  const stockUsage = Array.isArray(stockUsageData) ? stockUsageData : [];
 
   const chartData = useMemo(() => {
     const items = Array.isArray(inventory) ? inventory : [];

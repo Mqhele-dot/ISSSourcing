@@ -7,6 +7,7 @@ import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TutorialButton } from '@/components/tutorial/tutorial-button';
 import { Header } from './header';
+import { FallbackBanner } from '@/components/fallback-banner';
 
 interface DesktopLayoutProps {
   children: React.ReactNode;
@@ -32,6 +33,9 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
         <div className="flex-1 relative flex flex-col">
           {/* Header with profile icon */}
           <Header />
+
+          {/* Degraded mode banner when operational fallback is active */}
+          <FallbackBanner />
           
           {/* Mobile menu button */}
           <div className="block md:hidden absolute top-4 left-4 z-30">

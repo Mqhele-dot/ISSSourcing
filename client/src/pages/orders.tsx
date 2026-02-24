@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import { ArrowLeft, CheckCircle2, Printer, Send, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { formatMutationError } from "@/lib/queryClient";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { Can } from "@/components/auth/can";
@@ -177,9 +178,14 @@ function PurchaseOrdersList() {
           </>
         }
         right={
-          <Button variant="outline" onClick={refetch}>
-            Refresh
-          </Button>
+          <>
+            <Button asChild variant="default" size="sm">
+              <Link href="/reorder">Create reorder request</Link>
+            </Button>
+            <Button variant="outline" onClick={refetch}>
+              Refresh
+            </Button>
+          </>
         }
       />
 
@@ -189,7 +195,17 @@ function PurchaseOrdersList() {
         data={data}
         isEmpty={(orders) => (Array.isArray(orders) ? orders : []).length === 0}
         emptyTitle="No purchase orders found"
-        emptyDescription="Try broadening your filters."
+        emptyDescription="Create a reorder request from low stock, or run the demo to seed data."
+        emptyAction={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="default" size="sm">
+              <Link href="/reorder">Create reorder request</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/">Run demo / Overview</Link>
+            </Button>
+          </div>
+        }
         fallback={fallback}
         onRetry={refetch}
       >
@@ -263,17 +279,11 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
       }
       await refetch();
     } catch (statusError) {
-      console.error("Status update failed:", statusError);
       const err = statusError as Error & { status?: number };
-      const msg =
-        err.status === 503
-          ? "Service unavailable (operations degraded)"
-          : err.status === 408 || (err.message && String(err.message).toLowerCase().includes("timeout"))
-            ? "Timed out — DB may be down"
-            : err.message || "Status update failed";
+      const actionLabel = action === "approve" ? "Approve PO" : "Send PO";
       toast({
         title: "Update failed",
-        description: msg,
+        description: formatMutationError(actionLabel, "POST", `/api/purchase/orders/${po}/transition`, err),
         variant: "destructive",
       });
     } finally {
@@ -297,17 +307,10 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
       setReceiveState({});
       await refetch();
     } catch (receiveError) {
-      console.error("Receive failed:", receiveError);
       const err = receiveError as Error & { status?: number };
-      const msg =
-        err.status === 503
-          ? "Service unavailable (operations degraded)"
-          : err.status === 408 || (err.message && String(err.message).toLowerCase().includes("timeout"))
-            ? "Timed out — DB may be down"
-            : err.message || "Receive failed";
       toast({
         title: "Receive failed",
-        description: msg,
+        description: formatMutationError("Receive PO", "POST", `/api/purchase/orders/${po}/receive`, err),
         variant: "destructive",
       });
     } finally {

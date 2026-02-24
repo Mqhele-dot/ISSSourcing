@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
@@ -152,7 +152,17 @@ function ShipmentListView() {
         data={data}
         isEmpty={(shipments) => (Array.isArray(shipments) ? shipments : []).length === 0}
         emptyTitle="No shipments found"
-        emptyDescription="Try broadening your filters."
+        emptyDescription="Shipments are created from purchase orders. Create a PO or run the demo."
+        emptyAction={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="default" size="sm">
+              <Link href="/purchase">View purchase orders</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/">Overview / Demo</Link>
+            </Button>
+          </div>
+        }
         fallback={fallback}
         onRetry={refreshNow}
       >

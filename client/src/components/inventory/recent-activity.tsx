@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { requestJson } from "@/lib/queryClient";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExternalLink, ShoppingCart, User, Package } from "lucide-react";
 import { Link } from "wouter";
@@ -8,14 +9,8 @@ import { ActivityLog } from "@shared/schema";
 
 export default function RecentActivity() {
   const { data: activityLogs, isLoading } = useQuery({
-    queryKey: ["/api/activity-logs"],
-    queryFn: async () => {
-      const response = await fetch("/api/activity-logs?limit=3");
-      if (!response.ok) {
-        throw new Error("Failed to fetch activity logs");
-      }
-      return response.json() as Promise<ActivityLog[]>;
-    },
+    queryKey: ["/api/activity-logs?limit=3"],
+    queryFn: () => requestJson<ActivityLog[]>("GET", "/api/activity-logs?limit=3"),
   });
 
   if (isLoading) {

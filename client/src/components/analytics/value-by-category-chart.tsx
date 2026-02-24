@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { requestJson } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -16,27 +17,17 @@ import type { InventoryItem } from "@shared/schema";
 import type { Category } from "@shared/schema";
 
 export function ValueByCategoryChart() {
-  const { data: items, isLoading: itemsLoading } = useQuery({
+  const { data: itemsData, isLoading: itemsLoading } = useQuery({
     queryKey: ["/api/inventory"],
-    queryFn: async () => {
-      const res = await fetch("/api/inventory", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch inventory");
-      const raw = await res.json();
-      const data = raw?.ok !== undefined ? raw.data : raw;
-      return (Array.isArray(data) ? data : []) as InventoryItem[];
-    },
+    queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory"),
   });
+  const items = Array.isArray(itemsData) ? itemsData : [];
 
-  const { data: categories } = useQuery({
+  const { data: categoriesData } = useQuery({
     queryKey: ["/api/categories"],
-    queryFn: async () => {
-      const res = await fetch("/api/categories");
-      if (!res.ok) throw new Error("Failed to fetch categories");
-      const raw = await res.json();
-      const data = raw?.ok !== undefined ? raw.data : raw;
-      return (Array.isArray(data) ? data : []) as Category[];
-    },
+    queryFn: () => requestJson<Category[]>("GET", "/api/categories"),
   });
+  const categories = Array.isArray(categoriesData) ? categoriesData : [];
 
   const chartData = useMemo(() => {
     if (!items?.length || !categories?.length) return [];

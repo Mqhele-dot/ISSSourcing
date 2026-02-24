@@ -8,6 +8,7 @@ import { CalendarIcon, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useDateRangeParams } from '@/hooks/use-date-range-params';
+import { requestJson } from '@/lib/queryClient';
 
 interface DemandForecastPoint {
   date: string;
@@ -41,13 +42,7 @@ export function DemandForecast({ itemId, itemName }: DemandForecastProps) {
   // Fetch forecast data
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: [`/api/analytics/demand-forecast/${itemId}`, queryParams.toString()],
-    queryFn: async () => {
-      const response = await fetch(`/api/analytics/demand-forecast/${itemId}?${queryParams.toString()}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch demand forecast');
-      }
-      return response.json() as Promise<DemandForecastPoint[]>;
-    },
+    queryFn: () => requestJson<DemandForecastPoint[]>("GET", `/api/analytics/demand-forecast/${itemId}?${queryParams.toString()}`),
   });
 
   const handleViewChange = (newView: '3m' | '6m' | '12m') => {

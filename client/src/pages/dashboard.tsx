@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest, requestJson } from "@/lib/queryClient";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Archive, AlertTriangle, ShoppingCart, DollarSign, Plus, FileDown, Filter } from "lucide-react";
@@ -34,21 +35,6 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const unwrapApiData = async <T,>(response: Response): Promise<T> => {
-    if (!response.ok) {
-      throw new Error(`Request failed (${response.status})`);
-    }
-    const raw = await response.json();
-    if (raw && typeof raw === "object" && "ok" in raw) {
-      const envelope = raw as { ok: boolean; data?: T; error?: { message?: string } };
-      if (envelope.ok) {
-        return envelope.data as T;
-      }
-      throw new Error(envelope.error?.message || "Request failed");
-    }
-    return raw as T;
-  };
-
   // Fetch inventory stats (primary query for page-level loading/error)
   const {
     data: stats,
@@ -58,31 +44,23 @@ export default function Dashboard() {
     refetch: refetchStats,
   } = useQuery({
     queryKey: ["/api/inventory/stats"],
-    queryFn: async () => {
-      const response = await fetch("/api/inventory/stats", { credentials: "include" });
-      return unwrapApiData<InventoryStats>(response);
-    },
+    queryFn: () => requestJson<InventoryStats>("GET", "/api/inventory/stats"),
   });
 
   // Fetch categories
   const { data: categories } = useQuery({
     queryKey: ["/api/categories"],
-    queryFn: async () => {
-      const response = await fetch("/api/categories");
-      return unwrapApiData<Category[]>(response);
-    },
+    queryFn: () => requestJson<Category[]>("GET", "/api/categories"),
   });
 
   // Fetch inventory items
   const { data: inventoryItems, isLoading: itemsLoading } = useQuery({
     queryKey: ["/api/inventory", selectedCategory],
     queryFn: async () => {
-      const endpoint = selectedCategory !== "all" 
+      const endpoint = selectedCategory !== "all"
         ? `/api/inventory?categoryId=${selectedCategory}`
         : "/api/inventory";
-      
-      const response = await fetch(endpoint);
-      return unwrapApiData<InventoryItem[]>(response);
+      return requestJson<InventoryItem[]>("GET", endpoint);
     },
   });
 
@@ -90,12 +68,7 @@ export default function Dashboard() {
   const handleExport = async (format: DocumentType) => {
     try {
       const url = `/api/export/inventory/${format}`;
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to export ${format} report`);
-      }
-      
+      const response = await apiRequest("GET", url);
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       

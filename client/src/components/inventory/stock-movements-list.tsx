@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { requestJson } from "@/lib/queryClient";
 import { StockMovementForm } from "./stock-movement-form";
 
 type StockMovement = {
@@ -88,13 +89,7 @@ export function StockMovementsList({ itemId, warehouseId, limit }: StockMovement
   // Fetch stock movements
   const { data: movements, isLoading } = useQuery({
     queryKey: [apiUrl],
-    queryFn: async () => {
-      const response = await fetch(apiUrl);
-      if (!response.ok) {
-        throw new Error("Failed to fetch stock movements");
-      }
-      return response.json() as Promise<StockMovement[]>;
-    },
+    queryFn: () => requestJson<StockMovement[]>("GET", apiUrl),
   });
   
   // Get movement type badge color

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Boxes, Download, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useToast } from "@/hooks/use-toast";
+import { requestJson } from "@/lib/queryClient";
 import { fetchInventory, type InventoryListItem } from "@/api/client";
 
 type Category = {
@@ -94,12 +95,8 @@ export default function InventoryPage() {
     refetch: refetchInventory,
   } = useAsyncResource(inventoryFetcher);
 
-  const categoriesFetcher = useCallback(async (): Promise<Category[]> => {
-    const response = await fetch("/api/categories", { credentials: "include" });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch categories (${response.status})`);
-    }
-    return (await response.json()) as Category[];
+  const categoriesFetcher = useCallback((): Promise<Category[]> => {
+    return requestJson<Category[]>("GET", "/api/categories");
   }, []);
 
   const {
@@ -253,7 +250,17 @@ export default function InventoryPage() {
         data={inventoryData}
         isEmpty={(items) => items.length === 0}
         emptyTitle="No inventory items found"
-        emptyDescription="Try broadening your filters or reset search criteria."
+        emptyDescription="Add items from the dashboard or run the demo to seed data."
+        emptyAction={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="default" size="sm">
+              <Link href="/dashboard">Add items (Dashboard)</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/">Overview / Demo</Link>
+            </Button>
+          </div>
+        }
         onRetry={refetchInventory}
       >
         {(items) => (

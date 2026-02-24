@@ -39,7 +39,7 @@ import {
   Clock, 
   AlertTriangle
 } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, formatMutationError, requestJson } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { type ReorderRequest, ReorderRequestStatus } from "@shared/schema";
 
@@ -58,13 +58,7 @@ export default function ReorderRequestsPage() {
   // Fetch all reorder requests
   const { data: reorderRequests, isLoading: requestsLoading } = useQuery({
     queryKey: ["/api/reorder-requests"],
-    queryFn: async () => {
-      const response = await fetch("/api/reorder-requests");
-      if (!response.ok) {
-        throw new Error("Failed to fetch reorder requests");
-      }
-      return response.json() as Promise<ReorderRequest[]>;
-    },
+    queryFn: () => requestJson<ReorderRequest[]>("GET", "/api/reorder-requests"),
   });
   
   // Approve request mutation
@@ -84,8 +78,8 @@ export default function ReorderRequestsPage() {
     },
     onError: (error) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to approve request",
+        title: "Approve request failed",
+        description: formatMutationError("Approve reorder request", "POST", "/api/reorder-requests/.../approve", error),
         variant: "destructive",
       });
     }
@@ -110,8 +104,8 @@ export default function ReorderRequestsPage() {
     },
     onError: (error) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to reject request",
+        title: "Reject request failed",
+        description: formatMutationError("Reject reorder request", "POST", "/api/reorder-requests/.../reject", error),
         variant: "destructive",
       });
     }
@@ -135,8 +129,8 @@ export default function ReorderRequestsPage() {
     },
     onError: (error) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to convert to requisition",
+        title: "Convert to requisition failed",
+        description: formatMutationError("Convert reorder request to requisition", "POST", "/api/reorder-requests/.../convert", error),
         variant: "destructive",
       });
     }
@@ -194,9 +188,7 @@ export default function ReorderRequestsPage() {
     const url = `/api/export/reorder-requests/${format}`;
     if (process.env.NODE_ENV === "development") console.debug("[Export]", url);
     try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Failed to export ${format}`);
-      
+      const response = await apiRequest("GET", url);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       

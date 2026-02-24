@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { formatCurrency } from '@/lib/utils';
+import { requestJson } from '@/lib/queryClient';
 
 interface InventoryValueItem {
   id: number;
@@ -23,13 +24,7 @@ export function InventoryValue() {
   // Fetch inventory value data
   const { data, isLoading, error } = useQuery({
     queryKey: ['/api/analytics/inventory-value'],
-    queryFn: async () => {
-      const response = await fetch('/api/analytics/inventory-value');
-      if (!response.ok) {
-        throw new Error('Failed to fetch inventory value data');
-      }
-      return response.json() as Promise<InventoryValueData>;
-    },
+    queryFn: () => requestJson<InventoryValueData>("GET", "/api/analytics/inventory-value"),
   });
 
   // Prepare data for the chart

@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { setFallbackState } from "./fallback-store";
 
 type ApiErrorEnvelope = {
   ok: false;
@@ -58,6 +59,85 @@ async function throwIfResNotOk(res: Response) {
 /** Slightly above server operational timeout (8s) so server fallback returns first */
 const REQUEST_TIMEOUT_MS = 12000;
 
+export type InvTrackMeta = { fallback?: string; endpoint?: string };
+
+/**
+ * Single central fetch: same timeout, credentials, envelope unwrap, and X-InvTrack-* / meta.
+ * Updates fallback store when response has fallback; clears store when response is ok with no fallback.
+ */
+export async function invTrackFetch<T>(
+  method: string,
+  url: string,
+  data?: unknown,
+): Promise<{ data: T; meta: InvTrackMeta }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: data != null ? { "Content-Type": "application/json" } : {},
+      body: data != null ? JSON.stringify(data) : undefined,
+      credentials: "include",
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
+
+  const headerFallback = res.headers.get("X-InvTrack-Fallback") ?? undefined;
+  const headerEndpoint = res.headers.get("X-InvTrack-Endpoint") ?? undefined;
+
+  if (!res.ok) {
+    const payload = await parseJsonOrText(res);
+    const msg =
+      isApiEnvelope(payload) && !payload.ok
+        ? `${payload.error.code ? `[${payload.error.code}] ` : ""}${payload.error.message}`
+        : typeof payload === "object" && payload !== null && "message" in payload && typeof (payload as { message?: unknown }).message === "string"
+          ? String((payload as { message: string }).message)
+          : typeof payload === "string" ? payload : res.statusText;
+    const err = new Error(`${res.status}: ${msg}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
+    return { data: undefined as T, meta: { fallback: headerFallback, endpoint: headerEndpoint } };
+  }
+
+  const payload = await parseJsonOrText(res);
+  const fallback = headerFallback ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { fallback?: string } }).meta?.fallback);
+  const endpoint = headerEndpoint ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { endpoint?: string } }).meta?.endpoint);
+  setFallbackState(fallback ?? null, endpoint ?? null);
+
+  if (isApiEnvelope<T>(payload)) {
+    if (payload.ok) {
+      const success = payload as ApiSuccessEnvelope<T>;
+      return {
+        data: success.data as T,
+        meta: {
+          fallback: success.meta?.fallback ?? headerFallback,
+          endpoint: headerEndpoint,
+        },
+      };
+    }
+    const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
+    throw new Error(`${codePrefix}${payload.error.message}`);
+  }
+
+  return {
+    data: payload as T,
+    meta: { fallback: headerFallback, endpoint: headerEndpoint },
+  };
+}
+
+/** Legacy: returns Response. Still uses timeout + credentials; sets fallback from X-InvTrack-* headers only. */
 export async function apiRequest(
   method: string,
   url: string,
@@ -73,6 +153,9 @@ export async function apiRequest(
       credentials: "include",
       signal: controller.signal,
     });
+    const headerFallback = res.headers.get("X-InvTrack-Fallback");
+    const headerEndpoint = res.headers.get("X-InvTrack-Endpoint");
+    setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
     await throwIfResNotOk(res);
     return res;
   } catch (err) {
@@ -85,13 +168,10 @@ export async function apiRequest(
   }
 }
 
-/** Run apiRequest and parse JSON. Use for APIs that return JSON bodies. Handles 204 No Content. */
+/** Preferred: single wrapper with envelope unwrap and meta. Use for all new code. */
 export async function requestJson<T>(method: string, url: string, data?: unknown): Promise<T> {
-  const res = await apiRequest(method, url, data);
-  if (res.status === 204 || res.headers.get("content-length") === "0") {
-    return undefined as T;
-  }
-  return (await res.json()) as T;
+  const { data: out } = await invTrackFetch<T>(method, url, data);
+  return out;
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
@@ -100,42 +180,32 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    let res: Response;
+    const url = queryKey[0] as string;
     try {
-      res = await fetch(queryKey[0] as string, {
-        credentials: "include",
-        signal: controller.signal,
-      });
+      const { data } = await invTrackFetch<T>("GET", url);
+      return data;
     } catch (err) {
-      clearTimeout(timeoutId);
-      if (err instanceof Error && err.name === "AbortError") {
-        throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+      const status = err && typeof err === "object" && "status" in err ? (err as { status: number }).status : undefined;
+      if (unauthorizedBehavior === "returnNull" && status === 401) {
+        return null;
       }
       throw err;
     }
-    clearTimeout(timeoutId);
-
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
-    }
-
-    await throwIfResNotOk(res);
-    const payload = await parseJsonOrText(res);
-    if (isApiEnvelope<T>(payload)) {
-      if (payload.ok) {
-        const success = payload as ApiSuccessEnvelope<T>;
-        if (success.meta?.fallback) {
-          return { data: success.data, meta: success.meta } as T;
-        }
-        return success.data as T;
-      }
-      const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
-      throw new Error(`${codePrefix}${payload.error.message}`);
-    }
-    return payload as T;
   };
+
+/**
+ * Format mutation error for consistent error toasts: action + endpoint + reason.
+ * Use in mutation onError: toast({ title: "Action failed", description: formatMutationError(...), variant: "destructive" }).
+ */
+export function formatMutationError(
+  action: string,
+  method: string,
+  url: string,
+  error: unknown,
+): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  return `${action} failed: ${method} ${url} — ${reason}`;
+}
 
 /** Unwrap operational list response that may include meta.fallback (timeout | db-error | degraded) */
 export function unwrapOperationalResponse<T>(

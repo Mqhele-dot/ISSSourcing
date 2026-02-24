@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import { ArrowLeft, Download } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
@@ -30,6 +30,7 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import { useToast } from "@/hooks/use-toast";
+import { formatMutationError } from "@/lib/queryClient";
 import {
   addExceptionComment,
   assignException,
@@ -193,7 +194,17 @@ function ExceptionListView() {
         data={data}
         isEmpty={(exceptions) => (Array.isArray(exceptions) ? exceptions : []).length === 0}
         emptyTitle="No exceptions found"
-        emptyDescription="No issues match the current filters."
+        emptyDescription="Exceptions are created from inventory issues or PO mismatches. Check inventory or run the demo."
+        emptyAction={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="default" size="sm">
+              <Link href="/inventory">View inventory</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/">Overview / Demo</Link>
+            </Button>
+          </div>
+        }
         fallback={fallback}
         onRetry={refreshNow}
       >
@@ -275,17 +286,10 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
       await action();
       await refetch();
     } catch (updateError) {
-      console.error("Exception update failed:", updateError);
       const err = updateError as Error & { status?: number };
-      const msg =
-        err.status === 503
-          ? "Service unavailable (operations degraded)"
-          : err.status === 408 || (err.message && String(err.message).toLowerCase().includes("timeout"))
-            ? "Timed out — DB may be down"
-            : err.message || "Exception update failed";
       toast({
         title: "Update failed",
-        description: msg,
+        description: formatMutationError("Exception update", "PATCH", `/api/exceptions/${exceptionId}`, err),
         variant: "destructive",
       });
     } finally {

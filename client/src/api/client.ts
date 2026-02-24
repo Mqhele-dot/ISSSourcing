@@ -1,6 +1,5 @@
-import {
-  apiRequest,
-} from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
+import { setFallbackState } from "@/lib/fallback-store";
 import { toastStore } from "@/lib/toast-store";
 import type {
   ActivityRecord,
@@ -131,10 +130,14 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
       ...init,
       signal: controller.signal,
     });
+    const headerFallback = response.headers.get("X-InvTrack-Fallback") ?? null;
+    const headerEndpoint = response.headers.get("X-InvTrack-Endpoint") ?? null;
     const payload = await parseJsonOrNull(response);
     if (isApiEnvelope<T>(payload)) {
       if (payload.ok) {
         const meta = (payload as { meta?: { fallback?: string } }).meta;
+        const fallback = headerFallback ?? meta?.fallback ?? null;
+        setFallbackState(fallback, headerEndpoint);
         return { data: payload.data as T, meta };
       }
       toastStore.push({
@@ -145,6 +148,7 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
       throw new ApiError(payload.error, response.status || 400);
     }
     if (!response.ok) {
+      setFallbackState(headerFallback, headerEndpoint);
       const fallbackMessage =
         typeof payload === "object" &&
         payload !== null &&
@@ -157,6 +161,7 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
         response.status,
       );
     }
+    setFallbackState(headerFallback, headerEndpoint);
     return { data: payload as T, meta: undefined };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {

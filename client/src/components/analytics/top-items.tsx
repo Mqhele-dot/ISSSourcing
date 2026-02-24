@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { ExternalLink } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { requestJson } from '@/lib/queryClient';
 import { type InventoryItem } from '@shared/schema';
 
 export function TopItems() {
@@ -31,13 +32,7 @@ export function TopItems() {
   // Fetch top items
   const { data, isLoading, error } = useQuery({
     queryKey: ['/api/analytics/top-items', queryParams.toString()],
-    queryFn: async () => {
-      const response = await fetch(`/api/analytics/top-items?${queryParams.toString()}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch top items');
-      }
-      return response.json() as Promise<InventoryItem[]>;
-    },
+    queryFn: () => requestJson<InventoryItem[]>("GET", `/api/analytics/top-items?${queryParams.toString()}`),
   });
 
   if (error) {

@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, requestJson } from "@/lib/queryClient";
 import { type Category, type InventoryItem, type InventoryItemForm, inventoryItemFormSchema } from "@shared/schema";
 
 interface ItemFormProps {
@@ -73,13 +73,7 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
   // Fetch categories
   const { data: categories } = useQuery({
     queryKey: ["/api/categories"],
-    queryFn: async () => {
-      const response = await fetch("/api/categories");
-      if (!response.ok) {
-        throw new Error("Failed to fetch categories");
-      }
-      return response.json() as Promise<Category[]>;
-    },
+    queryFn: () => requestJson<Category[]>("GET", "/api/categories"),
   });
 
   // Create or update item mutation

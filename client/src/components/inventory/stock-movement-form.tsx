@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, requestJson } from "@/lib/queryClient";
 
 type StockMovementFormProps = {
   open: boolean;
@@ -90,25 +90,13 @@ export function StockMovementForm({ open, onClose, type, itemId, warehouseId }: 
   // Fetch warehouses
   const { data: warehouses } = useQuery({
     queryKey: ["/api/warehouses"],
-    queryFn: async () => {
-      const response = await fetch("/api/warehouses");
-      if (!response.ok) {
-        throw new Error("Failed to fetch warehouses");
-      }
-      return response.json() as Promise<Warehouse[]>;
-    },
+    queryFn: () => requestJson<Warehouse[]>("GET", "/api/warehouses"),
   });
-  
+
   // Fetch inventory items if itemId is not provided
   const { data: items } = useQuery({
     queryKey: ["/api/inventory"],
-    queryFn: async () => {
-      const response = await fetch("/api/inventory");
-      if (!response.ok) {
-        throw new Error("Failed to fetch inventory items");
-      }
-      return response.json() as Promise<InventoryItem[]>;
-    },
+    queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory"),
     enabled: !itemId,
   });
   
