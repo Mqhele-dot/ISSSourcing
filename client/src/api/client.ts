@@ -148,7 +148,9 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
       throw new ApiError(payload.error, response.status || 400);
     }
     if (!response.ok) {
-      setFallbackState(headerFallback, headerEndpoint);
+      if (headerFallback != null || headerEndpoint != null) {
+        setFallbackState(headerFallback, headerEndpoint);
+      }
       const fallbackMessage =
         typeof payload === "object" &&
         payload !== null &&

@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { type InventoryItem } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, requestJson } from "@/lib/queryClient";
+import { requestJson, formatMutationError } from "@/lib/queryClient";
 
 export default function StockAlerts() {
   const { toast } = useToast();
@@ -26,35 +26,20 @@ export default function StockAlerts() {
   // Reorder item mutation
   const reorderMutation = useMutation({
     mutationFn: async (data: { itemId: number; quantity: number }) => {
-      // Clean up the data to match the expected schema
-      const validData = {
-        itemId: data.itemId,
-        quantity: data.quantity
-      };
-      
-      const response = await apiRequest("POST", "/api/reorder-requests", validData);
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to create reorder request");
-      }
-      
-      return response;
+      const validData = { itemId: data.itemId, quantity: data.quantity };
+      return requestJson<unknown>("POST", "/api/reorder-requests", validData);
     },
     onSuccess: async () => {
-      // Invalidate and refetch reorder requests
       await queryClient.invalidateQueries({ queryKey: ["/api/reorder-requests"] });
-      
       toast({
         title: "Reorder Request Created",
         description: "A reorder request has been created successfully.",
       });
     },
-    onError: (error: any) => {
-      console.error("Reorder error:", error);
+    onError: (error: unknown) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to create reorder request",
+        title: "Create reorder request failed",
+        description: formatMutationError("Create reorder request", "POST", "/api/reorder-requests", error),
         variant: "destructive",
       });
     },

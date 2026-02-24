@@ -26,6 +26,7 @@ import {
   Legend,
 } from "recharts";
 import { formatCurrency } from "@/lib/utils";
+import { requestJson } from "@/lib/queryClient";
 import type { InventoryItem, InventoryStats, Category } from "@shared/schema";
 
 const DATA_SOURCES = [
@@ -45,8 +46,6 @@ const CHART_TYPES = [
 
 type DataSourceId = (typeof DATA_SOURCES)[number]["id"];
 type ChartTypeId = (typeof CHART_TYPES)[number]["id"];
-
-import { requestJson } from "@/lib/queryClient";
 
 const CHART_COLORS = [
   "hsl(var(--chart-1, 220 70% 50%))",
