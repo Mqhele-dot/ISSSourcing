@@ -1,13 +1,14 @@
 import * as React from "react";
-import {
+import type {
   ColumnDef,
+  SortingState,
+  ColumnFiltersState} from "@tanstack/react-table";
+import {
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
   useReactTable,
-  SortingState,
   getSortedRowModel,
-  ColumnFiltersState,
   getFilteredRowModel,
 } from "@tanstack/react-table";
 

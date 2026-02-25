@@ -3,20 +3,22 @@
  * 
  * Handles HTTP routes for document extraction functionality
  */
-import { Request, Response, Router } from 'express';
+import type { Request, Response, Router } from 'express';
 import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
+import type {
+  ProcessingOptions,
+  ExtractedData,
+  ExportFormat
+} from '../services/document-extractor-service';
 import {
   detectFileType,
   processFile,
   processBatch,
   processFromUrls,
   exportData,
-  FileType,
-  ProcessingOptions,
-  ExtractedData,
-  ExportFormat
+  FileType
 } from '../services/document-extractor-service';
 import { storage } from '../storage';
 

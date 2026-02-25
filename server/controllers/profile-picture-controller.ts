@@ -4,7 +4,7 @@
  * Handles profile picture upload, update, and removal operations
  */
 
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { storage } from '../storage';
 import { deleteCloudinaryImage, getPublicIdFromUrl } from '../services/cloudinary-service';
 

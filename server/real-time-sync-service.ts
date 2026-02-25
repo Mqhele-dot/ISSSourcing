@@ -1,7 +1,7 @@
-import { Server as HttpServer } from 'http';
+import type { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
-import { IStorage } from './storage';
+import type { IStorage } from './storage';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
 

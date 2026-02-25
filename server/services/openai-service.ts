@@ -5,7 +5,7 @@
  * features such as image recognition and text analysis.
  */
 
-import { RecognizedItem } from './image-recognition-service';
+import type { RecognizedItem } from './image-recognition-service';
 import { storage } from '../storage';
 import * as fs from 'fs';
 import fetch from 'node-fetch';

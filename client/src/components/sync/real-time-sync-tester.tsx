@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useRealTimeSync, SyncMessageType, SyncMessage, SyncStatus } from '@/hooks/use-real-time-sync';
+import type { SyncMessage} from '@/hooks/use-real-time-sync';
+import { useRealTimeSync, SyncMessageType, SyncStatus } from '@/hooks/use-real-time-sync';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';

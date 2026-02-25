@@ -3,7 +3,7 @@ import { BarcodeScanner, BarcodeGenerator } from '@/components/barcode';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ScanResult } from '@/hooks/use-barcode-scanner';
+import type { ScanResult } from '@/hooks/use-barcode-scanner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { QrCode, Barcode, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';

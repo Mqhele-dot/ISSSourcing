@@ -8,7 +8,7 @@
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
-import { Request } from 'express';
+import type { Request } from 'express';
 
 // Configure Cloudinary
 cloudinary.config({

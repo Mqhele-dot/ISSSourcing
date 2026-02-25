@@ -1,4 +1,5 @@
-import { InventoryItem, StockMovement, stockMovementTypeEnum } from "@shared/schema";
+import type { InventoryItem, StockMovement} from "@shared/schema";
+import { stockMovementTypeEnum } from "@shared/schema";
 import { addDays, subDays, format, parse, isAfter, isBefore, isEqual } from "date-fns";
 
 interface DemandForecastPoint {

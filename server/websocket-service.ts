@@ -1,9 +1,9 @@
-import { Server as HttpServer } from 'http';
-import WebSocket from 'ws';
+import type { Server as HttpServer } from 'http';
+import type WebSocket from 'ws';
 import { WebSocketServer } from 'ws';
 import * as zlib from 'zlib';
 import { v4 as uuidv4 } from 'uuid';
-import { IStorage } from './storage';
+import type { IStorage } from './storage';
 import { AppSettings } from '../shared/schema';
 
 // Types of messages

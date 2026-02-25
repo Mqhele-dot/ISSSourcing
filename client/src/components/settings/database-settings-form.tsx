@@ -17,7 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Database, RotateCw, CheckCircle, XCircle, CloudCog, Download, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useSettings, DatabaseSettings } from "@/hooks/use-settings";
+import type { DatabaseSettings } from "@/hooks/use-settings";
+import { useSettings } from "@/hooks/use-settings";
 import { isElectronEnvironment, ElectronBridge, DatabaseInfo, BackupResult } from "@/lib/electron-bridge";
 import {
   Select,

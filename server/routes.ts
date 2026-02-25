@@ -24,7 +24,8 @@ import { registerDocumentExtractorRoutes } from "./controllers/document-extracto
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument } from "./services/document-generator-service";
-import { ReportFormat, ReportType, reportTypeEnum, reportFormatEnum } from "@shared/schema";
+import type { ReportFormat, ReportType} from "@shared/schema";
+import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { registerOperationalRoutes } from "./operations-routes";
 import { readiness } from "./readiness";
 import { 

@@ -1,7 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, File, FileText, Upload, Database, Check, ChevronDown, X, FilePlus, Link, Wrench } from 'lucide-react';
+import type { File} from 'lucide-react';
+import { Loader2, FileText, Upload, Database, Check, ChevronDown, X, FilePlus, Link, Wrench } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';

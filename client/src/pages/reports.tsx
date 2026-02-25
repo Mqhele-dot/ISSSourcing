@@ -11,7 +11,8 @@ import { format } from "date-fns";
 import { apiRequest, requestJson } from "@/lib/queryClient";
 import { downloadFile, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { type ReportFilter, type Category, type InventoryItem, type InventoryStats, type Warehouse, type Supplier, DocumentType } from "@shared/schema";
+import type { DocumentType } from "@shared/schema";
+import { type ReportFilter, type Category, type InventoryItem, type InventoryStats, type Warehouse, type Supplier } from "@shared/schema";
 import { ReportFilters } from "@/components/reports/report-filters";
 import { QueryState } from "@/components/ui/query-state";
 

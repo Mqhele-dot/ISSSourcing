@@ -1,11 +1,15 @@
 // Document generator service
-import { PDFDocument, StandardFonts, rgb, PDFPage } from 'pdf-lib';
+import type { PDFPage } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import Excel from 'exceljs';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream';
 import { promisify } from 'util';
+import type { 
+  InventoryItem,
+  ReportType,
+  ReportFormat} from '@shared/schema';
 import { 
-  InventoryItem, 
   ReorderRequest, 
   User, 
   Supplier, 
@@ -13,8 +17,6 @@ import {
   Category, 
   PurchaseOrder, 
   PurchaseRequisition,
-  ReportType,
-  ReportFormat,
   reportTypeEnum,
   reportFormatEnum
 } from '@shared/schema';

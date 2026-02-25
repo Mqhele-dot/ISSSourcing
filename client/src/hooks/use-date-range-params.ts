@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from 'react';
-import { DateRange } from 'react-day-picker';
+import type { DateRange } from 'react-day-picker';
 import { addDays, subDays } from 'date-fns';
 
 export type DateRangeValue = '7d' | '30d' | '90d' | 'custom';

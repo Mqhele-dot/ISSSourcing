@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { isElectronEnvironment, ScanResult as ElectronScanResult } from '@/lib/electron-bridge';
+import type { ScanResult as ElectronScanResult } from '@/lib/electron-bridge';
+import { isElectronEnvironment } from '@/lib/electron-bridge';
 import { useToast } from '@/hooks/use-toast';
 
 export type ScannerType = 'barcode' | 'qrcode' | 'auto';
@@ -198,7 +199,7 @@ export function useBarcodeScanner(): UseBarcodeScanner {
         variant: 'destructive'
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [toast]);
 
   // Stop scanning
@@ -223,7 +224,7 @@ export function useBarcodeScanner(): UseBarcodeScanner {
       scannerRef.current = null;
       setIsScanning(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   return {

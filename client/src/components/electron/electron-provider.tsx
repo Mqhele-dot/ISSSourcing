@@ -1,4 +1,5 @@
-import { ReactNode, createContext, useContext, useEffect, useState } from "react";
+import type { ReactNode} from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { appControls, isElectronEnvironment } from "@/lib/electron-bridge";
 
 interface UpdateInfo {

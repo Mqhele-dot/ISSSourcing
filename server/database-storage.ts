@@ -1,5 +1,6 @@
+import type {
+  UserRoleEnum, ResourceEnum, PermissionTypeEnum, PurchaseOrderStatus, PaymentStatus} from "@shared/schema";
 import {
-  UserRoleEnum, ResourceEnum, PermissionTypeEnum,
   users, type User, type InsertUser,
   categories, type Category, type InsertCategory,
   inventoryItems, type InventoryItem, type InsertInventoryItem,
@@ -33,7 +34,7 @@ import {
   userPerformanceMetrics, type UserPerformanceMetric, type InsertUserPerformanceMetric,
   timeRestrictions, type TimeRestriction, type InsertTimeRestriction,
   type InventoryStats, ItemStatus, type BulkImportInventory,
-  PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus, ReorderRequestStatus,
+  PurchaseRequisitionStatus, ReorderRequestStatus,
   stockMovementTypeEnum, userRoleEnum, permissionTypeEnum, resourceEnum,
   type UserLogin, type PasswordResetRequest,
   // Billing related imports

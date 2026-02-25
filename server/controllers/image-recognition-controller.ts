@@ -8,15 +8,17 @@
  * - Managing training data for image recognition models
  */
 
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { storage } from '../storage';
+import type { 
+  RecognizedItem 
+} from '../services/image-recognition-service';
 import { 
   analyzeProductImage, 
-  getServiceStatus, 
-  RecognizedItem 
+  getServiceStatus 
 } from '../services/image-recognition-service';
 
 // Set up multer for file uploads

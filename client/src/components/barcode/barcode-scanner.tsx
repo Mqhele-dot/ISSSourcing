@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useBarcodeScanner, ScannerType, ScanResult } from '@/hooks/use-barcode-scanner';
+import type { ScannerType, ScanResult } from '@/hooks/use-barcode-scanner';
+import { useBarcodeScanner } from '@/hooks/use-barcode-scanner';
 import { Loader2, QrCode, Barcode, Camera, X } from 'lucide-react';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
 

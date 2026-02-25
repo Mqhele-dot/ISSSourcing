@@ -5,7 +5,7 @@ import { ExternalLink, ShoppingCart, User, Package } from "lucide-react";
 import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeDate } from "@/lib/utils";
-import { ActivityLog } from "@shared/schema";
+import type { ActivityLog } from "@shared/schema";
 
 export default function RecentActivity() {
   const { data: activityLogs, isLoading } = useQuery({
