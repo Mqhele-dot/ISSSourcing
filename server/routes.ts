@@ -7,6 +7,7 @@ import { seedOperationalIfEmpty } from "./seed-operational";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { Buffer } from "buffer";
+import { existsSync } from "fs";
 import { setupAuth } from "./auth";
 import {
   generateReorderRequestsPdfReport,
@@ -976,8 +977,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid purchase requisition ID" });
       }
       
-      const { approverId } = req.body;
-      if (!approverId) {
+      const approverId = Number(req.body?.approverId ?? (req.user as { id?: number } | undefined)?.id ?? 0);
+      if (!approverId || Number.isNaN(approverId)) {
         return res.status(400).json({ message: "Approver ID is required" });
       }
       
@@ -1001,8 +1002,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid purchase requisition ID" });
       }
       
-      const { approverId, reason } = req.body;
-      if (!approverId) {
+      const approverId = Number(req.body?.approverId ?? (req.user as { id?: number } | undefined)?.id ?? 0);
+      const reason = String(req.body?.reason ?? "").trim();
+      if (!approverId || Number.isNaN(approverId)) {
         return res.status(400).json({ message: "Approver ID is required" });
       }
       
@@ -1751,6 +1753,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.setHeader("Content-Type", "text/csv");
         res.setHeader("Content-Disposition", "attachment; filename=export.csv");
         res.status(200).send("sep=,\n");
+      } else if (format === "pdf") {
+        const reportLabel = `${reportType} report`;
+        const pdf = await PDFDocument.create();
+        const page = pdf.addPage([612, 792]);
+        const font = await pdf.embedFont(StandardFonts.Helvetica);
+        page.drawText("Report export notice", { x: 50, y: 740, size: 18, font, color: rgb(0.12, 0.12, 0.12) });
+        page.drawText(`Unable to generate ${reportLabel} with current filters.`, { x: 50, y: 710, size: 12, font });
+        page.drawText("Try broadening date range or removing restrictive filters.", { x: 50, y: 692, size: 12, font });
+        page.drawText(`Generated at: ${new Date().toISOString()}`, { x: 50, y: 666, size: 10, font, color: rgb(0.35, 0.35, 0.35) });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "attachment; filename=export-notice.pdf");
+        res.status(200).send(Buffer.from(await pdf.save()));
       } else {
         res.status(200).json({
           message: `No data for ${reportType} ${format} report`,
@@ -1824,6 +1838,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!process.env.EMAIL_HOST?.trim() || !process.env.EMAIL_USER?.trim() || !process.env.EMAIL_PASS?.trim()) {
         result.configuration.push("Email configuration incomplete");
       }
+      if (!process.env.DATABASE_URL?.trim()) {
+        result.configuration.push("DATABASE_URL is not set (using fallback connection strategy)");
+      }
+
+      // Runtime / development toolchain checks
+      const hasNodeModules = existsSync("node_modules");
+      if (!hasNodeModules) {
+        result.system.push("node_modules missing: run npm install or npm ci");
+      }
+      if (hasNodeModules && !existsSync("node_modules/.bin/tsx")) {
+        result.system.push("tsx runtime missing: npm install did not complete");
+      }
+      if (hasNodeModules && !existsSync("node_modules/.bin/drizzle-kit")) {
+        result.system.push("drizzle-kit missing: database migration scripts unavailable");
+      }
 
       // Data
       const items = await storage.getAllInventoryItems();
@@ -1847,6 +1876,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (negativeCount > 0) {
           result.data.push(`${negativeCount} item(s) with negative stock`);
         }
+      }
+
+      try {
+        await pool.query("SELECT 1");
+      } catch (dbError) {
+        result.database.push(`Database connectivity check failed: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
       }
 
       const filtered: Record<string, string[]> = {};

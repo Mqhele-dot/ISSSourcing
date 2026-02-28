@@ -49,7 +49,8 @@ export function TutorialSteps() {
       {
         id: "dashboard-intro",
         title: "Dashboard Overview",
-        text: "Your dashboard gives you a complete view of your inventory status at a glance."
+        text: "Your dashboard gives you a complete view of your inventory status at a glance.",
+        attachTo: { element: '[data-help-title="Dashboard"]', on: 'right' }
       },
       {
         id: "dashboard-stats",
@@ -59,7 +60,8 @@ export function TutorialSteps() {
       {
         id: "dashboard-charts",
         title: "Analytics Charts",
-        text: "Visual charts display inventory value, stock trends, and movement patterns to help you understand your data."
+        text: "Visual charts display inventory value, stock trends, and movement patterns to help you understand your data.",
+        attachTo: { element: '#analytics', on: 'top' }
       },
       {
         id: "dashboard-activity",
@@ -112,7 +114,8 @@ export function TutorialSteps() {
       {
         id: "report-types",
         title: "Report Types",
-        text: "Choose from various report types including inventory valuation, stock movements, sales analysis, and reorder suggestions."
+        text: "Choose from various report types including inventory valuation, stock movements, sales analysis, and reorder suggestions.",
+        attachTo: { element: '[data-help-title="Reports"]', on: 'right' }
       },
       {
         id: "date-filters",

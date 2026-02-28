@@ -40,6 +40,7 @@ import type { FallbackKind } from "@/components/ui/data-state";
 import { apiRequest, requestJson } from "@/lib/queryClient";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import TutorialButton from "@/components/ui/tutorial-button";
+import { useAuth } from "@/hooks/use-auth";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -56,15 +57,17 @@ function formatDateTime(value: string | null) {
 }
 
 function canApprove(status: string) {
-  return status === "open";
+  const normalized = status.toLowerCase();
+  return normalized === "open" || normalized === "draft";
 }
 
 function canSend(status: string) {
-  return status === "approved";
+  return status.toLowerCase() === "approved";
 }
 
 function canReceive(status: string) {
-  return status === "approved" || status === "sent";
+  const normalized = status.toLowerCase();
+  return normalized === "approved" || normalized === "sent" || normalized === "partially_received";
 }
 
 function openPurchaseOrderPrintView(detail: PurchaseOrderDetail) {
@@ -408,6 +411,30 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
 
             <Card>
               <CardHeader>
+                <CardTitle>Commercial & legal summary</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Order reference</p>
+                  <p className="font-medium">{detail.poNumber}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Counterparty</p>
+                  <p className="font-medium">{detail.supplierName || `Supplier #${detail.supplierId}`}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Fulfilment status</p>
+                  <p className="font-medium">{detail.progress.qtyReceived}/{detail.progress.qtyOrdered} units received</p>
+                </div>
+                <p className="text-xs text-muted-foreground md:col-span-3">
+                  This order record is system-generated for procurement audit and goods receipt reconciliation.
+                  Please attach signed terms and supplier confirmations in your contract module for legal enforceability.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
                 <CardTitle>Receive panel</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -580,13 +607,60 @@ type Requisition = {
   requiredDate: string | null;
   notes: string | null;
   supplierId: number | null;
+  totalAmount?: number;
 };
+
+type RequisitionMeta = {
+  currency?: string;
+  exchangeRate?: number;
+  paymentTerms?: string;
+  shippingTerms?: string;
+  billingAddress?: string;
+  deliveryAddress?: string;
+  legalTerms?: string;
+};
+
+const META_PREFIX = "INVTRACK_PR_META:";
+
+function parseRequisitionMeta(notes: string | null): { description: string; meta: RequisitionMeta } {
+  if (!notes) return { description: "", meta: {} };
+  if (!notes.startsWith(META_PREFIX)) return { description: notes, meta: {} };
+  const payload = notes.slice(META_PREFIX.length);
+  try {
+    const parsed = JSON.parse(payload) as { description?: string; meta?: RequisitionMeta };
+    return {
+      description: parsed.description ?? "",
+      meta: parsed.meta ?? {},
+    };
+  } catch {
+    return { description: notes, meta: {} };
+  }
+}
+
+function composeRequisitionNotes(description: string, meta: RequisitionMeta): string {
+  return `${META_PREFIX}${JSON.stringify({ description, meta })}`;
+}
 
 function PurchaseRequisitionsPanel() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ supplierId: "", requiredDate: "", notes: "", itemId: "", quantity: "1", unitPrice: "0" });
+  const [form, setForm] = useState({
+    supplierId: "",
+    requiredDate: "",
+    notes: "",
+    itemId: "",
+    quantity: "1",
+    unitPrice: "0",
+    currency: "USD",
+    exchangeRate: "1",
+    paymentTerms: "Net 30",
+    shippingTerms: "FOB destination",
+    billingAddress: "",
+    deliveryAddress: "",
+    legalTerms: "Subject to supplier contract and local procurement law.",
+  });
   const [editing, setEditing] = useState<Requisition | null>(null);
   const [sharedWith, setSharedWith] = useState<Record<number, string>>(() => {
     try { return JSON.parse(localStorage.getItem("requisition-share-list") || "{}"); } catch { return {}; }
@@ -598,17 +672,28 @@ function PurchaseRequisitionsPanel() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const notes = composeRequisitionNotes(form.notes, {
+        currency: form.currency,
+        exchangeRate: Number(form.exchangeRate || 1),
+        paymentTerms: form.paymentTerms,
+        shippingTerms: form.shippingTerms,
+        billingAddress: form.billingAddress,
+        deliveryAddress: form.deliveryAddress,
+        legalTerms: form.legalTerms,
+      });
       if (editing) {
         return (await apiRequest("PUT", `/api/purchase-requisitions/${editing.id}`, {
           supplierId: form.supplierId ? Number(form.supplierId) : null,
           requiredDate: form.requiredDate ? new Date(form.requiredDate) : null,
-          notes: form.notes,
+          notes,
         })).json();
       }
       return (await apiRequest("POST", "/api/purchase-requisitions", {
+        requestorId: user?.id ?? null,
         supplierId: form.supplierId ? Number(form.supplierId) : null,
         requiredDate: form.requiredDate ? new Date(form.requiredDate) : null,
-        notes: form.notes,
+        notes,
+        status: "PENDING",
         items: [{
           itemId: Number(form.itemId),
           quantity: Number(form.quantity),
@@ -619,27 +704,53 @@ function PurchaseRequisitionsPanel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase/orders"] });
       setOpen(false);
       setEditing(null);
-      setForm({ supplierId: "", requiredDate: "", notes: "", itemId: "", quantity: "1", unitPrice: "0" });
+      setForm({ supplierId: "", requiredDate: "", notes: "", itemId: "", quantity: "1", unitPrice: "0", currency: "USD", exchangeRate: "1", paymentTerms: "Net 30", shippingTerms: "FOB destination", billingAddress: "", deliveryAddress: "", legalTerms: "Subject to supplier contract and local procurement law." });
       toast({ title: "Requisition saved" });
+    },
+    onError: (error) => {
+      toast({ title: "Unable to save requisition", description: String(error), variant: "destructive" });
     },
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/purchase-requisitions/${id}/approve`, { approverId: 1 }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] }),
+    mutationFn: (id: number) => apiRequest("POST", `/api/purchase-requisitions/${id}/approve`, { approverId: user?.id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      toast({ title: "Requisition approved" });
+    },
+    onError: (error) => toast({ title: "Approval failed", description: String(error), variant: "destructive" }),
+  });
+
+  const convertMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("POST", `/api/purchase-requisitions/${id}/convert`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase/orders"] });
+      toast({ title: "Converted to purchase order" });
+    },
+    onError: (error) => toast({ title: "Conversion failed", description: String(error), variant: "destructive" }),
   });
 
   const openEdit = (req: Requisition) => {
+    const parsed = parseRequisitionMeta(req.notes);
     setEditing(req);
     setForm({
       supplierId: req.supplierId ? String(req.supplierId) : "",
       requiredDate: req.requiredDate ? new Date(req.requiredDate).toISOString().slice(0, 10) : "",
-      notes: req.notes ?? "",
+      notes: parsed.description ?? "",
       itemId: "",
       quantity: "1",
       unitPrice: "0",
+      currency: parsed.meta.currency ?? "USD",
+      exchangeRate: String(parsed.meta.exchangeRate ?? 1),
+      paymentTerms: parsed.meta.paymentTerms ?? "Net 30",
+      shippingTerms: parsed.meta.shippingTerms ?? "FOB destination",
+      billingAddress: parsed.meta.billingAddress ?? "",
+      deliveryAddress: parsed.meta.deliveryAddress ?? "",
+      legalTerms: parsed.meta.legalTerms ?? "Subject to supplier contract and local procurement law.",
     });
     setOpen(true);
   };
@@ -647,39 +758,49 @@ function PurchaseRequisitionsPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Create, edit, approve, and share requisitions with teammates.</p>
+        <p className="text-sm text-muted-foreground">Procurement starts with requisitions. Approve and convert to compliant purchase orders.</p>
         <div className="flex gap-2">
           <TutorialButton page="purchase" />
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button size="sm">New Requisition</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{editing ? "Edit" : "Create"} Purchase Requisition</DialogTitle>
               </DialogHeader>
-              <div className="space-y-3">
-                <Label>Supplier</Label>
-                <select className="w-full rounded-md border px-3 py-2" value={form.supplierId} onChange={(e) => setForm((f) => ({ ...f, supplierId: e.target.value }))}>
-                  <option value="">Select supplier</option>
-                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-                <Label>Required date</Label>
-                <Input type="date" value={form.requiredDate} onChange={(e) => setForm((f) => ({ ...f, requiredDate: e.target.value }))} />
-                {!editing && <>
-                  <Label>Item</Label>
-                  <select className="w-full rounded-md border px-3 py-2" value={form.itemId} onChange={(e) => setForm((f) => ({ ...f, itemId: e.target.value }))}>
-                    <option value="">Select item</option>
-                    {inventory.map((i) => <option key={i.id} value={i.id}>{i.sku} - {i.name}</option>)}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Supplier</Label>
+                  <select className="w-full rounded-md border px-3 py-2" value={form.supplierId} onChange={(e) => setForm((f) => ({ ...f, supplierId: e.target.value }))}>
+                    <option value="">Select supplier</option>
+                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input placeholder="Quantity" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} />
-                    <Input placeholder="Unit price" value={form.unitPrice} onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Required date</Label>
+                  <Input type="date" value={form.requiredDate} onChange={(e) => setForm((f) => ({ ...f, requiredDate: e.target.value }))} />
+                </div>
+                {!editing && <>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Requested item</Label>
+                    <select className="w-full rounded-md border px-3 py-2" value={form.itemId} onChange={(e) => setForm((f) => ({ ...f, itemId: e.target.value }))}>
+                      <option value="">Select item</option>
+                      {inventory.map((i) => <option key={i.id} value={i.id}>{i.sku} - {i.name}</option>)}
+                    </select>
                   </div>
+                  <div className="space-y-2"><Label>Quantity</Label><Input value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Unit price</Label><Input value={form.unitPrice} onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))} /></div>
                 </>}
-                <Label>Notes</Label>
-                <Textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
-                <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || (!editing && !form.itemId)}>Save</Button>
+                <div className="space-y-2"><Label>Currency</Label><Input value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value.toUpperCase() }))} /></div>
+                <div className="space-y-2"><Label>Exchange rate</Label><Input value={form.exchangeRate} onChange={(e) => setForm((f) => ({ ...f, exchangeRate: e.target.value }))} /></div>
+                <div className="space-y-2"><Label>Payment terms</Label><Input value={form.paymentTerms} onChange={(e) => setForm((f) => ({ ...f, paymentTerms: e.target.value }))} /></div>
+                <div className="space-y-2"><Label>Shipping terms</Label><Input value={form.shippingTerms} onChange={(e) => setForm((f) => ({ ...f, shippingTerms: e.target.value }))} /></div>
+                <div className="space-y-2 md:col-span-2"><Label>Billing address</Label><Textarea value={form.billingAddress} onChange={(e) => setForm((f) => ({ ...f, billingAddress: e.target.value }))} /></div>
+                <div className="space-y-2 md:col-span-2"><Label>Delivery address</Label><Textarea value={form.deliveryAddress} onChange={(e) => setForm((f) => ({ ...f, deliveryAddress: e.target.value }))} /></div>
+                <div className="space-y-2 md:col-span-2"><Label>Legal / compliance terms</Label><Textarea value={form.legalTerms} onChange={(e) => setForm((f) => ({ ...f, legalTerms: e.target.value }))} /></div>
+                <div className="space-y-2 md:col-span-2"><Label>Business justification</Label><Textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} /></div>
+                <div className="md:col-span-2"><Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || (!editing && !form.itemId)}>Save Requisition</Button></div>
               </div>
             </DialogContent>
           </Dialog>
@@ -691,16 +812,23 @@ function PurchaseRequisitionsPanel() {
             <TableHead>Requisition</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Required</TableHead>
+            <TableHead className="text-right">Value</TableHead>
             <TableHead>Share With</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {requisitions.map((req) => (
+          {requisitions.map((req) => {
+            const parsed = parseRequisitionMeta(req.notes);
+            return (
             <TableRow key={req.id}>
-              <TableCell>{req.requisitionNumber}</TableCell>
+              <TableCell>
+                <div className="font-medium">{req.requisitionNumber}</div>
+                <div className="text-xs text-muted-foreground">{parsed.meta.paymentTerms || "Net 30"}</div>
+              </TableCell>
               <TableCell><StatusBadge status={req.status.toLowerCase()} /></TableCell>
               <TableCell>{formatDate(req.requiredDate)}</TableCell>
+              <TableCell className="text-right">{parsed.meta.currency || "USD"} {(req.totalAmount ?? 0).toFixed(2)}</TableCell>
               <TableCell>
                 <Input
                   placeholder="user@company.com"
@@ -714,10 +842,11 @@ function PurchaseRequisitionsPanel() {
               </TableCell>
               <TableCell className="space-x-2 text-right">
                 <Button variant="outline" size="sm" onClick={() => openEdit(req)}>Edit</Button>
-                <Button size="sm" onClick={() => approveMutation.mutate(req.id)} disabled={req.status === "APPROVED"}>Approve</Button>
+                <Button size="sm" onClick={() => approveMutation.mutate(req.id)} disabled={req.status.toUpperCase() === "APPROVED"}>Approve</Button>
+                <Button variant="secondary" size="sm" onClick={() => convertMutation.mutate(req.id)} disabled={req.status.toUpperCase() !== "APPROVED"}>Convert to PO</Button>
               </TableCell>
             </TableRow>
-          ))}
+          )})}
         </TableBody>
       </Table>
     </div>

@@ -58,6 +58,7 @@ interface FormData {
   aisle: string;
   bin: string;
   zone: string;
+  additionalLocations: string;
   contactPerson: string;
   contactPhone: string;
   isDefault: boolean;
@@ -82,6 +83,7 @@ export default function WarehousesPage() {
     aisle: '',
     bin: '',
     zone: '',
+    additionalLocations: '',
     contactPerson: '',
     contactPhone: '',
     isDefault: false,
@@ -193,7 +195,7 @@ export default function WarehousesPage() {
       });
       return;
     }
-    createWarehouse.mutate({ ...formData, name: formData.name.trim(), location: `Aisle:${formData.aisle || "-"} | Bin:${formData.bin || "-"} | Location:${formData.zone || formData.location || "-"}` });
+    createWarehouse.mutate({ ...formData, name: formData.name.trim(), location: `Aisle:${formData.aisle || "-"} | Bin:${formData.bin || "-"} | Location:${formData.zone || formData.location || "-"} | JSON:${JSON.stringify({ additionalLocations: formData.additionalLocations.split(/\n+/).map((l) => l.trim()).filter(Boolean) })}` });
   };
 
   const handleEditSubmit = () => {
@@ -209,7 +211,7 @@ export default function WarehousesPage() {
     }
     updateWarehouse.mutate({
       id: selectedWarehouse.id,
-      data: { ...formData, name: formData.name.trim(), location: `Aisle:${formData.aisle || "-"} | Bin:${formData.bin || "-"} | Location:${formData.zone || formData.location || "-"}` },
+      data: { ...formData, name: formData.name.trim(), location: `Aisle:${formData.aisle || "-"} | Bin:${formData.bin || "-"} | Location:${formData.zone || formData.location || "-"} | JSON:${JSON.stringify({ additionalLocations: formData.additionalLocations.split(/\n+/).map((l) => l.trim()).filter(Boolean) })}` },
     });
   };
 
@@ -227,6 +229,7 @@ export default function WarehousesPage() {
       aisle: '',
       bin: '',
       zone: '',
+      additionalLocations: '',
       contactPerson: '',
       contactPhone: '',
       isDefault: false,
@@ -242,6 +245,7 @@ export default function WarehousesPage() {
       aisle: warehouse.location?.match(/Aisle:([^|]+)/)?.[1]?.trim() || '',
       bin: warehouse.location?.match(/Bin:([^|]+)/)?.[1]?.trim() || '',
       zone: warehouse.location?.match(/Location:([^|]+)/)?.[1]?.trim() || '',
+      additionalLocations: (() => { try { const m = warehouse.location?.match(/JSON:(.*)$/); if (!m?.[1]) return ''; const parsed = JSON.parse(m[1]); return Array.isArray(parsed.additionalLocations) ? parsed.additionalLocations.join('\n') : ''; } catch { return ''; } })(),
       contactPerson: warehouse.contactPerson || '',
       contactPhone: warehouse.contactPhone || '',
       isDefault: warehouse.isDefault || false,
@@ -406,6 +410,17 @@ export default function WarehousesPage() {
                 <div className="grid gap-2"><Label htmlFor="zone">Location</Label><Input id="zone" value={formData.zone} onChange={(e) => setFormData({ ...formData, zone: e.target.value })} placeholder="East wing" /></div>
               </div>
               
+
+              <div className="grid gap-2">
+                <Label htmlFor="additionalLocations">Additional storage locations</Label>
+                <Textarea
+                  id="additionalLocations"
+                  value={formData.additionalLocations}
+                  onChange={(e) => setFormData({ ...formData, additionalLocations: e.target.value })}
+                  rows={3}
+                  placeholder="Zone A / Aisle 1 / Rack 3 / Bin 08\nZone C / Aisle 7 / Rack 1 / Bin 02"
+                />
+              </div>
               <div className="grid gap-2">
                 <Label htmlFor="address">Address</Label>
                 <Textarea
@@ -499,6 +514,17 @@ export default function WarehousesPage() {
                 <div className="grid gap-2"><Label htmlFor="edit-zone">Location</Label><Input id="edit-zone" value={formData.zone} onChange={(e) => setFormData({ ...formData, zone: e.target.value })} /></div>
               </div>
               
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-additionalLocations">Additional storage locations</Label>
+                <Textarea
+                  id="edit-additionalLocations"
+                  value={formData.additionalLocations}
+                  onChange={(e) => setFormData({ ...formData, additionalLocations: e.target.value })}
+                  rows={3}
+                  placeholder="Zone A / Aisle 1 / Rack 3 / Bin 08\nZone C / Aisle 7 / Rack 1 / Bin 02"
+                />
+              </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-address">Address</Label>
                 <Textarea

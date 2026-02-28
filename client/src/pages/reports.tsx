@@ -152,7 +152,14 @@ export default function Reports() {
         url += `?${queryParams.toString()}`;
       }
       const response = await fetch(url, { credentials: "include", headers: customTemplateName ? { "X-Report-Template": customTemplateName } : {} });
-      if (!response.ok) { throw new Error(`Export failed with status ${response.status}`); }
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.ok) {
+        throw new Error(`Export failed with status ${response.status}`);
+      }
+      if (exportFormat === "pdf" && !contentType.includes("application/pdf")) {
+        const maybeError = await response.text();
+        throw new Error(`PDF export returned unexpected payload: ${maybeError.slice(0, 140)}`);
+      }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       
