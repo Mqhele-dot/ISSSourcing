@@ -59,8 +59,6 @@ import {
   resourceEnum,
   permissionTypeEnum,
   UserRoleEnum,
-  ResourceEnum,
-  PermissionTypeEnum,
   type UserRole,
   type Resource,
   type PermissionType,
@@ -374,8 +372,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (customRoleId) {
           hasPermission = await storage.checkCustomRolePermission(
             customRoleId,
-            resource as keyof typeof ResourceEnum,
-            permissionType as keyof typeof PermissionTypeEnum
+            resource as Resource,
+            permissionType as PermissionType
           );
         }
       } 

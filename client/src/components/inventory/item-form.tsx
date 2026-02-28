@@ -19,6 +19,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, requestJson } from "@/lib/queryClient";
 import { type Category, type InventoryItem, type InventoryItemForm, inventoryItemFormSchema } from "@shared/schema";
 
+const ITEM_FORM_FIELD_KEYS = ["name", "description", "quantity", "sku", "categoryId", "lowStockThreshold", "price", "cost", "location", "barcode", "defaultWarehouseId", "status", "reorderPoint"] as const;
+
 interface ItemFormProps {
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -47,11 +49,9 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
   });
 
   // Update form values when initialData changes
-  type FormFieldKey = "name" | "description" | "quantity" | "sku" | "categoryId" | "lowStockThreshold" | "price" | "cost" | "location" | "barcode" | "defaultWarehouseId" | "status" | "reorderPoint";
-  const formPathKeys: readonly FormFieldKey[] = ["name", "description", "quantity", "sku", "categoryId", "lowStockThreshold", "price", "cost", "location", "barcode", "defaultWarehouseId", "status", "reorderPoint"];
   useEffect(() => {
     if (initialData) {
-      formPathKeys.forEach((key) => {
+      ITEM_FORM_FIELD_KEYS.forEach((key) => {
         if (key in initialData && key in form.getValues()) {
           form.setValue(key, initialData[key as keyof InventoryItem] as never);
         }
