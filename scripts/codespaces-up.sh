@@ -9,12 +9,13 @@ if [[ "${CODESPACES:-}" == "true" || -n "${CODESPACE_NAME:-}" || -n "${GITHUB_CO
 fi
 
 if [[ "$(pwd)" != "${REPO_ROOT}" ]]; then
-  echo "Run this command from the repository root: ${REPO_ROOT}" >&2
-  exit 1
+  echo "Switching to repository root: ${REPO_ROOT}"
+  cd "${REPO_ROOT}"
 fi
 
 if [[ ! -f "${REPO_ROOT}/package.json" || ! -d "${REPO_ROOT}/server" ]]; then
   echo "Could not verify repository root layout (missing package.json or server/)." >&2
+  echo "If you are in Codespaces, locate the repo root with: git rev-parse --show-toplevel" >&2
   exit 1
 fi
 
