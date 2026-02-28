@@ -1,5 +1,15 @@
 import type { Config } from "tailwindcss";
 
+const optionalPlugin = (packageName: string) => {
+  try {
+    return require(packageName);
+  } catch {
+    // Keep Tailwind and IntelliSense working even if node_modules is temporarily incomplete.
+    // This avoids hard failure in Codespaces while dependencies are being (re)installed.
+    return () => ({}) as unknown;
+  }
+};
+
 export default {
   darkMode: ["class"],
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
@@ -86,5 +96,5 @@ export default {
       },
     },
   },
-  plugins: [require("tailwindcss-animate"), require("@tailwindcss/typography")],
+  plugins: [optionalPlugin("tailwindcss-animate"), optionalPlugin("@tailwindcss/typography")],
 } satisfies Config;
