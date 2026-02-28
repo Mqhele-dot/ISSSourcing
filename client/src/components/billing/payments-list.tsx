@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import type { Payment } from "@shared/schema";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 interface PaymentsListProps {
-  payments: any[];
+  payments: Payment[];
   onCreatePayment: () => void;
   onRefresh: () => void;
 }
@@ -55,18 +56,18 @@ export function PaymentsList({
   const { toast } = useToast();
   const [sortField, setSortField] = useState("paymentDate");
   const [sortDirection, setSortDirection] = useState("desc");
-  const [selectedPayment, setSelectedPayment] = useState<any>(null);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   
   // Sort payments
   const sortedPayments = [...payments].sort((a, b) => {
-    let valueA = a[sortField];
-    let valueB = b[sortField];
+    let valueA = (a as Record<string, unknown>)[sortField];
+    let valueB = (b as Record<string, unknown>)[sortField];
     
     // Handle dates
     if (typeof valueA === 'string' && !isNaN(Date.parse(valueA))) {
       valueA = new Date(valueA).getTime();
-      valueB = new Date(valueB).getTime();
+      valueB = new Date(valueB as string).getTime();
     }
     
     // Handle numbers
@@ -131,7 +132,7 @@ export function PaymentsList({
       .join(" ");
     
     return (
-      <Badge variant={badgeVariant as any} className="font-normal">
+      <Badge variant={badgeVariant as "default" | "secondary" | "destructive" | "outline"} className="font-normal">
         {methodText}
       </Badge>
     );
@@ -144,7 +145,7 @@ export function PaymentsList({
       if (!res.ok) throw new Error("Failed to delete payment");
       return id;
     },
-    onSuccess: (id) => {
+    onSuccess: (_id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
       // Also invalidate the invoice this payment was for to update its status
       if (selectedPayment?.invoiceId) {
@@ -168,27 +169,27 @@ export function PaymentsList({
   });
   
   // Handle payment actions
-  const handleDeleteClick = (payment: any) => {
+  const handleDeleteClick = (payment: Payment) => {
     setSelectedPayment(payment);
     setDeleteDialogOpen(true);
   };
   
   // Handle document generation
-  const handlePrintClick = (payment: any) => {
+  const handlePrintClick = (_payment: Payment) => {
     toast({
       title: "Print feature",
       description: "Payment receipt printing is not yet implemented.",
     });
   };
   
-  const handleDownloadClick = (payment: any) => {
+  const handleDownloadClick = (_payment: Payment) => {
     toast({
       title: "Download feature",
       description: "Payment receipt download is not yet implemented.",
     });
   };
   
-  const handleViewInvoiceClick = (payment: any) => {
+  const handleViewInvoiceClick = (_payment: Payment) => {
     toast({
       title: "View Invoice",
       description: "Viewing associated invoice is not yet implemented.",
@@ -304,7 +305,7 @@ export function PaymentsList({
                 <TableRow key={payment.id}>
                   <TableCell>#{payment.id}</TableCell>
                   <TableCell>
-                    {payment.invoice?.invoiceNumber || `#${payment.invoiceId}`}
+                    {(payment as Payment & { invoice?: { invoiceNumber?: string | null } }).invoice?.invoiceNumber || `#${payment.invoiceId}`}
                   </TableCell>
                   <TableCell>{format(new Date(payment.paymentDate), "MMM d, yyyy")}</TableCell>
                   <TableCell>{getPaymentMethodBadge(payment.method)}</TableCell>

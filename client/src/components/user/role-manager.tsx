@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Check, X, Plus, Trash2, Save, Edit } from "lucide-react";
+import { Check, X, Plus } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -16,7 +16,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -47,10 +46,8 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -591,7 +588,7 @@ export function UserRoleAssignment({ userId, currentRole }: { userId: number, cu
     
     updateRoleMutation.mutate({
       role: selectedRole,
-      customRoleId: selectedRole === 'custom' ? customRoleId : undefined
+      customRoleId: selectedRole === 'custom' ? (customRoleId ?? undefined) : undefined
     });
   };
 

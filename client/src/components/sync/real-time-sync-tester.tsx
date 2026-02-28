@@ -3,11 +3,10 @@ import type { SyncMessage} from '@/hooks/use-real-time-sync';
 import { useRealTimeSync, SyncMessageType, SyncStatus } from '@/hooks/use-real-time-sync';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Send, RefreshCw, ArrowDownToLine, ArrowUpToLine, XCircle, Clock, Wifi, Info } from 'lucide-react';
+import { Loader2, Send, ArrowDownToLine, ArrowUpToLine, XCircle, Clock, Wifi, Info } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -15,7 +14,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
-import { isFeatureEnabled, setFeatureFlag } from '@/lib/config';
+import { setFeatureFlag } from '@/lib/config';
 
 const MESSAGE_TYPES = [
   { value: SyncMessageType.SYNC_REQUEST, label: 'Sync Request' },
@@ -65,7 +64,7 @@ export function RealTimeSyncTester() {
     startTime: new Date(),
     latency: [] as number[]
   });
-  const [latencies, setLatencies] = useState<{timestamp: number, latency: number}[]>([]);
+  const [_latencies, setLatencies] = useState<{timestamp: number, latency: number}[]>([]);
   
   const [status, setStatus] = useState<SyncStatus>(SyncStatus.DISCONNECTED);
   const [connectionInfo, setConnectionInfo] = useState<{clientId?: string}>({});

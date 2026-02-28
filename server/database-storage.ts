@@ -50,6 +50,7 @@ import {
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import memorystore from "memorystore";
+import * as crypto from "node:crypto";
 import { db, pool } from "./db";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
 import type { IStorage } from "./storage";
@@ -401,18 +402,16 @@ export class DatabaseStorage implements IStorage {
   
   async getUserAccessLogs(userId: number, limit?: number): Promise<UserAccessLog[]> {
     try {
-      let query = db
+      const logs = await db
         .select()
         .from(userAccessLogs)
         .where(eq(userAccessLogs.userId, userId))
-        .orderBy(desc(userAccessLogs.timestamp));
-      if (limit) query = query.limit(limit);
-      else query = query.limit(50);
-      const logs = await query;
+        .orderBy(desc(userAccessLogs.timestamp))
+        .limit(limit ?? 50);
       return logs;
     } catch (error) {
       console.error("Error getting user access logs:", error);
-      return this.memStorage.getUserAccessLogs(userId, limit);
+      return this.memStorage.getUserAccessLogs(userId);
     }
   }
   
@@ -421,6 +420,7 @@ export class DatabaseStorage implements IStorage {
       const logs = await db
         .select()
         .from(userAccessLogs)
+        .where(sql`1=1`)
         .orderBy(desc(userAccessLogs.timestamp))
         .limit(limit);
         
@@ -538,8 +538,7 @@ export class DatabaseStorage implements IStorage {
       const [updatedToken] = await db
         .update(userVerificationTokens)
         .set({
-          used: true,
-          usedAt: new Date()
+          used: true
         })
         .where(eq(userVerificationTokens.id, verificationToken.id))
         .returning();
@@ -942,8 +941,8 @@ export class DatabaseStorage implements IStorage {
           userAgent: userAgent || 'Unknown',
           expiresAt,
           createdAt: new Date(),
-          lastActiveAt: new Date(),
-          isActive: true
+          lastActivity: new Date(),
+          isValid: true
         })
         .returning();
       
@@ -967,17 +966,17 @@ export class DatabaseStorage implements IStorage {
         .where(
           and(
             eq(sessions.token, token),
-            eq(sessions.isActive, true),
+            eq(sessions.isValid, true),
             gt(sessions.expiresAt, new Date())
           )
         );
       
-      // If session exists, update lastActiveAt timestamp
+      // If session exists, update lastActivity timestamp
       if (session) {
         await db
           .update(sessions)
           .set({
-            lastActiveAt: new Date()
+            lastActivity: new Date()
           })
           .where(eq(sessions.id, session.id));
       }
@@ -1002,11 +1001,11 @@ export class DatabaseStorage implements IStorage {
         return false;
       }
       
-      // Mark session as inactive
+      // Mark session as invalid
       await db
         .update(sessions)
         .set({
-          isActive: false
+          isValid: false
         })
         .where(eq(sessions.id, session.id));
       
@@ -1023,16 +1022,16 @@ export class DatabaseStorage implements IStorage {
   
   async invalidateAllUserSessions(userId: number): Promise<boolean> {
     try {
-      // Mark all user's sessions as inactive
+      // Mark all user's sessions as invalid
       await db
         .update(sessions)
         .set({
-          isActive: false
+          isValid: false
         })
         .where(
           and(
             eq(sessions.userId, userId),
-            eq(sessions.isActive, true)
+            eq(sessions.isValid, true)
           )
         );
       
@@ -1055,20 +1054,20 @@ export class DatabaseStorage implements IStorage {
         .from(sessions)
         .where(
           and(
-            eq(sessions.isActive, true),
+            eq(sessions.isValid, true),
             lt(sessions.expiresAt, new Date())
           )
         );
       
-      // Mark all expired sessions as inactive
+      // Mark all expired sessions as invalid
       await db
         .update(sessions)
         .set({
-          isActive: false
+          isValid: false
         })
         .where(
           and(
-            eq(sessions.isActive, true),
+            eq(sessions.isValid, true),
             lt(sessions.expiresAt, new Date())
           )
         );
@@ -1373,7 +1372,12 @@ export class DatabaseStorage implements IStorage {
   async getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]> {
     return db.select().from(warehouseInventory).where(eq(warehouseInventory.warehouseId, warehouseId));
   }
-  
+
+  async getWarehouseInventoryById(id: number): Promise<WarehouseInventory | undefined> {
+    const [row] = await db.select().from(warehouseInventory).where(eq(warehouseInventory.id, id));
+    return row;
+  }
+
   async getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined> {
     const [row] = await db.select().from(warehouseInventory).where(and(eq(warehouseInventory.warehouseId, warehouseId), eq(warehouseInventory.itemId, itemId)));
     return row;
@@ -1434,7 +1438,7 @@ export class DatabaseStorage implements IStorage {
     if (destInv) {
       await this.updateWarehouseInventory(destInv.id, { quantity: (destInv.quantity ?? 0) + quantity });
     } else {
-      await this.createWarehouseInventory({ warehouseId: destinationWarehouseId, itemId, quantity, updatedAt: new Date() });
+      await this.createWarehouseInventory({ warehouseId: destinationWarehouseId, itemId, quantity });
     }
     const notes = reason
       ? `Transfer from ${sourceWarehouse.name} to ${destinationWarehouse.name}: ${reason}`
@@ -1867,16 +1871,12 @@ export class DatabaseStorage implements IStorage {
   
   async getAllUserAccessLogs(userId?: number): Promise<UserAccessLog[]> {
     try {
-      let query = db
+      const logs = await db
         .select()
         .from(userAccessLogs)
-        .orderBy(desc(userAccessLogs.timestamp));
-      
-      if (userId) {
-        query = query.where(eq(userAccessLogs.userId, userId));
-      }
-      
-      const logs = await query;
+        .where(userId != null ? eq(userAccessLogs.userId, userId) : sql`1=1`)
+        .orderBy(desc(userAccessLogs.timestamp))
+        .limit(1000);
       return logs;
     } catch (error) {
       console.error("Error getting all user access logs:", error);

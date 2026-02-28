@@ -1,6 +1,6 @@
 /**
  * Document Extractor Service
- * 
+ *
  * A comprehensive service for extracting structured data from PDF, Excel, and CSV files
  * Features:
  * - Automatic file type detection
@@ -354,8 +354,10 @@ export async function extractFromExcel(
             if (value instanceof Date) {
               value = value.toISOString();
             } else if (typeof value === 'object') {
-              // Handle rich text and other complex objects
-              value = value.text || value.toString();
+              // Handle rich text and other complex objects (narrow for CellRichTextValue)
+              value = 'text' in value && typeof (value as { text: string }).text === 'string'
+                ? (value as { text: string }).text
+                : value.toString();
             }
           }
           
@@ -458,11 +460,12 @@ export async function extractFromImage(
     // Set up Tesseract.js for OCR with properly typed parameters
     const worker = await createWorker();
     
-    // Load language and initialize
-    await worker.load();
-    // Using string casting to handle type issues with Tesseract.js
-    await worker.loadLanguage(String(options.ocrLanguage || 'eng'));
-    await worker.initialize(String(options.ocrLanguage || 'eng'));
+    // Load language and initialize (Tesseract.js worker type may not expose these in typings)
+    const tesseractWorker = worker as unknown as { load: () => Promise<void>; loadLanguage: (lang: string) => Promise<void>; initialize: (lang: string) => Promise<void> };
+    await tesseractWorker.load();
+    const lang = String(options.ocrLanguage || 'eng');
+    await tesseractWorker.loadLanguage(lang);
+    await tesseractWorker.initialize(lang);
     
     // Perform OCR
     const result = await worker.recognize(filePath);
@@ -815,7 +818,7 @@ export async function exportData(
         // Auto-fit columns (approximately)
         worksheet.columns.forEach(column => {
           let maxLength = 0;
-          column.eachCell({ includeEmpty: true }, (cell) => {
+          column?.eachCell?.({ includeEmpty: true }, (cell: { value?: unknown }) => {
             const columnLength = cell.value ? cell.value.toString().length : 10;
             if (columnLength > maxLength) {
               maxLength = columnLength;

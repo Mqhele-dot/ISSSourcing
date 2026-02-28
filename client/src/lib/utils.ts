@@ -101,23 +101,28 @@ export function downloadFile(
   }, 100);
 }
 
+export type StatusColorStyle = { bg: string; text: string; pulse?: boolean };
+
 /**
  * Get the status of an inventory item based on its quantity and thresholds
- * @param currentQuantity Current quantity in stock
- * @param reorderPoint Quantity at which to reorder
- * @param lowStockThreshold Quantity considered "low stock"
+ * @param itemOrQuantity Inventory item or current quantity
+ * @param reorderPoint Quantity at which to reorder (when first arg is number)
+ * @param lowStockThreshold Quantity considered "low stock" (when first arg is number)
  * @returns Status string: 'In Stock', 'Low Stock', 'Out of Stock', or 'Reorder'
  */
 export function getItemStatus(
-  currentQuantity: number,
+  itemOrQuantity: number | { quantity: number; reorderPoint?: number | null; lowStockThreshold?: number | null },
   reorderPoint?: number | null,
   lowStockThreshold?: number | null
 ): string {
-  if (currentQuantity <= 0) {
+  const q = typeof itemOrQuantity === 'number' ? itemOrQuantity : itemOrQuantity.quantity;
+  const rp = typeof itemOrQuantity === 'number' ? reorderPoint : itemOrQuantity.reorderPoint;
+  const lt = typeof itemOrQuantity === 'number' ? lowStockThreshold : itemOrQuantity.lowStockThreshold;
+  if (q <= 0) {
     return 'Out of Stock';
-  } else if (reorderPoint !== undefined && reorderPoint !== null && currentQuantity <= reorderPoint) {
+  } else if (rp !== undefined && rp !== null && q <= rp) {
     return 'Reorder';
-  } else if (lowStockThreshold !== undefined && lowStockThreshold !== null && currentQuantity <= lowStockThreshold) {
+  } else if (lt !== undefined && lt !== null && q <= lt) {
     return 'Low Stock';
   } else {
     return 'In Stock';
@@ -127,20 +132,20 @@ export function getItemStatus(
 /**
  * Get the color for an inventory status
  * @param status The status: 'In Stock', 'Low Stock', 'Out of Stock', or 'Reorder'
- * @returns CSS color class
+ * @returns Object with bg, text, and optional pulse for Tailwind classes
  */
-export function getStatusColor(status: string): string {
+export function getStatusColor(status: string): StatusColorStyle {
   switch (status.toLowerCase()) {
     case 'in stock':
-      return 'text-success';
+      return { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300' };
     case 'low stock':
-      return 'text-warning';
+      return { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300' };
     case 'out of stock':
-      return 'text-destructive';
+      return { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', pulse: true };
     case 'reorder':
-      return 'text-amber-500';
+      return { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-800 dark:text-amber-300', pulse: true };
     default:
-      return 'text-muted-foreground';
+      return { bg: 'bg-muted', text: 'text-muted-foreground' };
   }
 }
 

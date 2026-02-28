@@ -32,7 +32,7 @@ export default function Dashboard() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { toast } = useToast();
 
   // When navigating to /dashboard#analytics (e.g. from sidebar "Analytics"), scroll to section

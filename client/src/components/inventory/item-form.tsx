@@ -47,12 +47,13 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
   });
 
   // Update form values when initialData changes
+  type FormFieldKey = "name" | "description" | "quantity" | "sku" | "categoryId" | "lowStockThreshold" | "price" | "cost" | "location" | "barcode" | "defaultWarehouseId" | "status" | "reorderPoint";
+  const formPathKeys: readonly FormFieldKey[] = ["name", "description", "quantity", "sku", "categoryId", "lowStockThreshold", "price", "cost", "location", "barcode", "defaultWarehouseId", "status", "reorderPoint"];
   useEffect(() => {
     if (initialData) {
-      Object.keys(initialData).forEach((key) => {
-        const k = key as keyof InventoryItem;
-        if (k in form.getValues()) {
-          form.setValue(k as any, initialData[k] as any);
+      formPathKeys.forEach((key) => {
+        if (key in initialData && key in form.getValues()) {
+          form.setValue(key, initialData[key as keyof InventoryItem] as never);
         }
       });
     } else {
@@ -271,6 +272,7 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                           placeholder="0.00"
                           className="pl-7 item-cost-input"
                           {...field}
+                          value={field.value === null || field.value === undefined ? 0 : field.value}
                           onChange={(e) =>
                             field.onChange(
                               e.target.value === "" ? 0 : parseFloat(e.target.value)
@@ -321,6 +323,7 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                     <Input 
                       placeholder="e.g., Warehouse A, Shelf B5" 
                       {...field} 
+                      value={field.value === null || field.value === undefined ? "" : field.value}
                       className="item-location-input" 
                     />
                   </FormControl>
@@ -340,6 +343,7 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                       placeholder="Enter item description"
                       className="resize-none item-description-input"
                       {...field}
+                      value={field.value ?? ""}
                     />
                   </FormControl>
                   <FormMessage />

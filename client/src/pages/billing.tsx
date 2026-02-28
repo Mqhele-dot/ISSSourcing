@@ -10,6 +10,7 @@ import { InvoicesList } from "@/components/billing/invoices-list";
 import { PaymentsList } from "@/components/billing/payments-list";
 import { InvoiceDialog } from "@/components/billing/invoice-dialog";
 import { PaymentDialog } from "@/components/billing/payment-dialog";
+import type { Invoice, Payment } from "@shared/schema";
 
 type BillingInvoice = {
   id: number;
@@ -147,11 +148,11 @@ export default function BillingPage() {
             </div>
           ) : (
             <InvoicesList
-              invoices={invoices}
+              invoices={invoices as unknown as Invoice[]}
               onRefresh={refetchInvoices}
               onCreateInvoice={handleCreateInvoice}
               onPayInvoice={() => setPaymentDialogOpen(true)}
-              onEditInvoice={handleEditInvoice}
+              onEditInvoice={(inv: Invoice) => handleEditInvoice(inv as unknown as BillingInvoice)}
             />
           )}
         </TabsContent>
@@ -163,8 +164,9 @@ export default function BillingPage() {
             </div>
           ) : (
             <PaymentsList
-              payments={payments}
+              payments={payments as unknown as Payment[]}
               onRefresh={refetchPayments}
+              onCreatePayment={handleCreatePayment}
             />
           )}
         </TabsContent>
@@ -174,7 +176,7 @@ export default function BillingPage() {
       <InvoiceDialog
         open={invoiceDialogOpen}
         onClose={handleInvoiceDialogClose}
-        invoice={selectedInvoice}
+        invoice={selectedInvoice as Parameters<typeof InvoiceDialog>[0]["invoice"]}
       />
       
       <PaymentDialog

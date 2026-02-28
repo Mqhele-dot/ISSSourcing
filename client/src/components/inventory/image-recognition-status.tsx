@@ -12,12 +12,19 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 
+interface ImageRecognitionStatusResponse {
+  status?: string;
+  mode?: string;
+  aiProvider?: string;
+  message?: string;
+}
+
 /**
  * Component that displays the status of the image recognition service
  */
 const ImageRecognitionStatus: React.FC = () => {
   // Query the status of the image recognition service
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<ImageRecognitionStatusResponse>({
     queryKey: ['/api/image-recognition/status'],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -104,7 +111,7 @@ const ImageRecognitionStatus: React.FC = () => {
             {variant.icon}
             {variant.title}
           </span>
-          <Badge variant={variant.badgeVariant as any}>{variant.badgeText}</Badge>
+          <Badge variant={variant.badgeVariant as "default" | "secondary" | "destructive" | "outline"}>{variant.badgeText}</Badge>
         </CardTitle>
         <CardDescription>
           Provider: {aiProvider} | Mode: {mode}

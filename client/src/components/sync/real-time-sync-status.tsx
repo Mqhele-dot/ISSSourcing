@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useRealTimeSync, SyncMessageType, SyncMessage } from '@/hooks/use-real-time-sync';
+import { useRealTimeSync } from '@/hooks/use-real-time-sync';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, Check, AlertCircle, Database, Wifi, WifiOff, RefreshCw, Info } from 'lucide-react';
+import { Loader2, Check, AlertCircle, Database, Wifi, WifiOff, Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
@@ -13,7 +13,7 @@ import {
   ClockIcon
 } from '@radix-ui/react-icons';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
-import { isFeatureEnabled, setFeatureFlag } from '@/lib/config';
+import { setFeatureFlag } from '@/lib/config';
 
 interface RealTimeSyncStatusProps {
   showDebugInfo?: boolean;
@@ -25,7 +25,7 @@ export function RealTimeSyncStatus({ showDebugInfo = false }: RealTimeSyncStatus
   const [syncProgress, setSyncProgress] = useState(0);
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
   const [lastSyncError, setLastSyncError] = useState<string | null>(null);
-  const [pendingChanges, setPendingChanges] = useState(0);
+  const [pendingChanges, _setPendingChanges] = useState(0);
   
   const { 
     isConnected,

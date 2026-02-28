@@ -5,33 +5,27 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import { User } from "@shared/schema";
 import type { Request, Response, NextFunction } from "express";
 import {
   loginRateLimiter,
   registerRateLimiter,
   emailVerificationRateLimiter,
   passwordResetRateLimiter,
-  csrfProtection,
-  handleCSRFError,
-  detectSuspiciousActivity
 } from "./services/security-service";
 import {
   sendVerificationEmail,
   sendPasswordResetEmail,
-  sendWelcomeEmail,
   send2FASetupEmail,
-  sendSuspiciousActivityEmail
 } from "./services/email-service";
 import {
   verifyToken,
   generateSetupResponse
 } from "./services/two-factor-service";
 
+import type { User as SchemaUser } from "@shared/schema";
 declare global {
   namespace Express {
-    // Use the User type from schema
-    interface User extends Omit<import('@shared/schema').User, 'password'> {}
+    interface User extends Omit<SchemaUser, 'password'> {}
   }
 }
 

@@ -4,7 +4,7 @@ import { format, parseISO, subMonths, addMonths } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CalendarIcon, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useDateRangeParams } from '@/hooks/use-date-range-params';
@@ -25,7 +25,7 @@ interface DemandForecastProps {
 }
 
 export function DemandForecast({ itemId, itemName }: DemandForecastProps) {
-  const { dateRange, updateDateRange, range, updateRange } = useDateRangeParams(90);
+  const { dateRange, updateDateRange } = useDateRangeParams(90);
   const [view, setView] = useState<'3m' | '6m' | '12m'>('3m');
 
   // Build query parameters
@@ -182,7 +182,7 @@ export function DemandForecast({ itemId, itemName }: DemandForecastProps) {
                   />
                   <YAxis />
                   <Tooltip 
-                    formatter={(value: any) => [value, 'Units']}
+                    formatter={(value: number) => [value, 'Units']}
                     labelFormatter={(label) => `Date: ${label}`}
                   />
                   <Legend />

@@ -44,7 +44,7 @@ export function ReportFilters({
         endDate: dateRange.to,
       });
     }
-  }, [dateRange]);
+  }, [dateRange, filter, setFilter]);
 
   // Update date range control when filter changes externally
   useEffect(() => {

@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import type { Invoice } from "@shared/schema";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,10 +44,10 @@ import {
 } from "@/components/ui/alert-dialog";
 
 interface InvoicesListProps {
-  invoices: any[];
+  invoices: Invoice[];
   onCreateInvoice: () => void;
-  onPayInvoice: (invoice: any) => void;
-  onEditInvoice: (invoice: any) => void;
+  onPayInvoice: (invoice: Invoice) => void;
+  onEditInvoice: (invoice: Invoice) => void;
   onRefresh: () => void;
 }
 
@@ -60,18 +61,18 @@ export function InvoicesList({
   const { toast } = useToast();
   const [sortField, setSortField] = useState("dueDate");
   const [sortDirection, setSortDirection] = useState("desc");
-  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   
   // Sort invoices
   const sortedInvoices = [...invoices].sort((a, b) => {
-    let valueA = a[sortField];
-    let valueB = b[sortField];
+    let valueA = (a as Record<string, unknown>)[sortField];
+    let valueB = (b as Record<string, unknown>)[sortField];
     
     // Handle dates
     if (typeof valueA === 'string' && !isNaN(Date.parse(valueA))) {
       valueA = new Date(valueA).getTime();
-      valueB = new Date(valueB).getTime();
+      valueB = new Date(valueB as string).getTime();
     }
     
     // Handle numbers
@@ -139,7 +140,7 @@ export function InvoicesList({
       .join(" ");
     
     return (
-      <Badge variant={badgeVariant as any} className="font-normal">
+      <Badge variant={badgeVariant as "default" | "secondary" | "destructive" | "outline"} className="font-normal">
         {statusText}
       </Badge>
     );
@@ -152,9 +153,9 @@ export function InvoicesList({
       if (!res.ok) throw new Error("Failed to delete invoice");
       return id;
     },
-    onSuccess: (id) => {
+    onSuccess: (_id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      
+
       toast({
         title: "Invoice deleted",
         description: "The invoice has been deleted successfully.",
@@ -196,24 +197,24 @@ export function InvoicesList({
   });
   
   // Handle invoice actions
-  const handleDeleteClick = (invoice: any) => {
+  const handleDeleteClick = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
     setDeleteDialogOpen(true);
   };
   
-  const handleSendClick = (invoice: any) => {
+  const handleSendClick = (invoice: Invoice) => {
     sendInvoiceMutation.mutate(invoice.id);
   };
   
   // Handle document generation/printing/download
-  const handlePrintClick = (invoice: any) => {
+  const handlePrintClick = (_invoice: Invoice) => {
     toast({
       title: "Print feature",
       description: "Invoice printing is not yet implemented.",
     });
   };
   
-  const handleDownloadClick = (invoice: any) => {
+  const handleDownloadClick = (_invoice: Invoice) => {
     toast({
       title: "Download feature",
       description: "Invoice download is not yet implemented.",
@@ -367,14 +368,14 @@ export function InvoicesList({
               {sortedInvoices.map((invoice) => (
                 <TableRow key={invoice.id}>
                   <TableCell>{invoice.invoiceNumber || `#${invoice.id}`}</TableCell>
-                  <TableCell>{invoice.customer?.name || `Customer #${invoice.customerId}`}</TableCell>
+                  <TableCell>{(invoice as Invoice & { customer?: { name: string } }).customer?.name || `Customer #${invoice.customerId}`}</TableCell>
                   <TableCell>{format(new Date(invoice.createdAt), "MMM d, yyyy")}</TableCell>
                   <TableCell>{format(new Date(invoice.dueDate), "MMM d, yyyy")}</TableCell>
                   <TableCell>{getStatusBadge(invoice.status)}</TableCell>
                   <TableCell className="font-medium">{formatCurrency(invoice.total)}</TableCell>
-                  <TableCell>{formatCurrency(invoice.amountPaid || 0)}</TableCell>
-                  <TableCell className={invoice.dueAmount > 0 ? "text-red-600 dark:text-red-400 font-medium" : ""}>
-                    {formatCurrency(invoice.dueAmount)}
+                  <TableCell>{formatCurrency(invoice.paidAmount ?? 0)}</TableCell>
+                  <TableCell className={(invoice.dueAmount ?? 0) > 0 ? "text-red-600 dark:text-red-400 font-medium" : ""}>
+                    {formatCurrency(invoice.dueAmount ?? 0)}
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>

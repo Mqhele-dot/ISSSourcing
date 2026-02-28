@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useElectron } from '../../contexts/electron-provider';
-import { Loader2, Database, Save, RefreshCw, FileText, Check, AlertTriangle } from 'lucide-react';
+import { Loader2, Database, Save, RefreshCw, Check, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';

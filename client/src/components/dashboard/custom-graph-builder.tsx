@@ -65,13 +65,13 @@ export function CustomGraphBuilder() {
     queryKey: ["/api/inventory"],
     queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory"),
   });
-  const inventory = Array.isArray(inventoryData) ? inventoryData : [];
+  const inventory = useMemo(() => (Array.isArray(inventoryData) ? inventoryData : []), [inventoryData]);
 
   const { data: categoriesData, isLoading: catLoading } = useQuery({
     queryKey: ["/api/categories"],
     queryFn: () => requestJson<Category[]>("GET", "/api/categories"),
   });
-  const categories = Array.isArray(categoriesData) ? categoriesData : [];
+  const categories = useMemo(() => (Array.isArray(categoriesData) ? categoriesData : []), [categoriesData]);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/inventory/stats"],
@@ -85,7 +85,7 @@ export function CustomGraphBuilder() {
       return json?.byItem ?? [];
     },
   });
-  const stockUsage = Array.isArray(stockUsageData) ? stockUsageData : [];
+  const stockUsage = useMemo(() => (Array.isArray(stockUsageData) ? stockUsageData : []), [stockUsageData]);
 
   const chartData = useMemo(() => {
     const items = Array.isArray(inventory) ? inventory : [];
@@ -178,17 +178,20 @@ export function CustomGraphBuilder() {
       );
     }
 
-    const isPie = chartType === "pie";
+    const _isPie = chartType === "pie";
     const isBarHorizontal = chartType === "bar-horizontal";
-    const isCurrency = dataSource === "value-by-category" || dataSource === "top-value-items";
+    const isInventoryOverview = dataSource === "inventory-overview";
+    const isCurrency = (dataSource === "value-by-category" || dataSource === "top-value-items") && !isInventoryOverview;
     const formatTick = (v: number) =>
-      isCurrency && dataSource !== "inventory-overview" ? formatCurrency(v) : String(v);
+      isCurrency ? formatCurrency(v) : String(v);
 
-    const commonTooltip = ({ active, payload }: { active?: boolean; payload?: { payload: { fullName?: string; name: string; value: number } }[] }) => {
-      if (!active || !payload?.[0]) return null;
+    type TooltipPayloadItem = { payload?: { fullName?: string; name: string; value: number } };
+    const commonTooltip = (props: { active?: boolean; payload?: TooltipPayloadItem[] }) => {
+      const { active, payload } = props;
+      if (!active || !payload?.[0]?.payload) return null;
       const d = payload[0].payload;
       const label = d.fullName ?? d.name;
-      const val = isCurrency && dataSource !== "inventory-overview" ? formatCurrency(d.value) : d.value;
+      const val = isCurrency && !isInventoryOverview ? formatCurrency(d.value) : d.value;
       return (
         <div className="rounded-md border bg-background px-3 py-2 shadow-md">
           <p className="font-medium truncate max-w-[220px]">{label}</p>
@@ -231,7 +234,7 @@ export function CustomGraphBuilder() {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 24 }} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis type="number" tickLine={false} tickFormatter={dataSource === "inventory-overview" ? undefined : formatTick} />
+              <XAxis type="number" tickLine={false} tickFormatter={isInventoryOverview ? undefined : formatTick} />
               <YAxis type="category" dataKey="name" width={100} tickLine={false} tick={{ fontSize: 11 }} />
               <Tooltip content={commonTooltip} />
               <Bar dataKey="value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} name={valueLabel} />

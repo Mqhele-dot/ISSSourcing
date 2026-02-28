@@ -58,6 +58,9 @@ import {
   userRoleEnum,
   resourceEnum,
   permissionTypeEnum,
+  UserRoleEnum,
+  ResourceEnum,
+  PermissionTypeEnum,
   type UserRole,
   type Resource,
   type PermissionType,
@@ -370,9 +373,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const customRoleId = await storage.getUserCustomRoleId(user.id);
         if (customRoleId) {
           hasPermission = await storage.checkCustomRolePermission(
-            customRoleId, 
-            resource as string, 
-            permissionType as string
+            customRoleId,
+            resource as keyof typeof ResourceEnum,
+            permissionType as keyof typeof PermissionTypeEnum
           );
         }
       } 
@@ -1601,8 +1604,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Apply warehouse filters if provided
           if (filter.warehouseId) {
-            stockMovements = stockMovements.filter(movement => 
-              movement.fromWarehouseId === filter.warehouseId || movement.toWarehouseId === filter.warehouseId
+            stockMovements =             stockMovements.filter((movement) =>
+              movement.warehouseId === filter.warehouseId || movement.sourceWarehouseId === filter.warehouseId || movement.destinationWarehouseId === filter.warehouseId
             );
           }
           
@@ -2254,8 +2257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertWarehouseInventorySchema.partial().parse(req.body);
       
       // Get the previous state for comparison
-      const warehouseInventory = await storage.getWarehouseInventory();
-      const previousItem = warehouseInventory.find(item => item.id === id);
+      const previousItem = await storage.getWarehouseInventoryById(id);
       if (!previousItem) {
         return res.status(404).json({ message: "Warehouse inventory item not found" });
       }
@@ -3433,7 +3435,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/roles", async (_req: Request, res: Response) => {
     try {
       // Return a list of all available roles from UserRole enum
-      res.json(Object.values(UserRole));
+      res.json(Object.values(UserRoleEnum));
     } catch (error) {
       console.error("Error fetching roles:", error);
       res.status(500).json({ message: "Failed to fetch roles" });
@@ -3442,10 +3444,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get("/api/roles/:role/permissions", async (req: Request, res: Response) => {
     try {
-      const role = req.params.role as UserRole;
+      const role = req.params.role as keyof typeof UserRoleEnum;
       
       // Validate role exists
-      if (!Object.values(UserRole).includes(role)) {
+      if (!Object.values(UserRoleEnum).includes(role as UserRoleEnum)) {
         return res.status(400).json({ message: "Invalid role" });
       }
       
@@ -3931,8 +3933,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Update invoice status to SENT
       const updatedInvoice = await storage.updateInvoice(id, {
-        status: "SENT",
-        sentDate: new Date()
+        status: "SENT" as const
       });
       
       res.json(updatedInvoice);
@@ -4477,10 +4478,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       databaseError = error instanceof Error ? error.message : "Unknown database error";
     }
 
-    let schemaStatus = {
+    let schemaStatus: { ok: boolean; status: string; missingTables: string[] } = {
       ok: false,
-      status: "schema_incomplete" as const,
-      missingTables: [] as string[],
+      status: "schema_incomplete",
+      missingTables: [],
     };
     let seedSummary = {
       users: 0,
@@ -4495,10 +4496,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       seedSummary = await getDemoDataSummary();
     }
 
-    const overallStatus = databaseOk && schemaStatus.ok ? "ok" : "degraded";
+    const overallStatus = databaseOk && schemaStatus?.ok ? "ok" : "degraded";
 
     return {
-      status: overallStatus,
+      status: overallStatus as "ok" | "degraded",
       uptimeSeconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
       responseTimeMs: Date.now() - startedAt,
@@ -4510,7 +4511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         schema: schemaStatus,
         seed: seedSummary,
       },
-      migrationsStatus: schemaStatus.status,
+      migrationsStatus: (schemaStatus as { status?: string }).status ?? "schema_incomplete",
     };
   };
 
@@ -4589,7 +4590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Use the notifyDataChange function from real-time-sync-service if available
       if (typeof notifyDataChange === 'function') {
-        const clientsNotified = notifyDataChange(entity, action, data);
+        const clientsNotified = await notifyDataChange(entity, action, data);
         return res.json({ 
           success: true, 
           message: `Notified ${clientsNotified} clients about the data change`,

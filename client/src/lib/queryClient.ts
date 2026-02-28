@@ -113,9 +113,9 @@ export async function invTrackFetch<T>(
   }
 
   const payload = await parseJsonOrText(res);
-  const fallback = headerFallback ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { fallback?: string } }).meta?.fallback);
-  const endpoint = headerEndpoint ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { endpoint?: string } }).meta?.endpoint);
-  setFallbackState(fallback ?? null, endpoint ?? null);
+  const fallbackRaw = headerFallback ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { fallback?: string } }).meta?.fallback);
+  const endpointRaw = headerEndpoint ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { endpoint?: string } }).meta?.endpoint);
+  setFallbackState(typeof fallbackRaw === "string" ? fallbackRaw : null, typeof endpointRaw === "string" ? endpointRaw : null);
 
   if (isApiEnvelope<T>(payload)) {
     if (payload.ok) {
@@ -176,11 +176,11 @@ export async function requestJson<T>(method: string, url: string, data?: unknown
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+export function getQueryFn<T>(options: { on401: "throw" }): QueryFunction<T>;
+export function getQueryFn<T>(options: { on401: "returnNull" }): QueryFunction<T | null>;
+export function getQueryFn<T>(options: { on401: UnauthorizedBehavior }): QueryFunction<T | null> {
+  const { on401: unauthorizedBehavior } = options;
+  return async ({ queryKey }) => {
     const url = queryKey[0] as string;
     try {
       const { data } = await invTrackFetch<T>("GET", url);
@@ -193,6 +193,7 @@ export const getQueryFn: <T>(options: {
       throw err;
     }
   };
+}
 
 /**
  * Format mutation error for consistent error toasts: action + endpoint + reason.

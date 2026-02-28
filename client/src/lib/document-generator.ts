@@ -1,12 +1,11 @@
 /**
  * Document Generator
- * 
+ *
  * This module provides utilities for generating various document formats
  * including PDFs, Excel spreadsheets, and CSV files. It uses the Electron
  * bridge for desktop environments and falls back to web-based alternatives
  * in browser environments.
  */
-
 import { isElectronEnvironment } from './electron-bridge';
 
 // Document generator API for Electron 

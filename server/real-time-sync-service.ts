@@ -331,8 +331,8 @@ async function handleSyncRequest(client: SyncClient, payload: any): Promise<void
           // Get units from app settings instead of a dedicated units table
           try {
             const settings = await storage.getSettings();
-            data = settings.availableUnits || [];
-            if (!Array.isArray(data) || data.length === 0) {
+            data = Array.isArray(settings?.availableUnits) ? settings.availableUnits : [];
+            if (data.length === 0) {
               data = ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"];
             }
           } catch (error) {
@@ -618,25 +618,21 @@ export function getConnectedClientInfo(): any[] {
 /**
  * Broadcast a message to all connected clients
  */
-export function broadcastToAllClients(message: SyncMessage): number {
+export async function broadcastToAllClients(message: SyncMessage): Promise<number> {
   let successCount = 0;
-  
-  syncClients.forEach((client) => {
+  for (const client of syncClients.values()) {
     if (client.socket.readyState === WebSocket.OPEN) {
-      const success = sendSyncMessage(client.socket, message, client);
-      if (success) {
-        successCount++;
-      }
+      const success = await sendSyncMessage(client.socket, message, client);
+      if (success) successCount++;
     }
-  });
-  
+  }
   return successCount;
 }
 
 /**
  * Notify all clients about a data change
  */
-export function notifyDataChange(entity: string, action: string, data: any): number {
+export async function notifyDataChange(entity: string, action: string, data: any): Promise<number> {
   const message: SyncMessage = {
     type: SyncMessageType.DATA_CHANGE,
     payload: {

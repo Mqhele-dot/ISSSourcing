@@ -56,7 +56,7 @@ export function InventoryValue() {
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#bbb'];
 
   // Custom tooltip for the chart
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number; color?: string }> }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-background border border-border p-2 rounded-md shadow">
@@ -143,7 +143,7 @@ export function InventoryValue() {
                       layout="horizontal" 
                       align="center" 
                       verticalAlign="bottom"
-                      formatter={(value, entry) => {
+                      formatter={(value, _entry) => {
                         // Truncate long names and show tooltip on hover
                         return value.length > 10 ? `${value.substring(0, 10)}...` : value;
                       }}

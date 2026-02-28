@@ -1,11 +1,10 @@
 /**
  * Electron Bridge - Helper functions for communicating with Electron
- * 
+ *
  * This module provides utility functions to safely communicate with Electron's
  * main process from the renderer process. It handles environment detection and
  * provides type-safe function calls.
  */
-
 // Check if we're running in Electron
 export function isElectronEnvironment(): boolean {
   return window.electron !== undefined;

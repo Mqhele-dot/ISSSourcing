@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -166,14 +165,14 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
     };
   };
   
-  // Default values for the form
-  const defaultValues: Partial<InvoiceFormValues> = {
+  // Default values for the form (memoized to satisfy exhaustive-deps)
+  const defaultValues = useMemo<Partial<InvoiceFormValues>>(() => ({
     customerId: 0,
     dueDate: addDays(new Date(), 30),
     status: "DRAFT",
     notes: "",
     items: [],
-  };
+  }), []);
   
   // Fetch inventory items query
   const { data: inventoryItems = [] } = useQuery<InventoryOption[]>({
@@ -221,7 +220,7 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
       form.reset(defaultValues);
       setItems([]);
     }
-  }, [invoice, form]);
+  }, [invoice, form, defaultValues]);
   
   // New item form
   const newItemForm = useForm<InvoiceItemValues>({
@@ -313,9 +312,14 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
   // Create or update invoice mutation
   const invoiceMutation = useMutation({
     mutationFn: async (data: InvoiceFormValues) => {
-      // Calculate totals
-      const subtotal = calculateSubtotal(data.items || []);
-      const taxAmount = calculateTaxTotal(data.items || []);
+      // Normalize line items so discount/taxRate are numbers for totals
+      const normalizedItems = (data.items || []).map((it) => ({
+        ...it,
+        discount: it.discount ?? 0,
+        taxRate: it.taxRate ?? 0,
+      })) as InvoiceLineItem[];
+      const subtotal = calculateSubtotal(normalizedItems);
+      const taxAmount = calculateTaxTotal(normalizedItems);
       const total = subtotal;
       const dueAmount = total - (data.amountPaid || 0);
       
@@ -409,7 +413,7 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
       .join(" ");
     
     return (
-      <Badge variant={badgeVariant as any} className="font-normal">
+      <Badge variant={badgeVariant as "default" | "secondary" | "destructive" | "outline"} className="font-normal">
         {statusText}
       </Badge>
     );

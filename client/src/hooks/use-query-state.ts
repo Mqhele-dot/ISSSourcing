@@ -19,9 +19,8 @@ export function useQueryState<T extends QueryState>(defaults: T) {
   const [location, setLocation] = useLocation();
 
   const current = useMemo(() => {
-    const params = new URLSearchParams(
-      typeof window !== "undefined" ? window.location.search : "",
-    );
+    const search = location.includes("?") ? location.slice(location.indexOf("?")) : "";
+    const params = new URLSearchParams(search);
 
     const parsed = { ...defaults } as Record<string, QueryStateValue>;
     for (const key of Object.keys(defaults)) {

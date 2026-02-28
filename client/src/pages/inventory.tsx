@@ -125,7 +125,7 @@ export default function InventoryPage() {
           String(item.onHand),
           String(item.allocated),
           String(item.available),
-          item.updatedAt || "",
+          item.updatedAt ? (typeof item.updatedAt === "string" ? item.updatedAt : new Date(item.updatedAt).toISOString()) : "",
         ]),
       ];
       downloadCsv("inventory-export.csv", rows);

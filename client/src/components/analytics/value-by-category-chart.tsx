@@ -21,13 +21,13 @@ export function ValueByCategoryChart() {
     queryKey: ["/api/inventory"],
     queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory"),
   });
-  const items = Array.isArray(itemsData) ? itemsData : [];
+  const items = useMemo(() => (Array.isArray(itemsData) ? itemsData : []), [itemsData]);
 
   const { data: categoriesData } = useQuery({
     queryKey: ["/api/categories"],
     queryFn: () => requestJson<Category[]>("GET", "/api/categories"),
   });
-  const categories = Array.isArray(categoriesData) ? categoriesData : [];
+  const categories = useMemo(() => (Array.isArray(categoriesData) ? categoriesData : []), [categoriesData]);
 
   const chartData = useMemo(() => {
     if (!items?.length || !categories?.length) return [];

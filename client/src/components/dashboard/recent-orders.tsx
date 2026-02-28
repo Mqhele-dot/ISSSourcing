@@ -16,12 +16,6 @@ import { fetchPurchaseOrdersEnvelope } from "@/api/client";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { FileText } from "lucide-react";
 
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
-}
-
 export function RecentOrders() {
   const [, setLocation] = useLocation();
 

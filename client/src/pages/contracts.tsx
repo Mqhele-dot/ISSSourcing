@@ -486,7 +486,7 @@ export default function ContractsPage() {
                   <FormItem>
                     <FormLabel>Reference number</FormLabel>
                     <FormControl>
-                      <Input placeholder="Optional" {...field} />
+                      <Input placeholder="Optional" {...field} value={field.value ?? ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -559,7 +559,7 @@ export default function ContractsPage() {
                     <FormItem>
                       <FormLabel>Currency</FormLabel>
                       <FormControl>
-                        <Input placeholder="USD" {...field} />
+                        <Input placeholder="USD" {...field} value={field.value ?? ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -573,7 +573,7 @@ export default function ContractsPage() {
                   <FormItem>
                     <FormLabel>Summary</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Brief summary of the contract" rows={3} {...field} />
+                      <Textarea placeholder="Brief summary of the contract" rows={3} {...field} value={field.value ?? ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -586,7 +586,7 @@ export default function ContractsPage() {
                   <FormItem>
                     <FormLabel>Notes</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Internal notes" rows={2} {...field} />
+                      <Textarea placeholder="Internal notes" rows={2} {...field} value={field.value ?? ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

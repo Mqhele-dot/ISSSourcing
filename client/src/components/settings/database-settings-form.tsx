@@ -15,18 +15,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Database, RotateCw, CheckCircle, XCircle, CloudCog, Download, Upload } from "lucide-react";
+import { Loader2, Database, RotateCw, CheckCircle, XCircle, CloudCog } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { DatabaseSettings } from "@/hooks/use-settings";
 import { useSettings } from "@/hooks/use-settings";
-import { isElectronEnvironment, ElectronBridge, DatabaseInfo, BackupResult } from "@/lib/electron-bridge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { isElectronEnvironment, ElectronBridge } from "@/lib/electron-bridge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Define schema for synchronization settings
@@ -60,7 +53,7 @@ type DatabaseSettingsFormType = z.infer<typeof databaseSettingsSchema>;
 
 export function DatabaseSettingsForm() {
   const { toast } = useToast();
-  const [isElectron, setIsElectron] = useState(isElectronEnvironment());
+  const [isElectron, _setIsElectron] = useState(isElectronEnvironment());
   const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
   const { settings, updateSettings } = useSettings();
   const electronBridge = useMemo(() => new ElectronBridge(), []);
@@ -91,7 +84,10 @@ export function DatabaseSettingsForm() {
   // Update form with settings if available
   useEffect(() => {
     if (settings && settings.databaseSettings) {
-      const dbSettings = settings.databaseSettings as DatabaseSettings;
+      const dbSettings = settings.databaseSettings as DatabaseSettings & {
+        syncInterval?: number; offlineMode?: boolean; syncOnStartup?: boolean;
+        maxOfflineDays?: number; compressionEnabled?: boolean;
+      };
       form.reset({
         // Sync settings
         useLocalDB: dbSettings.useLocalDB ?? true,

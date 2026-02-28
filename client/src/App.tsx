@@ -35,7 +35,7 @@ import IntegrationsPage from "@/pages/integrations";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AccentProvider } from "@/components/accent-provider";
 import { DensityProvider } from "@/components/density-provider";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { TutorialProvider } from "@/contexts/tutorial-context";
 import { HelpExplainProvider } from "@/contexts/help-explain-context";
 import { TutorialSteps } from "@/components/tutorial/tutorial-steps";
@@ -43,7 +43,7 @@ import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { isElectronEnvironment } from "./lib/electron-bridge";
 import { ElectronProvider } from "./contexts/electron-provider";
-import { TitleBar, UpdateNotification } from "./components/electron";
+import { UpdateNotification } from "./components/electron";
 import { DesktopLayout } from "./components/layout/desktop-layout";
 
 // Error boundary component

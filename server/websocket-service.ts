@@ -4,7 +4,6 @@ import { WebSocketServer } from 'ws';
 import * as zlib from 'zlib';
 import { v4 as uuidv4 } from 'uuid';
 import type { IStorage } from './storage';
-import { AppSettings } from '../shared/schema';
 
 // Types of messages
 enum MessageType {

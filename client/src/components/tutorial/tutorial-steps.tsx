@@ -450,7 +450,8 @@ export function TutorialSteps() {
       }
     ]);
     
-  // Empty dependency array since we're using isRegistered.current to prevent re-registration
+  // Empty dependency array intentional: register once on mount; isRegistered.current prevents re-registration
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- registerTutorial is stable, mount-only effect
   }, []);
   
   // This component doesn't render anything visible

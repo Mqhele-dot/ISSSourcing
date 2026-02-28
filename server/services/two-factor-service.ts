@@ -46,12 +46,12 @@ export async function generateSetupResponse(username: string): Promise<{
 }> {
   const issuer = process.env.APP_NAME || 'Inventory Manager';
   const secret = generateSecret(issuer, username);
-  
-  const qrCodeUrl = await generateQRCode(secret.otpauth_url);
+  const otpauthUrl = secret.otpauth_url ?? '';
+  const qrCodeUrl = await generateQRCode(otpauthUrl);
   
   return {
-    secret: secret.base32,
+    secret: secret.base32 ?? '',
     qrCodeUrl,
-    otpauthUrl: secret.otpauth_url
+    otpauthUrl
   };
 }

@@ -80,7 +80,7 @@ export default function ProfilePage() {
         profilePicture: user.profilePicture || null,
       });
     }
-  }, [user]);
+  }, [user, profileForm]);
 
   // Set up security preferences form
   const securityForm = useForm({
@@ -111,7 +111,7 @@ export default function ProfilePage() {
         sessionTimeout: securityPreferences.sessionTimeout,
       });
     }
-  }, [securityPreferences, loadingPreferences]);
+  }, [securityPreferences, loadingPreferences, securityForm]);
 
   // Profile update mutation
   const updateProfileMutation = useMutation({

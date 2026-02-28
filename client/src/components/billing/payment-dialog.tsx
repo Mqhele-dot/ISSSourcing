@@ -84,7 +84,7 @@ type PaymentDialogProps = {
 
 export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
   const { toast } = useToast();
-  const [selectedInvoice, setSelectedInvoice] = useState<PaymentInvoiceOption | null>(null);
+  const [_selectedInvoice, setSelectedInvoice] = useState<PaymentInvoiceOption | null>(null);
   
   // Default form values
   const defaultValues: Partial<PaymentFormValues> = {
@@ -157,7 +157,7 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
       .join(" ");
     
     return (
-      <Badge variant={badgeVariant as any} className="font-normal ml-2">
+      <Badge variant={badgeVariant as "default" | "secondary" | "destructive" | "outline"} className="font-normal ml-2">
         {statusText}
       </Badge>
     );
@@ -208,7 +208,7 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
   // Create payment with Stripe
   const processPaymentWithStripe = () => {
     const values = form.getValues();
-    const invoice = invoices.find((invoice: PaymentInvoiceOption) => invoice.id === values.invoiceId);
+    const _invoice = invoices.find((inv: PaymentInvoiceOption) => inv.id === values.invoiceId);
     
     // Check if we have Stripe keys configured
     if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {

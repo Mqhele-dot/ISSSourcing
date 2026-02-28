@@ -115,8 +115,9 @@ export async function analyzeProductImage(imageBuffer: Buffer): Promise<Recogniz
       if (jsonMatch) {
         try {
           parsedContent = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-        } catch (e2) {
-          throw new Error(`Failed to parse OpenAI response as JSON: ${e2.message}`);
+        } catch (e2: unknown) {
+          const msg = e2 instanceof Error ? e2.message : String(e2);
+          throw new Error(`Failed to parse OpenAI response as JSON: ${msg}`);
         }
       } else {
         throw new Error('Could not extract JSON from OpenAI response');
@@ -214,26 +215,21 @@ async function findSimilarItems(name: string, category: string): Promise<Array<{
     }
     
     // Find similar items based on name or category
-    const similarItems = items
-      .filter(item => {
-        // Simple similarity check - in a real application you would use more sophisticated algorithms
-        const nameSimilarity = item.name.toLowerCase().includes(name.toLowerCase()) ||
-                              name.toLowerCase().includes(item.name.toLowerCase());
-        
-        // Get category name if available
-        let categoryMatch = false;
-        if (item.categoryId && category) {
-          const itemCategory = storage.getCategory(item.categoryId);
-          if (itemCategory) {
-            categoryMatch = itemCategory.name.toLowerCase().includes(category.toLowerCase()) ||
-                           category.toLowerCase().includes(itemCategory.name.toLowerCase());
-          }
+    const matchingItems: typeof items = [];
+    for (const item of items) {
+      const nameSimilarity = item.name.toLowerCase().includes(name.toLowerCase()) ||
+                            name.toLowerCase().includes(item.name.toLowerCase());
+      let categoryMatch = false;
+      if (item.categoryId && category) {
+        const itemCategory = await storage.getCategory(item.categoryId);
+        if (itemCategory) {
+          categoryMatch = itemCategory.name.toLowerCase().includes(category.toLowerCase()) ||
+                         category.toLowerCase().includes(itemCategory.name.toLowerCase());
         }
-        
-        return nameSimilarity || categoryMatch;
-      })
-      .slice(0, 5) // Limit to 5 similar items
-      .map(item => {
+      }
+      if (nameSimilarity || categoryMatch) matchingItems.push(item);
+    }
+    const similarItems = matchingItems.slice(0, 5).map(item => {
         // Calculate similarity score (simplified)
         let score = 0.5; // Base score
         
@@ -242,12 +238,12 @@ async function findSimilarItems(name: string, category: string): Promise<Array<{
           score += 0.3;
         }
         
-        return {
-          id: item.id,
-          name: item.name,
-          similarity: parseFloat(score.toFixed(2))
-        };
-      });
+      return {
+        id: item.id,
+        name: item.name,
+        similarity: parseFloat(score.toFixed(2))
+      };
+    });
     
     return similarItems;
   } catch (error) {

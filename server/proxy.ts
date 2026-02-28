@@ -10,8 +10,8 @@ const httpProxy = createServer(async (req, res) => {
   try {
     const targetReq = await fetch(targetUrl, {
       method: req.method,
-      headers: req.headers as any,
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? req : undefined,
+      headers: req.headers as HeadersInit,
+      body: req.method !== 'GET' && req.method !== 'HEAD' ? undefined : undefined,
       redirect: 'manual',
     });
     
@@ -45,16 +45,16 @@ httpProxy.on('upgrade', (request, socket, head) => {
       const targetWs = new WebSocket('ws://localhost:3000/ws');
       
       // Forward messages from client to target
-      ws.on('message', (message) => {
+      ws.on('message', (message: unknown) => {
         if (targetWs.readyState === WebSocket.OPEN) {
-          targetWs.send(message.toString());
+          targetWs.send(typeof message === 'string' ? message : Buffer.isBuffer(message) ? message : String(message));
         }
       });
       
       // Forward messages from target to client
-      targetWs.on('message', (message) => {
+      targetWs.on('message', (message: unknown) => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(message.toString());
+          ws.send(typeof message === 'string' ? message : Buffer.isBuffer(message) ? message : String(message));
         }
       });
       
@@ -72,11 +72,11 @@ httpProxy.on('upgrade', (request, socket, head) => {
       });
       
       // Handle errors
-      ws.on('error', (error) => {
+      ws.on('error', (error: unknown) => {
         console.error('WebSocket proxy client error:', error);
       });
       
-      targetWs.on('error', (error) => {
+      targetWs.on('error', (error: unknown) => {
         console.error('WebSocket proxy target error:', error);
       });
     });

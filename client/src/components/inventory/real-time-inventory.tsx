@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useWebSocket } from '@/hooks/use-websocket';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
 import { setFeatureFlag } from '@/lib/config';
 
+type InventoryUpdateEntry = { item: { name: string }; currentQuantity: number; warehouseName: string; previousQuantity?: number };
+
 export function RealTimeInventory() {
   // Fetch warehouses to allow user to choose which ones to monitor
   const { data: warehouses, isLoading: warehousesLoading } = useQuery({
@@ -21,22 +23,19 @@ export function RealTimeInventory() {
 
   // State for selected warehouses
   const [selectedWarehouses, setSelectedWarehouses] = useState<number[]>([]);
-  const [recentUpdates, setRecentUpdates] = useState<any[]>([]);
+  const [recentUpdates, setRecentUpdates] = useState<InventoryUpdateEntry[]>([]);
   const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Handle inventory updates from WebSocket
-  const handleInventoryUpdate = (payload: any) => {
-    // Add to recent updates, keeping only the last 10
-    setRecentUpdates(prev => {
-      const newUpdates = [payload, ...prev].slice(0, 10);
-      return newUpdates;
-    });
+  const handleInventoryUpdate = (payload: unknown) => {
+    const p = payload as InventoryUpdateEntry;
+    setRecentUpdates(prev => [p, ...prev].slice(0, 10));
     setLastUpdateTime(new Date().toLocaleTimeString());
   };
 
   // Handle stock alerts from WebSocket
-  const handleStockAlert = (payload: any) => {
+  const handleStockAlert = (payload: { item: { name: string }; warehouse: { name?: string; warehouseId?: number }; currentLevel: number; reorderThreshold: number }) => {
     const { item, warehouse, currentLevel, reorderThreshold } = payload;
     toast({
       title: `Low Stock Alert: ${item.name}`,
@@ -146,7 +145,7 @@ export function RealTimeInventory() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Warehouses</SelectItem>
-                  {warehouses && Array.isArray(warehouses) ? warehouses.map((warehouse: any) => (
+                  {warehouses && Array.isArray(warehouses) ? warehouses.map((warehouse: { id: number; name: string }) => (
                     <SelectItem key={warehouse.id} value={warehouse.id.toString()}>
                       {warehouse.name}
                     </SelectItem>

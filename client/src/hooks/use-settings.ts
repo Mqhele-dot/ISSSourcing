@@ -3,7 +3,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { AppSettings, AppSettingsFormWithVat } from "@shared/schema";
 
-// Define database settings type
+// Define database settings type (includes form-only fields from database-settings-form)
 export type DatabaseSettings = {
   host?: string;
   port?: string;
@@ -12,6 +12,11 @@ export type DatabaseSettings = {
   database?: string;
   autoConnect?: boolean;
   useLocalDB?: boolean;
+  syncInterval?: number;
+  offlineMode?: boolean;
+  syncOnStartup?: boolean;
+  maxOfflineDays?: number;
+  compressionEnabled?: boolean;
 };
 
 // Re-export needed types
@@ -51,6 +56,10 @@ export function useSettings() {
     showPricesWithVat: true,
     databaseSettings: null,
     updatedAt: new Date(),
+    availableUnits: ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"],
+    defaultUnit: "each",
+    enableCustomTags: true,
+    defaultTags: ["featured", "seasonal", "sale", "new", "discontinued"],
   };
 
   const updateSettings = useMutation({

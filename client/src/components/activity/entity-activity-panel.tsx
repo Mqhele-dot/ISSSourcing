@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
 import { Badge } from "@/components/ui/badge";
 import { useAsyncResource } from "@/hooks/use-async-resource";
-import { fetchActivityEnvelope, type ActivityRecord } from "@/api/client";
+import { fetchActivityEnvelope } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
 
 function formatDate(value: string | null) {

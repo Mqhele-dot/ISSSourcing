@@ -123,7 +123,7 @@ export default function ReorderRequestsPage() {
       
       toast({
         title: "Converted to Requisition",
-        description: `A new purchase requisition (${data.requisitionNumber}) has been created`,
+        description: `A new purchase requisition (${(data as { requisitionNumber?: string }).requisitionNumber ?? "N/A"}) has been created`,
       });
       setConversionDialogOpen(false);
     },
@@ -185,16 +185,16 @@ export default function ReorderRequestsPage() {
   const exportReport = async (format: string) => {
     if (exporting) return;
     setExporting(true);
-    const url = `/api/export/reorder-requests/${format}`;
-    if (process.env.NODE_ENV === "development") console.debug("[Export]", url);
+    const apiUrl = `/api/export/reorder-requests/${format}`;
+    if (process.env.NODE_ENV === "development") console.debug("[Export]", apiUrl);
     try {
-      const response = await apiRequest("GET", url);
+      const response = await apiRequest("GET", apiUrl);
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
       
       // Create temporary anchor element to trigger download
       const a = document.createElement('a');
-      a.href = url;
+      a.href = blobUrl;
       
       // Use .xlsx extension for Excel files
       const fileExtension = format === 'excel' ? 'xlsx' : format;
@@ -204,7 +204,7 @@ export default function ReorderRequestsPage() {
       a.click();
       
       // Clean up
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(blobUrl);
       document.body.removeChild(a);
       
       toast({

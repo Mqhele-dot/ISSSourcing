@@ -319,13 +319,13 @@ const DocumentExtractorPage: React.FC = () => {
     setUrls(urls.filter(u => u !== url));
   };
 
-  // Handle database import
-  const handleDatabaseImport = (file: File) => {
+  // Handle database import (stable callback for dropzone)
+  const handleDatabaseImport = useCallback((file: File) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('targetSchema', targetSchema);
     formData.append('columnMapping', JSON.stringify(columnMapping));
-    
+
     databaseImportMutation.mutate(formData, {
       onSuccess: (data) => {
         toast({
@@ -335,14 +335,14 @@ const DocumentExtractorPage: React.FC = () => {
         });
       }
     });
-  };
+  }, [targetSchema, columnMapping, databaseImportMutation, toast]);
 
   // Dropzone for database import
   const onDatabaseImportDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles && acceptedFiles.length > 0) {
       handleDatabaseImport(acceptedFiles[0]);
     }
-  }, [targetSchema, columnMapping]);
+  }, [handleDatabaseImport]);
 
   const { getRootProps: getDatabaseImportRootProps, getInputProps: getDatabaseImportInputProps } = useDropzone({
     onDrop: onDatabaseImportDrop,

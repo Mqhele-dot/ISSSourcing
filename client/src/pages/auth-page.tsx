@@ -227,7 +227,7 @@ function LoginForm({
       
       loginMutation.mutate(data, {
         onSuccess: (userData) => {
-          if (userData.requiresTwoFactor) {
+          if ((userData as { requiresTwoFactor?: boolean }).requiresTwoFactor) {
             onTwoFactorRequired(userData);
           }
         },
@@ -884,8 +884,9 @@ function TwoFactorAuthForm({
           loginMutation.mutate({ 
             username: userData.username,
             password: "VERIFIED_BY_2FA", // Dummy value, won't be used
+            rememberMe: false,
             twoFactorVerified: true
-          }, {
+          } as Parameters<typeof loginMutation.mutate>[0], {
             onSuccess: () => {
               onClose();
             }

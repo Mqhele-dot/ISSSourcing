@@ -1,14 +1,18 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { ElectronBridge, isElectronEnvironment } from '../lib/electron-bridge';
+import { ElectronBridge, isElectronEnvironment, appControls } from '../lib/electron-bridge';
 
 export interface ElectronContextType {
   isElectron: boolean;
   bridge: ElectronBridge | null;
   electron?: {
-    on: (channel: string, callback: (...args: any[]) => void) => () => void;
-    invoke: (channel: string, ...args: any[]) => Promise<any>;
-    send: (channel: string, ...args: any[]) => void;
+    on: (channel: string, callback: (...args: unknown[]) => void) => () => void;
+    invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
+    send: (channel: string, ...args: unknown[]) => void;
   } | null;
+  isMaximized?: boolean;
+  toggleMaximize?: () => void;
+  minimizeWindow?: () => void;
+  closeWindow?: () => void;
 }
 
 const ElectronContext = createContext<ElectronContextType>({
@@ -55,8 +59,18 @@ export const ElectronProvider: React.FC<ElectronProviderProps> = ({ children }) 
     }
   }, []);
 
+  const value: ElectronContextType = {
+    isElectron,
+    bridge,
+    electron,
+    isMaximized: false,
+    toggleMaximize: () => appControls.maximize(),
+    minimizeWindow: () => appControls.minimize(),
+    closeWindow: () => appControls.close(),
+  };
+
   return (
-    <ElectronContext.Provider value={{ isElectron, bridge, electron }}>
+    <ElectronContext.Provider value={value}>
       {children}
     </ElectronContext.Provider>
   );

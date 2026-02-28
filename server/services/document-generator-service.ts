@@ -1,5 +1,5 @@
 // Document generator service
-import type { PDFPage } from 'pdf-lib';
+import type { PDFPage, PDFFont } from 'pdf-lib';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import Excel from 'exceljs';
 import { createWriteStream } from 'fs';
@@ -72,8 +72,8 @@ function truncateForPdf(s: string, maxLen: number): string {
 function drawPdfReportHeader(
   page: PDFPage,
   title: string,
-  font: ReturnType<Awaited<ReturnType<typeof PDFDocument.prototype.embedFont>>>,
-  boldFont: ReturnType<Awaited<ReturnType<typeof PDFDocument.prototype.embedFont>>>
+  font: PDFFont,
+  boldFont: PDFFont
 ): void {
   const { width, height } = page.getSize();
   const m = PDF_LAYOUT.margin;
@@ -113,7 +113,7 @@ function drawPdfReportHeader(
 function drawPdfReportFooter(
   page: PDFPage,
   pageNum: number,
-  font: ReturnType<Awaited<ReturnType<typeof PDFDocument.prototype.embedFont>>>
+  font: PDFFont
 ): void {
   const { width, height } = page.getSize();
   const m = PDF_LAYOUT.margin;
@@ -143,8 +143,8 @@ function drawBorderedTable(
   headers: string[],
   colWidths: number[],
   rows: string[][],
-  font: ReturnType<Awaited<ReturnType<typeof PDFDocument.prototype.embedFont>>>,
-  boldFont: ReturnType<Awaited<ReturnType<typeof PDFDocument.prototype.embedFont>>>
+  font: PDFFont,
+  boldFont: PDFFont
 ): void {
   const m = PDF_LAYOUT.margin;
   const tableTop = PDF_LAYOUT.pageHeight - PDF_LAYOUT.headerHeight - PDF_LAYOUT.margin;

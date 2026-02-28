@@ -149,23 +149,19 @@ export async function detectSuspiciousActivity(
     const hasUsedUserAgentBefore = await storage.hasUserUsedUserAgentBefore(userId, userAgent);
     
     // 3. Check for multiple failed attempts prior to this successful login
-    const recentFailedAttempts = await storage.getRecentFailedLoginAttempts(userId, 24); // last 24 hours
+    const recentFailedAttempts = await storage.getFailedLoginAttempts(userId, 24);
     const hasMultipleFailedAttempts = recentFailedAttempts.length >= 3;
     
     // 4. Check for logins from different geographic locations in a short time
     // This would typically involve an IP geolocation service
     
-    // Log this access for future checks
+    // Log this access for future checks (timestamp omitted - schema uses defaultNow())
     await storage.logUserAccess({
       userId,
-      ipAddress,
-      userAgent,
+      ipAddress: ipAddress ?? null,
+      userAgent: userAgent ?? null,
       action: 'login',
-      isSuccessful: true,
-      timestamp: new Date(),
-      additionalInfo: JSON.stringify({ 
-        isSuspicious: !hasUsedIpBefore || !hasUsedUserAgentBefore || hasMultipleFailedAttempts
-      })
+      details: { isSuspicious: !hasUsedIpBefore || !hasUsedUserAgentBefore || hasMultipleFailedAttempts }
     });
     
     // Return true if activity seems suspicious

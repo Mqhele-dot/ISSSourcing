@@ -9,13 +9,12 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { ExternalLink } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
 import { requestJson } from '@/lib/queryClient';
 import { type InventoryItem } from '@shared/schema';
 
 export function TopItems() {
   const [, setLocation] = useLocation();
-  const { dateRange, updateDateRange, range, updateRange } = useDateRangeParams(30);
+  const { dateRange, updateDateRange } = useDateRangeParams(30);
 
   // Build query parameters
   const queryParams = new URLSearchParams();

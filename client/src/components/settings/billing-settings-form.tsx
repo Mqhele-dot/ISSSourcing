@@ -18,7 +18,6 @@ import {
   Card, 
   CardContent, 
   CardDescription, 
-  CardFooter, 
   CardHeader, 
   CardTitle 
 } from "@/components/ui/card";
@@ -42,8 +41,6 @@ import { useToast } from "@/hooks/use-toast";
 import { 
   AlertCircle, 
   CreditCard, 
-  DollarSign, 
-  Receipt, 
   FileText,
   Save,
   AlertTriangle,
@@ -107,7 +104,7 @@ export function BillingSettingsForm() {
   // Fetch settings
   const {
     data: settings,
-    isLoading: isLoadingSettings,
+    isLoading: _isLoadingSettings,
   } = useQuery({
     queryKey: ["/api/settings/billing"],
     queryFn: getQueryFn({ on401: "throw" }),
@@ -152,7 +149,7 @@ export function BillingSettingsForm() {
       thirdReminderDays: 14,
     },
     // Merge with fetched settings when available
-    values: settings || undefined,
+    values: (settings as BillingSettingsValues | undefined) || undefined,
   });
   
   // Update payment processor fields when payment processor changes

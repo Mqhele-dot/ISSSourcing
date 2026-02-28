@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 export const OfflineModeIndicator: React.FC = () => {
   const { isElectron, bridge } = useElectron();
   const [isOffline, setIsOffline] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [_connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'checking'>('checking');
 
   useEffect(() => {
     if (!isElectron || !bridge) return;

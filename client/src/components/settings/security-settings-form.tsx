@@ -18,14 +18,6 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2, Shield, Lock, Key, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
 // Define schema for form validation
 const securitySettingsSchema = z.object({
   enableTwoFactor: z.boolean().default(false),
@@ -42,7 +34,7 @@ type SecuritySettingsFormType = z.infer<typeof securitySettingsSchema>;
 
 export function SecuritySettingsForm() {
   const { toast } = useToast();
-  const { settings, updateSettings } = useSettings();
+  const { updateSettings } = useSettings();
 
   // Create form with default values
   const form = useForm<SecuritySettingsFormType>({

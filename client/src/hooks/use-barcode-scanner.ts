@@ -22,7 +22,7 @@ interface UseBarcodeScanner {
   stopScanning: () => void;
 }
 
-// Declare missing constants for the HTML5QRCode library
+// Declare missing constants for the HTML5QRCode library (do not augment CameraScanConfig to avoid fps modifier conflict)
 declare module 'html5-qrcode' {
   interface Html5QrcodeStatic {
     QRCODE: string;
@@ -35,14 +35,6 @@ declare module 'html5-qrcode' {
     CODE_128: string;
     ITF: string;
     RSS_14: string;
-  }
-  
-  interface Html5QrcodeCameraScanConfig {
-    fps?: number;
-    qrbox?: number | QrDimensions | QrDimensionFunction;
-    aspectRatio?: number;
-    disableFlip?: boolean;
-    formatsToSupport?: string[];
   }
 }
 
@@ -186,8 +178,9 @@ export function useBarcodeScanner(): UseBarcodeScanner {
           // Store the scanner instance in the ref for cleanup
           scannerRef.current = { type: 'web', scanner: html5QrCode };
           setIsScanning(true);
-        } catch (cameraErr) {
-          throw new Error(`Camera access denied: ${cameraErr.message}`);
+        } catch (cameraErr: unknown) {
+          const msg = cameraErr instanceof Error ? cameraErr.message : String(cameraErr);
+          throw new Error(`Camera access denied: ${msg}`);
         }
       }
     } catch (err) {

@@ -442,8 +442,8 @@ const tourSteps: Record<string, ShepherdStep[]> = {
   ],
 };
 
-// Tour config
-const tourConfig = {
+// Tour config (reserved for future use with useShepherd)
+const _tourConfig = {
   defaultStepOptions: {
     cancelIcon: {
       enabled: true,
@@ -482,7 +482,7 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (tourRef.current) {
         try {
           shepherd.cancel();
-        } catch (e) {
+        } catch (_e) {
           console.log("No active tour to cancel");
         }
       }

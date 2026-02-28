@@ -398,7 +398,7 @@ async function ensureReorderRequests(supplierMap: Map<string, number>): Promise<
     { requestNumber: "RO-DEMO-003", itemId: items[2]?.id ?? 3, quantity: 20, supplierId, warehouseId, requestorId, status: "PENDING" },
   ];
   for (const r of reqs) {
-    await db.insert(reorderRequests).values(r);
+    await db.insert(reorderRequests).values({ ...r, requestNumber: r.requestNumber ?? `RO-DEMO-${r.itemId}` });
   }
 }
 

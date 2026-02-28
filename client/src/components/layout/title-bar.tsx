@@ -3,7 +3,7 @@ import { Minus, Square, X } from 'lucide-react';
 import { useElectron } from '@/contexts/electron-provider';
 
 export function TitleBar() {
-  const { isElectron, isMaximized, toggleMaximize, minimizeWindow, closeWindow } = useElectron();
+  const { isElectron, isMaximized = false, toggleMaximize = () => {}, minimizeWindow = () => {}, closeWindow = () => {} } = useElectron();
 
   // Only show the custom title bar in Electron environment
   if (!isElectron) return null;

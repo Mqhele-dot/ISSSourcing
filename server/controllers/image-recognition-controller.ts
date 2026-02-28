@@ -7,7 +7,6 @@
  * - Creating inventory items from recognized images
  * - Managing training data for image recognition models
  */
-
 import type { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
@@ -145,7 +144,6 @@ async function createItemFromImageHandler(req: Request, res: Response) {
       lowStockThreshold: itemData.lowStockThreshold,
       categoryId: itemData.categoryId,
       description: itemData.description || null,
-      notes: itemData.notes || null,
       location: itemData.location || null
     });
     

@@ -93,6 +93,43 @@ export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
     };
   }, []);
 
+  // Send capabilities to the server (defined before connect so it can be used there)
+  const sendCapabilitiesMessage = useCallback((ws: WebSocket) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      const deviceInfo: Record<string, unknown> = {
+        isElectron: isElectronEnvironment(),
+        userAgent: navigator.userAgent,
+      };
+      if ('userAgentData' in navigator) {
+        const nav = navigator as { userAgentData?: { platform?: string; mobile?: boolean; brands?: unknown } };
+        deviceInfo.platform = nav.userAgentData?.platform;
+        deviceInfo.mobile = nav.userAgentData?.mobile;
+        deviceInfo.brands = nav.userAgentData?.brands;
+      }
+      if (isElectronEnvironment()) {
+        deviceInfo.type = 'desktop';
+        try {
+          const process = (window as Window & { process?: { platform?: string; arch?: string; version?: string } }).process;
+          if (process) {
+            deviceInfo.platform = process.platform;
+            deviceInfo.arch = process.arch;
+            deviceInfo.version = process.version;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      const nextSequence = sequenceNumber + 1;
+      setSequenceNumber(nextSequence);
+      ws.send(JSON.stringify({
+        type: SyncMessageType.CAPABILITIES,
+        payload: { version: '1.0.0', features: ['compression', 'offline', 'encryption'], deviceInfo },
+        timestamp: new Date().toISOString(),
+        sequenceNumber: nextSequence
+      }));
+    }
+  }, [sequenceNumber]);
+
   // Connect to the WebSocket server
   const connect = useCallback(() => {
     // If real-time sync is disabled via feature flag, don't connect
@@ -198,7 +235,7 @@ export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
         options.onError(error instanceof Error ? error : new Error('Unknown error'));
       }
     }
-  }, [socket, clientId, options, realTimeSyncEnabled]);
+  }, [socket, clientId, options, realTimeSyncEnabled, sendCapabilitiesMessage]);
 
   // Disconnect from the server
   const disconnect = useCallback(() => {
@@ -244,56 +281,6 @@ export function useRealTimeSync(options: UseRealTimeSyncOptions = {}) {
     }
   }, [socket, clientId, sequenceNumber]);
 
-  // Send capabilities to the server
-  const sendCapabilitiesMessage = useCallback((ws: WebSocket) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      // Collect device information
-      const deviceInfo: Record<string, any> = {
-        isElectron: isElectronEnvironment(),
-        userAgent: navigator.userAgent,
-      };
-      
-      // Add more details if available in modern browsers
-      if ('userAgentData' in navigator) {
-        const nav = navigator as any;
-        deviceInfo.platform = nav.userAgentData?.platform;
-        deviceInfo.mobile = nav.userAgentData?.mobile;
-        deviceInfo.brands = nav.userAgentData?.brands;
-      }
-      
-      // Add electron-specific details
-      if (isElectronEnvironment()) {
-        deviceInfo.type = 'desktop';
-        
-        // Try to get electron process info
-        try {
-          const process = window.process;
-          if (process) {
-            deviceInfo.platform = process.platform;
-            deviceInfo.arch = process.arch;
-            deviceInfo.version = process.version;
-          }
-        } catch (e) {
-          console.warn('Could not access electron process info');
-        }
-      }
-      
-      const nextSequence = sequenceNumber + 1;
-      setSequenceNumber(nextSequence);
-      
-      ws.send(JSON.stringify({
-        type: SyncMessageType.CAPABILITIES,
-        payload: {
-          version: '1.0.0',
-          features: ['compression', 'offline', 'encryption'],
-          deviceInfo
-        },
-        timestamp: new Date().toISOString(),
-        sequenceNumber: nextSequence
-      }));
-    }
-  }, [sequenceNumber]);
-  
   // Request connected clients list
   const getConnectedClients = useCallback(() => {
     return sendMessage({

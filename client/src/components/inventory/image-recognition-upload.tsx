@@ -19,14 +19,23 @@ import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
 interface ImageRecognitionUploadProps {
-  onItemCreated?: (newItem: any) => void;
+  onItemCreated?: (newItem: unknown) => void;
   standalone?: boolean;
+}
+
+export interface RecognizedItem {
+  name?: string;
+  description?: string;
+  category?: string;
+  attributes?: Record<string, unknown>;
+  confidence?: number;
+  detectedText?: string;
 }
 
 // Schema for the additional item data form
@@ -42,7 +51,7 @@ const additionalItemDataSchema = z.object({
 export function ImageRecognitionUpload({ onItemCreated, standalone = false }: ImageRecognitionUploadProps) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [recognizedData, setRecognizedData] = useState<any | null>(null);
+  const [recognizedData, setRecognizedData] = useState<RecognizedItem | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [detectText, setDetectText] = useState(true);
   const [generateDescription, setGenerateDescription] = useState(true);
@@ -83,12 +92,7 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
       }, 500);
 
       try {
-        const response = await apiRequest('POST', '/api/inventory/image-recognition/analyze', formData, {
-          headers: {
-            // Don't set Content-Type header when using FormData
-            // Browser will set it automatically with proper boundary
-          },
-        });
+        const response = await apiRequest('POST', '/api/inventory/image-recognition/analyze', formData);
         
         clearInterval(progressInterval);
         setUploadProgress(100);
@@ -101,8 +105,9 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
         throw error;
       }
     },
-    onSuccess: (data) => {
-      setRecognizedData(data.recognizedItem);
+    onSuccess: (data: unknown) => {
+      const payload = data as { recognizedItem?: RecognizedItem };
+      setRecognizedData(payload.recognizedItem ?? null);
       toast({
         title: 'Image Analyzed',
         description: 'Image successfully analyzed by AI.',
@@ -119,7 +124,7 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
 
   // Create item from recognized data mutation
   const createItemMutation = useMutation({
-    mutationFn: async (itemData: any) => {
+    mutationFn: async (itemData: Record<string, unknown>) => {
       const response = await apiRequest('POST', '/api/inventory/image-recognition/create', itemData);
       return await response.json();
     },
@@ -349,7 +354,7 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
                     </Badge>
                   ))}
                   <Badge className="bg-primary/10 text-primary hover:bg-primary/20">
-                    {Math.round(recognizedData.confidence * 100)}% confidence
+                    {Math.round((recognizedData.confidence ?? 0) * 100)}% confidence
                   </Badge>
                 </div>
                 

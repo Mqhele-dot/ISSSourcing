@@ -1,5 +1,6 @@
 import {
   UserRoleEnum, ResourceEnum, PermissionTypeEnum,
+  type UserRole, type Resource, type PermissionType,
   users, type User, type InsertUser,
   categories, type Category, type InsertCategory,
   inventoryItems, type InventoryItem, type InsertInventoryItem,
@@ -218,6 +219,7 @@ export interface IStorage {
   
   // Warehouse inventory methods
   getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]>;
+  getWarehouseInventoryById(id: number): Promise<WarehouseInventory | undefined>;
   getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined>;
   getItemWarehouseInventory(itemId: number): Promise<WarehouseInventory[]>;
   createWarehouseInventory(warehouseInventory: InsertWarehouseInventory): Promise<WarehouseInventory>;
@@ -663,11 +665,11 @@ export class MemStorage implements IStorage {
     this.billingReminderLogCurrentId = 1;
     this.imageAnalysisLogCurrentId = 1;
     
-    // Add default data
-    this.initializeDefaultData();
+    // Add default data (async - runs without blocking constructor)
+    void this.initializeDefaultData();
   }
   
-  private initializeDefaultData() {
+  private async initializeDefaultData() {
     // Add default user for system operations
     const defaultUser: InsertUser = {
       username: "admin",
@@ -752,10 +754,10 @@ export class MemStorage implements IStorage {
     
     const supplierMap = new Map<string, number>();
     
-    defaultSuppliers.forEach(supplier => {
-      const createdSupplier = this.createSupplier(supplier);
+    for (const supplier of defaultSuppliers) {
+      const createdSupplier = await this.createSupplier(supplier);
       supplierMap.set(supplier.name, createdSupplier.id);
-    });
+    }
     
     // Add sample inventory items for demonstration
     const defaultItems: InsertInventoryItem[] = [
@@ -769,7 +771,7 @@ export class MemStorage implements IStorage {
         cost: 1999.00,
         lowStockThreshold: 10,
         location: "Warehouse A",
-        supplierId: supplierMap.get("Tech Solutions Inc.")
+        supplierId: supplierMap.get("Tech Solutions Inc.") ?? 1
       },
       {
         name: "Premium Notebooks",
@@ -781,7 +783,7 @@ export class MemStorage implements IStorage {
         cost: 12.50,
         lowStockThreshold: 15,
         location: "Shelf B5",
-        supplierId: supplierMap.get("Office Supply Co.")
+        supplierId: supplierMap.get("Office Supply Co.") ?? 1
       },
       {
         name: "Ergonomic Office Chair",
@@ -793,7 +795,7 @@ export class MemStorage implements IStorage {
         cost: 199.95,
         lowStockThreshold: 5,
         location: "Warehouse B",
-        supplierId: supplierMap.get("Furniture Warehouse")
+        supplierId: supplierMap.get("Furniture Warehouse") ?? 1
       },
       {
         name: "Wireless Laser Printer",
@@ -805,7 +807,7 @@ export class MemStorage implements IStorage {
         cost: 189.99,
         lowStockThreshold: 5,
         location: "Warehouse A",
-        supplierId: supplierMap.get("Tech Solutions Inc.")
+        supplierId: supplierMap.get("Tech Solutions Inc.") ?? 1
       }
     ];
     
@@ -820,7 +822,7 @@ export class MemStorage implements IStorage {
       status: PurchaseRequisitionStatus.APPROVED,
       notes: "Urgent order for new office setup",
       requiredDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week from now
-      supplierId: supplierMap.get("Tech Solutions Inc."),
+      supplierId: supplierMap.get("Tech Solutions Inc.") ?? 1,
       totalAmount: 4999.95,
       approvalDate: new Date(),
       approverId: 1
@@ -846,7 +848,7 @@ export class MemStorage implements IStorage {
     // Add sample purchase order
     const sampleOrder: InsertPurchaseOrder = {
       orderNumber: "PO-2023-001",
-      supplierId: supplierMap.get("Tech Solutions Inc."),
+      supplierId: supplierMap.get("Tech Solutions Inc.") ?? 1,
       status: PurchaseOrderStatus.SENT,
       orderDate: new Date(),
       expectedDeliveryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 2 weeks from now
@@ -939,11 +941,13 @@ export class MemStorage implements IStorage {
       return null;
     }
     
-    // Look for a custom role assignment in user preferences
+    // Look for a custom role assignment in user preferences (stored in dashboardLayout or notifications)
     const userPrefs = await this.getUserPreferences(userId);
-    if (userPrefs && userPrefs.preferences && typeof userPrefs.preferences === 'object') {
-      const prefs = userPrefs.preferences as any;
-      return prefs.customRoleId || null;
+    if (userPrefs) {
+      const prefs = (userPrefs.dashboardLayout ?? userPrefs.notifications) as { customRoleId?: number } | null;
+      if (prefs && typeof prefs === 'object' && typeof prefs.customRoleId === 'number') {
+        return prefs.customRoleId;
+      }
     }
     
     return null;
@@ -957,62 +961,48 @@ export class MemStorage implements IStorage {
     return Object.values(UserRoleEnum).filter(role => role !== 'custom');
   }
   
-  // Check if a system role has a specific permission
-  async checkPermission(role: UserRole, resource: Resource, permissionType: PermissionType): Promise<boolean> {
+  // Check if a system role has a specific permission (accepts string for API compatibility)
+  async checkPermission(role: string, resource: string, permissionType: string): Promise<boolean> {
     // Admin role has all permissions
-    if (role === 'admin') {
+    if (role === 'admin' || role === UserRoleEnum.ADMIN) {
       return true;
     }
     
     // Get predefined permissions for the role
-    const permissions = await this.getRolePermissions(role);
+    const permissions = await this.getRolePermissions(role as keyof typeof UserRoleEnum);
     
-    // Check if the role has the requested permission
+    // Check if the role has the requested permission (compare lowercase values)
     return permissions.some(
       (p) => p.resource === resource && p.permissionType === permissionType
     );
   }
   
   // Get permissions for a system role
-  async getRolePermissions(role: UserRole): Promise<Permission[]> {
-    // Predefined permissions for each role
-    // In a real DB, these would be fetched from the permissions table
-    switch(role) {
+  async getRolePermissions(role: keyof typeof UserRoleEnum): Promise<Permission[]> {
+    // Predefined permissions for each role (role is enum key: ADMIN, MANAGER, etc.)
+    const roleVal = typeof role === 'string' ? (UserRoleEnum as Record<string, string>)[role] ?? role : role;
+    switch(roleVal) {
       case 'admin':
-        // Admin has all permissions on all resources
         return this.getAllPermissions();
-        
       case 'manager':
-        // Return manager specific permissions
         return Array.from(this.permissions.values()).filter(p => 
-          // Managers can do everything except system-level operations
           p.resource !== 'system' || p.permissionType !== 'admin'
         );
-        
-      case 'warehouse_manager':
-        // Warehouse managers can manage inventory and warehouses
+      case 'warehouse_staff':
         return Array.from(this.permissions.values()).filter(p => 
           ['inventory', 'warehouses', 'stock_movements', 'reorder_requests'].includes(p.resource)
         );
-        
-      case 'procurement_officer':
-        // Procurement officers can manage suppliers and purchases
-        return Array.from(this.permissions.values()).filter(p => 
-          ['suppliers', 'purchases', 'reorder_requests'].includes(p.resource)
-        );
-        
-      case 'inventory_clerk':
-        // Inventory clerks can only work with inventory items
-        return Array.from(this.permissions.values()).filter(p => 
-          p.resource === 'inventory' && ['read', 'create', 'update'].includes(p.permissionType)
-        );
-        
       case 'viewer':
-        // Viewers can only read data
         return Array.from(this.permissions.values()).filter(p => 
           p.permissionType === 'read'
         );
-        
+      case 'sales':
+      case 'auditor':
+        return Array.from(this.permissions.values()).filter(p => p.permissionType === 'read');
+      case 'supplier':
+        return Array.from(this.permissions.values()).filter(p => 
+          ['purchases', 'suppliers'].includes(p.resource)
+        );
       default:
         return [];
     }
@@ -1116,30 +1106,32 @@ export class MemStorage implements IStorage {
       .filter(p => p.roleId === roleId);
   }
   
-  // Add a permission to a custom role
-  async addCustomRolePermission(roleId: number, resource: Resource, permissionType: PermissionType): Promise<CustomRolePermission> {
+  // Add a permission to a custom role (accepts enum key or value; stores schema value)
+  async addCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission> {
     const role = await this.getCustomRole(roleId);
     if (!role) {
       throw new Error(`Custom role with ID ${roleId} not found`);
     }
+    const resourceVal = (ResourceEnum as Record<string, string>)[resource] ?? resource;
+    const permissionVal = (PermissionTypeEnum as Record<string, string>)[permissionType] ?? permissionType;
     
     // Check if permission already exists
     const existing = Array.from(this.customRolePermissions.values())
-      .find(p => p.roleId === roleId && p.resource === resource && p.permissionType === permissionType);
+      .find(p => p.roleId === roleId && p.resource === resourceVal && p.permissionType === permissionVal);
       
     if (existing) {
       return existing;
     }
     
-    // Create new permission
+    // Create new permission (schema uses lowercase enum values)
     const id = this.customRolePermissionCurrentId++;
     const now = new Date();
     
     const newPermission: CustomRolePermission = {
       id,
       roleId,
-      resource,
-      permissionType,
+      resource: resourceVal as CustomRolePermission['resource'],
+      permissionType: permissionVal as CustomRolePermission['permissionType'],
       createdAt: now
     };
     
@@ -1178,24 +1170,35 @@ export class MemStorage implements IStorage {
     return this.customRolePermissions.delete(permissionId);
   }
   
-  // Check if a custom role has a specific permission
+  // Check if a custom role has a specific permission (normalize enum key to value for comparison)
   async checkCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean> {
     const permissions = await this.getCustomRolePermissions(roleId);
+    const resourceVal = (ResourceEnum as Record<string, string>)[resource] ?? resource;
+    const permissionVal = (PermissionTypeEnum as Record<string, string>)[permissionType] ?? permissionType;
     
     return permissions.some(
-      (p) => p.resource === resource && p.permissionType === permissionType
+      (p) => p.resource === resourceVal && p.permissionType === permissionVal
     );
   }
   
   // User access logging
   
-  // Log user access
-  async logUserAccess(log: InsertUserAccessLog): Promise<UserAccessLog> {
+  // Log user access (implements InsertUserAccessLog overload)
+  async logUserAccess(logOrUserId: InsertUserAccessLog | number, action?: string, details?: unknown, ip?: string, userAgent?: string): Promise<UserAccessLog> {
+    const log: InsertUserAccessLog = typeof logOrUserId === 'number'
+      ? { userId: logOrUserId, action: action!, ipAddress: ip ?? null, userAgent: userAgent ?? null, details: details as InsertUserAccessLog['details'] }
+      : logOrUserId;
     const id = this.userAccessLogCurrentId++;
     const userAccessLog: UserAccessLog = {
-      ...log,
       id,
-      timestamp: new Date()
+      userId: log.userId,
+      action: log.action,
+      ipAddress: log.ipAddress ?? null,
+      userAgent: log.userAgent ?? null,
+      geolocation: log.geolocation ?? null,
+      timestamp: new Date(),
+      details: log.details ?? null,
+      sessionId: log.sessionId ?? null
     };
     
     this.userAccessLogs.set(id, userAccessLog);
@@ -1709,12 +1712,23 @@ export class MemStorage implements IStorage {
       id,
       createdAt: now,
       updatedAt: now,
-      email: insertUser.email || null,
-      role: insertUser.role || null,
+      fullName: insertUser.fullName ?? null,
+      email: insertUser.email ?? '',
+      role: insertUser.role ?? 'viewer',
       warehouseId: null,
+      active: insertUser.active ?? true,
+      emailVerified: false,
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      passwordResetToken: insertUser.passwordResetToken ?? null,
+      passwordResetExpires: insertUser.passwordResetExpires ?? null,
+      failedLoginAttempts: 0,
+      accountLocked: false,
+      lockoutUntil: null,
       lastLogin: null,
+      lastPasswordChange: insertUser.lastPasswordChange ?? null,
       profilePicture: null,
-      preferences: {}
+      preferences: null
     };
     this.users.set(id, user);
     return user;
@@ -1817,7 +1831,7 @@ export class MemStorage implements IStorage {
     // ==================== STANDARD ROLES ====================
     
     // Admin role permissions (full access to all resources)
-    const adminPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+    const adminPermissions: Array<{resource: InsertCustomRolePermission['resource']; permissionType: InsertCustomRolePermission['permissionType']}> = [
       // Inventory resource permissions
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.CREATE },
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
@@ -1883,7 +1897,7 @@ export class MemStorage implements IStorage {
     ];
     
     // Manager role permissions (extensive but not full access)
-    const managerPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+    const managerPermissions: Array<{resource: InsertCustomRolePermission['resource']; permissionType: InsertCustomRolePermission['permissionType']}> = [
       // Inventory resource permissions
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.CREATE },
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
@@ -1936,7 +1950,7 @@ export class MemStorage implements IStorage {
     ];
     
     // Warehouse Staff role permissions (focused on inventory operations)
-    const warehouseStaffPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+    const warehouseStaffPermissions: Array<{resource: InsertCustomRolePermission['resource']; permissionType: InsertCustomRolePermission['permissionType']}> = [
       // Inventory resource permissions
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.UPDATE },
@@ -1963,7 +1977,7 @@ export class MemStorage implements IStorage {
     ];
     
     // Viewer role permissions (read-only access)
-    const viewerPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+    const viewerPermissions: Array<{resource: InsertCustomRolePermission['resource']; permissionType: InsertCustomRolePermission['permissionType']}> = [
       // Inventory resource permissions
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
       
@@ -1992,7 +2006,7 @@ export class MemStorage implements IStorage {
     // ==================== ADDITIONAL ROLES ====================
     
     // Sales Team role permissions (focus on inventory and customers)
-    const salesTeamPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+    const salesTeamPermissions: Array<{resource: InsertCustomRolePermission['resource']; permissionType: InsertCustomRolePermission['permissionType']}> = [
       // Inventory resource permissions
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.EXPORT },
@@ -2013,7 +2027,7 @@ export class MemStorage implements IStorage {
     ];
     
     // Auditor role permissions (focused on reporting and history)
-    const auditorPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+    const auditorPermissions: Array<{resource: InsertCustomRolePermission['resource']; permissionType: InsertCustomRolePermission['permissionType']}> = [
       // Inventory resource permissions
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.EXPORT },
@@ -2046,7 +2060,7 @@ export class MemStorage implements IStorage {
     ];
     
     // Supplier role permissions (limited to their own inventory)
-    const supplierPermissions: Array<{resource: Resource, permissionType: PermissionType}> = [
+    const supplierPermissions: Array<{resource: InsertCustomRolePermission['resource']; permissionType: InsertCustomRolePermission['permissionType']}> = [
       // Inventory resource permissions (limited)
       { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
       
@@ -2154,14 +2168,16 @@ export class MemStorage implements IStorage {
     return this.permissions.get(id);
   }
   
-  async getPermissionsByRole(role: UserRole): Promise<Permission[]> {
+  async getPermissionsByRole(role: keyof typeof UserRoleEnum): Promise<Permission[]> {
+    const roleVal = (UserRoleEnum as Record<string, string>)[role] ?? role;
     return Array.from(this.permissions.values())
-      .filter(permission => permission.role === role);
+      .filter(permission => permission.role === roleVal);
   }
   
-  async getPermissionsByResource(resource: Resource): Promise<Permission[]> {
+  async getPermissionsByResource(resource: keyof typeof ResourceEnum): Promise<Permission[]> {
+    const resourceVal = (ResourceEnum as Record<string, string>)[resource] ?? resource;
     return Array.from(this.permissions.values())
-      .filter(permission => permission.resource === resource);
+      .filter(permission => permission.resource === resourceVal);
   }
   
   createPermission(insertPermission: InsertPermission): Permission {
@@ -2411,7 +2427,11 @@ export class MemStorage implements IStorage {
     return Array.from(this.warehouseInventory.values())
       .filter(wi => wi.warehouseId === warehouseId);
   }
-  
+
+  async getWarehouseInventoryById(id: number): Promise<WarehouseInventory | undefined> {
+    return this.warehouseInventory.get(id);
+  }
+
   async getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined> {
     return Array.from(this.warehouseInventory.values())
       .find(wi => wi.warehouseId === warehouseId && wi.itemId === itemId);
@@ -3077,7 +3097,31 @@ export class MemStorage implements IStorage {
       ...insertItem, 
       id,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      status: insertItem.status ?? null,
+      defaultWarehouseId: insertItem.defaultWarehouseId ?? null,
+      description: insertItem.description ?? null,
+      categoryId: insertItem.categoryId ?? null,
+      customFields: insertItem.customFields ?? null,
+      quantity: insertItem.quantity ?? 0,
+      cost: insertItem.cost ?? null,
+      supplierId: insertItem.supplierId ?? null,
+      barcode: insertItem.barcode ?? null,
+      location: insertItem.location ?? null,
+      dimensions: insertItem.dimensions ?? null,
+      weight: insertItem.weight ?? null,
+      leadTime: insertItem.leadTime ?? null,
+      reorderPoint: insertItem.reorderPoint ?? null,
+      maxStockLevel: insertItem.maxStockLevel ?? null,
+      expiryDate: insertItem.expiryDate ?? null,
+      lastCountDate: insertItem.lastCountDate ?? null,
+      images: insertItem.images ?? null,
+      tags: insertItem.tags ?? null,
+      lowStockThreshold: insertItem.lowStockThreshold ?? null,
+      minOrderQuantity: insertItem.minOrderQuantity ?? 1,
+      unitOfMeasure: insertItem.unitOfMeasure ?? 'each',
+      barcodeType: insertItem.barcodeType ?? 'CODE128',
+      taxable: insertItem.taxable ?? true
     };
     this.inventoryItems.set(id, item);
     
@@ -3143,7 +3187,7 @@ export class MemStorage implements IStorage {
   
   async getLowStockItems(): Promise<InventoryItem[]> {
     return Array.from(this.inventoryItems.values()).filter(item => 
-      item.quantity > 0 && item.quantity <= item.lowStockThreshold
+      item.quantity > 0 && item.quantity <= (item.lowStockThreshold ?? 0)
     );
   }
   
@@ -3301,7 +3345,16 @@ export class MemStorage implements IStorage {
       ...requisition,
       id,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      status: requisition.status ?? 'PENDING',
+      supplierId: requisition.supplierId ?? null,
+      notes: requisition.notes ?? null,
+      requestorId: requisition.requestorId ?? null,
+      approverId: requisition.approverId ?? null,
+      approvalDate: null,
+      rejectionReason: null,
+      requiredDate: requisition.requiredDate ?? null,
+      totalAmount: requisition.totalAmount ?? 0
     };
     
     this.purchaseRequisitions.set(id, requisitionEntity);
@@ -3400,7 +3453,9 @@ export class MemStorage implements IStorage {
     
     const requisitionItem: PurchaseRequisitionItem = {
       ...item,
-      id
+      id,
+      quantity: item.quantity ?? 0,
+      notes: item.notes ?? null
     };
     
     this.purchaseRequisitionItems.set(id, requisitionItem);
@@ -3542,7 +3597,19 @@ export class MemStorage implements IStorage {
       ...order,
       id,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      status: order.status ?? 'DRAFT',
+      notes: order.notes ?? null,
+      requisitionId: order.requisitionId ?? null,
+      totalAmount: order.totalAmount ?? 0,
+      orderDate: order.orderDate ?? now,
+      expectedDeliveryDate: order.expectedDeliveryDate ?? null,
+      deliveryAddress: order.deliveryAddress ?? null,
+      paymentStatus: order.paymentStatus ?? 'UNPAID',
+      emailSent: order.emailSent ?? false,
+      emailSentDate: order.emailSentDate ?? null,
+      paymentDate: order.paymentDate ?? null,
+      paymentReference: order.paymentReference ?? null
     };
     
     this.purchaseOrders.set(id, orderEntity);
@@ -3641,7 +3708,10 @@ export class MemStorage implements IStorage {
     
     const orderItem: PurchaseOrderItem = {
       ...item,
-      id
+      id,
+      quantity: item.quantity ?? 0,
+      notes: item.notes ?? null,
+      receivedQuantity: item.receivedQuantity ?? null
     };
     
     this.purchaseOrderItems.set(id, orderItem);
@@ -3782,7 +3852,7 @@ export class MemStorage implements IStorage {
     // Update the received quantity
     const updatedItem = {
       ...poItem,
-      receivedQuantity: poItem.receivedQuantity + receivedQuantity
+      receivedQuantity: (poItem.receivedQuantity ?? 0) + receivedQuantity
     };
     
     this.purchaseOrderItems.set(itemId, updatedItem);
@@ -3799,14 +3869,14 @@ export class MemStorage implements IStorage {
     const order = this.purchaseOrders.get(poItem.orderId);
     if (order) {
       const orderItems = await this.getPurchaseOrderItems(order.id);
-      const allItemsReceived = orderItems.every(item => item.receivedQuantity >= item.quantity);
+      const allItemsReceived = orderItems.every(item => (item.receivedQuantity ?? 0) >= item.quantity);
       
       // If all items are received, update the order status
       if (allItemsReceived) {
         await this.updatePurchaseOrderStatus(order.id, PurchaseOrderStatus.RECEIVED);
       } else {
         // If some items are received but not all, update to partially received
-        const anyItemsReceived = orderItems.some(item => item.receivedQuantity > 0);
+        const anyItemsReceived = orderItems.some(item => (item.receivedQuantity ?? 0) > 0);
         if (anyItemsReceived) {
           await this.updatePurchaseOrderStatus(order.id, PurchaseOrderStatus.PARTIALLY_RECEIVED);
         }
@@ -3833,6 +3903,9 @@ export class MemStorage implements IStorage {
     // Check if requisition is approved
     if (requisition.status !== PurchaseRequisitionStatus.APPROVED) {
       throw new Error(`Cannot create purchase order from requisition with status: ${requisition.status}`);
+    }
+    if (requisition.supplierId == null) {
+      throw new Error('Requisition must have a supplier to create a purchase order');
     }
     
     // Generate order number
@@ -3924,7 +3997,7 @@ export class MemStorage implements IStorage {
     const item = this.inventoryItems.get(id);
     if (!item) return undefined;
     
-    const result = { ...item };
+    const result: InventoryItem & { supplier?: Supplier; category?: Category } = { ...item };
     
     if (item.supplierId) {
       result.supplier = this.suppliers.get(item.supplierId);
@@ -3946,7 +4019,7 @@ export class MemStorage implements IStorage {
     const requisition = this.purchaseRequisitions.get(id);
     if (!requisition) return undefined;
     
-    const result = { ...requisition, items: [] };
+    const result = { ...requisition, items: [] as (PurchaseRequisitionItem & { item: InventoryItem })[], requestor: undefined as User | undefined, approver: undefined as User | undefined, supplier: undefined as Supplier | undefined };
     
     // Get items
     const items = await this.getPurchaseRequisitionItems(id);
@@ -3989,7 +4062,7 @@ export class MemStorage implements IStorage {
       throw new Error(`Supplier not found for order ${id}`);
     }
     
-    const result = { 
+    const result: PurchaseOrder & { items: (PurchaseOrderItem & { item: InventoryItem })[]; supplier: Supplier; requisition?: PurchaseRequisition } = { 
       ...order, 
       items: [],
       supplier
@@ -4040,6 +4113,34 @@ export class MemStorage implements IStorage {
     return log;
   }
 
+  // Settings methods (IStorage)
+  async getSettings(): Promise<AppSettings> {
+    const settings = await this.getAppSettings();
+    if (!settings) throw new Error('No app settings found');
+    return settings;
+  }
+
+  async updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
+    return this.updateAppSettings(settings);
+  }
+
+  async getFailedLoginAttempts(userId: number, hours?: number): Promise<UserAccessLog[]> {
+    const logs = Array.from(this.userAccessLogs.values())
+      .filter(log => log.userId === userId && log.action === 'failed_login');
+    const cutoff = hours ? new Date(Date.now() - hours * 60 * 60 * 1000) : new Date(0);
+    return logs.filter(log => log.timestamp >= cutoff).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
+
+  async getUserContactInfo(userId: number): Promise<UserContact | undefined> {
+    return Array.from(this.userContacts.values()).find(c => c.userId === userId);
+  }
+
+  async updateUserContactInfo(userId: number, contactInfo: Partial<InsertUserContact>): Promise<UserContact | undefined> {
+    const existing = await this.getUserContactInfo(userId);
+    if (!existing) return undefined;
+    return this.updateUserContact(existing.id, contactInfo);
+  }
+
   // App Settings methods
   async getAppSettings(): Promise<AppSettings | undefined> {
     // Since there should be only one settings record, return the first one
@@ -4047,7 +4148,7 @@ export class MemStorage implements IStorage {
     return settings.length > 0 ? settings[0] : undefined;
   }
 
-  async updateAppSettings(settings: Partial<InsertAppSettings>): Promise<AppSettings> {
+  async updateAppSettings(settings: Partial<InsertAppSettings> | Partial<AppSettings>): Promise<AppSettings> {
     const existingSettings = await this.getAppSettings();
     const now = new Date();
     
@@ -4082,9 +4183,23 @@ export class MemStorage implements IStorage {
         currencySymbol: settings.currencySymbol || "$",
         lowStockDefaultThreshold: settings.lowStockDefaultThreshold || 10,
         allowNegativeInventory: settings.allowNegativeInventory || false,
+        availableUnits: (settings as Partial<AppSettings>).availableUnits ?? ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"],
+        defaultUnit: (settings as Partial<AppSettings>).defaultUnit ?? "each",
+        enableCustomTags: (settings as Partial<AppSettings>).enableCustomTags ?? true,
+        defaultTags: (settings as Partial<AppSettings>).defaultTags ?? ["featured", "seasonal", "sale", "new", "discontinued"],
+        realTimeUpdatesEnabled: (settings as Partial<AppSettings>).realTimeUpdatesEnabled ?? true,
+        lowStockAlertFrequency: (settings as Partial<AppSettings>).lowStockAlertFrequency ?? 30,
+        autoReorderEnabled: (settings as Partial<AppSettings>).autoReorderEnabled ?? false,
+        forecastingEnabled: (settings as Partial<AppSettings>).forecastingEnabled ?? true,
+        forecastDays: (settings as Partial<AppSettings>).forecastDays ?? 30,
+        seasonalAdjustmentEnabled: (settings as Partial<AppSettings>).seasonalAdjustmentEnabled ?? true,
+        defaultWarehouseId: (settings as Partial<AppSettings>).defaultWarehouseId ?? null,
+        requireLocationForItems: (settings as Partial<AppSettings>).requireLocationForItems ?? false,
+        allowTransfersBetweenWarehouses: (settings as Partial<AppSettings>).allowTransfersBetweenWarehouses ?? true,
         enableVat: settings.enableVat || false,
         defaultVatCountry: settings.defaultVatCountry || "US",
-        showPricesWithVat: settings.showPricesWithVat || true,
+        showPricesWithVat: settings.showPricesWithVat ?? true,
+        databaseSettings: (settings as Partial<AppSettings>).databaseSettings ?? null,
         updatedAt: now
       };
       
@@ -4196,6 +4311,14 @@ export class MemStorage implements IStorage {
       attachments: (insert.attachments as SupplierContract["attachments"]) ?? [],
       createdAt: now,
       updatedAt: now,
+      status: insert.status ?? 'active',
+      contractType: insert.contractType ?? 'master',
+      value: insert.value ?? null,
+      notes: insert.notes ?? null,
+      endDate: insert.endDate ?? null,
+      summary: insert.summary ?? null,
+      referenceNumber: insert.referenceNumber ?? null,
+      currency: insert.currency ?? null
     };
     this.supplierContracts.set(id, contract);
     return contract;
@@ -4251,12 +4374,13 @@ export class MemStorage implements IStorage {
       notes: insertRequest.notes || null,
       requestorId: insertRequest.requestorId || null,
       approverId: insertRequest.approverId || null,
-      approvalDate: insertRequest.approvalDate || null,
+      approvalDate: (insertRequest as InsertReorderRequest & { approvalDate?: Date | null }).approvalDate ?? null,
       rejectionReason: insertRequest.rejectionReason || null,
       convertedToRequisition: insertRequest.convertedToRequisition || false,
       requisitionId: insertRequest.requisitionId || null,
       supplierId: insertRequest.supplierId || null,
-      warehouseId: insertRequest.warehouseId || null,
+      warehouseId: insertRequest.warehouseId ?? null,
+      quantity: insertRequest.quantity ?? 0,
       isAutoGenerated: insertRequest.isAutoGenerated || false,
       requestDate: insertRequest.requestDate || now
     };
@@ -4489,7 +4613,10 @@ export class MemStorage implements IStorage {
     const newVatRate: VatRate = {
       ...vatRate,
       id,
-      updatedAt: now
+      updatedAt: now,
+      active: vatRate.active ?? true,
+      reducedRate: vatRate.reducedRate ?? null,
+      superReducedRate: vatRate.superReducedRate ?? null
     };
     
     this.vatRates.set(id, newVatRate);
@@ -4583,10 +4710,12 @@ export class MemStorage implements IStorage {
   
   // Custom Role Permission Methods
   async addPermissionToCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission> {
+    const resourceVal = (ResourceEnum as Record<string, string>)[resource] ?? resource;
+    const permissionVal = (PermissionTypeEnum as Record<string, string>)[permissionType] ?? permissionType;
     const permission: InsertCustomRolePermission = {
       roleId,
-      resource,
-      permissionType
+      resource: resourceVal as InsertCustomRolePermission['resource'],
+      permissionType: permissionVal as InsertCustomRolePermission['permissionType']
     };
     
     return this.createCustomRolePermission(permission);
@@ -4594,8 +4723,10 @@ export class MemStorage implements IStorage {
   
   async removePermissionFromCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean> {
     const permissions = await this.getCustomRolePermissions(roleId);
+    const resourceVal = (ResourceEnum as Record<string, string>)[resource] ?? resource;
+    const permissionVal = (PermissionTypeEnum as Record<string, string>)[permissionType] ?? permissionType;
     const permissionToRemove = permissions.find(
-      p => p.roleId === roleId && p.resource === resource && p.permissionType === permissionType
+      p => p.roleId === roleId && p.resource === resourceVal && p.permissionType === permissionVal
     );
     
     if (!permissionToRemove) return false;
@@ -4618,7 +4749,6 @@ export class MemStorage implements IStorage {
     const customRolePermission: CustomRolePermission = {
       id: this.customRolePermissionCurrentId++,
       createdAt: now,
-      updatedAt: now,
       ...permission
     };
     
@@ -4633,8 +4763,7 @@ export class MemStorage implements IStorage {
     
     const updatedPermission: CustomRolePermission = {
       ...existingPermission,
-      ...permission,
-      updatedAt: new Date()
+      ...permission
     };
     
     this.customRolePermissions.set(id, updatedPermission);
@@ -4665,9 +4794,14 @@ export class MemStorage implements IStorage {
   async createUserAccessLog(log: InsertUserAccessLog): Promise<UserAccessLog> {
     const userAccessLog: UserAccessLog = {
       id: this.userAccessLogCurrentId++,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      ...log
+      userId: log.userId,
+      action: log.action,
+      ipAddress: log.ipAddress ?? null,
+      userAgent: log.userAgent ?? null,
+      geolocation: log.geolocation ?? null,
+      timestamp: new Date(),
+      details: log.details ?? null,
+      sessionId: log.sessionId ?? null
     };
     
     this.userAccessLogs.set(userAccessLog.id, userAccessLog);
@@ -4690,9 +4824,19 @@ export class MemStorage implements IStorage {
     const now = new Date();
     const userContact: UserContact = {
       id: this.userContactCurrentId++,
-      createdAt: now,
-      updatedAt: now,
-      ...contact
+      userId: contact.userId,
+      phoneWork: contact.phoneWork ?? null,
+      phoneMobile: contact.phoneMobile ?? null,
+      phoneHome: contact.phoneHome ?? null,
+      addressLine1: contact.addressLine1 ?? null,
+      addressLine2: contact.addressLine2 ?? null,
+      city: contact.city ?? null,
+      state: contact.state ?? null,
+      postalCode: contact.postalCode ?? null,
+      country: contact.country ?? null,
+      emergencyContact: contact.emergencyContact ?? null,
+      emergencyPhone: contact.emergencyPhone ?? null,
+      updatedAt: now
     };
     
     this.userContacts.set(userContact.id, userContact);
@@ -4730,9 +4874,17 @@ export class MemStorage implements IStorage {
     const now = new Date();
     const userSecuritySetting: UserSecuritySetting = {
       id: this.userSecuritySettingCurrentId++,
-      createdAt: now,
-      updatedAt: now,
-      ...settings
+      userId: settings.userId,
+      allowedIpAddresses: settings.allowedIpAddresses ?? null,
+      allowedTimeWindows: settings.allowedTimeWindows ?? null,
+      allowedGeolocations: settings.allowedGeolocations ?? null,
+      securityQuestions: settings.securityQuestions ?? null,
+      securityAnswers: settings.securityAnswers ?? null,
+      biometricEnabled: settings.biometricEnabled ?? null,
+      biometricType: settings.biometricType ?? null,
+      ssoEnabled: settings.ssoEnabled ?? null,
+      ssoProvider: settings.ssoProvider ?? null,
+      updatedAt: now
     };
     
     this.userSecuritySettings.set(userSecuritySetting.id, userSecuritySetting);
@@ -4754,6 +4906,28 @@ export class MemStorage implements IStorage {
     
     return updatedSettings;
   }
+
+  async checkIpAllowed(_userId: number, _ipAddress: string): Promise<boolean> {
+    return true;
+  }
+  async checkTimeAllowed(_userId: number, _timestamp?: Date): Promise<boolean> {
+    return true;
+  }
+  async checkGeoAllowed(_userId: number, _country: string): Promise<boolean> {
+    return true;
+  }
+  async recordUserPerformance(metric: InsertUserPerformanceMetric): Promise<UserPerformanceMetric> {
+    return this.createUserPerformanceMetric(metric);
+  }
+  async getUserPerformanceMetrics(userId: number, _metricType?: string, _startDate?: Date, _endDate?: Date): Promise<UserPerformanceMetric[]> {
+    return this.getAllUserPerformanceMetrics(userId);
+  }
+  async getTimeRestrictions(userId: number): Promise<TimeRestriction[]> {
+    return this.getAllTimeRestrictions(userId);
+  }
+  async addTimeRestriction(restriction: InsertTimeRestriction): Promise<TimeRestriction> {
+    return this.createTimeRestriction(restriction);
+  }
   
   // User Performance Metrics Methods
   async getAllUserPerformanceMetrics(userId: number): Promise<UserPerformanceMetric[]> {
@@ -4771,8 +4945,8 @@ export class MemStorage implements IStorage {
     const userPerformanceMetric: UserPerformanceMetric = {
       id: this.userPerformanceMetricCurrentId++,
       createdAt: now,
-      updatedAt: now,
-      ...metric
+      ...metric,
+      notes: metric.notes ?? null
     };
     
     this.userPerformanceMetrics.set(userPerformanceMetric.id, userPerformanceMetric);
@@ -4786,8 +4960,7 @@ export class MemStorage implements IStorage {
     
     const updatedMetric: UserPerformanceMetric = {
       ...existingMetric,
-      ...metric,
-      updatedAt: new Date()
+      ...metric
     };
     
     this.userPerformanceMetrics.set(id, updatedMetric);
@@ -4818,7 +4991,8 @@ export class MemStorage implements IStorage {
       id: this.timeRestrictionCurrentId++,
       createdAt: now,
       updatedAt: now,
-      ...restriction
+      ...restriction,
+      isActive: restriction.isActive ?? true
     };
     
     this.timeRestrictions.set(timeRestriction.id, timeRestriction);
@@ -4867,26 +5041,36 @@ export class MemStorage implements IStorage {
     const now = new Date();
     
     // Generate invoice number if not provided
-    if (!invoice.invoiceNumber) {
-      // Get billing settings for prefix
+    let invoiceNumber = invoice.invoiceNumber;
+    if (!invoiceNumber) {
       const billingSettings = await this.getBillingSettings();
       const prefix = billingSettings?.invoicePrefix || 'INV-';
-      
-      invoice.invoiceNumber = `${prefix}${String(id).padStart(5, '0')}`;
+      invoiceNumber = `${prefix}${String(id).padStart(5, '0')}`;
     }
 
     // Calculate due amount based on total
-    const dueAmount = invoice.dueAmount || invoice.total;
+    const dueAmount = (invoice.dueAmount ?? invoice.total ?? 0) as number;
     
     const newInvoice: Invoice = {
       ...invoice,
       id,
+      invoiceNumber,
       createdAt: now,
       updatedAt: now,
+      issueDate: invoice.issueDate ?? now,
+      dueDate: invoice.dueDate ?? now,
+      subtotal: invoice.subtotal ?? 0,
+      tax: invoice.tax ?? 0,
+      discount: invoice.discount ?? 0,
+      total: invoice.total ?? 0,
       dueAmount,
-      paidAmount: invoice.paidAmount || 0,
-      sentDate: invoice.sentDate || null,
-      paidDate: invoice.paidDate || null
+      paidAmount: invoice.paidAmount ?? 0,
+      sentDate: null,
+      paidDate: null,
+      status: (invoice.status ?? 'DRAFT') as Invoice['status'],
+      notes: invoice.notes ?? null,
+      termsAndConditions: invoice.termsAndConditions ?? null,
+      purchaseOrderId: invoice.purchaseOrderId ?? null
     };
     
     this.invoices.set(id, newInvoice);
@@ -4911,7 +5095,7 @@ export class MemStorage implements IStorage {
     return newInvoice;
   }
   
-  async updateInvoice(id: number, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {
+  async updateInvoice(id: number, invoice: Partial<InsertInvoice> & Partial<Pick<Invoice, 'paidDate' | 'sentDate'>>): Promise<Invoice | undefined> {
     const existingInvoice = this.invoices.get(id);
     if (!existingInvoice) return undefined;
     
@@ -5044,7 +5228,12 @@ export class MemStorage implements IStorage {
       ...item,
       id,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      description: item.description ?? '',
+      quantity: item.quantity ?? 1,
+      discount: item.discount ?? null,
+      taxRate: item.taxRate ?? null,
+      taxAmount: item.taxAmount ?? null
     };
     
     this.invoiceItems.set(id, newItem);
@@ -5136,7 +5325,10 @@ export class MemStorage implements IStorage {
       id,
       createdAt: now,
       updatedAt: now,
-      paymentDate: payment.paymentDate || now
+      paymentDate: payment.paymentDate ?? now,
+      notes: payment.notes ?? null,
+      transactionReference: payment.transactionReference ?? null,
+      method: payment.method ?? 'CASH'
     };
     
     this.payments.set(id, newPayment);
@@ -5157,7 +5349,7 @@ export class MemStorage implements IStorage {
       await this.updateInvoice(payment.invoiceId, {
         paidAmount: totalPaid,
         dueAmount: invoice.total - totalPaid,
-        status,
+        status: status as Invoice['status'],
         paidDate: totalPaid >= invoice.total ? new Date() : invoice.paidDate
       });
     }
@@ -5199,13 +5391,13 @@ export class MemStorage implements IStorage {
         } else if (totalPaid > 0) {
           status = "PARTIALLY_PAID";
         } else {
-          status = invoice.sentDate ? "SENT" : "DRAFT";
+          status = (invoice as Invoice).sentDate ? "SENT" : "DRAFT";
         }
         
         await this.updateInvoice(existingPayment.invoiceId, {
           paidAmount: totalPaid,
           dueAmount: invoice.total - totalPaid,
-          status,
+          status: status as Invoice['status'],
           paidDate: totalPaid >= invoice.total ? new Date() : null
         });
       }
@@ -5238,7 +5430,7 @@ export class MemStorage implements IStorage {
       await this.updateInvoice(payment.invoiceId, {
         paidAmount: totalPaid,
         dueAmount: invoice.total - totalPaid,
-        status,
+        status: status as Invoice['status'],
         paidDate: totalPaid >= invoice.total ? new Date() : null
       });
     }
@@ -5356,6 +5548,7 @@ export class MemStorage implements IStorage {
       id,
       createdAt: now,
       updatedAt: now,
+      description: taxRate.description ?? null,
       isActive: taxRate.isActive !== undefined ? taxRate.isActive : true,
       isDefault: taxRate.isDefault !== undefined ? taxRate.isDefault : false
     };
@@ -5489,6 +5682,10 @@ export class MemStorage implements IStorage {
       id,
       createdAt: now,
       updatedAt: now,
+      description: discount.description ?? null,
+      type: discount.type ?? 'PERCENTAGE',
+      startDate: discount.startDate ?? null,
+      endDate: discount.endDate ?? null,
       isActive: discount.isActive !== undefined ? discount.isActive : true
     };
     
@@ -5566,7 +5763,10 @@ export class MemStorage implements IStorage {
       ...log,
       id,
       createdAt: now,
-      sentDate: log.sentDate || now
+      sentDate: log.sentDate ?? now,
+      status: log.status ?? 'SENT',
+      sentMethod: log.sentMethod ?? 'EMAIL',
+      messageContent: log.messageContent ?? null
     };
     
     this.billingReminderLogs.set(id, newLog);

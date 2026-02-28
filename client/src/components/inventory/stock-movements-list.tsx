@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Plus, ArrowUpDown, ArrowRight, Download, FileDown, FileUp } from "lucide-react";
+import { Plus, ArrowUpDown, ArrowRight, FileDown, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -56,11 +56,6 @@ type StockMovement = {
     id: number;
     name: string;
   } | null;
-};
-
-type Warehouse = {
-  id: number;
-  name: string;
 };
 
 type StockMovementsListProps = {

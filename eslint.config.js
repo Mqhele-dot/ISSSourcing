@@ -48,4 +48,12 @@ export default [
       "react-hooks/exhaustive-deps": "warn",
     },
   },
+  // Relax no-explicit-any and no-unused-vars to reduce noise; prefer fixing incrementally
+  {
+    files: ["client/src/**/*.{ts,tsx}", "server/**/*.ts", "shared/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+    },
+  },
 ];

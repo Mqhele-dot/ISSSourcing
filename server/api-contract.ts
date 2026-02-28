@@ -89,7 +89,7 @@ export type ApiRouteHandler = (
   req: Request,
   res: Response,
   next: NextFunction,
-) => Promise<void> | void;
+) => Promise<void | Response> | void;
 
 export function withApiContract(handler: ApiRouteHandler): ApiRouteHandler {
   return async (req, res, next) => {

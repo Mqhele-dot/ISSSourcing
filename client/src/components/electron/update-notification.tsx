@@ -19,18 +19,20 @@ export const UpdateNotification: React.FC = () => {
     if (!isElectron || !electron) return;
 
     // Listen for update notifications from the main process
-    const removeListener = electron.on('update-available', (info: any) => {
+    const removeListener = electron.on('update-available', (...args: unknown[]) => {
+      const info = args[0] as { version?: string; releaseNotes?: string };
       setUpdateAvailable(true);
       setUpdateInfo({
-        version: info.version || 'New Version',
-        notes: info.releaseNotes || 'Bug fixes and improvements'
+        version: info?.version || 'New Version',
+        notes: info?.releaseNotes || 'Bug fixes and improvements'
       });
     });
 
     // Listen for update progress events
-    electron.on('update-progress', (progress: number) => {
+    electron.on('update-progress', (...args: unknown[]) => {
+      const progress = args[0] as number;
       // Could implement a progress bar here
-      console.log(`Update progress: ${progress}%`);
+      console.log(`Update progress: ${progress ?? 0}%`);
     });
 
     // Listen for update downloaded event

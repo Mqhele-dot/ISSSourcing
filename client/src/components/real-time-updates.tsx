@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useWebSocket, WebSocketMessage } from '@/hooks/use-websocket';
+import React, { useState } from 'react';
+import { useWebSocket } from '@/hooks/use-websocket';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { Activity, AlertTriangle, BarChart2, Info, PackageOpen, RefreshCw, Zap, Wifi } from 'lucide-react';
+import { Activity, AlertTriangle, Info, PackageOpen, RefreshCw, Zap, Wifi } from 'lucide-react';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
 import { setFeatureFlag } from '@/lib/config';
 
@@ -17,7 +17,7 @@ type UpdateItem = {
   title: string;
   description: string;
   timestamp: Date;
-  details?: any;
+  details?: unknown;
 };
 
 export function RealTimeUpdates() {
@@ -29,12 +29,14 @@ export function RealTimeUpdates() {
   const { toast } = useToast();
 
   // Handle inventory updates
-  const handleInventoryUpdate = (payload: any) => {
+  const handleInventoryUpdate = (payload: Record<string, unknown>) => {
+    const item = payload.item as { name?: string } | undefined;
+    const warehouse = payload.warehouse as { name?: string } | undefined;
     const newUpdate: UpdateItem = {
       id: `inv-${Date.now()}`,
       type: 'inventory_update',
-      title: `${payload.item?.name || 'Item'} Updated`,
-      description: `Quantity is now ${payload.quantity} in ${payload.warehouse?.name || 'warehouse #' + payload.warehouseId}`,
+      title: `${item?.name || 'Item'} Updated`,
+      description: `Quantity is now ${payload.quantity} in ${warehouse?.name || 'warehouse #' + payload.warehouseId}`,
       timestamp: new Date(),
       details: payload
     };
@@ -43,11 +45,12 @@ export function RealTimeUpdates() {
   };
 
   // Handle stock alerts
-  const handleStockAlert = (payload: any) => {
+  const handleStockAlert = (payload: Record<string, unknown>) => {
+    const item = payload.item as { name?: string } | undefined;
     const newAlert: UpdateItem = {
       id: `alert-${Date.now()}`,
       type: 'stock_alert',
-      title: `Low Stock: ${payload.item?.name || 'Item'}`,
+      title: `Low Stock: ${item?.name || 'Item'}`,
       description: `Current quantity (${payload.currentQuantity}) is below threshold (${payload.threshold})`,
       timestamp: new Date(),
       details: payload
@@ -57,18 +60,21 @@ export function RealTimeUpdates() {
     
     toast({
       title: 'Low Stock Alert',
-      description: `${payload.item?.name || 'An item'} is running low on stock.`,
+      description: `${item?.name || 'An item'} is running low on stock.`,
       variant: 'destructive',
     });
   };
 
   // Handle stock transfers
-  const handleStockTransfer = (payload: any) => {
+  const handleStockTransfer = (payload: Record<string, unknown>) => {
+    const item = payload.item as { name?: string } | undefined;
+    const srcWh = payload.sourceWarehouse as { name?: string } | undefined;
+    const dstWh = payload.destinationWarehouse as { name?: string } | undefined;
     const newUpdate: UpdateItem = {
       id: `transfer-${Date.now()}`,
       type: 'stock_transfer',
-      title: `Stock Transfer: ${payload.item?.name || 'Item'}`,
-      description: `${payload.quantity} units transferred from ${payload.sourceWarehouse?.name || 'warehouse #' + payload.sourceWarehouseId} to ${payload.destinationWarehouse?.name || 'warehouse #' + payload.destinationWarehouseId}`,
+      title: `Stock Transfer: ${item?.name || 'Item'}`,
+      description: `${payload.quantity} units transferred from ${srcWh?.name || 'warehouse #' + payload.sourceWarehouseId} to ${dstWh?.name || 'warehouse #' + payload.destinationWarehouseId}`,
       timestamp: new Date(),
       details: payload
     };
@@ -97,7 +103,7 @@ export function RealTimeUpdates() {
   };
 
   // Connect to WebSocket
-  const { isConnected, sendMessage, connect, disconnect, webSocketsEnabled } = useWebSocket({
+  const { isConnected, connect, webSocketsEnabled } = useWebSocket({
     warehouses: [], // Subscribe to all warehouses
     onInventoryUpdate: isListening ? handleInventoryUpdate : undefined,
     onStockAlert: isListening ? handleStockAlert : undefined,
