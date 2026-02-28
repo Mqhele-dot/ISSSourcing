@@ -61,6 +61,15 @@ If you open the forwarded URL in an external browser session, set port **5000** 
 4. Restart the dev server with explicit binding: `HOST=0.0.0.0 PORT=5000 npm run dev`.
 5. In the **Ports** tab, confirm port `5000` exists and open it from that row (avoid stale browser tabs).
 
+**Tailwind IntelliSense errors (e.g. `Can't resolve 'tailwindcss-animate'` or SyntaxError in `node_modules/.../package.json`):**
+
+1. Make sure VS Code is opened at the repo root (the folder containing `package.json` and `tailwind.config.ts`).
+2. Re-run bootstrap: `npm run codespaces:up`.
+3. If errors persist, clean and reinstall dependencies:
+   - `rm -rf node_modules`
+   - `npm ci`
+4. Reload window: **Developer: Reload Window**.
+
 **Database / “Loading…” forever:** If the Control Tower, Purchase Orders, Shipments, or Exceptions pages never load:
 
 - Ensure the Postgres service is running (`db` in the devcontainer).

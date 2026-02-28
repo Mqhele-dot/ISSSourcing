@@ -73,6 +73,31 @@ fi
 echo "Installing dependencies..."
 npm ci
 
+validate_node_modules() {
+  node <<'NODE'
+const checks = [
+  'tailwindcss-animate/package.json',
+  '@tailwindcss/typography/package.json',
+  'tsx/package.json',
+  'drizzle-kit/package.json',
+];
+
+for (const target of checks) {
+  const resolved = require.resolve(target);
+  const raw = require('fs').readFileSync(resolved, 'utf8');
+  JSON.parse(raw);
+}
+NODE
+}
+
+echo "Validating dependency integrity..."
+if ! validate_node_modules; then
+  echo "Dependency integrity check failed (likely partial/corrupt install). Reinstalling once..."
+  rm -rf node_modules
+  npm ci
+  validate_node_modules
+fi
+
 HAS_PG_ISREADY="false"
 if command -v pg_isready >/dev/null 2>&1; then
   HAS_PG_ISREADY="true"
