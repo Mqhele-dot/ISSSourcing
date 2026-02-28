@@ -61,6 +61,8 @@ If you open the forwarded URL in an external browser session, set port **5000** 
 4. Restart the dev server with explicit binding: `HOST=0.0.0.0 PORT=5000 npm run dev`.
 5. In the **Ports** tab, confirm port `5000` exists and open it from that row (avoid stale browser tabs).
 
+If updates still do not appear after a successful start, it is often a stale process bound to the same port. `npm run codespaces:up` now auto-stops existing listeners on the app port and clears Vite cache before starting.
+
 **Tailwind IntelliSense errors (e.g. `Can't resolve 'tailwindcss-animate'` or SyntaxError in `node_modules/.../package.json`):**
 
 1. Make sure VS Code is opened at the repo root (the folder containing `package.json` and `tailwind.config.ts`).

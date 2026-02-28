@@ -18,6 +18,12 @@ if [[ ! -f "${REPO_ROOT}/package.json" || ! -d "${REPO_ROOT}/server" ]]; then
   exit 1
 fi
 
+if command -v git >/dev/null 2>&1 && [[ -d "${REPO_ROOT}/.git" ]]; then
+  GIT_BRANCH="$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+  GIT_COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  echo "Using git revision: ${GIT_BRANCH}@${GIT_COMMIT}"
+fi
+
 if [[ ! -f .env && -f .env.example ]]; then
   cp .env.example .env
   echo "Created .env from .env.example"
@@ -218,6 +224,20 @@ echo "Server URL: ${APP_URL}"
 echo "Client URL: ${APP_URL} (Vite is served through Express in this project)"
 echo "Ports => server/client: ${PORT}, db: ${PGPORT}"
 echo
+
+# Prevent stale/old process from serving old code on the same port.
+if command -v lsof >/dev/null 2>&1; then
+  EXISTING_PIDS="$(lsof -ti tcp:${PORT} -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')"
+  if [[ -n "${EXISTING_PIDS// }" ]]; then
+    echo "Found existing listener(s) on port ${PORT}: ${EXISTING_PIDS}. Stopping to avoid stale app output..."
+    # shellcheck disable=SC2086
+    kill ${EXISTING_PIDS} >/dev/null 2>&1 || true
+    sleep 1
+  fi
+fi
+
+echo "Clearing Vite transform cache..."
+rm -rf "${REPO_ROOT}/node_modules/.vite"
 
 npm run dev &
 APP_PID=$!
