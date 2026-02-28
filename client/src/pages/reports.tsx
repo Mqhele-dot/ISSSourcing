@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format } from "date-fns";
-import { apiRequest, requestJson } from "@/lib/queryClient";
+import { requestJson } from "@/lib/queryClient";
 import { downloadFile, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import type { DocumentType } from "@shared/schema";
@@ -31,6 +32,7 @@ export default function Reports() {
   const [exportFormat, setExportFormat] = useState<DocumentType>("pdf");
   const [filter, setFilter] = useState<ReportFilter>({});
   const [exporting, setExporting] = useState(false);
+  const [customTemplateName, setCustomTemplateName] = useState(() => localStorage.getItem("reportPdfTemplateName") || "");
 
   // Fetch inventory items (primary query for page-level loading/error; normalize to array)
   const {
@@ -149,7 +151,8 @@ export default function Reports() {
       if (queryParams.toString()) {
         url += `?${queryParams.toString()}`;
       }
-      const response = await apiRequest("GET", url);
+      const response = await fetch(url, { credentials: "include", headers: customTemplateName ? { "X-Report-Template": customTemplateName } : {} });
+      if (!response.ok) { throw new Error(`Export failed with status ${response.status}`); }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       
@@ -237,6 +240,18 @@ export default function Reports() {
             </SelectContent>
           </Select>
           
+
+          {exportFormat === "pdf" && (
+            <Input
+              className="w-[220px]"
+              placeholder="PDF template name (optional)"
+              value={customTemplateName}
+              onChange={(e) => {
+                setCustomTemplateName(e.target.value);
+                localStorage.setItem("reportPdfTemplateName", e.target.value);
+              }}
+            />
+          )}
           <Button onClick={handleExport} disabled={exporting}>
             <FileDown className="mr-2 h-4 w-4" />
             {exporting ? "Exporting…" : "Export Report"}

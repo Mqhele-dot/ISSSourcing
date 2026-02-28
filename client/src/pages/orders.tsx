@@ -17,6 +17,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatMutationError } from "@/lib/queryClient";
 import { useQueryState } from "@/hooks/use-query-state";
@@ -34,6 +37,9 @@ import {
   type PurchaseReceiveResult,
 } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
+import { apiRequest, requestJson } from "@/lib/queryClient";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import TutorialButton from "@/components/ui/tutorial-button";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -567,6 +573,157 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
   );
 }
 
+type Requisition = {
+  id: number;
+  requisitionNumber: string;
+  status: string;
+  requiredDate: string | null;
+  notes: string | null;
+  supplierId: number | null;
+};
+
+function PurchaseRequisitionsPanel() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ supplierId: "", requiredDate: "", notes: "", itemId: "", quantity: "1", unitPrice: "0" });
+  const [editing, setEditing] = useState<Requisition | null>(null);
+  const [sharedWith, setSharedWith] = useState<Record<number, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("requisition-share-list") || "{}"); } catch { return {}; }
+  });
+
+  const { data: requisitions = [] } = useQuery<Requisition[]>({ queryKey: ["/api/purchase-requisitions"], queryFn: () => requestJson("GET", "/api/purchase-requisitions") });
+  const { data: suppliers = [] } = useQuery<Array<{ id: number; name: string }>>({ queryKey: ["/api/suppliers"], queryFn: () => requestJson("GET", "/api/suppliers") });
+  const { data: inventory = [] } = useQuery<Array<{ id: number; name: string; sku: string }>>({ queryKey: ["/api/inventory"], queryFn: () => requestJson("GET", "/api/inventory") });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (editing) {
+        return (await apiRequest("PUT", `/api/purchase-requisitions/${editing.id}`, {
+          supplierId: form.supplierId ? Number(form.supplierId) : null,
+          requiredDate: form.requiredDate ? new Date(form.requiredDate) : null,
+          notes: form.notes,
+        })).json();
+      }
+      return (await apiRequest("POST", "/api/purchase-requisitions", {
+        supplierId: form.supplierId ? Number(form.supplierId) : null,
+        requiredDate: form.requiredDate ? new Date(form.requiredDate) : null,
+        notes: form.notes,
+        items: [{
+          itemId: Number(form.itemId),
+          quantity: Number(form.quantity),
+          unitPrice: Number(form.unitPrice),
+          totalPrice: Number(form.quantity) * Number(form.unitPrice),
+        }],
+      })).json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      setOpen(false);
+      setEditing(null);
+      setForm({ supplierId: "", requiredDate: "", notes: "", itemId: "", quantity: "1", unitPrice: "0" });
+      toast({ title: "Requisition saved" });
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("POST", `/api/purchase-requisitions/${id}/approve`, { approverId: 1 }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] }),
+  });
+
+  const openEdit = (req: Requisition) => {
+    setEditing(req);
+    setForm({
+      supplierId: req.supplierId ? String(req.supplierId) : "",
+      requiredDate: req.requiredDate ? new Date(req.requiredDate).toISOString().slice(0, 10) : "",
+      notes: req.notes ?? "",
+      itemId: "",
+      quantity: "1",
+      unitPrice: "0",
+    });
+    setOpen(true);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Create, edit, approve, and share requisitions with teammates.</p>
+        <div className="flex gap-2">
+          <TutorialButton page="purchase" />
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">New Requisition</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{editing ? "Edit" : "Create"} Purchase Requisition</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <Label>Supplier</Label>
+                <select className="w-full rounded-md border px-3 py-2" value={form.supplierId} onChange={(e) => setForm((f) => ({ ...f, supplierId: e.target.value }))}>
+                  <option value="">Select supplier</option>
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <Label>Required date</Label>
+                <Input type="date" value={form.requiredDate} onChange={(e) => setForm((f) => ({ ...f, requiredDate: e.target.value }))} />
+                {!editing && <>
+                  <Label>Item</Label>
+                  <select className="w-full rounded-md border px-3 py-2" value={form.itemId} onChange={(e) => setForm((f) => ({ ...f, itemId: e.target.value }))}>
+                    <option value="">Select item</option>
+                    {inventory.map((i) => <option key={i.id} value={i.id}>{i.sku} - {i.name}</option>)}
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input placeholder="Quantity" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} />
+                    <Input placeholder="Unit price" value={form.unitPrice} onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))} />
+                  </div>
+                </>}
+                <Label>Notes</Label>
+                <Textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
+                <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || (!editing && !form.itemId)}>Save</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Requisition</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Required</TableHead>
+            <TableHead>Share With</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {requisitions.map((req) => (
+            <TableRow key={req.id}>
+              <TableCell>{req.requisitionNumber}</TableCell>
+              <TableCell><StatusBadge status={req.status.toLowerCase()} /></TableCell>
+              <TableCell>{formatDate(req.requiredDate)}</TableCell>
+              <TableCell>
+                <Input
+                  placeholder="user@company.com"
+                  value={sharedWith[req.id] ?? ""}
+                  onChange={(e) => {
+                    const next = { ...sharedWith, [req.id]: e.target.value };
+                    setSharedWith(next);
+                    localStorage.setItem("requisition-share-list", JSON.stringify(next));
+                  }}
+                />
+              </TableCell>
+              <TableCell className="space-x-2 text-right">
+                <Button variant="outline" size="sm" onClick={() => openEdit(req)}>Edit</Button>
+                <Button size="sm" onClick={() => approveMutation.mutate(req.id)} disabled={req.status === "APPROVED"}>Approve</Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const [ordersDetailMatch, ordersDetailParams] = useRoute<{ po: string }>("/orders/:po");
   const [purchaseDetailMatch, purchaseDetailParams] = useRoute<{ po: string }>("/purchase/:po");
@@ -581,5 +738,20 @@ export default function OrdersPage() {
     return <PurchaseOrderDetailView po={po} />;
   }
 
-  return <PurchaseOrdersList />;
+  return (
+    <div className="mx-auto max-w-7xl">
+      <Tabs defaultValue="orders" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="orders">Purchase Orders</TabsTrigger>
+          <TabsTrigger value="requisitions">Purchase Requisitions</TabsTrigger>
+        </TabsList>
+        <TabsContent value="orders">
+          <PurchaseOrdersList />
+        </TabsContent>
+        <TabsContent value="requisitions">
+          <PurchaseRequisitionsPanel />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
 }

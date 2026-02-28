@@ -1717,8 +1717,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "No data found for report" });
       }
       
+      // Optional client-selected template label for PDF exports
+      const reportTemplate = String(req.get("X-Report-Template") || "").trim();
+      const normalizedTitle = reportTemplate && format === "pdf" ? `${reportTemplate} • ${title}` : title;
+
       // Generate the document using the centralized document generation service
-      const buffer = await generateDocument(normalizedReportType as ReportType, format as ReportFormat, data, title);
+      const buffer = await generateDocument(normalizedReportType as ReportType, format as ReportFormat, data, normalizedTitle);
       
       // Set appropriate headers
       switch (format) {

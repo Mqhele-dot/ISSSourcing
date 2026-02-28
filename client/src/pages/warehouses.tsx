@@ -55,6 +55,9 @@ interface FormData {
   name: string;
   address: string;
   location: string;
+  aisle: string;
+  bin: string;
+  zone: string;
   contactPerson: string;
   contactPhone: string;
   isDefault: boolean;
@@ -76,6 +79,9 @@ export default function WarehousesPage() {
     name: '',
     address: '',
     location: '',
+    aisle: '',
+    bin: '',
+    zone: '',
     contactPerson: '',
     contactPhone: '',
     isDefault: false,
@@ -187,7 +193,7 @@ export default function WarehousesPage() {
       });
       return;
     }
-    createWarehouse.mutate({ ...formData, name: formData.name.trim() });
+    createWarehouse.mutate({ ...formData, name: formData.name.trim(), location: `Aisle:${formData.aisle || "-"} | Bin:${formData.bin || "-"} | Location:${formData.zone || formData.location || "-"}` });
   };
 
   const handleEditSubmit = () => {
@@ -203,7 +209,7 @@ export default function WarehousesPage() {
     }
     updateWarehouse.mutate({
       id: selectedWarehouse.id,
-      data: { ...formData, name: formData.name.trim() },
+      data: { ...formData, name: formData.name.trim(), location: `Aisle:${formData.aisle || "-"} | Bin:${formData.bin || "-"} | Location:${formData.zone || formData.location || "-"}` },
     });
   };
 
@@ -218,6 +224,9 @@ export default function WarehousesPage() {
       name: '',
       address: '',
       location: '',
+      aisle: '',
+      bin: '',
+      zone: '',
       contactPerson: '',
       contactPhone: '',
       isDefault: false,
@@ -230,6 +239,9 @@ export default function WarehousesPage() {
       name: warehouse.name,
       address: warehouse.address || '',
       location: warehouse.location || '',
+      aisle: warehouse.location?.match(/Aisle:([^|]+)/)?.[1]?.trim() || '',
+      bin: warehouse.location?.match(/Bin:([^|]+)/)?.[1]?.trim() || '',
+      zone: warehouse.location?.match(/Location:([^|]+)/)?.[1]?.trim() || '',
       contactPerson: warehouse.contactPerson || '',
       contactPhone: warehouse.contactPhone || '',
       isDefault: warehouse.isDefault || false,
@@ -388,15 +400,10 @@ export default function WarehousesPage() {
                 />
               </div>
               
-              <div className="grid gap-2">
-                <Label htmlFor="location">Location</Label>
-                <Input
-                  id="location"
-                  name="location"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  placeholder="Building A, Floor 2"
-                />
+              <div className="grid grid-cols-3 gap-2">
+                <div className="grid gap-2"><Label htmlFor="aisle">Aisle</Label><Input id="aisle" value={formData.aisle} onChange={(e) => setFormData({ ...formData, aisle: e.target.value })} placeholder="A-12" /></div>
+                <div className="grid gap-2"><Label htmlFor="bin">Bin</Label><Input id="bin" value={formData.bin} onChange={(e) => setFormData({ ...formData, bin: e.target.value })} placeholder="B-07" /></div>
+                <div className="grid gap-2"><Label htmlFor="zone">Location</Label><Input id="zone" value={formData.zone} onChange={(e) => setFormData({ ...formData, zone: e.target.value })} placeholder="East wing" /></div>
               </div>
               
               <div className="grid gap-2">
@@ -486,14 +493,10 @@ export default function WarehousesPage() {
                 />
               </div>
               
-              <div className="grid gap-2">
-                <Label htmlFor="edit-location">Location</Label>
-                <Input
-                  id="edit-location"
-                  name="location"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                />
+              <div className="grid grid-cols-3 gap-2">
+                <div className="grid gap-2"><Label htmlFor="edit-aisle">Aisle</Label><Input id="edit-aisle" value={formData.aisle} onChange={(e) => setFormData({ ...formData, aisle: e.target.value })} /></div>
+                <div className="grid gap-2"><Label htmlFor="edit-bin">Bin</Label><Input id="edit-bin" value={formData.bin} onChange={(e) => setFormData({ ...formData, bin: e.target.value })} /></div>
+                <div className="grid gap-2"><Label htmlFor="edit-zone">Location</Label><Input id="edit-zone" value={formData.zone} onChange={(e) => setFormData({ ...formData, zone: e.target.value })} /></div>
               </div>
               
               <div className="grid gap-2">
