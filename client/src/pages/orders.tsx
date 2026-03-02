@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { ArrowLeft, CheckCircle2, Printer, Send, Truck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, Printer, Send, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +42,7 @@ import { apiRequest, requestJson } from "@/lib/queryClient";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import TutorialButton from "@/components/ui/tutorial-button";
 import { useAuth } from "@/hooks/use-auth";
+import { downloadFile } from "@/lib/utils";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -321,6 +322,24 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
     }
   };
 
+  const downloadPoPdf = async (detail: PurchaseOrderDetail) => {
+    try {
+      const response = await apiRequest("GET", `/api/purchase-orders/${detail.id}/pdf`);
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/pdf")) {
+        throw new Error("Unexpected response type while generating PO PDF");
+      }
+      const blob = await response.blob();
+      downloadFile(blob, `${detail.poNumber}.pdf`);
+    } catch (error) {
+      toast({
+        title: "PO PDF failed",
+        description: error instanceof Error ? error.message : "Failed to download PO PDF",
+        variant: "destructive",
+      });
+    }
+  };
+
   const submitReceive = async () => {
     if (receivePayload.length === 0) {
       toast({
@@ -374,6 +393,10 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                   <Button variant="outline" className="gap-2" onClick={() => openPurchaseOrderPrintView(detail)}>
                     <Printer className="h-4 w-4" />
                     Print view
+                  </Button>
+                  <Button variant="outline" className="gap-2" onClick={() => downloadPoPdf(detail)}>
+                    <Download className="h-4 w-4" />
+                    PDF
                   </Button>
                   <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
                     <Button
