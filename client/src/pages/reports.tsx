@@ -161,13 +161,10 @@ export default function Reports() {
         throw new Error(`PDF export returned unexpected payload: ${maybeError.slice(0, 140)}`);
       }
       const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      
+
       // Use .xlsx extension for Excel files
       const fileExtension = exportFormat === 'excel' ? 'xlsx' : exportFormat;
-      downloadFile(objectUrl, `${activeTab}-report.${fileExtension}`);
-      
-      URL.revokeObjectURL(objectUrl);
+      downloadFile(blob, `${activeTab}-report.${fileExtension}`);
       
       toast({
         title: "Export Successful",

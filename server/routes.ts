@@ -979,7 +979,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const approverId = Number(req.body?.approverId ?? (req.user as { id?: number } | undefined)?.id ?? 0);
       if (!approverId || Number.isNaN(approverId)) {
-        return res.status(400).json({ message: "Approver ID is required" });
+        return res.status(401).json({ message: "Not authenticated" });
       }
       
       const updatedRequisition = await storage.approvePurchaseRequisition(id, approverId);
@@ -1005,7 +1005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const approverId = Number(req.body?.approverId ?? (req.user as { id?: number } | undefined)?.id ?? 0);
       const reason = String(req.body?.reason ?? "").trim();
       if (!approverId || Number.isNaN(approverId)) {
-        return res.status(400).json({ message: "Approver ID is required" });
+        return res.status(401).json({ message: "Not authenticated" });
       }
       
       if (!reason) {

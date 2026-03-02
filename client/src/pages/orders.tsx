@@ -58,7 +58,7 @@ function formatDateTime(value: string | null) {
 
 function canApprove(status: string) {
   const normalized = status.toLowerCase();
-  return normalized === "open" || normalized === "draft";
+  return normalized === "submitted";
 }
 
 function canSend(status: string) {
@@ -67,7 +67,7 @@ function canSend(status: string) {
 
 function canReceive(status: string) {
   const normalized = status.toLowerCase();
-  return normalized === "approved" || normalized === "sent" || normalized === "partially_received";
+  return normalized === "sent" || normalized === "partially_received";
 }
 
 function openPurchaseOrderPrintView(detail: PurchaseOrderDetail) {
@@ -716,7 +716,12 @@ function PurchaseRequisitionsPanel() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/purchase-requisitions/${id}/approve`, { approverId: user?.id }),
+    mutationFn: (id: number) => {
+      if (!user?.id) {
+        throw new Error("You must be logged in to approve requisitions");
+      }
+      return apiRequest("POST", `/api/purchase-requisitions/${id}/approve`, { approverId: user.id });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
       toast({ title: "Requisition approved" });
