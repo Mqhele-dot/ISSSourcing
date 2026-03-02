@@ -280,13 +280,13 @@ export default function HomePage() {
                       </Badge>
                     </div>
                   ))}
-                  {walkthrough.phases.length > 0 ? (
+                  {(walkthrough.phases?.length ?? 0) > 0 ? (
                     <div className="space-y-2">
                       <p className="text-xs font-semibold uppercase text-muted-foreground">
                         Guided audit phases
                       </p>
                       <div className="grid gap-2 md:grid-cols-2">
-                        {walkthrough.phases.map((phase, index) => (
+                        {(walkthrough.phases ?? []).map((phase, index) => (
                           <div key={phase.id} className="rounded-md border border-border p-3">
                             <p className="font-medium">
                               {index + 1}. {phase.title}
