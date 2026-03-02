@@ -1043,6 +1043,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(purchaseOrder);
     } catch (error) {
       console.error("Error converting requisition to purchase order:", error);
+      const message = error instanceof Error ? error.message : "Failed to convert requisition to purchase order";
+      if (String(message).includes("Cannot create purchase order from requisition") || String(message).includes("already converted") || String(message).includes("supplier")) {
+        return res.status(400).json({ message });
+      }
       res.status(500).json({ message: "Failed to convert requisition to purchase order" });
     }
   });
@@ -1274,6 +1278,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedOrder);
     } catch (error) {
       console.error("Error updating purchase order status:", error);
+      const message = error instanceof Error ? error.message : "Failed to update purchase order status";
+      if (String(message).includes("Invalid purchase order status transition")) {
+        return res.status(400).json({ message });
+      }
       res.status(500).json({ message: "Failed to update purchase order status" });
     }
   });
@@ -1327,7 +1335,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Purchase order email sent successfully" });
     } catch (error) {
       console.error("Error sending purchase order email:", error);
+      const message = error instanceof Error ? error.message : "Failed to send purchase order email";
+      if (String(message).includes("Invalid purchase order status transition")) {
+        return res.status(400).json({ message });
+      }
       res.status(500).json({ message: "Failed to send purchase order email" });
+    }
+  });
+
+  app.get("/api/purchase-orders/:id/pdf", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (Number.isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase order ID" });
+      }
+
+      const detail = await storage.getPurchaseOrderWithDetails(id);
+      if (!detail) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+
+      const pdf = await PDFDocument.create();
+      const page = pdf.addPage([612, 792]);
+      const regular = await pdf.embedFont(StandardFonts.Helvetica);
+      const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+      let y = 760;
+      const left = 48;
+
+      page.drawText(`PURCHASE ORDER ${detail.orderNumber}`, { x: left, y, size: 18, font: bold });
+      y -= 24;
+      page.drawText(`Status: ${detail.status}    Date: ${new Date(detail.orderDate).toLocaleDateString()}`, { x: left, y, size: 10, font: regular });
+      y -= 14;
+      page.drawText(`Supplier ID: ${detail.supplierId}    Source Requisition: ${detail.requisitionId ?? "N/A"}`, { x: left, y, size: 10, font: regular });
+      y -= 24;
+
+      page.drawText("Delivery & Payment", { x: left, y, size: 12, font: bold });
+      y -= 16;
+      page.drawText(`Delivery address: ${detail.deliveryAddress || "Not specified"}`, { x: left, y, size: 10, font: regular });
+      y -= 14;
+      page.drawText(`Payment status: ${detail.paymentStatus || "UNPAID"}`, { x: left, y, size: 10, font: regular });
+      y -= 22;
+
+      page.drawText("Line Items", { x: left, y, size: 12, font: bold });
+      y -= 16;
+      page.drawText("SKU/Item", { x: left, y, size: 9, font: bold });
+      page.drawText("Qty", { x: 320, y, size: 9, font: bold });
+      page.drawText("Unit", { x: 370, y, size: 9, font: bold });
+      page.drawText("Line Total", { x: 450, y, size: 9, font: bold });
+      y -= 12;
+
+      let subtotal = 0;
+      for (const item of detail.items) {
+        const label = `${item.item?.sku ?? "N/A"} - ${item.item?.name ?? `Item ${item.itemId}`}`;
+        subtotal += Number(item.totalPrice ?? 0);
+        page.drawText(label.slice(0, 48), { x: left, y, size: 9, font: regular });
+        page.drawText(String(item.quantity), { x: 320, y, size: 9, font: regular });
+        page.drawText(Number(item.unitPrice).toFixed(2), { x: 370, y, size: 9, font: regular });
+        page.drawText(Number(item.totalPrice).toFixed(2), { x: 450, y, size: 9, font: regular });
+        y -= 12;
+        if (y < 170) break;
+      }
+
+      const taxTotal = +(subtotal * 0.1).toFixed(2);
+      const grandTotal = +(subtotal + taxTotal).toFixed(2);
+      y -= 10;
+      page.drawText(`Subtotal: ${subtotal.toFixed(2)}`, { x: 380, y, size: 10, font: regular });
+      y -= 14;
+      page.drawText(`Tax (est.): ${taxTotal.toFixed(2)}`, { x: 380, y, size: 10, font: regular });
+      y -= 14;
+      page.drawText(`Grand total: ${grandTotal.toFixed(2)}`, { x: 380, y, size: 11, font: bold });
+
+      y -= 28;
+      page.drawText("Terms & Conditions", { x: left, y, size: 12, font: bold });
+      y -= 14;
+      page.drawText("- Goods subject to supplier contract and applicable procurement policy.", { x: left, y, size: 9, font: regular });
+      y -= 12;
+      page.drawText("- Late delivery, quality, and dispute clauses follow master agreement.", { x: left, y, size: 9, font: regular });
+      y -= 18;
+      page.drawText("Buyer Signature: _____________________", { x: left, y, size: 10, font: regular });
+      page.drawText("Supplier Signature: _____________________", { x: 330, y, size: 10, font: regular });
+
+      const bytes = await pdf.save();
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${detail.orderNumber}.pdf"`);
+      res.status(200).send(Buffer.from(bytes));
+    } catch (error) {
+      console.error("Error generating purchase order PDF:", error);
+      res.status(500).json({ message: "Failed to generate purchase order PDF" });
     }
   });
 

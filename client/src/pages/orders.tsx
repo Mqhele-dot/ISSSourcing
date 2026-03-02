@@ -32,6 +32,7 @@ import {
   fetchPurchaseOrdersEnvelope,
   receivePurchaseOrder,
   sendPurchaseOrder,
+  transitionPurchaseOrderStatus,
   type PurchaseOrderDetail,
   type PurchaseOrderListItem,
   type PurchaseReceiveResult,
@@ -54,6 +55,10 @@ function formatDateTime(value: string | null) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "-";
   return parsed.toLocaleString();
+}
+
+function canSubmit(status: string) {
+  return status.toLowerCase() === "draft";
 }
 
 function canApprove(status: string) {
@@ -278,10 +283,12 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
     [receiveState],
   );
 
-  const updateStatus = async (action: "approve" | "send") => {
+  const updateStatus = async (action: "submit" | "approve" | "send") => {
     setStatusUpdating(true);
     try {
-      if (action === "approve") {
+      if (action === "submit") {
+        await transitionPurchaseOrderStatus(po, "submitted");
+      } else if (action === "approve") {
         await approvePurchaseOrder(po);
       } else {
         await sendPurchaseOrder(po);
@@ -289,7 +296,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
       await refetch();
     } catch (statusError) {
       const err = statusError as Error & { status?: number };
-      const actionLabel = action === "approve" ? "Approve PO" : "Send PO";
+      const actionLabel = action === "submit" ? "Submit PO" : action === "approve" ? "Approve PO" : "Send PO";
       toast({
         title: "Update failed",
         description: formatMutationError(actionLabel, "POST", `/api/purchase/orders/${po}/transition`, err),
@@ -354,6 +361,16 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                     <Printer className="h-4 w-4" />
                     Print view
                   </Button>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      disabled={!canSubmit(detail.status) || statusUpdating}
+                      onClick={() => updateStatus("submit")}
+                    >
+                      Submit
+                    </Button>
+                  </Can>
                   <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
                     <Button
                       variant="outline"

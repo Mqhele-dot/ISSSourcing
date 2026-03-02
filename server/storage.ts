@@ -57,6 +57,32 @@ const MemoryStore = memorystore(session);
 const PostgresSessionStore = connectPgSimple(session);
 import crypto from "crypto";
 
+const purchaseOrderTransitionMap: Record<PurchaseOrderStatus, PurchaseOrderStatus[]> = {
+  [PurchaseOrderStatus.DRAFT]: [PurchaseOrderStatus.SUBMITTED, PurchaseOrderStatus.CANCELLED],
+  [PurchaseOrderStatus.SUBMITTED]: [PurchaseOrderStatus.APPROVED, PurchaseOrderStatus.CANCELLED],
+  [PurchaseOrderStatus.APPROVED]: [PurchaseOrderStatus.SENT, PurchaseOrderStatus.CANCELLED],
+  [PurchaseOrderStatus.SENT]: [PurchaseOrderStatus.PARTIALLY_RECEIVED, PurchaseOrderStatus.RECEIVED, PurchaseOrderStatus.CANCELLED],
+  [PurchaseOrderStatus.PARTIALLY_RECEIVED]: [PurchaseOrderStatus.PARTIALLY_RECEIVED, PurchaseOrderStatus.RECEIVED, PurchaseOrderStatus.CLOSED],
+  [PurchaseOrderStatus.RECEIVED]: [PurchaseOrderStatus.CLOSED, PurchaseOrderStatus.COMPLETED],
+  [PurchaseOrderStatus.CLOSED]: [PurchaseOrderStatus.COMPLETED],
+  [PurchaseOrderStatus.COMPLETED]: [],
+  [PurchaseOrderStatus.CANCELLED]: [],
+};
+
+function normalizePurchaseOrderStatus(status: string): PurchaseOrderStatus {
+  const normalized = status.toUpperCase().replace(/\s+/g, "_");
+  if (!(normalized in PurchaseOrderStatus)) {
+    throw new Error(`Invalid purchase order status: ${status}`);
+  }
+  return normalized as PurchaseOrderStatus;
+}
+
+function canTransitionPurchaseOrderStatus(current: PurchaseOrderStatus, target: PurchaseOrderStatus): boolean {
+  if (current === target) return true;
+  const allowed = purchaseOrderTransitionMap[current] ?? [];
+  return allowed.includes(target);
+}
+
 export interface IStorage {
   // Session store for Express sessions
   sessionStore: session.Store;
@@ -3776,15 +3802,21 @@ export class MemStorage implements IStorage {
   ): Promise<PurchaseOrder | undefined> {
     const order = this.purchaseOrders.get(id);
     if (!order) return undefined;
+
+    const currentStatus = normalizePurchaseOrderStatus(order.status);
+    const targetStatus = normalizePurchaseOrderStatus(status);
+    if (!canTransitionPurchaseOrderStatus(currentStatus, targetStatus)) {
+      throw new Error(`Invalid purchase order status transition: ${currentStatus} -> ${targetStatus}`);
+    }
     
     const updatedOrder = {
       ...order,
-      status,
+      status: targetStatus,
       updatedAt: new Date()
     };
     
     // If status is CLOSED or COMPLETED, update payment status to PAID
-    if (status === PurchaseOrderStatus.CLOSED || status === PurchaseOrderStatus.COMPLETED) {
+    if (targetStatus === PurchaseOrderStatus.CLOSED || targetStatus === PurchaseOrderStatus.COMPLETED) {
       updatedOrder.paymentStatus = PaymentStatus.PAID;
       updatedOrder.paymentDate = new Date();
     }
@@ -3907,6 +3939,11 @@ export class MemStorage implements IStorage {
     if (requisition.supplierId == null) {
       throw new Error('Requisition must have a supplier to create a purchase order');
     }
+
+    const existingOrder = Array.from(this.purchaseOrders.values()).find((po) => po.requisitionId === requisition.id);
+    if (existingOrder) {
+      throw new Error(`Requisition already converted to PO ${existingOrder.orderNumber}`);
+    }
     
     // Generate order number
     const orderNumber = `PO-${new Date().getFullYear()}-${this.orderCurrentId.toString().padStart(3, '0')}`;
@@ -3970,8 +4007,6 @@ export class MemStorage implements IStorage {
       ...order,
       emailSent: true,
       emailSentDate: new Date(),
-      status: order.status === PurchaseOrderStatus.DRAFT ? 
-        PurchaseOrderStatus.SENT : order.status,
       updatedAt: new Date()
     };
     
