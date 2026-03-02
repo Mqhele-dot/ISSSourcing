@@ -1,0 +1,10 @@
+{
+  "tailwindCSS.experimental.configFile": "./tailwind.config.ts",
+  "tailwindCSS.files.exclude": [
+    "**/.git/**",
+    "**/node_modules/**",
+    "**/.next/**",
+    "**/dist/**",
+    "**/build/**"
+  ]
+}

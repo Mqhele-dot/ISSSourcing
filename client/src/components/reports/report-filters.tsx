@@ -283,10 +283,12 @@ export function ReportFilters({
                 {(["purchase-orders", "purchase_orders"].includes(reportTypeKey)) && (
                   <>
                     <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="SUBMITTED">Submitted</SelectItem>
+                    <SelectItem value="APPROVED">Approved</SelectItem>
                     <SelectItem value="SENT">Sent</SelectItem>
-                    <SelectItem value="ACKNOWLEDGED">Acknowledged</SelectItem>
                     <SelectItem value="PARTIALLY_RECEIVED">Partially Received</SelectItem>
                     <SelectItem value="RECEIVED">Received</SelectItem>
+                    <SelectItem value="CLOSED">Closed</SelectItem>
                     <SelectItem value="COMPLETED">Completed</SelectItem>
                     <SelectItem value="CANCELLED">Cancelled</SelectItem>
                   </>

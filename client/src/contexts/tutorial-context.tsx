@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +58,20 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
 
   // Get the steps for the active tutorial
   const activeTourSteps = activeTour && tutorials[activeTour] ? tutorials[activeTour] : null;
+
+  useEffect(() => {
+    if (!isTutorialActive || !activeTourSteps) return;
+    const current = activeTourSteps[currentStep];
+    const selector = current?.attachTo?.element;
+    if (!selector) return;
+
+    const el = document.querySelector(selector) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-primary", "ring-offset-2", "rounded-md");
+    const cleanup = () => el.classList.remove("ring-2", "ring-primary", "ring-offset-2", "rounded-md");
+    return cleanup;
+  }, [activeTourSteps, currentStep, isTutorialActive]);
 
   // Navigation functions
   const goToNextStep = () => {
