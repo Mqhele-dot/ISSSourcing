@@ -75,6 +75,16 @@ function canReceive(status: string) {
   return normalized === "sent" || normalized === "partially_received";
 }
 
+function canClose(status: string) {
+  const normalized = status.toLowerCase();
+  return normalized === "received" || normalized === "partially_received";
+}
+
+function canCancel(status: string) {
+  const normalized = status.toLowerCase();
+  return normalized === "draft" || normalized === "submitted" || normalized === "approved";
+}
+
 function openPurchaseOrderPrintView(detail: PurchaseOrderDetail) {
   const html = `
     <html>
@@ -283,20 +293,24 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
     [receiveState],
   );
 
-  const updateStatus = async (action: "submit" | "approve" | "send") => {
+  const updateStatus = async (action: "submit" | "approve" | "send" | "close" | "cancel") => {
     setStatusUpdating(true);
     try {
       if (action === "submit") {
         await transitionPurchaseOrderStatus(po, "submitted");
       } else if (action === "approve") {
         await approvePurchaseOrder(po);
-      } else {
+      } else if (action === "send") {
         await sendPurchaseOrder(po);
+      } else if (action === "close") {
+        await transitionPurchaseOrderStatus(po, "closed");
+      } else {
+        await transitionPurchaseOrderStatus(po, "cancelled");
       }
       await refetch();
     } catch (statusError) {
       const err = statusError as Error & { status?: number };
-      const actionLabel = action === "submit" ? "Submit PO" : action === "approve" ? "Approve PO" : "Send PO";
+      const actionLabel = action === "submit" ? "Submit PO" : action === "approve" ? "Approve PO" : action === "send" ? "Send PO" : action === "close" ? "Close PO" : "Cancel PO";
       toast({
         title: "Update failed",
         description: formatMutationError(actionLabel, "POST", `/api/purchase/orders/${po}/transition`, err),
@@ -391,6 +405,26 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                     >
                       <Send className="h-4 w-4" />
                       Send
+                    </Button>
+                  </Can>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      disabled={!canClose(detail.status) || statusUpdating}
+                      onClick={() => updateStatus("close")}
+                    >
+                      Close
+                    </Button>
+                  </Can>
+                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                    <Button
+                      variant="destructive"
+                      className="gap-2"
+                      disabled={!canCancel(detail.status) || statusUpdating}
+                      onClick={() => updateStatus("cancel")}
+                    >
+                      Cancel
                     </Button>
                   </Can>
                 </>
