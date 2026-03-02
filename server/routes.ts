@@ -4563,6 +4563,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(payload.status === "ok" ? 200 : 503).json(payload);
   });
 
+  app.get("/api/diagnostics/deep", async (_req: Request, res: Response) => {
+    const startedAt = Date.now();
+    const coreChecks: Record<string, { ok: boolean; latencyMs: number; error?: string }> = {};
+
+    const runCheck = async (name: string, fn: () => Promise<void>) => {
+      const t0 = Date.now();
+      try {
+        await fn();
+        coreChecks[name] = { ok: true, latencyMs: Date.now() - t0 };
+      } catch (error) {
+        coreChecks[name] = {
+          ok: false,
+          latencyMs: Date.now() - t0,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    };
+
+    await runCheck("database_ping", async () => {
+      await pool.query("SELECT 1");
+    });
+
+    await runCheck("schema_status", async () => {
+      const schema = await getSchemaStatus();
+      if (!schema.ok) {
+        throw new Error(`Schema incomplete: ${schema.missingTables.join(", ")}`);
+      }
+    });
+
+    await runCheck("inventory_endpoint_dependency", async () => {
+      await storage.getAllInventoryItems();
+    });
+
+    await runCheck("purchase_orders_dependency", async () => {
+      await storage.getAllPurchaseOrders();
+    });
+
+    await runCheck("purchase_requisitions_dependency", async () => {
+      await storage.getAllPurchaseRequisitions();
+    });
+
+    await runCheck("pdf_engine", async () => {
+      const pdf = await PDFDocument.create();
+      const page = pdf.addPage([180, 100]);
+      page.drawText("diagnostics pdf self-test", { x: 16, y: 50, size: 10 });
+      const bytes = await pdf.save();
+      if (!bytes || bytes.length < 20) {
+        throw new Error("Generated PDF was unexpectedly empty");
+      }
+    });
+
+    await runCheck("websocket_status", async () => {
+      getConnectedClientInfo();
+    });
+
+    const deepHealth = await getDeepHealthPayload();
+    const failures = Object.entries(coreChecks).filter(([, value]) => !value.ok).map(([key]) => key);
+
+    const payload = {
+      status: failures.length === 0 ? "ok" : "degraded",
+      responseTimeMs: Date.now() - startedAt,
+      generatedAt: new Date().toISOString(),
+      checks: coreChecks,
+      deepHealth,
+      failingChecks: failures,
+    };
+
+    res.status(payload.status === "ok" ? 200 : 503).json(payload);
+  });
+
   const handleDemoReset = async (_req: Request, res: Response) => {
     if (process.env.NODE_ENV === "production") {
       return res.status(404).json({ message: "Not found" });

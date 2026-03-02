@@ -113,10 +113,16 @@ npm ci
 validate_node_modules() {
   node <<'NODE'
 const checks = [
+  'tailwindcss/package.json',
   'tailwindcss-animate/package.json',
   '@tailwindcss/typography/package.json',
+  'vite/package.json',
   'tsx/package.json',
   'drizzle-kit/package.json',
+  '@types/node/package.json',
+  '@types/csurf/package.json',
+  '@types/nodemailer/package.json',
+  '@types/speakeasy/package.json',
 ];
 
 for (const target of checks) {
