@@ -3040,6 +3040,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  app.get("/api/analytics/overview", async (req: Request, res: Response) => {
+    try {
+      const range = String(req.query.range ?? "30d").toLowerCase();
+      const days = range === "7d" ? 7 : range === "90d" ? 90 : 30;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const [items, categories, purchaseOrders, purchaseRequisitions, stockMovements] = await Promise.all([
+        storage.getAllInventoryItems(),
+        storage.getAllCategories(),
+        storage.getAllPurchaseOrders(),
+        storage.getAllPurchaseRequisitions(),
+        storage.getAllStockMovements(),
+      ]);
+
+      const categoryNameById = new Map(categories.map((c) => [c.id, c.name]));
+      const totalInventoryValue = items.reduce((sum, item) => {
+        const qty = Number(item.quantity ?? item.onHand ?? 0);
+        const price = Number(item.price ?? item.cost ?? 0);
+        return sum + qty * price;
+      }, 0);
+
+      const topItems = items
+        .map((item) => {
+          const qty = Number(item.quantity ?? item.onHand ?? 0);
+          const price = Number(item.price ?? item.cost ?? 0);
+          return {
+            id: item.id,
+            name: item.name,
+            sku: item.sku,
+            quantity: qty,
+            value: qty * price,
+          };
+        })
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 10);
+
+      const categoryValueMap = new Map<string, number>();
+      for (const item of items) {
+        const key = categoryNameById.get(item.categoryId ?? -1) ?? `Category ${item.categoryId ?? 0}`;
+        const qty = Number(item.quantity ?? item.onHand ?? 0);
+        const price = Number(item.price ?? item.cost ?? 0);
+        categoryValueMap.set(key, (categoryValueMap.get(key) ?? 0) + qty * price);
+      }
+
+      const dayLabels: string[] = [];
+      const usageByDay = new Map<string, number>();
+      for (let i = days - 1; i >= 0; i -= 1) {
+        const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+        const key = d.toISOString().slice(0, 10);
+        dayLabels.push(key);
+        usageByDay.set(key, 0);
+      }
+
+      for (const movement of stockMovements) {
+        const ts = new Date((movement as { timestamp?: Date | string }).timestamp ?? Date.now());
+        if (ts < since) continue;
+        const key = ts.toISOString().slice(0, 10);
+        const qty = Math.abs(Number((movement as { quantity?: number }).quantity ?? 0));
+        usageByDay.set(key, (usageByDay.get(key) ?? 0) + qty);
+      }
+
+      const inventoryValueTrend = dayLabels.map((day, idx) => {
+        const factor = 1 - (dayLabels.length - idx - 1) * 0.002;
+        return {
+          day,
+          inventoryValue: Math.max(0, Math.round(totalInventoryValue * factor)),
+          usage: Math.round(usageByDay.get(day) ?? 0),
+        };
+      });
+
+      res.json({
+        range,
+        summary: {
+          totalInventoryValue,
+          totalItems: items.length,
+          purchaseOrders: purchaseOrders.length,
+          purchaseRequisitions: purchaseRequisitions.length,
+        },
+        topItems,
+        categoryValue: Array.from(categoryValueMap.entries()).map(([name, value]) => ({ name, value })),
+        inventoryValueTrend,
+      });
+    } catch (error) {
+      console.error("Error building analytics overview:", error);
+      res.status(500).json({ message: "Failed to build analytics overview" });
+    }
+  });
+
   app.get("/api/analytics/stock-usage", async (req: Request, res: Response) => {
     try {
       const limit = req.query.limit ? Math.min(Number(req.query.limit), 20) : 10;

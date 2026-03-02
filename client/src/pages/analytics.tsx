@@ -9,10 +9,14 @@ import { Switch } from "@/components/ui/switch";
 import { requestJson } from "@/lib/queryClient";
 import { type InventoryItem } from "@shared/schema";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Legend,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -20,6 +24,19 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+type OverviewPayload = {
+  range: string;
+  summary: {
+    totalInventoryValue: number;
+    totalItems: number;
+    purchaseOrders: number;
+    purchaseRequisitions: number;
+  };
+  topItems: Array<{ id: number; name: string; sku: string; quantity: number; value: number }>;
+  categoryValue: Array<{ name: string; value: number }>;
+  inventoryValueTrend: Array<{ day: string; inventoryValue: number; usage: number }>;
+};
 
 const demoInventory: InventoryItem[] = [
   { id: 9001, name: "Industrial Gloves", sku: "SAFE-GLV-001", lowStockThreshold: 40, onHand: 160, allocated: 20, available: 140, location: "A-01", quantity: 160, price: 4.2, categoryId: 1 },
@@ -33,10 +50,22 @@ export default function AnalyticsPage() {
   const [useDemoData, setUseDemoData] = useState(true);
   const [topN, setTopN] = useState("6");
   const [viewMode, setViewMode] = useState<"value" | "quantity">("value");
+  const [range, setRange] = useState<"7d" | "30d" | "90d">("30d");
+  const [trendType, setTrendType] = useState<"line" | "bar" | "area">("line");
 
   const { data: liveInventory = [] } = useQuery<InventoryItem[]>({
     queryKey: ["/api/inventory"],
     queryFn: () => requestJson("GET", "/api/inventory"),
+  });
+
+  const { data: categories = [] } = useQuery<Array<{ id: number; name: string }>>({
+    queryKey: ["/api/categories"],
+    queryFn: () => requestJson("GET", "/api/categories"),
+  });
+
+  const { data: overview } = useQuery<OverviewPayload>({
+    queryKey: ["/api/analytics/overview", range],
+    queryFn: () => requestJson("GET", `/api/analytics/overview?range=${range}`),
   });
 
   const inventory = useMemo(() => {
@@ -46,8 +75,20 @@ export default function AnalyticsPage() {
     return useDemoData ? demoInventory : [];
   }, [liveInventory, useDemoData]);
 
+  const categoryNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    categories.forEach((c) => map.set(c.id, c.name));
+    return map;
+  }, [categories]);
+
   const ranked = useMemo(() => {
     const n = Math.max(3, Math.min(20, Number(topN) || 6));
+    if (overview?.topItems?.length) {
+      return [...overview.topItems]
+        .sort((a, b) => (viewMode === "value" ? b.value - a.value : b.quantity - a.quantity))
+        .slice(0, n);
+    }
+
     return [...inventory]
       .map((item) => ({
         name: item.name,
@@ -57,17 +98,24 @@ export default function AnalyticsPage() {
       }))
       .sort((a, b) => (viewMode === "value" ? b.value - a.value : b.quantity - a.quantity))
       .slice(0, n);
-  }, [inventory, topN, viewMode]);
+  }, [inventory, overview, topN, viewMode]);
 
   const byCategory = useMemo(() => {
+    if (overview?.categoryValue?.length) {
+      return overview.categoryValue;
+    }
+
     const map = new Map<string, number>();
     for (const item of inventory) {
-      const key = `Category ${item.categoryId ?? 0}`;
+      const categoryId = item.categoryId ?? 0;
+      const key = categoryNameById.get(categoryId) ?? `Category ${categoryId}`;
       const value = Number(item.price ?? 0) * Number(item.quantity ?? item.onHand ?? 0);
       map.set(key, (map.get(key) ?? 0) + value);
     }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [inventory]);
+  }, [inventory, overview, categoryNameById]);
+
+  const trendData = overview?.inventoryValueTrend ?? [];
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -81,7 +129,7 @@ export default function AnalyticsPage() {
         <CardHeader>
           <CardTitle>Analytics controls</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+        <CardContent className="grid gap-4 md:grid-cols-5">
           <div className="flex items-center gap-2">
             <Switch checked={useDemoData} onCheckedChange={setUseDemoData} id="demo-data" />
             <Label htmlFor="demo-data">Use demo data when live data is empty</Label>
@@ -94,7 +142,20 @@ export default function AnalyticsPage() {
             <Switch checked={viewMode === "value"} onCheckedChange={(checked) => setViewMode(checked ? "value" : "quantity")} id="view-mode" />
             <Label htmlFor="view-mode">Rank by value (off = quantity)</Label>
           </div>
-          <div className="text-sm text-muted-foreground flex items-center">Data rows: {inventory.length}</div>
+          <div>
+            <Label htmlFor="range">Range</Label>
+            <Input id="range" value={range} onChange={(e) => setRange((e.target.value as "7d" | "30d" | "90d") || "30d")} />
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={trendType !== "line"} onCheckedChange={(checked) => setTrendType(checked ? "bar" : "line")} id="trend-type" />
+            <Label htmlFor="trend-type">Trend as bar (off = line)</Label>
+          </div>
+          <div className="text-sm text-muted-foreground flex items-center">Rows: {inventory.length}</div>
+          {overview?.summary && (
+            <div className="text-sm text-muted-foreground flex items-center md:col-span-2">
+              Value: ${overview.summary.totalInventoryValue.toLocaleString()} • POs: {overview.summary.purchaseOrders} • PRs: {overview.summary.purchaseRequisitions}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -127,6 +188,45 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle>Inventory value trend</CardTitle></CardHeader>
+        <CardContent className="h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            {trendType === "bar" ? (
+              <BarChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="inventoryValue" fill="#0ea5e9" name="Inventory value" />
+                <Bar dataKey="usage" fill="#f97316" name="Usage" />
+              </BarChart>
+            ) : trendType === "area" ? (
+              <AreaChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Area dataKey="inventoryValue" stroke="#0ea5e9" fill="#bae6fd" name="Inventory value" />
+                <Area dataKey="usage" stroke="#f97316" fill="#fed7aa" name="Usage" />
+              </AreaChart>
+            ) : (
+              <LineChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="inventoryValue" stroke="#0ea5e9" name="Inventory value" />
+                <Line type="monotone" dataKey="usage" stroke="#f97316" name="Usage" />
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
     </div>
   );
 }
