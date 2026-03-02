@@ -1,15 +1,5 @@
 import type { Config } from "tailwindcss";
 
-const optionalPlugin = (packageName: string) => {
-  try {
-    return require(packageName);
-  } catch {
-    // Keep Tailwind and IntelliSense working even if node_modules is temporarily incomplete.
-    // This avoids hard failure in Codespaces while dependencies are being (re)installed.
-    return () => ({}) as unknown;
-  }
-};
-
 export default {
   darkMode: ["class"],
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
@@ -96,5 +86,7 @@ export default {
       },
     },
   },
-  plugins: [optionalPlugin("tailwindcss-animate"), optionalPlugin("@tailwindcss/typography")],
+  // Avoid optional plugin resolution errors in Codespaces IntelliSense when node_modules is rebuilding.
+  // Required accordion animations are defined above in theme.extend.keyframes/animation.
+  plugins: [],
 } satisfies Config;

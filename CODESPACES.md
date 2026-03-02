@@ -95,7 +95,8 @@ git log --oneline -n 1
 **Tailwind IntelliSense errors (e.g. `Can't resolve 'tailwindcss-animate'` or SyntaxError in `node_modules/.../package.json`):**
 
 1. Make sure VS Code is opened at the repo root (the folder containing `package.json` and `tailwind.config.ts`).
-2. Re-run bootstrap: `npm run codespaces:up`.
+2. Run exactly one bootstrap process: `npm run codespaces:up`.
+   - Do **not** start a second `codespaces:up` while one is already running; concurrent installs can leave partial module folders and trigger false Tailwind resolution errors.
 3. If errors persist, clean and reinstall dependencies:
    - `rm -rf node_modules`
    - `npm ci`

@@ -25,6 +25,35 @@ if command -v git >/dev/null 2>&1 && [[ -d "${REPO_ROOT}/.git" ]]; then
   echo "Using git revision: ${GIT_BRANCH}@${GIT_COMMIT}"
 fi
 
+LOCK_DIR="${REPO_ROOT}/.codespaces-up.lock"
+if [[ -d "${LOCK_DIR}" ]]; then
+  LOCK_PID="$(cat "${LOCK_DIR}/pid" 2>/dev/null || true)"
+  if [[ -n "${LOCK_PID}" ]] && kill -0 "${LOCK_PID}" >/dev/null 2>&1; then
+    echo "Another codespaces-up run is already in progress (pid ${LOCK_PID})." >&2
+    echo "Stop that process first, then rerun: npm run codespaces:up" >&2
+    exit 1
+  fi
+  rm -rf "${LOCK_DIR}"
+fi
+mkdir -p "${LOCK_DIR}"
+echo "$$" > "${LOCK_DIR}/pid"
+
+release_lock() {
+  rm -rf "${LOCK_DIR}"
+}
+
+trap release_lock EXIT
+
+cleanup_partial_tailwind_modules() {
+  local pkg
+  for pkg in tailwindcss tailwindcss-animate "@tailwindcss/typography"; do
+    if [[ -d "node_modules/${pkg}" && ! -f "node_modules/${pkg}/package.json" ]]; then
+      echo "Detected partial install for ${pkg}; cleaning it before reinstall..."
+      rm -rf "node_modules/${pkg}"
+    fi
+  done
+}
+
 if [[ ! -f .env && -f .env.example ]]; then
   cp .env.example .env
   echo "Created .env from .env.example"
@@ -78,6 +107,7 @@ if [[ -n "${DATABASE_URL:-}" ]]; then
 fi
 
 echo "Installing dependencies..."
+cleanup_partial_tailwind_modules
 npm ci
 
 validate_node_modules() {
@@ -248,6 +278,7 @@ cleanup() {
     kill "${APP_PID}" >/dev/null 2>&1 || true
     wait "${APP_PID}" >/dev/null 2>&1 || true
   fi
+  release_lock
 }
 trap cleanup EXIT INT TERM
 
