@@ -83,13 +83,10 @@ export default function Dashboard() {
       const url = `/api/export/inventory/${format}`;
       const response = await apiRequest("GET", url);
       const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      
+
       // Use .xlsx extension for Excel files
       const fileExtension = format === 'excel' ? 'xlsx' : format;
-      downloadFile(objectUrl, `inventory-report.${fileExtension}`);
-      
-      URL.revokeObjectURL(objectUrl);
+      downloadFile(blob, `inventory-report.${fileExtension}`);
       
       toast({
         title: "Export Successful",

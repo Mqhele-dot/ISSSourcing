@@ -74,7 +74,7 @@ export default function AnalyticsPage() {
       <PageHeader
         title="Analytics"
         subtitle="Customizable demand and value insights with demo fallback data"
-        actions={<TutorialButton pageName="dashboard" />}
+        actions={<TutorialButton pageName="analytics" />}
       />
 
       <Card>
