@@ -3783,8 +3783,8 @@ export class MemStorage implements IStorage {
       updatedAt: new Date()
     };
     
-    // If status is COMPLETED, update payment status to PAID
-    if (status === PurchaseOrderStatus.COMPLETED) {
+    // If status is CLOSED or COMPLETED, update payment status to PAID
+    if (status === PurchaseOrderStatus.CLOSED || status === PurchaseOrderStatus.COMPLETED) {
       updatedOrder.paymentStatus = PaymentStatus.PAID;
       updatedOrder.paymentDate = new Date();
     }
