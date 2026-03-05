@@ -38,7 +38,10 @@ type OverviewPayload = {
   inventoryValueTrend: Array<{ day: string; inventoryValue: number; usage: number }>;
 };
 
-type AnalyticsInventoryItem = InventoryItem & { allocated?: number; available?: number };
+type AnalyticsInventoryItem = Pick<InventoryItem, "id" | "name" | "sku" | "location" | "quantity" | "price" | "categoryId" | "lowStockThreshold"> & {
+  allocated?: number;
+  available?: number;
+};
 
 const demoInventory: AnalyticsInventoryItem[] = [
   { id: 9001, name: "Industrial Gloves", sku: "SAFE-GLV-001", lowStockThreshold: 40,  allocated: 20, available: 140, location: "A-01", quantity: 160, price: 4.2, categoryId: 1 },
