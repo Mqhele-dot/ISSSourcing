@@ -102,6 +102,8 @@ git log --oneline -n 1
    - `npm ci`
 4. Reload window: **Developer: Reload Window**.
 
+`codespaces:up` now auto-attempts a lockfile reconciliation (`npm install --package-lock-only`) once if `npm ci` fails due an out-of-sync lockfile, then retries `npm ci`.
+
 **`ERR_PACKAGE_PATH_NOT_EXPORTED` during `npm run codespaces:up`** (for example, on `drizzle-kit/package.json`):
 
 - Pull the latest branch changes to ensure your local `scripts/codespaces-up.sh` includes the package-export-safe dependency check.

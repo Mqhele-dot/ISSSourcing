@@ -108,7 +108,11 @@ fi
 
 echo "Installing dependencies..."
 cleanup_partial_tailwind_modules
-npm ci
+if ! npm ci; then
+  echo "npm ci failed (package-lock may be out of sync). Attempting lockfile reconciliation..."
+  npm install --package-lock-only
+  npm ci
+fi
 
 validate_node_modules() {
   node <<'NODE'
