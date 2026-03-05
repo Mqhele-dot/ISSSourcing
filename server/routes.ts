@@ -3151,14 +3151,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const categoryNameById = new Map(categories.map((c) => [c.id, c.name]));
       const totalInventoryValue = items.reduce((sum, item) => {
-        const qty = Number(item.quantity ?? item.onHand ?? 0);
+        const qty = Number(item.quantity ?? 0);
         const price = Number(item.price ?? item.cost ?? 0);
         return sum + qty * price;
       }, 0);
 
       const topItems = items
         .map((item) => {
-          const qty = Number(item.quantity ?? item.onHand ?? 0);
+          const qty = Number(item.quantity ?? 0);
           const price = Number(item.price ?? item.cost ?? 0);
           return {
             id: item.id,
@@ -3174,7 +3174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const categoryValueMap = new Map<string, number>();
       for (const item of items) {
         const key = categoryNameById.get(item.categoryId ?? -1) ?? `Category ${item.categoryId ?? 0}`;
-        const qty = Number(item.quantity ?? item.onHand ?? 0);
+        const qty = Number(item.quantity ?? 0);
         const price = Number(item.price ?? item.cost ?? 0);
         categoryValueMap.set(key, (categoryValueMap.get(key) ?? 0) + qty * price);
       }

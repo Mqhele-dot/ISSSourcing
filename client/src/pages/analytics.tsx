@@ -38,12 +38,14 @@ type OverviewPayload = {
   inventoryValueTrend: Array<{ day: string; inventoryValue: number; usage: number }>;
 };
 
-const demoInventory: InventoryItem[] = [
-  { id: 9001, name: "Industrial Gloves", sku: "SAFE-GLV-001", lowStockThreshold: 40, onHand: 160, allocated: 20, available: 140, location: "A-01", quantity: 160, price: 4.2, categoryId: 1 },
-  { id: 9002, name: "Hydraulic Pump", sku: "MECH-PMP-010", lowStockThreshold: 8, onHand: 22, allocated: 6, available: 16, location: "B-11", quantity: 22, price: 640, categoryId: 2 },
-  { id: 9003, name: "Safety Helmet", sku: "SAFE-HLM-112", lowStockThreshold: 20, onHand: 96, allocated: 32, available: 64, location: "A-02", quantity: 96, price: 29.5, categoryId: 1 },
-  { id: 9004, name: "Cable Reel", sku: "ELEC-CBL-201", lowStockThreshold: 12, onHand: 40, allocated: 10, available: 30, location: "C-04", quantity: 40, price: 120, categoryId: 3 },
-  { id: 9005, name: "Forklift Tyre", sku: "OPS-TYR-221", lowStockThreshold: 6, onHand: 14, allocated: 2, available: 12, location: "D-09", quantity: 14, price: 180, categoryId: 4 },
+type AnalyticsInventoryItem = InventoryItem & { allocated?: number; available?: number };
+
+const demoInventory: AnalyticsInventoryItem[] = [
+  { id: 9001, name: "Industrial Gloves", sku: "SAFE-GLV-001", lowStockThreshold: 40,  allocated: 20, available: 140, location: "A-01", quantity: 160, price: 4.2, categoryId: 1 },
+  { id: 9002, name: "Hydraulic Pump", sku: "MECH-PMP-010", lowStockThreshold: 8,  allocated: 6, available: 16, location: "B-11", quantity: 22, price: 640, categoryId: 2 },
+  { id: 9003, name: "Safety Helmet", sku: "SAFE-HLM-112", lowStockThreshold: 20,  allocated: 32, available: 64, location: "A-02", quantity: 96, price: 29.5, categoryId: 1 },
+  { id: 9004, name: "Cable Reel", sku: "ELEC-CBL-201", lowStockThreshold: 12,  allocated: 10, available: 30, location: "C-04", quantity: 40, price: 120, categoryId: 3 },
+  { id: 9005, name: "Forklift Tyre", sku: "OPS-TYR-221", lowStockThreshold: 6,  allocated: 2, available: 12, location: "D-09", quantity: 14, price: 180, categoryId: 4 },
 ];
 
 export default function AnalyticsPage() {
@@ -93,8 +95,8 @@ export default function AnalyticsPage() {
       .map((item) => ({
         name: item.name,
         sku: item.sku,
-        quantity: Number(item.quantity ?? item.onHand ?? 0),
-        value: Number(item.price ?? 0) * Number(item.quantity ?? item.onHand ?? 0),
+        quantity: Number(item.quantity ?? 0),
+        value: Number(item.price ?? 0) * Number(item.quantity ?? 0),
       }))
       .sort((a, b) => (viewMode === "value" ? b.value - a.value : b.quantity - a.quantity))
       .slice(0, n);
@@ -109,7 +111,7 @@ export default function AnalyticsPage() {
     for (const item of inventory) {
       const categoryId = item.categoryId ?? 0;
       const key = categoryNameById.get(categoryId) ?? `Category ${categoryId}`;
-      const value = Number(item.price ?? 0) * Number(item.quantity ?? item.onHand ?? 0);
+      const value = Number(item.price ?? 0) * Number(item.quantity ?? 0);
       map.set(key, (map.get(key) ?? 0) + value);
     }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
