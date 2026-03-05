@@ -372,11 +372,13 @@ export const insertPurchaseRequisitionItemSchema = createInsertSchema(purchaseRe
 // Purchase Order Status enum
 export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [
   "DRAFT",
+  "SUBMITTED",
+  "APPROVED",
   "SENT",
-  "ACKNOWLEDGED",
   "PARTIALLY_RECEIVED",
   "RECEIVED",
   "CANCELLED",
+  "CLOSED",
   "COMPLETED"
 ]);
 
@@ -653,11 +655,13 @@ export enum PurchaseRequisitionStatus {
 // Purchase Order Status
 export enum PurchaseOrderStatus {
   DRAFT = "DRAFT",
+  SUBMITTED = "SUBMITTED",
+  APPROVED = "APPROVED",
   SENT = "SENT",
-  ACKNOWLEDGED = "ACKNOWLEDGED",
   PARTIALLY_RECEIVED = "PARTIALLY_RECEIVED",
   RECEIVED = "RECEIVED",
   CANCELLED = "CANCELLED",
+  CLOSED = "CLOSED",
   COMPLETED = "COMPLETED"
 }
 

@@ -14,7 +14,7 @@ This repository now includes a `.devcontainer` configuration so it can boot in G
    - install dependencies with `npm ci`
    - wait for PostgreSQL
    - run `npm run db:push` to initialize the schema
-4. Start the app with one command:
+4. Start the app with one command (the script now auto-switches to repo root when needed):
 
 ```bash
 npm run codespaces:up
@@ -36,6 +36,25 @@ You can also seed manually with:
 
 ```bash
 npm run db:seed
+```
+
+## First verify you are in the correct repo folder
+
+If you get errors like `No such file or directory: /workspace/ISSSourcing`, your workspace folder name is different from what a prior message assumed.
+
+Use these commands to detect the actual path and switch to it (no hardcoded folder name):
+
+```bash
+pwd
+git rev-parse --show-toplevel
+cd "$(git rev-parse --show-toplevel)"
+```
+
+To confirm you are running the latest branch changes (and not an older branch/tab):
+
+```bash
+git branch --show-current
+git log --oneline -n 3
 ```
 
 ## Ports and URLs
@@ -60,6 +79,36 @@ If you open the forwarded URL in an external browser session, set port **5000** 
 3. Set port visibility to **Public** in the Codespaces **Ports** tab (required for `*.app.github.dev`).
 4. Restart the dev server with explicit binding: `HOST=0.0.0.0 PORT=5000 npm run dev`.
 5. In the **Ports** tab, confirm port `5000` exists and open it from that row (avoid stale browser tabs).
+
+If updates still do not appear after a successful start, it is usually one of these:
+
+- stale process/cache (now auto-fixed by `npm run codespaces:up`, which stops old listeners and clears Vite cache), or
+- browser/VS Code is still pointed at a different branch/workspace.
+
+Verify branch + commit in your active terminal:
+
+```bash
+git branch --show-current
+git log --oneline -n 1
+```
+
+**Tailwind IntelliSense errors (e.g. `Can't resolve 'tailwindcss-animate'` or SyntaxError in `node_modules/.../package.json`):**
+
+1. Make sure VS Code is opened at the repo root (the folder containing `package.json` and `tailwind.config.ts`).
+2. Run exactly one bootstrap process: `npm run codespaces:up`.
+   - Do **not** start a second `codespaces:up` while one is already running; concurrent installs can leave partial module folders and trigger false Tailwind resolution errors.
+3. If errors persist, clean and reinstall dependencies:
+   - `rm -rf node_modules`
+   - `npm ci`
+4. Reload window: **Developer: Reload Window**.
+
+`codespaces:up` now auto-attempts a lockfile reconciliation (`npm install --package-lock-only`) once if `npm ci` fails due an out-of-sync lockfile, then retries `npm ci`.
+
+**`ERR_PACKAGE_PATH_NOT_EXPORTED` during `npm run codespaces:up`** (for example, on `drizzle-kit/package.json`):
+
+- Pull the latest branch changes to ensure your local `scripts/codespaces-up.sh` includes the package-export-safe dependency check.
+- Re-run bootstrap once: `npm run codespaces:up`.
+- If you still see the same error, verify your script does **not** call `require.resolve('<pkg>/package.json')` in dependency validation; it should read from `node_modules/<pkg>/package.json` directly.
 
 **Database / “Loading…” forever:** If the Control Tower, Purchase Orders, Shipments, or Exceptions pages never load:
 
@@ -113,3 +162,16 @@ For local non-Codespaces development, copy `.env.example` to `.env` and adjust v
 
 - **Vite** (client) builds to **`dist/public`** (see `vite.config.ts`: `build.outDir`).
 - **Express** in production serves static files from **`server/public`** when the server runs from the repo root, or from **`dist/public`** when the server runs from `dist/` (e.g. `node dist/index.js`). The `serveStatic` function in `server/vite.ts` uses `path.resolve(__dirname, "public")`, so the executable’s directory must contain a `public` folder with the built client (e.g. run from project root after copying client build into `server/public`, or run from `dist/` so `dist/public` is used). Do not change Vite’s `outDir` without updating the server’s static path so both stay in sync.
+
+## Codex PR update limitation
+
+If you see this error in Codex:
+
+> `Codex does not currently support updating PRs that are updated outside of Codex. For now, please create a new PR.`
+
+Use this workflow:
+
+1. Keep working on the same branch and commit your latest fixes.
+2. Open a **new** PR from that branch instead of trying to update the old Codex-managed PR.
+3. Link the new PR to the previous one and briefly note it replaces the prior PR because of Codex update limitations.
+4. Continue review and follow-up changes on the new PR thread.

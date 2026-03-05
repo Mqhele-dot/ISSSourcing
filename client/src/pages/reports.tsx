@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format } from "date-fns";
-import { apiRequest, requestJson } from "@/lib/queryClient";
+import { requestJson } from "@/lib/queryClient";
 import { downloadFile, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import type { DocumentType } from "@shared/schema";
@@ -31,6 +32,7 @@ export default function Reports() {
   const [exportFormat, setExportFormat] = useState<DocumentType>("pdf");
   const [filter, setFilter] = useState<ReportFilter>({});
   const [exporting, setExporting] = useState(false);
+  const [customTemplateName, setCustomTemplateName] = useState(() => localStorage.getItem("reportPdfTemplateName") || "");
 
   // Fetch inventory items (primary query for page-level loading/error; normalize to array)
   const {
@@ -149,15 +151,20 @@ export default function Reports() {
       if (queryParams.toString()) {
         url += `?${queryParams.toString()}`;
       }
-      const response = await apiRequest("GET", url);
+      const response = await fetch(url, { credentials: "include", headers: customTemplateName ? { "X-Report-Template": customTemplateName } : {} });
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.ok) {
+        throw new Error(`Export failed with status ${response.status}`);
+      }
+      if (exportFormat === "pdf" && !contentType.includes("application/pdf")) {
+        const maybeError = await response.text();
+        throw new Error(`PDF export returned unexpected payload: ${maybeError.slice(0, 140)}`);
+      }
       const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      
+
       // Use .xlsx extension for Excel files
       const fileExtension = exportFormat === 'excel' ? 'xlsx' : exportFormat;
-      downloadFile(objectUrl, `${activeTab}-report.${fileExtension}`);
-      
-      URL.revokeObjectURL(objectUrl);
+      downloadFile(blob, `${activeTab}-report.${fileExtension}`);
       
       toast({
         title: "Export Successful",
@@ -237,6 +244,18 @@ export default function Reports() {
             </SelectContent>
           </Select>
           
+
+          {exportFormat === "pdf" && (
+            <Input
+              className="w-[220px]"
+              placeholder="PDF template name (optional)"
+              value={customTemplateName}
+              onChange={(e) => {
+                setCustomTemplateName(e.target.value);
+                localStorage.setItem("reportPdfTemplateName", e.target.value);
+              }}
+            />
+          )}
           <Button onClick={handleExport} disabled={exporting}>
             <FileDown className="mr-2 h-4 w-4" />
             {exporting ? "Exporting…" : "Export Report"}

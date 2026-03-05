@@ -9,14 +9,50 @@ if [[ "${CODESPACES:-}" == "true" || -n "${CODESPACE_NAME:-}" || -n "${GITHUB_CO
 fi
 
 if [[ "$(pwd)" != "${REPO_ROOT}" ]]; then
-  echo "Run this command from the repository root: ${REPO_ROOT}" >&2
-  exit 1
+  echo "Switching to repository root: ${REPO_ROOT}"
+  cd "${REPO_ROOT}"
 fi
 
 if [[ ! -f "${REPO_ROOT}/package.json" || ! -d "${REPO_ROOT}/server" ]]; then
   echo "Could not verify repository root layout (missing package.json or server/)." >&2
+  echo "If you are in Codespaces, locate the repo root with: git rev-parse --show-toplevel" >&2
   exit 1
 fi
+
+if command -v git >/dev/null 2>&1 && [[ -d "${REPO_ROOT}/.git" ]]; then
+  GIT_BRANCH="$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+  GIT_COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  echo "Using git revision: ${GIT_BRANCH}@${GIT_COMMIT}"
+fi
+
+LOCK_DIR="${REPO_ROOT}/.codespaces-up.lock"
+if [[ -d "${LOCK_DIR}" ]]; then
+  LOCK_PID="$(cat "${LOCK_DIR}/pid" 2>/dev/null || true)"
+  if [[ -n "${LOCK_PID}" ]] && kill -0 "${LOCK_PID}" >/dev/null 2>&1; then
+    echo "Another codespaces-up run is already in progress (pid ${LOCK_PID})." >&2
+    echo "Stop that process first, then rerun: npm run codespaces:up" >&2
+    exit 1
+  fi
+  rm -rf "${LOCK_DIR}"
+fi
+mkdir -p "${LOCK_DIR}"
+echo "$$" > "${LOCK_DIR}/pid"
+
+release_lock() {
+  rm -rf "${LOCK_DIR}"
+}
+
+trap release_lock EXIT
+
+cleanup_partial_tailwind_modules() {
+  local pkg
+  for pkg in tailwindcss tailwindcss-animate "@tailwindcss/typography"; do
+    if [[ -d "node_modules/${pkg}" && ! -f "node_modules/${pkg}/package.json" ]]; then
+      echo "Detected partial install for ${pkg}; cleaning it before reinstall..."
+      rm -rf "node_modules/${pkg}"
+    fi
+  done
+}
 
 if [[ ! -f .env && -f .env.example ]]; then
   cp .env.example .env
@@ -71,7 +107,50 @@ if [[ -n "${DATABASE_URL:-}" ]]; then
 fi
 
 echo "Installing dependencies..."
-npm ci
+cleanup_partial_tailwind_modules
+if ! npm ci; then
+  echo "npm ci failed (package-lock may be out of sync). Attempting lockfile reconciliation..."
+  npm install --package-lock-only
+  npm ci
+fi
+
+validate_node_modules() {
+  node <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const checks = [
+  'tailwindcss',
+  'tailwindcss-animate',
+  '@tailwindcss/typography',
+  'vite',
+  'tsx',
+  'drizzle-kit',
+  '@types/node',
+  '@types/csurf',
+  '@types/nodemailer',
+  '@types/speakeasy',
+];
+
+const root = process.cwd();
+
+for (const pkg of checks) {
+  // Resolve package.json via filesystem path instead of require.resolve('<pkg>/package.json')
+  // because some packages (e.g. drizzle-kit) do not export that subpath.
+  const pkgJson = path.join(root, 'node_modules', ...pkg.split('/'), 'package.json');
+  const raw = fs.readFileSync(pkgJson, 'utf8');
+  JSON.parse(raw);
+}
+NODE
+}
+
+echo "Validating dependency integrity..."
+if ! validate_node_modules; then
+  echo "Dependency integrity check failed (likely partial/corrupt install). Reinstalling once..."
+  rm -rf node_modules
+  npm ci
+  validate_node_modules
+fi
 
 HAS_PG_ISREADY="false"
 if command -v pg_isready >/dev/null 2>&1; then
@@ -194,6 +273,20 @@ echo "Client URL: ${APP_URL} (Vite is served through Express in this project)"
 echo "Ports => server/client: ${PORT}, db: ${PGPORT}"
 echo
 
+# Prevent stale/old process from serving old code on the same port.
+if command -v lsof >/dev/null 2>&1; then
+  EXISTING_PIDS="$(lsof -ti tcp:${PORT} -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')"
+  if [[ -n "${EXISTING_PIDS// }" ]]; then
+    echo "Found existing listener(s) on port ${PORT}: ${EXISTING_PIDS}. Stopping to avoid stale app output..."
+    # shellcheck disable=SC2086
+    kill ${EXISTING_PIDS} >/dev/null 2>&1 || true
+    sleep 1
+  fi
+fi
+
+echo "Clearing Vite transform cache..."
+rm -rf "${REPO_ROOT}/node_modules/.vite"
+
 npm run dev &
 APP_PID=$!
 
@@ -202,6 +295,7 @@ cleanup() {
     kill "${APP_PID}" >/dev/null 2>&1 || true
     wait "${APP_PID}" >/dev/null 2>&1 || true
   fi
+  release_lock
 }
 trap cleanup EXIT INT TERM
 
