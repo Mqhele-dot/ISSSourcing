@@ -282,6 +282,14 @@ export type DemoWalkthroughResult = {
     completed: boolean;
     details?: string;
   }>;
+  phases?: Array<{
+    id: string;
+    title: string;
+    description: string;
+    route: string;
+    selector: string;
+    expectedOutcome: string;
+  }>;
   context: {
     sku: string;
     poNumber: string;

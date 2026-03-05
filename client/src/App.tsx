@@ -31,6 +31,7 @@ import DocumentExtractorPage from "@/pages/document-extractor-page";
 import WarehousesPage from "@/pages/warehouses";
 import LogisticsPage from "@/pages/logistics";
 import ExceptionsPage from "@/pages/exceptions";
+import AnalyticsPage from "@/pages/analytics";
 import IntegrationsPage from "@/pages/integrations";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AccentProvider } from "@/components/accent-provider";
@@ -102,6 +103,7 @@ function Router() {
     <Switch>
       <ProtectedRoute path="/" component={Home} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
+      <ProtectedRoute path="/analytics" component={AnalyticsPage} />
       <ProtectedRoute path="/inventory" component={Inventory} />
       <ProtectedRoute path="/inventory/:sku" component={InventoryItemDetail} />
       <ProtectedRoute path="/orders" component={OrdersPage} />

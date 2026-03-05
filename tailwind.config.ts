@@ -86,5 +86,7 @@ export default {
       },
     },
   },
-  plugins: [require("tailwindcss-animate"), require("@tailwindcss/typography")],
+  // Avoid optional plugin resolution errors in Codespaces IntelliSense when node_modules is rebuilding.
+  // Required accordion animations are defined above in theme.extend.keyframes/animation.
+  plugins: [],
 } satisfies Config;

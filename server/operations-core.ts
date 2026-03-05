@@ -2254,21 +2254,59 @@ export async function runOperationalDemoWalkthrough(actor: string) {
     });
   }
 
+  const links = {
+    inventory: `/inventory/${encodeURIComponent(firstInventoryItem.sku)}`,
+    purchase: `/purchase/${encodeURIComponent(poNumber)}`,
+    logistics: `/logistics/${shipmentId}`,
+    exception:
+      chosenExceptionId !== null ? `/exceptions/${chosenExceptionId}` : null,
+  };
+
+  const phases = [
+    {
+      id: "inventory-shortage",
+      title: "Investigate shortage",
+      description: "Open inventory detail and confirm the shortage-driven exception context.",
+      route: links.inventory,
+      selector: "[data-tour='inventory-root']",
+      expectedOutcome: "Inventory detail opens with the walkthrough SKU loaded.",
+    },
+    {
+      id: "purchase-follow-up",
+      title: "Review replenishment PO",
+      description: "Open the generated purchase order to confirm supplier, quantity, and status.",
+      route: links.purchase,
+      selector: "[data-tour='purchase-orders-table'], [data-tour='orders-root']",
+      expectedOutcome: "Generated PO is visible and can be progressed through workflow actions.",
+    },
+    {
+      id: "shipment-tracking",
+      title: "Track in-transit shipment",
+      description: "Open logistics to verify shipment moved into in-transit state.",
+      route: links.logistics,
+      selector: "[data-tour='logistics-list'], [data-tour='shipments-root']",
+      expectedOutcome: "Shipment shows in-transit status with ETA context.",
+    },
+    {
+      id: "exception-resolution",
+      title: "Resolve created exception",
+      description: "Open exception details and assign or resolve next actions.",
+      route: links.exception,
+      selector: "[data-tour='exceptions-table'], [data-tour='exceptions-root']",
+      expectedOutcome: "Exception details are visible for triage and resolution.",
+    },
+  ].filter((phase) => Boolean(phase.route));
+
   return {
     steps,
+    phases,
     context: {
       sku: firstInventoryItem.sku,
       poNumber,
       shipmentId,
       exceptionId: chosenExceptionId,
     },
-    links: {
-      inventory: `/inventory/${encodeURIComponent(firstInventoryItem.sku)}`,
-      purchase: `/purchase/${encodeURIComponent(poNumber)}`,
-      logistics: `/logistics/${shipmentId}`,
-      exception:
-        chosenExceptionId !== null ? `/exceptions/${chosenExceptionId}` : null,
-    },
+    links,
   };
 }
 
