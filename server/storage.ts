@@ -2901,6 +2901,14 @@ export class MemStorage implements IStorage {
       contactName: insertSupplier.contactName || null,
       phone: insertSupplier.phone || null,
       address: insertSupplier.address || null,
+      taxIdentificationNumber: insertSupplier.taxIdentificationNumber ?? null,
+      bankName: insertSupplier.bankName ?? null,
+      bankAccountNumber: insertSupplier.bankAccountNumber ?? null,
+      bankSwift: insertSupplier.bankSwift ?? null,
+      paymentTermsId: insertSupplier.paymentTermsId ?? null,
+      defaultCurrencyCode: insertSupplier.defaultCurrencyCode ?? null,
+      insuranceExpiry: insertSupplier.insuranceExpiry ?? null,
+      complianceNotes: insertSupplier.complianceNotes ?? null,
       notes: insertSupplier.notes || null,
       createdAt: now,
       updatedAt: now
@@ -3118,12 +3126,15 @@ export class MemStorage implements IStorage {
       reorderPoint: insertItem.reorderPoint ?? null,
       maxStockLevel: insertItem.maxStockLevel ?? null,
       expiryDate: insertItem.expiryDate ?? null,
+      manufacturingDate: insertItem.manufacturingDate ?? null,
       lastCountDate: insertItem.lastCountDate ?? null,
       images: insertItem.images ?? null,
       tags: insertItem.tags ?? null,
       lowStockThreshold: insertItem.lowStockThreshold ?? null,
       minOrderQuantity: insertItem.minOrderQuantity ?? 1,
       unitOfMeasure: insertItem.unitOfMeasure ?? 'each',
+      supplierPartNumber: insertItem.supplierPartNumber ?? null,
+      commodityCodeId: insertItem.commodityCodeId ?? null,
       barcodeType: insertItem.barcodeType ?? 'CODE128',
       taxable: insertItem.taxable ?? true
     };
@@ -3358,6 +3369,8 @@ export class MemStorage implements IStorage {
       approvalDate: null,
       rejectionReason: null,
       requiredDate: requisition.requiredDate ?? null,
+      departmentId: requisition.departmentId ?? null,
+      justification: requisition.justification ?? null,
       totalAmount: requisition.totalAmount ?? 0,
       sharedWithUserIds: (requisition as { sharedWithUserIds?: number[] }).sharedWithUserIds ?? []
     };
@@ -3606,6 +3619,10 @@ export class MemStorage implements IStorage {
       status: order.status ?? 'DRAFT',
       notes: order.notes ?? null,
       requisitionId: order.requisitionId ?? null,
+      departmentId: order.departmentId ?? null,
+      contractId: order.contractId ?? null,
+      paymentTermsId: order.paymentTermsId ?? null,
+      incotermId: order.incotermId ?? null,
       totalAmount: order.totalAmount ?? 0,
       orderDate: order.orderDate ?? now,
       expectedDeliveryDate: order.expectedDeliveryDate ?? null,
@@ -5075,7 +5092,9 @@ export class MemStorage implements IStorage {
       status: (invoice.status ?? 'DRAFT') as Invoice['status'],
       notes: invoice.notes ?? null,
       termsAndConditions: invoice.termsAndConditions ?? null,
-      purchaseOrderId: invoice.purchaseOrderId ?? null
+      purchaseOrderId: invoice.purchaseOrderId ?? null,
+      customerId: invoice.customerId ?? null,
+      supplierId: invoice.supplierId ?? null
     };
     
     this.invoices.set(id, newInvoice);

@@ -36,6 +36,7 @@ import WarehousesPage from "@/pages/warehouses";
 import LogisticsPage from "@/pages/logistics";
 import ExceptionsPage from "@/pages/exceptions";
 import IntegrationsPage from "@/pages/integrations";
+import MasterDataPage from "@/pages/master-data";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AccentProvider } from "@/components/accent-provider";
 import { DensityProvider } from "@/components/density-provider";
@@ -127,6 +128,7 @@ function Router() {
       <ProtectedRoute path="/exceptions" component={ExceptionsPage} />
       <ProtectedRoute path="/exceptions/:id" component={ExceptionsPage} />
       <ProtectedRoute path="/integrations" component={IntegrationsPage} />
+      <ProtectedRoute path="/master-data" component={MasterDataPage} />
       <ProtectedRoute path="/suppliers" component={SuppliersPage} />
       <ProtectedRoute path="/contracts" component={ContractsPage} />
       <ProtectedRoute path="/reports" component={Reports} />

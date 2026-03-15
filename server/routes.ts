@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
+import { db } from "./db";
 import { getDemoDataSummary, getSchemaStatus, resetAndSeedDemoData } from "./seed";
 import { seedOperationalIfEmpty } from "./seed-operational";
 import { ZodError } from "zod";
@@ -28,8 +29,10 @@ import type { ReportFormat, ReportType} from "@shared/schema";
 import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { registerOperationalRoutes } from "./operations-routes";
 import { readiness } from "./readiness";
-import { createContractRepository } from "./repositories";
+import { createContractRepository, createSupplierRepository, createWarehouseRepository } from "./repositories";
 import { createContractService, ContractDateError } from "./services/contract-service";
+import { createSupplierService } from "./services/supplier-service";
+import { eq, and, isNull, gte, lte } from "drizzle-orm";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -53,6 +56,44 @@ import {
   insertWarehouseInventorySchema,
   insertStockMovementSchema,
   stockMovementFormSchema,
+  insertUnitOfMeasureSchema,
+  insertCurrencySchema,
+  insertTaxCodeSchema,
+  insertCommodityCodeSchema,
+  insertIncotermSchema,
+  insertPaymentTermSchema,
+  insertDepartmentSchema,
+  insertApprovalPolicySchema,
+  insertRetentionPolicySchema,
+  insertInventoryBatchSchema,
+  insertInventorySerialSchema,
+  insertInventoryAllocationSchema,
+  insertCycleCountSchema,
+  insertCycleCountLineSchema,
+  unitsOfMeasure,
+  currencies,
+  taxCodes,
+  commodityCodes,
+  incoterms,
+  paymentTerms,
+  departments,
+  approvalPolicies,
+  approvalHistory,
+  purchaseOrderRevisions,
+  notifications,
+  notificationPreferences,
+  documents,
+  retentionPolicies,
+  inventoryBatches,
+  inventorySerials,
+  inventoryAllocations,
+  cycleCounts,
+  cycleCountLines,
+  invoices,
+  purchaseOrders,
+  purchaseOrderItems,
+  purchaseRequisitions,
+  stockMovements,
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
@@ -109,6 +150,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const auth = setupAuth(app);
   const contractRepo = createContractRepository(storage);
   const contractService = createContractService(contractRepo, storage);
+  const supplierRepo = createSupplierRepository(storage);
+  const supplierService = createSupplierService(supplierRepo, storage);
+  const warehouseRepo = createWarehouseRepository(storage);
   registerOperationalRoutes(app, auth);
   
   // Role and permission routes
@@ -414,8 +458,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error checking permission" });
     }
   });
+  // Categories — RBAC: read for authenticated; manager/admin for write
+  const categoryRead = [auth.ensureAuthenticated];
+  const categoryWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
   // Categories endpoints
-  app.get("/api/categories", async (_req: Request, res: Response) => {
+  app.get("/api/categories", ...categoryRead, async (_req: Request, res: Response) => {
     try {
       const categories = await storage.getAllCategories();
       res.json(categories);
@@ -425,7 +473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/categories", async (req: Request, res: Response) => {
+  app.post("/api/categories", ...categoryWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertCategorySchema.parse(req.body);
       
@@ -448,7 +496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/categories/:id", async (req: Request, res: Response) => {
+  app.put("/api/categories/:id", ...categoryWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -474,7 +522,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/categories/:id", async (req: Request, res: Response) => {
+  app.delete("/api/categories/:id", ...categoryWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -494,8 +542,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Inventory — RBAC: viewer read-only; manager/admin for create/update/delete/bulk-import
+  const invRead = [auth.ensureAuthenticated];
+  const invWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
   // Inventory items endpoints (return 200 + empty/safe payload on error so UI never 502s)
-  app.get("/api/inventory", async (req: Request, res: Response) => {
+  app.get("/api/inventory", ...invRead, async (req: Request, res: Response) => {
     try {
       const query = req.query.search as string | undefined;
       const categoryId = req.query.categoryId ? Number(req.query.categoryId) : undefined;
@@ -511,7 +563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/inventory/low-stock", async (_req: Request, res: Response) => {
+  app.get("/api/inventory/low-stock", ...invRead, async (_req: Request, res: Response) => {
     try {
       const items = await storage.getLowStockItems();
       res.json(items);
@@ -521,7 +573,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/inventory/out-of-stock", async (_req: Request, res: Response) => {
+  app.get("/api/inventory/out-of-stock", ...invRead, async (_req: Request, res: Response) => {
     try {
       const items = await storage.getOutOfStockItems();
       res.json(items);
@@ -531,7 +583,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/inventory/stats", async (_req: Request, res: Response) => {
+  app.get("/api/inventory/stats", ...invRead, async (_req: Request, res: Response) => {
     try {
       const stats = await storage.getInventoryStats();
       res.json(stats);
@@ -546,7 +598,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/inventory/:id", async (req: Request, res: Response) => {
+  app.get("/api/inventory/:id", ...invRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -580,7 +632,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/inventory", async (req: Request, res: Response) => {
+  app.post("/api/inventory", ...invWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertInventoryItemSchema.parse(req.body);
       
@@ -603,7 +655,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/inventory/:id", async (req: Request, res: Response) => {
+  app.put("/api/inventory/:id", ...invWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -629,7 +681,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/inventory/:id", async (req: Request, res: Response) => {
+  app.delete("/api/inventory/:id", ...invWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -677,13 +729,336 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Master data endpoints — foundational reference data
+  const masterRead = [auth.ensureAuthenticated];
+  const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
+  const registerMasterDataCrud = <TInsert>(
+    basePath: string,
+    table: any,
+    insertSchema: { parse: (input: unknown) => TInsert },
+  ) => {
+    app.get(basePath, ...masterRead, async (_req: Request, res: Response) => {
+      try {
+        const rows = await db.select().from(table);
+        res.json(rows);
+      } catch (error) {
+        console.error(`Error fetching ${basePath}:`, error);
+        res.status(500).json({ message: "Failed to fetch records" });
+      }
+    });
+
+    app.get(`${basePath}/:id`, ...masterRead, async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+        const rows = (await db.select().from(table).where(eq(table.id, id))) as any[];
+        const row = rows[0];
+        if (!row) return res.status(404).json({ message: "Record not found" });
+        res.json(row);
+      } catch (error) {
+        console.error(`Error fetching ${basePath} item:`, error);
+        res.status(500).json({ message: "Failed to fetch record" });
+      }
+    });
+
+    app.post(basePath, ...masterWrite, async (req: Request, res: Response) => {
+      try {
+        const payload = insertSchema.parse(req.body) as any;
+        const createdRows = (await db.insert(table).values(payload).returning()) as any[];
+        const created = createdRows[0];
+        res.status(201).json(created);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          return res.status(400).json({ message: fromZodError(error).message });
+        }
+        console.error(`Error creating ${basePath}:`, error);
+        res.status(500).json({ message: "Failed to create record" });
+      }
+    });
+
+    app.patch(`${basePath}/:id`, ...masterWrite, async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+        const payload = (insertSchema as any).partial().parse(req.body);
+        const updatedRows = (await db.update(table).set(payload).where(eq(table.id, id)).returning()) as any[];
+        const updated = updatedRows[0];
+        if (!updated) return res.status(404).json({ message: "Record not found" });
+        res.json(updated);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          return res.status(400).json({ message: fromZodError(error).message });
+        }
+        console.error(`Error updating ${basePath}:`, error);
+        res.status(500).json({ message: "Failed to update record" });
+      }
+    });
+
+    app.delete(`${basePath}/:id`, ...masterWrite, async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+        const deleted = (await db.delete(table).where(eq(table.id, id)).returning({ id: table.id })) as any[];
+        if (deleted.length === 0) return res.status(404).json({ message: "Record not found" });
+        res.status(204).send();
+      } catch (error) {
+        console.error(`Error deleting ${basePath}:`, error);
+        res.status(500).json({ message: "Failed to delete record" });
+      }
+    });
+  };
+
+  registerMasterDataCrud("/api/units-of-measure", unitsOfMeasure, insertUnitOfMeasureSchema as any);
+  registerMasterDataCrud("/api/currencies", currencies, insertCurrencySchema as any);
+  registerMasterDataCrud("/api/tax-codes", taxCodes, insertTaxCodeSchema as any);
+  registerMasterDataCrud("/api/commodity-codes", commodityCodes, insertCommodityCodeSchema as any);
+  registerMasterDataCrud("/api/incoterms", incoterms, insertIncotermSchema as any);
+  registerMasterDataCrud("/api/payment-terms", paymentTerms, insertPaymentTermSchema as any);
+  registerMasterDataCrud("/api/departments", departments, insertDepartmentSchema as any);
+  registerMasterDataCrud("/api/inventory-batches", inventoryBatches, insertInventoryBatchSchema as any);
+  registerMasterDataCrud("/api/inventory-serials", inventorySerials, insertInventorySerialSchema as any);
+  registerMasterDataCrud("/api/inventory-allocations", inventoryAllocations, insertInventoryAllocationSchema as any);
+  registerMasterDataCrud("/api/cycle-counts", cycleCounts, insertCycleCountSchema as any);
+  registerMasterDataCrud("/api/cycle-count-lines", cycleCountLines, insertCycleCountLineSchema as any);
+
+  // Approval policy + history
+  app.get("/api/approval-policies", ...masterRead, async (_req, res) => {
+    try {
+      const rows = await db.select().from(approvalPolicies);
+      res.json(rows);
+    } catch (error) {
+      console.error("Error fetching approval policies:", error);
+      res.status(500).json({ message: "Failed to fetch approval policies" });
+    }
+  });
+
+  app.post("/api/approval-policies", ...masterWrite, async (req, res) => {
+    try {
+      const payload = insertApprovalPolicySchema.parse(req.body);
+      const createdRows = (await db.insert(approvalPolicies).values(payload).returning()) as any[];
+      const created = createdRows[0];
+      res.status(201).json(created);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: fromZodError(error).message });
+      }
+      console.error("Error creating approval policy:", error);
+      res.status(500).json({ message: "Failed to create approval policy" });
+    }
+  });
+
+  app.patch("/api/approval-policies/:id", ...masterWrite, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid policy ID" });
+      const payload = insertApprovalPolicySchema.partial().parse(req.body);
+      const updatedRows = (await db.update(approvalPolicies).set(payload).where(eq(approvalPolicies.id, id)).returning()) as any[];
+      const updated = updatedRows[0];
+      if (!updated) return res.status(404).json({ message: "Approval policy not found" });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: fromZodError(error).message });
+      }
+      console.error("Error updating approval policy:", error);
+      res.status(500).json({ message: "Failed to update approval policy" });
+    }
+  });
+
+  app.delete("/api/approval-policies/:id", ...masterWrite, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid policy ID" });
+      const deleted = await db.delete(approvalPolicies).where(eq(approvalPolicies.id, id)).returning({ id: approvalPolicies.id });
+      if (deleted.length === 0) return res.status(404).json({ message: "Approval policy not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting approval policy:", error);
+      res.status(500).json({ message: "Failed to delete approval policy" });
+    }
+  });
+
+  app.get("/api/approval-history/:entityType/:entityId", ...masterRead, async (req, res) => {
+    try {
+      const entityType = String(req.params.entityType);
+      const entityId = Number(req.params.entityId);
+      if (isNaN(entityId)) return res.status(400).json({ message: "Invalid entity ID" });
+      const rows = await db
+        .select()
+        .from(approvalHistory)
+        .where(and(eq(approvalHistory.entityType, entityType), eq(approvalHistory.entityId, entityId)));
+      res.json(rows);
+    } catch (error) {
+      console.error("Error fetching approval history:", error);
+      res.status(500).json({ message: "Failed to fetch approval history" });
+    }
+  });
+
+  // Notifications
+  app.get("/api/notifications", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as Request & { user?: { id: number } }).user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const rows = await db.select().from(notifications).where(eq(notifications.userId, userId));
+      res.json(rows);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.post("/api/notifications/:id/read", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid notification ID" });
+      const updatedRows = (await db
+        .update(notifications)
+        .set({ readAt: new Date() })
+        .where(eq(notifications.id, id))
+        .returning()) as any[];
+      const updated = updatedRows[0];
+      if (!updated) return res.status(404).json({ message: "Notification not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error marking notification read:", error);
+      res.status(500).json({ message: "Failed to update notification" });
+    }
+  });
+
+  app.get("/api/notification-preferences", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as Request & { user?: { id: number } }).user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const prefRows = (await db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId))) as any[];
+      const prefs = prefRows[0];
+      if (!prefs) {
+        const createdRows = (await db
+          .insert(notificationPreferences)
+          .values({ userId } as any)
+          .returning()) as any[];
+        const created = createdRows[0];
+        return res.json(created);
+      }
+      res.json(prefs);
+    } catch (error) {
+      console.error("Error fetching notification preferences:", error);
+      res.status(500).json({ message: "Failed to fetch notification preferences" });
+    }
+  });
+
+  app.patch("/api/notification-preferences", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as Request & { user?: { id: number } }).user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const existingRows = (await db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId))) as any[];
+      const existing = existingRows[0];
+      if (!existing) {
+        const createdRows = (await db
+          .insert(notificationPreferences)
+          .values({ userId, ...(req.body || {}) } as any)
+          .returning()) as any[];
+        const created = createdRows[0];
+        return res.json(created);
+      }
+      const updatedRows = (await db
+        .update(notificationPreferences)
+        .set(req.body || {})
+        .where(eq(notificationPreferences.userId, userId))
+        .returning()) as any[];
+      const updated = updatedRows[0];
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating notification preferences:", error);
+      res.status(500).json({ message: "Failed to update notification preferences" });
+    }
+  });
+
+  // Retention policies (admin)
+  registerMasterDataCrud("/api/retention-policies", retentionPolicies, insertRetentionPolicySchema as any);
+
+  // Document metadata routes (versioned attachments by entity)
+  app.get("/api/documents", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const entityType = typeof req.query.entityType === "string" ? req.query.entityType : undefined;
+      const entityId = typeof req.query.entityId === "string" ? Number(req.query.entityId) : undefined;
+      let rows = await db.select().from(documents);
+      if (entityType) {
+        rows = await db.select().from(documents).where(eq(documents.entityType, entityType));
+      }
+      if (entityType && entityId != null && !isNaN(entityId)) {
+        rows = await db
+          .select()
+          .from(documents)
+          .where(and(eq(documents.entityType, entityType), eq(documents.entityId, entityId)));
+      }
+      res.json(rows);
+    } catch (error) {
+      console.error("Error fetching documents:", error);
+      res.status(500).json({ message: "Failed to fetch documents" });
+    }
+  });
+
+  app.post("/api/documents", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const payload = req.body as {
+        entityType: string;
+        entityId: number;
+        fileUrl: string;
+        fileName: string;
+        mimeType?: string;
+        fileSize?: number;
+        checksum?: string;
+      };
+      if (!payload?.entityType || !payload?.entityId || !payload?.fileUrl || !payload?.fileName) {
+        return res.status(400).json({ message: "entityType, entityId, fileUrl and fileName are required" });
+      }
+      const existing = await db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.entityType, payload.entityType), eq(documents.entityId, payload.entityId)));
+      const version = existing.length > 0 ? Math.max(...existing.map((d) => Number(d.version ?? 1))) + 1 : 1;
+      const createdRows = (await db
+        .insert(documents)
+        .values({
+          ...payload,
+          version,
+          uploadedBy: (req as Request & { user?: { id: number } }).user?.id,
+        } as any)
+        .returning()) as any[];
+      const created = createdRows[0];
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("Error creating document record:", error);
+      res.status(500).json({ message: "Failed to create document record" });
+    }
+  });
+
+  app.delete("/api/documents/:id", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid document ID" });
+      const updatedRows = (await db
+        .update(documents)
+        .set({ archivedAt: new Date() } as any)
+        .where(eq(documents.id, id))
+        .returning()) as any[];
+      const updated = updatedRows[0];
+      if (!updated) return res.status(404).json({ message: "Document not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error archiving document:", error);
+      res.status(500).json({ message: "Failed to archive document" });
+    }
+  });
+
   // Supplier endpoints — RBAC: viewer read-only; manager/admin can create/update/delete
   const supplierRead = [auth.ensureAuthenticated];
   const supplierWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
 
   app.get("/api/suppliers", ...supplierRead, async (_req: Request, res: Response) => {
     try {
-      const suppliers = await storage.getAllSuppliers();
+      const suppliers = await supplierRepo.findAll();
       res.json(suppliers);
     } catch (error) {
       console.error("Error fetching suppliers:", error);
@@ -698,7 +1073,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
       
-      const supplier = await storage.getSupplier(id);
+      const supplier = await supplierRepo.findById(id);
       
       if (!supplier) {
         return res.status(404).json({ message: "Supplier not found" });
@@ -716,12 +1091,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertSupplierSchema.parse(req.body);
       
       // Check if supplier with this name already exists
-      const existingSupplier = await storage.getSupplierByName(validatedData.name);
+      const existingSupplier = await supplierRepo.findByName(validatedData.name);
       if (existingSupplier) {
         return res.status(400).json({ message: "Supplier with this name already exists" });
       }
       
-      const newSupplier = await storage.createSupplier(validatedData);
+      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      const newSupplier = await supplierService.create(validatedData, userId);
       res.status(201).json(newSupplier);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -741,7 +1117,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
       const validatedData = insertSupplierSchema.partial().parse(req.body);
-      const updatedSupplier = await storage.updateSupplier(id, validatedData);
+      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      const updatedSupplier = await supplierService.update(id, validatedData, userId);
       if (!updatedSupplier) {
         return res.status(404).json({ message: "Supplier not found" });
       }
@@ -767,7 +1144,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
       
-      const success = await storage.deleteSupplier(id);
+      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      const success = await supplierService.delete(id, userId);
       
       if (!success) {
         return res.status(404).json({ message: "Supplier not found" });
@@ -871,7 +1249,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Bulk import inventory items
-  app.post("/api/inventory/bulk-import", async (req: Request, res: Response) => {
+  app.post("/api/inventory/bulk-import", ...invWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = bulkImportInventorySchema.parse(req.body);
       const result = await storage.bulkImportInventory(validatedData);
@@ -1034,12 +1412,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
+      const existing = await storage.getPurchaseRequisition(id);
+      if (!existing) return res.status(404).json({ message: "Purchase requisition not found" });
+      if (existing.requestorId != null && approverId === existing.requestorId) {
+        return res.status(403).json({ message: "Requester cannot approve their own requisition" });
+      }
       
       const updatedRequisition = await storage.approvePurchaseRequisition(id, approverId);
       
-      if (!updatedRequisition) {
-        return res.status(404).json({ message: "Purchase requisition not found" });
-      }
+      if (!updatedRequisition) return res.status(404).json({ message: "Purchase requisition not found" });
+      await db.insert(approvalHistory).values({
+        entityType: "requisition",
+        entityId: id,
+        level: 1,
+        action: "approved",
+        performedBy: approverId,
+        previousStatus: existing.status,
+        newStatus: updatedRequisition.status,
+        comment: typeof req.body?.comment === "string" ? req.body.comment : null,
+      } as any);
       
       res.json(updatedRequisition);
     } catch (error) {
@@ -1057,12 +1448,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
       const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
+      const existing = await storage.getPurchaseRequisition(id);
+      if (!existing) return res.status(404).json({ message: "Purchase requisition not found" });
+      if (existing.requestorId != null && approverId === existing.requestorId) {
+        return res.status(403).json({ message: "Requester cannot reject their own requisition" });
+      }
       
       const updatedRequisition = await storage.rejectPurchaseRequisition(id, approverId, reason);
       
-      if (!updatedRequisition) {
-        return res.status(404).json({ message: "Purchase requisition not found" });
-      }
+      if (!updatedRequisition) return res.status(404).json({ message: "Purchase requisition not found" });
+      await db.insert(approvalHistory).values({
+        entityType: "requisition",
+        entityId: id,
+        level: 1,
+        action: "rejected",
+        performedBy: approverId,
+        previousStatus: existing.status,
+        newStatus: updatedRequisition.status,
+        comment: reason || null,
+      } as any);
       
       res.json(updatedRequisition);
     } catch (error) {
@@ -1261,6 +1665,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedOrderData, 
         validatedItemsData
       );
+      const creatorId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      await db.insert(purchaseOrderRevisions).values({
+        orderId: newOrder.id,
+        revisionNumber: 1,
+        snapshot: {
+          order: newOrder,
+          items: validatedItemsData,
+          source: "create",
+        },
+        createdBy: creatorId,
+      } as any);
       
       res.status(201).json(newOrder);
     } catch (error) {
@@ -1288,6 +1703,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Purchase order not found" });
       }
       
+      const rev = await pool.query<{ max: number }>(
+        "SELECT COALESCE(MAX(revision_number), 0) AS max FROM purchase_order_revisions WHERE order_id = $1",
+        [id],
+      );
+      const nextRevision = Number(rev.rows[0]?.max ?? 0) + 1;
+      const updaterId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      await db.insert(purchaseOrderRevisions).values({
+        orderId: id,
+        revisionNumber: nextRevision,
+        snapshot: {
+          update: validatedData,
+          orderAfterUpdate: updatedOrder,
+          source: "update",
+        },
+        createdBy: updaterId,
+      } as any);
       res.json(updatedOrder);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -1297,6 +1728,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Error updating purchase order:", error);
         res.status(500).json({ message: "Failed to update purchase order" });
       }
+    }
+  });
+
+  app.get("/api/purchase-orders/:id/revisions", ...poRead, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid purchase order ID" });
+      const rows = await db.select().from(purchaseOrderRevisions).where(eq(purchaseOrderRevisions.orderId, id));
+      res.json(rows);
+    } catch (error) {
+      console.error("Error fetching purchase order revisions:", error);
+      res.status(500).json({ message: "Failed to fetch purchase order revisions" });
     }
   });
 
@@ -2140,7 +2583,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/warehouses", ...warehouseRead, async (_req: Request, res: Response) => {
     try {
-      const warehouses = await storage.getAllWarehouses();
+      const warehouses = await warehouseRepo.findAll();
       res.json(warehouses);
     } catch (error) {
       console.error("Error fetching warehouses:", error);
@@ -2150,7 +2593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/warehouses/default", ...warehouseRead, async (_req: Request, res: Response) => {
     try {
-      const warehouse = await storage.getDefaultWarehouse();
+      const warehouse = await warehouseRepo.findDefault();
       if (!warehouse) {
         return res.status(404).json({ message: "No default warehouse found" });
       }
@@ -2168,7 +2611,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid warehouse ID" });
       }
       
-      const warehouse = await storage.getWarehouse(id);
+      const warehouse = await warehouseRepo.findById(id);
       
       if (!warehouse) {
         return res.status(404).json({ message: "Warehouse not found" });
@@ -2184,7 +2627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/warehouses", ...warehouseWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertWarehouseSchema.parse(req.body);
-      const newWarehouse = await storage.createWarehouse(validatedData);
+      const newWarehouse = await warehouseRepo.create(validatedData);
       res.status(201).json(newWarehouse);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -2205,7 +2648,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const validatedData = insertWarehouseSchema.partial().parse(req.body);
-      const updatedWarehouse = await storage.updateWarehouse(id, validatedData);
+      const updatedWarehouse = await warehouseRepo.update(id, validatedData);
       
       if (!updatedWarehouse) {
         return res.status(404).json({ message: "Warehouse not found" });
@@ -2232,7 +2675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const validatedData = insertWarehouseSchema.partial().parse(req.body);
-      const updatedWarehouse = await storage.updateWarehouse(id, validatedData);
+      const updatedWarehouse = await warehouseRepo.update(id, validatedData);
       
       if (!updatedWarehouse) {
         return res.status(404).json({ message: "Warehouse not found" });
@@ -2257,7 +2700,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid warehouse ID" });
       }
       
-      const success = await storage.deleteWarehouse(id);
+      const success = await warehouseRepo.delete(id);
       
       if (!success) {
         return res.status(404).json({ message: "Warehouse not found" });
@@ -2277,7 +2720,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid warehouse ID" });
       }
       
-      const warehouse = await storage.setDefaultWarehouse(id);
+      const warehouse = await warehouseRepo.setDefault(id);
       
       if (!warehouse) {
         return res.status(404).json({ message: "Warehouse not found" });
@@ -3936,6 +4379,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching invoice:", error);
       res.status(500).json({ error: "Failed to fetch invoice" });
+    }
+  });
+
+  // 3-way match: PO vs received (GRN proxy) vs invoice
+  app.post("/api/invoices/:id/match", async (req, res) => {
+    try {
+      const invoiceId = Number(req.params.id);
+      if (isNaN(invoiceId)) return res.status(400).json({ error: "Invalid invoice ID" });
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      if (!invoice.purchaseOrderId) {
+        return res.status(400).json({ error: "Invoice is not linked to a purchase order" });
+      }
+
+      const po = await storage.getPurchaseOrder(invoice.purchaseOrderId);
+      if (!po) return res.status(404).json({ error: "Linked purchase order not found" });
+
+      const poItems = await storage.getPurchaseOrderItems(po.id);
+      const invItems = await storage.getInvoiceItems(invoiceId);
+
+      const mismatches: Array<{ type: string; itemId: number; message: string }> = [];
+      for (const invItem of invItems) {
+        const poItem = poItems.find((x) => x.itemId === invItem.itemId);
+        if (!poItem) {
+          mismatches.push({ type: "MISSING_PO_LINE", itemId: invItem.itemId, message: "Item not found on PO" });
+          continue;
+        }
+        if (Number(invItem.unitPrice) !== Number(poItem.unitPrice)) {
+          mismatches.push({
+            type: "PRICE_MISMATCH",
+            itemId: invItem.itemId,
+            message: `Invoice unit price ${invItem.unitPrice} differs from PO ${poItem.unitPrice}`,
+          });
+        }
+        const receivedQty = Number(poItem.receivedQuantity ?? 0);
+        const invoicedQty = Number(invItem.quantity ?? 0);
+        if (invoicedQty > receivedQty) {
+          mismatches.push({
+            type: "QTY_MISMATCH",
+            itemId: invItem.itemId,
+            message: `Invoice quantity ${invoicedQty} exceeds received quantity ${receivedQty}`,
+          });
+        }
+      }
+
+      const targetStatus = mismatches.length > 0 ? "DISPUTED" : "SENT";
+      await storage.updateInvoice(invoiceId, { status: targetStatus as any });
+      if (mismatches.length > 0) {
+        await storage.createActivityLog({
+          action: "INVOICE_3_WAY_MATCH_FAILED",
+          description: `Invoice ${invoice.invoiceNumber} mismatch count: ${mismatches.length}`,
+          referenceType: "invoice",
+          referenceId: invoiceId,
+          userId: (req as Request & { user?: { id: number } }).user?.id,
+        }).catch(() => {});
+      } else {
+        await storage.createActivityLog({
+          action: "INVOICE_3_WAY_MATCH_PASSED",
+          description: `Invoice ${invoice.invoiceNumber} matched with PO ${po.orderNumber}`,
+          referenceType: "invoice",
+          referenceId: invoiceId,
+          userId: (req as Request & { user?: { id: number } }).user?.id,
+        }).catch(() => {});
+      }
+
+      res.json({
+        invoiceId,
+        purchaseOrderId: po.id,
+        matched: mismatches.length === 0,
+        status: targetStatus,
+        mismatches,
+      });
+    } catch (error) {
+      console.error("Error running 3-way match:", error);
+      res.status(500).json({ error: "Failed to run 3-way match" });
     }
   });
 

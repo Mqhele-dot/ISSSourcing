@@ -46,7 +46,7 @@ export default function AnalyticsPage() {
     staleTime: 30_000,
   });
 
-  const { isError: invError } = useQuery({
+  const { data: inventoryArray = [], isError: invError } = useQuery({
     queryKey: ["/api/inventory"],
     queryFn: fetchInventoryArray,
     retry: 2,
@@ -54,6 +54,7 @@ export default function AnalyticsPage() {
   });
 
   const hasDataError = statsError || invError;
+  const hasNoData = !hasDataError && Array.isArray(inventoryArray) && inventoryArray.length === 0;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -69,6 +70,15 @@ export default function AnalyticsPage() {
           <AlertTitle>Data loading issue</AlertTitle>
           <AlertDescription>
             Some analytics may not load. Ensure the server is running and the database is configured.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {hasNoData && (
+        <Alert>
+          <AlertTitle>No inventory data yet</AlertTitle>
+          <AlertDescription>
+            Charts will appear once you add inventory items. Add items from Inventory or run the demo to seed data.
           </AlertDescription>
         </Alert>
       )}

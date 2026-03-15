@@ -228,6 +228,120 @@ export const insertCategorySchema = createInsertSchema(categories).pick({
   description: true,
 });
 
+// Master data tables used across procurement and finance
+export const unitsOfMeasure = pgTable("units_of_measure", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  symbol: text("symbol"),
+  baseUnitId: integer("base_unit_id"),
+  system: text("system").default("custom"), // metric, imperial, custom
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const currencies = pgTable("currencies", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  symbol: text("symbol").notNull(),
+  decimalPlaces: integer("decimal_places").default(2).notNull(),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const taxCodes = pgTable("tax_codes", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  rate: real("rate").notNull().default(0),
+  type: text("type").notNull().default("vat"), // vat, sales, withholding
+  countryCode: text("country_code"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const commodityCodes = pgTable("commodity_codes", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  description: text("description"),
+  category: text("category"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const incoterms = pgTable("incoterms", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const paymentTerms = pgTable("payment_terms", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  netDays: integer("net_days").default(30).notNull(),
+  discountDays: integer("discount_days"),
+  discountPercent: real("discount_percent"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const departments = pgTable("departments", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  costCenterId: text("cost_center_id"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertUnitOfMeasureSchema = createInsertSchema(unitsOfMeasure).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertCurrencySchema = createInsertSchema(currencies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertTaxCodeSchema = createInsertSchema(taxCodes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertCommodityCodeSchema = createInsertSchema(commodityCodes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertIncotermSchema = createInsertSchema(incoterms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertPaymentTermSchema = createInsertSchema(paymentTerms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertDepartmentSchema = createInsertSchema(departments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Supplier schema
 export const suppliers = pgTable("suppliers", {
   id: serial("id").primaryKey(),
@@ -236,6 +350,14 @@ export const suppliers = pgTable("suppliers", {
   email: text("email"),
   phone: text("phone"),
   address: text("address"),
+  taxIdentificationNumber: text("tax_identification_number"),
+  bankName: text("bank_name"),
+  bankAccountNumber: text("bank_account_number"),
+  bankSwift: text("bank_swift"),
+  paymentTermsId: integer("payment_terms_id"),
+  defaultCurrencyCode: text("default_currency_code"),
+  insuranceExpiry: timestamp("insurance_expiry"),
+  complianceNotes: text("compliance_notes"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -303,6 +425,8 @@ export const inventoryItems = pgTable("inventory_items", {
   dimensions: text("dimensions"),
   weight: real("weight"),
   unitOfMeasure: text("unit_of_measure").default("each"),
+  supplierPartNumber: text("supplier_part_number"),
+  commodityCodeId: integer("commodity_code_id"),
   defaultWarehouseId: integer("default_warehouse_id"),
   minOrderQuantity: integer("min_order_quantity").default(1),
   leadTime: integer("lead_time"), // In days
@@ -311,6 +435,7 @@ export const inventoryItems = pgTable("inventory_items", {
   taxable: boolean("taxable").default(true),
   status: text("status").default("active"),
   expiryDate: timestamp("expiry_date"),
+  manufacturingDate: timestamp("manufacturing_date"),
   lastCountDate: timestamp("last_count_date"),
   images: jsonb("images"),
   tags: text("tags").array(),
@@ -342,6 +467,8 @@ export const purchaseRequisitions = pgTable("purchase_requisitions", {
   status: text("status").notNull().default("DRAFT"),
   notes: text("notes"),
   requiredDate: timestamp("required_date"),
+  departmentId: integer("department_id"),
+  justification: text("justification"),
   supplierId: integer("supplier_id"),
   totalAmount: real("total_amount").notNull().default(0),
   sharedWithUserIds: jsonb("shared_with_user_ids").$type<number[]>().default([]),
@@ -390,6 +517,10 @@ export const purchaseOrders = pgTable("purchase_orders", {
   orderNumber: text("order_number").notNull().unique(),
   supplierId: integer("supplier_id").notNull(),
   requisitionId: integer("requisition_id"),
+  departmentId: integer("department_id"),
+  contractId: integer("contract_id"),
+  paymentTermsId: integer("payment_terms_id"),
+  incotermId: integer("incoterm_id"),
   status: text("status").notNull().default("DRAFT"),
   orderDate: timestamp("order_date").defaultNow().notNull(),
   expectedDeliveryDate: timestamp("expected_delivery_date"),
@@ -427,6 +558,42 @@ export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderIte
   id: true,
 });
 
+export const approvalPolicies = pgTable("approval_policies", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  entityType: text("entity_type").notNull(), // requisition, purchase_order
+  amountMin: real("amount_min").notNull().default(0),
+  amountMax: real("amount_max"),
+  approvalLevel: integer("approval_level").notNull().default(1),
+  approverRole: text("approver_role"),
+  approverUserId: integer("approver_user_id"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const approvalHistory = pgTable("approval_history", {
+  id: serial("id").primaryKey(),
+  entityType: text("entity_type").notNull(), // requisition, purchase_order
+  entityId: integer("entity_id").notNull(),
+  level: integer("level").notNull().default(1),
+  action: text("action").notNull(), // submitted, approved, rejected, returned
+  performedBy: integer("performed_by").notNull(),
+  comment: text("comment"),
+  previousStatus: text("previous_status"),
+  newStatus: text("new_status"),
+  performedAt: timestamp("performed_at").defaultNow().notNull(),
+});
+
+export const purchaseOrderRevisions = pgTable("purchase_order_revisions", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull(),
+  revisionNumber: integer("revision_number").notNull(),
+  snapshot: jsonb("snapshot").notNull(),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Activity log schema for tracking changes
 export const activityLogs = pgTable("activity_logs", {
   id: serial("id").primaryKey(),
@@ -442,6 +609,20 @@ export const activityLogs = pgTable("activity_logs", {
 export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({
   id: true,
   timestamp: true,
+});
+
+export const insertApprovalPolicySchema = createInsertSchema(approvalPolicies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertApprovalHistorySchema = createInsertSchema(approvalHistory).omit({
+  id: true,
+  performedAt: true,
+});
+export const insertPurchaseOrderRevisionSchema = createInsertSchema(purchaseOrderRevisions).omit({
+  id: true,
+  createdAt: true,
 });
 
 // Custom zod schemas for validation
@@ -583,6 +764,21 @@ export type TwoFactorVerification = z.infer<typeof twoFactorVerificationSchema>;
 export type Category = typeof categories.$inferSelect;
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
 
+export type UnitOfMeasure = typeof unitsOfMeasure.$inferSelect;
+export type InsertUnitOfMeasure = z.infer<typeof insertUnitOfMeasureSchema>;
+export type Currency = typeof currencies.$inferSelect;
+export type InsertCurrency = z.infer<typeof insertCurrencySchema>;
+export type TaxCode = typeof taxCodes.$inferSelect;
+export type InsertTaxCode = z.infer<typeof insertTaxCodeSchema>;
+export type CommodityCode = typeof commodityCodes.$inferSelect;
+export type InsertCommodityCode = z.infer<typeof insertCommodityCodeSchema>;
+export type Incoterm = typeof incoterms.$inferSelect;
+export type InsertIncoterm = z.infer<typeof insertIncotermSchema>;
+export type PaymentTerm = typeof paymentTerms.$inferSelect;
+export type InsertPaymentTerm = z.infer<typeof insertPaymentTermSchema>;
+export type Department = typeof departments.$inferSelect;
+export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
+
 export type InventoryItem = typeof inventoryItems.$inferSelect;
 export type InsertInventoryItem = z.infer<typeof insertInventoryItemSchema>;
 export type InventoryItemForm = z.infer<typeof inventoryItemFormSchema>;
@@ -611,6 +807,12 @@ export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSche
 
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type ApprovalPolicy = typeof approvalPolicies.$inferSelect;
+export type InsertApprovalPolicy = z.infer<typeof insertApprovalPolicySchema>;
+export type ApprovalHistory = typeof approvalHistory.$inferSelect;
+export type InsertApprovalHistory = z.infer<typeof insertApprovalHistorySchema>;
+export type PurchaseOrderRevision = typeof purchaseOrderRevisions.$inferSelect;
+export type InsertPurchaseOrderRevision = z.infer<typeof insertPurchaseOrderRevisionSchema>;
 
 export type BulkImportInventory = z.infer<typeof bulkImportInventorySchema>;
 
@@ -957,6 +1159,90 @@ export const insertWarehouseInventorySchema = createInsertSchema(warehouseInvent
   updatedAt: true,
 });
 
+export const inventoryBatches = pgTable("inventory_batches", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  warehouseId: integer("warehouse_id"),
+  batchNumber: text("batch_number").notNull(),
+  manufacturingDate: timestamp("manufacturing_date"),
+  expiryDate: timestamp("expiry_date"),
+  quantityReceived: integer("quantity_received").default(0).notNull(),
+  quantityOnHand: integer("quantity_on_hand").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const inventorySerials = pgTable("inventory_serials", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  warehouseId: integer("warehouse_id"),
+  serialNumber: text("serial_number").notNull().unique(),
+  status: text("status").default("available").notNull(), // available, allocated, sold
+  currentLocation: text("current_location"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const inventoryAllocations = pgTable("inventory_allocations", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  warehouseId: integer("warehouse_id"),
+  quantity: integer("quantity").notNull(),
+  orderId: integer("order_id"),
+  requisitionId: integer("requisition_id"),
+  shipmentId: integer("shipment_id"),
+  status: text("status").default("reserved").notNull(), // reserved, fulfilled, cancelled
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const cycleCounts = pgTable("cycle_counts", {
+  id: serial("id").primaryKey(),
+  warehouseId: integer("warehouse_id").notNull(),
+  zone: text("zone"),
+  status: text("status").default("planned").notNull(), // planned, in_progress, completed
+  countDate: timestamp("count_date").defaultNow().notNull(),
+  countedBy: integer("counted_by"),
+  variance: integer("variance"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const cycleCountLines = pgTable("cycle_count_lines", {
+  id: serial("id").primaryKey(),
+  cycleCountId: integer("cycle_count_id").notNull(),
+  itemId: integer("item_id").notNull(),
+  location: text("location"),
+  systemQuantity: integer("system_quantity").notNull().default(0),
+  countedQuantity: integer("counted_quantity").notNull().default(0),
+  variance: integer("variance").notNull().default(0),
+});
+
+export const insertInventoryBatchSchema = createInsertSchema(inventoryBatches).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertInventorySerialSchema = createInsertSchema(inventorySerials).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertInventoryAllocationSchema = createInsertSchema(inventoryAllocations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertCycleCountSchema = createInsertSchema(cycleCounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertCycleCountLineSchema = createInsertSchema(cycleCountLines).omit({
+  id: true,
+});
+
 // Barcode schema for product identification
 export const barcodes = pgTable("barcodes", {
   id: serial("id").primaryKey(),
@@ -1168,6 +1454,73 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
+export const documents = pgTable("documents", {
+  id: serial("id").primaryKey(),
+  entityType: text("entity_type").notNull(), // contract, invoice, delivery_note, compliance_certificate
+  entityId: integer("entity_id").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type"),
+  fileSize: integer("file_size"),
+  checksum: text("checksum"),
+  version: integer("version").default(1).notNull(),
+  uploadedBy: integer("uploaded_by"),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+  archivedAt: timestamp("archived_at"),
+});
+
+export const retentionPolicies = pgTable("retention_policies", {
+  id: serial("id").primaryKey(),
+  documentType: text("document_type").notNull().unique(), // purchase_order, invoice, contract
+  retentionYears: integer("retention_years").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  entityType: text("entity_type"),
+  entityId: integer("entity_id"),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const notificationPreferences = pgTable("notification_preferences", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique(),
+  emailEnabled: boolean("email_enabled").default(true),
+  smsEnabled: boolean("sms_enabled").default(false),
+  inAppEnabled: boolean("in_app_enabled").default(true),
+  lowStock: boolean("low_stock").default(true),
+  approvalRequest: boolean("approval_request").default(true),
+  contractExpiry: boolean("contract_expiry").default(true),
+  shipmentDelay: boolean("shipment_delay").default(true),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertDocumentSchema = createInsertSchema(documents).omit({
+  id: true,
+  uploadedAt: true,
+});
+export const insertRetentionPolicySchema = createInsertSchema(retentionPolicies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertNotificationPreferenceSchema = createInsertSchema(notificationPreferences).omit({
+  id: true,
+  updatedAt: true,
+});
+
 // User preferences for dashboard customization
 export const userPreferences = pgTable("user_preferences", {
   id: serial("id").primaryKey(),
@@ -1195,6 +1548,16 @@ export type StockMovementForm = z.infer<typeof stockMovementFormSchema>;
 
 export type WarehouseInventory = typeof warehouseInventory.$inferSelect;
 export type InsertWarehouseInventory = z.infer<typeof insertWarehouseInventorySchema>;
+export type InventoryBatch = typeof inventoryBatches.$inferSelect;
+export type InsertInventoryBatch = z.infer<typeof insertInventoryBatchSchema>;
+export type InventorySerial = typeof inventorySerials.$inferSelect;
+export type InsertInventorySerial = z.infer<typeof insertInventorySerialSchema>;
+export type InventoryAllocation = typeof inventoryAllocations.$inferSelect;
+export type InsertInventoryAllocation = z.infer<typeof insertInventoryAllocationSchema>;
+export type CycleCount = typeof cycleCounts.$inferSelect;
+export type InsertCycleCount = z.infer<typeof insertCycleCountSchema>;
+export type CycleCountLine = typeof cycleCountLines.$inferSelect;
+export type InsertCycleCountLine = z.infer<typeof insertCycleCountLineSchema>;
 
 export type Barcode = typeof barcodes.$inferSelect;
 export type InsertBarcode = z.infer<typeof insertBarcodeSchema>;
@@ -1208,6 +1571,14 @@ export type InsertExternalIntegration = z.infer<typeof insertExternalIntegration
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type Document = typeof documents.$inferSelect;
+export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+export type RetentionPolicy = typeof retentionPolicies.$inferSelect;
+export type InsertRetentionPolicy = z.infer<typeof insertRetentionPolicySchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type NotificationPreference = typeof notificationPreferences.$inferSelect;
+export type InsertNotificationPreference = z.infer<typeof insertNotificationPreferenceSchema>;
 
 export type UserPreference = typeof userPreferences.$inferSelect;
 export type InsertUserPreference = z.infer<typeof insertUserPreferencesSchema>;
@@ -1263,7 +1634,8 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
   invoiceNumber: text("invoice_number").notNull().unique(),
-  customerId: integer("customer_id").notNull(), // Reference to customer (can be users.id)
+  customerId: integer("customer_id"), // Optional when invoice is supplier-side AP
+  supplierId: integer("supplier_id"),
   status: invoiceStatusEnum("status").notNull().default("DRAFT"),
   issueDate: timestamp("issue_date").defaultNow().notNull(),
   dueDate: timestamp("due_date").notNull(),
@@ -1301,11 +1673,15 @@ export const insertInvoiceSchema = createInsertSchema(invoices).omit({
 });
 
 export const invoiceFormSchema = insertInvoiceSchema.extend({
-  customerId: z.number().int().positive("Customer ID must be a positive number"),
+  customerId: z.number().int().positive("Customer ID must be a positive number").optional(),
+  supplierId: z.number().int().positive("Supplier ID must be a positive number").optional(),
   subtotal: z.number().min(0, "Subtotal must be a positive number"),
   total: z.number().min(0, "Total must be a positive number"),
   dueDate: z.date().min(new Date(), "Due date must be in the future"),
-});
+}).refine(
+  (d) => d.customerId != null || d.supplierId != null,
+  { message: "Either customer or supplier is required", path: ["supplierId"] }
+);
 
 // Invoice Items Table Schema
 export const invoiceItems = pgTable("invoice_items", {

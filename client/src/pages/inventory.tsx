@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { Can } from "@/components/auth/can";
 import { Boxes, Download, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -253,9 +254,11 @@ export default function InventoryPage() {
         emptyDescription="Add items from the dashboard or run the demo to seed data."
         emptyAction={
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="default" size="sm">
-              <Link href="/dashboard">Add items (Dashboard)</Link>
-            </Button>
+            <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add inventory">
+              <Button asChild variant="default" size="sm">
+                <Link href="/dashboard">Add items (Dashboard)</Link>
+              </Button>
+            </Can>
             <Button asChild variant="outline" size="sm">
               <Link href="/">Overview / Demo</Link>
             </Button>

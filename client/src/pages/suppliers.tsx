@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { queryClient, requestJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,6 +56,7 @@ const supplierFormSchema = z.object({
   email: z.string().email("Invalid email address").nullable().optional(),
   phone: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
+  taxIdentificationNumber: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
@@ -104,11 +106,16 @@ export default function SuppliersPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers'] });
     },
-    onError: (error) => {
+    onError: (error, data) => {
       toast({
         title: "Error creating supplier",
         description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
+        action: data && (
+          <ToastAction altText="Retry" onClick={() => createSupplier.mutate(data)}>
+            Retry
+          </ToastAction>
+        ),
       });
     },
   });
@@ -125,11 +132,16 @@ export default function SuppliersPage() {
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers'] });
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers', variables.id] });
     },
-    onError: (error) => {
+    onError: (error, vars) => {
       toast({
         title: "Error updating supplier",
         description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
+        action: vars && (
+          <ToastAction altText="Retry" onClick={() => updateSupplier.mutate(vars)}>
+            Retry
+          </ToastAction>
+        ),
       });
     },
   });
@@ -146,11 +158,16 @@ export default function SuppliersPage() {
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers'] });
       setSelectedSupplierId(null);
     },
-    onError: (error) => {
+    onError: (error, id) => {
       toast({
         title: "Error deleting supplier",
         description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
+        action: id != null ? (
+          <ToastAction altText="Retry" onClick={() => deleteSupplier.mutate(id)}>
+            Retry
+          </ToastAction>
+        ) : undefined,
       });
     },
   });
@@ -167,11 +184,16 @@ export default function SuppliersPage() {
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers', variables.supplierId, 'logo'] });
       setLogoDialogOpen(false);
     },
-    onError: (error) => {
+    onError: (error, vars) => {
       toast({
         title: "Error adding logo",
         description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
+        action: vars && (
+          <ToastAction altText="Retry" onClick={() => createLogo.mutate(vars)}>
+            Retry
+          </ToastAction>
+        ),
       });
     },
   });
@@ -188,11 +210,16 @@ export default function SuppliersPage() {
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers', variables.supplierId, 'logo'] });
       setLogoDialogOpen(false);
     },
-    onError: (error) => {
+    onError: (error, vars) => {
       toast({
         title: "Error updating logo",
         description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
+        action: vars && (
+          <ToastAction altText="Retry" onClick={() => updateLogo.mutate(vars)}>
+            Retry
+          </ToastAction>
+        ),
       });
     },
   });
@@ -208,11 +235,16 @@ export default function SuppliersPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers', supplierId, 'logo'] });
     },
-    onError: (error) => {
+    onError: (error, supplierId) => {
       toast({
         title: "Error removing logo",
         description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
+        action: supplierId != null ? (
+          <ToastAction altText="Retry" onClick={() => deleteLogo.mutate(supplierId)}>
+            Retry
+          </ToastAction>
+        ) : undefined,
       });
     },
   });
@@ -226,6 +258,7 @@ export default function SuppliersPage() {
       email: "",
       phone: "",
       address: "",
+      taxIdentificationNumber: "",
       notes: "",
     },
   });
@@ -245,6 +278,7 @@ export default function SuppliersPage() {
       email: supplier.email || "",
       phone: supplier.phone || "",
       address: supplier.address || "",
+      taxIdentificationNumber: (supplier as { taxIdentificationNumber?: string }).taxIdentificationNumber || "",
       notes: supplier.notes || "",
     });
     setSelectedSupplierId(supplier.id);
@@ -417,8 +451,14 @@ export default function SuppliersPage() {
                             <span>{supplier.address}</span>
                           </div>
                         )}
+                        {(supplier as { taxIdentificationNumber?: string }).taxIdentificationNumber && (
+                          <div className="flex items-center col-span-2">
+                            <span className="text-muted-foreground text-sm">Tax ID:</span>
+                            <span className="ml-2">{(supplier as { taxIdentificationNumber: string }).taxIdentificationNumber}</span>
+                          </div>
+                        )}
                       </div>
-                      
+
                       {/* Notes */}
                       {supplier.notes && (
                         <div className="mt-3 pt-3 border-t text-sm">
@@ -457,15 +497,16 @@ export default function SuppliersPage() {
                   selectedSupplierId ? handleUpdateSupplier : handleCreateSupplier
                 )}
                 className="space-y-4"
+                aria-label="Supplier form"
               >
                 <FormField
                   control={form.control}
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Company Name*</FormLabel>
+                      <FormLabel htmlFor="supplier-name">Company Name*</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter company name" {...field} />
+                        <Input id="supplier-name" aria-label="Company name" placeholder="Enter company name" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -477,9 +518,9 @@ export default function SuppliersPage() {
                   name="contactName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Person</FormLabel>
+                      <FormLabel htmlFor="supplier-contact">Contact Person</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter contact name" {...field} value={field.value || ""} />
+                        <Input id="supplier-contact" aria-label="Contact person" placeholder="Enter contact name" {...field} value={field.value || ""} />
                       </FormControl>
                     </FormItem>
                   )}
@@ -491,9 +532,9 @@ export default function SuppliersPage() {
                     name="email"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email</FormLabel>
+                        <FormLabel htmlFor="supplier-email">Email</FormLabel>
                         <FormControl>
-                          <Input placeholder="email@example.com" {...field} value={field.value || ""} />
+                          <Input id="supplier-email" aria-label="Email" placeholder="email@example.com" {...field} value={field.value || ""} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -505,9 +546,9 @@ export default function SuppliersPage() {
                     name="phone"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Phone</FormLabel>
+                        <FormLabel htmlFor="supplier-phone">Phone</FormLabel>
                         <FormControl>
-                          <Input placeholder="(555) 123-4567" {...field} value={field.value || ""} />
+                          <Input id="supplier-phone" aria-label="Phone" placeholder="(555) 123-4567" {...field} value={field.value || ""} />
                         </FormControl>
                       </FormItem>
                     )}
@@ -519,9 +560,22 @@ export default function SuppliersPage() {
                   name="address"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Address</FormLabel>
+                      <FormLabel htmlFor="supplier-address">Address</FormLabel>
                       <FormControl>
-                        <Input placeholder="123 Main St, Anytown, ST 12345" {...field} value={field.value || ""} />
+                        <Input id="supplier-address" aria-label="Address" placeholder="123 Main St, Anytown, ST 12345" {...field} value={field.value || ""} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="taxIdentificationNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel htmlFor="supplier-taxid">Tax ID / VAT number</FormLabel>
+                      <FormControl>
+                        <Input id="supplier-taxid" aria-label="Tax ID or VAT number" placeholder="e.g. VAT number, tax registration" {...field} value={field.value || ""} />
                       </FormControl>
                     </FormItem>
                   )}
@@ -532,9 +586,11 @@ export default function SuppliersPage() {
                   name="notes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Notes</FormLabel>
+                      <FormLabel htmlFor="supplier-notes">Notes</FormLabel>
                       <FormControl>
                         <Textarea 
+                          id="supplier-notes"
+                          aria-label="Supplier notes"
                           placeholder="Additional information about this supplier" 
                           className="min-h-[100px]" 
                           {...field} 

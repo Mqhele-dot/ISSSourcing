@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { formatMutationError } from "@/lib/queryClient";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
@@ -289,6 +290,11 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
         title: "Update failed",
         description: formatMutationError(actionLabel, "POST", `/api/purchase/orders/${po}/transition`, err),
         variant: "destructive",
+        action: (
+          <ToastAction altText="Retry" onClick={() => updateStatus(action)}>
+            Retry
+          </ToastAction>
+        ),
       });
     } finally {
       setStatusUpdating(false);
@@ -316,6 +322,11 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
         title: "Receive failed",
         description: formatMutationError("Receive PO", "POST", `/api/purchase/orders/${po}/receive`, err),
         variant: "destructive",
+        action: (
+          <ToastAction altText="Retry" onClick={() => submitReceive()}>
+            Retry
+          </ToastAction>
+        ),
       });
     } finally {
       setReceiving(false);

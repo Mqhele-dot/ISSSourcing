@@ -37,6 +37,7 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { ToastAction } from '@/components/ui/toast';
 import { Can } from '@/components/auth/can';
 
 // Warehouse interface (API returns ISO date strings, not Date objects)
@@ -111,7 +112,7 @@ export default function WarehousesPage() {
   const list = Array.isArray(warehouseList) ? warehouseList : [];
 
   // Create warehouse mutation
-  const createWarehouse = useMutation({
+  const createWarehouse = useMutation<unknown, Error, FormData>({
     mutationFn: async (data: FormData) => {
       const res = await apiRequest('POST', '/api/warehouses', data);
       return await res.json();
@@ -137,17 +138,22 @@ export default function WarehousesPage() {
         }
       }).catch(() => {});
     },
-    onError: (error: Error) => {
+    onError: (error: Error, data: FormData | undefined) => {
       toast({
         variant: 'destructive',
         title: 'Failed to create warehouse (POST /api/warehouses)',
         description: error.message,
+        action: data != null ? (
+          <ToastAction altText="Retry" onClick={() => createWarehouse.mutate(data)}>
+            Retry
+          </ToastAction>
+        ) : undefined,
       });
     },
   });
 
   // Update warehouse mutation
-  const updateWarehouse = useMutation({
+  const updateWarehouse = useMutation<unknown, Error, { id: number; data: FormData }>({
     mutationFn: async ({ id, data }: { id: number; data: FormData }) => {
       const res = await apiRequest('PATCH', `/api/warehouses/${id}`, data);
       return await res.json();
@@ -161,17 +167,22 @@ export default function WarehousesPage() {
         description: 'Warehouse has been updated successfully',
       });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, vars: { id: number; data: FormData } | undefined) => {
       toast({
         variant: 'destructive',
-        title: `Failed to update warehouse (PATCH /api/warehouses/${selectedWarehouse?.id ?? '?'})`,
+        title: `Failed to update warehouse (PATCH /api/warehouses/${vars?.id ?? selectedWarehouse?.id ?? '?'})`,
         description: error.message,
+        action: vars ? (
+          <ToastAction altText="Retry" onClick={() => updateWarehouse.mutate(vars)}>
+            Retry
+          </ToastAction>
+        ) : undefined,
       });
     },
   });
 
   // Delete warehouse mutation
-  const deleteWarehouse = useMutation({
+  const deleteWarehouse = useMutation<boolean, Error, number>({
     mutationFn: async (id: number) => {
       const res = await apiRequest('DELETE', `/api/warehouses/${id}`);
       if (res.ok) return true;
@@ -186,11 +197,16 @@ export default function WarehousesPage() {
         description: 'Warehouse has been deleted successfully',
       });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, id: number | undefined) => {
       toast({
         variant: 'destructive',
-        title: `Failed to delete warehouse (DELETE /api/warehouses/${selectedWarehouse?.id ?? '?'})`,
+        title: `Failed to delete warehouse (DELETE /api/warehouses/${id ?? selectedWarehouse?.id ?? '?'})`,
         description: error.message,
+        action: id != null ? (
+          <ToastAction altText="Retry" onClick={() => deleteWarehouse.mutate(id)}>
+            Retry
+          </ToastAction>
+        ) : undefined,
       });
     },
   });
@@ -460,6 +476,7 @@ export default function WarehousesPage() {
               e.preventDefault();
               handleCreateSubmit();
             }}
+            aria-label="Create warehouse form"
           >
             <fieldset className="grid gap-4 py-4" disabled={createWarehouse.isPending}>
               <div className="grid gap-2">
@@ -472,6 +489,7 @@ export default function WarehousesPage() {
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Main Warehouse"
                   aria-required="true"
+                  aria-label="Warehouse name"
                 />
               </div>
               
@@ -483,6 +501,7 @@ export default function WarehousesPage() {
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                   placeholder="Building A, Floor 2"
+                  aria-label="Warehouse location"
                 />
               </div>
               
@@ -495,6 +514,7 @@ export default function WarehousesPage() {
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   placeholder="123 Main Street, City, Country"
                   rows={2}
+                  aria-label="Warehouse address"
                 />
               </div>
               
@@ -546,7 +566,7 @@ export default function WarehousesPage() {
               <div className="grid gap-2">
                 <div className="flex justify-between items-center">
                   <Label>Bins / Locations</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addBin}>
+                  <Button type="button" variant="outline" size="sm" onClick={addBin} aria-label="Add bin or location">
                     <Plus className="h-4 w-4 mr-1" />
                     Add bin
                   </Button>
@@ -621,6 +641,7 @@ export default function WarehousesPage() {
               e.preventDefault();
               handleEditSubmit();
             }}
+            aria-label="Edit warehouse form"
           >
             <fieldset className="grid gap-4 py-4" disabled={updateWarehouse.isPending}>
               <div className="grid gap-2">
@@ -632,6 +653,7 @@ export default function WarehousesPage() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   aria-required="true"
+                  aria-label="Warehouse name"
                 />
               </div>
               
@@ -701,7 +723,7 @@ export default function WarehousesPage() {
               <div className="grid gap-2">
                 <div className="flex justify-between items-center">
                   <Label>Bins / Locations</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addBin}>
+                  <Button type="button" variant="outline" size="sm" onClick={addBin} aria-label="Add bin or location">
                     <Plus className="h-4 w-4 mr-1" />
                     Add bin
                   </Button>

@@ -8,6 +8,7 @@ import {
   BarChart2,
   Building,
   Camera,
+  Database,
   FileText,
   FileUp,
   Home,
@@ -158,6 +159,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
 
             <SectionTitle>Settings</SectionTitle>
             <NavItem path="/reports" icon={<FileText className="h-5 w-5" />} helpTitle="Reports" helpDescription="Analytics and custom reports (PDF, Excel, CSV).">Reports</NavItem>
+            <NavItem path="/master-data" icon={<Database className="h-5 w-5" />} helpTitle="Master Data" helpDescription="Manage reference data like units, currencies, tax codes, payment terms, and departments.">Master Data</NavItem>
             <NavItem path="/settings" icon={<Settings className="h-5 w-5" />} helpTitle="Settings" helpDescription="Configure application preferences.">Settings</NavItem>
           </div>
         </nav>

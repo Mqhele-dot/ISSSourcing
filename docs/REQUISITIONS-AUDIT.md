@@ -50,8 +50,34 @@ This document tracks fixes applied in response to the **Audit Report: New Requis
 | Strengthen authorization | Already done (RBAC on all requisition/PO endpoints) |
 | Improve error handling | Done (clear 400 messages, optional 500 detail in dev) |
 | Loading state | Existing (spinner on Create, DataState on list) |
-| Unit/integration tests | Not implemented (recommended follow-up) |
+| Unit/integration tests | Done: `scripts/test-requisitions.ts`; run with `npm run test:requisitions`. See below. |
 | Code review and documentation | This document; API behaviour documented in code comments |
+
+## Running requisitions API tests
+
+The requisitions API is covered by an automated script that runs against a running server.
+
+1. **Start the server** (and ensure the DB is seeded with at least one supplier and one inventory item):
+   ```bash
+   npm run dev
+   ```
+   Optionally seed: `npm run db:seed` (or use the in-app “Reset demo data” as admin).
+
+2. **Run the tests** (in another terminal):
+   ```bash
+   npm run test:requisitions
+   ```
+   Or with a custom base URL:
+   ```bash
+   BASE_URL=http://localhost:5000 npm run test:requisitions
+   ```
+
+3. **Run all API tests** (RBAC + requisitions):
+   ```bash
+   npm run test:api
+   ```
+
+The script verifies: unauthenticated GET → 401/302/403; viewer can list (200) and cannot create (403); admin gets 400 for no items, quantity ≤ 0, and unit price ≤ 0; admin can create a valid requisition (201) when the DB has supplier and inventory data.
 
 ## Git: Resolving local changes before pull
 
