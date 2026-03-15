@@ -15,6 +15,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
 import { setFeatureFlag } from '@/lib/config';
+import { useToast } from '@/hooks/use-toast';
 
 const MESSAGE_TYPES = [
   { value: SyncMessageType.SYNC_REQUEST, label: 'Sync Request' },
@@ -49,6 +50,7 @@ interface MessageLogItem {
 }
 
 export function RealTimeSyncTester() {
+  const { toast } = useToast();
   const [messageType, setMessageType] = useState<SyncMessageType>(SyncMessageType.HEARTBEAT);
   const [entity, setEntity] = useState('inventory');
   const [action, setAction] = useState('update');
@@ -191,7 +193,11 @@ export function RealTimeSyncTester() {
       }));
     } catch (error) {
       console.error('Failed to send message:', error);
-      alert(`Failed to send message: ${(error as Error).message}`);
+      toast({
+        title: 'Failed to send message',
+        description: (error as Error).message,
+        variant: 'destructive',
+      });
     }
   };
   

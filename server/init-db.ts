@@ -35,6 +35,32 @@ export async function ensureSessionTable(): Promise<void> {
   }
 }
 
+const CONTRACT_DATE_CONSTRAINT_NAME = 'supplier_contracts_end_date_check';
+
+/** Ensure supplier_contracts has a check constraint: end_date must be null or >= start_date. */
+export async function ensureContractDateConstraint(): Promise<void> {
+  try {
+    const r = await pool.query<{ exists: boolean }>(`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_constraint c
+        JOIN pg_class t ON c.conrelid = t.oid
+        WHERE t.relname = 'supplier_contracts' AND c.conname = $1
+      ) AS exists
+    `, [CONTRACT_DATE_CONSTRAINT_NAME]);
+    if (r.rows[0]?.exists) {
+      return;
+    }
+    await pool.query(`
+      ALTER TABLE supplier_contracts
+      ADD CONSTRAINT supplier_contracts_end_date_check
+      CHECK (end_date IS NULL OR end_date >= start_date)
+    `);
+    console.log('Contract date constraint (end_date >= start_date) applied');
+  } catch (err) {
+    console.warn('Could not ensure contract date constraint:', err instanceof Error ? err.message : err);
+  }
+}
+
 /**
  * Initializes the database by ensuring all required tables exist
  * This is called during application startup to prepare the database
@@ -43,6 +69,7 @@ export async function initializeDatabase(): Promise<boolean> {
   console.log('Initializing database schema...');
 
   await ensureSessionTable();
+  await ensureContractDateConstraint();
 
   try {
     // Check if users table exists by trying to query it

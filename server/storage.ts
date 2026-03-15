@@ -2295,7 +2295,11 @@ export class MemStorage implements IStorage {
       location: insertWarehouse.location || null,
       contactPerson: insertWarehouse.contactPerson || null,
       contactPhone: insertWarehouse.contactPhone || null,
-      isDefault: insertWarehouse.isDefault || false
+      isDefault: insertWarehouse.isDefault || false,
+      aisle: insertWarehouse.aisle ?? null,
+      aisles: insertWarehouse.aisles ?? null,
+      bins: insertWarehouse.bins ?? null,
+      locationDetails: insertWarehouse.locationDetails ?? null,
     };
     
     // If this is marked as default, update other warehouses

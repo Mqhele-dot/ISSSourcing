@@ -1,0 +1,7 @@
+# Example Caddyfile: reverse proxy with automatic TLS for ISS Sourcing
+# Replace your-domain.example.com with your domain. Caddy obtains and renews TLS certs automatically.
+# Run: caddy run --config deploy/Caddyfile.example
+
+your-domain.example.com {
+    reverse_proxy 127.0.0.1:5000
+}

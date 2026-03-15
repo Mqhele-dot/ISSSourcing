@@ -68,6 +68,7 @@ export default function SuppliersPage() {
   const [logoDialogOpen, setLogoDialogOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState("");
   const [deleteConfirmSupplier, setDeleteConfirmSupplier] = useState<Supplier | null>(null);
+  const [removeLogoConfirm, setRemoveLogoConfirm] = useState(false);
 
   // Get all suppliers
   const { data: suppliers, isLoading } = useQuery<Supplier[]>({
@@ -578,6 +579,36 @@ export default function SuppliersPage() {
         </Can>
       </div>
 
+      {/* Remove logo confirmation */}
+      <AlertDialog open={removeLogoConfirm} onOpenChange={(open) => !open && setRemoveLogoConfirm(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove logo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the logo for this supplier. You can add a new one later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (selectedSupplierId) {
+                  deleteLogo.mutate(selectedSupplierId, {
+                    onSettled: () => {
+                      setRemoveLogoConfirm(false);
+                      setLogoDialogOpen(false);
+                    },
+                  });
+                }
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Delete supplier confirmation */}
       <AlertDialog open={!!deleteConfirmSupplier} onOpenChange={(open) => !open && setDeleteConfirmSupplier(null)}>
         <AlertDialogContent>
@@ -647,12 +678,7 @@ export default function SuppliersPage() {
                     type="button"
                     variant="outline"
                     className="text-red-500 hover:text-red-600"
-                    onClick={() => {
-                      if (selectedSupplierId && confirm("Are you sure you want to remove this logo?")) {
-                        deleteLogo.mutate(selectedSupplierId);
-                        setLogoDialogOpen(false);
-                      }
-                    }}
+                    onClick={() => setRemoveLogoConfirm(true)}
                   >
                     Remove Logo
                   </Button>

@@ -15,6 +15,16 @@ import { Separator } from "@/components/ui/separator";
 import { userPasswordChangeSchema } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { z } from "zod";
 
 // Profile update schema
@@ -37,6 +47,7 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState("profile");
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [removePictureConfirm, setRemovePictureConfirm] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -333,30 +344,7 @@ export default function ProfilePage() {
                                       type="button" 
                                       variant="destructive"
                                       size="sm"
-                                      onClick={async () => {
-                                        if (confirm("Are you sure you want to remove your profile picture?")) {
-                                          try {
-                                            const res = await apiRequest("DELETE", "/api/profile/picture");
-                                            profileForm.setValue("profilePicture", null);
-                                            
-                                            // Update user data in the cache
-                                            queryClient.setQueryData(["/api/user"], (oldData: any) => ({
-                                              ...oldData,
-                                              profilePicture: null,
-                                            }));
-                                            toast({
-                                              title: "Profile Picture Removed",
-                                              description: "Your profile picture has been removed successfully."
-                                            });
-                                          } catch (error) {
-                                            toast({
-                                              title: "Error",
-                                              description: "Failed to remove profile picture",
-                                              variant: "destructive"
-                                            });
-                                          }
-                                        }
-                                      }}
+                                      onClick={() => setRemovePictureConfirm(true)}
                                     >
                                       <Trash2 className="h-4 w-4 mr-2" />
                                       Remove
@@ -757,6 +745,47 @@ export default function ProfilePage() {
           )}
         </div>
       </div>
+
+      <AlertDialog open={removePictureConfirm} onOpenChange={setRemovePictureConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove profile picture?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove your profile picture. You can upload a new one at any time.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                try {
+                  await apiRequest("DELETE", "/api/profile/picture");
+                  profileForm.setValue("profilePicture", null);
+                  queryClient.setQueryData(["/api/user"], (oldData: unknown) => {
+                    const o = oldData as { profilePicture?: string | null };
+                    return o ? { ...o, profilePicture: null } : oldData;
+                  });
+                  toast({
+                    title: "Profile Picture Removed",
+                    description: "Your profile picture has been removed successfully.",
+                  });
+                } catch {
+                  toast({
+                    title: "Error",
+                    description: "Failed to remove profile picture",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setRemovePictureConfirm(false);
+                }
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

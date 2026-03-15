@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { queryClient, apiRequest, requestJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,11 +91,16 @@ export default function ContractsPage() {
       setFormOpen(false);
       form.reset(defaultFormValues);
     },
-    onError: (e) => {
+    onError: (e, data) => {
       toast({
         title: "Error",
         description: e instanceof Error ? e.message : "Failed to create contract",
         variant: "destructive",
+        action: data && (
+          <ToastAction altText="Retry" onClick={() => createContract.mutate(data)}>
+            Retry
+          </ToastAction>
+        ),
       });
     },
   });
@@ -109,11 +115,16 @@ export default function ContractsPage() {
       setEditingId(null);
       form.reset(defaultFormValues);
     },
-    onError: (e) => {
+    onError: (e, vars) => {
       toast({
         title: "Error",
         description: e instanceof Error ? e.message : "Failed to update contract",
         variant: "destructive",
+        action: vars && (
+          <ToastAction altText="Retry" onClick={() => updateContract.mutate(vars)}>
+            Retry
+          </ToastAction>
+        ),
       });
     },
   });
@@ -126,11 +137,16 @@ export default function ContractsPage() {
       setViewContract(null);
       setDeleteConfirmContract(null);
     },
-    onError: (e) => {
+    onError: (e, id) => {
       toast({
         title: "Delete failed",
         description: e instanceof Error ? e.message : "Failed to delete contract",
         variant: "destructive",
+        action: (
+          <ToastAction altText="Retry" onClick={() => id != null && deleteContract.mutate(id)}>
+            Retry
+          </ToastAction>
+        ),
       });
       setDeleteConfirmContract(null);
     },
@@ -439,20 +455,20 @@ export default function ContractsPage() {
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" aria-label="Contract form">
               <FormField
                 control={form.control}
                 name="supplierId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Supplier</FormLabel>
+                    <FormLabel htmlFor="contract-supplier">Supplier</FormLabel>
                     <Select
                       onValueChange={(v) => field.onChange(Number(v))}
                       value={field.value ? String(field.value) : ""}
                       disabled={!!editingId}
                     >
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger id="contract-supplier" aria-label="Select supplier">
                           <SelectValue placeholder="Select supplier" />
                         </SelectTrigger>
                       </FormControl>
@@ -471,9 +487,9 @@ export default function ContractsPage() {
                 name="title"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Title</FormLabel>
+                    <FormLabel htmlFor="contract-title">Title</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Master Service Agreement" {...field} />
+                      <Input id="contract-title" aria-label="Contract title" placeholder="e.g. Master Service Agreement" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -544,10 +560,12 @@ export default function ContractsPage() {
                   name="startDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Start date</FormLabel>
+                      <FormLabel htmlFor="contract-start-date">Start date</FormLabel>
                       <FormControl>
                         <Input
+                          id="contract-start-date"
                           type="date"
+                          aria-label="Contract start date"
                           value={field.value ? format(new Date(field.value), "yyyy-MM-dd") : ""}
                           onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
                         />
@@ -561,10 +579,12 @@ export default function ContractsPage() {
                   name="endDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>End date (optional)</FormLabel>
+                      <FormLabel htmlFor="contract-end-date">End date (optional)</FormLabel>
                       <FormControl>
                         <Input
+                          id="contract-end-date"
                           type="date"
+                          aria-label="Contract end date"
                           value={field.value ? format(new Date(field.value), "yyyy-MM-dd") : ""}
                           onChange={(e) =>
                             field.onChange(e.target.value ? new Date(e.target.value) : undefined)
@@ -582,11 +602,13 @@ export default function ContractsPage() {
                   name="value"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Value (optional)</FormLabel>
+                      <FormLabel htmlFor="contract-value">Value (optional)</FormLabel>
                       <FormControl>
                         <Input
+                          id="contract-value"
                           type="number"
                           step="0.01"
+                          aria-label="Contract value"
                           placeholder="0"
                           value={field.value ?? ""}
                           onChange={(e) =>
@@ -617,9 +639,9 @@ export default function ContractsPage() {
                 name="summary"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Summary</FormLabel>
+                    <FormLabel htmlFor="contract-summary">Summary</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Brief summary of the contract" rows={3} {...field} value={field.value ?? ""} />
+                      <Textarea id="contract-summary" aria-label="Contract summary" placeholder="Brief summary of the contract" rows={3} {...field} value={field.value ?? ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -630,9 +652,9 @@ export default function ContractsPage() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel htmlFor="contract-notes">Notes</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Internal notes" rows={2} {...field} value={field.value ?? ""} />
+                      <Textarea id="contract-notes" aria-label="Contract notes" placeholder="Internal notes" rows={2} {...field} value={field.value ?? ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -108,7 +108,7 @@ export default function RequisitionFormPage() {
       setLocation(listPath);
     },
     onError: (e) => {
-      toast({ title: "Create failed", description: (e as Error).message, variant: "destructive" });
+      toast({ title: "Create failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
     },
   });
 
@@ -126,7 +126,7 @@ export default function RequisitionFormPage() {
       toast({ title: "Requisition updated", variant: "default" });
     },
     onError: (e) => {
-      toast({ title: "Update failed", description: (e as Error).message, variant: "destructive" });
+      toast({ title: "Update failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
     },
   });
 

@@ -28,6 +28,8 @@ import type { ReportFormat, ReportType} from "@shared/schema";
 import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { registerOperationalRoutes } from "./operations-routes";
 import { readiness } from "./readiness";
+import { createContractRepository } from "./repositories";
+import { createContractService, ContractDateError } from "./services/contract-service";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -105,6 +107,8 @@ function csvBufferForExcel(buffer: Buffer): Buffer {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication routes and middleware
   const auth = setupAuth(app);
+  const contractRepo = createContractRepository(storage);
+  const contractService = createContractService(contractRepo, storage);
   registerOperationalRoutes(app, auth);
   
   // Role and permission routes
@@ -784,7 +788,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const supplierId = req.query.supplierId;
       const id = typeof supplierId === "string" ? Number(supplierId) : undefined;
-      const contracts = await storage.getContracts(isNaN(id as number) ? undefined : id);
+      const contracts = await contractRepo.findAll(isNaN(id as number) ? undefined : id);
       res.json(contracts);
     } catch (error) {
       console.error("Error fetching contracts:", error);
@@ -796,7 +800,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
-      const contract = await storage.getContract(id);
+      const contract = await contractRepo.findById(id);
       if (!contract) return res.status(404).json({ message: "Contract not found" });
       res.json(contract);
     } catch (error) {
@@ -811,20 +815,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof body.startDate === "string") body.startDate = new Date(body.startDate);
       if (body.endDate != null && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
       const validated = insertSupplierContractSchema.parse(body);
-      if (validated.endDate != null && validated.startDate != null && new Date(validated.endDate) < new Date(validated.startDate)) {
-        return res.status(400).json({ message: "End date must be on or after start date" });
-      }
-      const contract = await storage.createContract(validated);
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      await storage.createActivityLog({
-        action: "Contract Created",
-        description: `Created contract "${contract.title}" (supplier ID ${contract.supplierId})`,
-        referenceType: "supplier_contract",
-        referenceId: contract.id,
-        userId,
-      }).catch(() => {});
+      const contract = await contractService.create(validated, userId);
       res.status(201).json(contract);
     } catch (error) {
+      if (error instanceof ContractDateError) {
+        return res.status(400).json({ message: error.message });
+      }
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
         return res.status(400).json({ message: validationError.message });
@@ -842,26 +839,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof body.startDate === "string") body.startDate = new Date(body.startDate);
       if (body.endDate != null && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
       const validated = insertSupplierContractSchema.partial().parse(body);
-      const existing = await storage.getContract(id);
-      if (existing) {
-        const start = validated.startDate != null ? new Date(validated.startDate) : new Date(existing.startDate);
-        const end = validated.endDate != null ? new Date(validated.endDate) : (existing.endDate ? new Date(existing.endDate) : null);
-        if (end != null && end < start) {
-          return res.status(400).json({ message: "End date must be on or after start date" });
-        }
-      }
-      const contract = await storage.updateContract(id, validated);
-      if (!contract) return res.status(404).json({ message: "Contract not found" });
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      await storage.createActivityLog({
-        action: "Contract Updated",
-        description: `Updated contract "${contract.title}" (ID ${id})`,
-        referenceType: "supplier_contract",
-        referenceId: id,
-        userId,
-      }).catch(() => {});
+      const contract = await contractService.update(id, validated, userId);
+      if (!contract) return res.status(404).json({ message: "Contract not found" });
       res.json(contract);
     } catch (error) {
+      if (error instanceof ContractDateError) {
+        return res.status(400).json({ message: error.message });
+      }
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
         return res.status(400).json({ message: validationError.message });
@@ -875,17 +860,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
-      const existing = await storage.getContract(id);
-      const ok = await storage.deleteContract(id);
-      if (!ok) return res.status(404).json({ message: "Contract not found" });
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      await storage.createActivityLog({
-        action: "Contract Deleted",
-        description: existing ? `Deleted contract "${existing.title}" (ID ${id})` : `Deleted contract ID ${id}`,
-        referenceType: "supplier_contract",
-        referenceId: id,
-        userId,
-      }).catch(() => {});
+      const ok = await contractService.delete(id, userId);
+      if (!ok) return res.status(404).json({ message: "Contract not found" });
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting contract:", error);

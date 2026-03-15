@@ -672,12 +672,12 @@ export async function mergePdfWithTemplate(templateBuffer: Buffer, reportBuffer:
   const templatePages = templateDoc.getPages();
   const reportPages = reportDoc.getPages();
   const merged = await PDFDocument.create();
-  for (const page of templatePages) {
-    const [copied] = await merged.copyPages(templateDoc, [page.index]);
+  for (let i = 0; i < templatePages.length; i++) {
+    const [copied] = await merged.copyPages(templateDoc, [i]);
     merged.addPage(copied);
   }
-  for (const page of reportPages) {
-    const [copied] = await merged.copyPages(reportDoc, [page.index]);
+  for (let i = 0; i < reportPages.length; i++) {
+    const [copied] = await merged.copyPages(reportDoc, [i]);
     merged.addPage(copied);
   }
   return Buffer.from(await merged.save());

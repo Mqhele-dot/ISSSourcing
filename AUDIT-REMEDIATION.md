@@ -13,6 +13,8 @@ This document summarizes changes made in response to the security and UX audit.
 
 ### Frontend
 - **Contracts page**: Add Contract, Edit, and Delete are wrapped in `<Can roles={["manager", "admin"]}>` so viewers see disabled buttons with tooltip "Requires Manager or Admin".
+- **Warehouses page**: Add Warehouse, Add Your First Warehouse, and the row actions dropdown (Edit, Delete) are wrapped in `<Can roles={["manager", "admin"]}>`. Delete already uses an in-app Dialog (no browser confirm).
+- **Requisitions page**: New Requisition (header and empty state), Edit, Approve, Reject, Convert, and Share are wrapped in `<Can roles={["manager", "admin"]}>`. Rejection reason uses an in-app Dialog with optional reason input instead of `window.prompt`.
 - **Settings**: "Reset demo data" is inside `Can roles={["admin"]}` and the whole "Development Utilities" card is shown only when `import.meta.env.DEV` is true (hidden in production build).
 
 ## 2. Contract validation (client + server)
@@ -53,8 +55,36 @@ This document summarizes changes made in response to the security and UX audit.
 - **Environment**: `.env.example` documents `DATABASE_URL`, `SESSION_SECRET`, `PORT`, and optional email/seed variables.
 - **CI**: `.github/workflows/ci.yml` runs on push/PR to main/master: `npm ci`, `npm run check`, `npm run lint`.
 
-## 9. Recommended follow-ups (not yet implemented)
+## 9. UI consistency (native dialogs replaced)
 
-- **Deployment:** Reverse proxy with TLS in front of the app; separate dev/prod environment configs; secrets from env in production.
-- **Backend architecture:** DB constraints for date ranges and critical fields; dedicated service/repository layers; extend audit logging to other sensitive resources (e.g. suppliers, POs).
-- **UI consistency:** Replace any remaining native `alert`/`confirm` with app modals; ensure forms are accessible and responsive.
+- **Suppliers:** Remove-logo confirmation uses in-app `AlertDialog` (no `confirm()`).
+- **Profile:** Remove profile picture uses in-app `AlertDialog` (no `confirm()`).
+- **Requisitions:** Reject reason uses in-app `Dialog` with optional reason input (no `window.prompt()`).
+- **Contracts, Suppliers, Warehouses:** Delete confirmations use in-app `AlertDialog` or `Dialog`.
+- **Sync-test page:** Clear local DB uses in-app `AlertDialog` for confirmation; desktop-only and success/error use toasts (no `alert`/`confirm`).
+- **Real-time-sync-tester:** Send-message failure uses toast (no `alert`).
+
+## 10. Retry on failure
+
+- **Contracts:** Create, update, and delete error toasts include a "Retry" action that re-invokes the same mutation with the same parameters.
+- **Requisitions:** Approve, reject, and convert error toasts include a "Retry" action. List view already has `onRetry={refetch}` for load errors.
+
+## 11. Phase two (partial items completed)
+
+- **RBAC testing:** `scripts/test-rbac.ts` and `npm run test:rbac` verify viewer gets 403 on write, admin can write. Documented in `SECURITY.md`.
+- **Dev/prod config:** `.env.development.example`, `.env.production.example`, and `docs/ENV-CONFIG.md` document separate dev vs production env.
+- **CI build:** `.github/workflows/ci.yml` has a `build` job that runs `npm run build` and uploads the `dist/` artifact.
+- **Repository layer:** `server/repositories/contract-repository.ts` provides a contract data-access layer; routes use `contractRepo` for contract CRUD.
+- **Forms a11y:** Contract form has `aria-label` on form and key inputs, plus `id`/`htmlFor` for label association.
+- **Security checklist:** `SECURITY.md` describes RBAC, how to run `test:rbac`, and a manual verification checklist.
+
+## 12. Remaining items (completed)
+
+- **Reverse proxy with TLS:** `deploy/nginx.conf.example` and `deploy/Caddyfile.example` provide example configs; `docs/DEPLOYMENT.md` describes running the app behind nginx or Caddy with TLS.
+- **DB constraints for date ranges:** `server/init-db.ts` defines `ensureContractDateConstraint()` which adds `CHECK (end_date IS NULL OR end_date >= start_date)` on `supplier_contracts` at startup (idempotent).
+- **Service layer:** `server/services/contract-service.ts` implements contract create/update/delete with date validation and audit logging; routes use `contractService` instead of calling the repository and logging inline.
+
+## 13. Optional follow-ups
+
+- **UI:** Add retry actions for other modules (suppliers, warehouses, POs) where applicable; broader a11y audit if needed.
+- **Backend:** Extend repository/service pattern to other entities (suppliers, warehouses, etc.) if desired.

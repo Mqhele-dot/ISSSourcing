@@ -2,39 +2,61 @@ import React, { useState } from 'react';
 import { Container } from '@/components/ui/container';
 import { RealTimeSyncStatus } from '@/components/sync/real-time-sync-status';
 import { RealTimeSyncTester } from '@/components/sync/real-time-sync-tester';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { InfoCircledIcon, GearIcon, CircleBackslashIcon } from '@radix-ui/react-icons';
+import { InfoCircledIcon, CircleBackslashIcon } from '@radix-ui/react-icons';
 import { FlaskConical } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { isElectronEnvironment, callElectronBridge } from '@/lib/electron-bridge';
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export default function SyncTestPage() {
   const [showDebugInfo, setShowDebugInfo] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [clearDbConfirmOpen, setClearDbConfirmOpen] = useState(false);
+  const { toast } = useToast();
 
-  const handleClearLocalDb = async () => {
+  const handleClearLocalDbClick = () => {
     if (!isElectronEnvironment()) {
-      alert('This operation can only be performed in the desktop application');
+      toast({
+        title: 'Desktop only',
+        description: 'This operation can only be performed in the desktop application',
+        variant: 'destructive',
+      });
       return;
     }
+    setClearDbConfirmOpen(true);
+  };
 
-    const confirmation = confirm(
-      'Are you sure you want to clear the local database? This will delete all local data. ' +
-      'You should sync with the server after this operation to restore your data.'
-    );
-
-    if (!confirmation) return;
-
+  const handleClearLocalDbConfirm = async () => {
     try {
       await callElectronBridge('db', 'clearDatabase');
-      alert('Local database cleared successfully. You may need to restart the application or perform a sync to restore data.');
+      setLastError(null);
+      setClearDbConfirmOpen(false);
+      toast({
+        title: 'Local database cleared',
+        description: 'You may need to restart the application or perform a sync to restore data.',
+      });
     } catch (error) {
       const errorMessage = (error as Error)?.message || 'Unknown error';
       setLastError(errorMessage);
-      alert(`Failed to clear database: ${errorMessage}`);
+      setClearDbConfirmOpen(false);
+      toast({
+        title: 'Failed to clear database',
+        description: errorMessage,
+        variant: 'destructive',
+      });
     }
   };
 
@@ -78,7 +100,7 @@ export default function SyncTestPage() {
                     variant="destructive" 
                     size="sm" 
                     className="w-full"
-                    onClick={handleClearLocalDb}
+                    onClick={handleClearLocalDbClick}
                   >
                     <CircleBackslashIcon className="mr-2 h-4 w-4" />
                     Clear Local Database
@@ -91,6 +113,26 @@ export default function SyncTestPage() {
             </CardContent>
           </Card>
         </div>
+
+        <AlertDialog open={clearDbConfirmOpen} onOpenChange={setClearDbConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Clear local database?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will delete all local data. You should sync with the server after this operation to restore your data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={handleClearLocalDbConfirm}
+              >
+                Clear database
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         
         <div className="md:col-span-2">
           <Card>

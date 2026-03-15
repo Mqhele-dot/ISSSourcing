@@ -37,6 +37,7 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { Can } from '@/components/auth/can';
 
 // Warehouse interface (API returns ISO date strings, not Date objects)
 interface Warehouse {
@@ -235,7 +236,7 @@ export default function WarehousesPage() {
       });
       return;
     }
-    createWarehouse.mutate(toPayload(formData) as FormData);
+    createWarehouse.mutate(toPayload(formData) as unknown as FormData);
   };
 
   const handleEditSubmit = () => {
@@ -251,7 +252,7 @@ export default function WarehousesPage() {
     }
     updateWarehouse.mutate({
       id: selectedWarehouse.id,
-      data: toPayload(formData) as FormData,
+      data: toPayload(formData) as unknown as FormData,
     });
   };
 
@@ -330,13 +331,15 @@ export default function WarehousesPage() {
             Manage your warehouse locations and inventory distribution
           </p>
         </div>
-        <Button onClick={() => {
-          resetForm();
-          setIsCreateDialogOpen(true);
-        }}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Warehouse
-        </Button>
+        <Can roles={['manager', 'admin']} reason="Requires Manager or Admin to add warehouses">
+          <Button onClick={() => {
+            resetForm();
+            setIsCreateDialogOpen(true);
+          }}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Warehouse
+          </Button>
+        </Can>
       </div>
 
       {listFallback ? (
@@ -360,13 +363,15 @@ export default function WarehousesPage() {
               <p className="text-muted-foreground mb-4 max-w-md">
                 You haven't added any warehouses yet. Add your first warehouse to start managing inventory across multiple locations.
               </p>
-              <Button onClick={() => {
-                resetForm();
-                setIsCreateDialogOpen(true);
-              }}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Your First Warehouse
-              </Button>
+              <Can roles={['manager', 'admin']} reason="Requires Manager or Admin to add warehouses">
+                <Button onClick={() => {
+                  resetForm();
+                  setIsCreateDialogOpen(true);
+                }}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Your First Warehouse
+                </Button>
+              </Can>
             </div>
           ) : (
             <Table>
@@ -404,29 +409,31 @@ export default function WarehousesPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                            <span className="sr-only">Actions</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => openEditDialog(warehouse)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => openDeleteDialog(warehouse)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <Can roles={['manager', 'admin']} reason="Requires Manager or Admin to edit or delete warehouses">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                              <span className="sr-only">Actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => openEditDialog(warehouse)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => openDeleteDialog(warehouse)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </Can>
                     </TableCell>
                   </TableRow>
                   );
