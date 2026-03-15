@@ -896,8 +896,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const requisitions = await storage.getAllPurchaseRequisitions();
       res.json(requisitions);
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Error fetching purchase requisitions:", error);
-      res.status(500).json({ message: "Failed to fetch purchase requisitions" });
+      res.status(500).json({
+        message: "Failed to fetch purchase requisitions",
+        ...(process.env.NODE_ENV !== "production" && { detail: errMsg }),
+      });
     }
   });
 
@@ -925,6 +929,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
         return res.status(400).json({ message: "At least one item is required" });
+      }
+      for (let i = 0; i < req.body.items.length; i++) {
+        const it = req.body.items[i];
+        if (Number(it?.quantity) <= 0) {
+          return res.status(400).json({ message: `Item ${i + 1}: quantity must be greater than zero` });
+        }
+        const price = Number(it?.unitPrice);
+        if (price < 0) {
+          return res.status(400).json({ message: `Item ${i + 1}: unit price cannot be negative` });
+        }
+        if (price === 0) {
+          return res.status(400).json({ message: `Item ${i + 1}: unit price must be greater than zero` });
+        }
       }
       
       const validatedReqData = insertPurchaseRequisitionSchema.parse(req.body);

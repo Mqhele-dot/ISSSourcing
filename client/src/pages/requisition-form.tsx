@@ -91,7 +91,7 @@ export default function RequisitionFormPage() {
         supplierId: supplierId || undefined,
         requiredDate: requiredDate ? new Date(requiredDate).toISOString() : undefined,
         items: items
-          .filter((i) => i.itemId > 0 && i.quantity > 0)
+          .filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0)
           .map((i) => ({
             itemId: i.itemId,
             quantity: i.quantity,
@@ -141,8 +141,16 @@ export default function RequisitionFormPage() {
   };
 
   const handleSubmit = () => {
-    if (items.filter((i) => i.itemId > 0 && i.quantity > 0).length === 0) {
-      toast({ title: "Add at least one item", variant: "destructive" });
+    const validItems = items.filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0);
+    if (validItems.length === 0) {
+      const hasItems = items.some((i) => i.itemId > 0);
+      if (!hasItems) {
+        toast({ title: "Add at least one item", variant: "destructive" });
+      } else if (items.some((i) => i.itemId > 0 && i.quantity <= 0)) {
+        toast({ title: "Quantity must be greater than zero for each item", variant: "destructive" });
+      } else {
+        toast({ title: "Unit price must be greater than zero for each item", variant: "destructive" });
+      }
       return;
     }
     if (isNew) createMutation.mutate();

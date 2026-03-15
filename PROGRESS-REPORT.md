@@ -112,9 +112,46 @@ Progress against the security and UX audit recommendations. Status: **Done** | *
 | Back-end architecture | 4 | 0 | 0 |
 | UI consistency | 2 | 0 | 0 |
 | Other modules | 3 | 0 | 0 |
-| **Total** | **32** | **0** | **0** |
+| **New Requisition Module (latest audit)** | **12** | **0** | **1** |
+| **Total** | **44** | **0** | **1** |
 
-All audit items are implemented. See `docs/DEPLOYMENT.md` for reverse proxy with TLS; `server/init-db.ts` for DB date constraint; `server/services/contract-service.ts` for the contract service layer.
+All items from the original security/UX audit are implemented. From the **latest audit (New Requisition Module)**, all functional and security items are done; the only outstanding item is **unit/integration tests** for the requisitions module. See `docs/DEPLOYMENT.md` for reverse proxy with TLS; `server/init-db.ts` for DB constraints and requisition tables; `docs/REQUISITIONS-AUDIT.md` for requisition audit details.
+
+---
+
+## 10. Audit Report: New Requisition Module
+
+Progress against the **Audit Report: New Requisition Module** (Requisitions page, New Requisition form, role testing). Status: **Done** | **Partial** | **Not done**.
+
+| Audit item | Status | Notes |
+|------------|--------|--------|
+| **Broken requisitions API (500)** | **Done** | `ensurePurchaseRequisitionsTables()` in `server/init-db.ts` creates `purchase_requisitions` and `purchase_requisition_items` at startup if missing. `getRequisitionWithDetails()` in database-storage now reads from DB (not empty memStorage). GET list returns optional `detail` in non-production on error. |
+| **Create button not functional / no feedback** | **Done** | Tables ensured so list and create succeed. Success: toast “Requisition created”, redirect to list, list refetches. Failure: toast “Create failed” with server message. |
+| **Insufficient validation** | **Done** | Server: POST validates each item `quantity > 0`, `unitPrice > 0` (400 with clear message). Client: submit validates same; messages for “Add at least one item”, “Quantity must be greater than zero…”, “Unit price must be greater than zero…”. Only valid items sent. |
+| **Inconsistent feedback** | **Done** | Error toasts use API message; list errors show Retry; 500 includes `detail` in non-production. |
+| **Client-side only permission checks** | **Done** | Already in place: all requisition/PO endpoints use `poRead`/`poWrite`; viewers get 403 on write. |
+| **Fix the Requisitions API** | **Done** | Tables ensured; getRequisitionWithDetails implemented for DB. |
+| **Implement proper form submission + feedback** | **Done** | Validation, toasts, redirect on success. |
+| **Add field validation** | **Done** | Client and server: quantity and unit price > 0. |
+| **Strengthen authorization** | **Done** | RBAC on all requisition/PO endpoints (manager/admin for write). |
+| **Improve error handling** | **Done** | Clear 400 messages; optional 500 detail in dev. |
+| **Loading state** | **Done** | Spinner on Create; DataState on list with Retry. |
+| **Unit/integration tests for requisitions** | **Not done** | Recommended follow-up: automated tests for create, invalid inputs, permissions, API failures. |
+| **Code review and documentation** | **Done** | `docs/REQUISITIONS-AUDIT.md` documents fixes and API behaviour; code comments in routes and init-db. |
+
+### New Requisition Module — Summary
+
+| Category | Done | Partial | Not done |
+|----------|------|---------|----------|
+| API and data layer | 2 | 0 | 0 |
+| Form and feedback | 4 | 0 | 0 |
+| Validation (client + server) | 2 | 0 | 0 |
+| Authorization | 1 | 0 | 0 |
+| Error handling and loading | 2 | 0 | 0 |
+| Tests and documentation | 1 | 0 | 1 |
+| **Requisition module total** | **12** | **0** | **1** |
+
+The only outstanding item is **unit/integration tests** for the requisitions module. All functional and security items from the latest audit are done. See `docs/REQUISITIONS-AUDIT.md` for details.
 
 ---
 

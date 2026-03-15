@@ -1842,7 +1842,36 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getRequisitionWithDetails(id: number): Promise<(PurchaseRequisition & { items: (PurchaseRequisitionItem & { item: InventoryItem; })[]; requestor?: User; approver?: User; supplier?: Supplier; }) | undefined> {
-    return this.memStorage.getRequisitionWithDetails(id);
+    const [req] = await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.id, id));
+    if (!req) return undefined;
+    const items = await db.select().from(purchaseRequisitionItems).where(eq(purchaseRequisitionItems.requisitionId, id));
+    const itemIds = [...new Set(items.map((i) => i.itemId))];
+    const invItems = itemIds.length > 0
+      ? await db.select().from(inventoryItems).where(inArray(inventoryItems.id, itemIds))
+      : [];
+    const invMap = new Map(invItems.map((i) => [i.id, i]));
+    const result = {
+      ...req,
+      items: items
+        .map((i) => ({ ...i, item: invMap.get(i.itemId) }))
+        .filter((x): x is PurchaseRequisitionItem & { item: InventoryItem } => x.item != null),
+      requestor: undefined as User | undefined,
+      approver: undefined as User | undefined,
+      supplier: undefined as Supplier | undefined,
+    };
+    if (req.requestorId) {
+      const [u] = await db.select().from(users).where(eq(users.id, req.requestorId));
+      result.requestor = u;
+    }
+    if (req.approverId) {
+      const [u] = await db.select().from(users).where(eq(users.id, req.approverId));
+      result.approver = u;
+    }
+    if (req.supplierId) {
+      const [s] = await db.select().from(suppliers).where(eq(suppliers.id, req.supplierId));
+      result.supplier = s;
+    }
+    return result;
   }
   
   async getPurchaseOrderWithDetails(id: number): Promise<(PurchaseOrder & { items: (PurchaseOrderItem & { item: InventoryItem; })[]; supplier: Supplier; requisition?: PurchaseRequisition; }) | undefined> {

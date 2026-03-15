@@ -61,6 +61,44 @@ export async function ensureContractDateConstraint(): Promise<void> {
   }
 }
 
+/** Ensure purchase_requisitions and purchase_requisition_items tables exist (for environments where drizzle-kit push has not run). */
+export async function ensurePurchaseRequisitionsTables(): Promise<void> {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS purchase_requisitions (
+        id SERIAL PRIMARY KEY,
+        requisition_number TEXT NOT NULL UNIQUE,
+        requestor_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        notes TEXT,
+        required_date TIMESTAMP,
+        supplier_id INTEGER,
+        total_amount REAL NOT NULL DEFAULT 0,
+        shared_with_user_ids JSONB DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        approver_id INTEGER,
+        approval_date TIMESTAMP,
+        rejection_reason TEXT
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS purchase_requisition_items (
+        id SERIAL PRIMARY KEY,
+        requisition_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        unit_price REAL NOT NULL,
+        total_price REAL NOT NULL,
+        notes TEXT
+      )
+    `);
+    console.log('Purchase requisitions tables ready');
+  } catch (err) {
+    console.warn('Could not ensure purchase requisitions tables:', err instanceof Error ? err.message : err);
+  }
+}
+
 /**
  * Initializes the database by ensuring all required tables exist
  * This is called during application startup to prepare the database
@@ -70,6 +108,7 @@ export async function initializeDatabase(): Promise<boolean> {
 
   await ensureSessionTable();
   await ensureContractDateConstraint();
+  await ensurePurchaseRequisitionsTables();
 
   try {
     // Check if users table exists by trying to query it
