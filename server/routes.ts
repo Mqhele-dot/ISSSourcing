@@ -673,8 +673,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Supplier endpoints (return 200 + [] on error so UI can render)
-  app.get("/api/suppliers", async (_req: Request, res: Response) => {
+  // Supplier endpoints — RBAC: viewer read-only; manager/admin can create/update/delete
+  const supplierRead = [auth.ensureAuthenticated];
+  const supplierWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
+  app.get("/api/suppliers", ...supplierRead, async (_req: Request, res: Response) => {
     try {
       const suppliers = await storage.getAllSuppliers();
       res.json(suppliers);
@@ -684,7 +687,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/suppliers/:id", async (req: Request, res: Response) => {
+  app.get("/api/suppliers/:id", ...supplierRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -704,7 +707,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/suppliers", async (req: Request, res: Response) => {
+  app.post("/api/suppliers", ...supplierWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertSupplierSchema.parse(req.body);
       
@@ -750,10 +753,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
 
-  app.put("/api/suppliers/:id", handleUpdateSupplier);
-  app.patch("/api/suppliers/:id", handleUpdateSupplier);
+  app.put("/api/suppliers/:id", ...supplierWrite, handleUpdateSupplier);
+  app.patch("/api/suppliers/:id", ...supplierWrite, handleUpdateSupplier);
 
-  app.delete("/api/suppliers/:id", async (req: Request, res: Response) => {
+  app.delete("/api/suppliers/:id", ...supplierWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -773,8 +776,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Supplier contracts
-  app.get("/api/contracts", async (req: Request, res: Response) => {
+  // Supplier contracts — RBAC: viewer read-only; manager/admin can create/update/delete
+  const contractRead = [auth.ensureAuthenticated];
+  const contractWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
+  app.get("/api/contracts", ...contractRead, async (req: Request, res: Response) => {
     try {
       const supplierId = req.query.supplierId;
       const id = typeof supplierId === "string" ? Number(supplierId) : undefined;
@@ -786,7 +792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/contracts/:id", async (req: Request, res: Response) => {
+  app.get("/api/contracts/:id", ...contractRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
@@ -799,13 +805,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/contracts", async (req: Request, res: Response) => {
+  app.post("/api/contracts", ...contractWrite, async (req: Request, res: Response) => {
     try {
       const body = { ...req.body };
       if (typeof body.startDate === "string") body.startDate = new Date(body.startDate);
       if (body.endDate != null && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
       const validated = insertSupplierContractSchema.parse(body);
+      if (validated.endDate != null && validated.startDate != null && new Date(validated.endDate) < new Date(validated.startDate)) {
+        return res.status(400).json({ message: "End date must be on or after start date" });
+      }
       const contract = await storage.createContract(validated);
+      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      await storage.createActivityLog({
+        action: "Contract Created",
+        description: `Created contract "${contract.title}" (supplier ID ${contract.supplierId})`,
+        referenceType: "supplier_contract",
+        referenceId: contract.id,
+        userId,
+      }).catch(() => {});
       res.status(201).json(contract);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -817,7 +834,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/contracts/:id", async (req: Request, res: Response) => {
+  app.patch("/api/contracts/:id", ...contractWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
@@ -825,8 +842,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof body.startDate === "string") body.startDate = new Date(body.startDate);
       if (body.endDate != null && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
       const validated = insertSupplierContractSchema.partial().parse(body);
+      const existing = await storage.getContract(id);
+      if (existing) {
+        const start = validated.startDate != null ? new Date(validated.startDate) : new Date(existing.startDate);
+        const end = validated.endDate != null ? new Date(validated.endDate) : (existing.endDate ? new Date(existing.endDate) : null);
+        if (end != null && end < start) {
+          return res.status(400).json({ message: "End date must be on or after start date" });
+        }
+      }
       const contract = await storage.updateContract(id, validated);
       if (!contract) return res.status(404).json({ message: "Contract not found" });
+      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      await storage.createActivityLog({
+        action: "Contract Updated",
+        description: `Updated contract "${contract.title}" (ID ${id})`,
+        referenceType: "supplier_contract",
+        referenceId: id,
+        userId,
+      }).catch(() => {});
       res.json(contract);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -838,12 +871,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/contracts/:id", async (req: Request, res: Response) => {
+  app.delete("/api/contracts/:id", ...contractWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
+      const existing = await storage.getContract(id);
       const ok = await storage.deleteContract(id);
       if (!ok) return res.status(404).json({ message: "Contract not found" });
+      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      await storage.createActivityLog({
+        action: "Contract Deleted",
+        description: existing ? `Deleted contract "${existing.title}" (ID ${id})` : `Deleted contract ID ${id}`,
+        referenceType: "supplier_contract",
+        referenceId: id,
+        userId,
+      }).catch(() => {});
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting contract:", error);
@@ -868,8 +910,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Purchase Requisition endpoints
-  app.get("/api/purchase-requisitions", async (_req: Request, res: Response) => {
+  // Purchase Requisition & Purchase Order — RBAC: viewer read-only; manager/admin for create/update/delete/approve
+  const poRead = [auth.ensureAuthenticated];
+  const poWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
+  app.get("/api/purchase-requisitions", ...poRead, async (_req: Request, res: Response) => {
     try {
       const requisitions = await storage.getAllPurchaseRequisitions();
       res.json(requisitions);
@@ -879,7 +924,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/purchase-requisitions/:id", async (req: Request, res: Response) => {
+  app.get("/api/purchase-requisitions/:id", ...poRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -899,7 +944,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-requisitions", async (req: Request, res: Response) => {
+  app.post("/api/purchase-requisitions", ...poWrite, async (req: Request, res: Response) => {
     try {
       if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
         return res.status(400).json({ message: "At least one item is required" });
@@ -941,7 +986,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/purchase-requisitions/:id", async (req: Request, res: Response) => {
+  app.put("/api/purchase-requisitions/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -967,7 +1012,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/purchase-requisitions/:id", async (req: Request, res: Response) => {
+  app.delete("/api/purchase-requisitions/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -987,7 +1032,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-requisitions/:id/approve", async (req: Request, res: Response) => {
+  app.post("/api/purchase-requisitions/:id/approve", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1009,7 +1054,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-requisitions/:id/reject", async (req: Request, res: Response) => {
+  app.post("/api/purchase-requisitions/:id/reject", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1032,7 +1077,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-requisitions/:id/convert", async (req: Request, res: Response) => {
+  app.post("/api/purchase-requisitions/:id/convert", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1054,7 +1099,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-requisitions/:id/share", async (req: Request, res: Response) => {
+  app.post("/api/purchase-requisitions/:id/share", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1076,7 +1121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Purchase Requisition Items endpoints
-  app.get("/api/purchase-requisitions/:reqId/items", async (req: Request, res: Response) => {
+  app.get("/api/purchase-requisitions/:reqId/items", ...poRead, async (req: Request, res: Response) => {
     try {
       const reqId = Number(req.params.reqId);
       if (isNaN(reqId)) {
@@ -1091,7 +1136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-requisitions/:reqId/items", async (req: Request, res: Response) => {
+  app.post("/api/purchase-requisitions/:reqId/items", ...poWrite, async (req: Request, res: Response) => {
     try {
       const reqId = Number(req.params.reqId);
       if (isNaN(reqId)) {
@@ -1116,7 +1161,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/purchase-requisitions-items/:id", async (req: Request, res: Response) => {
+  app.put("/api/purchase-requisitions-items/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1142,7 +1187,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/purchase-requisitions-items/:id", async (req: Request, res: Response) => {
+  app.delete("/api/purchase-requisitions-items/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1162,8 +1207,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Purchase Order endpoints
-  app.get("/api/purchase-orders", async (_req: Request, res: Response) => {
+  // Purchase Order endpoints (same RBAC as requisitions)
+  app.get("/api/purchase-orders", ...poRead, async (_req: Request, res: Response) => {
     try {
       const orders = await storage.getAllPurchaseOrders();
       res.json(orders);
@@ -1173,7 +1218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/purchase-orders/:id", async (req: Request, res: Response) => {
+  app.get("/api/purchase-orders/:id", ...poRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1193,7 +1238,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-orders", async (req: Request, res: Response) => {
+  app.post("/api/purchase-orders", ...poWrite, async (req: Request, res: Response) => {
     try {
       if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
         return res.status(400).json({ message: "At least one item is required" });
@@ -1235,7 +1280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/purchase-orders/:id", async (req: Request, res: Response) => {
+  app.put("/api/purchase-orders/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1261,7 +1306,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/purchase-orders/:id", async (req: Request, res: Response) => {
+  app.delete("/api/purchase-orders/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1281,7 +1326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-orders/:id/update-status", async (req: Request, res: Response) => {
+  app.post("/api/purchase-orders/:id/update-status", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1306,7 +1351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-orders/:id/update-payment", async (req: Request, res: Response) => {
+  app.post("/api/purchase-orders/:id/update-payment", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1331,7 +1376,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-orders/:id/send-email", async (req: Request, res: Response) => {
+  app.post("/api/purchase-orders/:id/send-email", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1360,7 +1405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Purchase Order Items endpoints
-  app.get("/api/purchase-orders/:orderId/items", async (req: Request, res: Response) => {
+  app.get("/api/purchase-orders/:orderId/items", ...poRead, async (req: Request, res: Response) => {
     try {
       const orderId = Number(req.params.orderId);
       if (isNaN(orderId)) {
@@ -1375,7 +1420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-orders/:orderId/items", async (req: Request, res: Response) => {
+  app.post("/api/purchase-orders/:orderId/items", ...poWrite, async (req: Request, res: Response) => {
     try {
       const orderId = Number(req.params.orderId);
       if (isNaN(orderId)) {
@@ -1400,7 +1445,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/purchase-order-items/:id", async (req: Request, res: Response) => {
+  app.put("/api/purchase-order-items/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1426,7 +1471,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/purchase-order-items/:id", async (req: Request, res: Response) => {
+  app.delete("/api/purchase-order-items/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1446,7 +1491,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/purchase-order-items/:id/receive", async (req: Request, res: Response) => {
+  app.post("/api/purchase-order-items/:id/receive", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -2002,8 +2047,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Supplier Logo endpoints
-  app.get("/api/suppliers/:id/logo", async (req: Request, res: Response) => {
+  // Supplier Logo endpoints (same RBAC as suppliers)
+  app.get("/api/suppliers/:id/logo", ...supplierRead, async (req: Request, res: Response) => {
     try {
       const supplierId = Number(req.params.id);
       if (isNaN(supplierId)) {
@@ -2022,7 +2067,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/suppliers/:id/logo", async (req: Request, res: Response) => {
+  app.post("/api/suppliers/:id/logo", ...supplierWrite, async (req: Request, res: Response) => {
     try {
       const supplierId = Number(req.params.id);
       if (isNaN(supplierId)) {
@@ -2053,7 +2098,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/suppliers/:id/logo", async (req: Request, res: Response) => {
+  app.put("/api/suppliers/:id/logo", ...supplierWrite, async (req: Request, res: Response) => {
     try {
       const supplierId = Number(req.params.id);
       if (isNaN(supplierId)) {
@@ -2076,7 +2121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/suppliers/:id/logo", async (req: Request, res: Response) => {
+  app.delete("/api/suppliers/:id/logo", ...supplierWrite, async (req: Request, res: Response) => {
     try {
       const supplierId = Number(req.params.id);
       if (isNaN(supplierId)) {
@@ -2095,8 +2140,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Warehouse endpoints (return 200 + [] on error so UI can render)
-  app.get("/api/warehouses", async (_req: Request, res: Response) => {
+  // Warehouse endpoints — RBAC: viewer read-only; manager/admin can create/update/delete
+  const warehouseRead = [auth.ensureAuthenticated];
+  const warehouseWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
+  app.get("/api/warehouses", ...warehouseRead, async (_req: Request, res: Response) => {
     try {
       const warehouses = await storage.getAllWarehouses();
       res.json(warehouses);
@@ -2106,7 +2154,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/warehouses/default", async (_req: Request, res: Response) => {
+  app.get("/api/warehouses/default", ...warehouseRead, async (_req: Request, res: Response) => {
     try {
       const warehouse = await storage.getDefaultWarehouse();
       if (!warehouse) {
@@ -2119,7 +2167,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/warehouses/:id", async (req: Request, res: Response) => {
+  app.get("/api/warehouses/:id", ...warehouseRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -2139,7 +2187,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/warehouses", async (req: Request, res: Response) => {
+  app.post("/api/warehouses", ...warehouseWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertWarehouseSchema.parse(req.body);
       const newWarehouse = await storage.createWarehouse(validatedData);
@@ -2155,7 +2203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/warehouses/:id", async (req: Request, res: Response) => {
+  app.put("/api/warehouses/:id", ...warehouseWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -2182,7 +2230,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Add PATCH endpoint for warehouse updates - serves the same purpose as PUT
-  app.patch("/api/warehouses/:id", async (req: Request, res: Response) => {
+  app.patch("/api/warehouses/:id", ...warehouseWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -2208,7 +2256,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/warehouses/:id", async (req: Request, res: Response) => {
+  app.delete("/api/warehouses/:id", ...warehouseWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -2228,7 +2276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/warehouses/:id/set-default", async (req: Request, res: Response) => {
+  app.put("/api/warehouses/:id/set-default", ...warehouseWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {

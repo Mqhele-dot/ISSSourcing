@@ -280,7 +280,10 @@ export const supplierContractFormSchema = insertSupplierContractSchema.extend({
   value: z.number().min(0).nullable().optional(),
   contractType: z.enum(["master", "framework", "one-off", "renewal"]).default("master"),
   status: z.enum(["draft", "active", "expired", "terminated"]).default("active"),
-});
+}).refine(
+  (data) => !data.endDate || !data.startDate || new Date(data.endDate) >= new Date(data.startDate),
+  { message: "End date must be on or after start date", path: ["endDate"] }
+);
 
 // Inventory item schema
 export const inventoryItems = pgTable("inventory_items", {

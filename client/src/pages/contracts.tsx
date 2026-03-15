@@ -42,6 +42,17 @@ import {
   Building2,
 } from "lucide-react";
 import type { SupplierContract, Supplier, SupplierContractForm } from "@shared/schema";
+import { Can } from "@/components/auth/can";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -57,6 +68,7 @@ export default function ContractsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [viewContract, setViewContract] = useState<SupplierContract | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteConfirmContract, setDeleteConfirmContract] = useState<SupplierContract | null>(null);
 
   const { data: contracts = [], isLoading } = useQuery<SupplierContract[]>({
     queryKey: ["/api/contracts", supplierFilter],
@@ -109,16 +121,18 @@ export default function ContractsPage() {
   const deleteContract = useMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/contracts/${id}`),
     onSuccess: () => {
-      toast({ title: "Contract deleted" });
+      toast({ title: "Contract deleted", description: "The contract has been removed." });
       queryClient.invalidateQueries({ queryKey: ["/api/contracts"] });
       setViewContract(null);
+      setDeleteConfirmContract(null);
     },
     onError: (e) => {
       toast({
-        title: "Error",
-        description: e instanceof Error ? e.message : "Failed to delete",
+        title: "Delete failed",
+        description: e instanceof Error ? e.message : "Failed to delete contract",
         variant: "destructive",
       });
+      setDeleteConfirmContract(null);
     },
   });
 
@@ -193,10 +207,12 @@ export default function ContractsPage() {
             Manage contracts with suppliers, view summaries, and find copies
           </p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Contract
-        </Button>
+        <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add contracts">
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Contract
+          </Button>
+        </Can>
       </div>
 
       <Card>
@@ -226,9 +242,11 @@ export default function ContractsPage() {
             <div className="py-12 text-center text-muted-foreground">
               <FileText className="mx-auto h-12 w-12 opacity-50 mb-2" />
               <p>No contracts yet. Add one to get started.</p>
-              <Button variant="outline" className="mt-2" onClick={openCreate}>
-                Add Contract
-              </Button>
+              <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add contracts">
+                <Button variant="outline" className="mt-2" onClick={openCreate}>
+                  Add Contract
+                </Button>
+              </Can>
             </div>
           ) : (
             <Table>
@@ -271,18 +289,20 @@ export default function ContractsPage() {
                       <Button variant="ghost" size="sm" onClick={() => setViewContract(c)}>
                         View
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          if (confirm("Delete this contract?")) deleteContract.mutate(c.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to edit">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </Can>
+                      <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to delete">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteConfirmContract(c)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </Can>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -376,12 +396,38 @@ export default function ContractsPage() {
             <Button variant="outline" onClick={() => viewContract && setViewContract(null)}>
               Close
             </Button>
-            <Button onClick={() => viewContract && (setViewContract(null), openEdit(viewContract))}>
-              Edit
-            </Button>
+            <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to edit">
+              <Button onClick={() => viewContract && (setViewContract(null), openEdit(viewContract))}>
+                Edit
+              </Button>
+            </Can>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete confirmation modal */}
+      <AlertDialog open={!!deleteConfirmContract} onOpenChange={(open) => !open && setDeleteConfirmContract(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete contract?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirmContract
+                ? `This will permanently delete "${deleteConfirmContract.title}". This action cannot be undone.`
+                : "This action cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteContract.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteConfirmContract && deleteContract.mutate(deleteConfirmContract.id)}
+              disabled={deleteContract.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteContract.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Add / Edit form */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>

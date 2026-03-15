@@ -37,6 +37,17 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import TutorialStep from "@/components/ui/tutorial-button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Can } from "@/components/auth/can";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const supplierFormSchema = z.object({
   name: z.string().min(2, "Supplier name must be at least 2 characters"),
@@ -56,6 +67,7 @@ export default function SuppliersPage() {
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [logoDialogOpen, setLogoDialogOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState("");
+  const [deleteConfirmSupplier, setDeleteConfirmSupplier] = useState<Supplier | null>(null);
 
   // Get all suppliers
   const { data: suppliers, isLoading } = useQuery<Supplier[]>({
@@ -252,11 +264,15 @@ export default function SuppliersPage() {
     }
   };
 
-  // Delete supplier
-  const handleDeleteSupplier = (id: number) => {
-    if (confirm("Are you sure you want to delete this supplier? This action cannot be undone.")) {
-      deleteSupplier.mutate(id);
-    }
+  // Delete supplier (confirmation via AlertDialog)
+  const handleDeleteSupplier = (supplier: Supplier) => {
+    setDeleteConfirmSupplier(supplier);
+  };
+  const confirmDeleteSupplier = () => {
+    if (!deleteConfirmSupplier) return;
+    deleteSupplier.mutate(deleteConfirmSupplier.id, {
+      onSettled: () => setDeleteConfirmSupplier(null),
+    });
   };
 
   // Handle logo form submission
@@ -345,28 +361,34 @@ export default function SuppliersPage() {
                           </div>
                         </div>
                         <div className="flex space-x-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleOpenLogoDialog(supplier)}
-                          >
-                            Logo
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="icon"
-                            onClick={() => handleEditSupplier(supplier)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="icon" 
-                            className="text-red-500 hover:text-red-600"
-                            onClick={() => handleDeleteSupplier(supplier.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to edit suppliers">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleOpenLogoDialog(supplier)}
+                            >
+                              Logo
+                            </Button>
+                          </Can>
+                          <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to edit suppliers">
+                            <Button 
+                              variant="outline" 
+                              size="icon"
+                              onClick={() => handleEditSupplier(supplier)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </Can>
+                          <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to delete suppliers">
+                            <Button 
+                              variant="outline" 
+                              size="icon" 
+                              className="text-red-500 hover:text-red-600"
+                              onClick={() => handleDeleteSupplier(supplier)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </Can>
                         </div>
                       </div>
                       
@@ -415,7 +437,8 @@ export default function SuppliersPage() {
           </CardContent>
         </Card>
 
-        {/* Add/Edit Supplier Form */}
+        {/* Add/Edit Supplier Form — manager/admin only */}
+        <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add or edit suppliers">
         <Card>
           <CardHeader>
             <CardTitle>{selectedSupplierId ? "Edit Supplier" : "Add New Supplier"}</CardTitle>
@@ -552,7 +575,31 @@ export default function SuppliersPage() {
             </Form>
           </CardContent>
         </Card>
+        </Can>
       </div>
+
+      {/* Delete supplier confirmation */}
+      <AlertDialog open={!!deleteConfirmSupplier} onOpenChange={(open) => !open && setDeleteConfirmSupplier(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete supplier?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirmSupplier
+                ? `This will permanently remove "${deleteConfirmSupplier.name}". This action cannot be undone.`
+                : "This action cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDeleteSupplier}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Logo Dialog */}
       <Dialog open={logoDialogOpen} onOpenChange={setLogoDialogOpen}>
