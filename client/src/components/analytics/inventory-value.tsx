@@ -24,7 +24,18 @@ export function InventoryValue() {
   // Fetch inventory value data
   const { data, isLoading, error } = useQuery({
     queryKey: ['/api/analytics/inventory-value'],
-    queryFn: () => requestJson<InventoryValueData>("GET", "/api/analytics/inventory-value"),
+    queryFn: async () => {
+      try {
+        const raw = await requestJson<InventoryValueData | { data?: InventoryValueData }>("GET", "/api/analytics/inventory-value");
+        const unwrapped = (raw as { data?: InventoryValueData })?.data ?? raw;
+        if (unwrapped && typeof unwrapped === 'object' && 'items' in unwrapped) {
+          return unwrapped as InventoryValueData;
+        }
+        return { totalValue: 0, totalItems: 0, items: [] };
+      } catch {
+        return { totalValue: 0, totalItems: 0, items: [] };
+      }
+    },
   });
 
   // Prepare data for the chart
@@ -64,7 +75,7 @@ export function InventoryValue() {
           <p style={{ color: payload[0].color }}>
             Value: {formatCurrency(payload[0].value)}
           </p>
-          {data && (
+          {data && data.totalValue > 0 && (
             <p className="text-xs text-muted-foreground">
               ({((payload[0].value / data.totalValue) * 100).toFixed(1)}% of total)
             </p>

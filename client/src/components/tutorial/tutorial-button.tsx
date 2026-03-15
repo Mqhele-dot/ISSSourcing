@@ -16,6 +16,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useTutorial } from "@/contexts/tutorial-context";
 import { useHelpExplain } from "@/contexts/help-explain-context";
 import { useToast } from "@/hooks/use-toast";
@@ -45,6 +46,7 @@ import {
  * A button component that provides access to the application tutorials and error scanning
  */
 export function TutorialButton() {
+  const [, setLocation] = useLocation();
   const { startTutorial, scanForErrors, fixErrors } = useTutorial();
   const { setExplainMode } = useHelpExplain();
   const { toast } = useToast();
@@ -83,6 +85,13 @@ export function TutorialButton() {
       description: "Analytics and custom reporting features",
       icon: <BarChart4 className="h-5 w-5 mr-2" />,
       color: "bg-purple-100"
+    },
+    {
+      id: "analytics",
+      name: "Analytics",
+      description: "Inventory value, demand trends, and custom charts",
+      icon: <BarChart4 className="h-5 w-5 mr-2" />,
+      color: "bg-violet-100"
     },
     {
       id: "suppliers",
@@ -142,16 +151,54 @@ export function TutorialButton() {
     }
   ];
   
-  // Start a tutorial with the given ID
+  // Start a tutorial with the given ID - navigate to relevant page first when needed
   const handleStartTutorial = (tourId: string) => {
-    const started = startTutorial(tourId);
     setShowDialog(false);
-    if (!started) {
-      toast({
-        title: "Tutorial not available",
-        description: `Tour "${tourId}" is not loaded yet. Try again in a moment.`,
-        variant: "destructive",
-      });
+    const routeMap: Record<string, string> = {
+      main: "/dashboard",
+      dashboard: "/dashboard",
+      inventory: "/inventory",
+      reports: "/reports",
+      analytics: "/analytics",
+      suppliers: "/suppliers",
+      users: "/user-roles",
+      settings: "/settings",
+      database: "/settings",
+      documents: "/reports",
+      purchase: "/purchase",
+      barcode: "/barcode-scanner",
+      sync: "/sync-dashboard",
+      billing: "/billing",
+    };
+    const targetRoute = routeMap[tourId] || (tourId === "main" ? "/dashboard" : undefined);
+    const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
+    const needsNavigation = targetRoute && !currentPath.startsWith(targetRoute);
+
+    const tryStart = (retryCount = 0) => {
+      const started = startTutorial(tourId);
+      if (started) {
+        toast({
+          title: "Tutorial started",
+          description: "Use Next / Previous to move through the steps, or Skip to close.",
+        });
+      } else if (retryCount < 1) {
+        // Registration might be delayed; retry once after a short delay
+        setTimeout(() => tryStart(retryCount + 1), 800);
+      } else {
+        toast({
+          title: "Tutorial not available",
+          description: `Tour "${tourId}" could not be loaded. Open the Dashboard or Analytics page first, then try again.`,
+          variant: "destructive",
+        });
+      }
+    };
+
+    // When navigating, wait for the target page to mount so targetSelector elements (e.g. #dashboard-stats) exist
+    if (needsNavigation && targetRoute) {
+      setLocation(targetRoute);
+      setTimeout(() => tryStart(0), 2200);
+    } else {
+      tryStart(0);
     }
   };
   

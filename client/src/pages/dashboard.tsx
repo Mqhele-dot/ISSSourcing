@@ -222,7 +222,7 @@ export default function Dashboard() {
           </p>
         </div>
         
-        <div className="mt-4 md:mt-0 flex space-x-3">
+        <div id="dashboard-actions" className="mt-4 md:mt-0 flex space-x-3 scroll-mt-6">
           <TutorialButton pageName="dashboard" className="mr-2" />
           
           <Button
@@ -262,7 +262,7 @@ export default function Dashboard() {
       </div>
       
       {/* Stats Overview Cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6 dashboard-stats">
+      <div id="dashboard-stats" className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6 dashboard-stats scroll-mt-6">
         <StatsCard
           title="Total Items"
           value={stats?.totalItems ?? 0}
@@ -359,7 +359,7 @@ export default function Dashboard() {
           <div className="low-stock-section">
             <StockAlerts />
           </div>
-          <div className="activity-log-section">
+          <div id="dashboard-activity" className="activity-log-section scroll-mt-6">
             <RecentActivity />
           </div>
         </div>

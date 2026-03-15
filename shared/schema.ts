@@ -341,6 +341,7 @@ export const purchaseRequisitions = pgTable("purchase_requisitions", {
   requiredDate: timestamp("required_date"),
   supplierId: integer("supplier_id"),
   totalAmount: real("total_amount").notNull().default(0),
+  sharedWithUserIds: jsonb("shared_with_user_ids").$type<number[]>().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   approverId: integer("approver_id"),
@@ -864,6 +865,11 @@ export const warehouses = pgTable("warehouses", {
   contactPerson: text("contact_person"),
   contactPhone: text("contact_phone"),
   isDefault: boolean("is_default").default(false),
+  // Detailed location info: aisles, bins, storage locations
+  aisle: text("aisle"),
+  aisles: jsonb("aisles").$type<string[]>().default([]),
+  bins: jsonb("bins").$type<{ code: string; aisle?: string; row?: string; shelf?: string }[]>().default([]),
+  locationDetails: jsonb("location_details").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -876,6 +882,14 @@ export const insertWarehouseSchema = createInsertSchema(warehouses).omit({
 
 export const warehouseFormSchema = insertWarehouseSchema.extend({
   name: z.string().min(2, "Name must be at least 2 characters"),
+  aisle: z.string().optional().nullable(),
+  aisles: z.array(z.string()).optional().nullable(),
+  bins: z.array(z.object({
+    code: z.string(),
+    aisle: z.string().optional(),
+    row: z.string().optional(),
+    shelf: z.string().optional(),
+  })).optional().nullable(),
 });
 
 // Stock Movement Types enum

@@ -63,13 +63,19 @@ export function CustomGraphBuilder() {
 
   const { data: inventoryData, isLoading: invLoading } = useQuery({
     queryKey: ["/api/inventory"],
-    queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory"),
+    queryFn: async () => {
+      const raw = await requestJson<InventoryItem[] | { data?: InventoryItem[] }>("GET", "/api/inventory");
+      return Array.isArray(raw) ? raw : (raw as { data?: InventoryItem[] })?.data ?? [];
+    },
   });
   const inventory = useMemo(() => (Array.isArray(inventoryData) ? inventoryData : []), [inventoryData]);
 
   const { data: categoriesData, isLoading: catLoading } = useQuery({
     queryKey: ["/api/categories"],
-    queryFn: () => requestJson<Category[]>("GET", "/api/categories"),
+    queryFn: async () => {
+      const raw = await requestJson<Category[] | { data?: Category[] }>("GET", "/api/categories");
+      return Array.isArray(raw) ? raw : (raw as { data?: Category[] })?.data ?? [];
+    },
   });
   const categories = useMemo(() => (Array.isArray(categoriesData) ? categoriesData : []), [categoriesData]);
 

@@ -19,13 +19,19 @@ import type { Category } from "@shared/schema";
 export function ValueByCategoryChart() {
   const { data: itemsData, isLoading: itemsLoading } = useQuery({
     queryKey: ["/api/inventory"],
-    queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory"),
+    queryFn: async () => {
+      const raw = await requestJson<InventoryItem[] | { data?: InventoryItem[] }>("GET", "/api/inventory");
+      return Array.isArray(raw) ? raw : (raw as { data?: InventoryItem[] })?.data ?? [];
+    },
   });
   const items = useMemo(() => (Array.isArray(itemsData) ? itemsData : []), [itemsData]);
 
   const { data: categoriesData } = useQuery({
     queryKey: ["/api/categories"],
-    queryFn: () => requestJson<Category[]>("GET", "/api/categories"),
+    queryFn: async () => {
+      const raw = await requestJson<Category[] | { data?: Category[] }>("GET", "/api/categories");
+      return Array.isArray(raw) ? raw : (raw as { data?: Category[] })?.data ?? [];
+    },
   });
   const categories = useMemo(() => (Array.isArray(categoriesData) ? categoriesData : []), [categoriesData]);
 

@@ -47,8 +47,19 @@ interface Warehouse {
   contactPerson: string | null;
   contactPhone: string | null;
   isDefault: boolean | null;
+  aisle?: string | null;
+  aisles?: string[] | null;
+  bins?: { code: string; aisle?: string; row?: string; shelf?: string }[] | null;
+  locationDetails?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface BinLocation {
+  code: string;
+  aisle?: string;
+  row?: string;
+  shelf?: string;
 }
 
 interface FormData {
@@ -58,6 +69,9 @@ interface FormData {
   contactPerson: string;
   contactPhone: string;
   isDefault: boolean;
+  aisles: string;
+  bins: BinLocation[];
+  locationDetails: string;
 }
 
 /** Centralized validation for create/edit. Returns error message or null if valid. */
@@ -79,6 +93,9 @@ export default function WarehousesPage() {
     contactPerson: '',
     contactPhone: '',
     isDefault: false,
+    aisles: '',
+    bins: [],
+    locationDetails: '',
   });
 
   // Fetch warehouses (response may include meta.fallback when server used fallback)
@@ -177,6 +194,37 @@ export default function WarehousesPage() {
     },
   });
 
+  const toPayload = (data: FormData) => {
+    const aisles = data.aisles
+      ? data.aisles.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+    const bins = data.bins.filter((b) => b.code.trim()).map((b) => ({
+      code: b.code.trim(),
+      aisle: b.aisle?.trim() || undefined,
+      row: b.row?.trim() || undefined,
+      shelf: b.shelf?.trim() || undefined,
+    }));
+    let locationDetails: Record<string, unknown> | null = null;
+    if (data.locationDetails.trim()) {
+      try {
+        locationDetails = JSON.parse(data.locationDetails) as Record<string, unknown>;
+      } catch {
+        locationDetails = { raw: data.locationDetails };
+      }
+    }
+    return {
+      name: data.name.trim(),
+      address: data.address || null,
+      location: data.location || null,
+      contactPerson: data.contactPerson || null,
+      contactPhone: data.contactPhone || null,
+      isDefault: data.isDefault,
+      aisles: aisles.length ? aisles : undefined,
+      bins: bins.length ? bins : undefined,
+      locationDetails: locationDetails ?? undefined,
+    };
+  };
+
   const handleCreateSubmit = () => {
     const err = validateWarehouseForm(formData);
     if (err) {
@@ -187,7 +235,7 @@ export default function WarehousesPage() {
       });
       return;
     }
-    createWarehouse.mutate({ ...formData, name: formData.name.trim() });
+    createWarehouse.mutate(toPayload(formData) as FormData);
   };
 
   const handleEditSubmit = () => {
@@ -203,7 +251,7 @@ export default function WarehousesPage() {
     }
     updateWarehouse.mutate({
       id: selectedWarehouse.id,
-      data: { ...formData, name: formData.name.trim() },
+      data: toPayload(formData) as FormData,
     });
   };
 
@@ -221,11 +269,16 @@ export default function WarehousesPage() {
       contactPerson: '',
       contactPhone: '',
       isDefault: false,
+      aisles: '',
+      bins: [],
+      locationDetails: '',
     });
   };
 
   const openEditDialog = (warehouse: Warehouse) => {
     setSelectedWarehouse(warehouse);
+    const aislesList = warehouse.aisles ?? [];
+    const details = warehouse.locationDetails;
     setFormData({
       name: warehouse.name,
       address: warehouse.address || '',
@@ -233,8 +286,25 @@ export default function WarehousesPage() {
       contactPerson: warehouse.contactPerson || '',
       contactPhone: warehouse.contactPhone || '',
       isDefault: warehouse.isDefault || false,
+      aisles: Array.isArray(aislesList) ? aislesList.join(', ') : '',
+      bins: (warehouse.bins ?? []).map((b) => (typeof b === 'object' ? b : { code: String(b), aisle: '', row: '', shelf: '' })),
+      locationDetails: details && typeof details === 'object' ? JSON.stringify(details, null, 2) : (typeof details === 'string' ? details : ''),
     });
     setIsEditDialogOpen(true);
+  };
+
+  const addBin = () => {
+    setFormData({ ...formData, bins: [...formData.bins, { code: '', aisle: '', row: '', shelf: '' }] });
+  };
+
+  const updateBin = (index: number, field: keyof BinLocation, value: string) => {
+    const next = [...formData.bins];
+    next[index] = { ...next[index], [field]: value };
+    setFormData({ ...formData, bins: next });
+  };
+
+  const removeBin = (index: number) => {
+    setFormData({ ...formData, bins: formData.bins.filter((_, i) => i !== index) });
   };
 
   const openDeleteDialog = (warehouse: Warehouse) => {
@@ -304,6 +374,7 @@ export default function WarehousesPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Location</TableHead>
+                  <TableHead>Aisles / Bins</TableHead>
                   <TableHead>Contact Person</TableHead>
                   <TableHead>Contact Phone</TableHead>
                   <TableHead>Status</TableHead>
@@ -311,10 +382,18 @@ export default function WarehousesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {list.map((warehouse) => (
+                {list.map((warehouse) => {
+                  const aisles = warehouse.aisles ?? [];
+                  const bins = warehouse.bins ?? [];
+                  const aisleBinSummary = [
+                    Array.isArray(aisles) && aisles.length > 0 ? `${aisles.length} aisle(s)` : null,
+                    Array.isArray(bins) && bins.length > 0 ? `${bins.length} bin(s)` : null,
+                  ].filter(Boolean).join(', ') || '—';
+                  return (
                   <TableRow key={warehouse.id}>
                     <TableCell className="font-medium">{warehouse.name}</TableCell>
                     <TableCell>{warehouse.location || warehouse.address || '—'}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{aisleBinSummary}</TableCell>
                     <TableCell>{warehouse.contactPerson || '—'}</TableCell>
                     <TableCell>{warehouse.contactPhone || '—'}</TableCell>
                     <TableCell>
@@ -350,7 +429,8 @@ export default function WarehousesPage() {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -434,6 +514,68 @@ export default function WarehousesPage() {
                 </div>
               </div>
               
+              <p className="text-sm font-medium text-muted-foreground pt-2 border-t">Aisles, Bins & Locations</p>
+              <div className="grid gap-2">
+                <Label htmlFor="aisles">Aisles (comma-separated)</Label>
+                <Input
+                  id="aisles"
+                  value={formData.aisles}
+                  onChange={(e) => setFormData({ ...formData, aisles: e.target.value })}
+                  placeholder="A-1, A-2, B-1, B-2"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="locationDetails">Location details (optional JSON)</Label>
+                <Textarea
+                  id="locationDetails"
+                  value={formData.locationDetails}
+                  onChange={(e) => setFormData({ ...formData, locationDetails: e.target.value })}
+                  placeholder='{"zone": "A", "floor": 1}'
+                  rows={2}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">Add custom fields as JSON for zones, floors, etc.</p>
+              </div>
+              <div className="grid gap-2">
+                <div className="flex justify-between items-center">
+                  <Label>Bins / Locations</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addBin}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add bin
+                  </Button>
+                </div>
+                {formData.bins.map((bin, i) => (
+                  <div key={i} className="flex gap-2 items-center p-2 border rounded-md">
+                    <Input
+                      placeholder="Code"
+                      value={bin.code}
+                      onChange={(e) => updateBin(i, 'code', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Input
+                      placeholder="Aisle"
+                      value={bin.aisle ?? ''}
+                      onChange={(e) => updateBin(i, 'aisle', e.target.value)}
+                      className="w-20"
+                    />
+                    <Input
+                      placeholder="Row"
+                      value={bin.row ?? ''}
+                      onChange={(e) => updateBin(i, 'row', e.target.value)}
+                      className="w-20"
+                    />
+                    <Input
+                      placeholder="Shelf"
+                      value={bin.shelf ?? ''}
+                      onChange={(e) => updateBin(i, 'shelf', e.target.value)}
+                      className="w-20"
+                    />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeBin(i)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
               <div className="flex items-center space-x-2 mt-2">
                 <Switch
                   id="isDefault"
@@ -528,6 +670,67 @@ export default function WarehousesPage() {
                 </div>
               </div>
               
+              <p className="text-sm font-medium text-muted-foreground pt-2 border-t">Aisles, Bins & Locations</p>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-aisles">Aisles (comma-separated)</Label>
+                <Input
+                  id="edit-aisles"
+                  value={formData.aisles}
+                  onChange={(e) => setFormData({ ...formData, aisles: e.target.value })}
+                  placeholder="A-1, A-2, B-1, B-2"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-locationDetails">Location details (optional JSON)</Label>
+                <Textarea
+                  id="edit-locationDetails"
+                  value={formData.locationDetails}
+                  onChange={(e) => setFormData({ ...formData, locationDetails: e.target.value })}
+                  placeholder='{"zone": "A", "floor": 1}'
+                  rows={2}
+                  className="font-mono text-sm"
+                />
+              </div>
+              <div className="grid gap-2">
+                <div className="flex justify-between items-center">
+                  <Label>Bins / Locations</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addBin}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add bin
+                  </Button>
+                </div>
+                {formData.bins.map((bin, i) => (
+                  <div key={i} className="flex gap-2 items-center p-2 border rounded-md">
+                    <Input
+                      placeholder="Code"
+                      value={bin.code}
+                      onChange={(e) => updateBin(i, 'code', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Input
+                      placeholder="Aisle"
+                      value={bin.aisle ?? ''}
+                      onChange={(e) => updateBin(i, 'aisle', e.target.value)}
+                      className="w-20"
+                    />
+                    <Input
+                      placeholder="Row"
+                      value={bin.row ?? ''}
+                      onChange={(e) => updateBin(i, 'row', e.target.value)}
+                      className="w-20"
+                    />
+                    <Input
+                      placeholder="Shelf"
+                      value={bin.shelf ?? ''}
+                      onChange={(e) => updateBin(i, 'shelf', e.target.value)}
+                      className="w-20"
+                    />
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeBin(i)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
               <div className="flex items-center space-x-2 mt-2">
                 <Switch
                   id="edit-isDefault"

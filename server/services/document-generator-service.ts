@@ -261,9 +261,15 @@ function drawBorderedTable(
 export type InventoryItemForPdf = InventoryItem & { categoryName?: string };
 
 /**
- * Generate a PDF document from inventory data (shared InvTrack layout, clean data)
+ * Generate a PDF document from inventory data (shared InvTrack layout, clean data).
+ * @param template 'standard' (default) or 'compact' for tighter layout
  */
-export async function generateInventoryPdf(items: InventoryItemForPdf[], title: string, _columns?: any[]): Promise<Buffer> {
+export async function generateInventoryPdf(
+  items: InventoryItemForPdf[],
+  title: string,
+  _columns?: any[],
+  template: PdfTemplate = 'standard'
+): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -648,20 +654,58 @@ export function getReportColumns(reportType: ReportType) {
   }
 }
 
+export type PdfTemplate = 'standard' | 'compact' | 'custom';
+
+export interface GenerateDocumentOptions {
+  pdfTemplate?: PdfTemplate;
+  /** When pdfTemplate is 'custom', use this buffer as cover/template (its pages are prepended to the report). */
+  customTemplateBuffer?: Buffer;
+}
+
 /**
- * Generate document based on report type, format, and data
+ * Merge a custom template PDF (e.g. cover page) with the generated report PDF.
+ * Template pages come first, then report pages. Uses pdf-lib.
  */
-export async function generateDocument(reportType: ReportType, format: ReportFormat, data: any[], title: string): Promise<Buffer> {
+export async function mergePdfWithTemplate(templateBuffer: Buffer, reportBuffer: Buffer): Promise<Buffer> {
+  const templateDoc = await PDFDocument.load(templateBuffer);
+  const reportDoc = await PDFDocument.load(reportBuffer);
+  const templatePages = templateDoc.getPages();
+  const reportPages = reportDoc.getPages();
+  const merged = await PDFDocument.create();
+  for (const page of templatePages) {
+    const [copied] = await merged.copyPages(templateDoc, [page.index]);
+    merged.addPage(copied);
+  }
+  for (const page of reportPages) {
+    const [copied] = await merged.copyPages(reportDoc, [page.index]);
+    merged.addPage(copied);
+  }
+  return Buffer.from(await merged.save());
+}
+
+/**
+ * Generate document based on report type, format, and data.
+ * For PDF, options.pdfTemplate selects layout: standard (default), compact, or custom.
+ * When custom, options.customTemplateBuffer pages are prepended to the report.
+ */
+export async function generateDocument(
+  reportType: ReportType,
+  format: ReportFormat,
+  data: any[],
+  title: string,
+  options?: GenerateDocumentOptions
+): Promise<Buffer> {
   const generator = createDocumentGenerator(reportType);
   const columns = getReportColumns(reportType);
-  
+  const pdfTemplate = options?.pdfTemplate === 'custom' ? 'standard' : (options?.pdfTemplate ?? 'standard');
+
   try {
     if (format === 'pdf') {
-      if (reportType === 'inventory') {
-        return generator.pdf(data, title, columns);
-      } else {
-        return generator.pdf(data, title, columns);
+      let reportBuffer = await generator.pdf(data, title, columns, pdfTemplate as 'standard' | 'compact');
+      if (options?.pdfTemplate === 'custom' && options?.customTemplateBuffer?.length) {
+        reportBuffer = await mergePdfWithTemplate(options.customTemplateBuffer, reportBuffer);
       }
+      return reportBuffer;
     } else if (format === 'csv') {
       if (reportType === 'inventory') {
         return generator.csv(data, title, columns);

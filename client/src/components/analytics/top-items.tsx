@@ -28,10 +28,24 @@ export function TopItems() {
     queryParams.append("endDate", format(dateRange.to, "yyyy-MM-dd"));
   }
 
-  // Fetch top items
+  // Fetch top items (API returns InventoryItem[] or fallback by value)
   const { data, isLoading, error } = useQuery({
     queryKey: ['/api/analytics/top-items', queryParams.toString()],
-    queryFn: () => requestJson<InventoryItem[]>("GET", `/api/analytics/top-items?${queryParams.toString()}`),
+    queryFn: async () => {
+      try {
+        const raw = await requestJson<InventoryItem[] | { data?: InventoryItem[] }>("GET", `/api/analytics/top-items?${queryParams.toString()}`);
+        const arr = Array.isArray(raw) ? raw : (raw as { data?: InventoryItem[] })?.data ?? [];
+        return arr.map((item) => ({
+          ...item,
+          name: item?.name ?? (item as { itemName?: string }).itemName ?? `Item #${(item as { id?: number }).id ?? ""}`,
+          sku: item?.sku ?? "",
+          quantity: item?.quantity ?? 0,
+        })) as InventoryItem[];
+      } catch {
+        return [];
+      }
+    },
+    retry: 1,
   });
 
   if (error) {
@@ -101,7 +115,7 @@ export function TopItems() {
                     variant="ghost"
                     size="icon"
                     className="ml-auto"
-                    onClick={() => setLocation(`/inventory/${item.id}`)}
+                    onClick={() => setLocation(`/inventory/${item.sku}`)}
                   >
                     <ExternalLink className="h-4 w-4" />
                   </Button>

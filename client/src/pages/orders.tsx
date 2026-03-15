@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { ArrowLeft, CheckCircle2, Printer, Send, Truck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Printer, Send, ShoppingCart, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +34,8 @@ import {
   type PurchaseReceiveResult,
 } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import RequisitionsPage from "@/pages/requisitions";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -123,7 +125,7 @@ function openPurchaseOrderPrintView(detail: PurchaseOrderDetail) {
   printWindow.print();
 }
 
-function PurchaseOrdersList() {
+function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   const [, setLocation] = useLocation();
   const { queryState, setQueryState } = useQueryState({
     status: "",
@@ -147,11 +149,13 @@ function PurchaseOrdersList() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
-      <PageHeader
-        title="Purchase Orders"
-        subtitle="Operational purchasing workflow"
-        breadcrumb={<span>Operations / Purchase Orders</span>}
-      />
+      {!embedded && (
+        <PageHeader
+          title="Purchase Orders"
+          subtitle="Operational purchasing workflow"
+          breadcrumb={<span>Operations / Purchase Orders</span>}
+        />
+      )}
 
       <Toolbar
         sticky
@@ -570,6 +574,8 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
 export default function OrdersPage() {
   const [ordersDetailMatch, ordersDetailParams] = useRoute<{ po: string }>("/orders/:po");
   const [purchaseDetailMatch, purchaseDetailParams] = useRoute<{ po: string }>("/purchase/:po");
+  const [location] = useLocation();
+  const isPurchaseRoute = location.startsWith("/purchase");
 
   const po = ordersDetailMatch
     ? ordersDetailParams?.po
@@ -577,9 +583,70 @@ export default function OrdersPage() {
       ? purchaseDetailParams?.po
       : undefined;
 
-  if (po) {
+  // "requisitions" is a reserved path - don't treat as PO number
+  const isRequisitionsPath = po === "requisitions";
+
+  if (po && !isRequisitionsPath) {
     return <PurchaseOrderDetailView po={po} />;
   }
 
-  return <PurchaseOrdersList />;
+  // On /purchase, show tabbed view: Purchase Orders | Requisitions
+  if (isPurchaseRoute) {
+    return (
+      <div className="mx-auto max-w-7xl space-y-4">
+        <PageHeader
+          title="Purchase"
+          subtitle="Manage purchase orders and requisitions"
+          breadcrumb={<span>Operations / Purchase</span>}
+        />
+        <Tabs defaultValue="orders" className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="orders" className="gap-2">
+              <ShoppingCart className="h-4 w-4" />
+              Purchase Orders
+            </TabsTrigger>
+            <TabsTrigger value="requisitions" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Requisitions
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="orders">
+            <PurchaseOrdersList embedded />
+          </TabsContent>
+          <TabsContent value="requisitions">
+            <RequisitionsPage embedded />
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  }
+
+  // On /orders show tabbed view: Purchase Orders | Requisitions (same as /purchase)
+  return (
+    <div className="mx-auto max-w-7xl space-y-4">
+      <PageHeader
+        title="Purchase Orders"
+        subtitle="Manage purchase orders and requisitions"
+        breadcrumb={<span>Operations / Purchase Orders</span>}
+      />
+      <Tabs defaultValue="orders" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="orders" className="gap-2">
+            <ShoppingCart className="h-4 w-4" />
+            Purchase Orders
+          </TabsTrigger>
+          <TabsTrigger value="requisitions" className="gap-2">
+            <FileText className="h-4 w-4" />
+            Requisitions
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="orders">
+          <PurchaseOrdersList embedded />
+        </TabsContent>
+        <TabsContent value="requisitions">
+          <RequisitionsPage embedded basePath="/requisitions" />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
 }

@@ -8,9 +8,13 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
+import Analytics from "@/pages/analytics";
 import Inventory from "@/pages/inventory";
 import InventoryItemDetail from "@/pages/inventory-item";
 import OrdersPage from "@/pages/orders";
+import PurchasePage from "@/pages/purchase-page";
+import RequisitionsPage from "@/pages/requisitions";
+import RequisitionFormPage from "@/pages/requisition-form";
 import SuppliersPage from "@/pages/suppliers";
 import ContractsPage from "@/pages/contracts";
 import Reports from "@/pages/reports";
@@ -102,12 +106,22 @@ function Router() {
     <Switch>
       <ProtectedRoute path="/" component={Home} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
+      <ProtectedRoute path="/analytics" component={Analytics} />
       <ProtectedRoute path="/inventory" component={Inventory} />
       <ProtectedRoute path="/inventory/:sku" component={InventoryItemDetail} />
-      <ProtectedRoute path="/orders" component={OrdersPage} />
+      <ProtectedRoute path="/orders" component={PurchasePage} />
+      <ProtectedRoute path="/orders/requisitions" component={PurchasePage} />
+      <ProtectedRoute path="/orders/requisitions/new" component={RequisitionFormPage} />
+      <ProtectedRoute path="/orders/requisitions/:id" component={RequisitionFormPage} />
       <ProtectedRoute path="/orders/:po" component={OrdersPage} />
-      <ProtectedRoute path="/purchase" component={OrdersPage} />
+      <ProtectedRoute path="/purchase/requisitions" component={PurchasePage} />
       <ProtectedRoute path="/purchase/:po" component={OrdersPage} />
+      <ProtectedRoute path="/purchase" component={PurchasePage} />
+      <ProtectedRoute path="/requisitions" component={RequisitionsPage} />
+      <ProtectedRoute path="/requisitions/new" component={RequisitionFormPage} />
+      <ProtectedRoute path="/requisitions/:id" component={RequisitionFormPage} />
+      <ProtectedRoute path="/purchase/requisitions/new" component={RequisitionFormPage} />
+      <ProtectedRoute path="/purchase/requisitions/:id" component={RequisitionFormPage} />
       <ProtectedRoute path="/logistics" component={LogisticsPage} />
       <ProtectedRoute path="/logistics/:id" component={LogisticsPage} />
       <ProtectedRoute path="/exceptions" component={ExceptionsPage} />

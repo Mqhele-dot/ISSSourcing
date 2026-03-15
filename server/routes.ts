@@ -68,9 +68,27 @@ import {
 
 import * as fs from 'fs';
 import * as path from 'path';
+import multer from 'multer';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import Excel from 'exceljs';
 import { createObjectCsvWriter } from 'csv-writer';
+
+// Multer config for custom PDF template upload (stores to uploads/custom-pdf-template.pdf)
+const uploadsDir = path.join(process.cwd(), 'uploads');
+const pdfTemplateUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+      cb(null, uploadsDir);
+    },
+    filename: (_req, _file, cb) => cb(null, 'custom-pdf-template.pdf'),
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Only PDF files are allowed for the template.'));
+  },
+});
 
 // Helper function to convert Excel workbook to Buffer safely
 async function workbookToBuffer(workbook: Excel.Workbook): Promise<Buffer> {
@@ -517,8 +535,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error fetching inventory stats:", error);
       res.status(200).json({
         totalItems: 0,
-        lowStockCount: 0,
-        outOfStockCount: 0,
+        lowStockItems: 0,
+        outOfStockItems: 0,
         inventoryValue: 0,
       });
     }
@@ -976,10 +994,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid purchase requisition ID" });
       }
       
-      const { approverId } = req.body;
-      if (!approverId) {
-        return res.status(400).json({ message: "Approver ID is required" });
-      }
+      const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
       
       const updatedRequisition = await storage.approvePurchaseRequisition(id, approverId);
       
@@ -1001,14 +1016,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid purchase requisition ID" });
       }
       
-      const { approverId, reason } = req.body;
-      if (!approverId) {
-        return res.status(400).json({ message: "Approver ID is required" });
-      }
-      
-      if (!reason) {
-        return res.status(400).json({ message: "Rejection reason is required" });
-      }
+      const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
+      const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
       
       const updatedRequisition = await storage.rejectPurchaseRequisition(id, approverId, reason);
       
@@ -1042,6 +1051,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error converting requisition to purchase order:", error);
       res.status(500).json({ message: "Failed to convert requisition to purchase order" });
+    }
+  });
+
+  app.post("/api/purchase-requisitions/:id/share", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      }
+      const { userIds } = req.body as { userIds?: number[] };
+      if (!Array.isArray(userIds)) {
+        return res.status(400).json({ message: "userIds must be an array of user IDs" });
+      }
+      const updated = await storage.updatePurchaseRequisition(id, { sharedWithUserIds: userIds });
+      if (!updated) {
+        return res.status(404).json({ message: "Purchase requisition not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error sharing requisition:", error);
+      res.status(500).json({ message: "Failed to share requisition" });
     }
   });
 
@@ -1441,6 +1471,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Custom PDF template upload (for report export with template=custom)
+  app.post("/api/settings/pdf-template", pdfTemplateUpload.single("template"), (req: Request, res: Response) => {
+    if (!req.file) {
+      return res.status(400).json({ message: "No PDF file uploaded. Please select a PDF file." });
+    }
+    return res.json({ ok: true, message: "Custom PDF template uploaded. Use template 'Custom' when exporting PDF reports." });
+  });
+
   // Document generation endpoints
   app.get("/api/export/:reportType/:format", async (req: Request, res: Response) => {
     try {
@@ -1472,7 +1510,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const warehouseIdParam = req.query.warehouseId as string;
       const supplierIdParam = req.query.supplierId as string;
       const statusParam = req.query.status as string;
-      
+      const templateParam = (req.query.template as string) || "standard";
+
       // Create filter object
       const filter: any = {};
       
@@ -1717,8 +1756,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "No data found for report" });
       }
       
-      // Generate the document using the centralized document generation service
-      const buffer = await generateDocument(normalizedReportType as ReportType, format as ReportFormat, data, title);
+      // For PDF with template=custom, load uploaded template from uploads/custom-pdf-template.pdf if present
+      let customTemplateBuffer: Buffer | undefined;
+      if (format === 'pdf' && templateParam === 'custom') {
+        const templatePath = path.join(process.cwd(), 'uploads', 'custom-pdf-template.pdf');
+        try {
+          if (fs.existsSync(templatePath)) {
+            customTemplateBuffer = fs.readFileSync(templatePath);
+          }
+        } catch {
+          // Fall back to standard layout if custom template cannot be read
+        }
+      }
+      const buffer = await generateDocument(
+        normalizedReportType as ReportType,
+        format as ReportFormat,
+        data,
+        title,
+        { pdfTemplate: templateParam as 'standard' | 'compact' | 'custom', customTemplateBuffer }
+      );
       
       // Set appropriate headers
       switch (format) {
@@ -2954,7 +3010,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const topItems = await getTopItems(items, movements, limit);
+      let topItems = await getTopItems(items, movements, limit);
+      // Fallback: when no demand data, show top items by inventory value (qty * cost)
+      if (topItems.length === 0 && items.length > 0) {
+        const byValue = [...items]
+          .filter((i) => (i.quantity ?? 0) > 0)
+          .sort((a, b) => {
+            const va = (a.quantity ?? 0) * (a.cost ?? 0);
+            const vb = (b.quantity ?? 0) * (b.cost ?? 0);
+            return vb - va;
+          })
+          .slice(0, limit);
+        topItems = byValue;
+      }
       res.json(topItems);
     } catch (error) {
       console.error("Error getting top items:", error);
@@ -2974,9 +3042,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const item of items) {
         // Use item.quantity and item.cost (instead of quantityInStock and costPrice)
         const costPrice = item.cost || 0;
-        const itemValue = item.quantity * costPrice;
+        const itemValue = (item.quantity ?? 0) * costPrice;
         totalValue += itemValue;
-        totalItems += item.quantity;
+        totalItems += 1; // Count unique SKUs, not total units
         
         itemValues.push({
           id: item.id,
@@ -3008,10 +3076,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const movements = await storage.getAllStockMovements();
 
       const demandByItem: Map<number, number> = new Map();
+      const OUT_TYPES = new Set(["SALE", "ISSUE", "DAMAGE", "EXPIRE"]);
       movements.forEach((m: { itemId: number; type: string; quantity: number }) => {
-        if (m.type === "SALE" || m.type === "ISSUE") {
+        if (OUT_TYPES.has(m.type)) {
           const current = demandByItem.get(m.itemId) || 0;
-          demandByItem.set(m.itemId, current + Math.abs(m.quantity));
+          demandByItem.set(m.itemId, current + Math.abs(Number(m.quantity)));
         }
       });
 

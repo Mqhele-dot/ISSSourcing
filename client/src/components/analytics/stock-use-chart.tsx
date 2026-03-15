@@ -26,7 +26,15 @@ interface StockUsageData {
 export function StockUseChart() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["/api/analytics/stock-usage?limit=10"],
-    queryFn: () => requestJson<StockUsageData>("GET", "/api/analytics/stock-usage?limit=10"),
+    queryFn: async () => {
+      try {
+        const raw = await requestJson<StockUsageData | { byItem?: StockUsageItem[] }>("GET", "/api/analytics/stock-usage?limit=10");
+        const byItem = (raw as StockUsageData)?.byItem ?? (raw as { byItem?: StockUsageItem[] })?.byItem ?? [];
+        return { byItem };
+      } catch {
+        return { byItem: [] };
+      }
+    },
   });
 
   const chartData =

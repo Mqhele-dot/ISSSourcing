@@ -1,16 +1,17 @@
 // Using TS with our simplified tutorial system
-import { useRef, useEffect } from "react";
+import { useRef, useLayoutEffect } from "react";
 import { useTutorial } from "@/contexts/tutorial-context";
 
 /**
- * Component to register all available tutorials in the application
+ * Component to register all available tutorials in the application.
+ * useLayoutEffect ensures registration runs before paint so the Tutorial button works on first click.
  */
 export function TutorialSteps() {
   const { registerTutorial } = useTutorial();
   // Use ref to prevent multiple registrations
   const isRegistered = useRef(false);
   
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Only register tutorials once to prevent re-registering on every render
     if (isRegistered.current) return;
     isRegistered.current = true;
@@ -44,32 +45,37 @@ export function TutorialSteps() {
       }
     ]);
     
-    // Dashboard tutorial
+    // Dashboard tutorial (targetSelectors must match IDs on dashboard: #dashboard-stats, #analytics, #dashboard-activity, #dashboard-actions) (targetSelector scrolls the page to the relevant section when user clicks Next)
     registerTutorial("dashboard", [
       {
         id: "dashboard-intro",
         title: "Dashboard Overview",
-        text: "Your dashboard gives you a complete view of your inventory status at a glance."
+        text: "Your dashboard gives you a complete view of your inventory status at a glance.",
+        targetSelector: "#dashboard-stats"
       },
       {
         id: "dashboard-stats",
         title: "Key Metrics",
-        text: "The top cards show total items, low stock alerts, and out-of-stock items. Click any card to see detailed information."
+        text: "The top cards show total items, low stock alerts, and out-of-stock items. Click any card to see detailed information.",
+        targetSelector: "#dashboard-stats"
       },
       {
         id: "dashboard-charts",
         title: "Analytics Charts",
-        text: "Visual charts display inventory value, stock trends, and movement patterns to help you understand your data."
+        text: "Visual charts display inventory value, stock trends, and movement patterns to help you understand your data.",
+        targetSelector: "#analytics"
       },
       {
         id: "dashboard-activity",
         title: "Recent Activity",
-        text: "The activity feed shows recent inventory changes, alerts, and system events. Use it to stay updated on all inventory movements."
+        text: "The activity feed shows recent inventory changes, alerts, and system events. Use it to stay updated on all inventory movements.",
+        targetSelector: "#dashboard-activity"
       },
       {
         id: "dashboard-actions",
         title: "Quick Actions",
-        text: "Use the action buttons to quickly add new items, scan barcodes, or generate reports without navigating to different pages."
+        text: "Use the action buttons to quickly add new items, scan barcodes, or generate reports without navigating to different pages.",
+        targetSelector: "#dashboard-actions"
       }
     ]);
     
@@ -102,6 +108,32 @@ export function TutorialSteps() {
       }
     ]);
     
+    // Analytics tutorial (dedicated analytics page: charts, top items, value)
+    registerTutorial("analytics", [
+      {
+        id: "analytics-intro",
+        title: "Analytics Overview",
+        text: "This page shows inventory value, demand trends, and custom charts. Use the sections below to explore your data.",
+        targetSelector: "#analytics"
+      },
+      {
+        id: "analytics-stock-value",
+        title: "Stock Use & Value",
+        text: "The Stock Use chart shows items by quantity moved (sales, issues). Value by Category shows inventory value grouped by category.",
+        targetSelector: "#analytics"
+      },
+      {
+        id: "analytics-custom",
+        title: "Custom Graphs",
+        text: "Build your own chart: choose a data source (value by category, stock usage, etc.) and chart type (bar, line, pie)."
+      },
+      {
+        id: "analytics-insights",
+        title: "Top Items & Inventory Value",
+        text: "Top Items by Demand shows your best movers. Inventory Value Distribution shows total value and a breakdown by item."
+      },
+    ]);
+
     // Reports tutorial
     registerTutorial("reports", [
       {

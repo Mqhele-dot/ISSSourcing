@@ -3354,7 +3354,8 @@ export class MemStorage implements IStorage {
       approvalDate: null,
       rejectionReason: null,
       requiredDate: requisition.requiredDate ?? null,
-      totalAmount: requisition.totalAmount ?? 0
+      totalAmount: requisition.totalAmount ?? 0,
+      sharedWithUserIds: (requisition as { sharedWithUserIds?: number[] }).sharedWithUserIds ?? []
     };
     
     this.purchaseRequisitions.set(id, requisitionEntity);

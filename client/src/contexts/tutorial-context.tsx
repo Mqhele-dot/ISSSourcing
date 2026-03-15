@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,10 +13,12 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { fetchDiagnosticsScan, fixDiagnostics } from "@/api/client";
 
 // Define the tutorial step interface
-interface TutorialStep {
+export interface TutorialStep {
   id: string;
   title: string;
   text: string;
+  /** Optional CSS selector to scroll into view when this step is shown (e.g. #dashboard-stats) */
+  targetSelector?: string;
   attachTo?: {
     element: string;
     on: string;
@@ -58,6 +60,26 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
 
   // Get the steps for the active tutorial
   const activeTourSteps = activeTour && tutorials[activeTour] ? tutorials[activeTour] : null;
+
+  // When step has targetSelector, scroll that element into view so the tutorial has a visible action
+  useEffect(() => {
+    if (!isTutorialActive || !activeTourSteps) return;
+    const step = activeTourSteps[currentStep];
+    const selector = step?.targetSelector;
+    if (selector) {
+      const scrollToTarget = () => {
+        const el = typeof selector === "string" && selector.startsWith("#")
+          ? document.getElementById(selector.slice(1))
+          : document.querySelector(selector);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      };
+      // Defer scroll so the target page has painted (e.g. after navigating to dashboard)
+      const id = requestAnimationFrame(() => {
+        scrollToTarget();
+      });
+      return () => cancelAnimationFrame(id);
+    }
+  }, [isTutorialActive, currentStep, activeTourSteps]);
 
   // Navigation functions
   const goToNextStep = () => {

@@ -29,6 +29,9 @@ export default function Reports() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<ReportTab>("inventory");
   const [exportFormat, setExportFormat] = useState<DocumentType>("pdf");
+  const [pdfTemplate, setPdfTemplate] = useState<"standard" | "compact" | "custom">("standard");
+  const [customTemplateFile, setCustomTemplateFile] = useState<File | null>(null);
+  const [uploadingTemplate, setUploadingTemplate] = useState(false);
   const [filter, setFilter] = useState<ReportFilter>({});
   const [exporting, setExporting] = useState(false);
 
@@ -145,6 +148,10 @@ export default function Reports() {
         queryParams.append('tags', filter.tags.join(','));
       }
       
+      // PDF template (standard = default uniform layout, compact = tighter layout, custom = uploaded template)
+      if (exportFormat === "pdf") {
+        queryParams.set("template", pdfTemplate);
+      }
       // Append query parameters to URL
       if (queryParams.toString()) {
         url += `?${queryParams.toString()}`;
@@ -225,7 +232,7 @@ export default function Reports() {
           </p>
         </div>
         
-        <div className="mt-4 md:mt-0 flex space-x-3">
+        <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-3">
           <Select value={exportFormat} onValueChange={(value) => setExportFormat(value as DocumentType)}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Select format" />
@@ -236,7 +243,74 @@ export default function Reports() {
               <SelectItem value="excel">Excel</SelectItem>
             </SelectContent>
           </Select>
-          
+          {exportFormat === "pdf" && (
+            <div className="flex flex-col gap-2">
+              <Select value={pdfTemplate} onValueChange={(v) => setPdfTemplate(v as "standard" | "compact" | "custom")}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="PDF template" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standard">Standard (uniform layout)</SelectItem>
+                  <SelectItem value="compact">Compact</SelectItem>
+                  <SelectItem value="custom">Custom (uploaded template)</SelectItem>
+                </SelectContent>
+              </Select>
+              {pdfTemplate === "custom" && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Upload custom PDF template (cover/header pages; report data follows)
+                  </label>
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="text-sm file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-primary file:text-primary-foreground"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setUploadingTemplate(true);
+                      try {
+                        const formData = new FormData();
+                        formData.append("template", file);
+                        const res = await fetch("/api/settings/pdf-template", {
+                          method: "POST",
+                          body: formData,
+                          credentials: "include",
+                        });
+                        if (!res.ok) {
+                          const err = await res.json().catch(() => ({}));
+                          throw new Error((err as { message?: string }).message || "Upload failed");
+                        }
+                        setCustomTemplateFile(file);
+                        toast({ title: "Template uploaded", description: "Use Export to generate PDF with your template." });
+                      } catch (err) {
+                        toast({
+                          title: "Upload failed",
+                          description: err instanceof Error ? err.message : "Could not upload template",
+                          variant: "destructive",
+                        });
+                      } finally {
+                        setUploadingTemplate(false);
+                        e.target.value = "";
+                      }
+                    }}
+                    disabled={uploadingTemplate}
+                  />
+                  {customTemplateFile ? (
+                    <p className="text-xs text-muted-foreground">
+                      Using: {customTemplateFile.name}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-600 dark:text-amber-500">
+                      Upload a PDF to use as cover/header, or export will use the standard layout.
+                    </p>
+                  )}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                All PDFs use a consistent InvTrack layout. Custom template pages are prepended to the report.
+              </p>
+            </div>
+          )}
           <Button onClick={handleExport} disabled={exporting}>
             <FileDown className="mr-2 h-4 w-4" />
             {exporting ? "Exporting…" : "Export Report"}
