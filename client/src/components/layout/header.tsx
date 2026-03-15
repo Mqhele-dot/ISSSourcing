@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,16 @@ import { useFallbackState } from "@/hooks/use-fallback-state";
 import { LogOut, User, Settings, Bell, Moon, Palette, Search, Sun } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { useAccent } from "@/components/accent-provider";
+import { queryClient, requestJson } from "@/lib/queryClient";
+
+type Notification = {
+  id: number;
+  title: string;
+  body: string | null;
+  type: string;
+  readAt: string | null;
+  createdAt: string;
+};
 
 export const Header: React.FC = () => {
   const [location, setLocation] = useLocation();
@@ -44,6 +55,17 @@ export const Header: React.FC = () => {
   };
   const permissionSummary =
     permissionSummaryByRole[(user?.role || "viewer").toLowerCase()] || "Custom role";
+  const { data: notifications = [] } = useQuery({
+    queryKey: ["/api/notifications"],
+    queryFn: () => requestJson<Notification[]>("GET", "/api/notifications"),
+  });
+  const unreadCount = notifications.filter((notification) => !notification.readAt).length;
+  const markRead = useMutation({
+    mutationFn: (id: number) => requestJson("POST", `/api/notifications/${id}/read`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
 
   const breadcrumb = location
     .split("/")
@@ -120,14 +142,56 @@ export const Header: React.FC = () => {
           <span className="sr-only">Cycle accent palette</span>
         </Button>
 
-        <Button 
-          variant="ghost" 
-          size="icon"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Bell className="h-5 w-5" />
-          <span className="sr-only">Notifications</span>
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-foreground relative"
+            >
+              <Bell className="h-5 w-5" />
+              {unreadCount > 0 ? (
+                <span className="absolute -top-0.5 -right-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
+                  {unreadCount}
+                </span>
+              ) : null}
+              <span className="sr-only">Notifications</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-80" align="end">
+            <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {notifications.length === 0 ? (
+              <div className="px-2 py-3 text-xs text-muted-foreground">No notifications yet.</div>
+            ) : (
+              notifications
+                .slice()
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                .slice(0, 8)
+                .map((notification) => (
+                  <DropdownMenuItem
+                    key={notification.id}
+                    className="flex flex-col items-start gap-1 py-2"
+                    onClick={() => {
+                      if (!notification.readAt) {
+                        markRead.mutate(notification.id);
+                      }
+                    }}
+                  >
+                    <div className="flex w-full items-center justify-between gap-2">
+                      <span className="text-xs font-medium">{notification.title}</span>
+                      {!notification.readAt ? (
+                        <span className="h-2 w-2 rounded-full bg-primary" />
+                      ) : null}
+                    </div>
+                    {notification.body ? (
+                      <span className="text-xs text-muted-foreground line-clamp-2">{notification.body}</span>
+                    ) : null}
+                  </DropdownMenuItem>
+                ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

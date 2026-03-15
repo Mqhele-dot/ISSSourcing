@@ -31,6 +31,8 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
+  createShipment,
+  deleteShipment,
   fetchShipment,
   fetchShipmentsEnvelope,
   updateShipmentStatus,
@@ -48,6 +50,7 @@ function formatDate(value: string | null) {
 
 function ShipmentListView() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const { queryState, setQueryState } = useQueryState({
     status: "",
     po: "",
@@ -67,6 +70,9 @@ function ShipmentListView() {
   );
 
   const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const [newPoNumber, setNewPoNumber] = useState("");
+  const [newCarrier, setNewCarrier] = useState("");
+  const [newEta, setNewEta] = useState("");
   const data = envelope?.data ?? null;
   const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
   const {
@@ -139,6 +145,52 @@ function ShipmentListView() {
             <Button variant="outline" onClick={refreshNow}>
               Refresh
             </Button>
+            <Can roles={["manager", "admin"]}>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newPoNumber}
+                  onChange={(event) => setNewPoNumber(event.target.value)}
+                  placeholder="PO number"
+                  className="w-36"
+                />
+                <Input
+                  value={newCarrier}
+                  onChange={(event) => setNewCarrier(event.target.value)}
+                  placeholder="Carrier"
+                  className="w-28"
+                />
+                <Input
+                  value={newEta}
+                  onChange={(event) => setNewEta(event.target.value)}
+                  type="date"
+                  className="w-36"
+                />
+                <Button
+                  onClick={async () => {
+                    try {
+                      await createShipment({
+                        poNumber: newPoNumber,
+                        carrier: newCarrier || undefined,
+                        eta: newEta || undefined,
+                      });
+                      setNewPoNumber("");
+                      setNewCarrier("");
+                      setNewEta("");
+                      await refreshNow();
+                    } catch (createError) {
+                      toast({
+                        title: "Create shipment failed",
+                        description: createError instanceof Error ? createError.message : "Unknown error",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                  disabled={!newPoNumber.trim()}
+                >
+                  Add shipment
+                </Button>
+              </div>
+            </Can>
             <span className="text-xs text-muted-foreground">
               Last refreshed: {lastRefreshedLabel}
             </span>
@@ -178,6 +230,7 @@ function ShipmentListView() {
                 <TableHead>Status</TableHead>
                 <TableHead>ETA</TableHead>
                 <TableHead>Risk</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -195,6 +248,29 @@ function ShipmentListView() {
                   </TableCell>
                   <TableCell>{formatDate(shipment.eta)}</TableCell>
                   <TableCell>{shipment.atRisk ? "Late risk" : "-"}</TableCell>
+                  <TableCell className="text-right">
+                    <Can roles={["manager", "admin"]}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={async (event) => {
+                          event.stopPropagation();
+                          try {
+                            await deleteShipment(shipment.id);
+                            await refreshNow();
+                          } catch (deleteError) {
+                            toast({
+                              title: "Delete shipment failed",
+                              description: deleteError instanceof Error ? deleteError.message : "Unknown error",
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </Can>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

@@ -1,233 +1,187 @@
-# ISS Sourcing — Audit progress report
+# ISS Sourcing — Progress Report
 
-Progress against the security and UX audit recommendations. Status: **Done** | **Partial** | **Not done**.
+**Report date:** March 2025  
+**Scope:** Security/UX audits (complete) + Professional Supply Chain Full Feature Implementation Plan (phases 1–6).
 
----
-
-## 1. Harden access controls (RBAC)
-
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| Viewer must not create/edit contracts | **Done** | Backend: POST/PATCH/DELETE require manager or admin. Frontend: Add/Edit/Delete wrapped in `<Can roles={["manager","admin"]}>`. |
-| Define viewer / manager / admin boundaries | **Done** | Viewer = read-only; manager = approve/reject, manage data; admin = full. Enforced in routes and UI. |
-| RBAC in front-end (hide controls) | **Done** | Contracts, Warehouses, Suppliers, Requisitions: write actions gated by `<Can>`. |
-| RBAC in back-end (reject unauthorized) | **Done** | Contracts, Warehouses, Suppliers, Purchase requisitions, Purchase orders: read = auth; write = manager or admin. |
-| Test thoroughly | **Done** | `npm run test:rbac` runs automated RBAC checks (viewer 403 on write, admin allowed). See SECURITY.md. |
+Status key: **Done** | **Partial** | **Pending** | **Incomplete**
 
 ---
 
-## 2. Validate input (client and server)
+## 1. Audit remediation (security & UX)
 
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| Contract end date ≥ start date | **Done** | Client: `supplierContractFormSchema.refine()`. Server: check in POST/PATCH, 400 if invalid. |
-| Required fields, numeric values, attachment formats | **Done** | Zod schemas and form `FormMessage`; server parses/validates. |
-| Field-level error messages | **Done** | Form shows errors next to fields. |
-| Enforce same rules on server | **Done** | Contract routes parse with schema and return 400 on validation failure. |
+All items from the original audit, New Requisition Module audit, and Section 2 follow-ups are **Done**. See existing sections in this file (RBAC, validation, deletion workflow, dev utilities, user feedback, deployment, back-end architecture, UI consistency, requisition fixes, structural recommendations, retry toasts, a11y, supplier/warehouse repo and service). **65/65** audit items complete.
 
 ---
 
-## 3. Fix deletion workflow and notifications
+## 2. Supply chain plan — Phase 1: Master data
 
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| In-app modal instead of browser confirm | **Done** | Contracts, Suppliers, Profile (remove picture), Suppliers (remove logo), Sync-test (clear DB): use `AlertDialog` or `Dialog`. |
-| Correct UI refresh after delete | **Done** | Query invalidation and state reset on success. |
-| Toast on success and failure | **Done** | All relevant mutations show toasts; delete flows close modal and show toast in both outcomes. |
+| Item | Status | Notes |
+|------|--------|------|
+| **Schema: new tables** (units_of_measure, currencies, tax_codes, commodity_codes, incoterms, payment_terms, departments) | **Done** | All in `shared/schema.ts` with insert schemas. |
+| **Schema: extend suppliers** (bankName, bankAccountNumber, bankSwift, paymentTermsId, defaultCurrencyCode, insuranceExpiry, complianceNotes) | **Done** | Columns in schema and `init-db` alter. |
+| **Schema: extend inventory_items** (supplierPartNumber, commodityCodeId, manufacturingDate) | **Done** | In schema and init-db. |
+| **Schema: extend purchase_requisitions** (departmentId, justification) | **Done** | In schema, init-db, requisition form. |
+| **Schema: extend purchase_orders** (incotermId, paymentTermsId, contractId, departmentId) | **Done** | In schema and init-db. |
+| **Schema: extend invoices** (supplierId, customerId optional) | **Done** | In schema; invoice form schema refined. |
+| **Backend: CRUD APIs** for all new master entities | **Done** | `registerMasterDataCrud` in `server/routes.ts` for units, currencies, tax-codes, commodity-codes, incoterms, payment-terms, departments. |
+| **Init-db:** create tables + alter existing | **Done** | `ensureProfessionalSupplyChainTables()` in `server/init-db.ts`. |
+| **Frontend: Master Data page** (list, add, delete per entity) | **Done** | `client/src/pages/master-data.tsx` with tabs; sidebar link; route `/master-data`. |
+| **Frontend: Requisition form** (department dropdown, justification) | **Done** | Department from `/api/departments`; justification textarea; in create/update payload. |
+| **Frontend: Edit existing master records** | **Pending** | Master Data page has add + delete only; no edit inline/modal. |
+| **Frontend: Supplier form** (banking, payment terms, insurance/compliance) | **Pending** | Schema/DB ready; UI not extended. |
+| **Frontend: PO create/edit** (Incoterm, payment terms, contract, department, item supplier part #, commodity code) | **Pending** | Schema/DB ready; PO form not wired to new masters. |
 
----
-
-## 4. Restrict development utilities
-
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| Hide/disable "Reset demo data" in production | **Done** | Development Utilities card only when `import.meta.env.DEV`; button inside `Can roles={["admin"]}`. |
-| Tie to environment flags | **Done** | Card not rendered in production build. |
-| Require administrator to invoke | **Done** | Backend: `ensureAdmin`; frontend: admin-only button. |
-
----
-
-## 5. Improve user feedback and error handling
-
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| Status alerts and logs | **Done** | Toasts for success/error on create, update, delete, approve, reject, etc. |
-| Show message when operation fails | **Done** | Error toasts with description. |
-| Retry options for failed operations | **Done** | Contracts, Requisitions, **Suppliers** (create/update/delete + logo create/update/delete), **Warehouses** (create/update/delete), and **PO transitions** (approve/send, receive) error toasts include "Retry" `ToastAction`. List/requisitions use `onRetry={refetch}` where applicable. |
+**Phase 1 summary:** Backend and core UI done; **pending:** master data edit UI, supplier form extensions, PO form use of new masters.
 
 ---
 
-## 6. Deployment practices
+## 3. Supply chain plan — Phase 2: Procurement (approval, invoices, 3-way match)
 
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| Separate dev and production environments | **Done** | `.env.development.example` and `.env.production.example`; `docs/ENV-CONFIG.md` documents both. |
-| CI/CD to deploy changes | **Done** | CI runs check + lint; build job runs `npm run build` and uploads `dist/` artifact (deploy can use artifact). |
-| Containerize (e.g. Docker) | **Done** | Root `Dockerfile` (multi-stage) for production run. |
-| Reverse proxy with TLS | **Done** | `deploy/nginx.conf.example`, `deploy/Caddyfile.example`, and `docs/DEPLOYMENT.md` document running behind nginx/Caddy with TLS. |
-| Environment variables for secrets | **Done** | `.env.example` documents `DATABASE_URL`, `SESSION_SECRET`, etc. |
+| Item | Status | Notes |
+|------|--------|------|
+| **Schema: approval_policies, approval_history** | **Done** | In `shared/schema.ts`; init-db creates tables. |
+| **APIs: approval policies** CRUD | **Done** | GET/POST/PATCH/DELETE in `server/routes.ts`. |
+| **API: approval history** GET by entity | **Done** | `GET /api/approval-history/:entityType/:entityId`. |
+| **Conflict rule: requester cannot approve own requisition** | **Done** | Check in approve/reject routes; 403 + message. |
+| **Approval history logging** on approve/reject | **Done** | Insert into `approvalHistory` on approve/reject. |
+| **Schema: purchase_order_revisions** | **Done** | In schema and init-db. |
+| **PO revision on create** | **Done** | First revision snapshot on POST purchase-orders. |
+| **PO revision on update** | **Done** | New revision on PUT purchase-orders/:id. |
+| **API: GET PO revisions** | **Done** | `GET /api/purchase-orders/:id/revisions`. |
+| **3-way match endpoint** | **Done** | `POST /api/invoices/:id/match` (qty/price vs PO and received; DISPUTED/SENT; activity). |
+| **Frontend: Approval policies config UI** | **Pending** | No UI to define amount-based levels or approvers. |
+| **Frontend: Approval history** on requisition/PO detail | **Pending** | No approval history panel. |
+| **Frontend: Approval buttons by role/level** | **Pending** | No dynamic approval UI from policies. |
+| **Frontend: PO detail “Revision history” tab** | **Pending** | Revisions API exists; no tab in PO detail. |
+| **Frontend: Invoice CRUD + link to PO** | **Pending** | Invoice entry/create/edit UI and PO linkage not fully wired. |
+| **Frontend: 3-way match status and mismatches** on invoice | **Pending** | No “Run match” / match result UI. |
+| **GRN: receiverUserId, receiverName, warehouseLocation** in receipt | **Pending** | Receipt flow and stock_movements not extended for these fields. |
 
----
-
-## 7. Back-end architecture
-
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| Data models with constraints (e.g. date ranges in DB) | **Done** | `ensureContractDateConstraint()` in init-db adds CHECK (end_date IS NULL OR end_date >= start_date) on supplier_contracts. |
-| Service layer for business logic | **Done** | Contract service; **Supplier service** (`server/services/supplier-service.ts`): supplier create/update/delete with audit logging; routes use supplierService for supplier writes. |
-| Repository layer for data access | **Done** | Contract, **Supplier** (`server/repositories/supplier-repository.ts`), and **Warehouse** (`server/repositories/warehouse-repository.ts`) repositories; routes use repo/service for supplier and warehouse CRUD. |
-| Log critical actions for audit | **Done** | Contract and **supplier** create/update/delete call `createActivityLog`. Storage already logs warehouse, requisition, PO actions. |
-
----
-
-## 8. User-interface consistency
-
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| Unified component library (no native alert/confirm) | **Done** | Critical flows use Shadcn `AlertDialog`/`Dialog` and toasts. Sync-test and real-time-sync-tester use toasts and AlertDialog. |
-| Forms accessible and responsive | **Done** | Contract form and **Supplier form** (aria-label, id/htmlFor on name, contact, email, phone, address, tax ID, notes), **Requisition form** (role="form", aria-label, id/htmlFor on supplier, required date, notes, item/qty/unit price, Add item / Remove line), **Warehouse forms** (create/edit: aria-label on form and key inputs; id/htmlFor already present; Add bin aria-label). |
+**Phase 2 summary:** Approval/revision/match backend and conflict rule done; **pending:** approval and revision UIs, invoice UI and match display, GRN receiver/location fields.
 
 ---
 
-## 9. Monitor and audit other modules
+## 4. Supply chain plan — Phase 3: Inventory and warehouse operations
 
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| Permission leaks in purchase order approval | **Done** | PO and requisition routes use `poRead`/`poWrite`; frontend Requisitions wrapped in `<Can>`. |
-| Permission leaks in warehouse management | **Done** | Warehouse routes and UI gated by manager/admin. |
-| Code review / penetration test | **Done** | `SECURITY.md` added with RBAC verification checklist and how to run `npm run test:rbac`; automated RBAC script covers core cases. |
+| Item | Status | Notes |
+|------|--------|------|
+| **Schema: inventory_batches, inventory_serials, inventory_allocations, cycle_counts, cycle_count_lines** | **Done** | In schema and init-db. |
+| **APIs: CRUD** for batches, serials, allocations, cycle-counts, cycle-count-lines | **Done** | Via `registerMasterDataCrud` in routes. |
+| **Batch/serial UI** at receipt | **Pending** | No batch/serial entry on GRN. |
+| **Batch/serial business logic** (on-hand, issue) | **Pending** | No receipt/issue integration. |
+| **Allocation logic** (create on PO/requisition, reduce on fulfill) | **Pending** | Table/API only. |
+| **Available vs allocated** in inventory/warehouse views | **Pending** | No UI display. |
+| **Manufacturing/expiry** display and “expiring in 30 days” report | **Pending** | manufacturingDate in schema; no report. |
+| **Put-away UI** (receipt → location) | **Pending** | Not implemented. |
+| **Cycle count UI and workflow** (create, enter counts, post adjustment) | **Pending** | Tables/API only. |
 
----
-
-All items from the original security/UX audit, the New Requisition Module audit, and Section 2 optional follow-ups are implemented. See `docs/DEPLOYMENT.md` for reverse proxy with TLS; `server/init-db.ts` for DB constraints and requisition tables; `docs/REQUISITIONS-AUDIT.md` for requisition audit details and how to run `npm run test:requisitions`.
-
----
-
-## 10. Audit Report: New Requisition Module
-
-Progress against the **Audit Report: New Requisition Module** (Requisitions page, New Requisition form, role testing). Status: **Done** | **Partial** | **Not done**.
-
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| **Broken requisitions API (500)** | **Done** | `ensurePurchaseRequisitionsTables()` in `server/init-db.ts` creates `purchase_requisitions` and `purchase_requisition_items` at startup if missing. `getRequisitionWithDetails()` in database-storage now reads from DB (not empty memStorage). GET list returns optional `detail` in non-production on error. |
-| **Create button not functional / no feedback** | **Done** | Tables ensured so list and create succeed. Success: toast “Requisition created”, redirect to list, list refetches. Failure: toast “Create failed” with server message. |
-| **Insufficient validation** | **Done** | Server: POST validates each item `quantity > 0`, `unitPrice > 0` (400 with clear message). Client: submit validates same; messages for “Add at least one item”, “Quantity must be greater than zero…”, “Unit price must be greater than zero…”. Only valid items sent. |
-| **Inconsistent feedback** | **Done** | Error toasts use API message; list errors show Retry; 500 includes `detail` in non-production. |
-| **Client-side only permission checks** | **Done** | Already in place: all requisition/PO endpoints use `poRead`/`poWrite`; viewers get 403 on write. |
-| **Fix the Requisitions API** | **Done** | Tables ensured; getRequisitionWithDetails implemented for DB. |
-| **Implement proper form submission + feedback** | **Done** | Validation, toasts, redirect on success. |
-| **Add field validation** | **Done** | Client and server: quantity and unit price > 0. |
-| **Strengthen authorization** | **Done** | RBAC on all requisition/PO endpoints (manager/admin for write). |
-| **Improve error handling** | **Done** | Clear 400 messages; optional 500 detail in dev. |
-| **Loading state** | **Done** | Spinner on Create; DataState on list with Retry. |
-| **Unit/integration tests for requisitions** | **Done** | `scripts/test-requisitions.ts`; run `npm run test:requisitions` (server must be running). Covers permissions, validation, and success path. |
-| **Code review and documentation** | **Done** | `docs/REQUISITIONS-AUDIT.md` documents fixes and API behaviour; code comments in routes and init-db. |
-
-### New Requisition Module — Summary
-
-| Category | Done | Partial | Not done |
-|----------|------|---------|----------|
-| API and data layer | 2 | 0 | 0 |
-| Form and feedback | 4 | 0 | 0 |
-| Validation (client + server) | 2 | 0 | 0 |
-| Authorization | 1 | 0 | 0 |
-| Error handling and loading | 2 | 0 | 0 |
-| Tests and documentation | 2 | 0 | 0 |
-| **Requisition module total** | **13** | **0** | **0** |
-
-All items from the New Requisition Module audit are done, including unit/integration tests. See `docs/REQUISITIONS-AUDIT.md` for details.
+**Phase 3 summary:** Schema and CRUD APIs done; **pending:** receipt batch/serial, allocation logic and display, put-away, cycle count workflow, expiry report.
 
 ---
 
-## 11. Audit: Inventory Manager App & Structural Recommendations (docx)
+## 5. Supply chain plan — Phase 4: Control tower, exceptions, supplier portal, logistics
 
-Progress against the **Audit of Inventory Manager App & Structural Recommendations for a Professional Supply-Chain Platform** (key issues and recommendations). Status: **Done** | **Partial** | **Not done**.
+| Item | Status | Notes |
+|------|--------|------|
+| **Control tower API** | **Partial** | `GET /api/control-tower/overview` in operations-routes; uses `getOperationalControlTowerOverview()`. |
+| **Control tower dashboard page** | **Partial** | Home/dashboard uses control-tower data; no dedicated “Control tower” page with full KPI set. |
+| **Exception schema** (type, owner, priority, status, resolution) | **Partial** | Exceptions page and operations exist; structured types (LATE_SHIPMENT, PRICE_MISMATCH, etc.) not fully wired. |
+| **Auto-create exceptions** (late shipment, contract violation, stock shortage) | **Pending** | No scheduled/on-demand job to create these. |
+| **Supplier portal: auth** (supplier role → suppliers.id) | **Pending** | No supplier user mapping. |
+| **Supplier portal APIs** (orders, confirm, delivery, invoices) | **Pending** | No `/api/supplier/*` routes. |
+| **Supplier portal UI** | **Pending** | No supplier-facing portal. |
+| **Shipments/carriers in main schema** | **Pending** | Logistics exists in operations; not centralized in main schema per plan. |
+| **Shipment/carrier CRUD and UI** (create from PO, carrier, tracking, delivery) | **Partial** | Logistics page exists; full model per plan not done. |
 
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| **RBAC: viewer must not create/edit inventory** | **Done** | Inventory GET requires auth; POST/PUT/DELETE/bulk-import require manager or admin. Inventory list empty-action "Add items" gated by `<Can roles={["manager","admin"]}>`. |
-| **RBAC: viewer must not create/edit categories** | **Done** | Category read/write routes use `categoryRead`/`categoryWrite`; viewers get 403 on category create/update/delete. |
-| **Missing validation (e.g. contract end date)** | **Done** | Already addressed: contract end ≥ start (client, server, DB constraint). |
-| **Broken Requisitions (500)** | **Done** | Already addressed: ensurePurchaseRequisitionsTables, getRequisitionWithDetails from DB. |
-| **Supplier tax ID for legal compliance** | **Done** | Optional `taxIdentificationNumber` on suppliers (schema, init-db column, form field "Tax ID / VAT number"). |
-| **Analytics empty charts / no data** | **Done** | Info alert when inventory data is empty: "No inventory data yet. Charts will appear once you add inventory items." |
-| **Warehouse locations (aisles, bins)** | **Done** | Schema and warehouse form already support aisle, aisles, bins, locationDetails. |
-| **Audit logging of sensitive actions** | **Done** | Contract create/update/delete and storage activity logs for suppliers, warehouse, requisitions, POs. |
-| **User experience: no native dialogs** | **Done** | Deletion and critical flows use AlertDialog/Dialog and toasts. |
-| **Dev utilities hidden in production** | **Done** | Development Utilities card only in dev; reset demo requires admin. |
-| **Environment separation / deployment** | **Done** | Env examples, Dockerfile, reverse-proxy examples, CI. |
-
-Recommendations in the doc that are **strategic** (modular architecture, full procurement workflow, contract lifecycle, logistics, integrations, etc.) are noted as future roadmap; the above items are implemented to close the stated gaps.
+**Phase 4 summary:** Control tower and exceptions partially there; **pending:** exception automation, full supplier portal, centralized shipment/carrier model and UI.
 
 ---
 
-## 12. Section 2 optional follow-ups (audit remediation)
+## 6. Supply chain plan — Phase 5: Document management, compliance, security
 
-Progress on the optional follow-up items (retry toasts, a11y, repository/service for suppliers and warehouses). Status: **Done** | **Partial** | **Not done**.
+| Item | Status | Notes |
+|------|--------|------|
+| **Schema: documents, retention_policies** | **Done** | In schema and init-db. |
+| **APIs: documents** (GET list, POST, DELETE/archive) | **Done** | GET/POST/DELETE in routes; metadata only (no file storage). |
+| **APIs: retention_policies** CRUD | **Done** | Via registerMasterDataCrud. |
+| **Document file storage** (e.g. uploads/documents or bucket) | **Pending** | Only document metadata; no file upload/store. |
+| **Document upload UI** and version list on entity pages | **Pending** | No UI. |
+| **Retention job** (archive/delete per policy) | **Pending** | No scheduled job. |
+| **Supplier compliance expiry alerts** | **Pending** | No alerts. |
+| **Audit logging** for all sensitive actions (with old/new where needed) | **Partial** | Contract and supplier service log; PO, invoice, inventory not fully covered. |
+| **Audit log viewer UI** (filter, export) | **Pending** | No UI. |
+| **2FA (TOTP)** | **Done** | Setup, enable, verify, disable in auth; speakeasy; profile toggle. |
+| **Password policy** (min length, complexity, expiry) | **Pending** | No config or enforcement. |
+| **Login lockout** (failed attempts, lockoutUntil) | **Partial** | Schema may support; need to confirm enforcement in auth. |
 
-| Audit item | Status | Notes |
-|------------|--------|--------|
-| **Retry in toasts (suppliers)** | **Done** | Create, update, delete, and logo create/update/delete error toasts include `<ToastAction altText="Retry">` that re-invokes the same mutation. |
-| **Retry in toasts (warehouses)** | **Done** | Create, update, delete warehouse error toasts include Retry action. |
-| **Retry in toasts (PO transitions)** | **Done** | Approve/Send and Receive failure toasts on orders detail page include Retry action. |
-| **Broader a11y (suppliers form)** | **Done** | Form has `aria-label="Supplier form"`; all fields have `id`, `htmlFor`, and `aria-label`. |
-| **Broader a11y (requisition form)** | **Done** | Form container has `role="form"` and `aria-label`; supplier, required date, notes, item select, qty, unit price, Add item, Remove line have id/htmlFor/aria-label. |
-| **Broader a11y (warehouse forms)** | **Done** | Create and edit forms have `aria-label`; name, location, address have `aria-label`; Add bin buttons have `aria-label="Add bin or location"`. |
-| **Repository for suppliers** | **Done** | `server/repositories/supplier-repository.ts`; routes use supplierRepo for reads and supplierService for writes. |
-| **Service for suppliers** | **Done** | `server/services/supplier-service.ts` with audit logging on create/update/delete; routes pass userId for activity log. |
-| **Repository for warehouses** | **Done** | `server/repositories/warehouse-repository.ts`; routes use warehouseRepo for all warehouse CRUD and set-default. |
-
-### Section 2 summary
-
-| Category | Done | Partial | Not done |
-|----------|------|---------|----------|
-| Retry toasts | 3 | 0 | 0 |
-| A11y (forms) | 3 | 0 | 0 |
-| Repository/service | 3 | 0 | 0 |
-| **Section 2 total** | **9** | **0** | **0** |
+**Phase 5 summary:** Documents/retention schema and document/retention APIs done; 2FA done; **pending:** file storage and upload UI, retention job, compliance alerts, full audit logging and viewer, password policy, lockout enforcement.
 
 ---
 
-## What’s halfway (partial) and what still needs to get done
+## 7. Supply chain plan — Phase 6: Notifications, roles, analytics
 
-### Halfway / partial
+| Item | Status | Notes |
+|------|--------|------|
+| **Schema: notifications, notification_preferences** | **Done** | In schema and init-db. |
+| **APIs: notifications** (GET, mark read) | **Done** | In routes. |
+| **APIs: notification preferences** (GET, PATCH) | **Done** | In routes. |
+| **In-app notification bell** (unread count, list, mark read) | **Pending** | No bell/center in header. |
+| **Email sending** for key events | **Pending** | No email on approval request, low stock, contract expiry, etc. |
+| **SMS (optional)** | **Pending** | Not implemented. |
+| **Role refinement** (Requester, Buyer, Approver, Inventory, Logistics, Finance) | **Pending** | Viewer/manager/admin only; no mapping to spec roles. |
+| **Approver amount limit** rule | **Pending** | Not implemented. |
+| **Spend / turnover / supplier performance / warehouse reports** | **Partial** | Analytics and reports exist; not all report types. |
+| **Control tower KPIs** in dashboard | **Partial** | Overview API used; full KPI set per plan TBD. |
+| **Optional AI** (demand, supplier risk) | **Pending** | Not in scope yet. |
+| **Mobile-friendly receiving/picking** | **Partial** | Barcode scanner; no dedicated mobile flow. |
 
-- **None.** All tracked audit items and Section 2 follow-ups are implemented; nothing is left in a half-done state.
-
-### Still needs to get done (optional / future)
-
-These are not required by the current audits but are reasonable next steps:
-
-| Item | Notes |
-|------|--------|
-| **Warehouse service layer** | Optional. Warehouse repo is in place; a warehouse service (e.g. with audit logging on create/update/delete) could mirror the supplier service. |
-| **Retry in other modules** | Any remaining error toasts (e.g. inventory bulk-import, categories, other report flows) could get a Retry action for consistency. |
-| **A11y on remaining forms** | Profile, settings, and other lower-traffic forms could get the same aria-label / id / htmlFor pass. |
-| **Repository/service for other entities** | Inventory, categories, purchase orders could get repository (and optionally service) layers for consistency and future audit logging. |
-| **Strategic roadmap items** | From the structural audit doc: full procurement workflow, contract lifecycle automation, deeper logistics/integrations, modular architecture. |
-
-### Summary table (all sections)
-
-| Category | Done | Partial | Not done |
-|----------|------|---------|----------|
-| 1. RBAC | 5 | 0 | 0 |
-| 2. Validation | 4 | 0 | 0 |
-| 3. Deletion / notifications | 3 | 0 | 0 |
-| 4. Dev utilities | 3 | 0 | 0 |
-| 5. User feedback / retry | 3 | 0 | 0 |
-| 6. Deployment | 5 | 0 | 0 |
-| 7. Back-end architecture | 4 | 0 | 0 |
-| 8. UI consistency | 2 | 0 | 0 |
-| 9. Other modules | 3 | 0 | 0 |
-| 10. New Requisition Module | 13 | 0 | 0 |
-| 11. Structural recommendations | 11 | 0 | 0 |
-| 12. Section 2 follow-ups | 9 | 0 | 0 |
-| **Total** | **65** | **0** | **0** |
+**Phase 6 summary:** Notifications schema and APIs done; **pending:** in-app bell, email/SMS, role matrix, approval limits, full analytics/reports, optional AI.
 
 ---
 
-## How to run
+## 8. Summary tables
+
+### By phase
+
+| Phase | Done | Partial | Pending / Incomplete |
+|-------|------|--------|------------------------|
+| 1 – Master data | 10 | 0 | 3 |
+| 2 – Procurement | 10 | 0 | 7 |
+| 3 – Inventory/warehouse | 2 | 0 | 7 |
+| 4 – Control tower, exceptions, portal, logistics | 0 | 3 | 6 |
+| 5 – Documents, compliance, security | 5 | 2 | 6 |
+| 6 – Notifications, roles, analytics | 2 | 2 | 8 |
+
+### Overall
+
+| Category | Count |
+|----------|--------|
+| **Done** | 29 |
+| **Partial** | 7 |
+| **Pending / Incomplete** | 37 |
+
+### High-level “what’s done”
+
+- Audit remediation (RBAC, validation, deletion UX, dev utilities, feedback, deployment, repos/services, requisition fixes, a11y, retry toasts).
+- Master data: full schema, init-db, CRUD APIs, Master Data page (add/delete), requisition department + justification.
+- Procurement: approval policies + history APIs, “cannot approve own” rule, PO revisions (create/update + GET), 3-way match endpoint.
+- Inventory/warehouse: schema and CRUD APIs for batches, serials, allocations, cycle counts.
+- Documents, retention, notifications: schema and APIs (documents metadata, retention CRUD, notifications + preferences).
+- 2FA (TOTP) and control tower overview API (operations).
+
+### High-level “what’s pending / incomplete”
+
+- **Phase 1:** Master data edit UI; supplier form (banking, terms, compliance); PO form (Incoterm, payment terms, contract, department, item line extras).
+- **Phase 2:** Approval policies and history UI; PO revision history tab; invoice UI and 3-way match display; GRN receiver/location.
+- **Phase 3:** Batch/serial at receipt and in logic; allocation logic and “available vs allocated”; put-away; cycle count workflow; expiry report.
+- **Phase 4:** Exception automation; supplier portal (auth, APIs, UI); centralized shipments/carriers and full logistics UI.
+- **Phase 5:** Document file storage and upload UI; retention job; compliance alerts; full audit logging and viewer; password policy; lockout.
+- **Phase 6:** In-app notification bell; email (and optional SMS); role refinement and approver limits; full spend/turnover/supplier/warehouse reports; optional AI.
+
+---
+
+## 9. How to run
 
 - **Development:** `npm run dev` (set `DATABASE_URL` or PG env; see `.env.example`).
-- **Production:** `npm run build` then `npm start`, or build/run the root `Dockerfile` with `DATABASE_URL` and `SESSION_SECRET`.
-- **CI:** Push/PR to main or master runs `npm run check` and `npm run lint`.
+- **Production:** `npm run build` then `npm start`, or build/run the root `Dockerfile`.
+- **Tests:** `npm run test:rbac`, `npm run test:requisitions` (server must be running).

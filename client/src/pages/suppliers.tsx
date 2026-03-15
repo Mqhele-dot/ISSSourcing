@@ -27,10 +27,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Check, Edit, Phone, Mail, MapPin, Trash2, Plus, User, ExternalLink } from "lucide-react";
-import { type Supplier, type SupplierForm, type SupplierLogo } from "@shared/schema";
+import { type Supplier, type SupplierLogo } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
@@ -57,8 +58,17 @@ const supplierFormSchema = z.object({
   phone: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
   taxIdentificationNumber: z.string().nullable().optional(),
+  bankName: z.string().nullable().optional(),
+  bankAccountNumber: z.string().nullable().optional(),
+  bankSwift: z.string().nullable().optional(),
+  paymentTermsId: z.number().int().positive().nullable().optional(),
+  defaultCurrencyCode: z.string().nullable().optional(),
+  insuranceExpiry: z.string().nullable().optional(),
+  complianceNotes: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
+
+type SupplierFormValues = z.infer<typeof supplierFormSchema>;
 
 type SupplierLogoForm = {
   logoUrl: string;
@@ -76,6 +86,16 @@ export default function SuppliersPage() {
   const { data: suppliers, isLoading } = useQuery<Supplier[]>({
     queryKey: ['/api/suppliers'],
     retry: 1,
+  });
+
+  const { data: paymentTerms = [] } = useQuery<{ id: number; code: string; name: string }[]>({
+    queryKey: ["/api/payment-terms"],
+    queryFn: () => requestJson("GET", "/api/payment-terms"),
+  });
+
+  const { data: currencies = [] } = useQuery<{ id: number; code: string; name: string }[]>({
+    queryKey: ["/api/currencies"],
+    queryFn: () => requestJson("GET", "/api/currencies"),
   });
 
   // Get logo for selected supplier
@@ -97,7 +117,7 @@ export default function SuppliersPage() {
 
   // Create supplier
   const createSupplier = useMutation({
-    mutationFn: (supplier: SupplierForm) => 
+    mutationFn: (supplier: SupplierFormValues) => 
       requestJson<Supplier>('POST', '/api/suppliers', supplier),
     onSuccess: () => {
       toast({
@@ -122,7 +142,7 @@ export default function SuppliersPage() {
 
   // Update supplier
   const updateSupplier = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<SupplierForm> }) => 
+    mutationFn: ({ id, data }: { id: number; data: Partial<SupplierFormValues> }) => 
       requestJson<Supplier>('PATCH', `/api/suppliers/${id}`, data),
     onSuccess: (_, variables) => {
       toast({
@@ -250,7 +270,7 @@ export default function SuppliersPage() {
   });
 
   // Create or update supplier form
-  const form = useForm<SupplierForm>({
+  const form = useForm<SupplierFormValues>({
     resolver: zodResolver(supplierFormSchema),
     defaultValues: {
       name: "",
@@ -259,6 +279,13 @@ export default function SuppliersPage() {
       phone: "",
       address: "",
       taxIdentificationNumber: "",
+      bankName: "",
+      bankAccountNumber: "",
+      bankSwift: "",
+      paymentTermsId: null,
+      defaultCurrencyCode: "",
+      insuranceExpiry: "",
+      complianceNotes: "",
       notes: "",
     },
   });
@@ -279,21 +306,49 @@ export default function SuppliersPage() {
       phone: supplier.phone || "",
       address: supplier.address || "",
       taxIdentificationNumber: (supplier as { taxIdentificationNumber?: string }).taxIdentificationNumber || "",
+      bankName: (supplier as { bankName?: string | null }).bankName || "",
+      bankAccountNumber: (supplier as { bankAccountNumber?: string | null }).bankAccountNumber || "",
+      bankSwift: (supplier as { bankSwift?: string | null }).bankSwift || "",
+      paymentTermsId: (supplier as { paymentTermsId?: number | null }).paymentTermsId ?? null,
+      defaultCurrencyCode: (supplier as { defaultCurrencyCode?: string | null }).defaultCurrencyCode || "",
+      insuranceExpiry: ((supplier as { insuranceExpiry?: Date | string | null }).insuranceExpiry
+        ? new Date((supplier as { insuranceExpiry?: Date | string | null }).insuranceExpiry as Date | string)
+            .toISOString()
+            .slice(0, 10)
+        : ""),
+      complianceNotes: (supplier as { complianceNotes?: string | null }).complianceNotes || "",
       notes: supplier.notes || "",
     });
     setSelectedSupplierId(supplier.id);
   };
 
+  const toSupplierPayload = (data: SupplierFormValues): SupplierFormValues => ({
+    ...data,
+    contactName: data.contactName?.trim() || null,
+    email: data.email?.trim() || null,
+    phone: data.phone?.trim() || null,
+    address: data.address?.trim() || null,
+    taxIdentificationNumber: data.taxIdentificationNumber?.trim() || null,
+    bankName: data.bankName?.trim() || null,
+    bankAccountNumber: data.bankAccountNumber?.trim() || null,
+    bankSwift: data.bankSwift?.trim() || null,
+    paymentTermsId: data.paymentTermsId ?? null,
+    defaultCurrencyCode: data.defaultCurrencyCode?.trim() || null,
+    insuranceExpiry: data.insuranceExpiry?.trim() || null,
+    complianceNotes: data.complianceNotes?.trim() || null,
+    notes: data.notes?.trim() || null,
+  });
+
   // Create supplier
-  const handleCreateSupplier = (data: SupplierForm) => {
-    createSupplier.mutate(data);
+  const handleCreateSupplier = (data: SupplierFormValues) => {
+    createSupplier.mutate(toSupplierPayload(data));
     form.reset();
   };
 
   // Update supplier
-  const handleUpdateSupplier = (data: SupplierForm) => {
+  const handleUpdateSupplier = (data: SupplierFormValues) => {
     if (selectedSupplierId) {
-      updateSupplier.mutate({ id: selectedSupplierId, data });
+      updateSupplier.mutate({ id: selectedSupplierId, data: toSupplierPayload(data) });
       setSelectedSupplierId(null);
       form.reset();
     }
@@ -333,6 +388,8 @@ export default function SuppliersPage() {
       logoForm.reset({ logoUrl: "" });
     }
   };
+
+  const paymentTermsById = new Map(paymentTerms.map((term) => [term.id, `${term.code} - ${term.name}`]));
 
   return (
     <div>
@@ -457,6 +514,27 @@ export default function SuppliersPage() {
                             <span className="ml-2">{(supplier as { taxIdentificationNumber: string }).taxIdentificationNumber}</span>
                           </div>
                         )}
+                        {(supplier as { bankName?: string | null }).bankName && (
+                          <div className="flex items-center col-span-2">
+                            <span className="text-muted-foreground text-sm">Bank:</span>
+                            <span className="ml-2">{(supplier as { bankName: string }).bankName}</span>
+                          </div>
+                        )}
+                        {(supplier as { defaultCurrencyCode?: string | null }).defaultCurrencyCode && (
+                          <div className="flex items-center col-span-2">
+                            <span className="text-muted-foreground text-sm">Default currency:</span>
+                            <span className="ml-2">{(supplier as { defaultCurrencyCode: string }).defaultCurrencyCode}</span>
+                          </div>
+                        )}
+                        {(supplier as { paymentTermsId?: number | null }).paymentTermsId && (
+                          <div className="flex items-center col-span-2">
+                            <span className="text-muted-foreground text-sm">Payment terms:</span>
+                            <span className="ml-2">
+                              {paymentTermsById.get((supplier as { paymentTermsId: number }).paymentTermsId) ??
+                                `Term #${(supplier as { paymentTermsId: number }).paymentTermsId}`}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Notes */}
@@ -576,6 +654,137 @@ export default function SuppliersPage() {
                       <FormLabel htmlFor="supplier-taxid">Tax ID / VAT number</FormLabel>
                       <FormControl>
                         <Input id="supplier-taxid" aria-label="Tax ID or VAT number" placeholder="e.g. VAT number, tax registration" {...field} value={field.value || ""} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="bankName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="supplier-bank-name">Bank name</FormLabel>
+                        <FormControl>
+                          <Input id="supplier-bank-name" aria-label="Bank name" placeholder="Bank name" {...field} value={field.value || ""} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="bankAccountNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="supplier-bank-account">Bank account number</FormLabel>
+                        <FormControl>
+                          <Input id="supplier-bank-account" aria-label="Bank account number" placeholder="Account number" {...field} value={field.value || ""} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="bankSwift"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="supplier-bank-swift">SWIFT/BIC</FormLabel>
+                        <FormControl>
+                          <Input id="supplier-bank-swift" aria-label="Bank SWIFT or BIC code" placeholder="SWIFT/BIC code" {...field} value={field.value || ""} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="paymentTermsId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="supplier-payment-terms">Payment terms</FormLabel>
+                        <FormControl>
+                          <Select
+                            value={field.value ? String(field.value) : "none"}
+                            onValueChange={(value) => field.onChange(value === "none" ? null : Number(value))}
+                          >
+                            <SelectTrigger id="supplier-payment-terms" aria-label="Supplier payment terms">
+                              <SelectValue placeholder="Select payment terms" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {paymentTerms.map((term) => (
+                                <SelectItem key={term.id} value={String(term.id)}>
+                                  {term.code} - {term.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="defaultCurrencyCode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="supplier-default-currency">Default currency</FormLabel>
+                        <FormControl>
+                          <Select
+                            value={field.value || "none"}
+                            onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+                          >
+                            <SelectTrigger id="supplier-default-currency" aria-label="Supplier default currency">
+                              <SelectValue placeholder="Select default currency" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {currencies.map((currency) => (
+                                <SelectItem key={currency.id} value={currency.code}>
+                                  {currency.code} - {currency.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="insuranceExpiry"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="supplier-insurance-expiry">Insurance expiry</FormLabel>
+                        <FormControl>
+                          <Input id="supplier-insurance-expiry" aria-label="Insurance expiry date" type="date" {...field} value={field.value || ""} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="complianceNotes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel htmlFor="supplier-compliance-notes">Compliance notes</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          id="supplier-compliance-notes"
+                          aria-label="Supplier compliance notes"
+                          placeholder="Certifications, insurance notes, compliance remarks"
+                          className="min-h-[80px]"
+                          {...field}
+                          value={field.value || ""}
+                        />
                       </FormControl>
                     </FormItem>
                   )}

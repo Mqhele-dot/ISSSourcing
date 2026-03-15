@@ -1,9 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
 import { ArrowLeft, CheckCircle2, FileText, Printer, Send, ShoppingCart, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
@@ -19,7 +21,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
-import { formatMutationError } from "@/lib/queryClient";
+import { formatMutationError, queryClient, requestJson } from "@/lib/queryClient";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { Can } from "@/components/auth/can";
@@ -261,17 +263,132 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
   const [receiving, setReceiving] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [receiveState, setReceiveState] = useState<Record<string, number>>({});
+  const [batchState, setBatchState] = useState<Record<string, string>>({});
+  const [serialState, setSerialState] = useState<Record<string, string>>({});
+  const [receiverName, setReceiverName] = useState("");
+  const [warehouseLocation, setWarehouseLocation] = useState("");
   const [lastChangeSummary, setLastChangeSummary] = useState<PurchaseReceiveResult | null>(null);
+  const [departmentId, setDepartmentId] = useState<string>("none");
+  const [contractId, setContractId] = useState<string>("none");
+  const [paymentTermsId, setPaymentTermsId] = useState<string>("none");
+  const [incotermId, setIncotermId] = useState<string>("none");
 
   const fetcher = useCallback((): Promise<PurchaseOrderDetail> => fetchPurchaseOrder(po), [po]);
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const { data: revisions = [] } = useQuery({
+    queryKey: ["/api/purchase-orders/revisions", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: () =>
+      requestJson<
+        Array<{
+          id: number;
+          revisionNumber: number;
+          createdBy: number | null;
+          createdAt: string;
+          snapshot: Record<string, unknown>;
+        }>
+      >("GET", `/api/purchase-orders/${data?.id}/revisions`),
+  });
+  const { data: approvalHistory = [] } = useQuery({
+    queryKey: ["/api/approval-history/purchase-order", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: () =>
+      requestJson<
+        Array<{
+          id: number;
+          action: string;
+          level: number;
+          performedBy: number;
+          comment: string | null;
+          previousStatus: string | null;
+          newStatus: string | null;
+          performedAt: string;
+        }>
+      >("GET", `/api/approval-history/purchase_order/${data?.id}`),
+  });
+  const { data: purchaseOrderRecord } = useQuery({
+    queryKey: ["/api/purchase-orders", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: () =>
+      requestJson<{
+        id: number;
+        departmentId?: number | null;
+        contractId?: number | null;
+        paymentTermsId?: number | null;
+        incotermId?: number | null;
+      }>("GET", `/api/purchase-orders/${data?.id}`),
+  });
+  const { data: departments = [] } = useQuery({
+    queryKey: ["/api/departments"],
+    queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/departments"),
+  });
+  const { data: contracts = [] } = useQuery({
+    queryKey: ["/api/contracts"],
+    queryFn: () => requestJson<Array<{ id: number; title: string; supplierId: number }>>("GET", "/api/contracts"),
+  });
+  const { data: paymentTerms = [] } = useQuery({
+    queryKey: ["/api/payment-terms"],
+    queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/payment-terms"),
+  });
+  const { data: incoterms = [] } = useQuery({
+    queryKey: ["/api/incoterms"],
+    queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/incoterms"),
+  });
+
+  const saveCommercialTerms = useMutation({
+    mutationFn: () => {
+      if (!data?.id) throw new Error("Purchase order ID missing");
+      return requestJson("PUT", `/api/purchase-orders/${data.id}`, {
+        departmentId: departmentId === "none" ? null : Number(departmentId),
+        contractId: contractId === "none" ? null : Number(contractId),
+        paymentTermsId: paymentTermsId === "none" ? null : Number(paymentTermsId),
+        incotermId: incotermId === "none" ? null : Number(incotermId),
+      });
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", data?.id] });
+      await refetch();
+      toast({ title: "PO commercial terms updated" });
+    },
+    onError: (e) => {
+      toast({
+        title: "Failed to update PO terms",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (!purchaseOrderRecord) return;
+    setDepartmentId(
+      purchaseOrderRecord.departmentId == null ? "none" : String(purchaseOrderRecord.departmentId),
+    );
+    setContractId(purchaseOrderRecord.contractId == null ? "none" : String(purchaseOrderRecord.contractId));
+    setPaymentTermsId(
+      purchaseOrderRecord.paymentTermsId == null ? "none" : String(purchaseOrderRecord.paymentTermsId),
+    );
+    setIncotermId(
+      purchaseOrderRecord.incotermId == null ? "none" : String(purchaseOrderRecord.incotermId),
+    );
+  }, [purchaseOrderRecord]);
 
   const receivePayload = useMemo(
     () =>
       Object.entries(receiveState)
         .filter(([, qty]) => qty > 0)
-        .map(([sku, qty]) => ({ sku, qtyReceivedNow: qty })),
-    [receiveState],
+        .map(([sku, qty]) => ({
+          sku,
+          qtyReceivedNow: qty,
+          batchNumber: batchState[sku]?.trim() || undefined,
+          serialNumbers: serialState[sku]
+            ? serialState[sku]
+                .split(",")
+                .map((value) => value.trim())
+                .filter(Boolean)
+            : undefined,
+        })),
+    [batchState, receiveState, serialState],
   );
 
   const updateStatus = async (action: "approve" | "send") => {
@@ -312,9 +429,15 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
 
     setReceiving(true);
     try {
-      const result = await receivePurchaseOrder(po, receivePayload);
+      const result = await receivePurchaseOrder(po, receivePayload, {
+        receiverName: receiverName.trim() || undefined,
+        warehouseLocation: warehouseLocation.trim() || undefined,
+        receivedAt: new Date().toISOString(),
+      });
       setLastChangeSummary(result);
       setReceiveState({});
+      setBatchState({});
+      setSerialState({});
       await refetch();
     } catch (receiveError) {
       const err = receiveError as Error & { status?: number };
@@ -417,6 +540,85 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
 
             <Card>
               <CardHeader>
+                <CardTitle>Commercial terms</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="po-department">Department</Label>
+                  <Select value={departmentId} onValueChange={setDepartmentId}>
+                    <SelectTrigger id="po-department">
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {departments.map((department) => (
+                        <SelectItem key={department.id} value={String(department.id)}>
+                          {department.code} - {department.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="po-contract">Contract reference</Label>
+                  <Select value={contractId} onValueChange={setContractId}>
+                    <SelectTrigger id="po-contract">
+                      <SelectValue placeholder="Select contract" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {contracts
+                        .filter((contract) => contract.supplierId === detail.supplierId)
+                        .map((contract) => (
+                          <SelectItem key={contract.id} value={String(contract.id)}>
+                            #{contract.id} - {contract.title}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="po-payment-terms">Payment terms</Label>
+                  <Select value={paymentTermsId} onValueChange={setPaymentTermsId}>
+                    <SelectTrigger id="po-payment-terms">
+                      <SelectValue placeholder="Select payment terms" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {paymentTerms.map((term) => (
+                        <SelectItem key={term.id} value={String(term.id)}>
+                          {term.code} - {term.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="po-incoterm">Incoterm</Label>
+                  <Select value={incotermId} onValueChange={setIncotermId}>
+                    <SelectTrigger id="po-incoterm">
+                      <SelectValue placeholder="Select incoterm" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {incoterms.map((incoterm) => (
+                        <SelectItem key={incoterm.id} value={String(incoterm.id)}>
+                          {incoterm.code} - {incoterm.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="md:col-span-2 flex justify-end">
+                  <Button onClick={() => saveCommercialTerms.mutate()} disabled={saveCommercialTerms.isPending}>
+                    Save terms
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
                 <CardTitle>Receive panel</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -428,6 +630,8 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                       <TableHead className="text-right">Ordered</TableHead>
                       <TableHead className="text-right">Received</TableHead>
                       <TableHead className="text-right">Remaining</TableHead>
+                      <TableHead>Batch</TableHead>
+                      <TableHead>Serial numbers</TableHead>
                       <TableHead className="text-right">Receive now</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -439,6 +643,32 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                         <TableCell className="text-right">{line.qtyOrdered}</TableCell>
                         <TableCell className="text-right">{line.qtyReceived}</TableCell>
                         <TableCell className="text-right">{line.expectedRemaining}</TableCell>
+                        <TableCell>
+                          <Input
+                            placeholder="Batch #"
+                            value={batchState[line.sku] ?? ""}
+                            onChange={(event) =>
+                              setBatchState((current) => ({
+                                ...current,
+                                [line.sku]: event.target.value,
+                              }))
+                            }
+                            disabled={!canReceive(detail.status)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            placeholder="Serials CSV"
+                            value={serialState[line.sku] ?? ""}
+                            onChange={(event) =>
+                              setSerialState((current) => ({
+                                ...current,
+                                [line.sku]: event.target.value,
+                              }))
+                            }
+                            disabled={!canReceive(detail.status)}
+                          />
+                        </TableCell>
                         <TableCell className="text-right">
                           <Input
                             className="ml-auto w-28 text-right"
@@ -459,6 +689,27 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                     ))}
                   </TableBody>
                 </Table>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="receive-receiver-name">Receiver name</Label>
+                    <Input
+                      id="receive-receiver-name"
+                      placeholder="Who received this?"
+                      value={receiverName}
+                      onChange={(event) => setReceiverName(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="receive-location">Warehouse location</Label>
+                    <Input
+                      id="receive-location"
+                      placeholder="Aisle/Bin/Location"
+                      value={warehouseLocation}
+                      onChange={(event) => setWarehouseLocation(event.target.value)}
+                    />
+                  </div>
+                </div>
 
                 <div className="flex justify-end">
                   <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
@@ -535,6 +786,75 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
             ) : null}
 
             <EntityActivityPanel entityType="purchase_order" entityId={detail.poNumber} />
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Revision history</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {revisions.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No revisions found.</div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Revision</TableHead>
+                        <TableHead>Created by</TableHead>
+                        <TableHead>Created</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {revisions
+                        .slice()
+                        .sort((a, b) => b.revisionNumber - a.revisionNumber)
+                        .map((revision) => (
+                          <TableRow key={revision.id}>
+                            <TableCell>#{revision.revisionNumber}</TableCell>
+                            <TableCell>{revision.createdBy ? `User #${revision.createdBy}` : "-"}</TableCell>
+                            <TableCell>{formatDateTime(revision.createdAt)}</TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Approval history</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {approvalHistory.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No approval history found.</div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Action</TableHead>
+                        <TableHead>Level</TableHead>
+                        <TableHead>By</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>At</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {approvalHistory.map((entry) => (
+                        <TableRow key={entry.id}>
+                          <TableCell>{entry.action}</TableCell>
+                          <TableCell>{entry.level}</TableCell>
+                          <TableCell>User #{entry.performedBy}</TableCell>
+                          <TableCell>
+                            {(entry.previousStatus ?? "-") + " -> " + (entry.newStatus ?? "-")}
+                          </TableCell>
+                          <TableCell>{formatDateTime(entry.performedAt)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>

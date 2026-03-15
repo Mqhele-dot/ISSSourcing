@@ -1,0 +1,294 @@
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient, requestJson } from "@/lib/queryClient";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+type CycleCount = {
+  id: number;
+  warehouseId: number;
+  zone: string | null;
+  status: string;
+  countDate: string;
+  countedBy: number | null;
+  variance: number | null;
+};
+
+type CycleCountLine = {
+  id: number;
+  cycleCountId: number;
+  itemId: number;
+  location: string | null;
+  systemQuantity: number;
+  countedQuantity: number;
+  variance: number;
+};
+
+export default function CycleCountsPage() {
+  const { toast } = useToast();
+  const [warehouseId, setWarehouseId] = useState("none");
+  const [zone, setZone] = useState("");
+  const [selectedCountId, setSelectedCountId] = useState<number | null>(null);
+  const [itemId, setItemId] = useState("none");
+  const [location, setLocation] = useState("");
+  const [systemQuantity, setSystemQuantity] = useState("0");
+  const [countedQuantity, setCountedQuantity] = useState("0");
+
+  const { data: cycleCounts = [] } = useQuery({
+    queryKey: ["/api/cycle-counts"],
+    queryFn: () => requestJson<CycleCount[]>("GET", "/api/cycle-counts"),
+  });
+  const { data: cycleCountLines = [] } = useQuery({
+    queryKey: ["/api/cycle-count-lines", selectedCountId],
+    queryFn: async () => {
+      const all = await requestJson<CycleCountLine[]>("GET", "/api/cycle-count-lines");
+      return selectedCountId ? all.filter((line) => line.cycleCountId === selectedCountId) : [];
+    },
+    enabled: selectedCountId != null,
+  });
+  const { data: warehouses = [] } = useQuery({
+    queryKey: ["/api/warehouses"],
+    queryFn: () => requestJson<Array<{ id: number; name: string }>>("GET", "/api/warehouses"),
+  });
+  const { data: inventoryItems = [] } = useQuery({
+    queryKey: ["/api/inventory"],
+    queryFn: () => requestJson<Array<{ id: number; sku: string; name: string }>>("GET", "/api/inventory"),
+  });
+
+  const createCycleCount = useMutation({
+    mutationFn: () => {
+      if (warehouseId === "none") throw new Error("Warehouse is required");
+      return requestJson<CycleCount>("POST", "/api/cycle-counts", {
+        warehouseId: Number(warehouseId),
+        zone: zone.trim() || null,
+        status: "planned",
+      });
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cycle-counts"] });
+      setSelectedCountId(created.id);
+      toast({ title: "Cycle count created" });
+    },
+    onError: (e) => {
+      toast({
+        title: "Failed to create cycle count",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addLine = useMutation({
+    mutationFn: () => {
+      if (!selectedCountId) throw new Error("Select a cycle count first");
+      if (itemId === "none") throw new Error("Item is required");
+      const system = Number(systemQuantity);
+      const counted = Number(countedQuantity);
+      if (!Number.isFinite(system) || !Number.isFinite(counted)) {
+        throw new Error("System and counted quantities must be valid numbers");
+      }
+      return requestJson("POST", "/api/cycle-count-lines", {
+        cycleCountId: selectedCountId,
+        itemId: Number(itemId),
+        location: location.trim() || null,
+        systemQuantity: system,
+        countedQuantity: counted,
+        variance: counted - system,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cycle-count-lines", selectedCountId] });
+      toast({ title: "Cycle count line added" });
+    },
+    onError: (e) => {
+      toast({
+        title: "Failed to add line",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const postCount = useMutation({
+    mutationFn: (id: number) => requestJson("POST", `/api/cycle-counts/${id}/post`),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cycle-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cycle-count-lines", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      toast({ title: "Cycle count posted", description: "Inventory adjusted for variances." });
+    },
+    onError: (e) => {
+      toast({
+        title: "Failed to post cycle count",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PageHeader
+        title="Cycle Counts"
+        subtitle="Plan counts, capture counted quantities, and post inventory adjustments."
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Create cycle count</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-3">
+          <div className="space-y-1">
+            <Label htmlFor="cycle-warehouse">Warehouse</Label>
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger id="cycle-warehouse">
+                <SelectValue placeholder="Select warehouse" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select warehouse</SelectItem>
+                {warehouses.map((warehouse) => (
+                  <SelectItem key={warehouse.id} value={String(warehouse.id)}>
+                    {warehouse.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="cycle-zone">Zone</Label>
+            <Input id="cycle-zone" value={zone} onChange={(e) => setZone(e.target.value)} placeholder="Optional zone/aisle" />
+          </div>
+          <div className="flex items-end">
+            <Button onClick={() => createCycleCount.mutate()} disabled={createCycleCount.isPending}>
+              Create count
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Cycle counts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Warehouse</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Variance</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {cycleCounts.map((count) => (
+                <TableRow key={count.id}>
+                  <TableCell>#{count.id}</TableCell>
+                  <TableCell>{count.warehouseId}</TableCell>
+                  <TableCell>{count.status}</TableCell>
+                  <TableCell>{count.variance ?? 0}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setSelectedCountId(count.id)}>
+                        Open
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => postCount.mutate(count.id)}
+                        disabled={postCount.isPending || count.status === "completed"}
+                      >
+                        Post
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {selectedCountId ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Cycle count lines (#{selectedCountId})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-5">
+              <div className="space-y-1">
+                <Label htmlFor="cycle-item">Item</Label>
+                <Select value={itemId} onValueChange={setItemId}>
+                  <SelectTrigger id="cycle-item">
+                    <SelectValue placeholder="Select item" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select item</SelectItem>
+                    {inventoryItems.map((item) => (
+                      <SelectItem key={item.id} value={String(item.id)}>
+                        {item.sku} - {item.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cycle-location">Location</Label>
+                <Input id="cycle-location" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Bin/location" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cycle-system">System qty</Label>
+                <Input id="cycle-system" type="number" value={systemQuantity} onChange={(e) => setSystemQuantity(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cycle-counted">Counted qty</Label>
+                <Input id="cycle-counted" type="number" value={countedQuantity} onChange={(e) => setCountedQuantity(e.target.value)} />
+              </div>
+              <div className="flex items-end">
+                <Button onClick={() => addLine.mutate()} disabled={addLine.isPending}>
+                  Add line
+                </Button>
+              </div>
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>System</TableHead>
+                  <TableHead>Counted</TableHead>
+                  <TableHead>Variance</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {cycleCountLines.map((line) => (
+                  <TableRow key={line.id}>
+                    <TableCell>{line.itemId}</TableCell>
+                    <TableCell>{line.location || "-"}</TableCell>
+                    <TableCell>{line.systemQuantity}</TableCell>
+                    <TableCell>{line.countedQuantity}</TableCell>
+                    <TableCell>{line.variance}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
+    </div>
+  );
+}

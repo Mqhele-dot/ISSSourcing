@@ -30,7 +30,7 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import { useToast } from "@/hooks/use-toast";
-import { formatMutationError } from "@/lib/queryClient";
+import { formatMutationError, requestJson } from "@/lib/queryClient";
 import {
   addExceptionComment,
   assignException,
@@ -129,6 +129,20 @@ function ExceptionListView() {
     }
   };
 
+  const handleRunChecks = async () => {
+    try {
+      await requestJson("POST", "/api/exceptions/run-checks");
+      toast({ title: "Exception checks completed" });
+      await refreshNow();
+    } catch (error) {
+      toast({
+        title: "Failed to run exception checks",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       <PageHeader
@@ -172,6 +186,11 @@ function ExceptionListView() {
             <Button variant="outline" onClick={refreshNow}>
               Refresh
             </Button>
+            <Can roles={["manager", "admin"]} reason="Requires Manager/Admin">
+              <Button variant="outline" onClick={handleRunChecks}>
+                Run checks
+              </Button>
+            </Can>
             <Button
               variant="outline"
               onClick={handleExportCsv}

@@ -1127,6 +1127,10 @@ export const stockMovements = pgTable("stock_movements", {
   unitCost: real("unit_cost"),
   sourceWarehouseId: integer("source_warehouse_id"),
   destinationWarehouseId: integer("destination_warehouse_id"),
+  receiverUserId: integer("receiver_user_id"),
+  receiverName: text("receiver_name"),
+  warehouseLocation: text("warehouse_location"),
+  receivedAt: timestamp("received_at"),
   timestamp: timestamp("timestamp").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

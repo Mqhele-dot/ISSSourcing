@@ -10,6 +10,7 @@ import {
   Share2,
   Loader2,
   ChevronRight,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +70,25 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const [search, setSearch] = useState("");
   const [rejectDialogReq, setRejectDialogReq] = useState<PurchaseRequisition | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [historyDialogReq, setHistoryDialogReq] = useState<PurchaseRequisition | null>(null);
+
+  const { data: approvalHistory = [], isLoading: historyLoading } = useQuery({
+    queryKey: ["/api/approval-history", historyDialogReq?.id],
+    enabled: !!historyDialogReq,
+    queryFn: () =>
+      requestJson<
+        Array<{
+          id: number;
+          action: string;
+          level: number;
+          performedBy: number;
+          comment: string | null;
+          previousStatus: string | null;
+          newStatus: string | null;
+          performedAt: string;
+        }>
+      >("GET", `/api/approval-history/requisition/${historyDialogReq?.id}`),
+  });
 
   const { data: requisitionsRaw, isLoading, error, refetch } = useQuery({
     queryKey: ["/api/purchase-requisitions"],
@@ -324,6 +344,14 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                           <Share2 className="h-4 w-4" />
                         </Button>
                       </Can>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setHistoryDialogReq(req)}
+                        title="Approval history"
+                      >
+                        <History className="h-4 w-4" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -452,6 +480,52 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
             >
               {rejectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approval history */}
+      <Dialog
+        open={historyDialogReq !== null}
+        onOpenChange={(open) => {
+          if (!open) setHistoryDialogReq(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approval history</DialogTitle>
+            <DialogDescription>
+              {historyDialogReq
+                ? `History for ${historyDialogReq.requisitionNumber}`
+                : "Approval history"}
+            </DialogDescription>
+          </DialogHeader>
+          {historyLoading ? (
+            <div className="text-sm text-muted-foreground">Loading history...</div>
+          ) : approvalHistory.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No approval history found for this requisition.</div>
+          ) : (
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {approvalHistory.map((entry) => (
+                <div key={entry.id} className="rounded border p-2 text-sm">
+                  <div className="font-medium">
+                    {entry.action.toUpperCase()} (Level {entry.level})
+                  </div>
+                  <div className="text-muted-foreground">
+                    By user #{entry.performedBy} on {formatDate(entry.performedAt)}
+                  </div>
+                  <div className="text-muted-foreground">
+                    {entry.previousStatus ?? "-"} {"->"} {entry.newStatus ?? "-"}
+                  </div>
+                  {entry.comment ? <div className="mt-1">{entry.comment}</div> : null}
+                </div>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryDialogReq(null)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

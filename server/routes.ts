@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
@@ -25,6 +25,7 @@ import { registerDocumentExtractorRoutes } from "./controllers/document-extracto
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument } from "./services/document-generator-service";
+import { sendEmail } from "./services/email-service";
 import type { ReportFormat, ReportType} from "@shared/schema";
 import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { registerOperationalRoutes } from "./operations-routes";
@@ -94,6 +95,7 @@ import {
   purchaseOrderItems,
   purchaseRequisitions,
   stockMovements,
+  users,
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
@@ -118,6 +120,7 @@ import { createObjectCsvWriter } from 'csv-writer';
 
 // Multer config for custom PDF template upload (stores to uploads/custom-pdf-template.pdf)
 const uploadsDir = path.join(process.cwd(), 'uploads');
+const documentsDir = path.join(uploadsDir, "documents");
 const pdfTemplateUpload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => {
@@ -131,6 +134,19 @@ const pdfTemplateUpload = multer({
     if (file.mimetype === 'application/pdf') cb(null, true);
     else cb(new Error('Only PDF files are allowed for the template.'));
   },
+});
+const documentUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      if (!fs.existsSync(documentsDir)) fs.mkdirSync(documentsDir, { recursive: true });
+      cb(null, documentsDir);
+    },
+    filename: (_req, file, cb) => {
+      const safeBase = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+      cb(null, `${Date.now()}-${safeBase}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
 });
 
 // Helper function to convert Excel workbook to Buffer safely
@@ -146,6 +162,7 @@ function csvBufferForExcel(buffer: Buffer): Buffer {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  app.use("/uploads", express.static(uploadsDir));
   // Set up authentication routes and middleware
   const auth = setupAuth(app);
   const contractRepo = createContractRepository(storage);
@@ -822,6 +839,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerMasterDataCrud("/api/cycle-counts", cycleCounts, insertCycleCountSchema as any);
   registerMasterDataCrud("/api/cycle-count-lines", cycleCountLines, insertCycleCountLineSchema as any);
 
+  app.post("/api/cycle-counts/:id/post", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid cycle count ID" });
+
+      const cycleCountRows = await db.select().from(cycleCounts).where(eq(cycleCounts.id, id));
+      const cycleCount = cycleCountRows[0];
+      if (!cycleCount) return res.status(404).json({ message: "Cycle count not found" });
+
+      const lines = await db.select().from(cycleCountLines).where(eq(cycleCountLines.cycleCountId, id));
+      if (lines.length === 0) {
+        return res.status(400).json({ message: "Cycle count has no lines to post" });
+      }
+
+      let totalVariance = 0;
+      const adjustments: Array<{ itemId: number; variance: number; movementId: number }> = [];
+      for (const line of lines) {
+        const counted = Number(line.countedQuantity ?? 0);
+        const system = Number(line.systemQuantity ?? 0);
+        const variance = counted - system;
+        totalVariance += variance;
+
+        await db
+          .update(cycleCountLines)
+          .set({ variance })
+          .where(eq(cycleCountLines.id, line.id));
+
+        if (variance !== 0) {
+          const movement = await storage.createStockMovement({
+            itemId: line.itemId,
+            warehouseId: cycleCount.warehouseId,
+            type: "ADJUSTMENT",
+            quantity: variance,
+            destinationWarehouseId: cycleCount.warehouseId,
+            notes: `Cycle count #${id} adjustment`,
+            referenceId: id,
+            referenceType: "cycle_count",
+            userId: (req as Request & { user?: { id: number } }).user?.id ?? null,
+          } as any);
+          adjustments.push({ itemId: line.itemId, variance, movementId: movement.id });
+        }
+      }
+
+      const updatedRows = (await db
+        .update(cycleCounts)
+        .set({
+          status: "completed",
+          variance: totalVariance,
+          countedBy: (req as Request & { user?: { id: number } }).user?.id ?? null,
+          countDate: new Date(),
+        } as any)
+        .where(eq(cycleCounts.id, id))
+        .returning()) as any[];
+      const updated = updatedRows[0];
+
+      res.json({
+        cycleCount: updated,
+        adjustments,
+        totalVariance,
+      });
+    } catch (error) {
+      console.error("Error posting cycle count:", error);
+      res.status(500).json({ message: "Failed to post cycle count" });
+    }
+  });
+
   // Approval policy + history
   app.get("/api/approval-policies", ...masterRead, async (_req, res) => {
     try {
@@ -974,6 +1057,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/notifications/send", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const payload = req.body as {
+        userId: number;
+        type: string;
+        title: string;
+        body?: string;
+        entityType?: string;
+        entityId?: number;
+      };
+      if (!payload?.userId || !payload?.type || !payload?.title) {
+        return res.status(400).json({ message: "userId, type and title are required" });
+      }
+      const createdRows = (await db
+        .insert(notifications)
+        .values({
+          userId: payload.userId,
+          type: payload.type,
+          title: payload.title,
+          body: payload.body ?? null,
+          entityType: payload.entityType ?? null,
+          entityId: payload.entityId ?? null,
+        } as any)
+        .returning()) as any[];
+      const created = createdRows[0];
+
+      const prefRows = (await db
+        .select()
+        .from(notificationPreferences)
+        .where(eq(notificationPreferences.userId, payload.userId))) as any[];
+      const prefs = prefRows[0];
+      const userRows = (await db.select().from(users).where(eq(users.id, payload.userId))) as any[];
+      const user = userRows[0];
+
+      if (user?.email && prefs?.emailEnabled !== false) {
+        await sendEmail({
+          to: user.email,
+          subject: payload.title,
+          html: `<p>${payload.body ?? ""}</p>`,
+          text: payload.body ?? payload.title,
+        }).catch(() => {});
+      }
+      // Optional SMS hook: keep as integration point for providers like Twilio.
+      if (prefs?.smsEnabled === true) {
+        console.log("[sms-hook]", "send", { userId: payload.userId, title: payload.title });
+      }
+
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("Error sending notification:", error);
+      res.status(500).json({ message: "Failed to send notification" });
+    }
+  });
+
   // Retention policies (admin)
   registerMasterDataCrud("/api/retention-policies", retentionPolicies, insertRetentionPolicySchema as any);
 
@@ -1034,6 +1171,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/documents/upload", ...masterWrite, documentUpload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "File is required" });
+      const entityType = typeof req.body?.entityType === "string" ? req.body.entityType : "";
+      const entityId = Number(req.body?.entityId);
+      if (!entityType || !Number.isFinite(entityId)) {
+        return res.status(400).json({ message: "entityType and entityId are required" });
+      }
+
+      const fileUrl = `/uploads/documents/${req.file.filename}`;
+      const existing = await db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.entityType, entityType), eq(documents.entityId, entityId)));
+      const version = existing.length > 0 ? Math.max(...existing.map((d) => Number(d.version ?? 1))) + 1 : 1;
+      const createdRows = (await db
+        .insert(documents)
+        .values({
+          entityType,
+          entityId,
+          fileUrl,
+          fileName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          fileSize: req.file.size,
+          version,
+          uploadedBy: (req as Request & { user?: { id: number } }).user?.id ?? null,
+        } as any)
+        .returning()) as any[];
+      res.status(201).json(createdRows[0]);
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      res.status(500).json({ message: "Failed to upload document" });
+    }
+  });
+
   app.delete("/api/documents/:id", ...masterWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
@@ -1052,9 +1224,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/retention-policies/run", ...masterWrite, async (_req: Request, res: Response) => {
+    try {
+      const policies = await db.select().from(retentionPolicies);
+      let archivedCount = 0;
+      for (const policy of policies as any[]) {
+        const years = Number(policy.retentionYears ?? 0);
+        if (!Number.isFinite(years) || years <= 0) continue;
+        const cutoff = new Date();
+        cutoff.setFullYear(cutoff.getFullYear() - years);
+        const updatedRows = (await db
+          .update(documents)
+          .set({ archivedAt: new Date() } as any)
+          .where(
+            and(
+              eq(documents.entityType, String(policy.documentType ?? "")),
+              isNull(documents.archivedAt),
+              lte(documents.uploadedAt, cutoff),
+            ),
+          )
+          .returning({ id: documents.id })) as any[];
+        archivedCount += updatedRows.length;
+      }
+      res.json({ archivedCount });
+    } catch (error) {
+      console.error("Error running retention policy job:", error);
+      res.status(500).json({ message: "Failed to run retention policies" });
+    }
+  });
+
+  app.get("/api/reports/analytics", ...masterRead, async (_req: Request, res: Response) => {
+    try {
+      const supplierList = await storage.getAllSuppliers();
+      const poList = await storage.getAllPurchaseOrders();
+      const inventoryList = await storage.getAllInventoryItems();
+      const movementList = await storage.getAllStockMovements();
+      const warehouseList = await storage.getAllWarehouses();
+      const warehouseInventoryGroups = await Promise.all(
+        warehouseList.map(async (warehouse) => ({
+          warehouseId: warehouse.id,
+          records: await storage.getWarehouseInventory(warehouse.id),
+        })),
+      );
+
+      const spendBySupplier = supplierList.map((supplier) => ({
+        supplierName: supplier.name,
+        totalSpend: poList
+          .filter((po) => po.supplierId === supplier.id)
+          .reduce((sum, po) => sum + Number(po.totalAmount ?? 0), 0),
+      }));
+
+      const inventoryTurnover = inventoryList.map((item) => {
+        const issued = movementList
+          .filter(
+            (movement) =>
+              movement.itemId === item.id &&
+              (movement.type === "ISSUE" || movement.type === "SALE" || movement.type === "TRANSFER"),
+          )
+          .reduce((sum, movement) => sum + Math.abs(Number(movement.quantity ?? 0)), 0);
+        const onHand = Number(item.quantity ?? 0);
+        return {
+          sku: item.sku,
+          turnover: onHand > 0 ? Number((issued / onHand).toFixed(2)) : 0,
+        };
+      });
+
+      const warehouseUtilization = warehouseList.map((warehouse) => {
+        const records = warehouseInventoryGroups.find((group) => group.warehouseId === warehouse.id)?.records ?? [];
+        const used = records.reduce((sum, wi) => sum + Number(wi.quantity ?? 0), 0);
+        const capacity = Math.max(used * 1.25, 1);
+        return {
+          warehouseName: warehouse.name,
+          utilization: Number(((used / capacity) * 100).toFixed(1)),
+        };
+      });
+
+      res.json({ spendBySupplier, inventoryTurnover, warehouseUtilization });
+    } catch (error) {
+      console.error("Error generating analytics report:", error);
+      res.status(500).json({ message: "Failed to generate analytics report" });
+    }
+  });
+
   // Supplier endpoints — RBAC: viewer read-only; manager/admin can create/update/delete
   const supplierRead = [auth.ensureAuthenticated];
   const supplierWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
+  const resolveSupplierIdForUser = async (req: Request): Promise<number | null> => {
+    const user = (req as Request & { user?: { id: number; role?: string; email?: string } }).user;
+    if (!user) return null;
+    if (user.role === "supplier") {
+      const supplierRows = await supplierRepo.findAll();
+      const fallback = supplierRows.find((supplier) => supplier.email && user.email && supplier.email.toLowerCase() === user.email.toLowerCase());
+      return fallback?.id ?? null;
+    }
+    const explicit = Number(req.query.supplierId ?? req.body?.supplierId);
+    return Number.isFinite(explicit) && explicit > 0 ? explicit : null;
+  };
 
   app.get("/api/suppliers", ...supplierRead, async (_req: Request, res: Response) => {
     try {
@@ -1155,6 +1421,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting supplier:", error);
       res.status(500).json({ message: "Failed to delete supplier" });
+    }
+  });
+
+  // Supplier portal APIs
+  app.get("/api/supplier/orders", ...supplierRead, async (req: Request, res: Response) => {
+    try {
+      const user = (req as Request & { user?: { role?: string } }).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      if (!["supplier", "admin", "manager"].includes(String(user.role ?? ""))) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const supplierId = await resolveSupplierIdForUser(req);
+      if (!supplierId) return res.status(400).json({ message: "Supplier mapping not found for user" });
+      const orders = await storage.getAllPurchaseOrders();
+      res.json(orders.filter((order) => order.supplierId === supplierId));
+    } catch (error) {
+      console.error("Error fetching supplier orders:", error);
+      res.status(500).json({ message: "Failed to fetch supplier orders" });
+    }
+  });
+
+  app.post("/api/supplier/orders/:id/confirm", ...supplierRead, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
+      const supplierId = await resolveSupplierIdForUser(req);
+      if (!supplierId) return res.status(400).json({ message: "Supplier mapping not found for user" });
+      const order = await storage.getPurchaseOrder(id);
+      if (!order || order.supplierId !== supplierId) return res.status(404).json({ message: "Order not found" });
+      const updated = await storage.updatePurchaseOrderStatus(id, PurchaseOrderStatus.ACKNOWLEDGED);
+      await storage.createActivityLog({
+        action: "Supplier PO Confirmed",
+        description: `Supplier acknowledged PO ${order.orderNumber}`,
+        referenceType: "purchase_order",
+        referenceId: id,
+        userId: (req as Request & { user?: { id: number } }).user?.id ?? null,
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error confirming supplier order:", error);
+      res.status(500).json({ message: "Failed to confirm order" });
+    }
+  });
+
+  app.patch("/api/supplier/orders/:id/delivery", ...supplierRead, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
+      const supplierId = await resolveSupplierIdForUser(req);
+      if (!supplierId) return res.status(400).json({ message: "Supplier mapping not found for user" });
+      const order = await storage.getPurchaseOrder(id);
+      if (!order || order.supplierId !== supplierId) return res.status(404).json({ message: "Order not found" });
+      const expectedDeliveryDate = req.body?.expectedDeliveryDate ? new Date(req.body.expectedDeliveryDate) : null;
+      if (!expectedDeliveryDate || Number.isNaN(expectedDeliveryDate.getTime())) {
+        return res.status(400).json({ message: "Valid expectedDeliveryDate is required" });
+      }
+      const updated = await storage.updatePurchaseOrder(id, { expectedDeliveryDate });
+      await storage.createActivityLog({
+        action: "Supplier Delivery Updated",
+        description: `Supplier updated delivery for PO ${order.orderNumber}`,
+        referenceType: "purchase_order",
+        referenceId: id,
+        userId: (req as Request & { user?: { id: number } }).user?.id ?? null,
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating supplier delivery:", error);
+      res.status(500).json({ message: "Failed to update delivery" });
+    }
+  });
+
+  app.post("/api/supplier/invoices", ...supplierRead, async (req: Request, res: Response) => {
+    try {
+      const supplierId = await resolveSupplierIdForUser(req);
+      if (!supplierId) return res.status(400).json({ message: "Supplier mapping not found for user" });
+      const payload = req.body as any;
+      const poId = Number(payload?.purchaseOrderId);
+      if (!Number.isFinite(poId)) return res.status(400).json({ message: "purchaseOrderId is required" });
+      const order = await storage.getPurchaseOrder(poId);
+      if (!order || order.supplierId !== supplierId) return res.status(404).json({ message: "Purchase order not found" });
+      const now = new Date();
+      const due = payload?.dueDate ? new Date(payload.dueDate) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const invoice = await storage.createInvoice(
+        {
+          invoiceNumber: payload?.invoiceNumber || `INV-SUP-${Date.now().toString().slice(-8)}`,
+          issueDate: payload?.issueDate ? new Date(payload.issueDate) : now,
+          dueDate: due,
+          customerId: null,
+          supplierId,
+          purchaseOrderId: poId,
+          subtotal: Number(payload?.subtotal ?? order.totalAmount ?? 0),
+          taxRate: Number(payload?.taxRate ?? 0),
+          taxAmount: Number(payload?.taxAmount ?? 0),
+          discountAmount: Number(payload?.discountAmount ?? 0),
+          shippingCost: Number(payload?.shippingCost ?? 0),
+          totalAmount: Number(payload?.totalAmount ?? order.totalAmount ?? 0),
+          amountPaid: 0,
+          balanceDue: Number(payload?.totalAmount ?? order.totalAmount ?? 0),
+          currency: payload?.currency ?? "USD",
+          status: "DRAFT",
+          notes: payload?.notes ?? null,
+        } as any,
+        Array.isArray(payload?.items) ? payload.items : [],
+      );
+      res.status(201).json(invoice);
+    } catch (error) {
+      console.error("Error creating supplier invoice:", error);
+      res.status(500).json({ message: "Failed to create supplier invoice" });
     }
   });
 
@@ -1412,10 +1786,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
+      const approverRole = String((req as any).user?.role ?? "");
       const existing = await storage.getPurchaseRequisition(id);
       if (!existing) return res.status(404).json({ message: "Purchase requisition not found" });
       if (existing.requestorId != null && approverId === existing.requestorId) {
         return res.status(403).json({ message: "Requester cannot approve their own requisition" });
+      }
+      const requisitionTotal = Number(existing.totalAmount ?? 0);
+      const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
+      const applicable = policies
+        .filter((policy) => {
+          if (!policy.isActive) return false;
+          const min = Number(policy.amountMin ?? 0);
+          const max = policy.amountMax == null ? Number.POSITIVE_INFINITY : Number(policy.amountMax);
+          return requisitionTotal >= min && requisitionTotal <= max;
+        })
+        .sort((a, b) => Number(b.approvalLevel ?? 0) - Number(a.approvalLevel ?? 0))[0];
+      if (applicable) {
+        if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
+          return res.status(403).json({ message: "Only the configured approver can approve this requisition" });
+        }
+        if (applicable.approverRole && applicable.approverRole.toLowerCase() !== approverRole.toLowerCase()) {
+          return res.status(403).json({ message: "Your role is not allowed to approve this requisition amount" });
+        }
       }
       
       const updatedRequisition = await storage.approvePurchaseRequisition(id, approverId);
@@ -1424,7 +1817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await db.insert(approvalHistory).values({
         entityType: "requisition",
         entityId: id,
-        level: 1,
+        level: Number(applicable?.approvalLevel ?? 1),
         action: "approved",
         performedBy: approverId,
         previousStatus: existing.status,
@@ -1447,11 +1840,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
+      const approverRole = String((req as any).user?.role ?? "");
       const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
       const existing = await storage.getPurchaseRequisition(id);
       if (!existing) return res.status(404).json({ message: "Purchase requisition not found" });
       if (existing.requestorId != null && approverId === existing.requestorId) {
         return res.status(403).json({ message: "Requester cannot reject their own requisition" });
+      }
+      const requisitionTotal = Number(existing.totalAmount ?? 0);
+      const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
+      const applicable = policies
+        .filter((policy) => {
+          if (!policy.isActive) return false;
+          const min = Number(policy.amountMin ?? 0);
+          const max = policy.amountMax == null ? Number.POSITIVE_INFINITY : Number(policy.amountMax);
+          return requisitionTotal >= min && requisitionTotal <= max;
+        })
+        .sort((a, b) => Number(b.approvalLevel ?? 0) - Number(a.approvalLevel ?? 0))[0];
+      if (applicable) {
+        if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
+          return res.status(403).json({ message: "Only the configured approver can reject this requisition" });
+        }
+        if (applicable.approverRole && applicable.approverRole.toLowerCase() !== approverRole.toLowerCase()) {
+          return res.status(403).json({ message: "Your role is not allowed to reject this requisition amount" });
+        }
       }
       
       const updatedRequisition = await storage.rejectPurchaseRequisition(id, approverId, reason);
@@ -1460,7 +1872,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await db.insert(approvalHistory).values({
         entityType: "requisition",
         entityId: id,
-        level: 1,
+        level: Number(applicable?.approvalLevel ?? 1),
         action: "rejected",
         performedBy: approverId,
         previousStatus: existing.status,

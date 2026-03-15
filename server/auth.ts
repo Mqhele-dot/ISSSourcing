@@ -47,6 +47,25 @@ async function comparePasswords(supplied: string, stored: string): Promise<boole
   return timingSafeEqual(hashedBuffer, suppliedBuffer);
 }
 
+function validatePasswordPolicy(password: string): string | null {
+  if (typeof password !== "string" || password.length < 10) {
+    return "Password must be at least 10 characters long";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Password must include at least one uppercase letter";
+  }
+  if (!/[a-z]/.test(password)) {
+    return "Password must include at least one lowercase letter";
+  }
+  if (!/[0-9]/.test(password)) {
+    return "Password must include at least one number";
+  }
+  if (!/[!@#$%^&*()[\]{}\-_=+\\|;:'\",.<>/?`~]/.test(password)) {
+    return "Password must include at least one special character";
+  }
+  return null;
+}
+
 // Middleware to check if the user is authenticated
 function ensureAuthenticated(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) {
@@ -354,6 +373,11 @@ export function setupAuth(app: Express) {
         if (existingEmail) {
           return res.status(400).json({ message: "Email already exists" });
         }
+      }
+
+      const passwordPolicyError = validatePasswordPolicy(req.body.password);
+      if (passwordPolicyError) {
+        return res.status(400).json({ message: passwordPolicyError });
       }
 
       // Create new user with hashed password
@@ -789,6 +813,10 @@ export function setupAuth(app: Express) {
   app.post("/api/password-reset", passwordResetRateLimiter, async (req, res) => {
     try {
       const { token, newPassword } = req.body;
+      const passwordPolicyError = validatePasswordPolicy(newPassword);
+      if (passwordPolicyError) {
+        return res.status(400).json({ message: passwordPolicyError });
+      }
       
       const user = await storage.getUserByResetToken(token);
       if (!user) {
@@ -834,6 +862,10 @@ export function setupAuth(app: Express) {
       }
       
       const { currentPassword, newPassword } = req.body;
+      const passwordPolicyError = validatePasswordPolicy(newPassword);
+      if (passwordPolicyError) {
+        return res.status(400).json({ message: passwordPolicyError });
+      }
       
       // Change the password
       const success = await storage.changePassword(req.user.id, currentPassword, newPassword);

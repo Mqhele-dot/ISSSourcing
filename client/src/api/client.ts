@@ -16,6 +16,7 @@ import type {
   InventoryListItem,
   OperationalException,
   PurchaseOrderDetail,
+  PurchaseOrder,
   PurchaseOrderListItem,
   PurchaseReceiveResult,
   ShipmentDetail,
@@ -382,7 +383,18 @@ export async function sendPurchaseOrder(po: string): Promise<PurchaseOrderDetail
 
 export async function receivePurchaseOrder(
   po: string,
-  lines: Array<{ sku: string; qtyReceivedNow: number }>,
+  lines: Array<{
+    sku: string;
+    qtyReceivedNow: number;
+    batchNumber?: string;
+    serialNumbers?: string[];
+  }>,
+  options?: {
+    receiverUserId?: number;
+    receiverName?: string;
+    warehouseLocation?: string;
+    receivedAt?: string;
+  },
 ): Promise<PurchaseReceiveResult> {
   const result = await apiMutate<PurchaseReceiveResult>(
     "POST",
@@ -391,7 +403,13 @@ export async function receivePurchaseOrder(
       lines: lines.map((line) => ({
         sku: line.sku,
         qty_received_now: line.qtyReceivedNow,
+        batch_number: line.batchNumber,
+        serial_numbers: line.serialNumbers,
       })),
+      receiver_user_id: options?.receiverUserId,
+      receiver_name: options?.receiverName,
+      warehouse_location: options?.warehouseLocation,
+      received_at: options?.receivedAt,
     },
   );
   const firstChange = result.inventoryChanges[0];
@@ -448,6 +466,57 @@ export async function updateShipmentStatus(input: {
     toStatus: input.toStatus,
     note: input.note,
   });
+}
+
+export async function createShipment(input: {
+  poNumber: string;
+  carrier?: string;
+  eta?: string;
+}): Promise<ShipmentListItem> {
+  return apiMutate<ShipmentListItem>("POST", "/api/logistics/shipments", input);
+}
+
+export async function deleteShipment(id: string | number): Promise<{ id: number }> {
+  return apiMutate<{ id: number }>("DELETE", `/api/logistics/shipments/${id}`);
+}
+
+export async function fetchSupplierPortalOrders(): Promise<PurchaseOrder[]> {
+  return apiFetch<PurchaseOrder[]>("/api/supplier/orders");
+}
+
+export async function confirmSupplierPortalOrder(id: number): Promise<PurchaseOrder> {
+  return apiMutate<PurchaseOrder>("POST", `/api/supplier/orders/${id}/confirm`);
+}
+
+export async function updateSupplierPortalDelivery(id: number, expectedDeliveryDate: string): Promise<PurchaseOrder> {
+  return apiMutate<PurchaseOrder>("PATCH", `/api/supplier/orders/${id}/delivery`, {
+    expectedDeliveryDate,
+  });
+}
+
+export async function uploadDocumentFile(formData: FormData): Promise<Record<string, unknown>> {
+  const response = await fetch("/api/documents/upload", {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ message: "Upload failed" }));
+    throw new Error(body.message || "Upload failed");
+  }
+  return response.json();
+}
+
+export async function runRetentionJob(): Promise<{ archivedCount: number }> {
+  return apiMutate<{ archivedCount: number }>("POST", "/api/retention-policies/run");
+}
+
+export async function fetchSpendAnalytics(): Promise<{
+  spendBySupplier: Array<{ supplierName: string; totalSpend: number }>;
+  inventoryTurnover: Array<{ sku: string; turnover: number }>;
+  warehouseUtilization: Array<{ warehouseName: string; utilization: number }>;
+}> {
+  return apiFetch("/api/reports/analytics");
 }
 
 export async function fetchExceptions(params?: {

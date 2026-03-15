@@ -14,6 +14,7 @@ import {
   listOperationalInventory,
   listOperationalPurchaseOrders,
   listOperationalShipments,
+  runOperationalExceptionChecks,
   receiveOperationalPurchaseOrder,
   runOperationalConnector,
   runOperationalDemoWalkthrough,
@@ -22,6 +23,7 @@ import {
   updateOperationalShipmentStatus,
 } from "./operations-core";
 import { contractError, respondOk, withApiContract } from "./api-contract";
+import { pool } from "./db";
 import { readiness } from "./readiness";
 import { seedOperationalIfEmpty } from "./seed-operational";
 import { seedDatabaseIfEmpty } from "./seed";
@@ -514,17 +516,57 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       }
       const bodyLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
       const lines = bodyLines.map(
-        (line: { sku?: unknown; qty_received_now?: unknown; qtyReceivedNow?: unknown }) => ({
-          sku: typeof line.sku === "string" ? line.sku : "",
-          qty_received_now: Number(line.qty_received_now ?? line.qtyReceivedNow),
-        }),
+        (line: {
+          sku?: unknown;
+          qty_received_now?: unknown;
+          qtyReceivedNow?: unknown;
+          batch_number?: unknown;
+          batchNumber?: unknown;
+          serial_numbers?: unknown;
+          serialNumbers?: unknown;
+        }) => {
+          const serialInput = line.serial_numbers ?? line.serialNumbers;
+          const normalizedSerials = Array.isArray(serialInput)
+            ? (serialInput as unknown[])
+                .map((value) => String(value))
+                .filter((value) => value.trim().length > 0)
+            : undefined;
+          return {
+            sku: typeof line.sku === "string" ? line.sku : "",
+            qty_received_now: Number(line.qty_received_now ?? line.qtyReceivedNow),
+            batch_number:
+              typeof (line.batch_number ?? line.batchNumber) === "string"
+                ? String(line.batch_number ?? line.batchNumber)
+                : undefined,
+            serial_numbers: normalizedSerials,
+          };
+        },
       );
+      const receiveMeta = {
+        receiver_user_id:
+          req.body?.receiver_user_id != null || req.body?.receiverUserId != null
+            ? Number(req.body?.receiver_user_id ?? req.body?.receiverUserId)
+            : undefined,
+        receiver_name:
+          typeof (req.body?.receiver_name ?? req.body?.receiverName) === "string"
+            ? String(req.body?.receiver_name ?? req.body?.receiverName)
+            : undefined,
+        warehouse_location:
+          typeof (req.body?.warehouse_location ?? req.body?.warehouseLocation) === "string"
+            ? String(req.body?.warehouse_location ?? req.body?.warehouseLocation)
+            : undefined,
+        received_at:
+          typeof (req.body?.received_at ?? req.body?.receivedAt) === "string"
+            ? new Date(String(req.body?.received_at ?? req.body?.receivedAt))
+            : undefined,
+      };
 
       try {
         const result = await withTimeout(
           receiveOperationalPurchaseOrder(
             req.params.po,
             lines,
+            receiveMeta,
             resolveActor(req),
           ),
           OPERATIONS_QUERY_TIMEOUT_MS,
@@ -572,6 +614,26 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         setFallbackHeader(res, err);
         respondOk(res, [], 200, { fallback: getFallbackValue(err) });
       }
+    }),
+  );
+
+  app.post(
+    "/api/logistics/shipments",
+    auth.ensureAuthenticated,
+    withApiContract(async (req: Request, res: Response) => {
+      const poNumber = typeof req.body?.poNumber === "string" ? req.body.poNumber.trim() : "";
+      const carrier = typeof req.body?.carrier === "string" ? req.body.carrier.trim() : null;
+      const eta = typeof req.body?.eta === "string" ? new Date(req.body.eta) : null;
+      if (!poNumber) {
+        throw contractError(400, "PO_REQUIRED", "poNumber is required");
+      }
+      const inserted = await pool.query(
+        `INSERT INTO shipments (po_number, carrier, status, eta, drift_minutes, created_at, updated_at)
+         VALUES ($1, $2, 'created', $3, 0, now(), now())
+         RETURNING id, po_number AS "poNumber", carrier, status, eta, drift_minutes AS "driftMinutes", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [poNumber, carrier, eta],
+      );
+      respondOk(res, inserted.rows[0], 201);
     }),
   );
 
@@ -636,6 +698,22 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     }),
   );
 
+  app.delete(
+    "/api/logistics/shipments/:id",
+    auth.ensureAuthenticated,
+    withApiContract(async (req: Request, res: Response) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        throw contractError(400, "INVALID_ID", "shipment id is invalid");
+      }
+      const deleted = await pool.query(`DELETE FROM shipments WHERE id = $1 RETURNING id`, [id]);
+      if (!deleted.rows[0]) {
+        throw contractError(404, "SHIPMENT_NOT_FOUND", "Shipment not found");
+      }
+      respondOk(res, { id });
+    }),
+  );
+
   app.get(
     "/api/exceptions",
     withApiContract(async (req: Request, res: Response) => {
@@ -658,6 +736,33 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
         respondOk(res, [], 200, { fallback: getFallbackValue(err) });
+      }
+    }),
+  );
+
+  app.post(
+    "/api/exceptions/run-checks",
+    auth.ensureAuthenticated,
+    withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
+      try {
+        const result = await withTimeout(
+          runOperationalExceptionChecks(resolveActor(req)),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
+        respondOk(res, result);
+      } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
+        throw error;
       }
     }),
   );

@@ -144,10 +144,13 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             <NavItem path="/purchase/requisitions" icon={<FileText className="h-5 w-5" />} helpTitle="Requisitions" helpDescription="Create, edit, approve, and share purchase requisitions; convert approved ones to purchase orders.">Requisitions</NavItem>
             <NavItem path="/suppliers" icon={<Users className="h-5 w-5" />} helpTitle="Suppliers" helpDescription="Manage vendor information and contacts.">Suppliers</NavItem>
             <NavItem path="/contracts" icon={<FileText className="h-5 w-5" />} helpTitle="Contracts" helpDescription="Manage contracts with each supplier, view summaries, and find copies.">Contracts</NavItem>
+            <NavItem path="/invoices" icon={<FileText className="h-5 w-5" />} helpTitle="Invoices" helpDescription="Create and manage supplier invoices linked to purchase orders, and run 3-way match checks.">Invoices</NavItem>
+            <NavItem path="/supplier-portal" icon={<Users className="h-5 w-5" />} helpTitle="Supplier Portal" helpDescription="Supplier-facing view for confirming POs and updating expected delivery dates.">Supplier Portal</NavItem>
 
             <SectionTitle>Logistics</SectionTitle>
             <NavItem path="/logistics" icon={<Building className="h-5 w-5" />} helpTitle="Shipments" helpDescription="Track shipments and logistics.">Shipments</NavItem>
             <NavItem path="/warehouses" icon={<Building className="h-5 w-5" />} helpTitle="Warehouses" helpDescription="Manage warehouse locations and stock.">Warehouses</NavItem>
+            <NavItem path="/cycle-counts" icon={<RefreshCw className="h-5 w-5" />} helpTitle="Cycle Counts" helpDescription="Plan and post cycle counts with automatic stock adjustment entries.">Cycle Counts</NavItem>
             <NavItem path="/reorder" icon={<RefreshCw className="h-5 w-5" />} helpTitle="Reorder Requests" helpDescription="View and manage reorder requests.">Reorder Requests</NavItem>
 
             <SectionTitle>Exceptions</SectionTitle>
@@ -159,7 +162,10 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
 
             <SectionTitle>Settings</SectionTitle>
             <NavItem path="/reports" icon={<FileText className="h-5 w-5" />} helpTitle="Reports" helpDescription="Analytics and custom reports (PDF, Excel, CSV).">Reports</NavItem>
+            <NavItem path="/supply-analytics" icon={<BarChart2 className="h-5 w-5" />} helpTitle="Supply Analytics" helpDescription="Spend, turnover, and warehouse utilization snapshots.">Supply Analytics</NavItem>
             <NavItem path="/master-data" icon={<Database className="h-5 w-5" />} helpTitle="Master Data" helpDescription="Manage reference data like units, currencies, tax codes, payment terms, and departments.">Master Data</NavItem>
+            <NavItem path="/audit-logs" icon={<Activity className="h-5 w-5" />} helpTitle="Audit Logs" helpDescription="Filter and export audit/activity records for compliance review.">Audit Logs</NavItem>
+            <NavItem path="/documents" icon={<FileUp className="h-5 w-5" />} helpTitle="Documents" helpDescription="Upload and manage document versions with retention support.">Documents</NavItem>
             <NavItem path="/settings" icon={<Settings className="h-5 w-5" />} helpTitle="Settings" helpDescription="Configure application preferences.">Settings</NavItem>
           </div>
         </nav>

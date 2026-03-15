@@ -898,6 +898,15 @@ type PurchaseOrderShipment = {
 type ReceivePurchaseLineInput = {
   sku: string;
   qty_received_now: number;
+  batch_number?: string;
+  serial_numbers?: string[];
+};
+
+type ReceivePurchaseMetaInput = {
+  receiver_user_id?: number | null;
+  receiver_name?: string | null;
+  warehouse_location?: string | null;
+  received_at?: Date | null;
 };
 
 const PURCHASE_TRANSITIONS: Record<string, string[]> = {
@@ -1247,6 +1256,7 @@ export async function transitionOperationalPurchaseOrderStatus(
 export async function receiveOperationalPurchaseOrder(
   poOrId: string,
   lines: ReceivePurchaseLineInput[],
+  receiveMeta: ReceivePurchaseMetaInput = {},
   actor = "system",
 ) {
   const order = await resolvePurchaseOrder(poOrId);
@@ -1278,6 +1288,10 @@ export async function receiveOperationalPurchaseOrder(
   for (const lineInput of lines) {
     const sku = lineInput.sku;
     const receiveNow = Number(lineInput.qty_received_now);
+    const batchNumber = typeof lineInput.batch_number === "string" ? lineInput.batch_number.trim() : "";
+    const serialNumbers = Array.isArray(lineInput.serial_numbers)
+      ? lineInput.serial_numbers.map((s) => String(s).trim()).filter(Boolean)
+      : [];
     const line = lineBySku.get(sku);
 
     if (!line) {
@@ -1350,6 +1364,124 @@ export async function receiveOperationalPurchaseOrder(
         available: adjustment.summary.available,
         onHand: adjustment.summary.onHand,
       });
+
+      const receivedAt = receiveMeta.received_at ?? new Date();
+      await pool.query(
+        `
+        INSERT INTO stock_movements (
+          item_id,
+          warehouse_id,
+          type,
+          quantity,
+          reference_id,
+          reference_type,
+          notes,
+          user_id,
+          receiver_user_id,
+          receiver_name,
+          warehouse_location,
+          received_at,
+          timestamp,
+          created_at
+        )
+        VALUES ($1, NULL, 'RECEIPT', $2, $3, 'purchase_order', $4, $5, $6, $7, $8, $9, now(), now())
+        `,
+        [
+          line.itemId,
+          appliedQty,
+          order.id,
+          `Received against PO ${order.order_number}`,
+          receiveMeta.receiver_user_id ?? null,
+          receiveMeta.receiver_user_id ?? null,
+          receiveMeta.receiver_name ?? null,
+          receiveMeta.warehouse_location ?? location,
+          receivedAt,
+        ],
+      );
+
+      if (batchNumber) {
+        const existingBatch = await pool.query<{ id: number }>(
+          `
+          SELECT id
+          FROM inventory_batches
+          WHERE item_id = $1
+            AND COALESCE(warehouse_id, 0) = 0
+            AND batch_number = $2
+          LIMIT 1
+          `,
+          [line.itemId, batchNumber],
+        );
+
+        if (existingBatch.rows[0]?.id) {
+          await pool.query(
+            `
+            UPDATE inventory_batches
+            SET quantity_received = quantity_received + $2,
+                quantity_on_hand = quantity_on_hand + $2,
+                updated_at = now()
+            WHERE id = $1
+            `,
+            [existingBatch.rows[0].id, appliedQty],
+          );
+        } else {
+          await pool.query(
+            `
+            INSERT INTO inventory_batches (item_id, warehouse_id, batch_number, quantity_received, quantity_on_hand)
+            VALUES ($1, NULL, $2, $3, $3)
+            `,
+            [line.itemId, batchNumber, appliedQty],
+          );
+        }
+      }
+
+      if (serialNumbers.length > 0) {
+        for (const serial of serialNumbers) {
+          await pool.query(
+            `
+            INSERT INTO inventory_serials (item_id, warehouse_id, serial_number, status, current_location)
+            VALUES ($1, NULL, $2, 'available', $3)
+            ON CONFLICT (serial_number)
+            DO UPDATE SET
+              item_id = EXCLUDED.item_id,
+              warehouse_id = EXCLUDED.warehouse_id,
+              status = 'available',
+              current_location = EXCLUDED.current_location,
+              updated_at = now()
+            `,
+            [line.itemId, serial, receiveMeta.warehouse_location ?? location],
+          );
+        }
+      }
+
+      let remainingToFulfill = appliedQty;
+      const allocationRows = await pool.query<{ id: number; quantity: number }>(
+        `
+        SELECT id, quantity
+        FROM inventory_allocations
+        WHERE order_id = $1
+          AND item_id = $2
+          AND status = 'reserved'
+        ORDER BY created_at ASC
+        `,
+        [order.id, line.itemId],
+      );
+      for (const allocation of allocationRows.rows) {
+        if (remainingToFulfill <= 0) break;
+        const reservedQty = Number(allocation.quantity ?? 0);
+        if (reservedQty <= 0) continue;
+        const consume = Math.min(reservedQty, remainingToFulfill);
+        const nextQty = reservedQty - consume;
+        await pool.query(
+          `
+          UPDATE inventory_allocations
+          SET quantity = $2,
+              status = CASE WHEN $2 <= 0 THEN 'fulfilled' ELSE status END
+          WHERE id = $1
+          `,
+          [allocation.id, nextQty],
+        );
+        remainingToFulfill -= consume;
+      }
     }
   }
 
@@ -1465,6 +1597,116 @@ async function ensureLateShipmentException(shipment: {
     },
     slaHours: 2,
   });
+}
+
+export async function runOperationalExceptionChecks(actor = "system") {
+  const created = {
+    lateShipments: 0,
+    stockShortages: 0,
+    contractViolations: 0,
+  };
+  const touched = {
+    lateShipments: 0,
+    stockShortages: 0,
+    contractViolations: 0,
+  };
+
+  const lateShipments = await pool.query<{
+    id: number;
+    po_number: string;
+    status: string;
+    eta: Date | null;
+  }>(
+    `
+    SELECT id, po_number, status, eta
+    FROM shipments
+    WHERE eta IS NOT NULL
+      AND eta < now()
+      AND lower(status) <> 'delivered'
+    `,
+  );
+  for (const shipment of lateShipments.rows) {
+    touched.lateShipments += 1;
+    const result = await ensureLateShipmentException({
+      id: shipment.id,
+      poNumber: shipment.po_number,
+      status: shipment.status.toLowerCase(),
+      eta: shipment.eta,
+    });
+    if (result?.created) created.lateShipments += 1;
+  }
+
+  const lowStockRows = await pool.query<{
+    id: number;
+    sku: string;
+    name: string;
+    quantity: number;
+    low_stock_threshold: number | null;
+  }>(
+    `
+    SELECT id, sku, name, quantity, low_stock_threshold
+    FROM inventory_items
+    WHERE quantity <= COALESCE(low_stock_threshold, 0)
+    `,
+  );
+  for (const item of lowStockRows.rows) {
+    touched.stockShortages += 1;
+    const result = await createOrGetOperationalException({
+      type: "stock_shortage",
+      severity: "high",
+      title: `Low stock: ${item.sku}`,
+      description: `${item.name} is at ${item.quantity} units`,
+      relatedRefs: {
+        item_id: item.id,
+        sku: item.sku,
+      },
+      slaHours: 6,
+    });
+    if (result.created) created.stockShortages += 1;
+  }
+
+  const contractViolations = await pool.query<{
+    id: number;
+    order_number: string;
+    total_amount: number | null;
+    contract_id: number | null;
+    value: number | null;
+  }>(
+    `
+    SELECT po.id, po.order_number, po.total_amount, po.contract_id, sc.value
+    FROM purchase_orders po
+    JOIN supplier_contracts sc ON sc.id = po.contract_id
+    WHERE po.contract_id IS NOT NULL
+      AND sc.value IS NOT NULL
+      AND po.total_amount > sc.value
+      AND lower(COALESCE(po.status, '')) NOT IN ('cancelled', 'void')
+    `,
+  );
+  for (const po of contractViolations.rows) {
+    touched.contractViolations += 1;
+    const result = await createOrGetOperationalException({
+      type: "contract_violation",
+      severity: "high",
+      title: `Contract limit exceeded: ${po.order_number}`,
+      description: `PO total ${toNumber(po.total_amount)} exceeds contract value ${toNumber(po.value)}`,
+      relatedRefs: {
+        po_number: po.order_number,
+        contract_id: po.contract_id ?? 0,
+      },
+      slaHours: 8,
+    });
+    if (result.created) created.contractViolations += 1;
+  }
+
+  await recordActivity({
+    actor,
+    entityType: "exception",
+    entityId: "system",
+    action: "run_checks",
+    summary: { created, touched },
+  });
+
+  return { created, touched };
 }
 
 export async function listOperationalShipments(filters: {
@@ -2233,6 +2475,7 @@ export async function runOperationalDemoWalkthrough(actor: string) {
         qty_received_now: 4,
       },
     ],
+    {},
     actor,
   );
   const mismatchExceptionId = receiveResult.mismatchExceptions[0]?.id ?? null;

@@ -18,6 +18,7 @@ import RequisitionFormPage from "@/pages/requisition-form";
 import SuppliersPage from "@/pages/suppliers";
 import ContractsPage from "@/pages/contracts";
 import Reports from "@/pages/reports";
+import InvoicesPage from "@/pages/invoices";
 import SettingsPage from "@/pages/settings";
 import UserRolesPage from "@/pages/user-roles";
 import Home from "@/pages/home";
@@ -37,6 +38,11 @@ import LogisticsPage from "@/pages/logistics";
 import ExceptionsPage from "@/pages/exceptions";
 import IntegrationsPage from "@/pages/integrations";
 import MasterDataPage from "@/pages/master-data";
+import CycleCountsPage from "@/pages/cycle-counts";
+import AuditLogsPage from "@/pages/audit-logs";
+import SupplierPortalPage from "@/pages/supplier-portal";
+import DocumentsPage from "@/pages/documents";
+import SupplyAnalyticsPage from "@/pages/supply-analytics";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AccentProvider } from "@/components/accent-provider";
 import { DensityProvider } from "@/components/density-provider";
@@ -129,8 +135,13 @@ function Router() {
       <ProtectedRoute path="/exceptions/:id" component={ExceptionsPage} />
       <ProtectedRoute path="/integrations" component={IntegrationsPage} />
       <ProtectedRoute path="/master-data" component={MasterDataPage} />
+      <ProtectedRoute path="/audit-logs" component={AuditLogsPage} />
+      <ProtectedRoute path="/supplier-portal" component={SupplierPortalPage} />
+      <ProtectedRoute path="/documents" component={DocumentsPage} />
+      <ProtectedRoute path="/supply-analytics" component={SupplyAnalyticsPage} />
       <ProtectedRoute path="/suppliers" component={SuppliersPage} />
       <ProtectedRoute path="/contracts" component={ContractsPage} />
+      <ProtectedRoute path="/invoices" component={InvoicesPage} />
       <ProtectedRoute path="/reports" component={Reports} />
       <ProtectedRoute path="/reorder" component={ReorderPage} />
       <ProtectedRoute path="/barcode-scanner" component={BarcodeScannerPage} />
@@ -145,6 +156,7 @@ function Router() {
       <ProtectedRoute path="/image-recognition" component={ImageRecognitionPage} />
       <ProtectedRoute path="/document-extractor" component={DocumentExtractorPage} />
       <ProtectedRoute path="/warehouses" component={WarehousesPage} />
+      <ProtectedRoute path="/cycle-counts" component={CycleCountsPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>

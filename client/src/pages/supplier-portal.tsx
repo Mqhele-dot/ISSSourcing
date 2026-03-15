@@ -1,0 +1,136 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
+import { confirmSupplierPortalOrder, fetchSupplierPortalOrders, updateSupplierPortalDelivery } from "@/api/client";
+
+export default function SupplierPortalPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [etaByOrder, setEtaByOrder] = useState<Record<number, string>>({});
+  const { data: orders = [], isLoading } = useQuery({
+    queryKey: ["/api/supplier/orders"],
+    queryFn: fetchSupplierPortalOrders,
+  });
+
+  const confirmOrder = useMutation({
+    mutationFn: (id: number) => confirmSupplierPortalOrder(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/supplier/orders"] });
+      toast({ title: "Order confirmed", description: "The buyer can now track this acknowledgment." });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to confirm order",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateDelivery = useMutation({
+    mutationFn: ({ id, date }: { id: number; date: string }) => updateSupplierPortalDelivery(id, date),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/supplier/orders"] });
+      toast({ title: "Delivery date updated", description: "Expected delivery has been sent to procurement." });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to update delivery",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PageHeader
+        title="Supplier Portal"
+        subtitle="Review your assigned purchase orders and share acknowledgments/delivery dates."
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Assigned purchase orders</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading supplier orders...</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>PO</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Requested</TableHead>
+                  <TableHead className="w-[260px]">Delivery update</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orders.map((order) => (
+                  <TableRow key={order.id}>
+                    <TableCell className="font-medium">{order.poNumber}</TableCell>
+                    <TableCell>{order.status}</TableCell>
+                    <TableCell>{Number(order.totalAmount ?? 0).toFixed(2)}</TableCell>
+                    <TableCell>{order.requestedDate ? new Date(order.requestedDate).toLocaleDateString() : "-"}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Label className="sr-only" htmlFor={`eta-${order.id}`}>
+                          Expected delivery
+                        </Label>
+                        <Input
+                          id={`eta-${order.id}`}
+                          type="date"
+                          value={etaByOrder[order.id] ?? ""}
+                          onChange={(event) =>
+                            setEtaByOrder((current) => ({ ...current, [order.id]: event.target.value }))
+                          }
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const date = etaByOrder[order.id];
+                            if (!date) return;
+                            updateDelivery.mutate({ id: order.id, date });
+                          }}
+                          disabled={updateDelivery.isPending}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        onClick={() => confirmOrder.mutate(order.id)}
+                        disabled={confirmOrder.isPending}
+                      >
+                        Confirm
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {orders.length === 0 ? (
+                  <TableRow>
+                    <TableCell className="text-muted-foreground" colSpan={6}>
+                      No purchase orders assigned to your supplier account yet.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
