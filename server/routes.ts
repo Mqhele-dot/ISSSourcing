@@ -64,6 +64,7 @@ import {
   insertIncotermSchema,
   insertPaymentTermSchema,
   insertDepartmentSchema,
+  insertCarrierSchema,
   insertApprovalPolicySchema,
   insertRetentionPolicySchema,
   insertInventoryBatchSchema,
@@ -78,6 +79,7 @@ import {
   incoterms,
   paymentTerms,
   departments,
+  carriers,
   approvalPolicies,
   approvalHistory,
   purchaseOrderRevisions,
@@ -750,6 +752,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const masterRead = [auth.ensureAuthenticated];
   const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
 
+  const emitNotification = async (payload: {
+    userId: number;
+    type: string;
+    title: string;
+    body?: string;
+    entityType?: string;
+    entityId?: number;
+  }) => {
+    await db.insert(notifications).values({
+      userId: payload.userId,
+      type: payload.type,
+      title: payload.title,
+      body: payload.body ?? null,
+      entityType: payload.entityType ?? null,
+      entityId: payload.entityId ?? null,
+    } as any);
+  };
+
+  const emitNotificationToRoles = async (
+    roles: string[],
+    payload: Omit<Parameters<typeof emitNotification>[0], "userId">,
+  ) => {
+    const roleUsers = (await db.select().from(users)) as any[];
+    const targets = roleUsers.filter((user) =>
+      roles.some((role) => String(user.role ?? "").toLowerCase() === role.toLowerCase()),
+    );
+    for (const user of targets) {
+      if (!user.id) continue;
+      await emitNotification({ userId: Number(user.id), ...payload });
+    }
+  };
+
   const registerMasterDataCrud = <TInsert>(
     basePath: string,
     table: any,
@@ -833,6 +867,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerMasterDataCrud("/api/incoterms", incoterms, insertIncotermSchema as any);
   registerMasterDataCrud("/api/payment-terms", paymentTerms, insertPaymentTermSchema as any);
   registerMasterDataCrud("/api/departments", departments, insertDepartmentSchema as any);
+  registerMasterDataCrud("/api/carriers", carriers, insertCarrierSchema as any);
   registerMasterDataCrud("/api/inventory-batches", inventoryBatches, insertInventoryBatchSchema as any);
   registerMasterDataCrud("/api/inventory-serials", inventorySerials, insertInventorySerialSchema as any);
   registerMasterDataCrud("/api/inventory-allocations", inventoryAllocations, insertInventoryAllocationSchema as any);
@@ -1253,13 +1288,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/reports/analytics", ...masterRead, async (_req: Request, res: Response) => {
+  app.get("/api/reports/analytics", ...masterRead, async (req: Request, res: Response) => {
     try {
       const supplierList = await storage.getAllSuppliers();
       const poList = await storage.getAllPurchaseOrders();
       const inventoryList = await storage.getAllInventoryItems();
       const movementList = await storage.getAllStockMovements();
       const warehouseList = await storage.getAllWarehouses();
+      const fromDate = typeof req.query.from === "string" && req.query.from ? new Date(req.query.from) : null;
+      const toDate = typeof req.query.to === "string" && req.query.to ? new Date(req.query.to) : null;
+      const departmentId =
+        typeof req.query.departmentId === "string" && req.query.departmentId
+          ? Number(req.query.departmentId)
+          : null;
+      const filteredPoList = poList.filter((po) => {
+        const createdAt = po.createdAt ? new Date(po.createdAt) : null;
+        if (fromDate && createdAt && createdAt < fromDate) return false;
+        if (toDate && createdAt && createdAt > toDate) return false;
+        if (departmentId && Number(po.departmentId ?? 0) !== departmentId) return false;
+        return true;
+      });
       const warehouseInventoryGroups = await Promise.all(
         warehouseList.map(async (warehouse) => ({
           warehouseId: warehouse.id,
@@ -1269,7 +1317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const spendBySupplier = supplierList.map((supplier) => ({
         supplierName: supplier.name,
-        totalSpend: poList
+        totalSpend: filteredPoList
           .filter((po) => po.supplierId === supplier.id)
           .reduce((sum, po) => sum + Number(po.totalAmount ?? 0), 0),
       }));
@@ -1298,8 +1346,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           utilization: Number(((used / capacity) * 100).toFixed(1)),
         };
       });
+      const supplierPerformance = supplierList.map((supplier) => {
+        const supplierOrders = filteredPoList.filter((po) => po.supplierId === supplier.id);
+        let onTimeCount = 0;
+        let measured = 0;
+        for (const order of supplierOrders) {
+          if (!order.expectedDeliveryDate) continue;
+          const receipts = movementList
+            .filter(
+              (movement) =>
+                movement.referenceType === "purchase_order" &&
+                Number(movement.referenceId ?? 0) === order.id &&
+                movement.type === "RECEIPT",
+            )
+            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          if (receipts.length === 0) continue;
+          measured += 1;
+          const firstReceipt = new Date(receipts[0].receivedAt ?? receipts[0].timestamp);
+          const eta = new Date(order.expectedDeliveryDate);
+          if (!Number.isNaN(firstReceipt.getTime()) && !Number.isNaN(eta.getTime()) && firstReceipt <= eta) {
+            onTimeCount += 1;
+          }
+        }
+        return {
+          supplierName: supplier.name,
+          onTimeDeliveryRate: measured > 0 ? Number(((onTimeCount / measured) * 100).toFixed(1)) : 0,
+          ordersMeasured: measured,
+        };
+      });
 
-      res.json({ spendBySupplier, inventoryTurnover, warehouseUtilization });
+      res.json({ spendBySupplier, inventoryTurnover, warehouseUtilization, supplierPerformance });
     } catch (error) {
       console.error("Error generating analytics report:", error);
       res.status(500).json({ message: "Failed to generate analytics report" });
@@ -1484,6 +1560,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         referenceType: "purchase_order",
         referenceId: id,
         userId: (req as Request & { user?: { id: number } }).user?.id ?? null,
+      });
+      await emitNotificationToRoles(["manager", "admin"], {
+        type: "shipment_delay",
+        title: `Supplier updated ETA for PO ${order.orderNumber}`,
+        body: `Expected delivery changed to ${expectedDeliveryDate.toISOString().slice(0, 10)}.`,
+        entityType: "purchase_order",
+        entityId: id,
       });
       res.json(updated);
     } catch (error) {
@@ -1824,6 +1907,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         newStatus: updatedRequisition.status,
         comment: typeof req.body?.comment === "string" ? req.body.comment : null,
       } as any);
+      if (existing.requestorId) {
+        await emitNotification({
+          userId: Number(existing.requestorId),
+          type: "approval_request",
+          title: `Requisition ${existing.requisitionNumber ?? `#${id}`} approved`,
+          body: `Your requisition has been approved.`,
+          entityType: "requisition",
+          entityId: id,
+        });
+      }
       
       res.json(updatedRequisition);
     } catch (error) {
@@ -1879,6 +1972,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         newStatus: updatedRequisition.status,
         comment: reason || null,
       } as any);
+      if (existing.requestorId) {
+        await emitNotification({
+          userId: Number(existing.requestorId),
+          type: "approval_request",
+          title: `Requisition ${existing.requisitionNumber ?? `#${id}`} rejected`,
+          body: reason || "Your requisition has been rejected.",
+          entityType: "requisition",
+          entityId: id,
+        });
+      }
       
       res.json(updatedRequisition);
     } catch (error) {

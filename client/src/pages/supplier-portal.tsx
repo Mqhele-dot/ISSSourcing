@@ -7,12 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { confirmSupplierPortalOrder, fetchSupplierPortalOrders, updateSupplierPortalDelivery } from "@/api/client";
+import { confirmSupplierPortalOrder, fetchSupplierPortalOrders, updateSupplierPortalDelivery, uploadDocumentFile } from "@/api/client";
+import { requestJson } from "@/lib/queryClient";
 
 export default function SupplierPortalPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [etaByOrder, setEtaByOrder] = useState<Record<number, string>>({});
+  const [invoicePoId, setInvoicePoId] = useState<string>("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["/api/supplier/orders"],
     queryFn: fetchSupplierPortalOrders,
@@ -42,6 +46,43 @@ export default function SupplierPortalPage() {
     onError: (error) => {
       toast({
         title: "Failed to update delivery",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const uploadInvoice = useMutation({
+    mutationFn: async () => {
+      const poId = Number(invoicePoId);
+      if (!Number.isFinite(poId) || poId <= 0) {
+        throw new Error("Choose a valid purchase order");
+      }
+      const createdInvoice = await requestJson<{ id: number }>("POST", "/api/supplier/invoices", {
+        purchaseOrderId: poId,
+        invoiceNumber: invoiceNumber || undefined,
+      });
+      if (invoiceFile) {
+        const form = new FormData();
+        form.append("file", invoiceFile);
+        form.append("entityType", "invoice");
+        form.append("entityId", String(createdInvoice.id));
+        await uploadDocumentFile(form);
+      }
+      return createdInvoice;
+    },
+    onSuccess: () => {
+      setInvoicePoId("");
+      setInvoiceNumber("");
+      setInvoiceFile(null);
+      toast({
+        title: "Supplier invoice submitted",
+        description: "Invoice has been created and attachment uploaded.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Invoice submission failed",
         description: error instanceof Error ? error.message : "Unknown error",
         variant: "destructive",
       });
@@ -129,6 +170,45 @@ export default function SupplierPortalPage() {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Submit invoice</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          <div className="space-y-1">
+            <Label htmlFor="supplier-invoice-po">Purchase order ID</Label>
+            <Input
+              id="supplier-invoice-po"
+              value={invoicePoId}
+              onChange={(event) => setInvoicePoId(event.target.value)}
+              placeholder="e.g. 123"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="supplier-invoice-number">Invoice number</Label>
+            <Input
+              id="supplier-invoice-number"
+              value={invoiceNumber}
+              onChange={(event) => setInvoiceNumber(event.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="supplier-invoice-file">Invoice file</Label>
+            <Input
+              id="supplier-invoice-file"
+              type="file"
+              onChange={(event) => setInvoiceFile(event.target.files?.[0] ?? null)}
+            />
+          </div>
+          <div className="flex items-end">
+            <Button onClick={() => uploadInvoice.mutate()} disabled={uploadInvoice.isPending}>
+              Submit invoice
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

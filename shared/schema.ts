@@ -306,6 +306,16 @@ export const departments = pgTable("departments", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const carriers = pgTable("carriers", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  contact: text("contact"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const insertUnitOfMeasureSchema = createInsertSchema(unitsOfMeasure).omit({
   id: true,
   createdAt: true,
@@ -337,6 +347,11 @@ export const insertPaymentTermSchema = createInsertSchema(paymentTerms).omit({
   updatedAt: true,
 });
 export const insertDepartmentSchema = createInsertSchema(departments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertCarrierSchema = createInsertSchema(carriers).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -1562,6 +1577,8 @@ export type CycleCount = typeof cycleCounts.$inferSelect;
 export type InsertCycleCount = z.infer<typeof insertCycleCountSchema>;
 export type CycleCountLine = typeof cycleCountLines.$inferSelect;
 export type InsertCycleCountLine = z.infer<typeof insertCycleCountLineSchema>;
+export type Carrier = typeof carriers.$inferSelect;
+export type InsertCarrier = z.infer<typeof insertCarrierSchema>;
 
 export type Barcode = typeof barcodes.$inferSelect;
 export type InsertBarcode = z.infer<typeof insertBarcodeSchema>;

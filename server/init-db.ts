@@ -188,6 +188,15 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL,
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS carriers (
+        id SERIAL PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        contact TEXT,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS approval_policies (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,

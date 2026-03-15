@@ -50,6 +50,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 
 const supplierFormSchema = z.object({
   name: z.string().min(2, "Supplier name must be at least 2 characters"),
@@ -842,6 +843,14 @@ export default function SuppliersPage() {
           </CardContent>
         </Card>
         </Can>
+      </div>
+
+      <div className="mt-6">
+        <EntityDocumentsCard
+          entityType="supplier"
+          entityId={selectedSupplierId}
+          title="Supplier Compliance Documents"
+        />
       </div>
 
       {/* Remove logo confirmation */}

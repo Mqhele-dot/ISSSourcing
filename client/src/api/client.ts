@@ -511,12 +511,24 @@ export async function runRetentionJob(): Promise<{ archivedCount: number }> {
   return apiMutate<{ archivedCount: number }>("POST", "/api/retention-policies/run");
 }
 
-export async function fetchSpendAnalytics(): Promise<{
+export async function fetchSpendAnalytics(params?: {
+  from?: string;
+  to?: string;
+  departmentId?: number;
+}): Promise<{
   spendBySupplier: Array<{ supplierName: string; totalSpend: number }>;
   inventoryTurnover: Array<{ sku: string; turnover: number }>;
   warehouseUtilization: Array<{ warehouseName: string; utilization: number }>;
+  supplierPerformance: Array<{ supplierName: string; onTimeDeliveryRate: number; ordersMeasured: number }>;
 }> {
-  return apiFetch("/api/reports/analytics");
+  const search = new URLSearchParams();
+  if (params?.from) search.set("from", params.from);
+  if (params?.to) search.set("to", params.to);
+  if (typeof params?.departmentId === "number" && Number.isFinite(params.departmentId)) {
+    search.set("departmentId", String(params.departmentId));
+  }
+  const url = search.size > 0 ? `/api/reports/analytics?${search.toString()}` : "/api/reports/analytics";
+  return apiFetch(url);
 }
 
 export async function fetchExceptions(params?: {

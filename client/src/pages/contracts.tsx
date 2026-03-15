@@ -59,6 +59,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { supplierContractFormSchema } from "@shared/schema";
 import { format } from "date-fns";
+import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 
 const CONTRACT_TYPES = ["master", "framework", "one-off", "renewal"] as const;
 const STATUSES = ["draft", "active", "expired", "terminated"] as const;
@@ -406,6 +407,11 @@ export default function ContractsPage() {
                   </ul>
                 </div>
               )}
+              <EntityDocumentsCard
+                entityType="contract"
+                entityId={viewContract.id}
+                title="Contract Documents"
+              />
             </div>
           )}
           <DialogFooter>

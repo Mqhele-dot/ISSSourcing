@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, requestJson } from "@/lib/queryClient";
+import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 
 type Invoice = {
   id: number;
@@ -52,6 +53,7 @@ export default function InvoicesPage() {
   const [dueDate, setDueDate] = useState("");
   const [taxCodeId, setTaxCodeId] = useState<string>("none");
   const [matchResults, setMatchResults] = useState<Record<number, MatchResult>>({});
+  const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
 
   const { data: invoices = [], isLoading } = useQuery({
     queryKey: ["/api/invoices"],
@@ -285,6 +287,14 @@ export default function InvoicesPage() {
                         >
                           Run 3-way match
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="ml-2"
+                          onClick={() => setActiveInvoiceId(invoice.id)}
+                        >
+                          Documents
+                        </Button>
                         {match && match.mismatches.length > 0 ? (
                           <div className="mt-1 text-xs text-destructive">
                             {match.mismatches.length} mismatch(es): {match.mismatches[0]?.message}
@@ -299,6 +309,12 @@ export default function InvoicesPage() {
           )}
         </CardContent>
       </Card>
+
+      <EntityDocumentsCard
+        entityType="invoice"
+        entityId={activeInvoiceId}
+        title="Invoice Documents"
+      />
     </div>
   );
 }

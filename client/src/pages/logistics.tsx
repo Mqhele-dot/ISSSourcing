@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -40,6 +41,15 @@ import {
   type ShipmentListItem,
 } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
+import { queryClient, requestJson } from "@/lib/queryClient";
+
+type Carrier = {
+  id: number;
+  code: string;
+  name: string;
+  contact?: string | null;
+  active?: boolean | null;
+};
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -73,6 +83,55 @@ function ShipmentListView() {
   const [newPoNumber, setNewPoNumber] = useState("");
   const [newCarrier, setNewCarrier] = useState("");
   const [newEta, setNewEta] = useState("");
+  const [carrierCode, setCarrierCode] = useState("");
+  const [carrierName, setCarrierName] = useState("");
+  const [carrierContact, setCarrierContact] = useState("");
+  const [carrierEditId, setCarrierEditId] = useState<number | null>(null);
+  const { data: carriers = [] } = useQuery({
+    queryKey: ["/api/carriers"],
+    queryFn: () => requestJson<Carrier[]>("GET", "/api/carriers"),
+  });
+  const upsertCarrier = useMutation({
+    mutationFn: () =>
+      carrierEditId
+        ? requestJson("PATCH", `/api/carriers/${carrierEditId}`, {
+            code: carrierCode,
+            name: carrierName,
+            contact: carrierContact || null,
+          })
+        : requestJson("POST", "/api/carriers", {
+            code: carrierCode,
+            name: carrierName,
+            contact: carrierContact || null,
+          }),
+    onSuccess: async () => {
+      setCarrierCode("");
+      setCarrierName("");
+      setCarrierContact("");
+      setCarrierEditId(null);
+      await queryClient.invalidateQueries({ queryKey: ["/api/carriers"] });
+    },
+    onError: (error) => {
+      toast({
+        title: "Carrier save failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+  const removeCarrier = useMutation({
+    mutationFn: (id: number) => requestJson("DELETE", `/api/carriers/${id}`),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/carriers"] });
+    },
+    onError: (error) => {
+      toast({
+        title: "Carrier delete failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
   const data = envelope?.data ?? null;
   const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
   const {
@@ -153,12 +212,19 @@ function ShipmentListView() {
                   placeholder="PO number"
                   className="w-36"
                 />
-                <Input
-                  value={newCarrier}
-                  onChange={(event) => setNewCarrier(event.target.value)}
-                  placeholder="Carrier"
-                  className="w-28"
-                />
+                <Select value={newCarrier || "none"} onValueChange={(value) => setNewCarrier(value === "none" ? "" : value)}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Carrier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Carrier</SelectItem>
+                    {carriers.map((carrier) => (
+                      <SelectItem key={carrier.id} value={carrier.name}>
+                        {carrier.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Input
                   value={newEta}
                   onChange={(event) => setNewEta(event.target.value)}
@@ -278,6 +344,61 @@ function ShipmentListView() {
           );
         }}
       </DataState>
+
+      <Can roles={["manager", "admin"]}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Carriers</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-2 md:grid-cols-4">
+              <Input placeholder="Code" value={carrierCode} onChange={(event) => setCarrierCode(event.target.value)} />
+              <Input placeholder="Name" value={carrierName} onChange={(event) => setCarrierName(event.target.value)} />
+              <Input
+                placeholder="Contact"
+                value={carrierContact}
+                onChange={(event) => setCarrierContact(event.target.value)}
+              />
+              <Button
+                onClick={() => upsertCarrier.mutate()}
+                disabled={upsertCarrier.isPending || !carrierCode.trim() || !carrierName.trim()}
+              >
+                {carrierEditId ? "Update" : "Add"} carrier
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {carriers.map((carrier) => (
+                <div key={carrier.id} className="rounded border p-2 text-sm flex items-center justify-between gap-2">
+                  <div>
+                    <div className="font-medium">{carrier.code} - {carrier.name}</div>
+                    <div className="text-muted-foreground">{carrier.contact || "-"}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setCarrierEditId(carrier.id);
+                        setCarrierCode(carrier.code);
+                        setCarrierName(carrier.name);
+                        setCarrierContact(carrier.contact ?? "");
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => removeCarrier.mutate(carrier.id)}>
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {carriers.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No carriers configured yet.</div>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      </Can>
     </div>
   );
 }
