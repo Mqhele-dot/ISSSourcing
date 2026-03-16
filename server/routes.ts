@@ -1462,13 +1462,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const resolveSupplierIdForUser = async (req: Request): Promise<number | null> => {
     const user = (req as Request & { user?: { id: number; role?: string; email?: string } }).user;
     if (!user) return null;
+    const explicit = Number(req.query.supplierId ?? req.body?.supplierId);
+    const hasExplicit = Number.isFinite(explicit) && explicit > 0;
     if (user.role === "supplier") {
       const supplierRows = await supplierRepo.findAll();
       const fallback = supplierRows.find((supplier) => supplier.email && user.email && supplier.email.toLowerCase() === user.email.toLowerCase());
+      // Supplier users are always scoped to their own mapped supplier, even if query/body includes supplierId.
       return fallback?.id ?? null;
     }
-    const explicit = Number(req.query.supplierId ?? req.body?.supplierId);
-    return Number.isFinite(explicit) && explicit > 0 ? explicit : null;
+    if (user.role === "admin" || user.role === "manager") {
+      return hasExplicit ? explicit : null;
+    }
+    return null;
   };
 
   app.get("/api/suppliers", ...supplierRead, async (_req: Request, res: Response) => {
@@ -1651,6 +1656,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/supplier/orders/:id/confirm", ...supplierRead, async (req: Request, res: Response) => {
     try {
+      const user = (req as Request & { user?: { role?: string } }).user;
+      if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
       const supplierId = await resolveSupplierIdForUser(req);
@@ -1674,6 +1683,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/supplier/orders/:id/delivery", ...supplierRead, async (req: Request, res: Response) => {
     try {
+      const user = (req as Request & { user?: { role?: string } }).user;
+      if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
       const supplierId = await resolveSupplierIdForUser(req);
@@ -1708,6 +1721,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/supplier/invoices", ...supplierRead, async (req: Request, res: Response) => {
     try {
+      const user = (req as Request & { user?: { role?: string } }).user;
+      if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
       const supplierId = await resolveSupplierIdForUser(req);
       if (!supplierId) return res.status(400).json({ message: "Supplier mapping not found for user" });
       const payload = req.body as any;

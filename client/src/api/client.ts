@@ -480,16 +480,39 @@ export async function deleteShipment(id: string | number): Promise<{ id: number 
   return apiMutate<{ id: number }>("DELETE", `/api/logistics/shipments/${id}`);
 }
 
-export async function fetchSupplierPortalOrders(): Promise<PurchaseOrder[]> {
-  return apiFetch<PurchaseOrder[]>("/api/supplier/orders");
+export async function fetchSupplierPortalOrders(supplierId?: number): Promise<PurchaseOrder[]> {
+  const search = new URLSearchParams();
+  if (typeof supplierId === "number" && Number.isFinite(supplierId) && supplierId > 0) {
+    search.set("supplierId", String(supplierId));
+  }
+  const url = search.size > 0 ? `/api/supplier/orders?${search.toString()}` : "/api/supplier/orders";
+  return apiFetch<PurchaseOrder[]>(url);
 }
 
-export async function confirmSupplierPortalOrder(id: number): Promise<PurchaseOrder> {
-  return apiMutate<PurchaseOrder>("POST", `/api/supplier/orders/${id}/confirm`);
+export async function confirmSupplierPortalOrder(id: number, supplierId?: number): Promise<PurchaseOrder> {
+  const search = new URLSearchParams();
+  if (typeof supplierId === "number" && Number.isFinite(supplierId) && supplierId > 0) {
+    search.set("supplierId", String(supplierId));
+  }
+  const url = search.size > 0
+    ? `/api/supplier/orders/${id}/confirm?${search.toString()}`
+    : `/api/supplier/orders/${id}/confirm`;
+  return apiMutate<PurchaseOrder>("POST", url);
 }
 
-export async function updateSupplierPortalDelivery(id: number, expectedDeliveryDate: string): Promise<PurchaseOrder> {
-  return apiMutate<PurchaseOrder>("PATCH", `/api/supplier/orders/${id}/delivery`, {
+export async function updateSupplierPortalDelivery(
+  id: number,
+  expectedDeliveryDate: string,
+  supplierId?: number,
+): Promise<PurchaseOrder> {
+  const search = new URLSearchParams();
+  if (typeof supplierId === "number" && Number.isFinite(supplierId) && supplierId > 0) {
+    search.set("supplierId", String(supplierId));
+  }
+  const url = search.size > 0
+    ? `/api/supplier/orders/${id}/delivery?${search.toString()}`
+    : `/api/supplier/orders/${id}/delivery`;
+  return apiMutate<PurchaseOrder>("PATCH", url, {
     expectedDeliveryDate,
   });
 }

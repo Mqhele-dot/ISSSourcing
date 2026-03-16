@@ -20,6 +20,8 @@ import { useLocation } from "wouter";
 import { useTutorial } from "@/contexts/tutorial-context";
 import { useHelpExplain } from "@/contexts/help-explain-context";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
+import { requestJson } from "@/lib/queryClient";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +43,7 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 /**
  * A button component that provides access to the application tutorials and error scanning
@@ -55,9 +58,27 @@ export function TutorialButton() {
   const [isFixing, setIsFixing] = useState<string | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   const [activeTab, setActiveTab] = useState("tutorials");
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["/api/suppliers", "tutorial-assistant"],
+    queryFn: () => requestJson<Array<{ id: number }>>("GET", "/api/suppliers"),
+  });
+  const { data: inventoryItems = [] } = useQuery({
+    queryKey: ["/api/inventory", "tutorial-assistant"],
+    queryFn: async () => {
+      const data = await requestJson<Array<{ id: number }> | { data: Array<{ id: number }> }>("GET", "/api/inventory");
+      return Array.isArray(data) ? data : data?.data ?? [];
+    },
+  });
   
   // Define all tutorials for each page
   const pageSpecificTutorials = [
+    {
+      id: "setup-wizard",
+      name: "Setup Wizard",
+      description: "Guided first-time setup for warehouse, inventory, suppliers, and first PO",
+      icon: <BookOpen className="h-5 w-5 mr-2" />,
+      color: "bg-emerald-100"
+    },
     {
       id: "database",
       name: "Database Setup",
@@ -169,6 +190,7 @@ export function TutorialButton() {
       barcode: "/barcode-scanner",
       sync: "/sync-dashboard",
       billing: "/billing",
+      "setup-wizard": "/dashboard",
     };
     const targetRoute = routeMap[tourId] || (tourId === "main" ? "/dashboard" : undefined);
     const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
@@ -283,12 +305,29 @@ export function TutorialButton() {
           </DialogHeader>
           
           <Tabs defaultValue="tutorials" value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="tutorials">Tutorials</TabsTrigger>
               <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+              <TabsTrigger value="learning">Learning Center</TabsTrigger>
             </TabsList>
             
             <TabsContent value="tutorials" className="mt-4 space-y-4">
+              {(suppliers.length === 0 || inventoryItems.length === 0) && (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Recommended next step</AlertTitle>
+                  <AlertDescription className="flex items-center justify-between gap-3">
+                    <span>
+                      {suppliers.length === 0
+                        ? "No suppliers found yet. Use Setup Wizard to create your initial vendor base."
+                        : "No inventory items found yet. Use Setup Wizard to create your first SKUs."}
+                    </span>
+                    <Button size="sm" onClick={() => handleStartTutorial("setup-wizard")}>
+                      Start Wizard
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
               <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto p-1">
                 {pageSpecificTutorials.map((tutorial) => (
                   <Card key={tutorial.id} className={`${tutorial.color} border-none hover:shadow-md transition-shadow cursor-pointer`} onClick={() => handleStartTutorial(tutorial.id)}>
@@ -328,6 +367,38 @@ export function TutorialButton() {
                   Start Complete Tour
                 </Button>
               </div>
+            </TabsContent>
+
+            <TabsContent value="learning" className="mt-4 space-y-3">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Getting Started</CardTitle>
+                  <CardDescription>Fast onboarding for first-time teams.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <Button variant="outline" className="w-full justify-start" onClick={() => handleStartTutorial("setup-wizard")}>
+                    Launch Setup Wizard
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start" onClick={() => handleStartTutorial("main")}>
+                    Platform Orientation Tour
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Role Learning Paths</CardTitle>
+                  <CardDescription>Targeted tutorials by function.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-2">
+                  <Button variant="ghost" className="justify-start" onClick={() => handleStartTutorial("inventory")}>Inventory</Button>
+                  <Button variant="ghost" className="justify-start" onClick={() => handleStartTutorial("purchase")}>Procurement</Button>
+                  <Button variant="ghost" className="justify-start" onClick={() => handleStartTutorial("suppliers")}>Suppliers</Button>
+                  <Button variant="ghost" className="justify-start" onClick={() => handleStartTutorial("reports")}>Reports</Button>
+                  <Button variant="ghost" className="justify-start" onClick={() => handleStartTutorial("analytics")}>Analytics</Button>
+                  <Button variant="ghost" className="justify-start" onClick={() => handleStartTutorial("users")}>Roles & Permissions</Button>
+                </CardContent>
+              </Card>
             </TabsContent>
             
             <TabsContent value="diagnostics" className="mt-4">

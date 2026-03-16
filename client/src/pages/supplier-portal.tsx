@@ -9,21 +9,38 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { confirmSupplierPortalOrder, fetchSupplierPortalOrders, updateSupplierPortalDelivery, uploadDocumentFile } from "@/api/client";
 import { requestJson } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function SupplierPortalPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [etaByOrder, setEtaByOrder] = useState<Record<number, string>>({});
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [invoicePoId, setInvoicePoId] = useState<string>("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const role = String(user?.role ?? "");
+  const canChooseSupplier = role === "admin" || role === "manager";
+  const supplierScopeId =
+    canChooseSupplier && selectedSupplierId ? Number(selectedSupplierId) : undefined;
+
+  const { data: supplierOptions = [] } = useQuery({
+    queryKey: ["/api/suppliers", "portal-options"],
+    enabled: canChooseSupplier,
+    queryFn: () => requestJson<Array<{ id: number; name: string }>>("GET", "/api/suppliers"),
+  });
+
   const { data: orders = [], isLoading } = useQuery({
-    queryKey: ["/api/supplier/orders"],
-    queryFn: fetchSupplierPortalOrders,
+    queryKey: ["/api/supplier/orders", supplierScopeId ?? "self"],
+    queryFn: () => fetchSupplierPortalOrders(supplierScopeId),
+    enabled: !canChooseSupplier || supplierScopeId != null,
   });
 
   const confirmOrder = useMutation({
-    mutationFn: (id: number) => confirmSupplierPortalOrder(id),
+    mutationFn: (id: number) => confirmSupplierPortalOrder(id, supplierScopeId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/supplier/orders"] });
       toast({ title: "Order confirmed", description: "The buyer can now track this acknowledgment." });
@@ -38,7 +55,7 @@ export default function SupplierPortalPage() {
   });
 
   const updateDelivery = useMutation({
-    mutationFn: ({ id, date }: { id: number; date: string }) => updateSupplierPortalDelivery(id, date),
+    mutationFn: ({ id, date }: { id: number; date: string }) => updateSupplierPortalDelivery(id, date, supplierScopeId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/supplier/orders"] });
       toast({ title: "Delivery date updated", description: "Expected delivery has been sent to procurement." });
@@ -54,6 +71,9 @@ export default function SupplierPortalPage() {
 
   const uploadInvoice = useMutation({
     mutationFn: async () => {
+      if (canChooseSupplier && !supplierScopeId) {
+        throw new Error("Select a supplier account first");
+      }
       const poId = Number(invoicePoId);
       if (!Number.isFinite(poId) || poId <= 0) {
         throw new Error("Choose a valid purchase order");
@@ -61,6 +81,7 @@ export default function SupplierPortalPage() {
       const createdInvoice = await requestJson<{ id: number }>("POST", "/api/supplier/invoices", {
         purchaseOrderId: poId,
         invoiceNumber: invoiceNumber || undefined,
+        ...(supplierScopeId ? { supplierId: supplierScopeId } : {}),
       });
       if (invoiceFile) {
         const form = new FormData();
@@ -95,6 +116,43 @@ export default function SupplierPortalPage() {
         title="Supplier Portal"
         subtitle="Review your assigned purchase orders and share acknowledgments/delivery dates."
       />
+
+      {canChooseSupplier ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Supplier scope</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-[320px_1fr] md:items-end">
+            <div className="space-y-1">
+              <Label htmlFor="supplier-scope-select">View supplier account</Label>
+              <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+                <SelectTrigger id="supplier-scope-select">
+                  <SelectValue placeholder="Choose supplier" />
+                </SelectTrigger>
+                <SelectContent>
+                  {supplierOptions.map((supplier) => (
+                    <SelectItem key={supplier.id} value={String(supplier.id)}>
+                      {supplier.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Managers/Admins must select a supplier to simulate supplier-portal access.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {canChooseSupplier && !supplierScopeId ? (
+        <Alert>
+          <AlertTitle>Select a supplier</AlertTitle>
+          <AlertDescription>
+            Choose a supplier account above to load portal orders and submit supplier invoices.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -205,7 +263,10 @@ export default function SupplierPortalPage() {
             />
           </div>
           <div className="flex items-end">
-            <Button onClick={() => uploadInvoice.mutate()} disabled={uploadInvoice.isPending}>
+            <Button
+              onClick={() => uploadInvoice.mutate()}
+              disabled={uploadInvoice.isPending || (canChooseSupplier && !supplierScopeId)}
+            >
               Submit invoice
             </Button>
           </div>

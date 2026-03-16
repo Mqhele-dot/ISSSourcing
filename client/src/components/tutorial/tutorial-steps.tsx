@@ -453,6 +453,40 @@ export function TutorialSteps() {
       },
     ]);
 
+    // Setup wizard: task-oriented onboarding flow
+    registerTutorial("setup-wizard", [
+      {
+        id: "setup-intro",
+        title: "Setup Wizard",
+        text: "Let's configure your supply chain workspace in five steps: warehouse, inventory, suppliers, approval rules, and first purchase order.",
+      },
+      {
+        id: "setup-warehouse",
+        title: "Step 1: Add your first warehouse",
+        text: "Open the Warehouses page and create a warehouse with aisles/bins so all inventory movements have a physical location.",
+      },
+      {
+        id: "setup-inventory",
+        title: "Step 2: Add inventory items",
+        text: "Create your core SKUs with reorder thresholds and default warehouse assignments. This enables low-stock alerts and reorder workflows.",
+      },
+      {
+        id: "setup-supplier",
+        title: "Step 3: Add suppliers",
+        text: "Create supplier profiles with contacts, payment terms, and compliance details so requisitions and POs can link to approved vendors.",
+      },
+      {
+        id: "setup-approvals",
+        title: "Step 4: Configure approval rules",
+        text: "Set approval policies by amount and role to enforce governance before requisitions and purchase orders are approved.",
+      },
+      {
+        id: "setup-po",
+        title: "Step 5: Create your first PO",
+        text: "Create a requisition, approve it, convert to PO, and track it through shipment and invoice to validate your end-to-end flow.",
+      },
+    ]);
+
     // Database Management tutorial
     registerTutorial("database", [
       {

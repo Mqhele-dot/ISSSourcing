@@ -76,6 +76,18 @@ interface FormData {
   locationDetails: string;
 }
 
+interface WarehousePayload {
+  name: string;
+  address: string | null;
+  location: string | null;
+  contactPerson: string | null;
+  contactPhone: string | null;
+  isDefault: boolean;
+  aisles?: string[];
+  bins?: { code: string; aisle?: string; row?: string; shelf?: string }[];
+  locationDetails?: Record<string, unknown>;
+}
+
 /** Centralized validation for create/edit. Returns error message or null if valid. */
 function validateWarehouseForm(data: FormData): string | null {
   if (!data.name.trim()) return "Warehouse name is required";
@@ -101,7 +113,7 @@ export default function WarehousesPage() {
   });
 
   // Fetch warehouses (response may include meta.fallback when server used fallback)
-  const { data: warehousesRaw, isLoading, error } = useQuery<
+  const { data: warehousesRaw, isLoading, error, refetch } = useQuery<
     Warehouse[] | { data: Warehouse[]; meta: { fallback?: string } }
   >({
     queryKey: ['/api/warehouses'],
@@ -112,8 +124,8 @@ export default function WarehousesPage() {
   const list = Array.isArray(warehouseList) ? warehouseList : [];
 
   // Create warehouse mutation
-  const createWarehouse = useMutation<unknown, Error, FormData>({
-    mutationFn: async (data: FormData) => {
+  const createWarehouse = useMutation<unknown, Error, WarehousePayload>({
+    mutationFn: async (data: WarehousePayload) => {
       const res = await apiRequest('POST', '/api/warehouses', data);
       return await res.json();
     },
@@ -138,7 +150,7 @@ export default function WarehousesPage() {
         }
       }).catch(() => {});
     },
-    onError: (error: Error, data: FormData | undefined) => {
+    onError: (error: Error, data: WarehousePayload | undefined) => {
       toast({
         variant: 'destructive',
         title: 'Failed to create warehouse (POST /api/warehouses)',
@@ -153,8 +165,8 @@ export default function WarehousesPage() {
   });
 
   // Update warehouse mutation
-  const updateWarehouse = useMutation<unknown, Error, { id: number; data: FormData }>({
-    mutationFn: async ({ id, data }: { id: number; data: FormData }) => {
+  const updateWarehouse = useMutation<unknown, Error, { id: number; data: WarehousePayload }>({
+    mutationFn: async ({ id, data }: { id: number; data: WarehousePayload }) => {
       const res = await apiRequest('PATCH', `/api/warehouses/${id}`, data);
       return await res.json();
     },
@@ -167,7 +179,7 @@ export default function WarehousesPage() {
         description: 'Warehouse has been updated successfully',
       });
     },
-    onError: (error: Error, vars: { id: number; data: FormData } | undefined) => {
+    onError: (error: Error, vars: { id: number; data: WarehousePayload } | undefined) => {
       toast({
         variant: 'destructive',
         title: `Failed to update warehouse (PATCH /api/warehouses/${vars?.id ?? selectedWarehouse?.id ?? '?'})`,
@@ -252,7 +264,7 @@ export default function WarehousesPage() {
       });
       return;
     }
-    createWarehouse.mutate(toPayload(formData) as unknown as FormData);
+    createWarehouse.mutate(toPayload(formData));
   };
 
   const handleEditSubmit = () => {
@@ -268,7 +280,7 @@ export default function WarehousesPage() {
     }
     updateWarehouse.mutate({
       id: selectedWarehouse.id,
-      data: toPayload(formData) as unknown as FormData,
+      data: toPayload(formData),
     });
   };
 
@@ -333,7 +345,12 @@ export default function WarehousesPage() {
     return (
       <Alert variant="destructive" className="max-w-4xl mx-auto mt-4">
         <AlertTitle>Error</AlertTitle>
-        <AlertDescription>Failed to load warehouses (GET /api/warehouses): {(error as Error).message}</AlertDescription>
+        <AlertDescription className="space-y-3">
+          <p>Failed to load warehouses (GET /api/warehouses): {(error as Error).message}</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        </AlertDescription>
       </Alert>
     );
   }

@@ -31,6 +31,7 @@ import SyncDashboard from "@/pages/sync-dashboard";
 import DownloadPage from "@/pages/download";
 import BillingPage from "@/pages/billing";
 import ProfilePage from "@/pages/profile";
+import EmployeeProfilesPage from "@/pages/employee-profiles";
 import ImageRecognitionPage from "@/pages/image-recognition-page";
 import DocumentExtractorPage from "@/pages/document-extractor-page";
 import WarehousesPage from "@/pages/warehouses";
@@ -153,6 +154,7 @@ function Router() {
       <ProtectedRoute path="/user-roles" component={UserRolesPage} />
       <ProtectedRoute path="/billing" component={BillingPage} />
       <ProtectedRoute path="/profile" component={ProfilePage} />
+      <ProtectedRoute path="/employee-profiles" component={EmployeeProfilesPage} />
       <ProtectedRoute path="/image-recognition" component={ImageRecognitionPage} />
       <ProtectedRoute path="/document-extractor" component={DocumentExtractorPage} />
       <ProtectedRoute path="/warehouses" component={WarehousesPage} />

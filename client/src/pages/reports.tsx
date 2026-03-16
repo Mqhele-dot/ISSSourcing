@@ -160,9 +160,14 @@ export default function Reports() {
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       
-      // Use .xlsx extension for Excel files
       const fileExtension = exportFormat === 'excel' ? 'xlsx' : exportFormat;
-      downloadFile(objectUrl, `${activeTab}-report.${fileExtension}`);
+      const filenameSuffix =
+        exportFormat === "pdf"
+          ? "report"
+          : exportFormat === "csv"
+            ? "raw-data"
+            : "analysis";
+      downloadFile(objectUrl, `${activeTab}-${filenameSuffix}.${fileExtension}`);
       
       URL.revokeObjectURL(objectUrl);
       
@@ -238,9 +243,9 @@ export default function Reports() {
               <SelectValue placeholder="Select format" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="pdf">PDF</SelectItem>
-              <SelectItem value="csv">CSV</SelectItem>
-              <SelectItem value="excel">Excel</SelectItem>
+              <SelectItem value="pdf">PDF Report</SelectItem>
+              <SelectItem value="csv">Raw CSV</SelectItem>
+              <SelectItem value="excel">Excel Analysis</SelectItem>
             </SelectContent>
           </Select>
           {exportFormat === "pdf" && (
@@ -315,6 +320,13 @@ export default function Reports() {
             <FileDown className="mr-2 h-4 w-4" />
             {exporting ? "Exporting…" : "Export Report"}
           </Button>
+          <p className="w-full text-xs text-muted-foreground md:w-auto">
+            {exportFormat === "pdf"
+              ? "PDF Report: structured, branded document for sharing."
+              : exportFormat === "csv"
+                ? "Raw CSV: source table data for external processing."
+                : "Excel Analysis: workbook optimized for filtering and pivot analysis."}
+          </p>
         </div>
       </div>
       

@@ -15,6 +15,9 @@ import {
   purchaseRequisitionItems,
   purchaseOrders,
   purchaseOrderItems,
+  supplierContracts,
+  invoices,
+  payments,
   type InsertAppSettings,
   type InsertCategory,
   type InsertInventoryItem,
@@ -27,6 +30,7 @@ import {
   type InsertPurchaseRequisitionItem,
   type InsertPurchaseOrder,
   type InsertPurchaseOrderItem,
+  type InsertSupplierContract,
 } from "@shared/schema";
 import { db, pool } from "./db";
 
@@ -239,6 +243,12 @@ async function ensureDemoUsers(): Promise<void> {
       email: "viewer@example.com",
       fullName: "Demo Viewer",
       role: "viewer" as const,
+    },
+    {
+      username: "supplierdemo",
+      email: "john@techsolutions.example",
+      fullName: "Supplier Demo User",
+      role: "supplier" as const,
     },
   ];
 
@@ -477,6 +487,92 @@ async function ensurePurchaseRequisitionsAndOrders(supplierMap: Map<string, numb
   }
 }
 
+async function ensureContractsAndFinanceData(
+  supplierMap: Map<string, number>,
+): Promise<void> {
+  const [admin] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.username, "admin"))
+    .limit(1);
+  const creatorId = admin?.id ?? 1;
+  const supplierId =
+    supplierMap.get("Tech Solutions Inc.") ??
+    (await db.select({ id: suppliers.id }).from(suppliers).limit(1))[0]?.id ??
+    1;
+
+  const existingContracts = await db.select({ id: supplierContracts.id }).from(supplierContracts).limit(1);
+  if (existingContracts.length === 0) {
+    const contracts: InsertSupplierContract[] = [
+      {
+        supplierId,
+        title: "Annual IT Equipment Supply Agreement",
+        contractType: "master",
+        referenceNumber: "CT-IT-2026-001",
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        value: 150000,
+        currency: "USD",
+        summary: "Demo annual contract for electronics and accessories.",
+        status: "active",
+        notes: "Seeded demo contract",
+      },
+    ];
+    await db.insert(supplierContracts).values(contracts);
+  }
+
+  const existingInvoices = await db.select({ id: invoices.id }).from(invoices).limit(1);
+  if (existingInvoices.length === 0) {
+    const [po] = await db
+      .select({
+        id: purchaseOrders.id,
+        supplierId: purchaseOrders.supplierId,
+        totalAmount: purchaseOrders.totalAmount,
+      })
+      .from(purchaseOrders)
+      .limit(1);
+    if (po) {
+      const issueDate = new Date();
+      const dueDate = new Date(issueDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const total = Number(po.totalAmount ?? 0);
+      const paidAmount = Number((total * 0.4).toFixed(2));
+      const dueAmount = Number((total - paidAmount).toFixed(2));
+      const invoiceRows = await db
+        .insert(invoices)
+        .values({
+          invoiceNumber: `INV-DEMO-${Date.now().toString().slice(-6)}`,
+          customerId: null,
+          supplierId: po.supplierId,
+          purchaseOrderId: po.id,
+          status: "PARTIALLY_PAID",
+          issueDate,
+          dueDate,
+          subtotal: total,
+          tax: 0,
+          discount: 0,
+          total,
+          paidAmount,
+          dueAmount,
+          notes: "Seeded demo invoice linked to seeded purchase order.",
+          createdBy: creatorId,
+        })
+        .returning({ id: invoices.id });
+      const invoiceId = invoiceRows[0]?.id;
+      if (invoiceId) {
+        await db.insert(payments).values({
+          invoiceId,
+          amount: paidAmount,
+          method: "BANK_TRANSFER",
+          transactionReference: `PMT-DEMO-${Date.now().toString().slice(-6)}`,
+          paymentDate: new Date(),
+          notes: "Seeded demo payment",
+          receivedBy: creatorId,
+        });
+      }
+    }
+  }
+}
+
 export async function getDemoDataSummary(): Promise<DemoDataSummary> {
   const [usersCount] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -530,6 +626,7 @@ export async function seedDatabase(): Promise<DemoDataSummary> {
   await ensureReorderRequests(supplierMap);
   await ensureStockMovements();
   await ensurePurchaseRequisitionsAndOrders(supplierMap);
+  await ensureContractsAndFinanceData(supplierMap);
 
   return getDemoDataSummary();
 }

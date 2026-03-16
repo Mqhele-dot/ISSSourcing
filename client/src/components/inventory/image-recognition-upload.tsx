@@ -31,8 +31,12 @@ interface ImageRecognitionUploadProps {
 
 export interface RecognizedItem {
   name?: string;
+  sku?: string;
   description?: string;
   category?: string;
+  categoryId?: number;
+  price?: number;
+  quantity?: number;
   attributes?: Record<string, unknown>;
   confidence?: number;
   detectedText?: string;
@@ -92,7 +96,7 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
       }, 500);
 
       try {
-        const response = await apiRequest('POST', '/api/inventory/image-recognition/analyze', formData);
+        const response = await apiRequest('POST', '/api/image-recognition/analyze', formData);
         
         clearInterval(progressInterval);
         setUploadProgress(100);
@@ -125,7 +129,7 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
   // Create item from recognized data mutation
   const createItemMutation = useMutation({
     mutationFn: async (itemData: Record<string, unknown>) => {
-      const response = await apiRequest('POST', '/api/inventory/image-recognition/create', itemData);
+      const response = await apiRequest('POST', '/api/image-recognition/create-item', itemData);
       return await response.json();
     },
     onSuccess: (data) => {
@@ -188,9 +192,37 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
   // Handle create item button
   const handleCreateItem = form.handleSubmit((additionalData) => {
     if (recognizedData) {
+      const normalizedName = (recognizedData.name || "Recognized Item").trim();
+      const fallbackSku = `IMG-${Date.now().toString().slice(-8)}`;
+      const normalizedSku = (recognizedData.sku || fallbackSku).trim();
+      const mergedPrice = Number(
+        (additionalData.price as unknown as number) ||
+        (recognizedData.price as unknown as number) ||
+        0,
+      );
+      const mergedQuantity = Number(
+        (additionalData.quantity as unknown as number) ||
+        (recognizedData.quantity as unknown as number) ||
+        0,
+      );
       createItemMutation.mutate({
-        recognizedItem: recognizedData,
-        additionalData,
+        name: normalizedName,
+        sku: normalizedSku,
+        description: recognizedData.description || null,
+        price: Number.isFinite(mergedPrice) ? mergedPrice : 0,
+        quantity: Number.isFinite(mergedQuantity) ? mergedQuantity : 0,
+        lowStockThreshold:
+          typeof additionalData.lowStockThreshold === "number" && Number.isFinite(additionalData.lowStockThreshold)
+            ? additionalData.lowStockThreshold
+            : null,
+        categoryId:
+          typeof additionalData.categoryId === "number" && Number.isFinite(additionalData.categoryId)
+            ? additionalData.categoryId
+            : (typeof recognizedData.categoryId === "number" && Number.isFinite(recognizedData.categoryId)
+              ? recognizedData.categoryId
+              : null),
+        location: additionalData.location || null,
+        notes: additionalData.notes || null,
       });
     }
   });

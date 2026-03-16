@@ -61,9 +61,13 @@ const upload = multer({
 export function registerImageRecognitionRoutes(app: any) {
   // Route to analyze an image and return recognized items
   app.post('/api/image-recognition/analyze', upload.single('image'), analyzeProductImageHandler);
+  // Backward-compatible alias used by older clients
+  app.post('/api/inventory/image-recognition/analyze', upload.single('image'), analyzeProductImageHandler);
   
   // Route to create an inventory item from recognized image data
   app.post('/api/image-recognition/create-item', createItemFromImageHandler);
+  // Backward-compatible alias used by older clients
+  app.post('/api/inventory/image-recognition/create', createItemFromImageHandler);
   
   // Route to get analysis history for an inventory item
   app.get('/api/image-recognition/item/:id/history', getItemAnalysisHistoryHandler);
@@ -127,7 +131,20 @@ async function analyzeProductImageHandler(req: Request, res: Response) {
  */
 async function createItemFromImageHandler(req: Request, res: Response) {
   try {
-    const { name, sku, ...itemData } = req.body;
+    const body = req.body ?? {};
+    const recognized = typeof body.recognizedItem === "object" && body.recognizedItem !== null
+      ? body.recognizedItem as Record<string, unknown>
+      : null;
+    const additional = typeof body.additionalData === "object" && body.additionalData !== null
+      ? body.additionalData as Record<string, unknown>
+      : null;
+    const name = String(body.name ?? recognized?.name ?? "").trim();
+    const sku = String(body.sku ?? recognized?.sku ?? "").trim();
+    const itemData = {
+      ...body,
+      ...(recognized ?? {}),
+      ...(additional ?? {}),
+    } as any;
     
     if (!name || !sku) {
       return res.status(400).json({ 

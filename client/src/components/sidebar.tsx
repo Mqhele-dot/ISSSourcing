@@ -171,6 +171,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             <SectionTitle>Settings</SectionTitle>
             <NavItem path="/integrations" icon={<FileUp className="h-5 w-5" />} helpTitle="Connectors" helpDescription="Connect external systems and data sources.">Connectors</NavItem>
             <NavItem path="/document-extractor" icon={<FileUp className="h-5 w-5" />} helpTitle="Document Extractor" helpDescription="Extract data from documents (e.g. invoices).">Document Extractor</NavItem>
+            <NavItem path="/employee-profiles" icon={<Users className="h-5 w-5" />} helpTitle="Employee Profiles" helpDescription="Manage employee profile information, roles, permissions, and activity.">Employee Profiles</NavItem>
             <NavItem path="/settings" icon={<Settings className="h-5 w-5" />} helpTitle="Settings" helpDescription="Configure application preferences.">Settings</NavItem>
           </div>
         </nav>
