@@ -19,7 +19,7 @@ export const reportTypeEnum = [
 export type ReportType = typeof reportTypeEnum[number];
 
 // Report formats enum
-export const reportFormatEnum = ['pdf', 'csv', 'excel'] as const;
+export const reportFormatEnum = ['pdf', 'csv', 'excel', 'docx'] as const;
 export type ReportFormat = typeof reportFormatEnum[number];
 
 // User role enum with expanded roles
@@ -847,7 +847,7 @@ export enum ItemStatus {
 }
 
 // Export types for document generation
-export type DocumentType = "pdf" | "csv" | "excel";
+export type DocumentType = "pdf" | "csv" | "excel" | "docx";
 // ReportType is already defined at the top of the file
 
 // Report filter interface for customizable report filtering

@@ -2896,10 +2896,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: "Unsupported report type" });
       }
       
-      // Make sure we have data for the report
-      if (!data || data.length === 0) {
-        return res.status(404).json({ message: "No data found for report" });
-      }
+      const normalizedData = Array.isArray(data) ? data : [];
       
       // For PDF with template=custom, load uploaded template from uploads/custom-pdf-template.pdf if present
       let customTemplateBuffer: Buffer | undefined;
@@ -2916,43 +2913,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const buffer = await generateDocument(
         normalizedReportType as ReportType,
         format as ReportFormat,
-        data,
+        normalizedData,
         title,
         { pdfTemplate: templateParam as 'standard' | 'compact' | 'custom', customTemplateBuffer }
       );
-      
-      // Set appropriate headers
-      switch (format) {
-        case 'pdf':
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '-').toLowerCase()}.pdf"`);
-          break;
-        case 'csv':
-          res.setHeader('Content-Type', 'text/csv');
-          res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '-').toLowerCase()}.csv"`);
-          break;
-        case 'excel':
-          res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-          res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '-').toLowerCase()}.xlsx"`);
-          break;
-      }
+
+      const normalizedTitle = title.replace(/\s+/g, "-").toLowerCase();
+      const formatMeta: Record<ReportFormat, { contentType: string; extension: string }> = {
+        pdf: {
+          contentType: "application/pdf",
+          extension: "pdf",
+        },
+        csv: {
+          contentType: "text/csv; charset=utf-8",
+          extension: "csv",
+        },
+        excel: {
+          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          extension: "xlsx",
+        },
+        docx: {
+          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          extension: "docx",
+        },
+      };
+      const meta = formatMeta[format as ReportFormat];
+      res.setHeader("Content-Type", meta.contentType);
+      res.setHeader("X-Export-Row-Count", String(normalizedData.length));
+      res.setHeader("Content-Disposition", `attachment; filename="${normalizedTitle}.${meta.extension}"`);
       
       // Send the document
       res.send(buffer);
       
     } catch (error) {
       console.error(`Error generating ${req.params.format} report for ${req.params.reportType}:`, error);
-      const format = req.params.format;
-      const reportType = req.params.reportType;
-      if (format === "csv") {
-        res.setHeader("Content-Type", "text/csv");
-        res.setHeader("Content-Disposition", "attachment; filename=export.csv");
-        res.status(200).send("sep=,\n");
-      } else {
-        res.status(200).json({
-          message: `No data for ${reportType} ${format} report`,
-        });
-      }
+      return res.status(500).json({
+        message: `Failed to generate ${req.params.reportType} report as ${req.params.format}.`,
+      });
     }
   });
 

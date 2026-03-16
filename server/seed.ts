@@ -11,11 +11,33 @@ import {
   reorderRequests,
   stockMovements,
   activityLogs,
+  approvalPolicies,
+  carriers,
+  commodityCodes,
+  currencies,
+  cycleCountLines,
+  cycleCounts,
+  departments,
+  documents,
+  incoterms,
+  inventoryAllocations,
+  inventoryBatches,
+  inventorySerials,
+  notificationPreferences,
+  notifications,
+  paymentTerms,
   purchaseRequisitions,
   purchaseRequisitionItems,
   purchaseOrders,
   purchaseOrderItems,
+  retentionPolicies,
   supplierContracts,
+  taxCodes,
+  userContacts,
+  userSecuritySettings,
+  warehouseInventory,
+  unitsOfMeasure,
+  auditLogs,
   invoices,
   payments,
   type InsertAppSettings,
@@ -186,6 +208,56 @@ async function ensureSuppliers(): Promise<Map<string, number>> {
 
   const rows = await db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers);
   return new Map(rows.map((row) => [row.name, row.id]));
+}
+
+async function ensureMasterData(): Promise<void> {
+  await db.insert(unitsOfMeasure).values([
+    { code: "EA", name: "Each", symbol: "ea", system: "metric", active: true },
+    { code: "BOX", name: "Box", symbol: "box", system: "custom", active: true },
+    { code: "KG", name: "Kilogram", symbol: "kg", system: "metric", active: true },
+  ]).onConflictDoNothing({ target: unitsOfMeasure.code });
+
+  await db.insert(currencies).values([
+    { code: "USD", name: "US Dollar", symbol: "$", decimalPlaces: 2, active: true },
+    { code: "EUR", name: "Euro", symbol: "€", decimalPlaces: 2, active: true },
+    { code: "GBP", name: "British Pound", symbol: "£", decimalPlaces: 2, active: true },
+  ]).onConflictDoNothing({ target: currencies.code });
+
+  await db.insert(taxCodes).values([
+    { code: "VAT15", name: "Standard VAT 15%", rate: 15, type: "vat", countryCode: "ZA", active: true },
+    { code: "GST07", name: "GST 7%", rate: 7, type: "sales", countryCode: "US", active: true },
+  ]).onConflictDoNothing({ target: taxCodes.code });
+
+  await db.insert(commodityCodes).values([
+    { code: "432115", description: "Computers", category: "IT", active: true },
+    { code: "441217", description: "Office writing instruments", category: "Office", active: true },
+    { code: "561015", description: "Office furniture", category: "Furniture", active: true },
+  ]).onConflictDoNothing({ target: commodityCodes.code });
+
+  await db.insert(incoterms).values([
+    { code: "EXW", name: "Ex Works", description: "Buyer takes responsibility at seller premises", active: true },
+    { code: "FOB", name: "Free On Board", description: "Seller responsible until loaded on vessel", active: true },
+    { code: "DAP", name: "Delivered At Place", description: "Seller delivers to buyer destination", active: true },
+  ]).onConflictDoNothing({ target: incoterms.code });
+
+  await db.insert(paymentTerms).values([
+    { code: "NET30", name: "Net 30", netDays: 30, active: true },
+    { code: "NET45", name: "Net 45", netDays: 45, active: true },
+    { code: "COD", name: "Cash on Delivery", netDays: 0, active: true },
+  ]).onConflictDoNothing({ target: paymentTerms.code });
+
+  await db.insert(departments).values([
+    { code: "OPS", name: "Operations", costCenterId: "CC-OPS-001", active: true },
+    { code: "PROC", name: "Procurement", costCenterId: "CC-PRC-001", active: true },
+    { code: "FIN", name: "Finance", costCenterId: "CC-FIN-001", active: true },
+    { code: "WH", name: "Warehousing", costCenterId: "CC-WH-001", active: true },
+  ]).onConflictDoNothing({ target: departments.code });
+
+  await db.insert(carriers).values([
+    { code: "DHL", name: "DHL Demo Freight", contact: "ops@dhl.example", active: true },
+    { code: "UPS", name: "UPS Demo Express", contact: "ops@ups.example", active: true },
+    { code: "FDEX", name: "FedEx Demo", contact: "ops@fedex.example", active: true },
+  ]).onConflictDoNothing({ target: carriers.code });
 }
 
 async function ensureSettings(): Promise<void> {
@@ -573,6 +645,280 @@ async function ensureContractsAndFinanceData(
   }
 }
 
+async function ensureGovernanceAndDocuments(): Promise<void> {
+  const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.username, "admin")).limit(1);
+  const adminId = admin?.id ?? 1;
+
+  const [firstPo] = await db.select({ id: purchaseOrders.id }).from(purchaseOrders).limit(1);
+  const [firstInvoice] = await db.select({ id: invoices.id }).from(invoices).limit(1);
+  const [firstContract] = await db.select({ id: supplierContracts.id }).from(supplierContracts).limit(1);
+
+  const existingDocs = await db.select({ id: documents.id }).from(documents).limit(1);
+  if (existingDocs.length === 0) {
+    await db.insert(documents).values([
+      {
+        entityType: "purchase_order",
+        entityId: firstPo?.id ?? 1,
+        fileUrl: "/uploads/documents/demo-po.pdf",
+        fileName: "demo-po.pdf",
+        mimeType: "application/pdf",
+        fileSize: 102400,
+        checksum: "demo-po-checksum",
+        version: 1,
+        uploadedBy: adminId,
+      },
+      {
+        entityType: "invoice",
+        entityId: firstInvoice?.id ?? 1,
+        fileUrl: "/uploads/documents/demo-invoice.pdf",
+        fileName: "demo-invoice.pdf",
+        mimeType: "application/pdf",
+        fileSize: 98888,
+        checksum: "demo-invoice-checksum",
+        version: 1,
+        uploadedBy: adminId,
+      },
+      {
+        entityType: "contract",
+        entityId: firstContract?.id ?? 1,
+        fileUrl: "/uploads/documents/demo-contract.pdf",
+        fileName: "demo-contract.pdf",
+        mimeType: "application/pdf",
+        fileSize: 121100,
+        checksum: "demo-contract-checksum",
+        version: 1,
+        uploadedBy: adminId,
+      },
+    ]);
+  }
+
+  await db.insert(retentionPolicies).values([
+    { documentType: "purchase_order", retentionYears: 7, isActive: true },
+    { documentType: "invoice", retentionYears: 7, isActive: true },
+    { documentType: "contract", retentionYears: 10, isActive: true },
+  ]).onConflictDoNothing({ target: retentionPolicies.documentType });
+
+  const existingPolicies = await db.select({ id: approvalPolicies.id }).from(approvalPolicies).limit(1);
+  if (existingPolicies.length === 0) {
+    await db.insert(approvalPolicies).values([
+      {
+        name: "Requisition Standard Approval",
+        entityType: "requisition",
+        amountMin: 0,
+        amountMax: 5000,
+        approvalLevel: 1,
+        approverRole: "manager",
+        isActive: true,
+      },
+      {
+        name: "PO High Value Approval",
+        entityType: "purchase_order",
+        amountMin: 5000,
+        amountMax: null,
+        approvalLevel: 2,
+        approverRole: "admin",
+        isActive: true,
+      },
+    ]);
+  }
+
+  const allUsers = await db.select({ id: users.id }).from(users);
+  for (const user of allUsers) {
+    await db
+      .insert(notificationPreferences)
+      .values({
+        userId: user.id,
+        emailEnabled: true,
+        inAppEnabled: true,
+        approvalRequest: true,
+        lowStock: true,
+        contractExpiry: true,
+        shipmentDelay: true,
+      })
+      .onConflictDoNothing({ target: notificationPreferences.userId });
+  }
+
+  const existingNotifications = await db.select({ id: notifications.id }).from(notifications).limit(1);
+  if (existingNotifications.length === 0 && allUsers.length > 0) {
+    await db.insert(notifications).values(
+      allUsers.flatMap((user) => [
+        {
+          userId: user.id,
+          type: "approval",
+          title: "Requisition awaiting approval",
+          body: "A requisition is pending approval in your queue.",
+          entityType: "purchase_requisition",
+          entityId: null,
+        },
+        {
+          userId: user.id,
+          type: "inventory",
+          title: "Low stock alert",
+          body: "Multiple SKUs are below threshold and need reorder.",
+          entityType: "inventory_item",
+          entityId: null,
+        },
+      ]),
+    );
+  }
+
+  const [existingSeedAudit] = await db
+    .select({ id: auditLogs.id })
+    .from(auditLogs)
+    .where(eq(auditLogs.action, "seed_completed"))
+    .limit(1);
+  if (!existingSeedAudit) {
+    await db.insert(auditLogs).values({
+      userId: adminId,
+      action: "seed_completed",
+      resourceType: "system",
+      resourceId: null,
+      details: { note: "Extended demo seed completed" },
+      ipAddress: "127.0.0.1",
+      userAgent: "seed-script",
+    });
+  }
+}
+
+async function ensureOperationalInventoryCoverage(defaultWarehouseId: number): Promise<void> {
+  const items = await db.select({ id: inventoryItems.id }).from(inventoryItems).limit(6);
+  if (items.length === 0) return;
+
+  const [secondaryWarehouse] = await db
+    .select({ id: warehouses.id })
+    .from(warehouses)
+    .where(eq(warehouses.name, "Secondary Warehouse"))
+    .limit(1);
+  const secondaryWarehouseId = secondaryWarehouse?.id ?? defaultWarehouseId;
+
+  const existingBatches = await db.select({ id: inventoryBatches.id }).from(inventoryBatches).limit(1);
+  if (existingBatches.length === 0) {
+    await db.insert(inventoryBatches).values(
+      items.slice(0, 4).map((item, idx) => ({
+        itemId: item.id,
+        warehouseId: idx % 2 === 0 ? defaultWarehouseId : secondaryWarehouseId,
+        batchNumber: `BATCH-DEMO-${idx + 1}`,
+        manufacturingDate: new Date(Date.now() - (30 + idx) * 24 * 60 * 60 * 1000),
+        expiryDate: new Date(Date.now() + (180 + idx * 15) * 24 * 60 * 60 * 1000),
+        quantityReceived: 40 + idx * 10,
+        quantityOnHand: 28 + idx * 8,
+      })),
+    );
+  }
+
+  const existingSerials = await db.select({ id: inventorySerials.id }).from(inventorySerials).limit(1);
+  if (existingSerials.length === 0) {
+    await db.insert(inventorySerials).values(
+      items.slice(0, 3).flatMap((item, idx) => [
+        {
+          itemId: item.id,
+          warehouseId: defaultWarehouseId,
+          serialNumber: `SER-${item.id}-${idx + 1}-A`,
+          status: "available",
+          currentLocation: `Aisle A-${idx + 1}`,
+        },
+        {
+          itemId: item.id,
+          warehouseId: secondaryWarehouseId,
+          serialNumber: `SER-${item.id}-${idx + 1}-B`,
+          status: "allocated",
+          currentLocation: `Aisle B-${idx + 1}`,
+        },
+      ]),
+    );
+  }
+
+  const existingAllocations = await db.select({ id: inventoryAllocations.id }).from(inventoryAllocations).limit(1);
+  if (existingAllocations.length === 0) {
+    const [requisition] = await db.select({ id: purchaseRequisitions.id }).from(purchaseRequisitions).limit(1);
+    const [shipment] = await pool.query<{ id: number }>("SELECT id FROM shipments ORDER BY id LIMIT 1").then((r) => r.rows);
+    await db.insert(inventoryAllocations).values(
+      items.slice(0, 3).map((item, idx) => ({
+        itemId: item.id,
+        warehouseId: defaultWarehouseId,
+        quantity: 4 + idx,
+        requisitionId: requisition?.id ?? null,
+        shipmentId: shipment?.id ?? null,
+        status: idx === 0 ? "reserved" : "fulfilled",
+      })),
+    );
+  }
+
+  const existingWarehouseInventory = await db.select({ id: warehouseInventory.id }).from(warehouseInventory).limit(1);
+  if (existingWarehouseInventory.length === 0) {
+    await db.insert(warehouseInventory).values(
+      items.map((item, idx) => ({
+        itemId: item.id,
+        warehouseId: idx % 2 === 0 ? defaultWarehouseId : secondaryWarehouseId,
+        quantity: 20 + idx * 3,
+        location: idx % 2 === 0 ? `Aisle A-${idx + 1}` : `Aisle B-${idx + 1}`,
+        aisle: idx % 2 === 0 ? "A" : "B",
+        bin: `BIN-${idx + 1}`,
+      })),
+    );
+  }
+
+  const existingCycleCounts = await db.select({ id: cycleCounts.id }).from(cycleCounts).limit(1);
+  if (existingCycleCounts.length === 0) {
+    const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.username, "admin")).limit(1);
+    const [cycleCount] = await db.insert(cycleCounts).values({
+      warehouseId: defaultWarehouseId,
+      zone: "Zone A",
+      status: "completed",
+      countDate: new Date(),
+      countedBy: admin?.id ?? null,
+      variance: 2,
+    }).returning({ id: cycleCounts.id });
+
+    if (cycleCount) {
+      await db.insert(cycleCountLines).values(
+        items.slice(0, 4).map((item, idx) => ({
+          cycleCountId: cycleCount.id,
+          itemId: item.id,
+          location: `Aisle A-${idx + 1}`,
+          systemQuantity: 25 + idx * 2,
+          countedQuantity: 24 + idx * 2,
+          variance: -1,
+        })),
+      );
+    }
+  }
+}
+
+async function ensureUserProfileCoverage(): Promise<void> {
+  const allUsers = await db.select({ id: users.id }).from(users);
+  if (allUsers.length === 0) return;
+
+  const existingContacts = await db.select({ id: userContacts.id }).from(userContacts).limit(1);
+  if (existingContacts.length === 0) {
+    await db.insert(userContacts).values(
+      allUsers.map((user, idx) => ({
+        userId: user.id,
+        phoneWork: `+1-555-30${idx}0`,
+        phoneMobile: `+1-555-40${idx}0`,
+        city: "Cape Town",
+        state: "Western Cape",
+        country: "ZA",
+        emergencyContact: `Emergency Contact ${idx + 1}`,
+        emergencyPhone: `+1-555-90${idx}0`,
+      })),
+    );
+  }
+
+  const existingSecurity = await db.select({ id: userSecuritySettings.id }).from(userSecuritySettings).limit(1);
+  if (existingSecurity.length === 0) {
+    await db.insert(userSecuritySettings).values(
+      allUsers.map((user) => ({
+        userId: user.id,
+        allowedIpAddresses: ["127.0.0.1"],
+        allowedGeolocations: ["ZA"],
+        biometricEnabled: false,
+        ssoEnabled: false,
+      })),
+    );
+  }
+}
+
 export async function getDemoDataSummary(): Promise<DemoDataSummary> {
   const [usersCount] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -618,6 +964,7 @@ export async function seedDatabase(): Promise<DemoDataSummary> {
   const categoryMap = await ensureCategories();
   const supplierMap = await ensureSuppliers();
 
+  await ensureMasterData();
   await ensureSettings();
   await ensureAdminUser();
   await ensureDemoUsers();
@@ -627,6 +974,9 @@ export async function seedDatabase(): Promise<DemoDataSummary> {
   await ensureStockMovements();
   await ensurePurchaseRequisitionsAndOrders(supplierMap);
   await ensureContractsAndFinanceData(supplierMap);
+  await ensureGovernanceAndDocuments();
+  await ensureOperationalInventoryCoverage(defaultWarehouseId);
+  await ensureUserProfileCoverage();
 
   return getDemoDataSummary();
 }

@@ -38,6 +38,45 @@ You can also seed manually with:
 npm run db:seed
 ```
 
+For a full QA-ready seeded environment (core + operational datasets), use:
+
+```bash
+npm run demo:reset
+```
+
+## Full Validation Workflow
+
+Run this exact sequence in Codespaces to verify the latest branch and ensure exports + procurement flow are healthy:
+
+```bash
+git fetch origin
+git checkout cursor/project-codespace-compatibility-b14c
+git pull --ff-only origin cursor/project-codespace-compatibility-b14c
+npm ci
+npm run db:push
+npm run demo:reset
+```
+
+Start the app in terminal A:
+
+```bash
+npm run dev
+```
+
+In terminal B, run verification checks:
+
+```bash
+npm run check
+npm run lint
+npm run test:api
+```
+
+`test:api` includes:
+- RBAC authorization checks
+- purchase requisition API flow tests
+- end-to-end procurement flow smoke test
+- export smoke tests for `pdf`, `csv`, `excel`, and `docx`
+
 ## Ports and URLs
 
 | Service | Port | Notes |

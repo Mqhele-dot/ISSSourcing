@@ -25,6 +25,23 @@ type ReportTab =
   | "suppliers"
   | "reorder-requests";
 
+function getExportReportType(reportTab: ReportTab): string {
+  switch (reportTab) {
+    case "purchase-orders":
+      return "purchase_orders";
+    case "purchase-requisitions":
+      return "purchase_requisitions";
+    case "reorder-requests":
+      return "reorder_requests";
+    case "inventory":
+    case "low-stock":
+    case "value":
+      return "inventory";
+    default:
+      return reportTab;
+  }
+}
+
 export default function Reports() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<ReportTab>("inventory");
@@ -118,7 +135,7 @@ export default function Reports() {
     setExporting(true);
     try {
       // Build URL with filter parameters
-      let url = `/api/export/${activeTab}/${exportFormat}`;
+      let url = `/api/export/${getExportReportType(activeTab)}/${exportFormat}`;
       
       // Add filter parameters to URL
       const queryParams = new URLSearchParams();
@@ -143,6 +160,9 @@ export default function Reports() {
       if (filter.status) {
         queryParams.append('status', filter.status);
       }
+      if (activeTab === "low-stock") {
+        queryParams.set("status", "low_stock");
+      }
       
       if (filter.tags && filter.tags.length > 0) {
         queryParams.append('tags', filter.tags.join(','));
@@ -160,10 +180,12 @@ export default function Reports() {
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       
-      const fileExtension = exportFormat === 'excel' ? 'xlsx' : exportFormat;
+      const fileExtension = exportFormat === "excel" ? "xlsx" : exportFormat;
       const filenameSuffix =
         exportFormat === "pdf"
           ? "report"
+          : exportFormat === "docx"
+            ? "word-report"
           : exportFormat === "csv"
             ? "raw-data"
             : "analysis";
@@ -173,7 +195,7 @@ export default function Reports() {
       
       toast({
         title: "Export Successful",
-        description: `${getReportTitle(activeTab)} has been exported as ${exportFormat === 'excel' ? 'XLSX' : exportFormat.toUpperCase()}`,
+        description: `${getReportTitle(activeTab)} has been exported as ${exportFormat === "excel" ? "XLSX" : exportFormat === "docx" ? "DOCX" : exportFormat.toUpperCase()}`,
       });
     } catch (error) {
       toast({
@@ -244,6 +266,7 @@ export default function Reports() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="pdf">PDF Report</SelectItem>
+              <SelectItem value="docx">Word Document</SelectItem>
               <SelectItem value="csv">Raw CSV</SelectItem>
               <SelectItem value="excel">Excel Analysis</SelectItem>
             </SelectContent>
@@ -323,6 +346,8 @@ export default function Reports() {
           <p className="w-full text-xs text-muted-foreground md:w-auto">
             {exportFormat === "pdf"
               ? "PDF Report: structured, branded document for sharing."
+              : exportFormat === "docx"
+                ? "Word Document: polished narrative layout with aligned tables."
               : exportFormat === "csv"
                 ? "Raw CSV: source table data for external processing."
                 : "Excel Analysis: workbook optimized for filtering and pivot analysis."}

@@ -13,6 +13,20 @@ async function count(table: string): Promise<number> {
   return Number(r.rows[0]?.count ?? "0");
 }
 
+async function ensureMinOpsActivity(targetCount: number): Promise<void> {
+  const current = await count("ops_activity");
+  if (current >= targetCount) return;
+
+  for (let i = current; i < targetCount; i++) {
+    const eventType = i % 4 === 0 ? "created" : i % 4 === 1 ? "status_change" : i % 4 === 2 ? "received" : "exception_created";
+    await pool.query(
+      `INSERT INTO ops_activity (created_at, actor, entity_type, entity_id, action, summary_json)
+       VALUES (now() - ($1::int * interval '15 minutes'), 'system', 'demo', $2, $3, $4::jsonb)`,
+      [i, String((i % 10) + 1), eventType, JSON.stringify({ title: `Demo activity ${i + 1}`, details: "Operational seed expansion" })],
+    );
+  }
+}
+
 export async function seedOperationalIfEmpty(): Promise<{
   purchaseOrders: number;
   shipments: number;
@@ -61,32 +75,42 @@ export async function seedOperationalIfEmpty(): Promise<{
     }
   }
 
-  if ((await count("shipments")) === 0) {
-    const pos = (await pool.query<{ order_number: string }>("SELECT order_number FROM purchase_orders ORDER BY id LIMIT 3")).rows;
-    for (const row of pos) {
+  const currentShipmentCount = await count("shipments");
+  if (currentShipmentCount < 12) {
+    const pos = (await pool.query<{ order_number: string }>("SELECT order_number FROM purchase_orders ORDER BY id LIMIT 12")).rows;
+    for (const [index, row] of pos.entries()) {
       await pool.query(
         `INSERT INTO shipments (po_number, carrier, status, eta, created_at, updated_at)
-         VALUES ($1, 'Demo Carrier', 'in_transit', now() + interval '2 days', now(), now())`,
-        [row.order_number],
+         VALUES ($1, $2, $3, now() + interval '2 days', now() - ($4::int * interval '45 minutes'), now())`,
+        [
+          row.order_number,
+          index % 2 === 0 ? "Demo Carrier" : "Global Freight",
+          index % 3 === 0 ? "delivered" : "in_transit",
+          index,
+        ],
       );
     }
   }
 
-  if (exceptionCount === 0) {
+  if (exceptionCount < 8) {
     await pool.query(
       `INSERT INTO operational_exceptions (type, severity, status, title, description, related_refs, sla_hours)
        VALUES
          ('shortage', 'medium', 'open', 'Low stock alert', 'Demo open exception', '{"po":"PO-DEMO-1"}'::jsonb, 24),
-         ('mismatch', 'low', 'resolved', 'Receive quantity mismatch', 'Demo resolved', '{}'::jsonb, 48)`,
+         ('mismatch', 'low', 'resolved', 'Receive quantity mismatch', 'Demo resolved', '{}'::jsonb, 48),
+         ('delay', 'high', 'open', 'Delayed shipment', 'Carrier ETA missed for inbound shipment', '{"shipmentId":2}'::jsonb, 12),
+         ('quality', 'medium', 'open', 'Quality hold', 'Inspection flagged damaged cartons', '{"po":"PO-DEMO-2"}'::jsonb, 24)`,
     );
   }
 
-  if (runsCount === 0) {
+  if (runsCount < 6) {
     await pool.query(
       `INSERT INTO integration_runs (connector, status, started_at, finished_at, message)
        VALUES
          ('erp', 'success', now() - interval '1 hour', now(), 'Sync completed'),
-         ('wms', 'success', now() - interval '2 hours', now() - interval '1 hour', 'OK')`,
+         ('wms', 'success', now() - interval '2 hours', now() - interval '1 hour', 'OK'),
+         ('supplier_portal', 'success', now() - interval '3 hours', now() - interval '2 hours', 'Invoices synchronized'),
+         ('analytics', 'success', now() - interval '4 hours', now() - interval '3 hours', 'Metrics refresh complete')`,
     );
   }
 
@@ -111,6 +135,8 @@ export async function seedOperationalIfEmpty(): Promise<{
       );
     }
   }
+
+  await ensureMinOpsActivity(30);
 
   return {
     purchaseOrders: await count("purchase_orders"),

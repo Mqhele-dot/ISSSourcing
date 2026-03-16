@@ -2,9 +2,23 @@
 import type { PDFPage, PDFFont } from 'pdf-lib';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import Excel from 'exceljs';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream';
-import { promisify } from 'util';
+import {
+  AlignmentType,
+  BorderStyle,
+  Document as DocxDocument,
+  Footer,
+  Header,
+  Packer,
+  PageOrientation,
+  PageNumber,
+  Paragraph,
+  Table,
+  TableCell,
+  TableLayoutType,
+  TableRow,
+  TextRun,
+  WidthType,
+} from 'docx';
 import type { 
   InventoryItem,
   ReportType,
@@ -16,13 +30,9 @@ import {
   Warehouse, 
   Category, 
   PurchaseOrder, 
-  PurchaseRequisition,
-  reportTypeEnum,
-  reportFormatEnum
+  PurchaseRequisition
 } from '@shared/schema';
 import { format } from 'date-fns';
-
-const pipelineAsync = promisify(pipeline);
 
 // ——— Shared PDF layout (matches app style: InvTrack, accent blue, clean table) ———
 const PDF_LAYOUT = {
@@ -67,6 +77,53 @@ function formatPdfCell(value: unknown, opts?: { currency?: boolean; date?: boole
 function truncateForPdf(s: string, maxLen: number): string {
   if (s.length <= maxLen) return s;
   return s.slice(0, maxLen - 3) + '…';
+}
+
+function toTitleCase(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatExportValue(value: unknown, key?: string): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+
+  const valueFormat = key ? PDF_COLUMN_FORMAT[key] : undefined;
+  if (valueFormat === "date") {
+    const d = new Date(value as string | number | Date);
+    if (!Number.isNaN(d.getTime())) {
+      return format(d, "yyyy-MM-dd");
+    }
+  }
+  if (valueFormat === "currency") {
+    const n = Number(value);
+    if (!Number.isNaN(n)) {
+      return n.toFixed(2);
+    }
+  }
+
+  if (value instanceof Date) return format(value, "yyyy-MM-dd");
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return String(value);
+}
+
+function buildGenericSummaryMetrics(data: any[], columns: { header: string; key: string; width: number }[]): Array<{ label: string; value: string }> {
+  const currencyColumns = columns.filter((col) => PDF_COLUMN_FORMAT[col.key] === "currency").map((col) => col.key);
+  const currencyTotal = data.reduce((sum, item) => {
+    for (const key of currencyColumns) {
+      const n = Number(item?.[key] ?? 0);
+      if (Number.isFinite(n)) sum += n;
+    }
+    return sum;
+  }, 0);
+
+  return [
+    { label: "Records", value: String(data.length) },
+    { label: "Columns", value: String(columns.length) },
+    { label: "Updated", value: format(new Date(), "yyyy-MM-dd") },
+    { label: "Monetary Sum", value: `$${currencyTotal.toFixed(2)}` },
+  ];
 }
 
 function drawPdfReportHeader(
@@ -408,7 +465,13 @@ const CSV_EOL = '\r\n';
  * Uses UTF-8 BOM + sep=, + CRLF so Excel opens as a clean table.
  */
 export async function generateInventoryCsv(items: InventoryItem[], title: string, _columns?: any[]): Promise<Buffer> {
-  const lines = [CSV_BOM + 'sep=,', ['SKU', 'Name', 'Description', 'Category', 'Quantity', 'Price', 'Cost', 'Status', 'Low Stock Threshold'].join(',')];
+  const lines = [
+    CSV_BOM + 'sep=,',
+    `"${title.replace(/"/g, '""')}"`,
+    `"Generated","${format(new Date(), "yyyy-MM-dd HH:mm")}"`,
+    "",
+    ['SKU', 'Name', 'Description', 'Category', 'Quantity', 'Price', 'Cost', 'Status', 'Low Stock Threshold'].join(','),
+  ];
   items.forEach(item => {
     const status = item.quantity <= 0 ? 'Out of Stock' : 
                   (item.lowStockThreshold && item.quantity <= item.lowStockThreshold) ? 'Low Stock' : 
@@ -419,8 +482,8 @@ export async function generateInventoryCsv(items: InventoryItem[], title: string
       item.description || '',
       item.categoryId || '',
       item.quantity,
-      item.price.toFixed(2),
-      item.cost?.toFixed(2) || '',
+      formatExportValue(item.price, "price"),
+      formatExportValue(item.cost, "cost"),
       status,
       item.lowStockThreshold || ''
     ].map(value => `"${String(value).replace(/"/g, '""')}"`).join(','));
@@ -450,13 +513,26 @@ export async function generateInventoryExcel(items: InventoryItem[], title: stri
     { header: 'Last Updated', key: 'lastUpdated', width: 18 }
   ];
   
-  // Style the header row
-  worksheet.getRow(1).font = { bold: true };
-  
-  // Add title as a merged cell before the headers
+  // Add title and metadata section before headers
   worksheet.insertRow(1, [title]);
   worksheet.getCell('A1').font = { bold: true, size: 14 };
   worksheet.mergeCells('A1:J1');
+  worksheet.insertRow(2, [`Generated: ${format(new Date(), "yyyy-MM-dd HH:mm")}`]);
+  worksheet.mergeCells("A2:J2");
+  worksheet.getCell("A2").font = { italic: true, color: { argb: "FF64748B" } };
+  worksheet.insertRow(3, []);
+
+  // Header styling
+  const headerRow = worksheet.getRow(4);
+  headerRow.font = { bold: true, color: { argb: "FF0F172A" } };
+  headerRow.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFE2E8F0" },
+  };
+  headerRow.alignment = { vertical: "middle", horizontal: "center" };
+  headerRow.height = 22;
+  worksheet.views = [{ state: "frozen", ySplit: 4, activeCell: "A5" }];
   
   // Add data
   items.forEach(item => {
@@ -470,14 +546,36 @@ export async function generateInventoryExcel(items: InventoryItem[], title: stri
       description: item.description || '',
       category: item.categoryId || '',
       quantity: item.quantity,
-      price: item.price.toFixed(2),
-      cost: item.cost?.toFixed(2) || '',
+      price: Number(formatExportValue(item.price, "price")),
+      cost: item.cost == null ? "" : Number(formatExportValue(item.cost, "cost")),
       status: status,
       lowStockThreshold: item.lowStockThreshold || '',
       lastUpdated: item.updatedAt ? format(new Date(item.updatedAt), 'yyyy-MM-dd HH:mm') : ''
     });
   });
   
+  // Apply professional table formatting and alignment
+  for (let rowNumber = 5; rowNumber <= worksheet.rowCount; rowNumber++) {
+    const row = worksheet.getRow(rowNumber);
+    row.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    row.getCell(5).alignment = { vertical: "middle", horizontal: "right" };
+    row.getCell(6).alignment = { vertical: "middle", horizontal: "right" };
+    row.getCell(7).alignment = { vertical: "middle", horizontal: "right" };
+  }
+
+  worksheet.getColumn(6).numFmt = '#,##0.00';
+  worksheet.getColumn(7).numFmt = '#,##0.00';
+  worksheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+    });
+  });
+
   // Write to buffer
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer as ArrayBuffer);
@@ -555,11 +653,16 @@ export async function generateGenericPdf(data: any[], title: string, columns: {h
  * Uses UTF-8 BOM + sep=, + CRLF so Excel opens as a clean table.
  */
 export async function generateGenericCsv(data: any[], title: string, columns: {header: string; key: string}[]): Promise<Buffer> {
-  const lines = [CSV_BOM + 'sep=,', columns.map(col => `"${String(col.header).replace(/"/g, '""')}"`).join(',')];
+  const lines = [
+    CSV_BOM + 'sep=,',
+    `"${title.replace(/"/g, '""')}"`,
+    `"Generated","${format(new Date(), "yyyy-MM-dd HH:mm")}"`,
+    "",
+    columns.map(col => `"${String(col.header).replace(/"/g, '""')}"`).join(','),
+  ];
   data.forEach(item => {
     lines.push(columns.map(col => {
-      let value = item[col.key] !== undefined && item[col.key] !== null ? item[col.key] : '';
-      if (value instanceof Date) value = format(value, 'yyyy-MM-dd HH:mm');
+      const value = formatExportValue(item[col.key], col.key);
       return `"${String(value).replace(/"/g, '""')}"`;
     }).join(','));
   });
@@ -576,37 +679,240 @@ export async function generateGenericExcel(data: any[], title: string, columns: 
   
   // Set up the columns
   worksheet.columns = columns;
-  worksheet.getRow(1).font = { bold: true };
   worksheet.insertRow(1, [title]);
   worksheet.getCell('A1').font = { bold: true, size: 14 };
-  worksheet.mergeCells(`A1:${String.fromCharCode(64 + columns.length)}1`);
-  // Freeze header row (row 2) so it stays visible when scrolling
-  worksheet.views = [{ state: "frozen", ySplit: 2, activeCell: "A3" }];
-  worksheet.getRow(2).font = { bold: true };
+  const lastColumnLetter = worksheet.getColumn(columns.length).letter;
+  worksheet.mergeCells(`A1:${lastColumnLetter}1`);
+  worksheet.insertRow(2, [`Generated: ${format(new Date(), "yyyy-MM-dd HH:mm")}`]);
+  worksheet.mergeCells(`A2:${lastColumnLetter}2`);
+  worksheet.getCell("A2").font = { italic: true, color: { argb: "FF64748B" } };
+  worksheet.insertRow(3, []);
+  worksheet.views = [{ state: "frozen", ySplit: 4, activeCell: "A5" }];
+  const headerRow = worksheet.getRow(4);
+  headerRow.font = { bold: true, color: { argb: "FF0F172A" } };
+  headerRow.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFE2E8F0" },
+  };
+  headerRow.alignment = { vertical: "middle", horizontal: "center" };
+  headerRow.height = 22;
 
   // Add data
   data.forEach(item => {
     const row: any = {};
     
     columns.forEach(col => {
-      let value = item[col.key];
-      
-      // Handle special cases
-      if (value instanceof Date) {
-        value = format(value, 'yyyy-MM-dd HH:mm');
-      } else if (value === null || value === undefined) {
-        value = '';
-      }
-      
-      row[col.key] = value;
+      row[col.key] = formatExportValue(item[col.key], col.key);
     });
     
     worksheet.addRow(row);
   });
   
+  for (let rowNumber = 5; rowNumber <= worksheet.rowCount; rowNumber++) {
+    const row = worksheet.getRow(rowNumber);
+    row.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    columns.forEach((column, index) => {
+      const isNumeric = PDF_COLUMN_FORMAT[column.key] === "currency" || /amount|price|total|cost|quantity|qty/i.test(column.key);
+      if (isNumeric) {
+        row.getCell(index + 1).alignment = { vertical: "middle", horizontal: "right" };
+      }
+    });
+  }
+
+  columns.forEach((column, index) => {
+    if (PDF_COLUMN_FORMAT[column.key] === "currency") {
+      worksheet.getColumn(index + 1).numFmt = '#,##0.00';
+    }
+  });
+  worksheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+    });
+  });
+
   // Write to buffer
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer as ArrayBuffer);
+}
+
+function getDocxAlignmentForColumn(key: string) {
+  if (PDF_COLUMN_FORMAT[key] === "currency" || /amount|price|total|cost|quantity|qty/i.test(key)) {
+    return AlignmentType.RIGHT;
+  }
+  if (PDF_COLUMN_FORMAT[key] === "date") {
+    return AlignmentType.CENTER;
+  }
+  return AlignmentType.LEFT;
+}
+
+function buildDocxSummaryRows(metrics: Array<{ label: string; value: string }>): TableRow[] {
+  return metrics.map((metric) =>
+    new TableRow({
+      children: [
+        new TableCell({
+          width: { size: 35, type: WidthType.PERCENTAGE },
+          children: [new Paragraph({ children: [new TextRun({ text: metric.label, bold: true })] })],
+        }),
+        new TableCell({
+          width: { size: 65, type: WidthType.PERCENTAGE },
+          children: [new Paragraph({ children: [new TextRun(metric.value)] })],
+        }),
+      ],
+    }),
+  );
+}
+
+export async function generateGenericDocx(
+  data: any[],
+  title: string,
+  columns: { header: string; key: string; width: number }[],
+): Promise<Buffer> {
+  const summaryMetrics = buildGenericSummaryMetrics(data, columns);
+
+  const headerRow = new TableRow({
+    tableHeader: true,
+    children: columns.map(
+      (col) =>
+        new TableCell({
+          children: [
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({ text: col.header, bold: true })],
+            }),
+          ],
+        }),
+    ),
+  });
+
+  const dataRows = (data.length > 0 ? data : [{}]).map(
+    (item) =>
+      new TableRow({
+        children: columns.map((col) => {
+          const value =
+            data.length > 0
+              ? formatExportValue(item[col.key], col.key)
+              : col === columns[0]
+                ? "No records available for selected filters."
+                : "";
+          return new TableCell({
+            children: [
+              new Paragraph({
+                alignment: getDocxAlignmentForColumn(col.key),
+                children: [new TextRun(value)],
+              }),
+            ],
+          });
+        }),
+      }),
+  );
+
+  const doc = new DocxDocument({
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: { top: 1100, right: 900, bottom: 1100, left: 900 },
+            size: { orientation: PageOrientation.PORTRAIT },
+          },
+        },
+        headers: {
+          default: new Header({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: "InvTrack", bold: true })],
+              }),
+            ],
+          }),
+        },
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [
+                  new TextRun("Page "),
+                  new TextRun({ children: [PageNumber.CURRENT] }),
+                  new TextRun(" of "),
+                  new TextRun({ children: [PageNumber.TOTAL_PAGES] }),
+                ],
+              }),
+            ],
+          }),
+        },
+        children: [
+          new Paragraph({
+            spacing: { after: 120 },
+            children: [new TextRun({ text: title, bold: true, size: 34 })],
+          }),
+          new Paragraph({
+            spacing: { after: 280 },
+            children: [new TextRun({ text: `Generated ${format(new Date(), "PPP p")}`, color: "475569" })],
+          }),
+          new Paragraph({
+            spacing: { after: 140 },
+            children: [new TextRun({ text: "Summary", bold: true, size: 24 })],
+          }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: buildDocxSummaryRows(summaryMetrics),
+            layout: TableLayoutType.FIXED,
+            borders: {
+              top: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              bottom: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              left: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              right: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              insideHorizontal: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              insideVertical: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+            },
+          }),
+          new Paragraph({ spacing: { after: 220 } }),
+          new Paragraph({
+            spacing: { after: 120 },
+            children: [new TextRun({ text: "Detailed Data", bold: true, size: 24 })],
+          }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [headerRow, ...dataRows],
+            layout: TableLayoutType.FIXED,
+            borders: {
+              top: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              bottom: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              left: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              right: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              insideHorizontal: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+              insideVertical: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 1 },
+            },
+          }),
+        ],
+      },
+    ],
+  });
+
+  return Buffer.from(await Packer.toBuffer(doc));
+}
+
+export async function generateInventoryDocx(
+  items: InventoryItem[],
+  title: string,
+  columns: { header: string; key: string; width: number }[],
+): Promise<Buffer> {
+  const normalizedRows = items.map((item) => ({
+    ...item,
+    status:
+      item.quantity <= 0
+        ? "Out of Stock"
+        : (item.lowStockThreshold && item.quantity <= item.lowStockThreshold)
+          ? "Low Stock"
+          : "In Stock",
+  }));
+  return generateGenericDocx(normalizedRows, title, columns);
 }
 
 /**
@@ -619,7 +925,8 @@ export function createDocumentGenerator(reportType: ReportType) {
       return {
         pdf: generateInventoryPdf,
         csv: generateInventoryCsv,
-        excel: generateInventoryExcel
+        excel: generateInventoryExcel,
+        docx: generateInventoryDocx,
       };
     
     // For other reports, return generic handlers
@@ -627,7 +934,8 @@ export function createDocumentGenerator(reportType: ReportType) {
       return {
         pdf: generateGenericPdf,
         csv: generateGenericCsv,
-        excel: generateGenericExcel
+        excel: generateGenericExcel,
+        docx: generateGenericDocx,
       };
   }
 }
@@ -803,26 +1111,21 @@ export async function generateDocument(
   const generator = createDocumentGenerator(reportType);
   const columns = getReportColumns(reportType);
   const pdfTemplate = options?.pdfTemplate === 'custom' ? 'standard' : (options?.pdfTemplate ?? 'standard');
+  const normalizedData = Array.isArray(data) ? data : [];
 
   try {
     if (format === 'pdf') {
-      let reportBuffer = await generator.pdf(data, title, columns, pdfTemplate as 'standard' | 'compact');
+      let reportBuffer = await generator.pdf(normalizedData, title, columns, pdfTemplate as 'standard' | 'compact');
       if (options?.pdfTemplate === 'custom' && options?.customTemplateBuffer?.length) {
         reportBuffer = await mergePdfWithTemplate(options.customTemplateBuffer, reportBuffer);
       }
       return reportBuffer;
     } else if (format === 'csv') {
-      if (reportType === 'inventory') {
-        return generator.csv(data, title, columns);
-      } else {
-        return generator.csv(data, title, columns);
-      }
+      return generator.csv(normalizedData, title, columns);
     } else if (format === 'excel') {
-      if (reportType === 'inventory') {
-        return generator.excel(data, title, columns);
-      } else {
-        return generator.excel(data, title, columns);
-      }
+      return generator.excel(normalizedData, title, columns);
+    } else if (format === 'docx') {
+      return generator.docx(normalizedData, title, columns);
     } else {
       throw new Error(`Unsupported format: ${format}`);
     }
