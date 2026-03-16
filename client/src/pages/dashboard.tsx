@@ -76,6 +76,16 @@ export default function Dashboard() {
       return requestJson<InventoryItem[]>("GET", endpoint);
     },
   });
+  const { data: controlTower } = useQuery({
+    queryKey: ["/api/control-tower/overview"],
+    queryFn: () => requestJson<{
+      kpis?: {
+        lateShipments?: number;
+        posAwaitingAction?: number;
+        lowStockSkus?: number;
+      };
+    }>("GET", "/api/control-tower/overview"),
+  });
 
   // Export report handler
   const handleExport = async (format: DocumentType) => {
@@ -299,6 +309,36 @@ export default function Dashboard() {
           loading={statsLoading}
         />
       </div>
+
+      <Card className="mb-6">
+        <div className="px-5 py-4 border-b border-neutral-200 dark:border-neutral-700">
+          <h3 className="text-lg font-medium text-neutral-900 dark:text-white">Control Tower</h3>
+          <p className="text-sm text-muted-foreground">Monitor critical workflow exceptions and jump to deep-dive modules.</p>
+        </div>
+        <div className="p-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded border p-3">
+            <div className="text-sm text-muted-foreground">Open approvals</div>
+            <div className="text-2xl font-semibold">{controlTower?.kpis?.posAwaitingAction ?? 0}</div>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/purchase/requisitions")}>
+              View approvals
+            </Button>
+          </div>
+          <div className="rounded border p-3">
+            <div className="text-sm text-muted-foreground">Late shipments</div>
+            <div className="text-2xl font-semibold">{controlTower?.kpis?.lateShipments ?? 0}</div>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/logistics")}>
+              View logistics
+            </Button>
+          </div>
+          <div className="rounded border p-3">
+            <div className="text-sm text-muted-foreground">Low stock alerts</div>
+            <div className="text-2xl font-semibold">{controlTower?.kpis?.lowStockSkus ?? 0}</div>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/exceptions")}>
+              View exceptions
+            </Button>
+          </div>
+        </div>
+      </Card>
       
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Inventory Overview Section */}

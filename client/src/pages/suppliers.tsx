@@ -98,6 +98,20 @@ export default function SuppliersPage() {
     queryKey: ["/api/currencies"],
     queryFn: () => requestJson("GET", "/api/currencies"),
   });
+  const { data: performance = [] } = useQuery<
+    Array<{
+      supplierId: number;
+      supplierName: string;
+      onTimeDeliveryRate: number;
+      priceComplianceRate: number;
+      ordersMeasured: number;
+      invoicesMeasured: number;
+      overallRating: number;
+    }>
+  >({
+    queryKey: ["/api/suppliers/performance"],
+    queryFn: () => requestJson("GET", "/api/suppliers/performance"),
+  });
 
   // Get logo for selected supplier
   const { data: selectedLogo, isLoading: isLogoLoading } = useQuery<SupplierLogo | null>({
@@ -391,6 +405,7 @@ export default function SuppliersPage() {
   };
 
   const paymentTermsById = new Map(paymentTerms.map((term) => [term.id, `${term.code} - ${term.name}`]));
+  const performanceBySupplier = new Map(performance.map((row) => [row.supplierId, row]));
 
   return (
     <div>
@@ -536,6 +551,18 @@ export default function SuppliersPage() {
                             </span>
                           </div>
                         )}
+                        {performanceBySupplier.get(supplier.id) ? (
+                          <div className="flex items-center col-span-2">
+                            <span className="text-muted-foreground text-sm">Supplier rating:</span>
+                            <span className="ml-2">
+                              {performanceBySupplier.get(supplier.id)?.overallRating.toFixed(1)}/5
+                              {" · "}
+                              OTD {performanceBySupplier.get(supplier.id)?.onTimeDeliveryRate.toFixed(1)}%
+                              {" · "}
+                              Price compliance {performanceBySupplier.get(supplier.id)?.priceComplianceRate.toFixed(1)}%
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
 
                       {/* Notes */}

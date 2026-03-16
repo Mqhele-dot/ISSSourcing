@@ -17,6 +17,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, requestJson } from "@/lib/queryClient";
 import type { PurchaseRequisition, PurchaseRequisitionItem, Supplier, InventoryItem } from "@shared/schema";
+import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 
 interface ReqItem {
   itemId: number;
@@ -193,7 +194,7 @@ export default function RequisitionFormPage() {
         <div className="space-y-6" role="form" aria-label="Purchase requisition form">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="req-supplier">Supplier</Label>
+              <Label htmlFor="req-supplier">Supplier *</Label>
               <Select value={String(supplierId)} onValueChange={(v) => setSupplierId(v ? Number(v) : "")}>
                 <SelectTrigger id="req-supplier" aria-label="Select supplier">
                   <SelectValue placeholder="Select supplier..." />
@@ -223,7 +224,7 @@ export default function RequisitionFormPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="req-required-date">Required date</Label>
+              <Label htmlFor="req-required-date">Required date *</Label>
               <Input
                 id="req-required-date"
                 aria-label="Required date"
@@ -263,7 +264,7 @@ export default function RequisitionFormPage() {
                 {items.map((item, idx) => (
                   <div key={idx} className="flex gap-2 items-end">
                     <div className="flex-1 space-y-2">
-                      <Label htmlFor={"req-item-" + idx}>Item</Label>
+                      <Label htmlFor={"req-item-" + idx}>Item *</Label>
                       <Select
                         value={item.itemId ? String(item.itemId) : ""}
                         onValueChange={(v) => updateItem(idx, "itemId", v ? Number(v) : 0)}
@@ -281,7 +282,7 @@ export default function RequisitionFormPage() {
                       </Select>
                     </div>
                     <div className="w-24 space-y-2">
-                      <Label htmlFor={"req-qty-" + idx}>Qty</Label>
+                      <Label htmlFor={"req-qty-" + idx}>Qty *</Label>
                       <Input
                         id={"req-qty-" + idx}
                         aria-label={"Quantity for line " + (idx + 1)}
@@ -292,7 +293,7 @@ export default function RequisitionFormPage() {
                       />
                     </div>
                     <div className="w-28 space-y-2">
-                      <Label htmlFor={"req-unitprice-" + idx}>Unit price</Label>
+                      <Label htmlFor={"req-unitprice-" + idx}>Unit price *</Label>
                       <Input
                         id={"req-unitprice-" + idx}
                         aria-label={"Unit price for line " + (idx + 1)}
@@ -321,6 +322,13 @@ export default function RequisitionFormPage() {
               <Link href={listPath}>Cancel</Link>
             </Button>
           </div>
+          {!isNew && id ? (
+            <EntityDocumentsCard
+              entityType="requisition"
+              entityId={id}
+              title="Requisition Attachments"
+            />
+          ) : null}
         </div>
       )}
     </div>

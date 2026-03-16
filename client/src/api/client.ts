@@ -520,6 +520,7 @@ export async function fetchSpendAnalytics(params?: {
   inventoryTurnover: Array<{ sku: string; turnover: number }>;
   warehouseUtilization: Array<{ warehouseName: string; utilization: number }>;
   supplierPerformance: Array<{ supplierName: string; onTimeDeliveryRate: number; ordersMeasured: number }>;
+  exceptionSummary: Array<{ type: string; openCount: number }>;
 }> {
   const search = new URLSearchParams();
   if (params?.from) search.set("from", params.from);

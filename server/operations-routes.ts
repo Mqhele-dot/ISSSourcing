@@ -927,6 +927,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const limitRaw = Number(req.query.limit);
         const entityType = typeof req.query.entity_type === "string" ? req.query.entity_type : "";
         const entityId = typeof req.query.entity_id === "string" ? req.query.entity_id : "";
+        const actor = typeof req.query.actor === "string" ? req.query.actor.trim().toLowerCase() : "";
+        const from = typeof req.query.from === "string" ? new Date(req.query.from) : null;
+        const to = typeof req.query.to === "string" ? new Date(req.query.to) : null;
         const records = await withTimeout(
           listOperationalActivity({
             limit: Number.isFinite(limitRaw) ? limitRaw : 20,
@@ -935,7 +938,14 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           }),
           OPERATIONS_QUERY_TIMEOUT_MS,
         );
-        respondOk(res, records);
+        const filtered = records.filter((record) => {
+          if (actor && !String(record.actor ?? "").toLowerCase().includes(actor)) return false;
+          const createdAt = record.createdAt ? new Date(record.createdAt) : null;
+          if (from && createdAt && createdAt < from) return false;
+          if (to && createdAt && createdAt > to) return false;
+          return true;
+        });
+        respondOk(res, filtered);
       } catch (err) {
         logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);

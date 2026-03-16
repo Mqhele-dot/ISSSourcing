@@ -118,6 +118,20 @@ export default function SupplyAnalyticsPage() {
             ))}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Exception analytics</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {(data?.exceptionSummary ?? []).slice(0, 8).map((row) => (
+              <div key={row.type} className="flex items-center justify-between text-sm">
+                <span>{row.type}</span>
+                <span>{row.openCount}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

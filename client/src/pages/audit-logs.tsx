@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { requestJson } from "@/lib/queryClient";
 import { Download } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 type ActivityLog = {
   id: number;
@@ -45,17 +46,41 @@ function downloadCsv(filename: string, rows: string[][]) {
 }
 
 export default function AuditLogsPage() {
+  const { toast } = useToast();
   const [entityType, setEntityType] = useState("");
   const [entityId, setEntityId] = useState("");
+  const [actor, setActor] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const { data: logs = [], isLoading, refetch } = useQuery({
-    queryKey: ["/api/activity", entityType, entityId],
+    queryKey: ["/api/activity", entityType, entityId, actor, fromDate, toDate],
     queryFn: () => {
       const search = new URLSearchParams();
       search.set("limit", "200");
       if (entityType.trim()) search.set("entity_type", entityType.trim());
       if (entityId.trim()) search.set("entity_id", entityId.trim());
+      if (actor.trim()) search.set("actor", actor.trim());
+      if (fromDate.trim()) search.set("from", fromDate.trim());
+      if (toDate.trim()) search.set("to", toDate.trim());
       return requestJson<ActivityLog[]>("GET", `/api/activity?${search.toString()}`);
+    },
+  });
+
+  const runComplianceReminders = useMutation({
+    mutationFn: () => requestJson("POST", "/api/compliance/run-reminders"),
+    onSuccess: (result: any) => {
+      toast({
+        title: "Compliance reminders run",
+        description: `Suppliers: ${result.insuranceExpiring}, Contracts: ${result.contractsExpiring}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Compliance reminders failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
     },
   });
 
@@ -103,8 +128,32 @@ export default function AuditLogsPage() {
               placeholder="e.g. PO-2025-001 or 123"
             />
           </div>
+          <div className="space-y-1">
+            <Label htmlFor="audit-actor">Actor</Label>
+            <Input
+              id="audit-actor"
+              value={actor}
+              onChange={(e) => setActor(e.target.value)}
+              placeholder="username/email/system"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="audit-from">From</Label>
+            <Input id="audit-from" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="audit-to">To</Label>
+            <Input id="audit-to" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </div>
           <div className="flex items-end gap-2">
             <Button onClick={() => refetch()}>Apply</Button>
+            <Button
+              variant="outline"
+              onClick={() => runComplianceReminders.mutate()}
+              disabled={runComplianceReminders.isPending}
+            >
+              Run reminders
+            </Button>
             <Button
               variant="outline"
               onClick={() =>

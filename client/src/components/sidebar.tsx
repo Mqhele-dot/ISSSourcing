@@ -129,43 +129,48 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
         
         <nav className="flex-1 px-2 py-4 overflow-y-auto">
           <div className="space-y-1">
-            <SectionTitle>Overview</SectionTitle>
+            <SectionTitle>Control Tower</SectionTitle>
             <NavItem path="/" icon={<Home className="h-5 w-5" />} helpTitle="Home" helpDescription="Landing page and quick overview of the app.">Home</NavItem>
             <NavItem path="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} helpTitle="Dashboard" helpDescription="Overview of inventory status, stats, charts, and recent orders.">Dashboard</NavItem>
             <NavItem path="/analytics" icon={<BarChart2 className="h-5 w-5" />} helpTitle="Analytics" helpDescription="Charts, top items, inventory value, and custom graphs.">Analytics</NavItem>
 
-            <SectionTitle>Inventory</SectionTitle>
+            <SectionTitle>Master Data</SectionTitle>
             <NavItem path="/inventory" icon={<Archive className="h-5 w-5" />} helpTitle="Inventory" helpDescription="Manage products, stock levels, and item details.">Inventory</NavItem>
+            <NavItem path="/master-data" icon={<Database className="h-5 w-5" />} helpTitle="Master Data" helpDescription="Manage reference data like units, currencies, tax codes, payment terms, and departments.">Master Data</NavItem>
+            <NavItem path="/suppliers" icon={<Users className="h-5 w-5" />} helpTitle="Suppliers" helpDescription="Manage vendor information and contacts.">Suppliers</NavItem>
+            <NavItem path="/warehouses" icon={<Building className="h-5 w-5" />} helpTitle="Warehouses" helpDescription="Manage warehouse locations and stock.">Warehouses</NavItem>
             <NavItem path="/barcode-scanner" icon={<QrCode className="h-5 w-5" />} helpTitle="Barcode Scanner" helpDescription="Scan and generate barcodes for inventory items.">Barcode Scanner</NavItem>
             <NavItem path="/image-recognition" icon={<Camera className="h-5 w-5" />} helpTitle="Image Recognition" helpDescription="Identify items or extract data from product images.">Image Recognition</NavItem>
 
-            <SectionTitle>Purchase</SectionTitle>
+            <SectionTitle>Procurement</SectionTitle>
             <NavItem path="/purchase" icon={<ShoppingCart className="h-5 w-5" />} helpTitle="Purchase Orders" helpDescription="View and manage purchase orders. Use the Requisitions tab to create or approve requisitions.">Purchase Orders</NavItem>
             <NavItem path="/purchase/requisitions" icon={<FileText className="h-5 w-5" />} helpTitle="Requisitions" helpDescription="Create, edit, approve, and share purchase requisitions; convert approved ones to purchase orders.">Requisitions</NavItem>
-            <NavItem path="/suppliers" icon={<Users className="h-5 w-5" />} helpTitle="Suppliers" helpDescription="Manage vendor information and contacts.">Suppliers</NavItem>
-            <NavItem path="/contracts" icon={<FileText className="h-5 w-5" />} helpTitle="Contracts" helpDescription="Manage contracts with each supplier, view summaries, and find copies.">Contracts</NavItem>
             <NavItem path="/invoices" icon={<FileText className="h-5 w-5" />} helpTitle="Invoices" helpDescription="Create and manage supplier invoices linked to purchase orders, and run 3-way match checks.">Invoices</NavItem>
             <NavItem path="/supplier-portal" icon={<Users className="h-5 w-5" />} helpTitle="Supplier Portal" helpDescription="Supplier-facing view for confirming POs and updating expected delivery dates.">Supplier Portal</NavItem>
 
-            <SectionTitle>Logistics</SectionTitle>
-            <NavItem path="/logistics" icon={<Building className="h-5 w-5" />} helpTitle="Shipments" helpDescription="Track shipments and logistics.">Shipments</NavItem>
-            <NavItem path="/warehouses" icon={<Building className="h-5 w-5" />} helpTitle="Warehouses" helpDescription="Manage warehouse locations and stock.">Warehouses</NavItem>
+            <SectionTitle>Inventory Operations</SectionTitle>
             <NavItem path="/cycle-counts" icon={<RefreshCw className="h-5 w-5" />} helpTitle="Cycle Counts" helpDescription="Plan and post cycle counts with automatic stock adjustment entries.">Cycle Counts</NavItem>
             <NavItem path="/reorder" icon={<RefreshCw className="h-5 w-5" />} helpTitle="Reorder Requests" helpDescription="View and manage reorder requests.">Reorder Requests</NavItem>
 
-            <SectionTitle>Exceptions</SectionTitle>
-            <NavItem path="/exceptions" icon={<Activity className="h-5 w-5" />} helpTitle="Exceptions" helpDescription="View and resolve inventory or order exceptions.">Exceptions</NavItem>
+            <SectionTitle>Logistics</SectionTitle>
+            <NavItem path="/logistics" icon={<Building className="h-5 w-5" />} helpTitle="Shipments" helpDescription="Track shipments and logistics.">Shipments</NavItem>
 
-            <SectionTitle>Integrations</SectionTitle>
-            <NavItem path="/integrations" icon={<FileUp className="h-5 w-5" />} helpTitle="Connectors" helpDescription="Connect external systems and data sources.">Connectors</NavItem>
-            <NavItem path="/document-extractor" icon={<FileUp className="h-5 w-5" />} helpTitle="Document Extractor" helpDescription="Extract data from documents (e.g. invoices).">Document Extractor</NavItem>
+            <SectionTitle>Finance</SectionTitle>
+            <NavItem path="/billing" icon={<FileText className="h-5 w-5" />} helpTitle="Payments & Billing" helpDescription="Track payments and billing configuration.">Payments</NavItem>
 
-            <SectionTitle>Settings</SectionTitle>
-            <NavItem path="/reports" icon={<FileText className="h-5 w-5" />} helpTitle="Reports" helpDescription="Analytics and custom reports (PDF, Excel, CSV).">Reports</NavItem>
-            <NavItem path="/supply-analytics" icon={<BarChart2 className="h-5 w-5" />} helpTitle="Supply Analytics" helpDescription="Spend, turnover, and warehouse utilization snapshots.">Supply Analytics</NavItem>
-            <NavItem path="/master-data" icon={<Database className="h-5 w-5" />} helpTitle="Master Data" helpDescription="Manage reference data like units, currencies, tax codes, payment terms, and departments.">Master Data</NavItem>
+            <SectionTitle>Compliance</SectionTitle>
+            <NavItem path="/contracts" icon={<FileText className="h-5 w-5" />} helpTitle="Contracts" helpDescription="Manage contracts with each supplier, view summaries, and find copies.">Contracts</NavItem>
             <NavItem path="/audit-logs" icon={<Activity className="h-5 w-5" />} helpTitle="Audit Logs" helpDescription="Filter and export audit/activity records for compliance review.">Audit Logs</NavItem>
             <NavItem path="/documents" icon={<FileUp className="h-5 w-5" />} helpTitle="Documents" helpDescription="Upload and manage document versions with retention support.">Documents</NavItem>
+            <NavItem path="/exceptions" icon={<Activity className="h-5 w-5" />} helpTitle="Exceptions" helpDescription="View and resolve inventory or order exceptions.">Exceptions</NavItem>
+
+            <SectionTitle>Analytics</SectionTitle>
+            <NavItem path="/reports" icon={<FileText className="h-5 w-5" />} helpTitle="Reports" helpDescription="Analytics and custom reports (PDF, Excel, CSV).">Reports</NavItem>
+            <NavItem path="/supply-analytics" icon={<BarChart2 className="h-5 w-5" />} helpTitle="Supply Analytics" helpDescription="Spend, turnover, and warehouse utilization snapshots.">Supply Analytics</NavItem>
+
+            <SectionTitle>Settings</SectionTitle>
+            <NavItem path="/integrations" icon={<FileUp className="h-5 w-5" />} helpTitle="Connectors" helpDescription="Connect external systems and data sources.">Connectors</NavItem>
+            <NavItem path="/document-extractor" icon={<FileUp className="h-5 w-5" />} helpTitle="Document Extractor" helpDescription="Extract data from documents (e.g. invoices).">Document Extractor</NavItem>
             <NavItem path="/settings" icon={<Settings className="h-5 w-5" />} helpTitle="Settings" helpDescription="Configure application preferences.">Settings</NavItem>
           </div>
         </nav>

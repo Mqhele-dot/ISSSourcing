@@ -1375,10 +1375,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       });
 
-      res.json({ spendBySupplier, inventoryTurnover, warehouseUtilization, supplierPerformance });
+      let exceptionSummary: Array<{ type: string; openCount: number }> = [];
+      try {
+        const exceptionRows = await pool.query(
+          `SELECT type, COUNT(*)::int AS open_count
+           FROM ops_exceptions
+           WHERE status IN ('open', 'in_progress')
+           GROUP BY type
+           ORDER BY open_count DESC`,
+        );
+        exceptionSummary = (exceptionRows.rows ?? []).map((row: any) => ({
+          type: String(row.type ?? "unknown"),
+          openCount: Number(row.open_count ?? 0),
+        }));
+      } catch {
+        exceptionSummary = [];
+      }
+
+      res.json({
+        spendBySupplier,
+        inventoryTurnover,
+        warehouseUtilization,
+        supplierPerformance,
+        exceptionSummary,
+      });
     } catch (error) {
       console.error("Error generating analytics report:", error);
       res.status(500).json({ message: "Failed to generate analytics report" });
+    }
+  });
+
+  app.post("/api/compliance/run-reminders", ...masterWrite, async (_req: Request, res: Response) => {
+    try {
+      const suppliers = await storage.getAllSuppliers();
+      const contracts = await storage.getContracts();
+      const now = new Date();
+      const threshold = new Date();
+      threshold.setDate(threshold.getDate() + 30);
+
+      const insuranceExpiring = suppliers.filter((supplier) => {
+        const expiry = (supplier as any).insuranceExpiry ? new Date((supplier as any).insuranceExpiry) : null;
+        return expiry && !Number.isNaN(expiry.getTime()) && expiry >= now && expiry <= threshold;
+      });
+      const contractsExpiring = contracts.filter((contract) => {
+        const end = contract.endDate ? new Date(contract.endDate) : null;
+        return end && !Number.isNaN(end.getTime()) && end >= now && end <= threshold;
+      });
+
+      let notificationsCreated = 0;
+      for (const supplier of insuranceExpiring) {
+        await emitNotificationToRoles(["manager", "admin"], {
+          type: "contract_expiry",
+          title: `Supplier insurance expiring: ${supplier.name}`,
+          body: `Insurance expiry is within 30 days.`,
+          entityType: "supplier",
+          entityId: supplier.id,
+        });
+        notificationsCreated += 1;
+      }
+      for (const contract of contractsExpiring) {
+        await emitNotificationToRoles(["manager", "admin"], {
+          type: "contract_expiry",
+          title: `Contract nearing expiry: ${contract.title}`,
+          body: `Contract end date is within 30 days.`,
+          entityType: "contract",
+          entityId: contract.id,
+        });
+        notificationsCreated += 1;
+      }
+
+      res.json({
+        insuranceExpiring: insuranceExpiring.length,
+        contractsExpiring: contractsExpiring.length,
+        notificationsCreated,
+      });
+    } catch (error) {
+      console.error("Error running compliance reminders:", error);
+      res.status(500).json({ message: "Failed to run compliance reminders" });
     }
   });
 
@@ -1405,6 +1478,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching suppliers:", error);
       res.status(200).json([]);
+    }
+  });
+
+  app.get("/api/suppliers/performance", ...supplierRead, async (_req: Request, res: Response) => {
+    try {
+      const supplierList = await supplierRepo.findAll();
+      const purchaseOrders = await storage.getAllPurchaseOrders();
+      const stockMovements = await storage.getAllStockMovements();
+      const invoices = await storage.getAllInvoices();
+
+      const performance = supplierList.map((supplier) => {
+        const supplierOrders = purchaseOrders.filter((po) => po.supplierId === supplier.id);
+        const supplierInvoices = invoices.filter((invoice) => Number((invoice as any).supplierId ?? 0) === supplier.id);
+
+        let onTimeCount = 0;
+        let measuredOrders = 0;
+        for (const order of supplierOrders) {
+          if (!order.expectedDeliveryDate) continue;
+          const receipts = stockMovements
+            .filter(
+              (movement) =>
+                movement.referenceType === "purchase_order" &&
+                Number(movement.referenceId ?? 0) === order.id &&
+                movement.type === "RECEIPT",
+            )
+            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          if (receipts.length === 0) continue;
+          measuredOrders += 1;
+          const eta = new Date(order.expectedDeliveryDate);
+          const firstReceipt = new Date(receipts[0].receivedAt ?? receipts[0].timestamp);
+          if (!Number.isNaN(eta.getTime()) && !Number.isNaN(firstReceipt.getTime()) && firstReceipt <= eta) {
+            onTimeCount += 1;
+          }
+        }
+
+        const disputeCount = supplierInvoices.filter((invoice) => String(invoice.status).toUpperCase() === "DISPUTED").length;
+        const invoiceMeasured = supplierInvoices.length;
+        const priceComplianceRate =
+          invoiceMeasured > 0 ? Number((((invoiceMeasured - disputeCount) / invoiceMeasured) * 100).toFixed(1)) : 100;
+        const onTimeDeliveryRate =
+          measuredOrders > 0 ? Number(((onTimeCount / measuredOrders) * 100).toFixed(1)) : 0;
+        const overallRating = Number(((onTimeDeliveryRate * 0.6 + priceComplianceRate * 0.4) / 20).toFixed(1)); // /5 scale
+
+        return {
+          supplierId: supplier.id,
+          supplierName: supplier.name,
+          onTimeDeliveryRate,
+          priceComplianceRate,
+          ordersMeasured: measuredOrders,
+          invoicesMeasured: invoiceMeasured,
+          overallRating,
+        };
+      });
+
+      res.json(performance);
+    } catch (error) {
+      console.error("Error fetching supplier performance:", error);
+      res.status(500).json({ message: "Failed to fetch supplier performance" });
     }
   });
 
