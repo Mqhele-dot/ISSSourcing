@@ -163,6 +163,20 @@ function csvBufferForExcel(buffer: Buffer): Buffer {
   return Buffer.from("\uFEFFsep=,\r\n" + content, "utf8");
 }
 
+function sendFunctionError(
+  res: Response,
+  status: number,
+  functionName: string,
+  message: string,
+  details?: unknown,
+) {
+  return res.status(status).json({
+    message: `${functionName}: ${message}`,
+    functionName,
+    ...(details !== undefined ? { details } : {}),
+  });
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/uploads", express.static(uploadsDir));
   // Set up authentication routes and middleware
@@ -1640,17 +1654,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/supplier/orders", ...supplierRead, async (req: Request, res: Response) => {
     try {
       const user = (req as Request & { user?: { role?: string } }).user;
-      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      if (!user) return sendFunctionError(res, 401, "getSupplierPortalOrders", "Unauthorized");
       if (!["supplier", "admin", "manager"].includes(String(user.role ?? ""))) {
-        return res.status(403).json({ message: "Forbidden" });
+        return sendFunctionError(res, 403, "getSupplierPortalOrders", "Forbidden");
       }
       const supplierId = await resolveSupplierIdForUser(req);
-      if (!supplierId) return res.status(400).json({ message: "Supplier mapping not found for user" });
+      if (!supplierId) return sendFunctionError(res, 400, "getSupplierPortalOrders", "Supplier mapping not found for user");
       const orders = await storage.getAllPurchaseOrders();
       res.json(orders.filter((order) => order.supplierId === supplierId));
     } catch (error) {
       console.error("Error fetching supplier orders:", error);
-      res.status(500).json({ message: "Failed to fetch supplier orders" });
+      return sendFunctionError(res, 500, "getSupplierPortalOrders", "Failed to fetch supplier orders", error instanceof Error ? error.message : String(error));
     }
   });
 
@@ -1658,15 +1672,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as Request & { user?: { role?: string } }).user;
       if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
-        return res.status(403).json({ message: "Forbidden" });
+        return sendFunctionError(res, 403, "confirmSupplierPortalOrder", "Forbidden");
       }
       const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
+      if (isNaN(id)) return sendFunctionError(res, 400, "confirmSupplierPortalOrder", "Invalid order ID");
       const supplierId = await resolveSupplierIdForUser(req);
-      if (!supplierId) return res.status(400).json({ message: "Supplier mapping not found for user" });
+      if (!supplierId) return sendFunctionError(res, 400, "confirmSupplierPortalOrder", "Supplier mapping not found for user");
       const order = await storage.getPurchaseOrder(id);
-      if (!order || order.supplierId !== supplierId) return res.status(404).json({ message: "Order not found" });
+      if (!order || order.supplierId !== supplierId) return sendFunctionError(res, 404, "confirmSupplierPortalOrder", "Order not found");
       const updated = await storage.updatePurchaseOrderStatus(id, PurchaseOrderStatus.ACKNOWLEDGED);
+      if (!updated) return sendFunctionError(res, 404, "confirmSupplierPortalOrder", "Unable to update order status");
       await storage.createActivityLog({
         action: "Supplier PO Confirmed",
         description: `Supplier acknowledged PO ${order.orderNumber}`,
@@ -1677,7 +1692,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updated);
     } catch (error) {
       console.error("Error confirming supplier order:", error);
-      res.status(500).json({ message: "Failed to confirm order" });
+      return sendFunctionError(res, 500, "confirmSupplierPortalOrder", "Failed to confirm order", error instanceof Error ? error.message : String(error));
     }
   });
 
@@ -1685,19 +1700,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as Request & { user?: { role?: string } }).user;
       if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
-        return res.status(403).json({ message: "Forbidden" });
+        return sendFunctionError(res, 403, "updateSupplierPortalDelivery", "Forbidden");
       }
       const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
+      if (isNaN(id)) return sendFunctionError(res, 400, "updateSupplierPortalDelivery", "Invalid order ID");
       const supplierId = await resolveSupplierIdForUser(req);
-      if (!supplierId) return res.status(400).json({ message: "Supplier mapping not found for user" });
+      if (!supplierId) return sendFunctionError(res, 400, "updateSupplierPortalDelivery", "Supplier mapping not found for user");
       const order = await storage.getPurchaseOrder(id);
-      if (!order || order.supplierId !== supplierId) return res.status(404).json({ message: "Order not found" });
+      if (!order || order.supplierId !== supplierId) return sendFunctionError(res, 404, "updateSupplierPortalDelivery", "Order not found");
       const expectedDeliveryDate = req.body?.expectedDeliveryDate ? new Date(req.body.expectedDeliveryDate) : null;
       if (!expectedDeliveryDate || Number.isNaN(expectedDeliveryDate.getTime())) {
-        return res.status(400).json({ message: "Valid expectedDeliveryDate is required" });
+        return sendFunctionError(res, 400, "updateSupplierPortalDelivery", "Valid expectedDeliveryDate is required");
       }
       const updated = await storage.updatePurchaseOrder(id, { expectedDeliveryDate });
+      if (!updated) return sendFunctionError(res, 404, "updateSupplierPortalDelivery", "Unable to update purchase order delivery date");
       await storage.createActivityLog({
         action: "Supplier Delivery Updated",
         description: `Supplier updated delivery for PO ${order.orderNumber}`,
@@ -1715,7 +1731,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updated);
     } catch (error) {
       console.error("Error updating supplier delivery:", error);
-      res.status(500).json({ message: "Failed to update delivery" });
+      return sendFunctionError(res, 500, "updateSupplierPortalDelivery", "Failed to update delivery", error instanceof Error ? error.message : String(error));
     }
   });
 
@@ -1723,17 +1739,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as Request & { user?: { role?: string } }).user;
       if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
-        return res.status(403).json({ message: "Forbidden" });
+        return sendFunctionError(res, 403, "createSupplierPortalInvoice", "Forbidden");
       }
       const supplierId = await resolveSupplierIdForUser(req);
-      if (!supplierId) return res.status(400).json({ message: "Supplier mapping not found for user" });
+      if (!supplierId) return sendFunctionError(res, 400, "createSupplierPortalInvoice", "Supplier mapping not found for user");
       const payload = req.body as any;
       const poId = Number(payload?.purchaseOrderId);
-      if (!Number.isFinite(poId)) return res.status(400).json({ message: "purchaseOrderId is required" });
+      if (!Number.isFinite(poId)) return sendFunctionError(res, 400, "createSupplierPortalInvoice", "purchaseOrderId is required");
       const order = await storage.getPurchaseOrder(poId);
-      if (!order || order.supplierId !== supplierId) return res.status(404).json({ message: "Purchase order not found" });
+      if (!order || order.supplierId !== supplierId) return sendFunctionError(res, 404, "createSupplierPortalInvoice", "Purchase order not found");
       const now = new Date();
       const due = payload?.dueDate ? new Date(payload.dueDate) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const total = Number(payload?.total ?? order.totalAmount ?? 0);
+      if (!Number.isFinite(total) || total <= 0) {
+        return sendFunctionError(res, 400, "createSupplierPortalInvoice", "Invoice total must be a positive number");
+      }
       const invoice = await storage.createInvoice(
         {
           invoiceNumber: payload?.invoiceNumber || `INV-SUP-${Date.now().toString().slice(-8)}`,
@@ -1742,24 +1762,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customerId: null,
           supplierId,
           purchaseOrderId: poId,
-          subtotal: Number(payload?.subtotal ?? order.totalAmount ?? 0),
-          taxRate: Number(payload?.taxRate ?? 0),
-          taxAmount: Number(payload?.taxAmount ?? 0),
-          discountAmount: Number(payload?.discountAmount ?? 0),
-          shippingCost: Number(payload?.shippingCost ?? 0),
-          totalAmount: Number(payload?.totalAmount ?? order.totalAmount ?? 0),
-          amountPaid: 0,
-          balanceDue: Number(payload?.totalAmount ?? order.totalAmount ?? 0),
+          subtotal: Number(payload?.subtotal ?? total),
+          tax: Number(payload?.tax ?? 0),
+          discount: Number(payload?.discount ?? 0),
+          total,
+          paidAmount: 0,
+          dueAmount: total,
           currency: payload?.currency ?? "USD",
           status: "DRAFT",
           notes: payload?.notes ?? null,
+          createdBy: Number((req as Request & { user?: { id?: number } }).user?.id ?? 1),
         } as any,
         Array.isArray(payload?.items) ? payload.items : [],
       );
       res.status(201).json(invoice);
     } catch (error) {
       console.error("Error creating supplier invoice:", error);
-      res.status(500).json({ message: "Failed to create supplier invoice" });
+      return sendFunctionError(res, 500, "createSupplierPortalInvoice", "Failed to create supplier invoice", error instanceof Error ? error.message : String(error));
     }
   });
 
@@ -1911,19 +1930,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/purchase-requisitions", ...poWrite, async (req: Request, res: Response) => {
     try {
       if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
-        return res.status(400).json({ message: "At least one item is required" });
+        return sendFunctionError(res, 400, "createPurchaseRequisition", "At least one item is required");
       }
       for (let i = 0; i < req.body.items.length; i++) {
         const it = req.body.items[i];
         if (Number(it?.quantity) <= 0) {
-          return res.status(400).json({ message: `Item ${i + 1}: quantity must be greater than zero` });
+          return sendFunctionError(res, 400, "createPurchaseRequisition", `Item ${i + 1}: quantity must be greater than zero`);
         }
         const price = Number(it?.unitPrice);
         if (price < 0) {
-          return res.status(400).json({ message: `Item ${i + 1}: unit price cannot be negative` });
+          return sendFunctionError(res, 400, "createPurchaseRequisition", `Item ${i + 1}: unit price cannot be negative`);
         }
         if (price === 0) {
-          return res.status(400).json({ message: `Item ${i + 1}: unit price must be greater than zero` });
+          return sendFunctionError(res, 400, "createPurchaseRequisition", `Item ${i + 1}: unit price must be greater than zero`);
         }
       }
       
@@ -1941,9 +1960,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedReqData.requisitionNumber = `REQ-${year}${month}-${random}`;
       }
       
-      // Set default status if not provided
+      // Default to PENDING so requisitions immediately enter approval workflow.
       if (!validatedReqData.status) {
-        validatedReqData.status = PurchaseRequisitionStatus.DRAFT;
+        validatedReqData.status = PurchaseRequisitionStatus.PENDING;
       }
       
       const newRequisition = await storage.createPurchaseRequisition(
@@ -1955,10 +1974,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
+        return sendFunctionError(res, 400, "createPurchaseRequisition", validationError.message);
       } else {
         console.error("Error creating purchase requisition:", error);
-        res.status(500).json({ message: "Failed to create purchase requisition" });
+        return sendFunctionError(
+          res,
+          500,
+          "createPurchaseRequisition",
+          "Failed to create purchase requisition",
+          error instanceof Error ? error.message : String(error),
+        );
       }
     }
   });
@@ -2013,15 +2038,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+        return sendFunctionError(res, 400, "approvePurchaseRequisition", "Invalid purchase requisition ID");
       }
       
       const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
       const approverRole = String((req as any).user?.role ?? "");
       const existing = await storage.getPurchaseRequisition(id);
-      if (!existing) return res.status(404).json({ message: "Purchase requisition not found" });
-      if (existing.requestorId != null && approverId === existing.requestorId) {
-        return res.status(403).json({ message: "Requester cannot approve their own requisition" });
+      if (!existing) return sendFunctionError(res, 404, "approvePurchaseRequisition", "Purchase requisition not found");
+      if (![PurchaseRequisitionStatus.PENDING, PurchaseRequisitionStatus.DRAFT].includes(existing.status as PurchaseRequisitionStatus)) {
+        return sendFunctionError(
+          res,
+          409,
+          "approvePurchaseRequisition",
+          `Requisition must be PENDING or DRAFT before approval; current status is ${existing.status}`,
+        );
+      }
+      if (existing.requestorId != null && approverId === existing.requestorId && approverRole.toLowerCase() !== "admin") {
+        return sendFunctionError(res, 403, "approvePurchaseRequisition", "Requester cannot approve their own requisition");
       }
       const requisitionTotal = Number(existing.totalAmount ?? 0);
       const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
@@ -2035,16 +2068,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .sort((a, b) => Number(b.approvalLevel ?? 0) - Number(a.approvalLevel ?? 0))[0];
       if (applicable) {
         if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
-          return res.status(403).json({ message: "Only the configured approver can approve this requisition" });
+          return sendFunctionError(res, 403, "approvePurchaseRequisition", "Only the configured approver can approve this requisition");
         }
         if (applicable.approverRole && applicable.approverRole.toLowerCase() !== approverRole.toLowerCase()) {
-          return res.status(403).json({ message: "Your role is not allowed to approve this requisition amount" });
+          return sendFunctionError(res, 403, "approvePurchaseRequisition", "Your role is not allowed to approve this requisition amount");
         }
       }
       
       const updatedRequisition = await storage.approvePurchaseRequisition(id, approverId);
       
-      if (!updatedRequisition) return res.status(404).json({ message: "Purchase requisition not found" });
+      if (!updatedRequisition) return sendFunctionError(res, 404, "approvePurchaseRequisition", "Purchase requisition not found");
       await db.insert(approvalHistory).values({
         entityType: "requisition",
         entityId: id,
@@ -2069,7 +2102,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedRequisition);
     } catch (error) {
       console.error("Error approving purchase requisition:", error);
-      res.status(500).json({ message: "Failed to approve purchase requisition" });
+      return sendFunctionError(
+        res,
+        500,
+        "approvePurchaseRequisition",
+        "Failed to approve purchase requisition",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   });
 
@@ -2077,16 +2116,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+        return sendFunctionError(res, 400, "rejectPurchaseRequisition", "Invalid purchase requisition ID");
       }
       
       const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
       const approverRole = String((req as any).user?.role ?? "");
       const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
       const existing = await storage.getPurchaseRequisition(id);
-      if (!existing) return res.status(404).json({ message: "Purchase requisition not found" });
-      if (existing.requestorId != null && approverId === existing.requestorId) {
-        return res.status(403).json({ message: "Requester cannot reject their own requisition" });
+      if (!existing) return sendFunctionError(res, 404, "rejectPurchaseRequisition", "Purchase requisition not found");
+      if (existing.requestorId != null && approverId === existing.requestorId && approverRole.toLowerCase() !== "admin") {
+        return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Requester cannot reject their own requisition");
       }
       const requisitionTotal = Number(existing.totalAmount ?? 0);
       const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
@@ -2100,16 +2139,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .sort((a, b) => Number(b.approvalLevel ?? 0) - Number(a.approvalLevel ?? 0))[0];
       if (applicable) {
         if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
-          return res.status(403).json({ message: "Only the configured approver can reject this requisition" });
+          return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Only the configured approver can reject this requisition");
         }
         if (applicable.approverRole && applicable.approverRole.toLowerCase() !== approverRole.toLowerCase()) {
-          return res.status(403).json({ message: "Your role is not allowed to reject this requisition amount" });
+          return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Your role is not allowed to reject this requisition amount");
         }
       }
       
       const updatedRequisition = await storage.rejectPurchaseRequisition(id, approverId, reason);
       
-      if (!updatedRequisition) return res.status(404).json({ message: "Purchase requisition not found" });
+      if (!updatedRequisition) return sendFunctionError(res, 404, "rejectPurchaseRequisition", "Purchase requisition not found");
       await db.insert(approvalHistory).values({
         entityType: "requisition",
         entityId: id,
@@ -2134,7 +2173,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedRequisition);
     } catch (error) {
       console.error("Error rejecting purchase requisition:", error);
-      res.status(500).json({ message: "Failed to reject purchase requisition" });
+      return sendFunctionError(
+        res,
+        500,
+        "rejectPurchaseRequisition",
+        "Failed to reject purchase requisition",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   });
 
@@ -2142,21 +2187,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+        return sendFunctionError(res, 400, "convertPurchaseRequisitionToPO", "Invalid purchase requisition ID");
       }
       
       const purchaseOrder = await storage.createPurchaseOrderFromRequisition(id);
       
       if (!purchaseOrder) {
-        return res.status(404).json({ 
-          message: "Failed to convert requisition to purchase order. Make sure the requisition exists and is approved." 
-        });
+        return sendFunctionError(
+          res,
+          404,
+          "convertPurchaseRequisitionToPO",
+          "Failed to convert requisition to purchase order. Make sure the requisition exists and is approved.",
+        );
       }
       
       res.status(201).json(purchaseOrder);
     } catch (error) {
       console.error("Error converting requisition to purchase order:", error);
-      res.status(500).json({ message: "Failed to convert requisition to purchase order" });
+      return sendFunctionError(
+        res,
+        500,
+        "convertPurchaseRequisitionToPO",
+        "Failed to convert requisition to purchase order",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   });
 

@@ -364,7 +364,8 @@ function drawBorderedTable(
     const row = rows[r];
     xPos = m + 4;
     row.forEach((cell, i) => {
-      currentPage().drawText(truncateForPdf(cell, 28), {
+      const maxChars = Math.max(8, Math.floor((colWidths[i] ?? 40) / 4));
+      currentPage().drawText(truncateForPdf(cell, maxChars), {
         x: xPos,
         y: y + rowH * 0.5 - 4,
         size: PDF_LAYOUT.fontSize,
@@ -751,6 +752,12 @@ function getDocxAlignmentForColumn(key: string) {
   return AlignmentType.LEFT;
 }
 
+function getDocxColumnWidthPercent(columns: { width: number }[], index: number): number {
+  const sum = columns.reduce((acc, col) => acc + Number(col.width || 1), 0) || columns.length;
+  const raw = (Number(columns[index]?.width || 1) / sum) * 100;
+  return Math.max(6, Math.round(raw));
+}
+
 function buildDocxSummaryRows(metrics: Array<{ label: string; value: string }>): TableRow[] {
   return metrics.map((metric) =>
     new TableRow({
@@ -780,6 +787,7 @@ export async function generateGenericDocx(
     children: columns.map(
       (col) =>
         new TableCell({
+          width: { size: getDocxColumnWidthPercent(columns, columns.findIndex((c) => c.key === col.key)), type: WidthType.PERCENTAGE },
           children: [
             new Paragraph({
               alignment: AlignmentType.CENTER,
@@ -801,10 +809,11 @@ export async function generateGenericDocx(
                 ? "No records available for selected filters."
                 : "";
           return new TableCell({
+            width: { size: getDocxColumnWidthPercent(columns, columns.findIndex((c) => c.key === col.key)), type: WidthType.PERCENTAGE },
             children: [
               new Paragraph({
                 alignment: getDocxAlignmentForColumn(col.key),
-                children: [new TextRun(value)],
+                children: [new TextRun(value.slice(0, 140))],
               }),
             ],
           });

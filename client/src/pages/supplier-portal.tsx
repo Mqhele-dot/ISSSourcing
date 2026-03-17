@@ -198,7 +198,14 @@ export default function SupplierPortalPage() {
                           variant="outline"
                           onClick={() => {
                             const date = etaByOrder[order.id];
-                            if (!date) return;
+                            if (!date) {
+                              toast({
+                                title: "updateSupplierPortalDelivery: Missing expected delivery date",
+                                description: "Select a delivery date before saving.",
+                                variant: "destructive",
+                              });
+                              return;
+                            }
                             updateDelivery.mutate({ id: order.id, date });
                           }}
                           disabled={updateDelivery.isPending}

@@ -1,5 +1,5 @@
 import type {
-  UserRoleEnum, ResourceEnum, PermissionTypeEnum, PurchaseOrderStatus, PaymentStatus} from "@shared/schema";
+  UserRoleEnum, ResourceEnum, PermissionTypeEnum } from "@shared/schema";
 import {
   users, type User, type InsertUser,
   categories, type Category, type InsertCategory,
@@ -34,7 +34,7 @@ import {
   userPerformanceMetrics, type UserPerformanceMetric, type InsertUserPerformanceMetric,
   timeRestrictions, type TimeRestriction, type InsertTimeRestriction,
   type InventoryStats, ItemStatus, type BulkImportInventory,
-  PurchaseRequisitionStatus, ReorderRequestStatus,
+  PurchaseRequisitionStatus, PurchaseOrderStatus, PaymentStatus, ReorderRequestStatus,
   stockMovementTypeEnum, userRoleEnum, permissionTypeEnum, resourceEnum,
   type UserLogin, type PasswordResetRequest,
   // Billing related imports
@@ -1726,11 +1726,55 @@ export class DatabaseStorage implements IStorage {
   }
   
   async approvePurchaseRequisition(id: number, approverId: number): Promise<PurchaseRequisition | undefined> {
-    return this.memStorage.approvePurchaseRequisition(id, approverId);
+    const [updated] = await db
+      .update(purchaseRequisitions)
+      .set({
+        status: PurchaseRequisitionStatus.APPROVED,
+        approverId,
+        approvalDate: new Date(),
+        rejectionReason: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseRequisitions.id, id))
+      .returning();
+
+    if (!updated) return undefined;
+
+    await this.createActivityLog({
+      action: "Requisition Approved",
+      description: `Approved requisition ${updated.requisitionNumber}`,
+      referenceType: "purchase_requisition",
+      referenceId: id,
+      userId: approverId,
+    });
+
+    return updated;
   }
   
   async rejectPurchaseRequisition(id: number, approverId: number, reason: string): Promise<PurchaseRequisition | undefined> {
-    return this.memStorage.rejectPurchaseRequisition(id, approverId, reason);
+    const [updated] = await db
+      .update(purchaseRequisitions)
+      .set({
+        status: PurchaseRequisitionStatus.REJECTED,
+        approverId,
+        approvalDate: new Date(),
+        rejectionReason: reason ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseRequisitions.id, id))
+      .returning();
+
+    if (!updated) return undefined;
+
+    await this.createActivityLog({
+      action: "Requisition Rejected",
+      description: `Rejected requisition ${updated.requisitionNumber}${reason ? `: ${reason}` : ""}`,
+      referenceType: "purchase_requisition",
+      referenceId: id,
+      userId: approverId,
+    });
+
+    return updated;
   }
   
   async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
@@ -1790,11 +1834,41 @@ export class DatabaseStorage implements IStorage {
   }
   
   async updatePurchaseOrderStatus(id: number, status: PurchaseOrderStatus): Promise<PurchaseOrder | undefined> {
-    return this.memStorage.updatePurchaseOrderStatus(id, status);
+    const [updated] = await db
+      .update(purchaseOrders)
+      .set({
+        status,
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseOrders.id, id))
+      .returning();
+
+    if (!updated) return undefined;
+
+    await this.createActivityLog({
+      action: "Purchase Order Status Updated",
+      description: `Updated PO ${updated.orderNumber} to ${status}`,
+      referenceType: "purchase_order",
+      referenceId: id,
+      userId: 1,
+    });
+
+    return updated;
   }
   
   async updatePurchaseOrderPaymentStatus(id: number, paymentStatus: PaymentStatus, reference?: string): Promise<PurchaseOrder | undefined> {
-    return this.memStorage.updatePurchaseOrderPaymentStatus(id, paymentStatus, reference);
+    const [updated] = await db
+      .update(purchaseOrders)
+      .set({
+        paymentStatus,
+        paymentReference: reference ?? null,
+        paymentDate: paymentStatus === PaymentStatus.PAID ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseOrders.id, id))
+      .returning();
+
+    return updated;
   }
   
   async recordPurchaseOrderItemReceived(itemId: number, receivedQuantity: number): Promise<PurchaseOrderItem | undefined> {
@@ -1802,7 +1876,79 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createPurchaseOrderFromRequisition(requisitionId: number): Promise<PurchaseOrder | undefined> {
-    return this.memStorage.createPurchaseOrderFromRequisition(requisitionId);
+    return db.transaction(async (tx) => {
+      const [requisition] = await tx
+        .select()
+        .from(purchaseRequisitions)
+        .where(eq(purchaseRequisitions.id, requisitionId));
+      if (!requisition) return undefined;
+      if (requisition.status !== PurchaseRequisitionStatus.APPROVED) {
+        throw new Error(`Cannot create purchase order from requisition with status: ${requisition.status}`);
+      }
+      if (requisition.supplierId == null) {
+        throw new Error("Requisition must have a supplier to create a purchase order");
+      }
+
+      const requisitionItems = await tx
+        .select()
+        .from(purchaseRequisitionItems)
+        .where(eq(purchaseRequisitionItems.requisitionId, requisitionId));
+      if (requisitionItems.length === 0) {
+        throw new Error("Requisition has no line items to convert");
+      }
+
+      const orderNumber = `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
+      const expectedDeliveryDate =
+        requisition.requiredDate ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+      const [order] = await tx
+        .insert(purchaseOrders)
+        .values({
+          orderNumber,
+          supplierId: requisition.supplierId,
+          requisitionId: requisition.id,
+          status: PurchaseOrderStatus.DRAFT,
+          orderDate: new Date(),
+          expectedDeliveryDate,
+          deliveryAddress: "",
+          totalAmount: Number(requisition.totalAmount ?? 0),
+          notes: requisition.notes ?? null,
+          paymentStatus: PaymentStatus.UNPAID,
+          emailSent: false,
+          updatedAt: new Date(),
+        })
+        .returning();
+
+      for (const item of requisitionItems) {
+        await tx.insert(purchaseOrderItems).values({
+          orderId: order.id,
+          itemId: item.itemId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          receivedQuantity: 0,
+          notes: item.notes ?? null,
+        });
+      }
+
+      await tx
+        .update(purchaseRequisitions)
+        .set({
+          status: PurchaseRequisitionStatus.CONVERTED,
+          updatedAt: new Date(),
+        })
+        .where(eq(purchaseRequisitions.id, requisitionId));
+
+      await this.createActivityLog({
+        action: "Purchase Order Created from Requisition",
+        description: `Created PO ${orderNumber} from requisition ${requisition.requisitionNumber}`,
+        referenceType: "purchase_order",
+        referenceId: order.id,
+        userId: requisition.approverId ?? requisition.requestorId ?? 1,
+      });
+
+      return order;
+    });
   }
   
   async sendPurchaseOrderEmail(id: number, recipientEmail: string): Promise<boolean> {
@@ -1987,7 +2133,48 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createInvoice(invoice: InsertInvoice, items: InsertInvoiceItem[]): Promise<Invoice> {
-    return this.memStorage.createInvoice(invoice, items);
+    return db.transaction(async (tx) => {
+      const total = Number(invoice.total ?? 0);
+      const payload = {
+        invoiceNumber: invoice.invoiceNumber ?? `INV-${Date.now().toString().slice(-8)}`,
+        customerId: invoice.customerId ?? null,
+        supplierId: invoice.supplierId ?? null,
+        status: invoice.status ?? "DRAFT",
+        issueDate: invoice.issueDate ?? new Date(),
+        dueDate: invoice.dueDate ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        subtotal: Number(invoice.subtotal ?? total),
+        tax: Number(invoice.tax ?? 0),
+        discount: Number(invoice.discount ?? 0),
+        total,
+        notes: invoice.notes ?? null,
+        termsAndConditions: invoice.termsAndConditions ?? null,
+        purchaseOrderId: invoice.purchaseOrderId ?? null,
+        paidAmount: Number(invoice.paidAmount ?? 0),
+        dueAmount: Number(invoice.dueAmount ?? total),
+        createdBy: Number(invoice.createdBy ?? 1),
+        updatedAt: new Date(),
+      };
+
+      const [created] = await tx.insert(invoices).values(payload).returning();
+
+      if (Array.isArray(items) && items.length > 0) {
+        for (const item of items) {
+          await tx.insert(invoiceItems).values({
+            invoiceId: created.id,
+            itemId: Number(item.itemId),
+            description: item.description ?? `Item #${item.itemId}`,
+            quantity: Number(item.quantity ?? 1),
+            unitPrice: Number(item.unitPrice ?? 0),
+            discount: Number(item.discount ?? 0),
+            taxRate: Number(item.taxRate ?? 0),
+            taxAmount: Number(item.taxAmount ?? 0),
+            totalPrice: Number(item.totalPrice ?? (Number(item.unitPrice ?? 0) * Number(item.quantity ?? 1))),
+          });
+        }
+      }
+
+      return created;
+    });
   }
   
   async updateInvoice(id: number, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {

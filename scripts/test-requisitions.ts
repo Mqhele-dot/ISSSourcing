@@ -159,6 +159,19 @@ async function main() {
         const body = validCreate.json as { id?: number; requisitionNumber?: string };
         if (body && typeof body.id === "number" && body.requisitionNumber) {
           console.log("    (id=%d, requisitionNumber=%s)", body.id, body.requisitionNumber);
+          const approveRes = await request(`/purchase-requisitions/${body.id}/approve`, {
+            method: "POST",
+            body: {},
+            cookie: adminCookie,
+          });
+          expectStatus("Admin POST /api/purchase-requisitions/:id/approve (expect 200)", 200, approveRes.status);
+
+          const convertRes = await request(`/purchase-requisitions/${body.id}/convert`, {
+            method: "POST",
+            body: {},
+            cookie: adminCookie,
+          });
+          expectStatus("Admin POST /api/purchase-requisitions/:id/convert (expect 201)", 201, convertRes.status);
         }
       } else if (validCreate.status === 400 || validCreate.status === 404) {
         console.log("  ⚠ Admin POST valid requisition → %d (DB may lack supplier/id 1 or item id 1; auth passed)", validCreate.status);

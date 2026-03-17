@@ -57,6 +57,25 @@ npm run db:push
 npm run demo:reset
 ```
 
+If `npm ci` fails with lockfile sync errors (for example `Missing: bufferutil@... from lock file`), run:
+
+```bash
+npm install
+npm ci
+```
+
+If `npm run dev` fails with `Cannot find package 'docx'`, run:
+
+```bash
+npm install
+```
+
+Then re-run:
+
+```bash
+npm run dev
+```
+
 Start the app in terminal A:
 
 ```bash

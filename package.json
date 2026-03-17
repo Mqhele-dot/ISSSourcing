@@ -17,8 +17,9 @@
     "test:rbac": "tsx scripts/test-rbac.ts",
     "test:requisitions": "tsx scripts/test-requisitions.ts",
     "test:procurement-flow": "tsx scripts/test-procurement-flow.ts",
+    "test:supplier-portal": "tsx scripts/test-supplier-portal.ts",
     "test:exports": "tsx scripts/test-exports.ts",
-    "test:api": "npm run test:rbac && npm run test:requisitions && npm run test:procurement-flow && npm run test:exports",
+    "test:api": "npm run test:rbac && npm run test:requisitions && npm run test:procurement-flow && npm run test:supplier-portal && npm run test:exports",
     "test:deeplinks": "tsx scripts/test-kpi-deeplinks.ts",
     "test:csv": "tsx server/services/document-generator-service.test.ts",
     "test:e2e": "playwright test",
@@ -173,6 +174,6 @@
     "vite": "^5.4.14"
   },
   "optionalDependencies": {
-    "bufferutil": "^4.0.8"
+    "bufferutil": "^4.1.0"
   }
 }
