@@ -21,6 +21,7 @@ import {
   verifyToken,
   generateSetupResponse
 } from "./services/two-factor-service";
+import { sendError } from "./api-response";
 
 import type { User as SchemaUser } from "@shared/schema";
 declare global {
@@ -71,7 +72,10 @@ function ensureAuthenticated(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) {
     return next();
   }
-  res.status(401).json({ message: "Unauthorized" });
+  return sendError(res, 401, "UNAUTHORIZED", "Unauthorized", {
+    hint: "Log in again to continue.",
+    details: { functionName: "ensureAuthenticated" },
+  });
 }
 
 // Middleware to check if the user has admin role
@@ -79,14 +83,18 @@ function ensureAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated() && req.user && req.user.role === "admin") {
     return next();
   }
-  res.status(403).json({ message: "Forbidden: Admin access required" });
+  return sendError(res, 403, "FORBIDDEN_ADMIN_REQUIRED", "Forbidden: Admin access required", {
+    details: { functionName: "ensureAdmin" },
+  });
 }
 
 // Middleware to check if user has a specific role
 function ensureRole(role: string | string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.isAuthenticated() || !req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return sendError(res, 401, "UNAUTHORIZED", "Unauthorized", {
+        details: { functionName: "ensureRole" },
+      });
     }
 
     const roles = Array.isArray(role) ? role : [role];
@@ -95,9 +103,13 @@ function ensureRole(role: string | string[]) {
       return next();
     }
     
-    res.status(403).json({ 
-      message: `Forbidden: Required role not found. Need one of: ${roles.join(', ')}` 
-    });
+    return sendError(
+      res,
+      403,
+      "FORBIDDEN_ROLE_REQUIRED",
+      `Forbidden: Required role not found. Need one of: ${roles.join(", ")}`,
+      { details: { requiredRoles: roles, currentRole: req.user.role, functionName: "ensureRole" } },
+    );
   };
 }
 
@@ -105,7 +117,9 @@ function ensureRole(role: string | string[]) {
 function ensurePermission(resource: string, permissionType: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!req.isAuthenticated() || !req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return sendError(res, 401, "UNAUTHORIZED", "Unauthorized", {
+        details: { functionName: "ensurePermission" },
+      });
     }
 
     const userRole = req.user.role;
@@ -145,12 +159,18 @@ function ensurePermission(resource: string, permissionType: string) {
         }
       }
       
-      res.status(403).json({ 
-        message: `Forbidden: You don't have ${permissionType} permission for ${resource}` 
-      });
+      return sendError(
+        res,
+        403,
+        "FORBIDDEN_PERMISSION_REQUIRED",
+        `Forbidden: You don't have ${permissionType} permission for ${resource}`,
+        { details: { resource, permissionType, functionName: "ensurePermission" } },
+      );
     } catch (error) {
       console.error("Permission check error:", error);
-      res.status(500).json({ message: "Error checking permissions" });
+      return sendError(res, 500, "PERMISSION_CHECK_ERROR", "Error checking permissions", {
+        details: error instanceof Error ? error.message : String(error),
+      });
     }
   };
 }
@@ -158,7 +178,9 @@ function ensurePermission(resource: string, permissionType: string) {
 // Middleware to check if 2FA is required
 function ensureTwoFactorAuthenticated(req: Request, res: Response, next: NextFunction) {
   if (!req.isAuthenticated() || !req.user) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return sendError(res, 401, "UNAUTHORIZED", "Unauthorized", {
+      details: { functionName: "ensureTwoFactorAuthenticated" },
+    });
   }
   
   // Skip 2FA check if not enabled for this user
@@ -172,9 +194,17 @@ function ensureTwoFactorAuthenticated(req: Request, res: Response, next: NextFun
   }
   
   // 2FA is required
-  res.status(403).json({ 
-    message: "Two-factor authentication required",
-    requiresTwoFactor: true
+  return res.status(403).json({
+    ok: false,
+    error: {
+      code: "TWO_FACTOR_REQUIRED",
+      message: "Two-factor authentication required",
+      details: { requiresTwoFactor: true, functionName: "ensureTwoFactorAuthenticated" },
+      requestId:
+        (res.locals?.requestId as string | undefined) ??
+        (res.getHeader("X-Request-Id") as string | undefined) ??
+        "unknown-request-id",
+    },
   });
 }
 

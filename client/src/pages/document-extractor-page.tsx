@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { useMutation } from '@tanstack/react-query';
 import type { File} from 'lucide-react';
 import { Loader2, FileText, Upload, Database, Check, ChevronDown, X, FilePlus, Link, Wrench } from 'lucide-react';
-import { apiRequest } from '@/lib/queryClient';
+import { requestJson } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -166,8 +166,7 @@ const DocumentExtractorPage: React.FC = () => {
 
   // Fetch supported formats when component mounts
   React.useEffect(() => {
-    fetch('/api/document-extractor/supported-formats')
-      .then(res => res.json())
+    requestJson<SupportedFormats>('GET', '/api/document-extractor/supported-formats')
       .then(data => setFormats(data))
       .catch(err => console.error('Error fetching supported formats:', err));
   }, []);
@@ -219,11 +218,10 @@ const DocumentExtractorPage: React.FC = () => {
   // URL processing mutation
   const urlProcessingMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/document-extractor/from-urls', {
+      return requestJson<BatchExtractionResult>('POST', '/api/document-extractor/from-urls', {
         urls,
         options,
       });
-      return response.json();
     },
     onSuccess: (data: BatchExtractionResult) => {
       setBatchExtractionResult(data);

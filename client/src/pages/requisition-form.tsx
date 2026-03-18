@@ -52,6 +52,7 @@ export default function RequisitionFormPage() {
   const [justification, setJustification] = useState("");
   const [requiredDate, setRequiredDate] = useState("");
   const [items, setItems] = useState<ReqItem[]>([{ itemId: 0, quantity: 1, unitPrice: 0 }]);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"supplierId" | "departmentId" | "requiredDate" | "items", string>>>({});
 
   const { data: requisition, isLoading } = useQuery({
     queryKey: ["/api/purchase-requisitions", id],
@@ -155,7 +156,23 @@ export default function RequisitionFormPage() {
   };
 
   const handleSubmit = () => {
+    const nextErrors: Partial<Record<"supplierId" | "departmentId" | "requiredDate" | "items", string>> = {};
+    if (!supplierId) nextErrors.supplierId = "Supplier is required";
+    if (!departmentId) nextErrors.departmentId = "Department is required";
+    if (!requiredDate) nextErrors.requiredDate = "Required date is required";
     const validItems = items.filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0);
+    if (validItems.length === 0) {
+      nextErrors.items = "Add at least one valid item with qty > 0 and unit price > 0";
+    }
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      if (nextErrors.items) {
+        toast({ title: nextErrors.items, variant: "destructive" });
+      } else {
+        toast({ title: "Please fix highlighted fields", variant: "destructive" });
+      }
+      return;
+    }
     if (validItems.length === 0) {
       const hasItems = items.some((i) => i.itemId > 0);
       if (!hasItems) {
@@ -207,6 +224,7 @@ export default function RequisitionFormPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {fieldErrors.supplierId ? <p className="text-xs text-destructive">{fieldErrors.supplierId}</p> : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="req-department">Department</Label>
@@ -222,6 +240,7 @@ export default function RequisitionFormPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {fieldErrors.departmentId ? <p className="text-xs text-destructive">{fieldErrors.departmentId}</p> : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="req-required-date">Required date *</Label>
@@ -232,6 +251,7 @@ export default function RequisitionFormPage() {
                 value={requiredDate}
                 onChange={(e) => setRequiredDate(e.target.value)}
               />
+              {fieldErrors.requiredDate ? <p className="text-xs text-destructive">{fieldErrors.requiredDate}</p> : null}
             </div>
           </div>
 
@@ -310,6 +330,7 @@ export default function RequisitionFormPage() {
                   </div>
                 ))}
               </div>
+              {fieldErrors.items ? <p className="text-xs text-destructive">{fieldErrors.items}</p> : null}
             </div>
           )}
 

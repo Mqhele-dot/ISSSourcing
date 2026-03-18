@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { userPasswordChangeSchema } from "@shared/schema";
-import { apiRequest } from "@/lib/queryClient";
+import { requestJson } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -42,6 +42,9 @@ const securityPreferencesSchema = z.object({
   sessionTimeout: z.number().min(15).max(1440).default(60),
 });
 
+type SecurityPreferences = z.infer<typeof securityPreferencesSchema>;
+type ProfileUpdatePayload = z.infer<typeof profileUpdateSchema>;
+
 export default function ProfilePage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("profile");
@@ -52,12 +55,11 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
 
   // Fetch user security preferences
-  const { data: securityPreferences, isLoading: loadingPreferences } = useQuery({
+  const { data: securityPreferences, isLoading: loadingPreferences } = useQuery<SecurityPreferences>({
     queryKey: ["/api/user/security-preferences"],
     queryFn: async () => {
       try {
-        const res = await apiRequest("GET", "/api/user/security-preferences");
-        return await res.json();
+        return await requestJson<SecurityPreferences>("GET", "/api/user/security-preferences");
       } catch (error) {
         // Return default preferences if not set yet
         return {
@@ -94,12 +96,12 @@ export default function ProfilePage() {
   }, [user, profileForm]);
 
   // Set up security preferences form
-  const securityForm = useForm({
+  const securityForm = useForm<SecurityPreferences>({
     resolver: zodResolver(securityPreferencesSchema),
     defaultValues: {
-      twoFactorEnabled: securityPreferences?.twoFactorEnabled || false,
-      emailNotifications: securityPreferences?.emailNotifications || true,
-      sessionTimeout: securityPreferences?.sessionTimeout || 60,
+      twoFactorEnabled: securityPreferences?.twoFactorEnabled ?? false,
+      emailNotifications: securityPreferences?.emailNotifications ?? true,
+      sessionTimeout: securityPreferences?.sessionTimeout ?? 60,
     },
   });
 
@@ -126,9 +128,8 @@ export default function ProfilePage() {
 
   // Profile update mutation
   const updateProfileMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof profileUpdateSchema>) => {
-      const res = await apiRequest("PATCH", "/api/user/profile", data);
-      return await res.json();
+    mutationFn: async (data: ProfileUpdatePayload) => {
+      return await requestJson<ProfileUpdatePayload>("PATCH", "/api/user/profile", data);
     },
     onSuccess: (data) => {
       queryClient.setQueryData(["/api/user"], (oldData: any) => ({
@@ -152,8 +153,7 @@ export default function ProfilePage() {
   // Security preferences update mutation
   const updateSecurityPreferencesMutation = useMutation({
     mutationFn: async (data: z.infer<typeof securityPreferencesSchema>) => {
-      const res = await apiRequest("PATCH", "/api/user/security-preferences", data);
-      return await res.json();
+      return await requestJson("PATCH", "/api/user/security-preferences", data);
     },
     onSuccess: (data) => {
       queryClient.setQueryData(["/api/user/security-preferences"], data);
@@ -174,8 +174,7 @@ export default function ProfilePage() {
   // Password change mutation
   const changePasswordMutation = useMutation({
     mutationFn: async (data: z.infer<typeof userPasswordChangeSchema>) => {
-      const res = await apiRequest("POST", "/api/user/change-password", data);
-      return await res.json();
+      return await requestJson("POST", "/api/user/change-password", data);
     },
     onSuccess: () => {
       passwordForm.reset();
@@ -432,7 +431,7 @@ export default function ProfilePage() {
                                         
                                         // Update the API to save the URL
                                         try {
-                                          await apiRequest("PUT", "/api/profile/picture/url", { url });
+                                          await requestJson("PUT", "/api/profile/picture/url", { url });
                                           
                                           // Update user data in the cache
                                           queryClient.setQueryData(["/api/user"], (oldData: any) => ({
@@ -760,7 +759,7 @@ export default function ProfilePage() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={async () => {
                 try {
-                  await apiRequest("DELETE", "/api/profile/picture");
+                  await requestJson("DELETE", "/api/profile/picture");
                   profileForm.setValue("profilePicture", null);
                   queryClient.setQueryData(["/api/user"], (oldData: unknown) => {
                     const o = oldData as { profilePicture?: string | null };

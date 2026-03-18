@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format } from "date-fns";
-import { apiRequest, requestJson } from "@/lib/queryClient";
+import { requestJson } from "@/lib/queryClient";
 import { downloadFile, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import type { DocumentType } from "@shared/schema";
@@ -176,7 +176,10 @@ export default function Reports() {
       if (queryParams.toString()) {
         url += `?${queryParams.toString()}`;
       }
-      const response = await apiRequest("GET", url);
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error(`Export failed (${response.status})`);
+      }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       

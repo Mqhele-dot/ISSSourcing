@@ -39,7 +39,7 @@ import {
   Clock, 
   AlertTriangle
 } from "lucide-react";
-import { apiRequest, formatMutationError, requestJson } from "@/lib/queryClient";
+import { formatMutationError, requestJson } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { type ReorderRequest, ReorderRequestStatus } from "@shared/schema";
 
@@ -64,7 +64,7 @@ export default function ReorderRequestsPage() {
   // Approve request mutation
   const approveMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest("POST", `/api/reorder-requests/${id}/approve`, {
+      return requestJson("POST", `/api/reorder-requests/${id}/approve`, {
         approverId: 1 // Using default admin user
       });
     },
@@ -88,7 +88,7 @@ export default function ReorderRequestsPage() {
   // Reject request mutation
   const rejectMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest("POST", `/api/reorder-requests/${id}/reject`, {
+      return requestJson("POST", `/api/reorder-requests/${id}/reject`, {
         approverId: 1, // Using default admin user
         reason: rejectionReason
       });
@@ -114,7 +114,7 @@ export default function ReorderRequestsPage() {
   // Convert request to requisition mutation
   const convertMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest("POST", `/api/reorder-requests/${id}/convert`, {});
+      return requestJson<{ requisitionNumber?: string }>("POST", `/api/reorder-requests/${id}/convert`, {});
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/reorder-requests"] });
@@ -188,7 +188,8 @@ export default function ReorderRequestsPage() {
     const apiUrl = `/api/export/reorder-requests/${format}`;
     if (process.env.NODE_ENV === "development") console.debug("[Export]", apiUrl);
     try {
-      const response = await apiRequest("GET", apiUrl);
+      const response = await fetch(apiUrl, { credentials: "include" });
+      if (!response.ok) throw new Error(`Export failed (${response.status})`);
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
       

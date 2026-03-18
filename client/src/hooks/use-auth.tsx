@@ -1,5 +1,5 @@
 import type { ReactNode} from "react";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
 import type {
   UseMutationResult} from "@tanstack/react-query";
 import {
@@ -53,6 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: (user: User) => {
       queryClient.setQueryData(["/api/user"], user);
+      // Clear stale 401-cached page queries after successful login.
+      queryClient.invalidateQueries({
+        predicate: (q) => String(q.queryKey?.[0] ?? "") !== "/api/user",
+      });
       toast({
         title: "Login successful",
         description: `Welcome back, ${user.username}!`,
@@ -87,6 +91,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       } else if (response.user) {
         queryClient.setQueryData(["/api/user"], response.user);
+        queryClient.invalidateQueries({
+          predicate: (q) => String(q.queryKey?.[0] ?? "") !== "/api/user",
+        });
         toast({
           title: "Registration successful",
           description: "Your account has been created",
@@ -114,6 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);
+      queryClient.removeQueries({
+        predicate: (q) => String(q.queryKey?.[0] ?? "") !== "/api/user",
+      });
       toast({
         title: "Logged out",
         description: "You have been logged out successfully",
@@ -149,6 +159,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     },
   });
+
+  const previousUserIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const currentUserId = user?.id ?? null;
+    if (currentUserId && currentUserId !== previousUserIdRef.current) {
+      queryClient.invalidateQueries({
+        predicate: (q) => String(q.queryKey?.[0] ?? "") !== "/api/user",
+      });
+    }
+    previousUserIdRef.current = currentUserId;
+  }, [user?.id]);
 
   return (
     <AuthContext.Provider

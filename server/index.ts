@@ -1,5 +1,6 @@
 import type { Response, NextFunction } from "express";
 import express, { type Request } from "express";
+import { randomUUID } from "node:crypto";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeWebSocketService, checkLowStockAlerts } from "./websocket-service";
@@ -9,7 +10,8 @@ import { initializeDatabase, ensureSessionTable } from "./init-db";
 import { seedDatabaseIfEmpty } from "./seed";
 import { initializeOperationalData } from "./operations-core";
 import { seedOperationalIfEmpty } from "./seed-operational";
-import { setDbReady, setSchemaReady } from "./readiness";
+import { setDbReady, setSchemaReady, setSessionStoreReady, setWebsocketReady } from "./readiness";
+import { sendError } from "./api-response";
 import type { PoolClient } from "pg";
 
 // Non-blocking: init DB and schema in background so server can start immediately.
@@ -22,7 +24,9 @@ pool.connect()
 
     try {
       await ensureSessionTable();
+      setSessionStoreReady(true);
     } catch (sessionErr) {
+      setSessionStoreReady(false);
       console.warn("Session table check failed:", sessionErr instanceof Error ? sessionErr.message : sessionErr);
     }
 
@@ -68,6 +72,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 app.use((req, res, next) => {
+  const requestId = randomUUID();
+  res.locals.requestId = requestId;
+  res.setHeader("X-Request-Id", requestId);
+  next();
+});
+
+app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
@@ -81,7 +92,9 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
+      const requestId = String(res.locals?.requestId ?? "-");
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      logLine += ` [req:${requestId}]`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
@@ -102,6 +115,7 @@ app.use((req, res, next) => {
 
   // Initialize the WebSocket service for real-time inventory updates
   const wsService = initializeWebSocketService(server, storage);
+  setWebsocketReady(Boolean(wsService));
   
   // Set up a periodic check for low stock alerts based on app settings
   let lowStockCheckInterval: NodeJS.Timeout;
@@ -163,8 +177,13 @@ app.use((req, res, next) => {
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
+    sendError(
+      res,
+      status,
+      status >= 500 ? "UNHANDLED_SERVER_ERROR" : "REQUEST_FAILED",
+      message,
+      { details: process.env.NODE_ENV === "production" ? undefined : err?.stack },
+    );
     // Do not rethrow from Express error middleware; crashing here causes flaky 502s.
     if (process.env.NODE_ENV !== "production") {
       console.error("Unhandled request error:", err);

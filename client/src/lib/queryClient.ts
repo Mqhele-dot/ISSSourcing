@@ -1,6 +1,7 @@
 import type { QueryFunction } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import { setFallbackState } from "./fallback-store";
+import { actionErrorStore } from "./action-error-store";
 
 type ApiErrorEnvelope = {
   ok: false;
@@ -8,6 +9,8 @@ type ApiErrorEnvelope = {
     code: string;
     message: string;
     hint?: string;
+    requestId?: string;
+    details?: unknown;
   };
 };
 
@@ -38,22 +41,85 @@ async function parseJsonOrText(res: Response): Promise<unknown> {
   }
 }
 
-async function throwIfResNotOk(res: Response) {
+function formatServerErrorPayload(payload: unknown): string | null {
+  if (isApiEnvelope(payload) && !payload.ok) {
+    const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
+    return `${codePrefix}${payload.error.message}`;
+  }
+  if (typeof payload === "object" && payload !== null) {
+    const maybeFunction = "functionName" in payload ? (payload as { functionName?: unknown }).functionName : undefined;
+    const maybeMessage = "message" in payload ? (payload as { message?: unknown }).message : undefined;
+    const maybeDetails = "details" in payload ? (payload as { details?: unknown }).details : undefined;
+    const fn = typeof maybeFunction === "string" ? maybeFunction : "";
+    const msg = typeof maybeMessage === "string" ? maybeMessage : "";
+    const details =
+      typeof maybeDetails === "string"
+        ? maybeDetails
+        : maybeDetails != null
+          ? JSON.stringify(maybeDetails)
+          : "";
+    const combined = [fn ? `[${fn}]` : "", msg, details].filter(Boolean).join(" ");
+    return combined || null;
+  }
+  if (typeof payload === "string" && payload.trim()) return payload;
+  return null;
+}
+
+function getRequestIdFromPayload(payload: unknown): string | undefined {
+  if (isApiEnvelope(payload) && !payload.ok) {
+    return payload.error.requestId;
+  }
+  if (payload && typeof payload === "object" && "requestId" in payload) {
+    const value = (payload as { requestId?: unknown }).requestId;
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
+}
+
+function reportRequestError(params: {
+  method: string;
+  url: string;
+  status?: number;
+  reason: string;
+  payload?: unknown;
+  requestPayload?: unknown;
+  requestId?: string;
+  payloadSummary?: string;
+  stack?: string;
+}) {
+  actionErrorStore.push({
+    method: params.method,
+    endpoint: params.url,
+    status: params.status,
+    reason: params.reason,
+    requestId: params.requestId ?? getRequestIdFromPayload(params.payload),
+    module: inferModuleName(params.url),
+    action: inferActionName(params.method, params.url),
+    payloadSummary: params.payloadSummary,
+    retryMethod: params.method,
+    retryEndpoint: params.url,
+    retryPayload: params.requestPayload,
+    stack: isDevRuntime ? params.stack : undefined,
+    lastGoodResponse: lastGoodByEndpoint.get(params.url),
+    raw: params.payload,
+  });
+}
+
+async function throwIfResNotOk(res: Response, context?: { method?: string; url?: string }) {
   if (!res.ok) {
     const payload = await parseJsonOrText(res);
-    if (isApiEnvelope(payload) && !payload.ok) {
-      const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
-      throw new Error(`${res.status}: ${codePrefix}${payload.error.message}`);
-    }
-    if (
-      typeof payload === "object" &&
-      payload !== null &&
-      "message" in payload &&
-      typeof (payload as { message?: unknown }).message === "string"
-    ) {
-      throw new Error(`${res.status}: ${String((payload as { message: string }).message)}`);
-    }
-    throw new Error(`${res.status}: ${typeof payload === "string" ? payload : res.statusText}`);
+    const message = formatServerErrorPayload(payload) ?? res.statusText;
+    reportRequestError({
+      method: context?.method ?? "UNKNOWN",
+      url: context?.url ?? res.url,
+      status: res.status,
+      reason: message,
+      payload,
+      requestPayload: undefined,
+      requestId: res.headers.get("X-Request-Id") ?? undefined,
+      stack: isDevRuntime ? new Error().stack : undefined,
+    });
+    throw new Error(`${res.status}: ${message}`);
   }
 }
 
@@ -61,6 +127,29 @@ async function throwIfResNotOk(res: Response) {
 const REQUEST_TIMEOUT_MS = 12000;
 
 export type InvTrackMeta = { fallback?: string; endpoint?: string };
+const lastGoodByEndpoint = new Map<string, unknown>();
+const isDevRuntime = typeof import.meta !== "undefined" && Boolean(import.meta.env?.DEV);
+
+function inferModuleName(url: string): string {
+  const clean = url.startsWith("/") ? url.slice(1) : url;
+  const parts = clean.split("/");
+  const apiIndex = parts[0] === "api" ? 1 : 0;
+  const segment = parts[apiIndex] ?? "unknown";
+  return segment.replace(/-/g, " ");
+}
+
+function inferActionName(method: string, url: string): string {
+  const module = inferModuleName(url);
+  const verb =
+    method.toUpperCase() === "POST"
+      ? "Create/Run"
+      : method.toUpperCase() === "PATCH" || method.toUpperCase() === "PUT"
+        ? "Update"
+        : method.toUpperCase() === "DELETE"
+          ? "Delete"
+          : "Fetch";
+  return `${verb} ${module}`;
+}
 
 /**
  * Single central fetch: same timeout, credentials, envelope unwrap, and X-InvTrack-* / meta.
@@ -96,12 +185,24 @@ export async function invTrackFetch<T>(
 
   if (!res.ok) {
     const payload = await parseJsonOrText(res);
-    const msg =
-      isApiEnvelope(payload) && !payload.ok
-        ? `${payload.error.code ? `[${payload.error.code}] ` : ""}${payload.error.message}`
-        : typeof payload === "object" && payload !== null && "message" in payload && typeof (payload as { message?: unknown }).message === "string"
-          ? String((payload as { message: string }).message)
-          : typeof payload === "string" ? payload : res.statusText;
+    const msg = formatServerErrorPayload(payload) ?? res.statusText;
+    const payloadSummary =
+      data == null
+        ? undefined
+        : typeof data === "string"
+          ? data.slice(0, 300)
+          : JSON.stringify(data).slice(0, 300);
+    reportRequestError({
+      method,
+      url,
+      status: res.status,
+      reason: msg,
+      payload,
+      requestPayload: data,
+      requestId: res.headers.get("X-Request-Id") ?? undefined,
+      payloadSummary,
+      stack: isDevRuntime ? new Error().stack : undefined,
+    });
     const err = new Error(`${res.status}: ${msg}`) as Error & { status?: number };
     err.status = res.status;
     throw err;
@@ -109,6 +210,7 @@ export async function invTrackFetch<T>(
 
   if (res.status === 204 || res.headers.get("content-length") === "0") {
     setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
+    lastGoodByEndpoint.set(url, { status: 204 });
     return { data: undefined as T, meta: { fallback: headerFallback, endpoint: headerEndpoint } };
   }
 
@@ -120,6 +222,7 @@ export async function invTrackFetch<T>(
   if (isApiEnvelope<T>(payload)) {
     if (payload.ok) {
       const success = payload as ApiSuccessEnvelope<T>;
+      lastGoodByEndpoint.set(url, success.data);
       return {
         data: success.data as T,
         meta: {
@@ -132,6 +235,7 @@ export async function invTrackFetch<T>(
     throw new Error(`${codePrefix}${payload.error.message}`);
   }
 
+  lastGoodByEndpoint.set(url, payload as T);
   return {
     data: payload as T,
     meta: { fallback: headerFallback, endpoint: headerEndpoint },
@@ -157,7 +261,7 @@ export async function apiRequest(
     const headerFallback = res.headers.get("X-InvTrack-Fallback");
     const headerEndpoint = res.headers.get("X-InvTrack-Endpoint");
     setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
-    await throwIfResNotOk(res);
+    await throwIfResNotOk(res, { method, url });
     return res;
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
@@ -232,8 +336,8 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      refetchOnWindowFocus: true,
+      staleTime: 60_000,
       retry: false,
     },
     mutations: {

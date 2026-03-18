@@ -30,6 +30,7 @@ import type { ReportFormat, ReportType} from "@shared/schema";
 import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { registerOperationalRoutes } from "./operations-routes";
 import { readiness } from "./readiness";
+import { sendError, sendOk } from "./api-response";
 import { createContractRepository, createSupplierRepository, createWarehouseRepository } from "./repositories";
 import { createContractService, ContractDateError } from "./services/contract-service";
 import { createSupplierService } from "./services/supplier-service";
@@ -170,11 +171,19 @@ function sendFunctionError(
   message: string,
   details?: unknown,
 ) {
-  return res.status(status).json({
-    message: `${functionName}: ${message}`,
-    functionName,
-    ...(details !== undefined ? { details } : {}),
-  });
+  const normalizedMessage = `${functionName}: ${message}`;
+  return sendError(
+    res,
+    status,
+    functionName.toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
+    normalizedMessage,
+    {
+      details: {
+        functionName,
+        ...(details !== undefined ? { details } : {}),
+      },
+    },
+  );
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -1950,6 +1959,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedItemsData = req.body.items.map((item: any) => 
         insertPurchaseRequisitionItemSchema.omit({ requisitionId: true }).parse(item)
       );
+      if (!validatedReqData.supplierId) {
+        return sendFunctionError(res, 400, "createPurchaseRequisition", "Supplier is required");
+      }
+      const supplier = await storage.getSupplier(Number(validatedReqData.supplierId));
+      if (!supplier) {
+        return sendFunctionError(res, 400, "createPurchaseRequisition", "Supplier does not exist");
+      }
+      if (validatedReqData.departmentId) {
+        const deptRows = await db
+          .select({ id: departments.id })
+          .from(departments)
+          .where(eq(departments.id, Number(validatedReqData.departmentId)))
+          .limit(1);
+        if (deptRows.length === 0) {
+          return sendFunctionError(res, 400, "createPurchaseRequisition", "Department does not exist");
+        }
+      }
       
       // Generate a unique requisition number
       if (!validatedReqData.requisitionNumber) {
@@ -1992,24 +2018,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+        return sendFunctionError(res, 400, "updatePurchaseRequisition", "Invalid purchase requisition ID");
       }
       
       const validatedData = insertPurchaseRequisitionSchema.partial().parse(req.body);
+      if (validatedData.supplierId != null) {
+        const supplier = await storage.getSupplier(Number(validatedData.supplierId));
+        if (!supplier) {
+          return sendFunctionError(res, 400, "updatePurchaseRequisition", "Supplier does not exist");
+        }
+      }
+      if (validatedData.departmentId != null) {
+        const deptRows = await db
+          .select({ id: departments.id })
+          .from(departments)
+          .where(eq(departments.id, Number(validatedData.departmentId)))
+          .limit(1);
+        if (deptRows.length === 0) {
+          return sendFunctionError(res, 400, "updatePurchaseRequisition", "Department does not exist");
+        }
+      }
       const updatedRequisition = await storage.updatePurchaseRequisition(id, validatedData);
       
       if (!updatedRequisition) {
-        return res.status(404).json({ message: "Purchase requisition not found" });
+        return sendFunctionError(res, 404, "updatePurchaseRequisition", "Purchase requisition not found");
       }
       
       res.json(updatedRequisition);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
+        return sendFunctionError(res, 400, "updatePurchaseRequisition", validationError.message);
       } else {
         console.error("Error updating purchase requisition:", error);
-        res.status(500).json({ message: "Failed to update purchase requisition" });
+        return sendFunctionError(
+          res,
+          500,
+          "updatePurchaseRequisition",
+          "Failed to update purchase requisition",
+          error instanceof Error ? error.message : String(error),
+        );
       }
     }
   });
@@ -3630,6 +3678,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/stock-movements", async (req: Request, res: Response) => {
     try {
       const validatedData = insertStockMovementSchema.parse(req.body);
+      if (Number(validatedData.quantity) === 0) {
+        return sendFunctionError(res, 400, "createStockMovement", "Stock movement quantity must be non-zero");
+      }
+      const warehouseIds = [
+        validatedData.warehouseId,
+        validatedData.sourceWarehouseId,
+        validatedData.destinationWarehouseId,
+      ]
+        .map((v) => (v == null ? null : Number(v)))
+        .filter((v): v is number => Number.isFinite(v));
+      for (const warehouseId of warehouseIds) {
+        const warehouse = await storage.getWarehouse(warehouseId);
+        if (!warehouse) {
+          return sendFunctionError(
+            res,
+            400,
+            "createStockMovement",
+            `Warehouse ID ${warehouseId} does not exist`,
+          );
+        }
+      }
       const movement = await storage.createStockMovement(validatedData);
       res.status(201).json(movement);
     } catch (error) {
@@ -4931,10 +5000,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // WebSocket test endpoint for real-time inventory updates
   app.post("/api/inventory-sync/test", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
-      const { type, itemId, warehouseId, quantity, reason, userId } = req.body;
+      const { type, itemId, warehouseId, quantity, reason, userId, entity, action, data } =
+        req.body as {
+          type?: string;
+          itemId?: number;
+          warehouseId?: number;
+          quantity?: number;
+          reason?: string;
+          userId?: number;
+          entity?: string;
+          action?: string;
+          data?: unknown;
+        };
+
+      // Mode 1: notify broadcast simulation used by sync integration checks
+      if (entity && action && data) {
+        if (typeof notifyDataChange !== "function") {
+          return sendError(
+            res,
+            501,
+            "SYNC_NOTIFICATION_UNAVAILABLE",
+            "Real-time sync notification service not available",
+          );
+        }
+        const clientsNotified = await notifyDataChange(entity, action, data);
+        return sendOk(res, {
+          success: true,
+          message: `Notified ${clientsNotified} clients about the data change`,
+          clientsNotified,
+        });
+      }
 
       if (!type || !itemId || !warehouseId) {
-        return res.status(400).json({ message: "Missing required fields: type, itemId, warehouseId" });
+        return sendError(
+          res,
+          400,
+          "MISSING_INVENTORY_SYNC_FIELDS",
+          "Missing required fields: type, itemId, warehouseId",
+        );
       }
 
       // Get the item and warehouse to ensure they exist
@@ -4942,17 +5045,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const warehouse = await storage.getWarehouse(warehouseId);
 
       if (!item) {
-        return res.status(404).json({ message: `Inventory item #${itemId} not found` });
+        return sendError(res, 404, "INVENTORY_ITEM_NOT_FOUND", `Inventory item #${itemId} not found`);
       }
 
       if (!warehouse) {
-        return res.status(404).json({ message: `Warehouse #${warehouseId} not found` });
+        return sendError(res, 404, "WAREHOUSE_NOT_FOUND", `Warehouse #${warehouseId} not found`);
       }
 
       // Update the inventory if data is valid
       if (type === 'update') {
         if (quantity === undefined) {
-          return res.status(400).json({ message: "Quantity is required for inventory updates" });
+          return sendError(res, 400, "MISSING_QUANTITY", "Quantity is required for inventory updates");
         }
 
         // Get current warehouse inventory
@@ -4994,7 +5097,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           referenceType: 'warehouse'
         });
 
-        res.json({ 
+        return sendOk(res, { 
           message: "Inventory updated successfully", 
           item, 
           warehouse, 
@@ -5018,17 +5121,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           referenceType: 'warehouse'
         });
 
-        res.json({
+        return sendOk(res, {
           message: "Low stock alert triggered successfully",
           item: alertItem,
           warehouse
         });
       } else {
-        return res.status(400).json({ message: `Unknown test type: ${type}. Supported types: update, alert` });
+        return sendError(
+          res,
+          400,
+          "INVALID_SYNC_TEST_TYPE",
+          `Unknown test type: ${type}. Supported types: update, alert`,
+        );
       }
     } catch (error) {
       console.error("Error in inventory sync test:", error);
-      res.status(500).json({ message: "Failed to process inventory sync test" });
+      return sendError(res, 500, "INVENTORY_SYNC_TEST_FAILED", "Failed to process inventory sync test");
     }
   });
 
@@ -5047,7 +5155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (dueInDays) {
         const days = parseInt(dueInDays as string);
         if (isNaN(days)) {
-          return res.status(400).json({ error: "Invalid dueInDays parameter" });
+          return sendError(res, 400, "INVALID_DUE_IN_DAYS", "Invalid dueInDays parameter");
         }
         invoices = await storage.getInvoiceDueInDays(days);
       } else if (customerId) {
@@ -5063,10 +5171,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         invoices = await storage.getAllInvoices();
       }
       
-      res.json(invoices);
+      return sendOk(res, invoices);
     } catch (error) {
       console.error("Error fetching invoices:", error);
-      res.status(500).json({ error: "Failed to fetch invoices" });
+      return sendError(res, 500, "FETCH_INVOICES_FAILED", "Failed to fetch invoices");
     }
   });
 
@@ -5076,7 +5184,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await storage.getInvoice(id);
       
       if (!invoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Get invoice items
@@ -5085,14 +5193,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get payments
       const payments = await storage.getPaymentsByInvoiceId(id);
       
-      res.json({
+      return sendOk(res, {
         ...invoice,
         items,
         payments
       });
     } catch (error) {
       console.error("Error fetching invoice:", error);
-      res.status(500).json({ error: "Failed to fetch invoice" });
+      return sendError(res, 500, "FETCH_INVOICE_FAILED", "Failed to fetch invoice");
     }
   });
 
@@ -5100,16 +5208,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/invoices/:id/match", async (req, res) => {
     try {
       const invoiceId = Number(req.params.id);
-      if (isNaN(invoiceId)) return res.status(400).json({ error: "Invalid invoice ID" });
+      if (isNaN(invoiceId)) return sendError(res, 400, "INVALID_INVOICE_ID", "Invalid invoice ID");
 
       const invoice = await storage.getInvoice(invoiceId);
-      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       if (!invoice.purchaseOrderId) {
-        return res.status(400).json({ error: "Invoice is not linked to a purchase order" });
+        return sendError(res, 400, "INVOICE_PO_REQUIRED", "Invoice is not linked to a purchase order");
       }
 
       const po = await storage.getPurchaseOrder(invoice.purchaseOrderId);
-      if (!po) return res.status(404).json({ error: "Linked purchase order not found" });
+      if (!po) return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Linked purchase order not found");
 
       const poItems = await storage.getPurchaseOrderItems(po.id);
       const invItems = await storage.getInvoiceItems(invoiceId);
@@ -5159,7 +5267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }).catch(() => {});
       }
 
-      res.json({
+      return sendOk(res, {
         invoiceId,
         purchaseOrderId: po.id,
         matched: mismatches.length === 0,
@@ -5168,7 +5276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error running 3-way match:", error);
-      res.status(500).json({ error: "Failed to run 3-way match" });
+      return sendError(res, 500, "INVOICE_MATCH_FAILED", "Failed to run 3-way match");
     }
   });
 
@@ -5176,6 +5284,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceData = req.body;
       const items = invoiceData.items || [];
+      if (!invoiceData.supplierId) {
+        return sendFunctionError(res, 400, "createInvoice", "Supplier is required");
+      }
+      const supplier = await storage.getSupplier(Number(invoiceData.supplierId));
+      if (!supplier) {
+        return sendFunctionError(res, 400, "createInvoice", "Supplier does not exist");
+      }
+      if (invoiceData.purchaseOrderId) {
+        const po = await storage.getPurchaseOrder(Number(invoiceData.purchaseOrderId));
+        if (!po) {
+          return sendFunctionError(res, 400, "createInvoice", "Purchase order does not exist");
+        }
+        if (Number(po.supplierId) !== Number(invoiceData.supplierId)) {
+          return sendFunctionError(
+            res,
+            400,
+            "createInvoice",
+            "Invoice supplier must match purchase order supplier",
+          );
+        }
+      }
+      if (Array.isArray(items)) {
+        const invalidLine = items.findIndex((line: { unitPrice?: number; quantity?: number }) =>
+          Number(line.quantity) <= 0 || Number(line.unitPrice) <= 0,
+        );
+        if (invalidLine >= 0) {
+          return sendFunctionError(
+            res,
+            400,
+            "createInvoice",
+            `Invoice item ${invalidLine + 1} must have positive quantity and unit price`,
+          );
+        }
+      }
       
       // Delete items from invoice data as we'll handle them separately
       delete invoiceData.items;
@@ -5200,10 +5342,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create invoice
       const invoice = await storage.createInvoice(invoiceData, items);
       
-      res.status(201).json(invoice);
+      return sendOk(res, invoice, 201);
     } catch (error) {
       console.error("Error creating invoice:", error);
-      res.status(500).json({ error: "Failed to create invoice" });
+      return sendError(res, 500, "CREATE_INVOICE_FAILED", "Failed to create invoice");
     }
   });
 
@@ -5215,16 +5357,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(id);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Update invoice
       const updatedInvoice = await storage.updateInvoice(id, invoiceData);
       
-      res.json(updatedInvoice);
+      return sendOk(res, updatedInvoice);
     } catch (error) {
       console.error("Error updating invoice:", error);
-      res.status(500).json({ error: "Failed to update invoice" });
+      return sendError(res, 500, "UPDATE_INVOICE_FAILED", "Failed to update invoice");
     }
   });
 
@@ -5235,23 +5377,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(id);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Check if invoice can be deleted (e.g., not in PAID status)
       if (existingInvoice.status === "PAID" || existingInvoice.status === "PARTIALLY_PAID") {
-        return res.status(400).json({ 
-          error: "Cannot delete a paid invoice. Consider cancelling it instead." 
-        });
+        return sendError(
+          res,
+          400,
+          "INVOICE_DELETE_NOT_ALLOWED",
+          "Cannot delete a paid invoice. Consider cancelling it instead.",
+        );
       }
       
       // Delete invoice
       await storage.deleteInvoice(id);
       
-      res.json({ success: true });
+      return sendOk(res, { success: true });
     } catch (error) {
       console.error("Error deleting invoice:", error);
-      res.status(500).json({ error: "Failed to delete invoice" });
+      return sendError(res, 500, "DELETE_INVOICE_FAILED", "Failed to delete invoice");
     }
   });
 
@@ -5263,14 +5408,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(id);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Check if invoice can be sent (must be in DRAFT status)
       if (existingInvoice.status !== "DRAFT") {
-        return res.status(400).json({ 
-          error: "Only invoices in DRAFT status can be sent" 
-        });
+        return sendError(res, 400, "INVOICE_SEND_NOT_ALLOWED", "Only invoices in DRAFT status can be sent");
       }
       
       // Update invoice status to SENT
@@ -5278,10 +5421,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "SENT" as const
       });
       
-      res.json(updatedInvoice);
+      return sendOk(res, updatedInvoice);
     } catch (error) {
       console.error("Error sending invoice:", error);
-      res.status(500).json({ error: "Failed to send invoice" });
+      return sendError(res, 500, "SEND_INVOICE_FAILED", "Failed to send invoice");
     }
   });
 
@@ -5292,14 +5435,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(id);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Check if invoice can be cancelled (not in PAID or CANCELLED status)
       if (existingInvoice.status === "PAID" || existingInvoice.status === "CANCELLED" || existingInvoice.status === "VOID") {
-        return res.status(400).json({ 
-          error: "Cannot cancel an invoice that is already paid, cancelled, or void" 
-        });
+        return sendError(
+          res,
+          400,
+          "INVOICE_CANCEL_NOT_ALLOWED",
+          "Cannot cancel an invoice that is already paid, cancelled, or void",
+        );
       }
       
       // Update invoice status to CANCELLED
@@ -5307,10 +5453,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "CANCELLED"
       });
       
-      res.json(updatedInvoice);
+      return sendOk(res, updatedInvoice);
     } catch (error) {
       console.error("Error cancelling invoice:", error);
-      res.status(500).json({ error: "Failed to cancel invoice" });
+      return sendError(res, 500, "CANCEL_INVOICE_FAILED", "Failed to cancel invoice");
     }
   });
 
@@ -5321,14 +5467,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(id);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Check if invoice can be voided (not in VOID status)
       if (existingInvoice.status === "VOID") {
-        return res.status(400).json({ 
-          error: "Invoice is already void" 
-        });
+        return sendError(res, 400, "INVOICE_ALREADY_VOID", "Invoice is already void");
       }
       
       // Update invoice status to VOID
@@ -5336,10 +5480,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "VOID"
       });
       
-      res.json(updatedInvoice);
+      return sendOk(res, updatedInvoice);
     } catch (error) {
       console.error("Error voiding invoice:", error);
-      res.status(500).json({ error: "Failed to void invoice" });
+      return sendError(res, 500, "VOID_INVOICE_FAILED", "Failed to void invoice");
     }
   });
 
@@ -5351,16 +5495,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(invoiceId);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Get invoice items
       const items = await storage.getInvoiceItems(invoiceId);
       
-      res.json(items);
+      return sendOk(res, items);
     } catch (error) {
       console.error("Error fetching invoice items:", error);
-      res.status(500).json({ error: "Failed to fetch invoice items" });
+      return sendError(res, 500, "FETCH_INVOICE_ITEMS_FAILED", "Failed to fetch invoice items");
     }
   });
 
@@ -5371,14 +5515,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(invoiceId);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Check if invoice can be modified (not in PAID, CANCELLED, or VOID status)
       if (["PAID", "CANCELLED", "VOID"].includes(existingInvoice.status)) {
-        return res.status(400).json({ 
-          error: "Cannot modify a paid, cancelled, or void invoice" 
-        });
+        return sendError(res, 400, "INVOICE_MODIFY_NOT_ALLOWED", "Cannot modify a paid, cancelled, or void invoice");
       }
       
       const itemData = req.body;
@@ -5387,10 +5529,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create invoice item
       const item = await storage.addInvoiceItem(itemData);
       
-      res.status(201).json(item);
+      return sendOk(res, item, 201);
     } catch (error) {
       console.error("Error creating invoice item:", error);
-      res.status(500).json({ error: "Failed to create invoice item" });
+      return sendError(res, 500, "CREATE_INVOICE_ITEM_FAILED", "Failed to create invoice item");
     }
   });
 
@@ -5402,29 +5544,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(invoiceId);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Check if invoice can be modified
       if (["PAID", "CANCELLED", "VOID"].includes(existingInvoice.status)) {
-        return res.status(400).json({ 
-          error: "Cannot modify a paid, cancelled, or void invoice" 
-        });
+        return sendError(res, 400, "INVOICE_MODIFY_NOT_ALLOWED", "Cannot modify a paid, cancelled, or void invoice");
       }
       
       // Validate item exists and belongs to the invoice
       const existingItem = await storage.getInvoiceItem(itemId);
       if (!existingItem || existingItem.invoiceId !== invoiceId) {
-        return res.status(404).json({ error: "Invoice item not found" });
+        return sendError(res, 404, "INVOICE_ITEM_NOT_FOUND", "Invoice item not found");
       }
       
       // Update invoice item
       const updatedItem = await storage.updateInvoiceItem(itemId, req.body);
       
-      res.json(updatedItem);
+      return sendOk(res, updatedItem);
     } catch (error) {
       console.error("Error updating invoice item:", error);
-      res.status(500).json({ error: "Failed to update invoice item" });
+      return sendError(res, 500, "UPDATE_INVOICE_ITEM_FAILED", "Failed to update invoice item");
     }
   });
 
@@ -5436,29 +5576,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(invoiceId);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Check if invoice can be modified
       if (["PAID", "CANCELLED", "VOID"].includes(existingInvoice.status)) {
-        return res.status(400).json({ 
-          error: "Cannot modify a paid, cancelled, or void invoice" 
-        });
+        return sendError(res, 400, "INVOICE_MODIFY_NOT_ALLOWED", "Cannot modify a paid, cancelled, or void invoice");
       }
       
       // Validate item exists and belongs to the invoice
       const existingItem = await storage.getInvoiceItem(itemId);
       if (!existingItem || existingItem.invoiceId !== invoiceId) {
-        return res.status(404).json({ error: "Invoice item not found" });
+        return sendError(res, 404, "INVOICE_ITEM_NOT_FOUND", "Invoice item not found");
       }
       
       // Delete invoice item
       await storage.deleteInvoiceItem(itemId);
       
-      res.json({ success: true });
+      return sendOk(res, { success: true });
     } catch (error) {
       console.error("Error deleting invoice item:", error);
-      res.status(500).json({ error: "Failed to delete invoice item" });
+      return sendError(res, 500, "DELETE_INVOICE_ITEM_FAILED", "Failed to delete invoice item");
     }
   });
 
@@ -5466,10 +5604,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/payments", async (req, res) => {
     try {
       const payments = await storage.getAllPayments();
-      res.json(payments);
+      return sendOk(res, payments);
     } catch (error) {
       console.error("Error fetching payments:", error);
-      res.status(500).json({ error: "Failed to fetch payments" });
+      return sendError(res, 500, "FETCH_PAYMENTS_FAILED", "Failed to fetch payments");
     }
   });
 
@@ -5480,16 +5618,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(invoiceId);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Get payments for invoice
       const payments = await storage.getPaymentsByInvoiceId(invoiceId);
       
-      res.json(payments);
+      return sendOk(res, payments);
     } catch (error) {
       console.error("Error fetching payments:", error);
-      res.status(500).json({ error: "Failed to fetch payments" });
+      return sendError(res, 500, "FETCH_INVOICE_PAYMENTS_FAILED", "Failed to fetch payments");
     }
   });
 
@@ -5500,26 +5638,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate invoice exists
       const existingInvoice = await storage.getInvoice(invoiceId);
       if (!existingInvoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       }
       
       // Check if invoice can accept payments
       if (["CANCELLED", "VOID"].includes(existingInvoice.status)) {
-        return res.status(400).json({ 
-          error: "Cannot add payments to a cancelled or void invoice" 
-        });
+        return sendFunctionError(
+          res,
+          400,
+          "createPayment",
+          "Cannot add payments to a cancelled or void invoice",
+        );
       }
       
       const paymentData = req.body;
       paymentData.invoiceId = invoiceId;
+      const paymentAmount = Number(paymentData.amount ?? paymentData.paymentAmount ?? 0);
+      if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+        return sendFunctionError(res, 400, "createPayment", "Payment amount must be greater than zero");
+      }
+      const total = Number((existingInvoice as { totalAmount?: number | string }).totalAmount ?? existingInvoice.total ?? 0);
+      const paid = Number(existingInvoice.paidAmount ?? 0);
+      const balance = Number.isFinite(total - paid) ? total - paid : 0;
+      if (paymentAmount > balance && balance > 0) {
+        return sendFunctionError(
+          res,
+          400,
+          "createPayment",
+          `Payment amount (${paymentAmount}) cannot exceed invoice balance (${balance})`,
+        );
+      }
       
       // Create payment
       const payment = await storage.createPayment(paymentData);
       
-      res.status(201).json(payment);
+      return sendOk(res, payment, 201);
     } catch (error) {
       console.error("Error creating payment:", error);
-      res.status(500).json({ error: "Failed to create payment" });
+      return sendError(res, 500, "CREATE_PAYMENT_FAILED", "Failed to create payment");
     }
   });
 
@@ -5530,16 +5686,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate payment exists
       const existingPayment = await storage.getPayment(id);
       if (!existingPayment) {
-        return res.status(404).json({ error: "Payment not found" });
+        return sendError(res, 404, "PAYMENT_NOT_FOUND", "Payment not found");
       }
       
       // Update payment
       const updatedPayment = await storage.updatePayment(id, req.body);
       
-      res.json(updatedPayment);
+      return sendOk(res, updatedPayment);
     } catch (error) {
       console.error("Error updating payment:", error);
-      res.status(500).json({ error: "Failed to update payment" });
+      return sendError(res, 500, "UPDATE_PAYMENT_FAILED", "Failed to update payment");
     }
   });
 
@@ -5550,16 +5706,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate payment exists
       const existingPayment = await storage.getPayment(id);
       if (!existingPayment) {
-        return res.status(404).json({ error: "Payment not found" });
+        return sendError(res, 404, "PAYMENT_NOT_FOUND", "Payment not found");
       }
       
       // Delete payment
       await storage.deletePayment(id);
       
-      res.json({ success: true });
+      return sendOk(res, { success: true });
     } catch (error) {
       console.error("Error deleting payment:", error);
-      res.status(500).json({ error: "Failed to delete payment" });
+      return sendError(res, 500, "DELETE_PAYMENT_FAILED", "Failed to delete payment");
     }
   });
 
@@ -5567,20 +5723,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/billing-settings", async (req, res) => {
     try {
       const settings = await storage.getBillingSettings();
-      res.json(settings || {});
+      return sendOk(res, settings || {});
     } catch (error) {
       console.error("Error fetching billing settings:", error);
-      res.status(500).json({ error: "Failed to fetch billing settings" });
+      return sendError(res, 500, "FETCH_BILLING_SETTINGS_FAILED", "Failed to fetch billing settings");
     }
   });
 
   app.post("/api/billing-settings", async (req, res) => {
     try {
       const settings = await storage.updateBillingSettings(req.body);
-      res.json(settings);
+      return sendOk(res, settings);
     } catch (error) {
       console.error("Error updating billing settings:", error);
-      res.status(500).json({ error: "Failed to update billing settings" });
+      return sendError(res, 500, "UPDATE_BILLING_SETTINGS_FAILED", "Failed to update billing settings");
     }
   });
 
@@ -5588,10 +5744,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/tax-rates", async (req, res) => {
     try {
       const taxRates = await storage.getAllTaxRates();
-      res.json(taxRates);
+      return sendOk(res, taxRates);
     } catch (error) {
       console.error("Error fetching tax rates:", error);
-      res.status(500).json({ error: "Failed to fetch tax rates" });
+      return sendError(res, 500, "FETCH_TAX_RATES_FAILED", "Failed to fetch tax rates");
     }
   });
 
@@ -5599,12 +5755,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const defaultTaxRate = await storage.getDefaultTaxRate();
       if (!defaultTaxRate) {
-        return res.status(404).json({ error: "No default tax rate set" });
+        return sendError(res, 404, "DEFAULT_TAX_RATE_NOT_FOUND", "No default tax rate set");
       }
-      res.json(defaultTaxRate);
+      return sendOk(res, defaultTaxRate);
     } catch (error) {
       console.error("Error fetching default tax rate:", error);
-      res.status(500).json({ error: "Failed to fetch default tax rate" });
+      return sendError(res, 500, "FETCH_DEFAULT_TAX_RATE_FAILED", "Failed to fetch default tax rate");
     }
   });
 
@@ -5614,23 +5770,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const taxRate = await storage.getTaxRate(id);
       
       if (!taxRate) {
-        return res.status(404).json({ error: "Tax rate not found" });
+        return sendError(res, 404, "TAX_RATE_NOT_FOUND", "Tax rate not found");
       }
       
-      res.json(taxRate);
+      return sendOk(res, taxRate);
     } catch (error) {
       console.error("Error fetching tax rate:", error);
-      res.status(500).json({ error: "Failed to fetch tax rate" });
+      return sendError(res, 500, "FETCH_TAX_RATE_FAILED", "Failed to fetch tax rate");
     }
   });
 
   app.post("/api/tax-rates", async (req, res) => {
     try {
       const taxRate = await storage.createTaxRate(req.body);
-      res.status(201).json(taxRate);
+      return sendOk(res, taxRate, 201);
     } catch (error) {
       console.error("Error creating tax rate:", error);
-      res.status(500).json({ error: "Failed to create tax rate" });
+      return sendError(res, 500, "CREATE_TAX_RATE_FAILED", "Failed to create tax rate");
     }
   });
 
@@ -5641,16 +5797,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate tax rate exists
       const existingTaxRate = await storage.getTaxRate(id);
       if (!existingTaxRate) {
-        return res.status(404).json({ error: "Tax rate not found" });
+        return sendError(res, 404, "TAX_RATE_NOT_FOUND", "Tax rate not found");
       }
       
       // Update tax rate
       const updatedTaxRate = await storage.updateTaxRate(id, req.body);
       
-      res.json(updatedTaxRate);
+      return sendOk(res, updatedTaxRate);
     } catch (error) {
       console.error("Error updating tax rate:", error);
-      res.status(500).json({ error: "Failed to update tax rate" });
+      return sendError(res, 500, "UPDATE_TAX_RATE_FAILED", "Failed to update tax rate");
     }
   });
 
@@ -5661,23 +5817,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate tax rate exists
       const existingTaxRate = await storage.getTaxRate(id);
       if (!existingTaxRate) {
-        return res.status(404).json({ error: "Tax rate not found" });
+        return sendError(res, 404, "TAX_RATE_NOT_FOUND", "Tax rate not found");
       }
       
       // Check if it's the default tax rate
       if (existingTaxRate.isDefault) {
-        return res.status(400).json({ 
-          error: "Cannot delete the default tax rate. Set another tax rate as default first." 
-        });
+        return sendError(
+          res,
+          400,
+          "DELETE_DEFAULT_TAX_RATE_NOT_ALLOWED",
+          "Cannot delete the default tax rate. Set another tax rate as default first.",
+        );
       }
       
       // Delete tax rate
       await storage.deleteTaxRate(id);
       
-      res.json({ success: true });
+      return sendOk(res, { success: true });
     } catch (error) {
       console.error("Error deleting tax rate:", error);
-      res.status(500).json({ error: "Failed to delete tax rate" });
+      return sendError(res, 500, "DELETE_TAX_RATE_FAILED", "Failed to delete tax rate");
     }
   });
 
@@ -5688,16 +5847,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate tax rate exists
       const existingTaxRate = await storage.getTaxRate(id);
       if (!existingTaxRate) {
-        return res.status(404).json({ error: "Tax rate not found" });
+        return sendError(res, 404, "TAX_RATE_NOT_FOUND", "Tax rate not found");
       }
       
       // Set as default
       const updatedTaxRate = await storage.setDefaultTaxRate(id);
       
-      res.json(updatedTaxRate);
+      return sendOk(res, updatedTaxRate);
     } catch (error) {
       console.error("Error setting default tax rate:", error);
-      res.status(500).json({ error: "Failed to set default tax rate" });
+      return sendError(res, 500, "SET_DEFAULT_TAX_RATE_FAILED", "Failed to set default tax rate");
     }
   });
 
@@ -5706,10 +5865,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const activeOnly = req.query.activeOnly === "true";
       const discounts = activeOnly ? await storage.getActiveDiscounts() : await storage.getAllDiscounts();
-      res.json(discounts);
+      return sendOk(res, discounts);
     } catch (error) {
       console.error("Error fetching discounts:", error);
-      res.status(500).json({ error: "Failed to fetch discounts" });
+      return sendError(res, 500, "FETCH_DISCOUNTS_FAILED", "Failed to fetch discounts");
     }
   });
 
@@ -5719,23 +5878,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const discount = await storage.getDiscount(id);
       
       if (!discount) {
-        return res.status(404).json({ error: "Discount not found" });
+        return sendError(res, 404, "DISCOUNT_NOT_FOUND", "Discount not found");
       }
       
-      res.json(discount);
+      return sendOk(res, discount);
     } catch (error) {
       console.error("Error fetching discount:", error);
-      res.status(500).json({ error: "Failed to fetch discount" });
+      return sendError(res, 500, "FETCH_DISCOUNT_FAILED", "Failed to fetch discount");
     }
   });
 
   app.post("/api/discounts", async (req, res) => {
     try {
       const discount = await storage.createDiscount(req.body);
-      res.status(201).json(discount);
+      return sendOk(res, discount, 201);
     } catch (error) {
       console.error("Error creating discount:", error);
-      res.status(500).json({ error: "Failed to create discount" });
+      return sendError(res, 500, "CREATE_DISCOUNT_FAILED", "Failed to create discount");
     }
   });
 
@@ -5746,16 +5905,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate discount exists
       const existingDiscount = await storage.getDiscount(id);
       if (!existingDiscount) {
-        return res.status(404).json({ error: "Discount not found" });
+        return sendError(res, 404, "DISCOUNT_NOT_FOUND", "Discount not found");
       }
       
       // Update discount
       const updatedDiscount = await storage.updateDiscount(id, req.body);
       
-      res.json(updatedDiscount);
+      return sendOk(res, updatedDiscount);
     } catch (error) {
       console.error("Error updating discount:", error);
-      res.status(500).json({ error: "Failed to update discount" });
+      return sendError(res, 500, "UPDATE_DISCOUNT_FAILED", "Failed to update discount");
     }
   });
 
@@ -5766,24 +5925,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate discount exists
       const existingDiscount = await storage.getDiscount(id);
       if (!existingDiscount) {
-        return res.status(404).json({ error: "Discount not found" });
+        return sendError(res, 404, "DISCOUNT_NOT_FOUND", "Discount not found");
       }
       
       // Delete discount
       await storage.deleteDiscount(id);
       
-      res.json({ success: true });
+      return sendOk(res, { success: true });
     } catch (error) {
       console.error("Error deleting discount:", error);
-      res.status(500).json({ error: "Failed to delete discount" });
+      return sendError(res, 500, "DELETE_DISCOUNT_FAILED", "Failed to delete discount");
     }
   });
 
   // Lightweight payload: no DB or other deps — always returns 200 for proxy/CI.
+  const uploadPathReady = () => fs.existsSync(uploadsDir);
+  const emailServiceReady = () => {
+    if (process.env.NODE_ENV !== "production") {
+      return true;
+    }
+    return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  };
   const getHealthPayload = () => ({
     status: "ok",
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
+    readiness: {
+      dbReady: readiness.dbReady,
+      schemaReady: readiness.schemaReady,
+      sessionStoreReady: readiness.sessionStoreReady,
+      websocketReady: readiness.websocketReady,
+      uploadPathReady: uploadPathReady(),
+      emailServiceReady: emailServiceReady(),
+    },
   });
 
   // Health checks for app monitors and CI smoke tests. /health must never fail (no DB).
@@ -5792,19 +5966,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/health", (_req, res) => {
-    res.json(getHealthPayload());
+    sendOk(res, getHealthPayload());
   });
 
   app.get("/ready", (_req, res) => {
-    res.json({
+    sendOk(res, {
       dbReady: readiness.dbReady,
       schemaReady: readiness.schemaReady,
+      sessionStoreReady: readiness.sessionStoreReady,
+      websocketReady: readiness.websocketReady,
+      uploadPathReady: uploadPathReady(),
+      emailServiceReady: emailServiceReady(),
     });
   });
   app.get("/api/ready", (_req, res) => {
-    res.json({
+    sendOk(res, {
       dbReady: readiness.dbReady,
       schemaReady: readiness.schemaReady,
+      sessionStoreReady: readiness.sessionStoreReady,
+      websocketReady: readiness.websocketReady,
+      uploadPathReady: uploadPathReady(),
+      emailServiceReady: emailServiceReady(),
     });
   });
 
@@ -5850,6 +6032,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ok: databaseOk,
           error: databaseError,
         },
+        sessionStore: {
+          ok: readiness.sessionStoreReady,
+        },
+        websocket: {
+          ok: readiness.websocketReady,
+        },
+        uploadPath: {
+          ok: uploadPathReady(),
+          path: uploadsDir,
+        },
+        emailService: {
+          ok: emailServiceReady(),
+        },
         schema: schemaStatus,
         seed: seedSummary,
       },
@@ -5865,21 +6060,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/health/deep", async (_req, res) => {
     const payload = await getDeepHealthPayload();
-    res.status(payload.status === "ok" ? 200 : 503).json(payload);
+    sendOk(res, payload, payload.status === "ok" ? 200 : 503);
   });
 
   const handleDemoReset = async (_req: Request, res: Response) => {
     if (process.env.NODE_ENV === "production") {
-      return res.status(404).json({ message: "Not found" });
+      return sendError(res, 404, "NOT_FOUND", "Not found");
     }
 
     try {
       const summary = await resetAndSeedDemoData();
       const operational = await seedOperationalIfEmpty();
-      return res.json({ ...summary, operational });
+      return sendOk(res, { ...summary, operational });
     } catch (error) {
       console.error("Failed to reset demo data:", error);
-      return res.status(500).json({ message: "Failed to reset demo data" });
+      return sendError(res, 500, "DEMO_RESET_FAILED", "Failed to reset demo data", {
+        details: error instanceof Error ? error.message : String(error),
+      });
     }
   };
 
@@ -5914,36 +6111,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         syncConnections: syncWss ? syncWss.clients.size : 0,
         syncClientsInfo: typeof getConnectedClientInfo === 'function' ? getConnectedClientInfo() : []
       };
-      res.json(connectionInfo);
+      return sendOk(res, connectionInfo);
     } catch (error) {
       console.error("Error getting WebSocket connection status:", error);
-      res.status(500).json({ message: "Error getting WebSocket connection status" });
-    }
-  });
-  
-  // Test real-time sync functionality
-  app.post("/api/inventory-sync/test", auth.ensureAuthenticated, async (req: Request, res: Response) => {
-    try {
-      const { entity, action, data } = req.body;
-      
-      if (!entity || !action || !data) {
-        return res.status(400).json({ message: "Missing required parameters: entity, action, data" });
-      }
-      
-      // Use the notifyDataChange function from real-time-sync-service if available
-      if (typeof notifyDataChange === 'function') {
-        const clientsNotified = await notifyDataChange(entity, action, data);
-        return res.json({ 
-          success: true, 
-          message: `Notified ${clientsNotified} clients about the data change`,
-          clientsNotified
-        });
-      } else {
-        return res.status(501).json({ message: "Real-time sync notification service not available" });
-      }
-    } catch (error) {
-      console.error("Error testing real-time sync:", error);
-      res.status(500).json({ message: "Failed to test real-time sync" });
+      return sendError(res, 500, "SYNC_STATUS_FAILED", "Error getting WebSocket connection status");
     }
   });
   

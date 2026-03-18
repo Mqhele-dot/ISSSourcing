@@ -5,6 +5,8 @@
 export const readiness = {
   dbReady: false,
   schemaReady: false,
+  sessionStoreReady: false,
+  websocketReady: false,
 };
 
 export function setDbReady(value: boolean): void {
@@ -13,4 +15,12 @@ export function setDbReady(value: boolean): void {
 
 export function setSchemaReady(value: boolean): void {
   readiness.schemaReady = value;
+}
+
+export function setSessionStoreReady(value: boolean): void {
+  readiness.sessionStoreReady = value;
+}
+
+export function setWebsocketReady(value: boolean): void {
+  readiness.websocketReady = value;
 }

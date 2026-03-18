@@ -57,6 +57,7 @@ import { isElectronEnvironment } from "./lib/electron-bridge";
 import { ElectronProvider } from "./contexts/electron-provider";
 import { UpdateNotification } from "./components/electron";
 import { DesktopLayout } from "./components/layout/desktop-layout";
+import { GlobalActionErrorCenter } from "./components/diagnostics/global-action-error-center";
 
 // Error boundary component
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null}> {
@@ -223,6 +224,7 @@ function App() {
                       </Route>
                     </div>
                     <TutorialSteps />
+                    <GlobalActionErrorCenter />
                     <Toaster />
                   </ElectronProvider>
                   </HelpExplainProvider>

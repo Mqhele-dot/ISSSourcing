@@ -58,6 +58,8 @@ export const Header: React.FC = () => {
   const { data: notifications = [] } = useQuery({
     queryKey: ["/api/notifications"],
     queryFn: () => requestJson<Notification[]>("GET", "/api/notifications"),
+    enabled: !!user,
+    refetchInterval: 30000,
   });
   const unreadCount = notifications.filter((notification) => !notification.readAt).length;
   const markRead = useMutation({

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest, unwrapOperationalResponse } from '@/lib/queryClient';
+import { queryClient, requestJson, unwrapOperationalResponse } from '@/lib/queryClient';
 import { Plus, Pencil, MoreHorizontal, Trash2, Loader2, Building } from 'lucide-react';
 import {
   Table,
@@ -125,10 +125,7 @@ export default function WarehousesPage() {
 
   // Create warehouse mutation
   const createWarehouse = useMutation<unknown, Error, WarehousePayload>({
-    mutationFn: async (data: WarehousePayload) => {
-      const res = await apiRequest('POST', '/api/warehouses', data);
-      return await res.json();
-    },
+    mutationFn: async (data: WarehousePayload) => requestJson('POST', '/api/warehouses', data),
     onSuccess: (_data, variables) => {
       const createdName = variables.name.trim();
       queryClient.invalidateQueries({ queryKey: ['/api/warehouses'] });
@@ -166,10 +163,8 @@ export default function WarehousesPage() {
 
   // Update warehouse mutation
   const updateWarehouse = useMutation<unknown, Error, { id: number; data: WarehousePayload }>({
-    mutationFn: async ({ id, data }: { id: number; data: WarehousePayload }) => {
-      const res = await apiRequest('PATCH', `/api/warehouses/${id}`, data);
-      return await res.json();
-    },
+    mutationFn: async ({ id, data }: { id: number; data: WarehousePayload }) =>
+      requestJson('PATCH', `/api/warehouses/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/warehouses'] });
       setIsEditDialogOpen(false);
@@ -196,9 +191,8 @@ export default function WarehousesPage() {
   // Delete warehouse mutation
   const deleteWarehouse = useMutation<boolean, Error, number>({
     mutationFn: async (id: number) => {
-      const res = await apiRequest('DELETE', `/api/warehouses/${id}`);
-      if (res.ok) return true;
-      throw new Error('Failed to delete warehouse');
+      await requestJson('DELETE', `/api/warehouses/${id}`);
+      return true;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/warehouses'] });

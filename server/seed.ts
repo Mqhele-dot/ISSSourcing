@@ -55,6 +55,7 @@ import {
   type InsertSupplierContract,
 } from "@shared/schema";
 import { db, pool } from "./db";
+import { initializeOperationalData } from "./operations-core";
 
 const scryptAsync = promisify(scrypt);
 
@@ -831,7 +832,16 @@ async function ensureOperationalInventoryCoverage(defaultWarehouseId: number): P
   const existingAllocations = await db.select({ id: inventoryAllocations.id }).from(inventoryAllocations).limit(1);
   if (existingAllocations.length === 0) {
     const [requisition] = await db.select({ id: purchaseRequisitions.id }).from(purchaseRequisitions).limit(1);
-    const [shipment] = await pool.query<{ id: number }>("SELECT id FROM shipments ORDER BY id LIMIT 1").then((r) => r.rows);
+    let shipment: { id: number } | undefined;
+    try {
+      [shipment] = await pool
+        .query<{ id: number }>("SELECT id FROM shipments ORDER BY id LIMIT 1")
+        .then((r) => r.rows);
+    } catch {
+      // Shipments table is created by operational seed/bootstrap in some environments.
+      // Core seed should still succeed when operational tables are not present yet.
+      shipment = undefined;
+    }
     await db.insert(inventoryAllocations).values(
       items.slice(0, 3).map((item, idx) => ({
         itemId: item.id,
@@ -960,6 +970,8 @@ export async function getSchemaStatus(): Promise<SchemaStatus> {
 }
 
 export async function seedDatabase(): Promise<DemoDataSummary> {
+  // Ensure operational tables exist before core seed references optional shipment IDs.
+  await initializeOperationalData();
   const defaultWarehouseId = await getOrCreateDefaultWarehouse();
   const categoryMap = await ensureCategories();
   const supplierMap = await ensureSuppliers();

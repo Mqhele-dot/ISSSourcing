@@ -98,10 +98,16 @@ export default function InvoicesPage() {
       if (selectedPoItems.length === 0) {
         throw new Error("Selected purchase order has no items");
       }
+      if (dueDate && new Date(dueDate) < new Date(issueDate)) {
+        throw new Error("Due date cannot be earlier than issue date");
+      }
 
       const lines = selectedPoItems.map((item) => {
         const qty = Number(item.quantity ?? 0);
         const unitPrice = Number(item.unitPrice ?? 0);
+        if (qty <= 0 || unitPrice <= 0) {
+          throw new Error("PO items must have quantity and unit price greater than zero");
+        }
         const lineTotal = qty * unitPrice;
         const taxRate = Number(selectedTaxCode?.rate ?? 0);
         const taxAmount = (lineTotal * taxRate) / 100;

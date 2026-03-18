@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, requestJson } from "@/lib/queryClient";
 import { setFallbackState } from "@/lib/fallback-store";
 import { toastStore } from "@/lib/toast-store";
 import type {
@@ -194,17 +194,17 @@ async function apiMutate<T>(method: string, url: string, data?: unknown): Promis
   return unwrapEnvelope<T>(response);
 }
 
-export type ReadyState = { dbReady: boolean; schemaReady: boolean };
+export type ReadyState = {
+  dbReady: boolean;
+  schemaReady: boolean;
+  sessionStoreReady?: boolean;
+  websocketReady?: boolean;
+  uploadPathReady?: boolean;
+  emailServiceReady?: boolean;
+};
 
 export async function fetchReady(): Promise<ReadyState> {
-  const response = await fetch("/api/ready", { credentials: "include" });
-  if (!response.ok) {
-    throw new ApiError({
-      code: "READY_REQUEST_FAILED",
-      message: `Ready check failed: ${response.status}`,
-    });
-  }
-  return (await response.json()) as ReadyState;
+  return requestJson<ReadyState>("GET", "/api/ready");
 }
 
 export async function fetchHealth(): Promise<HealthCheck> {

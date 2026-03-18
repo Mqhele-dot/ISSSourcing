@@ -90,6 +90,18 @@ npm run lint
 npm run test:api
 ```
 
+Reliability contract checks (request IDs + readiness):
+
+```bash
+curl -i http://127.0.0.1:5000/api/health
+curl -i http://127.0.0.1:5000/api/ready
+curl -i http://127.0.0.1:5000/health/deep
+```
+
+Expected:
+- `X-Request-Id` header is present on API responses.
+- `/api/ready` payload includes `dbReady`, `schemaReady`, `sessionStoreReady`, and `websocketReady`.
+
 `test:api` includes:
 - RBAC authorization checks
 - purchase requisition API flow tests
