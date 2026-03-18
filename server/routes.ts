@@ -1901,6 +1901,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Purchase Requisition & Purchase Order — RBAC: viewer read-only; manager/admin for create/update/delete/approve
   const poRead = [auth.ensureAuthenticated];
   const poWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const roleMatchesPolicy = (policyRole: string | null | undefined, actorRole: string) => {
+    if (!policyRole) return true;
+    const normalizedActor = actorRole.trim().toLowerCase();
+    if (!normalizedActor) return false;
+    if (normalizedActor === "admin") return true;
+    const allowedRoles = policyRole
+      .split(/[,\s|/]+/)
+      .map((role) => role.trim().toLowerCase())
+      .filter(Boolean);
+    if (allowedRoles.length === 0) return true;
+    return allowedRoles.includes(normalizedActor);
+  };
 
   app.get("/api/purchase-requisitions", ...poRead, async (_req: Request, res: Response) => {
     try {
@@ -2118,7 +2130,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
           return sendFunctionError(res, 403, "approvePurchaseRequisition", "Only the configured approver can approve this requisition");
         }
-        if (applicable.approverRole && applicable.approverRole.toLowerCase() !== approverRole.toLowerCase()) {
+        if (!roleMatchesPolicy(applicable.approverRole, approverRole)) {
           return sendFunctionError(res, 403, "approvePurchaseRequisition", "Your role is not allowed to approve this requisition amount");
         }
       }
@@ -2189,7 +2201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
           return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Only the configured approver can reject this requisition");
         }
-        if (applicable.approverRole && applicable.approverRole.toLowerCase() !== approverRole.toLowerCase()) {
+        if (!roleMatchesPolicy(applicable.approverRole, approverRole)) {
           return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Your role is not allowed to reject this requisition amount");
         }
       }
@@ -5316,6 +5328,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             "createInvoice",
             `Invoice item ${invalidLine + 1} must have positive quantity and unit price`,
           );
+        }
+        for (let i = 0; i < items.length; i++) {
+          const itemId = Number(items[i]?.itemId);
+          if (!Number.isFinite(itemId) || itemId <= 0) {
+            return sendFunctionError(
+              res,
+              400,
+              "createInvoice",
+              `Invoice item ${i + 1} must include a valid itemId`,
+            );
+          }
+          const inventoryItem = await storage.getInventoryItem(itemId);
+          if (!inventoryItem) {
+            return sendFunctionError(
+              res,
+              400,
+              "createInvoice",
+              `Invoice item ${i + 1} references an inventory item that does not exist`,
+            );
+          }
         }
       }
       

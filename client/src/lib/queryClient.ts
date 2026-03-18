@@ -87,6 +87,9 @@ function reportRequestError(params: {
   payloadSummary?: string;
   stack?: string;
 }) {
+  if (shouldSuppressGlobalError(params.method, params.status, params.url)) {
+    return;
+  }
   actionErrorStore.push({
     method: params.method,
     endpoint: params.url,
@@ -103,6 +106,13 @@ function reportRequestError(params: {
     lastGoodResponse: lastGoodByEndpoint.get(params.url),
     raw: params.payload,
   });
+}
+
+function shouldSuppressGlobalError(method: string, status: number | undefined, url: string): boolean {
+  if (status !== 401) return false;
+  if (method.toUpperCase() !== "GET") return false;
+  // Anonymous/bootstrap reads can legitimately return 401 before/after auth transitions.
+  return url.startsWith("/api/");
 }
 
 async function throwIfResNotOk(res: Response, context?: { method?: string; url?: string }) {

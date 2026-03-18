@@ -21,7 +21,7 @@ import {
   verifyToken,
   generateSetupResponse
 } from "./services/two-factor-service";
-import { sendError } from "./api-response";
+import { sendError, sendOk } from "./api-response";
 
 import type { User as SchemaUser } from "@shared/schema";
 declare global {
@@ -368,7 +368,10 @@ export function setupAuth(app: Express) {
   // Route to get current user
   app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
+      return sendError(res, 401, "UNAUTHORIZED", "Not authenticated", {
+        hint: "Log in again to continue.",
+        details: { functionName: "getCurrentUser" },
+      });
     }
     
     // Check if 2FA is enabled but not completed for this session
@@ -377,7 +380,7 @@ export function setupAuth(app: Express) {
     // Don't send sensitive data to client
     const safeUser = { ...req.user };
     
-    res.json({
+    return sendOk(res, {
       ...safeUser,
       requiresTwoFactor
     });

@@ -128,6 +128,54 @@ function openPurchaseOrderPrintView(detail: PurchaseOrderDetail) {
   printWindow.print();
 }
 
+async function fetchPurchaseOrderRecordById(id: number): Promise<{
+  id: number;
+  departmentId?: number | null;
+  contractId?: number | null;
+  paymentTermsId?: number | null;
+  incotermId?: number | null;
+} | null> {
+  const response = await fetch(`/api/purchase-orders/${id}`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (response.status === 404 || response.status === 401) {
+    return null;
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      payload && typeof payload === "object" && "message" in payload
+        ? String((payload as { message?: unknown }).message ?? `Request failed with ${response.status}`)
+        : `Request failed with ${response.status}`;
+    throw new Error(message);
+  }
+
+  if (payload && typeof payload === "object" && "ok" in payload) {
+    const envelope = payload as { ok: boolean; data?: unknown; error?: { message?: string } };
+    if (!envelope.ok) {
+      throw new Error(envelope.error?.message ?? "Failed to fetch purchase order details");
+    }
+    return (envelope.data as {
+      id: number;
+      departmentId?: number | null;
+      contractId?: number | null;
+      paymentTermsId?: number | null;
+      incotermId?: number | null;
+    }) ?? null;
+  }
+
+  return payload as {
+    id: number;
+    departmentId?: number | null;
+    contractId?: number | null;
+    paymentTermsId?: number | null;
+    incotermId?: number | null;
+  };
+}
+
 function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   const [, setLocation] = useLocation();
   const { queryState, setQueryState } = useQueryState({
@@ -309,14 +357,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
   const { data: purchaseOrderRecord } = useQuery({
     queryKey: ["/api/purchase-orders", data?.id],
     enabled: Boolean(data?.id),
-    queryFn: () =>
-      requestJson<{
-        id: number;
-        departmentId?: number | null;
-        contractId?: number | null;
-        paymentTermsId?: number | null;
-        incotermId?: number | null;
-      }>("GET", `/api/purchase-orders/${data?.id}`),
+    queryFn: () => fetchPurchaseOrderRecordById(Number(data?.id)),
   });
   const { data: departments = [] } = useQuery({
     queryKey: ["/api/departments"],
@@ -483,7 +524,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                     <Printer className="h-4 w-4" />
                     Print view
                   </Button>
-                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                  <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
                     <Button
                       variant="outline"
                       className="gap-2"
@@ -494,7 +535,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                       Approve
                     </Button>
                   </Can>
-                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                  <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
                     <Button
                       variant="outline"
                       className="gap-2"
@@ -712,7 +753,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                 </div>
 
                 <div className="flex justify-end">
-                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                  <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
                     <Button onClick={submitReceive} disabled={!canReceive(detail.status) || receiving}>
                       <Truck className="mr-2 h-4 w-4" />
                       Receive selected

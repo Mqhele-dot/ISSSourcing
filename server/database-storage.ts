@@ -2021,7 +2021,38 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getPurchaseOrderWithDetails(id: number): Promise<(PurchaseOrder & { items: (PurchaseOrderItem & { item: InventoryItem; })[]; supplier: Supplier; requisition?: PurchaseRequisition; }) | undefined> {
-    return this.memStorage.getPurchaseOrderWithDetails(id);
+    const [order] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    if (!order) return undefined;
+
+    const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, order.supplierId));
+    if (!supplier) return undefined;
+
+    const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));
+    const itemIds = [...new Set(items.map((line) => line.itemId))];
+    const invItems =
+      itemIds.length > 0
+        ? await db.select().from(inventoryItems).where(inArray(inventoryItems.id, itemIds))
+        : [];
+    const invMap = new Map(invItems.map((item) => [item.id, item]));
+    const enrichedItems = items
+      .map((line) => ({ ...line, item: invMap.get(line.itemId) }))
+      .filter((line): line is PurchaseOrderItem & { item: InventoryItem } => line.item != null);
+
+    let requisition: PurchaseRequisition | undefined;
+    if (order.requisitionId != null) {
+      const [req] = await db
+        .select()
+        .from(purchaseRequisitions)
+        .where(eq(purchaseRequisitions.id, order.requisitionId));
+      requisition = req;
+    }
+
+    return {
+      ...order,
+      items: enrichedItems,
+      supplier,
+      requisition,
+    };
   }
   
   async getAllCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]> {
@@ -2121,15 +2152,17 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllInvoices(): Promise<Invoice[]> {
-    return this.memStorage.getAllInvoices();
+    return db.select().from(invoices).orderBy(desc(invoices.createdAt));
   }
   
   async getInvoice(id: number): Promise<Invoice | undefined> {
-    return this.memStorage.getInvoice(id);
+    const [row] = await db.select().from(invoices).where(eq(invoices.id, id));
+    return row;
   }
   
   async getInvoiceByNumber(invoiceNumber: string): Promise<Invoice | undefined> {
-    return this.memStorage.getInvoiceByNumber(invoiceNumber);
+    const [row] = await db.select().from(invoices).where(eq(invoices.invoiceNumber, invoiceNumber));
+    return row;
   }
   
   async createInvoice(invoice: InsertInvoice, items: InsertInvoiceItem[]): Promise<Invoice> {
@@ -2178,51 +2211,99 @@ export class DatabaseStorage implements IStorage {
   }
   
   async updateInvoice(id: number, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {
-    return this.memStorage.updateInvoice(id, invoice);
+    const [updated] = await db
+      .update(invoices)
+      .set({ ...invoice, updatedAt: new Date() })
+      .where(eq(invoices.id, id))
+      .returning();
+    return updated;
   }
   
   async deleteInvoice(id: number): Promise<boolean> {
-    return this.memStorage.deleteInvoice(id);
+    await db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, id));
+    await db.delete(payments).where(eq(payments.invoiceId, id));
+    const result = await db.delete(invoices).where(eq(invoices.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async getInvoicesByCustomerId(customerId: number): Promise<Invoice[]> {
-    return this.memStorage.getInvoicesByCustomerId(customerId);
+    return db.select().from(invoices).where(eq(invoices.customerId, customerId)).orderBy(desc(invoices.createdAt));
   }
   
   async getInvoicesByDateRange(startDate: Date, endDate: Date): Promise<Invoice[]> {
-    return this.memStorage.getInvoicesByDateRange(startDate, endDate);
+    return db
+      .select()
+      .from(invoices)
+      .where(and(gte(invoices.issueDate, startDate), lte(invoices.issueDate, endDate)))
+      .orderBy(desc(invoices.issueDate));
   }
   
   async getInvoicesByStatus(status: string): Promise<Invoice[]> {
-    return this.memStorage.getInvoicesByStatus(status);
+    return db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.status, status as Invoice["status"]))
+      .orderBy(desc(invoices.createdAt));
   }
   
   async getOverdueInvoices(): Promise<Invoice[]> {
-    return this.memStorage.getOverdueInvoices();
+    const now = new Date();
+    return db
+      .select()
+      .from(invoices)
+      .where(and(lt(invoices.dueDate, now), ne(invoices.status, "PAID")))
+      .orderBy(desc(invoices.dueDate));
   }
   
   async getInvoiceDueInDays(days: number): Promise<Invoice[]> {
-    return this.memStorage.getInvoiceDueInDays(days);
+    const now = new Date();
+    const target = new Date(now);
+    target.setDate(target.getDate() + days);
+    return db
+      .select()
+      .from(invoices)
+      .where(and(gte(invoices.dueDate, now), lte(invoices.dueDate, target), ne(invoices.status, "PAID")))
+      .orderBy(invoices.dueDate);
   }
   
   async getInvoiceItems(invoiceId: number): Promise<InvoiceItem[]> {
-    return this.memStorage.getInvoiceItems(invoiceId);
+    return db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId)).orderBy(invoiceItems.id);
   }
   
   async getInvoiceItem(id: number): Promise<InvoiceItem | undefined> {
-    return this.memStorage.getInvoiceItem(id);
+    const [row] = await db.select().from(invoiceItems).where(eq(invoiceItems.id, id));
+    return row;
   }
   
   async addInvoiceItem(item: InsertInvoiceItem): Promise<InvoiceItem> {
-    return this.memStorage.addInvoiceItem(item);
+    const payload = {
+      invoiceId: Number(item.invoiceId),
+      itemId: Number(item.itemId),
+      description: item.description ?? `Item #${item.itemId}`,
+      quantity: Number(item.quantity ?? 1),
+      unitPrice: Number(item.unitPrice ?? 0),
+      discount: Number(item.discount ?? 0),
+      taxRate: Number(item.taxRate ?? 0),
+      taxAmount: Number(item.taxAmount ?? 0),
+      totalPrice:
+        Number(item.totalPrice ?? (Number(item.unitPrice ?? 0) * Number(item.quantity ?? 1))),
+    };
+    const [created] = await db.insert(invoiceItems).values(payload).returning();
+    return created;
   }
   
   async updateInvoiceItem(id: number, item: Partial<InsertInvoiceItem>): Promise<InvoiceItem | undefined> {
-    return this.memStorage.updateInvoiceItem(id, item);
+    const [updated] = await db
+      .update(invoiceItems)
+      .set(item)
+      .where(eq(invoiceItems.id, id))
+      .returning();
+    return updated;
   }
   
   async deleteInvoiceItem(id: number): Promise<boolean> {
-    return this.memStorage.deleteInvoiceItem(id);
+    const result = await db.delete(invoiceItems).where(eq(invoiceItems.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async getAllPayments(): Promise<Payment[]> {
