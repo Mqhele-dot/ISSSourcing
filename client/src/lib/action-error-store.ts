@@ -42,6 +42,15 @@ export const actionErrorStore = {
   list() {
     return [...records];
   },
+  clearAll() {
+    records.length = 0;
+  },
+  clearById(id: string) {
+    const idx = records.findIndex((record) => record.id === id);
+    if (idx >= 0) {
+      records.splice(idx, 1);
+    }
+  },
   subscribe(listener: Listener) {
     listeners.add(listener);
     return () => {

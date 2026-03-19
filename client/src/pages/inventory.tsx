@@ -116,7 +116,7 @@ export default function InventoryPage() {
 
   const handleExportCsv = () => {
     try {
-      const items = inventoryData ?? [];
+      const items = displayedItems;
       const rows: string[][] = [
         ["sku", "name", "location", "on_hand", "allocated", "available", "updated_at"],
         ...items.map((item) => [
@@ -150,6 +150,30 @@ export default function InventoryPage() {
     return Array.from(locationSet).sort((a, b) => a.localeCompare(b));
   }, [inventoryData]);
 
+  const displayedItems = useMemo(() => {
+    const base = inventoryData ?? [];
+    const q = String(queryState.q || "").trim().toLowerCase();
+    const location = String(queryState.location || "").trim().toLowerCase();
+    const category = String(queryState.category || "").trim();
+    const lowOnly = isLowFilterEnabled(String(queryState.low || ""));
+    return base.filter((item) => {
+      if (q) {
+        const haystack = `${item.sku} ${item.name}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      if (location && (item.location || "").toLowerCase() !== location) {
+        return false;
+      }
+      if (category && String(item.categoryId ?? "") !== category) {
+        return false;
+      }
+      if (lowOnly && item.available > item.lowStockThreshold) {
+        return false;
+      }
+      return true;
+    });
+  }, [inventoryData, queryState.category, queryState.location, queryState.low, queryState.q]);
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       <PageHeader
@@ -163,7 +187,7 @@ export default function InventoryPage() {
             <Button
               variant="outline"
               onClick={handleExportCsv}
-              disabled={!inventoryData || inventoryData.length === 0}
+              disabled={displayedItems.length === 0}
               className="gap-2"
             >
               <Download className="h-4 w-4" />
@@ -248,7 +272,7 @@ export default function InventoryPage() {
       <DataState
         loading={inventoryLoading}
         error={inventoryError}
-        data={inventoryData}
+        data={displayedItems}
         isEmpty={(items) => items.length === 0}
         emptyTitle="No inventory items found"
         emptyDescription="Add items from the dashboard or run the demo to seed data."

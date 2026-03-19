@@ -14,6 +14,7 @@ type BaseMasterRecord = {
   id: number;
   code: string;
   name: string;
+  symbol?: string | null;
 };
 
 type ApprovalPolicy = {
@@ -48,7 +49,9 @@ function MasterTable({
   const { toast } = useToast();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [symbol, setSymbol] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const isCurrencyEndpoint = endpoint === MASTER_ENDPOINTS.currencies;
 
   const { data = [], isLoading } = useQuery({
     queryKey: [endpoint],
@@ -61,6 +64,7 @@ function MasterTable({
       queryClient.invalidateQueries({ queryKey: [endpoint] });
       setCode("");
       setName("");
+      setSymbol("");
       toast({ title: `${label} created` });
     },
     onError: (e) => {
@@ -80,6 +84,7 @@ function MasterTable({
       setEditingId(null);
       setCode("");
       setName("");
+      setSymbol("");
       toast({ title: `${label} updated` });
     },
     onError: (e) => {
@@ -118,14 +123,22 @@ function MasterTable({
       </CardHeader>
       <CardContent className="space-y-4">
         <form
-          className="grid gap-2 md:grid-cols-[1fr_1fr_auto]"
+          className={`grid gap-2 ${isCurrencyEndpoint ? "md:grid-cols-[1fr_1fr_1fr_auto]" : "md:grid-cols-[1fr_1fr_auto]"}`}
           onSubmit={(e) => {
             e.preventDefault();
             if (!code.trim() || !name.trim()) {
               toast({ title: "Code and name are required", variant: "destructive" });
               return;
             }
-            const payload = { code: code.trim(), name: name.trim() };
+            if (isCurrencyEndpoint && !symbol.trim()) {
+              toast({ title: "Currency symbol is required", variant: "destructive" });
+              return;
+            }
+            const payload = {
+              code: code.trim(),
+              name: name.trim(),
+              ...(isCurrencyEndpoint ? { symbol: symbol.trim() } : {}),
+            };
             if (editingId != null) {
               updateRecord.mutate({ id: editingId, payload });
             } else {
@@ -141,6 +154,17 @@ function MasterTable({
             <Label htmlFor={`${endpoint}-name`}>Name</Label>
             <Input id={`${endpoint}-name`} value={name} onChange={(e) => setName(e.target.value)} />
           </div>
+          {isCurrencyEndpoint ? (
+            <div className="space-y-1">
+              <Label htmlFor={`${endpoint}-symbol`}>Symbol</Label>
+              <Input
+                id={`${endpoint}-symbol`}
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value)}
+                placeholder="$"
+              />
+            </div>
+          ) : null}
           <div className="flex items-end">
             <div className="flex gap-2">
               {editingId != null ? (
@@ -152,6 +176,7 @@ function MasterTable({
                       setEditingId(null);
                       setCode("");
                       setName("");
+                      setSymbol("");
                     }}
                   >
                     Cancel
@@ -180,7 +205,10 @@ function MasterTable({
                 <div key={row.id} className="flex items-center justify-between p-3">
                   <div>
                     <div className="text-sm font-medium">{row.code}</div>
-                    <div className="text-xs text-muted-foreground">{row.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.name}
+                      {isCurrencyEndpoint && row.symbol ? ` (${row.symbol})` : ""}
+                    </div>
                   </div>
                   <Button
                     size="sm"
@@ -189,6 +217,7 @@ function MasterTable({
                       setEditingId(row.id);
                       setCode(row.code);
                       setName(row.name);
+                      setSymbol(row.symbol ?? "");
                     }}
                     disabled={updateRecord.isPending || deleteRecord.isPending}
                   >

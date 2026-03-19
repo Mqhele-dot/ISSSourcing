@@ -117,6 +117,7 @@ export default function WarehousesPage() {
     Warehouse[] | { data: Warehouse[]; meta: { fallback?: string } }
   >({
     queryKey: ['/api/warehouses'],
+    queryFn: () => requestJson<Warehouse[] | { data: Warehouse[]; meta: { fallback?: string } }>('GET', '/api/warehouses'),
   });
   const { data: warehouseList, fallback: listFallback } = unwrapOperationalResponse(
     warehousesRaw ?? [],

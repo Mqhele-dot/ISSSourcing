@@ -838,7 +838,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     app.post(basePath, ...masterWrite, async (req: Request, res: Response) => {
       try {
-        const payload = insertSchema.parse(req.body) as any;
+        const normalizedBody =
+          basePath === "/api/currencies" &&
+          req.body &&
+          typeof req.body === "object" &&
+          (!("symbol" in req.body) || !String((req.body as { symbol?: unknown }).symbol ?? "").trim())
+            ? {
+                ...(req.body as Record<string, unknown>),
+                symbol: String((req.body as { code?: unknown }).code ?? "").trim().slice(0, 3) || "$",
+              }
+            : req.body;
+        const payload = insertSchema.parse(normalizedBody) as any;
         const createdRows = (await db.insert(table).values(payload).returning()) as any[];
         const created = createdRows[0];
         res.status(201).json(created);

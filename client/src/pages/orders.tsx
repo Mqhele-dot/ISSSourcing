@@ -265,7 +265,28 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
         onRetry={refetch}
       >
         {(orders) => {
-          const list = Array.isArray(orders) ? orders : [];
+          const baseList = Array.isArray(orders) ? orders : [];
+          const q = String(queryState.q || "").trim().toLowerCase();
+          const supplierFilter = String(queryState.supplier || "").trim().toLowerCase();
+          const statusFilter = String(queryState.status || "").trim().toLowerCase();
+          const list = baseList.filter((order) => {
+            if (statusFilter && String(order.status || "").toLowerCase() !== statusFilter) {
+              return false;
+            }
+            if (supplierFilter) {
+              const supplierHaystack = `${order.supplierName || ""} ${order.supplierId}`.toLowerCase();
+              if (!supplierHaystack.includes(supplierFilter)) {
+                return false;
+              }
+            }
+            if (q) {
+              const searchHaystack = `${order.poNumber} ${order.supplierName || ""}`.toLowerCase();
+              if (!searchHaystack.includes(q)) {
+                return false;
+              }
+            }
+            return true;
+          });
           return (
           <Table>
             <TableHeader>

@@ -87,7 +87,10 @@ function ShipmentListView() {
   const [carrierName, setCarrierName] = useState("");
   const [carrierContact, setCarrierContact] = useState("");
   const [carrierEditId, setCarrierEditId] = useState<number | null>(null);
-  const { data: carriers = [] } = useQuery({
+  const {
+    data: carriers = [],
+    error: carriersError,
+  } = useQuery({
     queryKey: ["/api/carriers"],
     queryFn: () => requestJson<Carrier[]>("GET", "/api/carriers"),
   });
@@ -212,19 +215,28 @@ function ShipmentListView() {
                   placeholder="PO number"
                   className="w-36"
                 />
-                <Select value={newCarrier || "none"} onValueChange={(value) => setNewCarrier(value === "none" ? "" : value)}>
-                  <SelectTrigger className="w-36">
-                    <SelectValue placeholder="Carrier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Carrier</SelectItem>
-                    {carriers.map((carrier) => (
-                      <SelectItem key={carrier.id} value={carrier.name}>
-                        {carrier.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {carriersError ? (
+                  <Input
+                    value={newCarrier}
+                    onChange={(event) => setNewCarrier(event.target.value)}
+                    placeholder="Carrier name"
+                    className="w-36"
+                  />
+                ) : (
+                  <Select value={newCarrier || "none"} onValueChange={(value) => setNewCarrier(value === "none" ? "" : value)}>
+                    <SelectTrigger className="w-36">
+                      <SelectValue placeholder="Carrier" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Carrier</SelectItem>
+                      {carriers.map((carrier) => (
+                        <SelectItem key={carrier.id} value={carrier.name}>
+                          {carrier.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <Input
                   value={newEta}
                   onChange={(event) => setNewEta(event.target.value)}
@@ -344,6 +356,15 @@ function ShipmentListView() {
           );
         }}
       </DataState>
+
+      {carriersError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Carrier service unavailable</AlertTitle>
+          <AlertDescription>
+            Could not load carriers from <code>/api/carriers</code>. You can still create shipments by typing the carrier name manually.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <Can roles={["manager", "admin"]}>
         <Card>

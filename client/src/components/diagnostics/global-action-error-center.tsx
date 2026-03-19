@@ -71,6 +71,9 @@ export function GlobalActionErrorCenter() {
         title: "Retry successful",
         description: `${latest.retryMethod} ${latest.retryEndpoint}`,
       });
+      actionErrorStore.clearById(latest.id);
+      setHistory(actionErrorStore.list());
+      setLatest(actionErrorStore.list()[0] ?? null);
       setOpen(false);
     } catch (error) {
       toast({
@@ -95,7 +98,18 @@ export function GlobalActionErrorCenter() {
         </div>
       ) : null}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && latest) {
+            actionErrorStore.clearById(latest.id);
+            const nextHistory = actionErrorStore.list();
+            setHistory(nextHistory);
+            setLatest(nextHistory[0] ?? null);
+          }
+          setOpen(nextOpen);
+        }}
+      >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Action Failure Details</DialogTitle>
@@ -142,7 +156,19 @@ export function GlobalActionErrorCenter() {
                 Admin Diagnostics
               </Button>
             ) : null}
-            <Button onClick={() => setOpen(false)}>Close</Button>
+            <Button
+              onClick={() => {
+                if (latest) {
+                  actionErrorStore.clearById(latest.id);
+                  const nextHistory = actionErrorStore.list();
+                  setHistory(nextHistory);
+                  setLatest(nextHistory[0] ?? null);
+                }
+                setOpen(false);
+              }}
+            >
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
