@@ -421,7 +421,10 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      /** Keep list views snappy while avoiding stale dashboards forever */
       staleTime: 60_000,
+      gcTime: 30 * 60 * 1000,
       retry: false,
     },
     mutations: {

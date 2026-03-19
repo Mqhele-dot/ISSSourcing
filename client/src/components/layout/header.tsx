@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { useFallbackState } from "@/hooks/use-fallback-state";
-import { LogOut, User, Settings, Bell, Moon, Palette, Search, Sun } from "lucide-react";
+import { Command as CommandPaletteIcon, LogOut, User, Settings, Bell, Moon, Palette, Search, Sun } from "lucide-react";
+import { requestOpenCommandPalette } from "@/components/command-menu";
 import { useTheme } from "@/components/theme-provider";
 import { useAccent } from "@/components/accent-provider";
 import { queryClient, requestJson } from "@/lib/queryClient";
@@ -104,7 +105,21 @@ export const Header: React.FC = () => {
           />
         </form>
       </div>
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-2 md:space-x-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="hidden gap-1.5 md:inline-flex shrink-0"
+          onClick={() => requestOpenCommandPalette()}
+          title="Open command palette"
+        >
+          <CommandPaletteIcon className="h-4 w-4" />
+          <span className="text-xs font-medium">Jump to…</span>
+          <kbd className="pointer-events-none hidden lg:inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            ⌘K
+          </kbd>
+        </Button>
         <Badge
           variant={systemBadge === "DEGRADED" ? "destructive" : "outline"}
           className="hidden md:inline-flex"

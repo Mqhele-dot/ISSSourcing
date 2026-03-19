@@ -99,6 +99,10 @@ $env:BASE_URL="http://127.0.0.1:5000"; npm run test:procurement-flow
 
 **Error UX smoke (toasts + diagnostics):** after logging in, trigger a failed save or a blocked action. You should see a **visible toast** (Radix) and, when a request fails through the shared client, the **Action Failed** diagnostics affordance when applicable. The top **readiness banner** appears when the database, schema, session store, or upload path is not ready (does not use the global error center so it stays quiet on health polling).
 
+**Power-user navigation:** press **Ctrl+K** (Windows/Linux) or **⌘K** (macOS), or use **Jump to…** in the header, to open the **command palette** and jump to any module without using the sidebar. This mirrors patterns used in modern SCM and collaboration tools.
+
+**Performance:** route modules are **lazy-loaded** so initial load stays smaller; list data uses tuned React Query defaults (`staleTime`, `gcTime`, refetch on reconnect).
+
 Reliability contract checks (request IDs + readiness):
 
 ```bash
