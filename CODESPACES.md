@@ -90,6 +90,15 @@ npm run lint
 npm run test:api
 ```
 
+**Windows PowerShell:** prefix env vars instead of `BASE_URL=...`:
+
+```powershell
+$env:BASE_URL="http://127.0.0.1:5000"; npm run test:api
+$env:BASE_URL="http://127.0.0.1:5000"; npm run test:procurement-flow
+```
+
+**Error UX smoke (toasts + diagnostics):** after logging in, trigger a failed save or a blocked action. You should see a **visible toast** (Radix) and, when a request fails through the shared client, the **Action Failed** diagnostics affordance when applicable. The top **readiness banner** appears when the database, schema, session store, or upload path is not ready (does not use the global error center so it stays quiet on health polling).
+
 Reliability contract checks (request IDs + readiness):
 
 ```bash

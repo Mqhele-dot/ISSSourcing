@@ -12,6 +12,7 @@
  *   BASE_URL=http://127.0.0.1:5000 npx tsx scripts/test-procurement-flow.ts
  */
 import process from "node:process";
+import { exitTest } from "./test-exit.ts";
 
 const BASE_URL = (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
 const API = `${BASE_URL}/api`;
@@ -72,7 +73,7 @@ async function main() {
   const adminCookie = await login("admin", "Admin123!");
   if (!adminCookie) {
     console.log("  ⚠ Admin login failed (seed users missing?).");
-    process.exit(1);
+    exitTest(1);
   }
 
   let failures = 0;
@@ -88,7 +89,7 @@ async function main() {
   const supplierId = Number(suppliers[0]?.id ?? 0);
   if (!supplierId) {
     console.log("  ✗ Missing suppliers; run npm run db:seed");
-    process.exit(1);
+    exitTest(1);
   }
 
   const itemsRes = await request("/inventory", { method: "GET", cookie: adminCookie });
@@ -97,7 +98,7 @@ async function main() {
   const firstItem = items[0];
   if (!firstItem?.id) {
     console.log("  ✗ Missing inventory items; run npm run db:seed");
-    process.exit(1);
+    exitTest(1);
   }
 
   const requiredDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -122,7 +123,7 @@ async function main() {
   const requisitionId = Number(requisition.id ?? 0);
   if (!requisitionId) {
     console.log("  ✗ Requisition was not created.");
-    process.exit(1);
+    exitTest(1);
   }
 
   const approveRes = await request(`/purchase-requisitions/${requisitionId}/approve`, {
@@ -143,7 +144,7 @@ async function main() {
   const poNumber = String(po.orderNumber ?? "");
   if (!poId || !poNumber) {
     console.log("  ✗ PO conversion did not return id/orderNumber.");
-    process.exit(1);
+    exitTest(1);
   }
 
   const shipmentCreateRes = await request("/logistics/shipments", {
@@ -160,7 +161,7 @@ async function main() {
   const shipmentId = Number(shipment.id ?? 0);
   if (!shipmentId) {
     console.log("  ✗ Shipment create did not return id.");
-    process.exit(1);
+    exitTest(1);
   }
 
   const inTransitRes = await request(`/logistics/shipments/${shipmentId}/status`, {
@@ -210,7 +211,7 @@ async function main() {
   const invoiceId = Number(invoice.id ?? 0);
   if (!invoiceId) {
     console.log("  ✗ Invoice creation did not return id.");
-    process.exit(1);
+    exitTest(1);
   }
 
   const paymentRes = await request(`/invoices/${invoiceId}/payments`, {
@@ -230,16 +231,16 @@ async function main() {
   if (!expectStatus("GET /api/invoices/:id", 200, verifyRes.status)) failures++;
 
   console.log("\nFlow result: %d failure(s)", failures);
-  process.exit(failures > 0 ? 1 : 0);
+  exitTest(failures > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
   const cause = (err as NodeJS.ErrnoException & { cause?: { code?: string } })?.cause;
   if (cause?.code === "ECONNREFUSED") {
     console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", BASE_URL);
-    process.exit(0);
+    exitTest(0);
   }
   console.error(err);
-  process.exit(1);
+  exitTest(1);
 });
 

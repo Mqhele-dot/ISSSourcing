@@ -6,6 +6,7 @@
  * Or:  BASE_URL=http://localhost:5000 npm run test:requisitions
  */
 import process from "node:process";
+import { exitTest } from "./test-exit.ts";
 
 const BASE_URL = (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
 const API = `${BASE_URL}/api`;
@@ -185,16 +186,16 @@ async function main() {
     const cause = (err as NodeJS.ErrnoException & { cause?: { code?: string } })?.cause;
     if (cause?.code === "ECONNREFUSED") {
       console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", BASE_URL);
-      process.exit(0);
+      exitTest(0);
     }
     throw err;
   }
 
   console.log("\nResult: %d passed, %d failed", passed, failed);
-  process.exit(failed > 0 ? 1 : 0);
+  exitTest(failed > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
   console.error(err);
-  process.exit(1);
+  exitTest(1);
 });

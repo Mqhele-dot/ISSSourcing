@@ -1,4 +1,5 @@
 import process from "node:process";
+import { exitTest } from "./test-exit.ts";
 
 const BASE_URL = (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
 const API = `${BASE_URL}/api`;
@@ -53,7 +54,7 @@ async function main() {
   const cookie = await login("admin", "Admin123!");
   if (!cookie) {
     console.log("  ⚠ Admin login failed. Ensure demo users exist (npm run db:seed).");
-    process.exit(1);
+    exitTest(1);
   }
 
   let failures = 0;
@@ -84,15 +85,15 @@ async function main() {
   }
 
   console.log("\nExport smoke result: %d failure(s)", failures);
-  process.exit(failures > 0 ? 1 : 0);
+  exitTest(failures > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
   const cause = (err as NodeJS.ErrnoException & { cause?: { code?: string } })?.cause;
   if (cause?.code === "ECONNREFUSED") {
     console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", BASE_URL);
-    process.exit(0);
+    exitTest(0);
   }
   console.error(err);
-  process.exit(1);
+  exitTest(1);
 });

@@ -1,4 +1,5 @@
 import process from "node:process";
+import { exitTest } from "./test-exit.ts";
 
 const BASE_URL = (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
 const API = `${BASE_URL}/api`;
@@ -42,7 +43,7 @@ async function main() {
   const adminCookie = await login("admin", "Admin123!");
   if (!adminCookie) {
     console.log("  ⚠ Admin login failed (seed users missing?).");
-    process.exit(1);
+    exitTest(1);
   }
 
   let failures = 0;
@@ -61,7 +62,7 @@ async function main() {
   const supplierId = Number(supplierList[0]?.id ?? 0);
   if (!supplierId) {
     console.log("  ✗ Missing suppliers for supplier-portal test");
-    process.exit(1);
+    exitTest(1);
   }
 
   const orders = await request(`/supplier/orders?supplierId=${supplierId}`, { method: "GET", cookie: adminCookie });
@@ -70,7 +71,7 @@ async function main() {
   const orderId = Number(orderList[0]?.id ?? 0);
   if (!orderId) {
     console.log("  ⚠ No supplier orders available for action tests.");
-    process.exit(failures > 0 ? 1 : 0);
+    exitTest(failures > 0 ? 1 : 0);
   }
 
   const confirm = await request(`/supplier/orders/${orderId}/confirm?supplierId=${supplierId}`, {
@@ -103,15 +104,15 @@ async function main() {
   expectStatus("POST /api/supplier/invoices", 201, invoice.status);
 
   console.log("\nSupplier portal result: %d failure(s)", failures);
-  process.exit(failures > 0 ? 1 : 0);
+  exitTest(failures > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
   const cause = (err as NodeJS.ErrnoException & { cause?: { code?: string } })?.cause;
   if (cause?.code === "ECONNREFUSED") {
     console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", BASE_URL);
-    process.exit(0);
+    exitTest(0);
   }
   console.error(err);
-  process.exit(1);
+  exitTest(1);
 });

@@ -111,8 +111,65 @@ function reportRequestError(params: {
 function shouldSuppressGlobalError(method: string, status: number | undefined, url: string): boolean {
   if (status !== 401) return false;
   if (method.toUpperCase() !== "GET") return false;
-  // Anonymous/bootstrap reads can legitimately return 401 before/after auth transitions.
-  return url.startsWith("/api/");
+  // Anonymous bootstrap probe can legitimately return 401 before auth transitions.
+  return normalizeEndpointPath(url) === "/api/user";
+}
+
+function normalizeEndpointPath(url: string): string {
+  const withoutQuery = url.split("?")[0]?.split("#")[0] ?? url;
+  if (withoutQuery.startsWith("/")) return withoutQuery;
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return withoutQuery;
+  }
+}
+
+function summarizeRequestPayload(data: unknown): string | undefined {
+  if (data == null) return undefined;
+  if (typeof data === "string") return data.slice(0, 300);
+  try {
+    return JSON.stringify(data).slice(0, 300);
+  } catch {
+    return String(data).slice(0, 300);
+  }
+}
+
+function reportNetworkFailure(params: {
+  method: string;
+  url: string;
+  error: unknown;
+  requestPayload?: unknown;
+}) {
+  const reason =
+    params.error instanceof Error
+      ? params.error.name === "AbortError"
+        ? `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
+        : params.error.message
+      : String(params.error);
+  reportRequestError({
+    method: params.method,
+    url: params.url,
+    reason,
+    payload:
+      params.error instanceof Error
+        ? {
+            name: params.error.name,
+            message: params.error.message,
+          }
+        : params.error,
+    requestPayload: params.requestPayload,
+    payloadSummary: summarizeRequestPayload(params.requestPayload),
+    stack: isDevRuntime ? new Error().stack : undefined,
+  });
+}
+
+function isLikelyTransportError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return true;
+  if (error.name === "TypeError") return true;
+  const message = error.message.toLowerCase();
+  return message.includes("network") || message.includes("fetch");
 }
 
 async function throwIfResNotOk(res: Response, context?: { method?: string; url?: string }) {
@@ -183,10 +240,15 @@ export async function invTrackFetch<T>(
     });
   } catch (err) {
     clearTimeout(timeoutId);
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+    if (isLikelyTransportError(err)) {
+      reportNetworkFailure({ method, url, error: err, requestPayload: data });
     }
-    throw err;
+    if (err instanceof Error && err.name === "AbortError") {
+      const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & { status?: number };
+      timeoutError.status = 408;
+      throw timeoutError;
+    }
+    throw err instanceof Error ? err : new Error(String(err));
   }
   clearTimeout(timeoutId);
 
@@ -196,12 +258,6 @@ export async function invTrackFetch<T>(
   if (!res.ok) {
     const payload = await parseJsonOrText(res);
     const msg = formatServerErrorPayload(payload) ?? res.statusText;
-    const payloadSummary =
-      data == null
-        ? undefined
-        : typeof data === "string"
-          ? data.slice(0, 300)
-          : JSON.stringify(data).slice(0, 300);
     reportRequestError({
       method,
       url,
@@ -210,7 +266,7 @@ export async function invTrackFetch<T>(
       payload,
       requestPayload: data,
       requestId: res.headers.get("X-Request-Id") ?? undefined,
-      payloadSummary,
+      payloadSummary: summarizeRequestPayload(data),
       stack: isDevRuntime ? new Error().stack : undefined,
     });
     const err = new Error(`${res.status}: ${msg}`) as Error & { status?: number };
@@ -242,7 +298,20 @@ export async function invTrackFetch<T>(
       };
     }
     const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
-    throw new Error(`${codePrefix}${payload.error.message}`);
+    reportRequestError({
+      method,
+      url,
+      status: res.status,
+      reason: `${codePrefix}${payload.error.message}`,
+      payload,
+      requestPayload: data,
+      requestId: res.headers.get("X-Request-Id") ?? payload.error.requestId,
+      payloadSummary: summarizeRequestPayload(data),
+      stack: isDevRuntime ? new Error().stack : undefined,
+    });
+    const err = new Error(`${codePrefix}${payload.error.message}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
 
   lastGoodByEndpoint.set(url, payload as T);
@@ -274,10 +343,15 @@ export async function apiRequest(
     await throwIfResNotOk(res, { method, url });
     return res;
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+    if (isLikelyTransportError(err)) {
+      reportNetworkFailure({ method, url, error: err, requestPayload: data });
     }
-    throw err;
+    if (err instanceof Error && err.name === "AbortError") {
+      const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & { status?: number };
+      timeoutError.status = 408;
+      throw timeoutError;
+    }
+    throw err instanceof Error ? err : new Error(String(err));
   } finally {
     clearTimeout(timeoutId);
   }

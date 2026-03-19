@@ -7,6 +7,7 @@
  */
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
+import { exitTest } from "./test-exit.ts";
 
 const BASE_URL = (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
 const API = `${BASE_URL}/api`;
@@ -97,8 +98,8 @@ async function main() {
 main().catch((err) => {
   if (err.cause?.code === "ECONNREFUSED") {
     console.warn("⚠ Server not reachable at", BASE_URL, "- start with: npm run dev");
-    process.exit(0);
+    exitTest(0);
   }
   console.error(err);
-  process.exit(1);
+  exitTest(1);
 });

@@ -1,11 +1,29 @@
-import React from 'react';
+import { useToast } from "@/hooks/use-toast";
+import {
+  Toast,
+  ToastClose,
+  ToastDescription,
+  ToastProvider,
+  ToastTitle,
+  ToastViewport,
+} from "@/components/ui/toast";
 
 export function Toaster() {
+  const { toasts } = useToast();
+
   return (
-    <div id="toaster" aria-live="assertive" className="fixed inset-0 z-50 flex pointer-events-none items-end px-4 py-6 sm:items-start sm:p-6">
-      <div className="flex flex-col items-center w-full space-y-4 sm:items-end">
-        {/* Toast notifications will be dynamically inserted here */}
-      </div>
-    </div>
+    <ToastProvider>
+      {toasts.map(({ id, title, description, action, ...props }) => (
+        <Toast key={id} {...props}>
+          <div className="grid gap-1">
+            {title ? <ToastTitle>{title}</ToastTitle> : null}
+            {description ? <ToastDescription>{description}</ToastDescription> : null}
+          </div>
+          {action}
+          <ToastClose />
+        </Toast>
+      ))}
+      <ToastViewport />
+    </ToastProvider>
   );
 }
