@@ -27,10 +27,16 @@ async function run() {
   assert(genericStr.includes("\r\n"), "Generic CSV must use CRLF line endings for Excel");
   assert(genericStr.includes("ID") && genericStr.includes("Name"), "Generic CSV must contain headers");
   const genericLines = genericStr.split(/\r?\n/);
-  assert(genericLines.length >= 2, "Generic CSV must have header + at least one data row");
-  const headerCols = genericLines[1].split(",").length;
-  const dataCols = genericLines[2] ? genericLines[2].split(",").length : 0;
-  assert(headerCols === dataCols || genericLines.length === 2, "Generic CSV column count must match");
+  const headerLineIndex = genericLines.findIndex((line) => line.includes('"ID"') && line.includes('"Name"'));
+  assert(headerLineIndex >= 0, "Generic CSV must have a header row containing ID and Name");
+  let dataLineIndex = headerLineIndex + 1;
+  while (dataLineIndex < genericLines.length && genericLines[dataLineIndex].trim() === "") {
+    dataLineIndex++;
+  }
+  assert(dataLineIndex < genericLines.length, "Generic CSV must have header + at least one data row");
+  const headerCols = genericLines[headerLineIndex].split(",").length;
+  const dataCols = genericLines[dataLineIndex].split(",").length;
+  assert(headerCols === dataCols, "Generic CSV column count must match between header and first data row");
   console.log("OK generateGenericCsv: BOM, sep=,, CRLF, headers, consistent columns");
   passed++;
 
@@ -65,7 +71,14 @@ async function run() {
     "Inventory CSV must contain expected headers",
   );
   const invLines = inventoryStr.split(/\r?\n/);
-  assert(invLines.length >= 2, "Inventory CSV must have header + data");
+  const invHeaderIdx = invLines.findIndex((line) => line.includes("SKU") && line.includes("Name"));
+  assert(invHeaderIdx >= 0, "Inventory CSV must have a header row with SKU and Name");
+  let invDataIdx = invHeaderIdx + 1;
+  while (invDataIdx < invLines.length && invLines[invDataIdx].trim() === "") invDataIdx++;
+  assert(invDataIdx < invLines.length, "Inventory CSV must have header + data");
+  const invHeaderCols = invLines[invHeaderIdx].split(",").length;
+  const invDataCols = invLines[invDataIdx].split(",").length;
+  assert(invHeaderCols === invDataCols, "Inventory CSV column count must match header vs first data row");
   console.log("OK generateInventoryCsv: BOM, sep=,, CRLF, headers present");
   passed++;
 

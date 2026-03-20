@@ -1,8 +1,6 @@
 import process from "node:process";
 import { exitTest } from "./test-exit.ts";
-
-const BASE_URL = (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
-const API = `${BASE_URL}/api`;
+import { apiRawRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
 
 type ExportCase = {
   reportType: string;
@@ -21,37 +19,11 @@ const exportCases: ExportCase[] = [
   { reportType: "purchase_requisitions", format: "docx", expectedMimePrefix: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
 ];
 
-let lastCookie: string | undefined;
-
-async function request(path: string, options: { method?: string; body?: unknown; cookie?: string }) {
-  const url = path.startsWith("http") ? path : `${API}${path.startsWith("/") ? path : `/${path}`}`;
-  const res = await fetch(url, {
-    method: options.method ?? "GET",
-    headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.cookie ? { Cookie: options.cookie } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    credentials: "include",
-  });
-  const setCookie = res.headers.get("set-cookie");
-  if (setCookie) lastCookie = setCookie.split(";")[0];
-  return res;
-}
-
-async function login(username: string, password: string): Promise<string | undefined> {
-  lastCookie = undefined;
-  await request("/auth/login", { method: "POST", body: { username, password } });
-  if (!lastCookie) {
-    await request("/login", { method: "POST", body: { username, password } });
-  }
-  return lastCookie;
-}
-
 async function main() {
+  const BASE_URL = getTestBaseUrl();
   console.log("Export smoke tests (BASE_URL=%s)\n", BASE_URL);
 
-  const cookie = await login("admin", "Admin123!");
+  const cookie = await loginForTests("admin", "Admin123!");
   if (!cookie) {
     console.log("  ⚠ Admin login failed. Ensure demo users exist (npm run db:seed).");
     exitTest(1);
@@ -61,7 +33,7 @@ async function main() {
 
   for (const testCase of exportCases) {
     const route = `/export/${testCase.reportType}/${testCase.format}`;
-    const res = await request(route, { method: "GET", cookie });
+    const res = await apiRawRequest(route, { method: "GET", cookie });
     const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
     const contentDisposition = res.headers.get("content-disposition") ?? "";
     const body = await res.arrayBuffer();
@@ -89,9 +61,8 @@ async function main() {
 }
 
 main().catch((err) => {
-  const cause = (err as NodeJS.ErrnoException & { cause?: { code?: string } })?.cause;
-  if (cause?.code === "ECONNREFUSED") {
-    console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", BASE_URL);
+  if (isConnectionRefused(err)) {
+    console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", getTestBaseUrl());
     exitTest(0);
   }
   console.error(err);

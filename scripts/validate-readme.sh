@@ -15,32 +15,33 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-if ! rg -q "npm run codespaces:up" "$DOC_FILE"; then
+# Use grep (POSIX) — ripgrep is not guaranteed on CI runners or minimal images.
+if ! grep -Fq "npm run codespaces:up" "$DOC_FILE"; then
   echo "❌ CODESPACES.md must document 'npm run codespaces:up'"
   exit 1
 fi
 
-if ! rg -q "Server \\| 5000" "$DOC_FILE"; then
+if ! grep -Fq "Server | 5000" "$DOC_FILE"; then
   echo "❌ CODESPACES.md must document server port 5000"
   exit 1
 fi
 
-if ! rg -q "PostgreSQL \\| 5432" "$DOC_FILE"; then
+if ! grep -Fq "PostgreSQL | 5432" "$DOC_FILE"; then
   echo "❌ CODESPACES.md must document PostgreSQL port 5432"
   exit 1
 fi
 
-if ! rg -q "^PORT=5000$" "$ENV_FILE"; then
+if ! grep -qxF "PORT=5000" "$ENV_FILE"; then
   echo "❌ .env.example must set PORT=5000"
   exit 1
 fi
 
-if ! rg -q "^CLIENT_PORT=5000$" "$ENV_FILE"; then
+if ! grep -qxF "CLIENT_PORT=5000" "$ENV_FILE"; then
   echo "❌ .env.example must set CLIENT_PORT=5000"
   exit 1
 fi
 
-if ! rg -q "^DB_PORT=5432$" "$ENV_FILE"; then
+if ! grep -qxF "DB_PORT=5432" "$ENV_FILE"; then
   echo "❌ .env.example must set DB_PORT=5432"
   exit 1
 fi

@@ -3,46 +3,11 @@
  * Requires server running with seeded DB (npm run dev, npm run db:seed).
  *
  * Run: npx tsx scripts/test-requisitions.ts
- * Or:  BASE_URL=http://localhost:5000 npm run test:requisitions
+ * Uses scripts/test-http.ts for HTTP + login.
  */
 import process from "node:process";
 import { exitTest } from "./test-exit.ts";
-
-const BASE_URL = (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
-const API = `${BASE_URL}/api`;
-
-type HttpResult = { status: number; ok: boolean; json: unknown };
-
-let lastCookie: string | undefined;
-
-async function request(
-  path: string,
-  options: { method?: string; body?: unknown; cookie?: string },
-): Promise<HttpResult> {
-  const url = path.startsWith("http") ? path : `${API}${path.startsWith("/") ? path : `/${path}`}`;
-  const res = await fetch(url, {
-    method: options.method ?? "GET",
-    headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.cookie ? { Cookie: options.cookie } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    credentials: "include",
-  });
-  const setCookie = res.headers.get("set-cookie");
-  if (setCookie) lastCookie = setCookie.split(";")[0];
-  const json = await res.json().catch(() => null);
-  return { status: res.status, ok: res.ok, json };
-}
-
-async function login(username: string, password: string): Promise<string | undefined> {
-  lastCookie = undefined;
-  await request("/auth/login", { method: "POST", body: { username, password } });
-  if (!lastCookie) {
-    await request("/login", { method: "POST", body: { username, password } });
-  }
-  return lastCookie;
-}
+import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
 
 function getMessage(json: unknown): string {
   if (json && typeof json === "object" && "message" in json && typeof (json as { message: unknown }).message === "string") {
@@ -52,6 +17,7 @@ function getMessage(json: unknown): string {
 }
 
 async function main() {
+  const BASE_URL = getTestBaseUrl();
   console.log("Requisitions API tests (BASE_URL=%s)\n", BASE_URL);
 
   let passed = 0;
@@ -78,20 +44,17 @@ async function main() {
   }
 
   try {
-    // 1. Unauthenticated GET /api/purchase-requisitions → 401 or 302 or 403
-    const noAuth = await request("/purchase-requisitions", { method: "GET" });
+    const noAuth = await apiJsonRequest("/purchase-requisitions", { method: "GET" });
     expectStatusOneOf("Unauthenticated GET /api/purchase-requisitions", [401, 302, 403], noAuth.status);
 
-    // 2. Viewer can list (200)
-    const viewerCookie = await login("viewer", "Admin123!");
+    const viewerCookie = await loginForTests("viewer", "Admin123!");
     if (!viewerCookie) {
       console.log("  ⚠ Viewer login failed (is DB seeded?). Skipping viewer tests.");
     } else {
-      const listAsViewer = await request("/purchase-requisitions", { method: "GET", cookie: viewerCookie });
+      const listAsViewer = await apiJsonRequest("/purchase-requisitions", { method: "GET", cookie: viewerCookie });
       expectStatus("Viewer GET /api/purchase-requisitions (expect 200)", 200, listAsViewer.status);
 
-      // 3. Viewer cannot create (403)
-      const createAsViewer = await request("/purchase-requisitions", {
+      const createAsViewer = await apiJsonRequest("/purchase-requisitions", {
         method: "POST",
         body: {
           supplierId: 1,
@@ -102,12 +65,11 @@ async function main() {
       expectStatus("Viewer POST /api/purchase-requisitions (expect 403)", 403, createAsViewer.status);
     }
 
-    // 4. Admin: validation – no items → 400
-    const adminCookie = await login("admin", "Admin123!");
+    const adminCookie = await loginForTests("admin", "Admin123!");
     if (!adminCookie) {
       console.log("  ⚠ Admin login failed. Skipping admin tests.");
     } else {
-      const noItems = await request("/purchase-requisitions", {
+      const noItems = await apiJsonRequest("/purchase-requisitions", {
         method: "POST",
         body: { supplierId: 1, items: [] },
         cookie: adminCookie,
@@ -117,8 +79,7 @@ async function main() {
         console.log("    (message mentions at least one item)");
       }
 
-      // 5. Admin: validation – quantity <= 0 → 400
-      const badQty = await request("/purchase-requisitions", {
+      const badQty = await apiJsonRequest("/purchase-requisitions", {
         method: "POST",
         body: {
           supplierId: 1,
@@ -131,8 +92,7 @@ async function main() {
         console.log("    (message mentions quantity)");
       }
 
-      // 6. Admin: validation – unit price 0 → 400
-      const badPrice = await request("/purchase-requisitions", {
+      const badPrice = await apiJsonRequest("/purchase-requisitions", {
         method: "POST",
         body: {
           supplierId: 1,
@@ -145,8 +105,7 @@ async function main() {
         console.log("    (message mentions unit price)");
       }
 
-      // 7. Admin can create (201) – assumes seeded DB has supplier id 1 and inventory item id 1
-      const validCreate = await request("/purchase-requisitions", {
+      const validCreate = await apiJsonRequest("/purchase-requisitions", {
         method: "POST",
         body: {
           supplierId: 1,
@@ -160,14 +119,14 @@ async function main() {
         const body = validCreate.json as { id?: number; requisitionNumber?: string };
         if (body && typeof body.id === "number" && body.requisitionNumber) {
           console.log("    (id=%d, requisitionNumber=%s)", body.id, body.requisitionNumber);
-          const approveRes = await request(`/purchase-requisitions/${body.id}/approve`, {
+          const approveRes = await apiJsonRequest(`/purchase-requisitions/${body.id}/approve`, {
             method: "POST",
             body: {},
             cookie: adminCookie,
           });
           expectStatus("Admin POST /api/purchase-requisitions/:id/approve (expect 200)", 200, approveRes.status);
 
-          const convertRes = await request(`/purchase-requisitions/${body.id}/convert`, {
+          const convertRes = await apiJsonRequest(`/purchase-requisitions/${body.id}/convert`, {
             method: "POST",
             body: {},
             cookie: adminCookie,
@@ -183,8 +142,7 @@ async function main() {
       }
     }
   } catch (err) {
-    const cause = (err as NodeJS.ErrnoException & { cause?: { code?: string } })?.cause;
-    if (cause?.code === "ECONNREFUSED") {
+    if (isConnectionRefused(err)) {
       console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", BASE_URL);
       exitTest(0);
     }

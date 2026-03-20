@@ -13,42 +13,7 @@
  */
 import process from "node:process";
 import { exitTest } from "./test-exit.ts";
-
-const BASE_URL = (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
-const API = `${BASE_URL}/api`;
-
-type HttpResult = { status: number; ok: boolean; json: unknown };
-
-let lastCookie: string | undefined;
-
-async function request(
-  path: string,
-  options: { method?: string; body?: unknown; cookie?: string },
-): Promise<HttpResult> {
-  const url = path.startsWith("http") ? path : `${API}${path.startsWith("/") ? path : `/${path}`}`;
-  const res = await fetch(url, {
-    method: options.method ?? "GET",
-    headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.cookie ? { Cookie: options.cookie } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    credentials: "include",
-  });
-  const setCookie = res.headers.get("set-cookie");
-  if (setCookie) lastCookie = setCookie.split(";")[0];
-  const json = await res.json().catch(() => null);
-  return { status: res.status, ok: res.ok, json };
-}
-
-async function login(username: string, password: string): Promise<string | undefined> {
-  lastCookie = undefined;
-  await request("/auth/login", { method: "POST", body: { username, password } });
-  if (!lastCookie) {
-    await request("/login", { method: "POST", body: { username, password } });
-  }
-  return lastCookie;
-}
+import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
 
 function asArray<T = Record<string, unknown>>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -68,9 +33,10 @@ function expectStatus(name: string, expected: number, actual: number): boolean {
 }
 
 async function main() {
+  const BASE_URL = getTestBaseUrl();
   console.log("Procurement flow test (BASE_URL=%s)\n", BASE_URL);
 
-  const adminCookie = await login("admin", "Admin123!");
+  const adminCookie = await loginForTests("admin", "Admin123!");
   if (!adminCookie) {
     console.log("  ⚠ Admin login failed (seed users missing?).");
     exitTest(1);
@@ -78,12 +44,12 @@ async function main() {
 
   let failures = 0;
 
-  const userRes = await request("/user", { method: "GET", cookie: adminCookie });
+  const userRes = await apiJsonRequest("/user", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/user", 200, userRes.status)) failures++;
   const currentUser = asRecord(userRes.json);
   const createdBy = Number(currentUser.id ?? 1);
 
-  const supplierRes = await request("/suppliers", { method: "GET", cookie: adminCookie });
+  const supplierRes = await apiJsonRequest("/suppliers", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/suppliers", 200, supplierRes.status)) failures++;
   const suppliers = asArray<{ id: number }>(supplierRes.json);
   const supplierId = Number(suppliers[0]?.id ?? 0);
@@ -92,7 +58,7 @@ async function main() {
     exitTest(1);
   }
 
-  const itemsRes = await request("/inventory", { method: "GET", cookie: adminCookie });
+  const itemsRes = await apiJsonRequest("/inventory", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/inventory", 200, itemsRes.status)) failures++;
   const items = asArray<{ id: number; price?: number }>(itemsRes.json);
   const firstItem = items[0];
@@ -102,7 +68,7 @@ async function main() {
   }
 
   const requiredDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const requisitionRes = await request("/purchase-requisitions", {
+  const requisitionRes = await apiJsonRequest("/purchase-requisitions", {
     method: "POST",
     cookie: adminCookie,
     body: {
@@ -126,14 +92,14 @@ async function main() {
     exitTest(1);
   }
 
-  const approveRes = await request(`/purchase-requisitions/${requisitionId}/approve`, {
+  const approveRes = await apiJsonRequest(`/purchase-requisitions/${requisitionId}/approve`, {
     method: "POST",
     cookie: adminCookie,
     body: {},
   });
   if (!expectStatus("POST /api/purchase-requisitions/:id/approve", 200, approveRes.status)) failures++;
 
-  const convertRes = await request(`/purchase-requisitions/${requisitionId}/convert`, {
+  const convertRes = await apiJsonRequest(`/purchase-requisitions/${requisitionId}/convert`, {
     method: "POST",
     cookie: adminCookie,
     body: {},
@@ -147,7 +113,7 @@ async function main() {
     exitTest(1);
   }
 
-  const shipmentCreateRes = await request("/logistics/shipments", {
+  const shipmentCreateRes = await apiJsonRequest("/logistics/shipments", {
     method: "POST",
     cookie: adminCookie,
     body: {
@@ -164,14 +130,14 @@ async function main() {
     exitTest(1);
   }
 
-  const inTransitRes = await request(`/logistics/shipments/${shipmentId}/status`, {
+  const inTransitRes = await apiJsonRequest(`/logistics/shipments/${shipmentId}/status`, {
     method: "POST",
     cookie: adminCookie,
     body: { toStatus: "in_transit", note: "Flow test status update" },
   });
   if (!expectStatus("POST /api/logistics/shipments/:id/status (in_transit)", 200, inTransitRes.status)) failures++;
 
-  const deliveredRes = await request(`/logistics/shipments/${shipmentId}/status`, {
+  const deliveredRes = await apiJsonRequest(`/logistics/shipments/${shipmentId}/status`, {
     method: "POST",
     cookie: adminCookie,
     body: { toStatus: "delivered", note: "Flow test delivered" },
@@ -181,7 +147,7 @@ async function main() {
   const issueDate = new Date();
   const dueDate = new Date(issueDate.getTime() + 30 * 24 * 60 * 60 * 1000);
   const total = Number(firstItem.price ?? 10) * 2;
-  const invoiceCreateRes = await request("/invoices", {
+  const invoiceCreateRes = await apiJsonRequest("/invoices", {
     method: "POST",
     cookie: adminCookie,
     body: {
@@ -214,7 +180,7 @@ async function main() {
     exitTest(1);
   }
 
-  const paymentRes = await request(`/invoices/${invoiceId}/payments`, {
+  const paymentRes = await apiJsonRequest(`/invoices/${invoiceId}/payments`, {
     method: "POST",
     cookie: adminCookie,
     body: {
@@ -227,7 +193,7 @@ async function main() {
   });
   if (!expectStatus("POST /api/invoices/:invoiceId/payments", 201, paymentRes.status)) failures++;
 
-  const verifyRes = await request(`/invoices/${invoiceId}`, { method: "GET", cookie: adminCookie });
+  const verifyRes = await apiJsonRequest(`/invoices/${invoiceId}`, { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/invoices/:id", 200, verifyRes.status)) failures++;
 
   console.log("\nFlow result: %d failure(s)", failures);
@@ -235,9 +201,8 @@ async function main() {
 }
 
 main().catch((err) => {
-  const cause = (err as NodeJS.ErrnoException & { cause?: { code?: string } })?.cause;
-  if (cause?.code === "ECONNREFUSED") {
-    console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", BASE_URL);
+  if (isConnectionRefused(err)) {
+    console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", getTestBaseUrl());
     exitTest(0);
   }
   console.error(err);

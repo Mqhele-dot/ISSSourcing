@@ -112,10 +112,12 @@ AUTO_SEED_ON_EMPTY_DB="false" \
 npm run dev >"${APP_LOG}" 2>&1 &
 APP_PID=$!
 
-echo "⏳ Waiting for /health/deep..."
+echo "⏳ Waiting for /health/deep (status ok — 503 is normal until DB + schema are ready)..."
 APP_READY="false"
 for attempt in {1..90}; do
-  if curl -fsS "${BASE_URL}/health/deep" >/dev/null 2>&1; then
+  # Do not use curl -f: /health/deep returns 503 while degraded; we poll until JSON status is ok.
+  deep_json="$(curl -sS "${BASE_URL}/health/deep" 2>/dev/null || true)"
+  if echo "${deep_json}" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
     APP_READY="true"
     break
   fi
