@@ -2,8 +2,15 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
-import { queryClient, requestJson } from "@/lib/queryClient";
+import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -51,6 +58,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
+import { PageHeader } from "@/components/page-header";
 
 const supplierFormSchema = z.object({
   name: z.string().min(2, "Supplier name must be at least 2 characters"),
@@ -82,11 +90,16 @@ export default function SuppliersPage() {
   const [logoUrl, setLogoUrl] = useState("");
   const [deleteConfirmSupplier, setDeleteConfirmSupplier] = useState<Supplier | null>(null);
   const [removeLogoConfirm, setRemoveLogoConfirm] = useState(false);
+  const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
 
   // Get all suppliers
-  const { data: suppliers, isLoading } = useQuery<Supplier[]>({
-    queryKey: ['/api/suppliers'],
+  const { data: suppliers, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ["/api/suppliers"],
     retry: 1,
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/suppliers");
+      return normalizeApiList<Supplier>(raw);
+    },
   });
 
   const { data: paymentTerms = [] } = useQuery<{ id: number; code: string; name: string }[]>({
@@ -140,6 +153,7 @@ export default function SuppliersPage() {
         description: "The supplier has been added successfully",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers'] });
+      setSupplierSheetOpen(false);
     },
     onError: (error, data) => {
       toast({
@@ -166,6 +180,7 @@ export default function SuppliersPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers'] });
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers', variables.id] });
+      setSupplierSheetOpen(false);
     },
     onError: (error, vars) => {
       toast({
@@ -313,6 +328,27 @@ export default function SuppliersPage() {
   });
 
   // Edit supplier
+  const openCreateSupplierSheet = () => {
+    setSelectedSupplierId(null);
+    form.reset({
+      name: "",
+      contactName: "",
+      email: "",
+      phone: "",
+      address: "",
+      taxIdentificationNumber: "",
+      bankName: "",
+      bankAccountNumber: "",
+      bankSwift: "",
+      paymentTermsId: null,
+      defaultCurrencyCode: "",
+      insuranceExpiry: "",
+      complianceNotes: "",
+      notes: "",
+    });
+    setSupplierSheetOpen(true);
+  };
+
   const handleEditSupplier = (supplier: Supplier) => {
     form.reset({
       name: supplier.name,
@@ -335,6 +371,7 @@ export default function SuppliersPage() {
       notes: supplier.notes || "",
     });
     setSelectedSupplierId(supplier.id);
+    setSupplierSheetOpen(true);
   };
 
   const toSupplierPayload = (data: SupplierFormValues): SupplierFormValues => ({
@@ -364,8 +401,6 @@ export default function SuppliersPage() {
   const handleUpdateSupplier = (data: SupplierFormValues) => {
     if (selectedSupplierId) {
       updateSupplier.mutate({ id: selectedSupplierId, data: toSupplierPayload(data) });
-      setSelectedSupplierId(null);
-      form.reset();
     }
   };
 
@@ -409,25 +444,38 @@ export default function SuppliersPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Suppliers</h1>
-          <p className="text-muted-foreground">
-            Manage your suppliers and their information
-          </p>
-        </div>
-        <TutorialStep page="suppliers" />
-      </div>
+      <PageHeader
+        title="Suppliers"
+        description="Manage your suppliers and their information"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add suppliers">
+              <Button type="button" onClick={openCreateSupplierSheet}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add supplier
+              </Button>
+            </Can>
+            <TutorialStep page="suppliers" />
+          </div>
+        }
+      />
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        {/* Supplier List */}
-        <Card className="md:col-span-2">
+      <div className="grid grid-cols-1 gap-6">
+        <Card>
           <CardHeader>
             <CardTitle>Supplier List</CardTitle>
             <CardDescription>View and manage your suppliers</CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {isError ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm space-y-2">
+                <p className="font-medium text-destructive">Could not load suppliers</p>
+                <p className="text-muted-foreground">{error instanceof Error ? error.message : String(error)}</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+                  Retry
+                </Button>
+              </div>
+            ) : isLoading ? (
               <div className="space-y-2">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="flex items-center space-x-4 p-4 border rounded-md">
@@ -583,302 +631,317 @@ export default function SuppliersPage() {
             )}
           </CardContent>
         </Card>
+      </div>
 
-        {/* Add/Edit Supplier Form — manager/admin only */}
-        <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add or edit suppliers">
-        <Card>
-          <CardHeader>
-            <CardTitle>{selectedSupplierId ? "Edit Supplier" : "Add New Supplier"}</CardTitle>
-            <CardDescription>
-              {selectedSupplierId 
-                ? "Update supplier information" 
-                : "Create a new supplier for your inventory"
-              }
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+      {/* Add/Edit supplier — drawer (manager/admin) */}
+      <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add or edit suppliers">
+        <Sheet
+          open={supplierSheetOpen}
+          onOpenChange={(open) => {
+            setSupplierSheetOpen(open);
+            if (!open) {
+              setSelectedSupplierId(null);
+              form.reset({
+                name: "",
+                contactName: "",
+                email: "",
+                phone: "",
+                address: "",
+                taxIdentificationNumber: "",
+                bankName: "",
+                bankAccountNumber: "",
+                bankSwift: "",
+                paymentTermsId: null,
+                defaultCurrencyCode: "",
+                insuranceExpiry: "",
+                complianceNotes: "",
+                notes: "",
+              });
+            }
+          }}
+        >
+          <SheetContent side="right" className="w-full sm:max-w-lg md:max-w-xl overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>{selectedSupplierId ? "Edit supplier" : "Add supplier"}</SheetTitle>
+              <SheetDescription>
+                General profile, banking, compliance, and documents — use tabs to jump between sections.
+              </SheetDescription>
+            </SheetHeader>
             <Form {...form}>
               <form
-                onSubmit={form.handleSubmit(
-                  selectedSupplierId ? handleUpdateSupplier : handleCreateSupplier
-                )}
-                className="space-y-4"
+                onSubmit={form.handleSubmit(selectedSupplierId ? handleUpdateSupplier : handleCreateSupplier)}
+                className="space-y-4 mt-4"
                 aria-label="Supplier form"
               >
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel htmlFor="supplier-name">Company Name*</FormLabel>
-                      <FormControl>
-                        <Input id="supplier-name" aria-label="Company name" placeholder="Enter company name" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <Tabs defaultValue="general" className="w-full">
+                  <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4 gap-1">
+                    <TabsTrigger value="general">General</TabsTrigger>
+                    <TabsTrigger value="banking">Banking</TabsTrigger>
+                    <TabsTrigger value="compliance">Compliance</TabsTrigger>
+                    <TabsTrigger value="documents">Docs</TabsTrigger>
+                  </TabsList>
 
-                <FormField
-                  control={form.control}
-                  name="contactName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel htmlFor="supplier-contact">Contact Person</FormLabel>
-                      <FormControl>
-                        <Input id="supplier-contact" aria-label="Contact person" placeholder="Enter contact name" {...field} value={field.value || ""} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+                  <TabsContent value="general" className="space-y-4 pt-4">
+                    <FormField
+                      control={form.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-name">Company Name*</FormLabel>
+                          <FormControl>
+                            <Input id="supplier-name" aria-label="Company name" placeholder="Enter company name" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="contactName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-contact">Contact Person</FormLabel>
+                          <FormControl>
+                            <Input
+                              id="supplier-contact"
+                              aria-label="Contact person"
+                              placeholder="Enter contact name"
+                              {...field}
+                              value={field.value || ""}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel htmlFor="supplier-email">Email</FormLabel>
+                            <FormControl>
+                              <Input id="supplier-email" aria-label="Email" placeholder="email@example.com" {...field} value={field.value || ""} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="phone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel htmlFor="supplier-phone">Phone</FormLabel>
+                            <FormControl>
+                              <Input id="supplier-phone" aria-label="Phone" placeholder="(555) 123-4567" {...field} value={field.value || ""} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="address"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-address">Address</FormLabel>
+                          <FormControl>
+                            <Input id="supplier-address" aria-label="Address" placeholder="123 Main St" {...field} value={field.value || ""} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="taxIdentificationNumber"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-taxid">Tax ID / VAT number</FormLabel>
+                          <FormControl>
+                            <Input id="supplier-taxid" aria-label="Tax ID or VAT number" placeholder="Tax registration" {...field} value={field.value || ""} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-notes">Notes</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              id="supplier-notes"
+                              aria-label="Supplier notes"
+                              placeholder="Additional information"
+                              className="min-h-[100px]"
+                              {...field}
+                              value={field.value || ""}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </TabsContent>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-email">Email</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-email" aria-label="Email" placeholder="email@example.com" {...field} value={field.value || ""} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                  <TabsContent value="banking" className="space-y-4 pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="bankName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel htmlFor="supplier-bank-name">Bank name</FormLabel>
+                            <FormControl>
+                              <Input id="supplier-bank-name" aria-label="Bank name" placeholder="Bank name" {...field} value={field.value || ""} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="bankAccountNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel htmlFor="supplier-bank-account">Bank account number</FormLabel>
+                            <FormControl>
+                              <Input id="supplier-bank-account" aria-label="Bank account number" placeholder="Account number" {...field} value={field.value || ""} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="bankSwift"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-bank-swift">SWIFT/BIC</FormLabel>
+                          <FormControl>
+                            <Input id="supplier-bank-swift" aria-label="SWIFT/BIC" placeholder="SWIFT/BIC code" {...field} value={field.value || ""} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="paymentTermsId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-payment-terms">Payment terms</FormLabel>
+                          <FormControl>
+                            <Select
+                              value={field.value ? String(field.value) : "none"}
+                              onValueChange={(value) => field.onChange(value === "none" ? null : Number(value))}
+                            >
+                              <SelectTrigger id="supplier-payment-terms" aria-label="Supplier payment terms">
+                                <SelectValue placeholder="Select payment terms" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                {paymentTerms.map((term) => (
+                                  <SelectItem key={term.id} value={String(term.id)}>
+                                    {term.code} - {term.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="defaultCurrencyCode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-default-currency">Default currency</FormLabel>
+                          <FormControl>
+                            <Select
+                              value={field.value || "none"}
+                              onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+                            >
+                              <SelectTrigger id="supplier-default-currency" aria-label="Supplier default currency">
+                                <SelectValue placeholder="Select default currency" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                {currencies.map((currency) => (
+                                  <SelectItem key={currency.id} value={currency.code}>
+                                    {currency.code} - {currency.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="compliance" className="space-y-4 pt-4">
+                    <FormField
+                      control={form.control}
+                      name="insuranceExpiry"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-insurance-expiry">Insurance expiry</FormLabel>
+                          <FormControl>
+                            <Input id="supplier-insurance-expiry" aria-label="Insurance expiry date" type="date" {...field} value={field.value || ""} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="complianceNotes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel htmlFor="supplier-compliance-notes">Compliance notes</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              id="supplier-compliance-notes"
+                              aria-label="Supplier compliance notes"
+                              placeholder="Certifications, insurance notes, compliance remarks"
+                              className="min-h-[80px]"
+                              {...field}
+                              value={field.value || ""}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="documents" className="space-y-4 pt-4">
+                    {selectedSupplierId ? (
+                      <EntityDocumentsCard entityType="supplier" entityId={selectedSupplierId} title="Compliance documents" />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Save the supplier first, then attach compliance documents here.</p>
                     )}
-                  />
+                  </TabsContent>
+                </Tabs>
 
-                  <FormField
-                    control={form.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-phone">Phone</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-phone" aria-label="Phone" placeholder="(555) 123-4567" {...field} value={field.value || ""} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="address"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel htmlFor="supplier-address">Address</FormLabel>
-                      <FormControl>
-                        <Input id="supplier-address" aria-label="Address" placeholder="123 Main St, Anytown, ST 12345" {...field} value={field.value || ""} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="taxIdentificationNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel htmlFor="supplier-taxid">Tax ID / VAT number</FormLabel>
-                      <FormControl>
-                        <Input id="supplier-taxid" aria-label="Tax ID or VAT number" placeholder="e.g. VAT number, tax registration" {...field} value={field.value || ""} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="bankName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-bank-name">Bank name</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-bank-name" aria-label="Bank name" placeholder="Bank name" {...field} value={field.value || ""} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="bankAccountNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-bank-account">Bank account number</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-bank-account" aria-label="Bank account number" placeholder="Account number" {...field} value={field.value || ""} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="bankSwift"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-bank-swift">SWIFT/BIC</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-bank-swift" aria-label="Bank SWIFT or BIC code" placeholder="SWIFT/BIC code" {...field} value={field.value || ""} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="paymentTermsId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-payment-terms">Payment terms</FormLabel>
-                        <FormControl>
-                          <Select
-                            value={field.value ? String(field.value) : "none"}
-                            onValueChange={(value) => field.onChange(value === "none" ? null : Number(value))}
-                          >
-                            <SelectTrigger id="supplier-payment-terms" aria-label="Supplier payment terms">
-                              <SelectValue placeholder="Select payment terms" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              {paymentTerms.map((term) => (
-                                <SelectItem key={term.id} value={String(term.id)}>
-                                  {term.code} - {term.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="defaultCurrencyCode"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-default-currency">Default currency</FormLabel>
-                        <FormControl>
-                          <Select
-                            value={field.value || "none"}
-                            onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
-                          >
-                            <SelectTrigger id="supplier-default-currency" aria-label="Supplier default currency">
-                              <SelectValue placeholder="Select default currency" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              {currencies.map((currency) => (
-                                <SelectItem key={currency.id} value={currency.code}>
-                                  {currency.code} - {currency.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="insuranceExpiry"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-insurance-expiry">Insurance expiry</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-insurance-expiry" aria-label="Insurance expiry date" type="date" {...field} value={field.value || ""} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="complianceNotes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel htmlFor="supplier-compliance-notes">Compliance notes</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          id="supplier-compliance-notes"
-                          aria-label="Supplier compliance notes"
-                          placeholder="Certifications, insurance notes, compliance remarks"
-                          className="min-h-[80px]"
-                          {...field}
-                          value={field.value || ""}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel htmlFor="supplier-notes">Notes</FormLabel>
-                      <FormControl>
-                        <Textarea 
-                          id="supplier-notes"
-                          aria-label="Supplier notes"
-                          placeholder="Additional information about this supplier" 
-                          className="min-h-[100px]" 
-                          {...field} 
-                          value={field.value || ""} 
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                <div className="flex justify-between pt-2">
-                  {selectedSupplierId && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setSelectedSupplierId(null);
-                        form.reset();
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  )}
-                  <Button 
-                    type="submit" 
-                    className={selectedSupplierId ? "" : "w-full"}
-                    disabled={createSupplier.isPending || updateSupplier.isPending}
-                  >
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-4 border-t">
+                  <Button type="button" variant="outline" onClick={() => setSupplierSheetOpen(false)}>
+                    Close
+                  </Button>
+                  <Button type="submit" disabled={createSupplier.isPending || updateSupplier.isPending}>
                     {createSupplier.isPending || updateSupplier.isPending ? (
                       <span>Saving...</span>
                     ) : selectedSupplierId ? (
-                      <span>Update Supplier</span>
+                      <span>Update supplier</span>
                     ) : (
-                      <span>Add Supplier</span>
+                      <span>Add supplier</span>
                     )}
                   </Button>
                 </div>
               </form>
             </Form>
-          </CardContent>
-        </Card>
-        </Can>
-      </div>
-
-      <div className="mt-6">
-        <EntityDocumentsCard
-          entityType="supplier"
-          entityId={selectedSupplierId}
-          title="Supplier Compliance Documents"
-        />
-      </div>
+          </SheetContent>
+        </Sheet>
+      </Can>
 
       {/* Remove logo confirmation */}
       <AlertDialog open={removeLogoConfirm} onOpenChange={(open) => !open && setRemoveLogoConfirm(false)}>

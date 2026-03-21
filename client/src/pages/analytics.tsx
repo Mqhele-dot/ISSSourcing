@@ -8,6 +8,8 @@ import { StockUseChart } from "@/components/analytics/stock-use-chart";
 import { ValueByCategoryChart } from "@/components/analytics/value-by-category-chart";
 import { CustomGraphBuilder } from "@/components/dashboard/custom-graph-builder";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCurrency } from "@/lib/utils";
 
 /** Normalize API response to array (handles envelope or raw array); never throw */
 async function fetchInventoryArray(): Promise<unknown[]> {
@@ -39,7 +41,7 @@ async function fetchStatsSafe(): Promise<{ totalItems?: number; lowStockItems?: 
  * so a single API failure does not block the rest of the page.
  */
 export default function AnalyticsPage() {
-  const { isError: statsError } = useQuery({
+  const { data: stats = {}, isError: statsError } = useQuery({
     queryKey: ["/api/inventory/stats"],
     queryFn: fetchStatsSafe,
     retry: 2,
@@ -81,6 +83,45 @@ export default function AnalyticsPage() {
             Charts will appear once you add inventory items. Add items from Inventory or run the demo to seed data.
           </AlertDescription>
         </Alert>
+      )}
+
+      {!hasDataError && (stats.totalItems ?? 0) > 0 && (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">SKUs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums">{stats.totalItems}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Low stock</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+                {stats.lowStockItems ?? 0}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Out of stock</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums text-destructive">{stats.outOfStockItems ?? 0}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Inventory value</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums">{formatCurrency(stats.inventoryValue ?? 0)}</p>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Stock Use & Value - each chart handles its own loading and errors */}

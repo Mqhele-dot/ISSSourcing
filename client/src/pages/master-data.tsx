@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, requestJson } from "@/lib/queryClient";
+import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 
 type BaseMasterRecord = {
   id: number;
@@ -55,7 +55,10 @@ function MasterTable({
 
   const { data = [], isLoading } = useQuery({
     queryKey: [endpoint],
-    queryFn: () => requestJson<BaseMasterRecord[]>("GET", endpoint),
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", endpoint);
+      return normalizeApiList<BaseMasterRecord>(raw);
+    },
   });
 
   const createRecord = useMutation({
@@ -130,14 +133,16 @@ function MasterTable({
               toast({ title: "Code and name are required", variant: "destructive" });
               return;
             }
-            if (isCurrencyEndpoint && !symbol.trim()) {
-              toast({ title: "Currency symbol is required", variant: "destructive" });
-              return;
-            }
+            const currencySymbol =
+              isCurrencyEndpoint && symbol.trim()
+                ? symbol.trim()
+                : isCurrencyEndpoint
+                  ? code.trim().slice(0, 3) || "$"
+                  : "";
             const payload = {
               code: code.trim(),
               name: name.trim(),
-              ...(isCurrencyEndpoint ? { symbol: symbol.trim() } : {}),
+              ...(isCurrencyEndpoint ? { symbol: currencySymbol, decimalPlaces: 2 } : {}),
             };
             if (editingId != null) {
               updateRecord.mutate({ id: editingId, payload });

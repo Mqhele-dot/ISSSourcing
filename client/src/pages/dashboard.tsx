@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest, requestJson } from "@/lib/queryClient";
+import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Archive, AlertTriangle, ShoppingCart, DollarSign, Plus, FileDown, Filter } from "lucide-react";
@@ -63,17 +63,22 @@ export default function Dashboard() {
   // Fetch categories
   const { data: categories } = useQuery({
     queryKey: ["/api/categories"],
-    queryFn: () => requestJson<Category[]>("GET", "/api/categories"),
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/categories");
+      return normalizeApiList<Category>(raw);
+    },
   });
 
   // Fetch inventory items
   const { data: inventoryItems, isLoading: itemsLoading } = useQuery({
     queryKey: ["/api/inventory", selectedCategory],
     queryFn: async () => {
-      const endpoint = selectedCategory !== "all"
-        ? `/api/inventory?categoryId=${selectedCategory}`
-        : "/api/inventory";
-      return requestJson<InventoryItem[]>("GET", endpoint);
+      const endpoint =
+        selectedCategory !== "all"
+          ? `/api/inventory?categoryId=${selectedCategory}`
+          : "/api/inventory";
+      const raw = await requestJson<unknown>("GET", endpoint);
+      return normalizeApiList<InventoryItem>(raw);
     },
   });
   const { data: controlTower } = useQuery({

@@ -144,6 +144,8 @@ If you open the forwarded URL in an external browser session, set port **5000** 
 4. Restart the dev server with explicit binding: `HOST=0.0.0.0 PORT=5000 npm run dev`.
 5. In the **Ports** tab, confirm port `5000` exists and open it from that row (avoid stale browser tabs).
 
+**401 Unauthorized on APIs after login (walkthrough, notifications, warehouses):** The app must trust the Codespaces HTTPS proxy so session cookies are marked `Secure` correctly. Ensure the dev container passes `CODESPACES` / `CODESPACE_NAME` / `GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN` into the app service (see `.devcontainer/docker-compose.yml`). Restart the dev server after updating. If you run the server **outside** Docker in a Codespace terminal, set `TRUST_PROXY=1` or rely on those same env vars being present in the shell.
+
 **Database / “Loading…” forever:** If the Control Tower, Purchase Orders, Shipments, or Exceptions pages never load:
 
 - Ensure the Postgres service is running (`db` in the devcontainer).

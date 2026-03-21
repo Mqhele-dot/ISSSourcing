@@ -496,6 +496,9 @@ async function ensureStockMovements(): Promise<void> {
     { itemId: items[0]?.id ?? 1, type: "RECEIPT", quantity: 15, userId, notes: "Demo receipt", previousQuantity: 0, newQuantity: 15 },
     { itemId: items[1]?.id ?? 2, type: "ADJUSTMENT", quantity: -2, userId, notes: "Demo adjustment", previousQuantity: 10, newQuantity: 8 },
     { itemId: items[2]?.id ?? 3, type: "RECEIPT", quantity: 30, userId, notes: "Demo restock", previousQuantity: 20, newQuantity: 50 },
+    // Outbound movements so Analytics "stock use" charts are populated without relying on fallback
+    { itemId: items[0]?.id ?? 1, type: "SALE", quantity: 3, userId, notes: "Demo sale", previousQuantity: 15, newQuantity: 12 },
+    { itemId: items[2]?.id ?? 3, type: "ISSUE", quantity: 5, userId, notes: "Demo issue to floor", previousQuantity: 50, newQuantity: 45 },
   ];
   if (whs.length >= 2) {
     movements.push({

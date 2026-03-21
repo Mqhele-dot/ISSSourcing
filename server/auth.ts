@@ -208,8 +208,26 @@ function ensureTwoFactorAuthenticated(req: Request, res: Response, next: NextFun
   });
 }
 
+/**
+ * GitHub Codespaces (and similar) terminate TLS at the edge; Node sees HTTP unless we trust
+ * X-Forwarded-Proto. Without this, express-session's `secure: "auto"` stays false while the browser
+ * is on https://*.app.github.dev — cookies may not persist correctly and APIs return 401.
+ */
+function shouldTrustProxy(): boolean {
+  if (process.env.NODE_ENV === "production") return true;
+  if (process.env.TRUST_PROXY === "1" || process.env.TRUST_PROXY === "true") return true;
+  if (process.env.CODESPACES === "true") return true;
+  if (Boolean(process.env.CODESPACE_NAME?.trim())) return true;
+  if (Boolean(process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN?.trim())) return true;
+  return false;
+}
+
 // Set up authentication
 export function setupAuth(app: Express) {
+  if (shouldTrustProxy()) {
+    app.set("trust proxy", 1);
+  }
+
   // Configure session
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "inventory-management-system-secret-key",
@@ -218,16 +236,12 @@ export function setupAuth(app: Express) {
     store: storage.sessionStore,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: process.env.NODE_ENV === "production",
+      // Match connection security; requires trust proxy when behind HTTPS reverse proxy (Codespaces).
+      secure: "auto",
       httpOnly: true,
-      sameSite: "lax"
-    }
+      sameSite: "lax",
+    },
   };
-
-  // Trust first proxy in production or when running in Codespaces (behind HTTPS proxy)
-  if (process.env.NODE_ENV === "production" || process.env.CODESPACES === "true") {
-    app.set("trust proxy", 1);
-  }
 
   // Set up session middleware
   app.use(session(sessionSettings));

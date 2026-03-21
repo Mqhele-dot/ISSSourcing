@@ -27,6 +27,11 @@ import {
 } from "recharts";
 import { formatCurrency } from "@/lib/utils";
 import { requestJson } from "@/lib/queryClient";
+import {
+  aggregateCountByCategory,
+  aggregateValueByCategory,
+  lineInventoryValue,
+} from "@/lib/inventory-metrics";
 import type { InventoryItem, InventoryStats, Category } from "@shared/schema";
 
 const DATA_SOURCES = [
@@ -87,8 +92,14 @@ export function CustomGraphBuilder() {
   const { data: stockUsageData, isLoading: usageLoading } = useQuery({
     queryKey: ["/api/analytics/stock-usage", limit],
     queryFn: async () => {
-      const json = await requestJson<{ byItem?: { itemId: number; itemName: string; quantityUsed: number }[] }>("GET", `/api/analytics/stock-usage?limit=${limit}`);
-      return json?.byItem ?? [];
+      try {
+        const json = await requestJson<{
+          byItem?: { itemId: number; itemName: string; quantityUsed: number }[];
+        }>("GET", `/api/analytics/stock-usage?limit=${limit}`);
+        return json?.byItem ?? [];
+      } catch {
+        return [];
+      }
     },
   });
   const stockUsage = useMemo(() => (Array.isArray(stockUsageData) ? stockUsageData : []), [stockUsageData]);
@@ -98,35 +109,11 @@ export function CustomGraphBuilder() {
     const cats = Array.isArray(categories) ? categories : [];
 
     if (dataSource === "value-by-category") {
-      const byCat: Record<number, { name: string; value: number }> = {};
-      cats.forEach((c) => { byCat[c.id] = { name: c.name, value: 0 }; });
-      byCat[0] = { name: "Uncategorized", value: 0 };
-      items.forEach((item) => {
-        const cid = item.categoryId ?? 0;
-        if (!byCat[cid]) byCat[cid] = { name: "Uncategorized", value: 0 };
-        byCat[cid].value += (item.quantity ?? 0) * (item.cost ?? 0);
-      });
-      return Object.entries(byCat)
-        .filter(([, v]) => v.value > 0)
-        .map(([, v]) => ({ name: v.name.length > 14 ? `${v.name.slice(0, 14)}…` : v.name, fullName: v.name, value: v.value }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, limit);
+      return aggregateValueByCategory(items, cats, limit, 14);
     }
 
     if (dataSource === "count-by-category") {
-      const byCat: Record<number, { name: string; count: number }> = {};
-      cats.forEach((c) => { byCat[c.id] = { name: c.name, count: 0 }; });
-      byCat[0] = { name: "Uncategorized", count: 0 };
-      items.forEach((item) => {
-        const cid = item.categoryId ?? 0;
-        if (!byCat[cid]) byCat[cid] = { name: "Uncategorized", count: 0 };
-        byCat[cid].count += 1;
-      });
-      return Object.entries(byCat)
-        .filter(([, v]) => v.count > 0)
-        .map(([, v]) => ({ name: v.name.length > 14 ? `${v.name.slice(0, 14)}…` : v.name, fullName: v.name, value: v.count }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, limit);
+      return aggregateCountByCategory(items, cats, limit);
     }
 
     if (dataSource === "stock-usage") {
@@ -152,7 +139,7 @@ export function CustomGraphBuilder() {
         .map((item) => ({
           name: item.name,
           fullName: item.name,
-          value: (item.quantity ?? 0) * (item.cost ?? 0),
+          value: lineInventoryValue(item),
         }))
         .filter((d) => d.value > 0)
         .sort((a, b) => b.value - a.value)

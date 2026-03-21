@@ -2,6 +2,14 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, requestJson, unwrapOperationalResponse } from '@/lib/queryClient';
 import { Plus, Pencil, MoreHorizontal, Trash2, Loader2, Building } from 'lucide-react';
+import { PageHeader } from '@/components/page-header';
+import { PageDataState } from '@/components/page-shell';
+import type { Warehouse, BinLocation, FormData, WarehousePayload } from '@/pages/warehouses/warehouse-types';
+import {
+  emptyWarehouseForm,
+  validateWarehouseForm,
+  warehouseFormToPayload,
+} from '@/pages/warehouses/warehouse-types';
 import {
   Table,
   TableBody,
@@ -40,80 +48,16 @@ import { useToast } from '@/hooks/use-toast';
 import { ToastAction } from '@/components/ui/toast';
 import { Can } from '@/components/auth/can';
 
-// Warehouse interface (API returns ISO date strings, not Date objects)
-interface Warehouse {
-  id: number;
-  name: string;
-  address: string | null;
-  location: string | null;
-  contactPerson: string | null;
-  contactPhone: string | null;
-  isDefault: boolean | null;
-  aisle?: string | null;
-  aisles?: string[] | null;
-  bins?: { code: string; aisle?: string; row?: string; shelf?: string }[] | null;
-  locationDetails?: Record<string, unknown> | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface BinLocation {
-  code: string;
-  aisle?: string;
-  row?: string;
-  shelf?: string;
-}
-
-interface FormData {
-  name: string;
-  address: string;
-  location: string;
-  contactPerson: string;
-  contactPhone: string;
-  isDefault: boolean;
-  aisles: string;
-  bins: BinLocation[];
-  locationDetails: string;
-}
-
-interface WarehousePayload {
-  name: string;
-  address: string | null;
-  location: string | null;
-  contactPerson: string | null;
-  contactPhone: string | null;
-  isDefault: boolean;
-  aisles?: string[];
-  bins?: { code: string; aisle?: string; row?: string; shelf?: string }[];
-  locationDetails?: Record<string, unknown>;
-}
-
-/** Centralized validation for create/edit. Returns error message or null if valid. */
-function validateWarehouseForm(data: FormData): string | null {
-  if (!data.name.trim()) return "Warehouse name is required";
-  return null;
-}
-
 export default function WarehousesPage() {
   const { toast } = useToast();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
-  const [formData, setFormData] = useState<FormData>({
-    name: '',
-    address: '',
-    location: '',
-    contactPerson: '',
-    contactPhone: '',
-    isDefault: false,
-    aisles: '',
-    bins: [],
-    locationDetails: '',
-  });
+  const [formData, setFormData] = useState<FormData>(emptyWarehouseForm());
 
   // Fetch warehouses (response may include meta.fallback when server used fallback)
-  const { data: warehousesRaw, isLoading, error, refetch } = useQuery<
+  const { data: warehousesRaw, isLoading, isError, error, refetch } = useQuery<
     Warehouse[] | { data: Warehouse[]; meta: { fallback?: string } }
   >({
     queryKey: ['/api/warehouses'],
@@ -218,37 +162,6 @@ export default function WarehousesPage() {
     },
   });
 
-  const toPayload = (data: FormData) => {
-    const aisles = data.aisles
-      ? data.aisles.split(',').map((s) => s.trim()).filter(Boolean)
-      : [];
-    const bins = data.bins.filter((b) => b.code.trim()).map((b) => ({
-      code: b.code.trim(),
-      aisle: b.aisle?.trim() || undefined,
-      row: b.row?.trim() || undefined,
-      shelf: b.shelf?.trim() || undefined,
-    }));
-    let locationDetails: Record<string, unknown> | null = null;
-    if (data.locationDetails.trim()) {
-      try {
-        locationDetails = JSON.parse(data.locationDetails) as Record<string, unknown>;
-      } catch {
-        locationDetails = { raw: data.locationDetails };
-      }
-    }
-    return {
-      name: data.name.trim(),
-      address: data.address || null,
-      location: data.location || null,
-      contactPerson: data.contactPerson || null,
-      contactPhone: data.contactPhone || null,
-      isDefault: data.isDefault,
-      aisles: aisles.length ? aisles : undefined,
-      bins: bins.length ? bins : undefined,
-      locationDetails: locationDetails ?? undefined,
-    };
-  };
-
   const handleCreateSubmit = () => {
     const err = validateWarehouseForm(formData);
     if (err) {
@@ -259,7 +172,7 @@ export default function WarehousesPage() {
       });
       return;
     }
-    createWarehouse.mutate(toPayload(formData));
+    createWarehouse.mutate(warehouseFormToPayload(formData));
   };
 
   const handleEditSubmit = () => {
@@ -275,7 +188,7 @@ export default function WarehousesPage() {
     }
     updateWarehouse.mutate({
       id: selectedWarehouse.id,
-      data: toPayload(formData),
+      data: warehouseFormToPayload(formData),
     });
   };
 
@@ -286,17 +199,7 @@ export default function WarehousesPage() {
   };
 
   const resetForm = () => {
-    setFormData({
-      name: '',
-      address: '',
-      location: '',
-      contactPerson: '',
-      contactPhone: '',
-      isDefault: false,
-      aisles: '',
-      bins: [],
-      locationDetails: '',
-    });
+    setFormData(emptyWarehouseForm());
   };
 
   const openEditDialog = (warehouse: Warehouse) => {
@@ -336,39 +239,25 @@ export default function WarehousesPage() {
     setIsDeleteDialogOpen(true);
   };
 
-  if (error) {
-    return (
-      <Alert variant="destructive" className="max-w-4xl mx-auto mt-4">
-        <AlertTitle>Error</AlertTitle>
-        <AlertDescription className="space-y-3">
-          <p>Failed to load warehouses (GET /api/warehouses): {(error as Error).message}</p>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            Retry
-          </Button>
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
   return (
     <div className="container mx-auto py-6 max-w-7xl">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Warehouses</h1>
-          <p className="text-muted-foreground">
-            Manage your warehouse locations and inventory distribution
-          </p>
-        </div>
-        <Can roles={['manager', 'admin']} reason="Requires Manager or Admin to add warehouses">
-          <Button onClick={() => {
-            resetForm();
-            setIsCreateDialogOpen(true);
-          }}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Warehouse
-          </Button>
-        </Can>
-      </div>
+      <PageHeader
+        title="Warehouses"
+        description="Manage your warehouse locations and inventory distribution"
+        actions={
+          <Can roles={['manager', 'admin']} reason="Requires Manager or Admin to add warehouses">
+            <Button
+              onClick={() => {
+                resetForm();
+                setIsCreateDialogOpen(true);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Warehouse
+            </Button>
+          </Can>
+        }
+      />
 
       {listFallback ? (
         <Alert variant="default" className="mb-4 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
@@ -380,28 +269,39 @@ export default function WarehousesPage() {
       ) : null}
       <Card>
         <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          ) : list.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-center px-4">
-              <Building className="h-12 w-12 text-gray-400 mb-4" />
-              <h3 className="text-lg font-medium mb-2">No warehouses found</h3>
-              <p className="text-muted-foreground mb-4 max-w-md">
-                You haven't added any warehouses yet. Add your first warehouse to start managing inventory across multiple locations.
-              </p>
-              <Can roles={['manager', 'admin']} reason="Requires Manager or Admin to add warehouses">
-                <Button onClick={() => {
-                  resetForm();
-                  setIsCreateDialogOpen(true);
-                }}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Your First Warehouse
-                </Button>
-              </Can>
-            </div>
-          ) : (
+          <PageDataState
+            isLoading={isLoading}
+            error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
+            isEmpty={!isLoading && !isError && list.length === 0}
+            loadingView={
+              <div className="flex justify-center items-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            }
+            errorTitle="Failed to load warehouses"
+            onRetry={() => refetch()}
+            emptyView={
+              <div className="flex flex-col items-center justify-center h-64 text-center px-4">
+                <Building className="h-12 w-12 text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium mb-2">No warehouses found</h3>
+                <p className="text-muted-foreground mb-4 max-w-md">
+                  You haven&apos;t added any warehouses yet. Add your first warehouse to start managing inventory across
+                  multiple locations.
+                </p>
+                <Can roles={['manager', 'admin']} reason="Requires Manager or Admin to add warehouses">
+                  <Button
+                    onClick={() => {
+                      resetForm();
+                      setIsCreateDialogOpen(true);
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Your First Warehouse
+                  </Button>
+                </Can>
+              </div>
+            }
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -468,7 +368,7 @@ export default function WarehousesPage() {
                 })}
               </TableBody>
             </Table>
-          )}
+          </PageDataState>
         </CardContent>
       </Card>
 

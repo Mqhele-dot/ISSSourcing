@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { type InventoryItem } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { requestJson, formatMutationError } from "@/lib/queryClient";
+import { formatMutationError, normalizeApiList, requestJson } from "@/lib/queryClient";
 
 export default function StockAlerts() {
   const { toast } = useToast();
@@ -15,12 +15,18 @@ export default function StockAlerts() {
 
   const { data: lowStockItems, isLoading } = useQuery({
     queryKey: ["/api/inventory/low-stock"],
-    queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory/low-stock"),
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/inventory/low-stock");
+      return normalizeApiList<InventoryItem>(raw);
+    },
   });
 
   const { data: outOfStockItems, isLoading: outOfStockLoading } = useQuery({
     queryKey: ["/api/inventory/out-of-stock"],
-    queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory/out-of-stock"),
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/inventory/out-of-stock");
+      return normalizeApiList<InventoryItem>(raw);
+    },
   });
   
   // Reorder item mutation

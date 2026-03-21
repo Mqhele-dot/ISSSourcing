@@ -1,6 +1,17 @@
 import type { InventoryItem, StockMovement} from "@shared/schema";
-import { stockMovementTypeEnum } from "@shared/schema";
 import { addDays, subDays, format, parse, isAfter, isBefore, isEqual } from "date-fns";
+
+/** Unit value for analytics: prefer recorded cost; fall back to selling price when cost is unset. */
+export function effectiveUnitCost(item: Pick<InventoryItem, "cost" | "price">): number {
+  const c = Number(item.cost ?? 0);
+  if (Number.isFinite(c) && c > 0) return c;
+  const p = Number(item.price ?? 0);
+  return Number.isFinite(p) ? p : 0;
+}
+
+export function inventoryLineValue(item: Pick<InventoryItem, "quantity" | "cost" | "price">): number {
+  return Number(item.quantity ?? 0) * effectiveUnitCost(item);
+}
 
 interface DemandForecastPoint {
   date: string;
@@ -140,13 +151,18 @@ export async function generateDemandForecast(
 export async function getTopItems(items: InventoryItem[], movements: StockMovement[], limit: number = 10): Promise<InventoryItem[]> {
   // Create a map to store demand by item ID
   const demandByItem: Map<number, number> = new Map();
-  
-  // Calculate total demand for each item
-  movements.forEach(movement => {
-    if (movement.type === "SALE" || movement.type === "ISSUE") {
-      const itemId = movement.itemId;
-      const currentDemand = demandByItem.get(itemId) || 0;
-      demandByItem.set(itemId, currentDemand + Math.abs(movement.quantity));
+  const OUT_TYPES = new Set(["SALE", "ISSUE", "DAMAGE", "EXPIRE"]);
+
+  movements.forEach((movement) => {
+    const t = String(movement.type ?? "").toUpperCase();
+    const qty = Math.abs(Number(movement.quantity));
+    if (!Number.isFinite(qty) || qty === 0) return;
+    const itemId = movement.itemId;
+    const currentDemand = demandByItem.get(itemId) || 0;
+    if (OUT_TYPES.has(t)) {
+      demandByItem.set(itemId, currentDemand + qty);
+    } else if (t === "ADJUSTMENT" && Number(movement.quantity) < 0) {
+      demandByItem.set(itemId, currentDemand + qty);
     }
   });
   

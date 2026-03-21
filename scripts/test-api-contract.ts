@@ -152,16 +152,21 @@ async function main() {
 
   const inventoryList = await requestApi("/inventory");
   assert(inventoryList.ok, "Inventory list request failed");
-  assert(
-    typeof inventoryList.json === "object" &&
-      inventoryList.json !== null &&
-      "ok" in inventoryList.json &&
-      (inventoryList.json as { ok: boolean }).ok === true &&
-      Array.isArray((inventoryList.json as { data: unknown }).data),
-    "Inventory list did not return ok envelope",
-  );
-
-  const inventoryItems = (inventoryList.json as { data: Array<Record<string, unknown>> }).data;
+  // Dual contract: legacy raw array OR envelope { ok, data } (see docs/API_CONTRACTS.md)
+  let inventoryItems: Array<Record<string, unknown>>;
+  if (Array.isArray(inventoryList.json)) {
+    inventoryItems = inventoryList.json as Array<Record<string, unknown>>;
+  } else {
+    assert(
+      typeof inventoryList.json === "object" &&
+        inventoryList.json !== null &&
+        "ok" in inventoryList.json &&
+        (inventoryList.json as { ok: boolean }).ok === true &&
+        Array.isArray((inventoryList.json as { data: unknown }).data),
+      "Inventory list did not return array or ok envelope",
+    );
+    inventoryItems = (inventoryList.json as { data: Array<Record<string, unknown>> }).data;
+  }
   const firstItem = inventoryItems[0];
   assert(firstItem, "Inventory list did not return any items");
   assert(typeof firstItem.sku === "string", "Inventory item missing sku");
@@ -172,6 +177,40 @@ async function main() {
   assert(Array.isArray(suppliers.json), "Suppliers endpoint should return array");
   const firstSupplier = (suppliers.json as Array<Record<string, unknown>>)[0];
   assert(firstSupplier && typeof firstSupplier.id === "number", "No supplier available");
+
+  // Master data: currency POST without symbol (server defaults from code); PATCH name-only keeps symbol
+  const curCode = `C${Date.now().toString().slice(-8)}`;
+  const createCur = await requestApi("/currencies", {
+    method: "POST",
+    body: { code: curCode, name: "Contract Test Currency", decimalPlaces: 2 },
+  });
+  assert(createCur.ok, `Currency POST without symbol failed ${createCur.status}: ${extractErrorMessage(createCur.json)}`);
+  const createdCur = createCur.json as { id?: unknown; symbol?: unknown; code?: unknown };
+  assert(typeof createdCur.id === "number", "Currency create missing id");
+  assert(
+    typeof createdCur.symbol === "string" && createdCur.symbol.length > 0,
+    "Currency should have symbol defaulted from code",
+  );
+
+  const patchCur = await requestApi(`/currencies/${createdCur.id}`, {
+    method: "PATCH",
+    body: { name: "Contract Test Currency (renamed)" },
+  });
+  assert(patchCur.ok, `Currency PATCH failed ${patchCur.status}: ${extractErrorMessage(patchCur.json)}`);
+  const patchedCur = patchCur.json as { symbol?: unknown; name?: unknown };
+  assert(
+    typeof patchedCur.symbol === "string" && patchedCur.symbol.length > 0,
+    "PATCH without symbol should preserve/default symbol",
+  );
+  assert(patchedCur.name === "Contract Test Currency (renamed)", "PATCH should update name");
+
+  const delCur = await requestApi(`/currencies/${createdCur.id}`, { method: "DELETE" });
+  assert(delCur.ok, `Currency DELETE failed ${delCur.status}`);
+
+  // Warehouses master data smoke (legacy array)
+  const warehouses = await requestApi("/warehouses");
+  assert(warehouses.ok, "Warehouses list failed");
+  assert(Array.isArray(warehouses.json), "Warehouses should return array");
 
   const createPo = await requestApi("/purchase-orders", {
     method: "POST",

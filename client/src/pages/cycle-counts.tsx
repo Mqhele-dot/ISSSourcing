@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, requestJson } from "@/lib/queryClient";
+import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import {
   Table,
   TableBody,
@@ -65,7 +65,10 @@ export default function CycleCountsPage() {
   });
   const { data: inventoryItems = [] } = useQuery({
     queryKey: ["/api/inventory"],
-    queryFn: () => requestJson<Array<{ id: number; sku: string; name: string }>>("GET", "/api/inventory"),
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/inventory");
+      return normalizeApiList<{ id: number; sku: string; name: string }>(raw);
+    },
   });
 
   const createCycleCount = useMutation({

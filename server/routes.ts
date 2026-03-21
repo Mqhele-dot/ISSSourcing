@@ -15,8 +15,10 @@ import {
   generateReorderRequestsExcelReport
 } from "./reorder-request-generators";
 import {
-  generateDemandForecast, 
-  getTopItems
+  generateDemandForecast,
+  getTopItems,
+  inventoryLineValue,
+  effectiveUnitCost,
 } from "./forecast-service";
 import { initializeWebSocketService } from "./websocket-service";
 import { initializeRealTimeSyncService, getConnectedClientInfo, notifyDataChange } from "./real-time-sync-service";
@@ -865,7 +867,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const id = Number(req.params.id);
         if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-        const payload = (insertSchema as any).partial().parse(req.body);
+        let patchBody = req.body;
+        if (basePath === "/api/currencies" && patchBody && typeof patchBody === "object") {
+          const rows = (await db.select().from(table).where(eq(table.id, id))) as Array<{
+            code?: string;
+            symbol?: string;
+          }>;
+          const existing = rows[0];
+          if (!existing) return res.status(404).json({ message: "Record not found" });
+          const incoming = { ...(patchBody as Record<string, unknown>) };
+          if (!("symbol" in incoming) || !String(incoming.symbol ?? "").trim()) {
+            const codeStr = String(incoming.code ?? existing.code ?? "").trim();
+            incoming.symbol = codeStr.slice(0, 3) || String(existing.symbol ?? "").trim() || "$";
+          }
+          patchBody = incoming;
+        }
+        const payload = (insertSchema as any).partial().parse(patchBody);
         const updatedRows = (await db.update(table).set(payload).where(eq(table.id, id)).returning()) as any[];
         const updated = updatedRows[0];
         if (!updated) return res.status(404).json({ message: "Record not found" });
@@ -3034,12 +3051,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Fall back to standard layout if custom template cannot be read
         }
       }
+      const requestId =
+        res.locals && typeof (res.locals as { requestId?: unknown }).requestId === "string"
+          ? (res.locals as { requestId: string }).requestId
+          : undefined;
+      const metadataLines = [
+        `Exported at (UTC): ${new Date().toISOString()}`,
+        `Rows: ${normalizedData.length}`,
+        ...(filterTexts.length ? [`Filters: ${filterTexts.join("; ")}`] : []),
+        ...(requestId ? [`Request ID: ${requestId}`] : []),
+      ];
       const buffer = await generateDocument(
         normalizedReportType as ReportType,
         format as ReportFormat,
         normalizedData,
         title,
-        { pdfTemplate: templateParam as 'standard' | 'compact' | 'custom', customTemplateBuffer }
+        {
+          pdfTemplate: templateParam as "standard" | "compact" | "custom",
+          customTemplateBuffer,
+          metadataLines,
+        },
       );
 
       const normalizedTitle = title.replace(/\s+/g, "-").toLowerCase();
@@ -4301,15 +4332,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       let topItems = await getTopItems(items, movements, limit);
-      // Fallback: when no demand data, show top items by inventory value (qty * cost)
+      // Fallback: when no demand data, show top items by inventory value (qty × cost, else price)
       if (topItems.length === 0 && items.length > 0) {
         const byValue = [...items]
           .filter((i) => (i.quantity ?? 0) > 0)
-          .sort((a, b) => {
-            const va = (a.quantity ?? 0) * (a.cost ?? 0);
-            const vb = (b.quantity ?? 0) * (b.cost ?? 0);
-            return vb - va;
-          })
+          .sort((a, b) => inventoryLineValue(b) - inventoryLineValue(a))
           .slice(0, limit);
         topItems = byValue;
       }
@@ -4330,18 +4357,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const itemValues = [];
 
       for (const item of items) {
-        // Use item.quantity and item.cost (instead of quantityInStock and costPrice)
-        const costPrice = item.cost || 0;
-        const itemValue = (item.quantity ?? 0) * costPrice;
+        const unit = effectiveUnitCost(item);
+        const itemValue = inventoryLineValue(item);
         totalValue += itemValue;
         totalItems += 1; // Count unique SKUs, not total units
-        
+
         itemValues.push({
           id: item.id,
           name: item.name,
           quantity: item.quantity,
-          cost: costPrice,
-          value: itemValue
+          cost: unit,
+          value: itemValue,
         });
       }
 
@@ -4368,13 +4394,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const demandByItem: Map<number, number> = new Map();
       const OUT_TYPES = new Set(["SALE", "ISSUE", "DAMAGE", "EXPIRE"]);
       movements.forEach((m: { itemId: number; type: string; quantity: number }) => {
-        if (OUT_TYPES.has(m.type)) {
+        const t = String(m.type ?? "").toUpperCase();
+        const qty = Math.abs(Number(m.quantity));
+        if (!Number.isFinite(qty) || qty === 0) return;
+        if (OUT_TYPES.has(t)) {
           const current = demandByItem.get(m.itemId) || 0;
-          demandByItem.set(m.itemId, current + Math.abs(Number(m.quantity)));
+          demandByItem.set(m.itemId, current + qty);
+        } else if (t === "ADJUSTMENT" && Number(m.quantity) < 0) {
+          const current = demandByItem.get(m.itemId) || 0;
+          demandByItem.set(m.itemId, current + qty);
         }
       });
 
-      const byItem = items
+      let byItem = items
         .filter((item: { id: number }) => demandByItem.has(item.id))
         .map((item: { id: number; name: string }) => ({
           itemId: item.id,
@@ -4384,7 +4416,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .sort((a: { quantityUsed: number }, b: { quantityUsed: number }) => b.quantityUsed - a.quantityUsed)
         .slice(0, limit);
 
-      res.json({ byItem });
+      let source: "movements" | "on_hand" = "movements";
+      if (byItem.length === 0 && items.length > 0) {
+        source = "on_hand";
+        byItem = [...items]
+          .filter((i: { quantity?: number }) => Number(i.quantity) > 0)
+          .sort(
+            (a: { quantity?: number }, b: { quantity?: number }) =>
+              Number(b.quantity ?? 0) - Number(a.quantity ?? 0),
+          )
+          .slice(0, limit)
+          .map((item: { id: number; name: string; quantity?: number }) => ({
+            itemId: item.id,
+            itemName: item.name,
+            quantityUsed: Number(item.quantity ?? 0),
+          }));
+      }
+
+      res.json({ byItem, source });
     } catch (error) {
       console.error("Error getting stock usage:", error);
       res.status(500).json({ message: "Failed to get stock usage" });

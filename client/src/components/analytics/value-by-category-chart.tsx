@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { formatCurrency } from "@/lib/utils";
+import { aggregateValueByCategory } from "@/lib/inventory-metrics";
 import type { InventoryItem } from "@shared/schema";
 import type { Category } from "@shared/schema";
 
@@ -36,25 +37,8 @@ export function ValueByCategoryChart() {
   const categories = useMemo(() => (Array.isArray(categoriesData) ? categoriesData : []), [categoriesData]);
 
   const chartData = useMemo(() => {
-    if (!items?.length || !categories?.length) return [];
-    const byCategory: Record<number, { name: string; value: number }> = {};
-    categories.forEach((c) => {
-      byCategory[c.id] = { name: c.name, value: 0 };
-    });
-    byCategory[0] = { name: "Uncategorized", value: 0 };
-
-    items.forEach((item) => {
-      const catId = item.categoryId ?? 0;
-      if (!byCategory[catId]) byCategory[catId] = { name: "Uncategorized", value: 0 };
-      const cost = item.cost ?? 0;
-      byCategory[catId].value += (item.quantity ?? 0) * cost;
-    });
-
-    return Object.entries(byCategory)
-      .filter(([, v]) => v.value > 0)
-      .map(([, v]) => ({ name: v.name.length > 10 ? `${v.name.slice(0, 10)}…` : v.name, fullName: v.name, value: v.value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8);
+    if (!items?.length) return [];
+    return aggregateValueByCategory(items, categories ?? [], 8);
   }, [items, categories]);
 
   const isLoading = itemsLoading;
@@ -64,7 +48,7 @@ export function ValueByCategoryChart() {
       <CardHeader>
         <CardTitle>Value by Category</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Inventory value (quantity × cost) grouped by category
+          Inventory value (quantity × unit cost, or price if cost is unset) by category
         </p>
       </CardHeader>
       <CardContent>

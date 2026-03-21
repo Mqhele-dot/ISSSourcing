@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { FileDown, BarChart2, FileText, FileSpreadsheet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,13 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format } from "date-fns";
-import { requestJson } from "@/lib/queryClient";
 import { downloadFile, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import type { DocumentType } from "@shared/schema";
-import { type ReportFilter, type Category, type InventoryItem, type InventoryStats, type Warehouse, type Supplier } from "@shared/schema";
+import { type ReportFilter } from "@shared/schema";
 import { ReportFilters } from "@/components/reports/report-filters";
 import { QueryState } from "@/components/ui/query-state";
+import { PageHeader } from "@/components/page-header";
+import { useReportsPageData } from "@/pages/reports/use-reports-data";
 
 type ReportTab =
   | "inventory"
@@ -52,77 +52,19 @@ export default function Reports() {
   const [filter, setFilter] = useState<ReportFilter>({});
   const [exporting, setExporting] = useState(false);
 
-  // Fetch inventory items (primary query for page-level loading/error; normalize to array)
   const {
-    data: inventoryItems,
-    isLoading: itemsLoading,
-    isError: itemsError,
-    error: itemsErrorDetail,
-    refetch: refetchInventory,
-  } = useQuery({
-    queryKey: ["/api/inventory"],
-    queryFn: async () => {
-      const raw = await requestJson<InventoryItem[] | { data: InventoryItem[] }>("GET", "/api/inventory");
-      return Array.isArray(raw) ? raw : (raw as { data?: InventoryItem[] })?.data ?? [];
-    },
-  });
-
-  // Fetch low stock items
-  const { data: lowStockItems, isLoading: lowStockLoading } = useQuery({
-    queryKey: ["/api/inventory/low-stock"],
-    queryFn: async () => {
-      const raw = await requestJson<InventoryItem[]>("GET", "/api/inventory/low-stock");
-      return Array.isArray(raw) ? raw : [];
-    },
-  });
-
-  // Fetch categories (normalize to array)
-  const { data: categories } = useQuery({
-    queryKey: ["/api/categories"],
-    queryFn: async () => {
-      const raw = await requestJson<Category[]>("GET", "/api/categories");
-      return Array.isArray(raw) ? raw : [];
-    },
-  });
-
-  // Fetch inventory stats
-  const { data: stats } = useQuery({
-    queryKey: ["/api/inventory/stats"],
-    queryFn: async () => {
-      const rawStats = await requestJson<Partial<InventoryStats>>("GET", "/api/inventory/stats");
-      return {
-        totalItems: Number(rawStats?.totalItems ?? 0),
-        lowStockItems: Number(rawStats?.lowStockItems ?? 0),
-        outOfStockItems: Number(rawStats?.outOfStockItems ?? 0),
-        inventoryValue: Number(rawStats?.inventoryValue ?? 0),
-      } as InventoryStats;
-    },
-  });
-
-  // Fetch warehouses for filtering (normalize to array)
-  const { data: warehouses } = useQuery({
-    queryKey: ["/api/warehouses"],
-    queryFn: async () => {
-      const raw = await requestJson<Warehouse[]>("GET", "/api/warehouses");
-      return Array.isArray(raw) ? raw : [];
-    },
-  });
-
-  // Fetch suppliers for filtering (normalize to array)
-  const { data: suppliers } = useQuery({
-    queryKey: ["/api/suppliers"],
-    queryFn: async () => {
-      const raw = await requestJson<Supplier[]>("GET", "/api/suppliers");
-      return Array.isArray(raw) ? raw : [];
-    },
-  });
-
-  // Ensure API responses are always arrays (avoid "x?.reduce is not a function" when API returns error object)
-  const safeInventoryItems = Array.isArray(inventoryItems) ? inventoryItems : [];
-  const safeLowStockItems = Array.isArray(lowStockItems) ? lowStockItems : [];
-  const safeCategories = Array.isArray(categories) ? categories : [];
-  const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
-  const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
+    safeInventoryItems,
+    safeLowStockItems,
+    safeCategories,
+    safeWarehouses,
+    safeSuppliers,
+    stats,
+    itemsLoading,
+    itemsError,
+    itemsErrorDetail,
+    refetchInventory,
+    lowStockLoading,
+  } = useReportsPageData();
 
   // Handle filter change
   const handleFilterChange = (newFilter: ReportFilter) => {
@@ -177,8 +119,29 @@ export default function Reports() {
         url += `?${queryParams.toString()}`;
       }
       const response = await fetch(url, { credentials: "include" });
+      const contentType = response.headers.get("content-type") ?? "";
       if (!response.ok) {
-        throw new Error(`Export failed (${response.status})`);
+        let detail = `Export failed (${response.status})`;
+        try {
+          const errBody = (await response.json()) as {
+            message?: string;
+            error?: { message?: string };
+          };
+          if (errBody?.error?.message) detail = errBody.error.message;
+          else if (errBody?.message) detail = errBody.message;
+        } catch {
+          /* not JSON */
+        }
+        if (response.status === 401) {
+          detail = "Not signed in or session expired — log in again, then retry the export.";
+        }
+        throw new Error(detail);
+      }
+      // Avoid saving JSON error/HTML as .pdf (common when session is missing in Codespaces).
+      if (exportFormat === "pdf" && contentType.includes("application/json")) {
+        throw new Error(
+          "Server returned JSON instead of a PDF (usually a session/auth issue). Log in again and retry.",
+        );
       }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
@@ -254,15 +217,11 @@ export default function Reports() {
       refetch={refetchInventory}
     >
     <div className="max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-semibold text-neutral-900 dark:text-white">Reports</h2>
-          <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
-            Generate and export inventory reports in multiple formats
-          </p>
-        </div>
-        
-        <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-3">
+      <PageHeader
+        title="Reports"
+        description="Generate and export inventory reports in multiple formats"
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
           <Select value={exportFormat} onValueChange={(value) => setExportFormat(value as DocumentType)}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Select format" />
@@ -355,8 +314,9 @@ export default function Reports() {
                 ? "Raw CSV: source table data for external processing."
                 : "Excel Analysis: workbook optimized for filtering and pivot analysis."}
           </p>
-        </div>
-      </div>
+          </div>
+        }
+      />
       
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportTab)} className="mb-6">
         <TabsList className="mb-4">

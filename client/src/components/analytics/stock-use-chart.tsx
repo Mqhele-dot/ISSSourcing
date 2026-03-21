@@ -21,6 +21,7 @@ interface StockUsageItem {
 
 interface StockUsageData {
   byItem: StockUsageItem[];
+  source?: "movements" | "on_hand";
 }
 
 export function StockUseChart() {
@@ -28,11 +29,12 @@ export function StockUseChart() {
     queryKey: ["/api/analytics/stock-usage?limit=10"],
     queryFn: async () => {
       try {
-        const raw = await requestJson<StockUsageData | { byItem?: StockUsageItem[] }>("GET", "/api/analytics/stock-usage?limit=10");
-        const byItem = (raw as StockUsageData)?.byItem ?? (raw as { byItem?: StockUsageItem[] })?.byItem ?? [];
-        return { byItem };
+        const raw = await requestJson<StockUsageData>("GET", "/api/analytics/stock-usage?limit=10");
+        const byItem = Array.isArray(raw?.byItem) ? raw.byItem : [];
+        const source: "movements" | "on_hand" = raw?.source === "on_hand" ? "on_hand" : "movements";
+        return { byItem, source };
       } catch {
-        return { byItem: [] };
+        return { byItem: [], source: "movements" as const };
       }
     },
   });
@@ -62,7 +64,9 @@ export function StockUseChart() {
       <CardHeader>
         <CardTitle>Stock Use</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Top items by quantity issued/sold (from stock movements)
+          {data?.source === "on_hand"
+            ? "Top SKUs by on-hand quantity (no outbound movements recorded yet — add sales/issues or use seeded adjustments)"
+            : "Top items by outbound quantity (sales, issues, negative adjustments, damage, expiry)"}
         </p>
       </CardHeader>
       <CardContent>

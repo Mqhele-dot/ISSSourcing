@@ -55,6 +55,7 @@ import { db, pool } from "./db";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
 import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
+import { inventoryLineValue } from "./forecast-service";
 
 const PostgresSessionStore = connectPgSimple(session);
 
@@ -1649,7 +1650,7 @@ export class DatabaseStorage implements IStorage {
   
   async getInventoryStats(): Promise<InventoryStats> {
     const items = await db.select().from(inventoryItems);
-    const inventoryValue = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (item.quantity ?? 0), 0);
+    const inventoryValue = items.reduce((sum, item) => sum + inventoryLineValue(item), 0);
     const lowStockItems = items.filter(
       (item) =>
         (item.quantity ?? 0) > 0 &&

@@ -52,6 +52,7 @@ import connectPgSimple from "connect-pg-simple";
 import memorystore from "memorystore";
 import { db, pool } from "./db";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
+import { inventoryLineValue } from "./forecast-service";
 
 const MemoryStore = memorystore(session);
 const PostgresSessionStore = connectPgSimple(session);
@@ -3218,11 +3219,8 @@ export class MemStorage implements IStorage {
   
   async getInventoryStats(): Promise<InventoryStats> {
     const items = Array.from(this.inventoryItems.values());
-    
-    // Calculate total inventory value (price * quantity)
-    const inventoryValue = items.reduce((total, item) => 
-      total + (item.price * item.quantity), 0
-    );
+
+    const inventoryValue = items.reduce((total, item) => total + inventoryLineValue(item), 0);
     
     return {
       totalItems: items.length,

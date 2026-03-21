@@ -119,6 +119,9 @@ async function main() {
         const body = validCreate.json as { id?: number; requisitionNumber?: string };
         if (body && typeof body.id === "number" && body.requisitionNumber) {
           console.log("    (id=%d, requisitionNumber=%s)", body.id, body.requisitionNumber);
+          const getOne = await apiJsonRequest(`/purchase-requisitions/${body.id}`, { method: "GET", cookie: adminCookie });
+          expectStatus("Admin GET /api/purchase-requisitions/:id after create (expect 200)", 200, getOne.status);
+
           const approveRes = await apiJsonRequest(`/purchase-requisitions/${body.id}/approve`, {
             method: "POST",
             body: {},

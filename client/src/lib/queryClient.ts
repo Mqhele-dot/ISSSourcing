@@ -111,8 +111,13 @@ function reportRequestError(params: {
 function shouldSuppressGlobalError(method: string, status: number | undefined, url: string): boolean {
   if (status !== 401) return false;
   if (method.toUpperCase() !== "GET") return false;
-  // Anonymous bootstrap probe can legitimately return 401 before auth transitions.
-  return normalizeEndpointPath(url) === "/api/user";
+  const path = normalizeEndpointPath(url);
+  // Anonymous bootstrap: session probe and auth/session discovery should not spam GlobalActionErrorCenter.
+  if (path === "/api/user" || path === "/api/me") return true;
+  if (path.startsWith("/api/auth/")) return true;
+  // Normalize trailing variants (some callers use /api/auth/me vs /auth)
+  if (path === "/auth" || path.startsWith("/auth/")) return true;
+  return false;
 }
 
 function normalizeEndpointPath(url: string): string {
@@ -395,6 +400,24 @@ export function formatMutationError(
 ): string {
   const reason = error instanceof Error ? error.message : String(error);
   return `${action} failed: ${method} ${url} — ${reason}`;
+}
+
+/**
+ * Normalize list-shaped GET responses per dual contract (see docs/API_CONTRACTS.md).
+ * Handles: raw `T[]`, or legacy `{ data: T[] }` when `ok` is absent (not unwrapped as envelope).
+ * Note: `{ ok: true, data }` is already unwrapped by `invTrackFetch` before this runs.
+ */
+export function normalizeApiList<T>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[];
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "data" in raw &&
+    Array.isArray((raw as { data: unknown }).data)
+  ) {
+    return (raw as { data: T[] }).data;
+  }
+  return [];
 }
 
 /** Unwrap operational list response that may include meta.fallback (timeout | db-error | degraded) */

@@ -130,37 +130,63 @@ function createHtmlTable(data: any[], title: string): string {
   return html;
 }
 
+export type GeneratePdfWebOptions = {
+  title?: string;
+  filename?: string;
+  /** Report type path segment for GET /api/export/:reportType/pdf */
+  reportType?: string;
+  /** Optional query string (e.g. template=compact&startDate=...) */
+  searchParams?: string;
+};
+
 /**
- * Generate a PDF document
+ * Generate a PDF document.
+ * - **Electron:** native bridge.
+ * - **Web:** server-authoritative export via `/api/export/.../pdf` (no HTML-table fallback).
  */
 export async function generatePdf(
-  templateId: string, 
+  templateId: string,
   data: any,
-  options: { title?: string; filename?: string } = {}
+  options: GeneratePdfWebOptions = {},
 ): Promise<string> {
-  // In Electron, use the native PDF generation
   if (isElectronEnvironment()) {
     return electronDocumentGenerator.generatePdf(templateId, data, {
       dialog: true,
     });
   }
-  
-  // In browser, create a simple HTML representation and open in a new tab
-  // This is a fallback - in a real app, you might use a library like jsPDF
-  const title = options.title || 'Generated PDF';
-  const html = createHtmlTable(Array.isArray(data) ? data : [data], title);
-  
-  // Create a blob from the HTML
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  
-  // Open in a new tab
-  window.open(url, '_blank');
-  
-  // Clean up
-  setTimeout(() => URL.revokeObjectURL(url), 100);
-  
-  return 'PDF opened in new tab';
+
+  const reportType = options.reportType ?? templateId;
+  const safeType = String(reportType).replace(/[^a-z0-9_-]/gi, "");
+  if (!safeType) {
+    throw new Error("Invalid report type for PDF export");
+  }
+  const qs = options.searchParams?.startsWith("?")
+    ? options.searchParams
+    : options.searchParams
+      ? `?${options.searchParams}`
+      : "?template=standard";
+  const url = `/api/export/${encodeURIComponent(safeType)}/pdf${qs}`;
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) {
+    let detail = `Export failed (${response.status})`;
+    try {
+      const errBody = (await response.json()) as { message?: string; error?: { message?: string } };
+      if (errBody?.error?.message) detail = errBody.error.message;
+      else if (errBody?.message) detail = errBody.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    throw new Error("Server returned JSON instead of PDF — check login/session and report type.");
+  }
+  const blob = await response.blob();
+  const filename = options.filename ?? `${safeType}-report.pdf`;
+  downloadBlob(blob, filename);
+  void data;
+  return "PDF download started";
 }
 
 /**

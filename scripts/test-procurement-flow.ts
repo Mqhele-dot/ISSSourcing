@@ -60,7 +60,12 @@ async function main() {
 
   const itemsRes = await apiJsonRequest("/inventory", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/inventory", 200, itemsRes.status)) failures++;
-  const items = asArray<{ id: number; price?: number }>(itemsRes.json);
+  const rawInv = itemsRes.json;
+  const items = Array.isArray(rawInv)
+    ? asArray<{ id: number; price?: number }>(rawInv)
+    : rawInv && typeof rawInv === "object" && "data" in rawInv && Array.isArray((rawInv as { data: unknown }).data)
+      ? asArray<{ id: number; price?: number }>((rawInv as { data: unknown }).data)
+      : [];
   const firstItem = items[0];
   if (!firstItem?.id) {
     console.log("  ✗ Missing inventory items; run npm run db:seed");

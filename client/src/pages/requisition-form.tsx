@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, requestJson } from "@/lib/queryClient";
+import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
 import type { PurchaseRequisition, PurchaseRequisitionItem, Supplier, InventoryItem } from "@shared/schema";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 
@@ -62,17 +62,26 @@ export default function RequisitionFormPage() {
 
   const { data: suppliers = [] } = useQuery({
     queryKey: ["/api/suppliers"],
-    queryFn: () => requestJson<Supplier[]>("GET", "/api/suppliers"),
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/suppliers");
+      return normalizeApiList<Supplier>(raw);
+    },
   });
 
   const { data: inventoryItems = [] } = useQuery({
     queryKey: ["/api/inventory"],
-    queryFn: () => requestJson<InventoryItem[]>("GET", "/api/inventory"),
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/inventory");
+      return normalizeApiList<InventoryItem>(raw);
+    },
   });
 
   const { data: departments = [] } = useQuery({
     queryKey: ["/api/departments"],
-    queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/departments"),
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/departments");
+      return normalizeApiList<{ id: number; code: string; name: string }>(raw);
+    },
   });
 
   useEffect(() => {

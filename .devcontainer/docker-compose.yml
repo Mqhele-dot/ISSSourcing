@@ -20,6 +20,10 @@ services:
       PGPASSWORD: postgres
       NODE_ENV: development
       CHOKIDAR_USEPOLLING: "true"
+      # Pass through from the Codespaces host so Express trusts X-Forwarded-Proto and sets Secure cookies.
+      CODESPACES: ${CODESPACES:-}
+      CODESPACE_NAME: ${CODESPACE_NAME:-}
+      GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: ${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}
 
   db:
     image: postgres:16-bookworm
