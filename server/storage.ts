@@ -4047,11 +4047,47 @@ export class MemStorage implements IStorage {
     
     // Get items
     const items = await this.getPurchaseRequisitionItems(id);
+    const now = new Date();
     result.items = items.map(item => {
       const inventoryItem = this.inventoryItems.get(item.itemId);
+      const placeholder: InventoryItem = {
+        id: item.itemId,
+        name: "Unknown item",
+        sku: `ITEM-${item.itemId}`,
+        description: null,
+        categoryId: null,
+        quantity: 0,
+        price: 0,
+        cost: null,
+        lowStockThreshold: 10,
+        location: null,
+        supplierId: null,
+        barcode: null,
+        barcodeType: "CODE128",
+        dimensions: null,
+        weight: null,
+        unitOfMeasure: "each",
+        supplierPartNumber: null,
+        commodityCodeId: null,
+        defaultWarehouseId: null,
+        minOrderQuantity: 1,
+        leadTime: null,
+        reorderPoint: null,
+        maxStockLevel: null,
+        taxable: true,
+        status: "unknown",
+        expiryDate: null,
+        manufacturingDate: null,
+        lastCountDate: null,
+        images: null,
+        tags: null,
+        customFields: null,
+        createdAt: now,
+        updatedAt: now,
+      };
       return {
         ...item,
-        item: inventoryItem!
+        item: inventoryItem ?? placeholder
       };
     });
     
@@ -4082,23 +4118,77 @@ export class MemStorage implements IStorage {
     if (!order) return undefined;
     
     const supplier = this.suppliers.get(order.supplierId);
-    if (!supplier) {
-      throw new Error(`Supplier not found for order ${id}`);
-    }
+    const now = new Date();
+    const supplierResolved: Supplier =
+      supplier ??
+      ({
+        id: order.supplierId,
+        name: "(Unknown supplier)",
+        contactName: null,
+        email: null,
+        phone: null,
+        address: null,
+        taxIdentificationNumber: null,
+        bankName: null,
+        bankAccountNumber: null,
+        bankSwift: null,
+        paymentTermsId: null,
+        defaultCurrencyCode: null,
+        insuranceExpiry: null,
+        complianceNotes: null,
+        notes: null,
+        createdAt: now,
+        updatedAt: now,
+      } as Supplier);
     
     const result: PurchaseOrder & { items: (PurchaseOrderItem & { item: InventoryItem })[]; supplier: Supplier; requisition?: PurchaseRequisition } = { 
       ...order, 
       items: [],
-      supplier
+      supplier: supplierResolved
     };
     
     // Get items
     const items = await this.getPurchaseOrderItems(id);
     result.items = items.map(item => {
       const inventoryItem = this.inventoryItems.get(item.itemId);
+      const placeholder: InventoryItem = {
+        id: item.itemId,
+        name: "Unknown item",
+        sku: `ITEM-${item.itemId}`,
+        description: null,
+        categoryId: null,
+        quantity: 0,
+        price: 0,
+        cost: null,
+        lowStockThreshold: 10,
+        location: null,
+        supplierId: null,
+        barcode: null,
+        barcodeType: "CODE128",
+        dimensions: null,
+        weight: null,
+        unitOfMeasure: "each",
+        supplierPartNumber: null,
+        commodityCodeId: null,
+        defaultWarehouseId: null,
+        minOrderQuantity: 1,
+        leadTime: null,
+        reorderPoint: null,
+        maxStockLevel: null,
+        taxable: true,
+        status: "unknown",
+        expiryDate: null,
+        manufacturingDate: null,
+        lastCountDate: null,
+        images: null,
+        tags: null,
+        customFields: null,
+        createdAt: now,
+        updatedAt: now,
+      };
       return {
         ...item,
-        item: inventoryItem!
+        item: inventoryItem ?? placeholder
       };
     });
     

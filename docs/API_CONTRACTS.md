@@ -17,6 +17,7 @@ We use **option (b): dual contract** during migration.
 | Envelope unwrap | [`invTrackFetch`](../client/src/lib/queryClient.ts): if body has `ok: boolean`, success returns `.data`; errors throw with server message. |
 | Legacy pass-through | Responses without `ok` are returned as `T` unchanged (may be an array or object). |
 | List normalization | Use [`normalizeApiList<T>`](../client/src/lib/queryClient.ts) for any `GET` that must behave as an array when the wire shape might be `T[]` **or** `{ data: T[] }` (legacy, no `ok`). |
+| `normalizeApiList` caveat | If the server returns **200** with a JSON object that is **not** an array and **not** `{ data: T[] }`, normalization yields **`[]`**. The request still looks like a **successful empty list**, not an error. Use `isError` from React Query for failed requests; for strict body validation, check shape explicitly or prefer envelope responses with `ok: false`. |
 | Warehouses + fallback | [`unwrapOperationalResponse`](../client/src/lib/queryClient.ts) after `requestJson` for `/api/warehouses` when the payload may be `Warehouse[]` or `{ data: Warehouse[]; meta? }`. |
 | New code | Prefer `requestJson` / `invTrackFetch` over raw `fetch` for consistent unwrap + timeouts. |
 | Bootstrap 401 noise | [`shouldSuppressGlobalError`](../client/src/lib/queryClient.ts): suppresses global error center for **GET** **401** on `/api/user`, `/api/me`, `/api/auth/*`, `/auth`, `/auth/*`. |
@@ -30,6 +31,7 @@ We use **option (b): dual contract** during migration.
 | Inventory GET | Returns **JSON array** of items (or `[]` on error — soft failure). | [`GET /api/inventory`](../server/routes.ts) |
 | Warehouses GET | Returns **JSON array** (or `[]` on error). | [`GET /api/warehouses`](../server/routes.ts) |
 | Export | PDF/Excel include **metadata** (UTC export time, row count, filters, `X-Request-Id` when present). | [`generateDocument`](../server/services/document-generator-service.ts) + export route in [`routes.ts`](../server/routes.ts) |
+| Client export (web) | [`document-generator.ts`](../client/src/lib/document-generator.ts): PDF always uses `/api/export/.../pdf`. Excel/CSV use `/api/export/.../excel` or `/csv` when `reportType` is passed; browser CSV/Excel **fallback without** `reportType` is **dev-only** (`import.meta.env.DEV`) or **Electron**. |
 | Column defs | Per-report columns and PDF orientation live in [`export-config.ts`](../server/services/export-config.ts). |
 
 ## Audit conformance — shared schema & UI

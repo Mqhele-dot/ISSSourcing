@@ -2905,15 +2905,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           title = 'Categories Report' + filterText;
           break;
           
-        case 'suppliers':
-          data = await storage.getAllSuppliers();
+        case 'suppliers': {
+          let suppliersList = await storage.getAllSuppliers();
+          if (filter.supplierId) {
+            suppliersList = suppliersList.filter((s) => s.id === filter.supplierId);
+          }
+          data = suppliersList;
           title = 'Suppliers Report' + filterText;
           break;
+        }
           
-        case 'warehouses':
-          data = await storage.getAllWarehouses();
+        case 'warehouses': {
+          let warehousesList = await storage.getAllWarehouses();
+          if (filter.warehouseId) {
+            warehousesList = warehousesList.filter((w) => w.id === filter.warehouseId);
+          }
+          data = warehousesList;
           title = 'Warehouses Report' + filterText;
           break;
+        }
           
         case 'stock_movements':
           let stockMovements = await storage.getAllStockMovements();
@@ -2969,7 +2979,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           title = 'Reorder Requests Report' + filterText;
           break;
           
-        case 'purchase_orders':
+        case 'purchase_orders': {
           // Get all orders
           let orders = await storage.getAllPurchaseOrders();
           
@@ -2989,12 +2999,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (filter.status) {
             orders = orders.filter(order => order.status === filter.status);
           }
-          
-          data = orders;
+
+          const poSuppliers = await storage.getAllSuppliers();
+          const poSupplierNames = new Map(poSuppliers.map((s) => [s.id, s.name]));
+          if (format === "pdf") {
+            const enriched: unknown[] = [];
+            for (const o of orders) {
+              const d = await storage.getPurchaseOrderWithDetails(o.id);
+              if (d) enriched.push(d);
+            }
+            data = enriched;
+          } else {
+            data = orders.map((o) => ({
+              ...o,
+              supplierName: poSupplierNames.get(o.supplierId) ?? "",
+            }));
+          }
           title = 'Purchase Orders Report' + filterText;
           break;
+        }
           
-        case 'purchase_requisitions':
+        case 'purchase_requisitions': {
           // Get all requisitions
           let requisitions = await storage.getAllPurchaseRequisitions();
           
@@ -3014,12 +3039,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (filter.status) {
             requisitions = requisitions.filter(req => req.status === filter.status);
           }
-          
-          data = requisitions;
+
+          const reqSuppliers = await storage.getAllSuppliers();
+          const reqSupplierNames = new Map(reqSuppliers.map((s) => [s.id, s.name]));
+          const reqUsers = await storage.getAllUsers();
+          const reqUserDisplay = new Map(
+            reqUsers.map((u) => [u.id, (u.fullName || u.username || "").trim()]),
+          );
+          if (format === "pdf") {
+            const enrichedReq: unknown[] = [];
+            for (const r of requisitions) {
+              const d = await storage.getRequisitionWithDetails(r.id);
+              if (d) enrichedReq.push(d);
+            }
+            data = enrichedReq;
+          } else {
+            data = requisitions.map((r) => ({
+              ...r,
+              supplierName: r.supplierId != null ? (reqSupplierNames.get(r.supplierId) ?? "") : "",
+              requestorName: r.requestorId != null ? (reqUserDisplay.get(r.requestorId) ?? "") : "",
+            }));
+          }
           title = 'Purchase Requisitions Report' + filterText;
           break;
+        }
           
-        case 'activity_logs':
+        case 'activity_logs': {
           let activityLogs = await storage.getAllActivityLogs();
           
           // Apply date range filter if provided
@@ -3028,10 +3073,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
               log.timestamp >= filter.startDate && log.timestamp <= filter.endDate
             );
           }
-          
-          data = activityLogs;
+
+          const logUsers = await storage.getAllUsers();
+          const logUserDisplay = new Map(
+            logUsers.map((u) => [u.id, (u.fullName || u.username || "").trim()]),
+          );
+          data = activityLogs.map((log) => ({
+            ...log,
+            userName: log.userId != null ? (logUserDisplay.get(log.userId) ?? "") : "",
+          }));
           title = 'Activity Logs Report' + filterText;
           break;
+        }
           
         default:
           return res.status(400).json({ message: "Unsupported report type" });

@@ -7,7 +7,7 @@
  */
 import process from "node:process";
 import { exitTest } from "./test-exit.ts";
-import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
+import { apiJsonRequest, apiRawRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
 
 function getMessage(json: unknown): string {
   if (json && typeof json === "object" && "message" in json && typeof (json as { message: unknown }).message === "string") {
@@ -69,6 +69,20 @@ async function main() {
     if (!adminCookie) {
       console.log("  ⚠ Admin login failed. Skipping admin tests.");
     } else {
+      const reqPdfRes = await apiRawRequest("/export/purchase_requisitions/pdf", { method: "GET", cookie: adminCookie });
+      const reqPdfBuf = await reqPdfRes.arrayBuffer();
+      expectStatus("Admin GET /api/export/purchase_requisitions/pdf (expect 200)", 200, reqPdfRes.status);
+      if (reqPdfRes.ok) {
+        const reqPdfMagic =
+          String.fromCharCode(...new Uint8Array(reqPdfBuf.slice(0, 5))) === "%PDF-" && reqPdfBuf.byteLength > 128;
+        if (reqPdfMagic) {
+          console.log("  ✓ Requisitions PDF export body looks valid (size=%d)", reqPdfBuf.byteLength);
+        } else {
+          console.log("  ✗ Requisitions PDF export bad body (bytes=%d)", reqPdfBuf.byteLength);
+          failed++;
+        }
+      }
+
       const noItems = await apiJsonRequest("/purchase-requisitions", {
         method: "POST",
         body: { supplierId: 1, items: [] },

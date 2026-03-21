@@ -13,7 +13,7 @@
  */
 import process from "node:process";
 import { exitTest } from "./test-exit.ts";
-import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
+import { apiJsonRequest, apiRawRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
 
 function asArray<T = Record<string, unknown>>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -116,6 +116,18 @@ async function main() {
   if (!poId || !poNumber) {
     console.log("  ✗ PO conversion did not return id/orderNumber.");
     exitTest(1);
+  }
+
+  const poPdfRes = await apiRawRequest("/export/purchase_orders/pdf", { method: "GET", cookie: adminCookie });
+  const poPdfBuf = await poPdfRes.arrayBuffer();
+  if (!expectStatus("GET /api/export/purchase_orders/pdf", 200, poPdfRes.status)) failures++;
+  const poPdfMagic =
+    String.fromCharCode(...new Uint8Array(poPdfBuf.slice(0, 5))) === "%PDF-" && poPdfBuf.byteLength > 200;
+  if (poPdfMagic) {
+    console.log("  ✓ PO PDF body has PDF magic bytes (size=%d)", poPdfBuf.byteLength);
+  } else {
+    console.log("  ✗ PO PDF body missing %%PDF- magic or too small (bytes=%d)", poPdfBuf.byteLength);
+    failures++;
   }
 
   const shipmentCreateRes = await apiJsonRequest("/logistics/shipments", {

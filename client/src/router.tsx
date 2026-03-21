@@ -16,6 +16,7 @@ const PurchasePage = lazy(() => import("@/pages/purchase-page"));
 const RequisitionsPage = lazy(() => import("@/pages/requisitions"));
 const RequisitionFormPage = lazy(() => import("@/pages/requisition-form"));
 const SuppliersPage = lazy(() => import("@/pages/suppliers"));
+const SupplierDetailPage = lazy(() => import("@/pages/supplier-detail"));
 const ContractsPage = lazy(() => import("@/pages/contracts"));
 const Reports = lazy(() => import("@/pages/reports"));
 const InvoicesPage = lazy(() => import("@/pages/invoices"));
@@ -33,6 +34,7 @@ const EmployeeProfilesPage = lazy(() => import("@/pages/employee-profiles"));
 const ImageRecognitionPage = lazy(() => import("@/pages/image-recognition-page"));
 const DocumentExtractorPage = lazy(() => import("@/pages/document-extractor-page"));
 const WarehousesPage = lazy(() => import("@/pages/warehouses"));
+const WarehouseDetailPage = lazy(() => import("@/pages/warehouse-detail"));
 const LogisticsPage = lazy(() => import("@/pages/logistics"));
 const ExceptionsPage = lazy(() => import("@/pages/exceptions"));
 const IntegrationsPage = lazy(() => import("@/pages/integrations"));
@@ -96,6 +98,7 @@ export function AppRouter() {
         <ProtectedRoute path="/supplier-portal" component={SupplierPortalPage} />
         <ProtectedRoute path="/documents" component={DocumentsPage} />
         <ProtectedRoute path="/supply-analytics" component={SupplyAnalyticsPage} />
+        <ProtectedRoute path="/suppliers/:id" component={SupplierDetailPage} />
         <ProtectedRoute path="/suppliers" component={SuppliersPage} />
         <ProtectedRoute path="/contracts" component={ContractsPage} />
         <ProtectedRoute path="/invoices" component={InvoicesPage} />
@@ -113,6 +116,7 @@ export function AppRouter() {
         <ProtectedRoute path="/employee-profiles" component={EmployeeProfilesPage} />
         <ProtectedRoute path="/image-recognition" component={ImageRecognitionPage} />
         <ProtectedRoute path="/document-extractor" component={DocumentExtractorPage} />
+        <ProtectedRoute path="/warehouses/:id" component={WarehouseDetailPage} />
         <ProtectedRoute path="/warehouses" component={WarehousesPage} />
         <ProtectedRoute path="/cycle-counts" component={CycleCountsPage} />
         <Route path="/auth" component={AuthPage} />

@@ -65,6 +65,19 @@ npm run test:e2e
 
 (Requires Playwright install: `npx playwright install chromium` once if needed.)
 
+### CI / staging against a running URL
+
+When `BASE_URL` is set to a reachable app (e.g. preview or staging):
+
+```bash
+BASE_URL=https://your-preview.example npx tsx scripts/test-api-contract.ts
+BASE_URL=https://your-preview.example npx tsx scripts/test-exports.ts
+BASE_URL=https://your-preview.example npx tsx scripts/test-requisitions.ts
+BASE_URL=https://your-preview.example npx tsx scripts/test-procurement-flow.ts
+```
+
+Scripts exit 0 if the server is unreachable (local dev convenience) unless they need a strict failure — check each script’s header comment. Use a **seeded** database for procurement/requisition flows.
+
 ---
 
 ## Summary

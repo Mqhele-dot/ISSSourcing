@@ -15,9 +15,18 @@ const exportCases: ExportCase[] = [
   { reportType: "inventory", format: "docx", expectedMimePrefix: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
   { reportType: "suppliers", format: "pdf", expectedMimePrefix: "application/pdf" },
   { reportType: "suppliers", format: "csv", expectedMimePrefix: "text/csv" },
+  { reportType: "purchase_orders", format: "pdf", expectedMimePrefix: "application/pdf" },
   { reportType: "purchase_orders", format: "excel", expectedMimePrefix: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+  { reportType: "purchase_requisitions", format: "pdf", expectedMimePrefix: "application/pdf" },
   { reportType: "purchase_requisitions", format: "docx", expectedMimePrefix: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+  { reportType: "activity_logs", format: "pdf", expectedMimePrefix: "application/pdf" },
 ];
+
+function isPdfMagic(buf: ArrayBuffer): boolean {
+  if (buf.byteLength < 5) return false;
+  const head = new Uint8Array(buf.slice(0, 5));
+  return String.fromCharCode(...head) === "%PDF-";
+}
 
 async function main() {
   const BASE_URL = getTestBaseUrl();
@@ -40,8 +49,9 @@ async function main() {
     const bodyLength = body.byteLength;
     const mimeOk = contentType.startsWith(testCase.expectedMimePrefix);
     const filenameOk = contentDisposition.includes(`.${testCase.format === "excel" ? "xlsx" : testCase.format}`);
+    const pdfOk = testCase.format !== "pdf" || isPdfMagic(body);
 
-    if (res.ok && mimeOk && filenameOk && bodyLength > 0) {
+    if (res.ok && mimeOk && filenameOk && bodyLength > 0 && pdfOk) {
       console.log("  ✓ GET %s -> %d (%s, %d bytes)", route, res.status, contentType, bodyLength);
     } else {
       failures++;

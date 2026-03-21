@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { Archive, AlertTriangle, ShoppingCart, DollarSign, Plus, FileDown, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import { ValueByCategoryChart } from "@/components/analytics/value-by-category-c
 import { RealTimeInventory } from "@/components/inventory/real-time-inventory";
 import { RecentOrders } from "@/components/dashboard/recent-orders";
 import { CustomGraphBuilder } from "@/components/dashboard/custom-graph-builder";
+import { useDashboardHashScroll } from "@/pages/dashboard/use-dashboard-hash-scroll";
 
 export default function Dashboard() {
   const [showItemForm, setShowItemForm] = useState(false);
@@ -35,18 +36,7 @@ export default function Dashboard() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
 
-  // When navigating to /dashboard#analytics (e.g. from sidebar "Analytics"), scroll to section
-  const scrollToAnalytics = () => {
-    if (typeof window !== "undefined" && window.location.hash === "#analytics") {
-      const el = document.getElementById("analytics");
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
-  useEffect(() => {
-    scrollToAnalytics();
-    window.addEventListener("hashchange", scrollToAnalytics);
-    return () => window.removeEventListener("hashchange", scrollToAnalytics);
-  }, [location]);
+  useDashboardHashScroll(location);
 
   // Fetch inventory stats (primary query for page-level loading/error)
   const {

@@ -1997,11 +1997,48 @@ export class DatabaseStorage implements IStorage {
       ? await db.select().from(inventoryItems).where(inArray(inventoryItems.id, itemIds))
       : [];
     const invMap = new Map(invItems.map((i) => [i.id, i]));
+    const now = new Date();
+    const placeholderInventory = (itemId: number): InventoryItem => ({
+      id: itemId,
+      name: "Unknown item",
+      sku: `ITEM-${itemId}`,
+      description: null,
+      categoryId: null,
+      quantity: 0,
+      price: 0,
+      cost: null,
+      lowStockThreshold: 10,
+      location: null,
+      supplierId: null,
+      barcode: null,
+      barcodeType: "CODE128",
+      dimensions: null,
+      weight: null,
+      unitOfMeasure: "each",
+      supplierPartNumber: null,
+      commodityCodeId: null,
+      defaultWarehouseId: null,
+      minOrderQuantity: 1,
+      leadTime: null,
+      reorderPoint: null,
+      maxStockLevel: null,
+      taxable: true,
+      status: "unknown",
+      expiryDate: null,
+      manufacturingDate: null,
+      lastCountDate: null,
+      images: null,
+      tags: null,
+      customFields: null,
+      createdAt: now,
+      updatedAt: now,
+    });
     const result = {
       ...req,
-      items: items
-        .map((i) => ({ ...i, item: invMap.get(i.itemId) }))
-        .filter((x): x is PurchaseRequisitionItem & { item: InventoryItem } => x.item != null),
+      items: items.map((i) => ({
+        ...i,
+        item: invMap.get(i.itemId) ?? placeholderInventory(i.itemId),
+      })),
       requestor: undefined as User | undefined,
       approver: undefined as User | undefined,
       supplier: undefined as Supplier | undefined,
@@ -2026,7 +2063,28 @@ export class DatabaseStorage implements IStorage {
     if (!order) return undefined;
 
     const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, order.supplierId));
-    if (!supplier) return undefined;
+    const now = new Date();
+    const supplierResolved: Supplier =
+      supplier ??
+      ({
+        id: order.supplierId,
+        name: "(Unknown supplier)",
+        contactName: null,
+        email: null,
+        phone: null,
+        address: null,
+        taxIdentificationNumber: null,
+        bankName: null,
+        bankAccountNumber: null,
+        bankSwift: null,
+        paymentTermsId: null,
+        defaultCurrencyCode: null,
+        insuranceExpiry: null,
+        complianceNotes: null,
+        notes: null,
+        createdAt: now,
+        updatedAt: now,
+      } as Supplier);
 
     const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));
     const itemIds = [...new Set(items.map((line) => line.itemId))];
@@ -2035,9 +2093,45 @@ export class DatabaseStorage implements IStorage {
         ? await db.select().from(inventoryItems).where(inArray(inventoryItems.id, itemIds))
         : [];
     const invMap = new Map(invItems.map((item) => [item.id, item]));
-    const enrichedItems = items
-      .map((line) => ({ ...line, item: invMap.get(line.itemId) }))
-      .filter((line): line is PurchaseOrderItem & { item: InventoryItem } => line.item != null);
+    const placeholderInventory = (itemId: number): InventoryItem => ({
+      id: itemId,
+      name: "Unknown item",
+      sku: `ITEM-${itemId}`,
+      description: null,
+      categoryId: null,
+      quantity: 0,
+      price: 0,
+      cost: null,
+      lowStockThreshold: 10,
+      location: null,
+      supplierId: null,
+      barcode: null,
+      barcodeType: "CODE128",
+      dimensions: null,
+      weight: null,
+      unitOfMeasure: "each",
+      supplierPartNumber: null,
+      commodityCodeId: null,
+      defaultWarehouseId: null,
+      minOrderQuantity: 1,
+      leadTime: null,
+      reorderPoint: null,
+      maxStockLevel: null,
+      taxable: true,
+      status: "unknown",
+      expiryDate: null,
+      manufacturingDate: null,
+      lastCountDate: null,
+      images: null,
+      tags: null,
+      customFields: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const enrichedItems = items.map((line) => ({
+      ...line,
+      item: invMap.get(line.itemId) ?? placeholderInventory(line.itemId),
+    }));
 
     let requisition: PurchaseRequisition | undefined;
     if (order.requisitionId != null) {
@@ -2051,7 +2145,7 @@ export class DatabaseStorage implements IStorage {
     return {
       ...order,
       items: enrichedItems,
-      supplier,
+      supplier: supplierResolved,
       requisition,
     };
   }

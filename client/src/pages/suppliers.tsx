@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
-import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { queryClient, requestJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -59,6 +60,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 import { PageHeader } from "@/components/page-header";
+import { PageDataState } from "@/components/page-shell";
+import { useSuppliersCoreQueries } from "@/pages/suppliers/use-suppliers-core-queries";
 
 const supplierFormSchema = z.object({
   name: z.string().min(2, "Supplier name must be at least 2 characters"),
@@ -92,39 +95,11 @@ export default function SuppliersPage() {
   const [removeLogoConfirm, setRemoveLogoConfirm] = useState(false);
   const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
 
-  // Get all suppliers
-  const { data: suppliers, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["/api/suppliers"],
-    retry: 1,
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/suppliers");
-      return normalizeApiList<Supplier>(raw);
-    },
-  });
-
-  const { data: paymentTerms = [] } = useQuery<{ id: number; code: string; name: string }[]>({
-    queryKey: ["/api/payment-terms"],
-    queryFn: () => requestJson("GET", "/api/payment-terms"),
-  });
-
-  const { data: currencies = [] } = useQuery<{ id: number; code: string; name: string }[]>({
-    queryKey: ["/api/currencies"],
-    queryFn: () => requestJson("GET", "/api/currencies"),
-  });
-  const { data: performance = [] } = useQuery<
-    Array<{
-      supplierId: number;
-      supplierName: string;
-      onTimeDeliveryRate: number;
-      priceComplianceRate: number;
-      ordersMeasured: number;
-      invoicesMeasured: number;
-      overallRating: number;
-    }>
-  >({
-    queryKey: ["/api/suppliers/performance"],
-    queryFn: () => requestJson("GET", "/api/suppliers/performance"),
-  });
+  const { suppliersQuery, paymentTermsQuery, currenciesQuery, performanceQuery } = useSuppliersCoreQueries();
+  const { data: suppliers, isLoading, isError, error, refetch } = suppliersQuery;
+  const { data: paymentTerms = [] } = paymentTermsQuery;
+  const { data: currencies = [] } = currenciesQuery;
+  const { data: performance = [] } = performanceQuery;
 
   // Get logo for selected supplier
   const { data: selectedLogo, isLoading: isLogoLoading } = useQuery<SupplierLogo | null>({
@@ -467,30 +442,41 @@ export default function SuppliersPage() {
             <CardDescription>View and manage your suppliers</CardDescription>
           </CardHeader>
           <CardContent>
-            {isError ? (
-              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm space-y-2">
-                <p className="font-medium text-destructive">Could not load suppliers</p>
-                <p className="text-muted-foreground">{error instanceof Error ? error.message : String(error)}</p>
-                <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
-                  Retry
-                </Button>
-              </div>
-            ) : isLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex items-center space-x-4 p-4 border rounded-md">
-                    <Skeleton className="h-12 w-12 rounded-full" />
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-40" />
-                      <Skeleton className="h-4 w-24" />
+            <PageDataState
+              isLoading={isLoading}
+              error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
+              isEmpty={!isLoading && !isError && (!suppliers || suppliers.length === 0)}
+              errorTitle="Could not load suppliers"
+              onRetry={() => refetch()}
+              loadingView={
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex items-center space-x-4 p-4 border rounded-md">
+                      <Skeleton className="h-12 w-12 rounded-full" />
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-4 w-24" />
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            ) : suppliers && suppliers.length > 0 ? (
+                  ))}
+                </div>
+              }
+              emptyView={
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">No suppliers found</p>
+                  <p className="text-sm text-muted-foreground mt-1">Get started by adding a supplier</p>
+                  <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add suppliers">
+                    <Button type="button" className="mt-4" onClick={openCreateSupplierSheet}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add supplier
+                    </Button>
+                  </Can>
+                </div>
+              }
+            >
               <ScrollArea className="h-[500px]">
                 <div className="space-y-4">
-                  {suppliers.map((supplier: Supplier) => (
+                  {(suppliers ?? []).map((supplier: Supplier) => (
                     <div 
                       key={supplier.id} 
                       className="flex flex-col p-4 border rounded-md hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
@@ -510,7 +496,9 @@ export default function SuppliersPage() {
                             )}
                           </div>
                           <div>
-                            <h3 className="font-medium">{supplier.name}</h3>
+                            <Link href={`/suppliers/${supplier.id}`}>
+                              <h3 className="font-medium hover:underline">{supplier.name}</h3>
+                            </Link>
                             {supplier.contactName && (
                               <p className="text-sm text-muted-foreground">{supplier.contactName}</p>
                             )}
@@ -623,12 +611,7 @@ export default function SuppliersPage() {
                   ))}
                 </div>
               </ScrollArea>
-            ) : (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">No suppliers found</p>
-                <p className="text-sm text-muted-foreground mt-1">Get started by adding a supplier</p>
-              </div>
-            )}
+            </PageDataState>
           </CardContent>
         </Card>
       </div>

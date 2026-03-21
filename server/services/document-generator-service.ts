@@ -19,10 +19,11 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
-import type { InventoryItem, ReportType, ReportFormat } from "@shared/schema";
+import type { ActivityLog, InventoryItem, ReportType, ReportFormat } from "@shared/schema";
 import {
   getReportColumnsFromConfig,
   getReportExportEntry,
+  type ReportPdfLayout,
 } from "./export-config";
 import { 
   ReorderRequest, 
@@ -592,6 +593,39 @@ function drawBorderedTableWrapped(
   drawVerticalLines(currentPage(), y, tableTop);
 }
 
+function drawLabelValueColumn(
+  page: PDFPage,
+  boldFont: PDFFont,
+  font: PDFFont,
+  x: number,
+  startY: number,
+  label: string,
+  value: string,
+  maxInnerWidth: number,
+): number {
+  let y = startY;
+  page.drawText(sanitizePdfText(label), {
+    x,
+    y,
+    size: 8,
+    font: boldFont,
+    color: PDF_LAYOUT.muted,
+  });
+  y -= 11;
+  const lines = wrapPdfCellLines(value || "—", font, PDF_LAYOUT.fontSize, maxInnerWidth);
+  for (const ln of lines) {
+    page.drawText(ln, {
+      x,
+      y,
+      size: PDF_LAYOUT.fontSize,
+      font,
+      color: PDF_LAYOUT.text,
+    });
+    y -= 11;
+  }
+  return y - 6;
+}
+
 /** Inventory item with optional category name for PDF export */
 export type InventoryItemForPdf = InventoryItem & { categoryName?: string };
 
@@ -901,6 +935,464 @@ export async function generateGenericPdf(
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
+}
+
+function userDisplayName(u?: User | null): string {
+  if (!u) return "—";
+  const n = (u.fullName || u.username || "").trim();
+  return n || "—";
+}
+
+/** One or more purchase orders with `supplier` and `items` (from getPurchaseOrderWithDetails). */
+export async function generatePurchaseOrdersDocumentPdf(
+  orders: any[],
+  title: string,
+  metadataLines: string[] = [],
+): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  applyPdfMetadata(pdfDoc, title);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pw = PDF_LAYOUT.pageHeight;
+  const ph = PDF_LAYOUT.pageWidth;
+  const allPages: PDFPage[] = [];
+
+  if (!orders.length) {
+    const page = pdfDoc.addPage([pw, ph]);
+    allPages.push(page);
+    drawPdfReportHeader(page, title, font, boldFont);
+    let y = page.getSize().height - PDF_LAYOUT.headerHeight - 16;
+    if (metadataLines.length) y = drawPdfExtraMetadataLines(page, font, metadataLines, y) - 8;
+    page.drawText("No purchase orders in this export.", {
+      x: PDF_LAYOUT.margin,
+      y: y - 20,
+      size: 11,
+      font,
+      color: PDF_LAYOUT.muted,
+    });
+    const totalPages = allPages.length;
+    allPages.forEach((p, i) => drawPdfReportFooter(p, i + 1, font, totalPages));
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  for (let oi = 0; oi < orders.length; oi++) {
+    const order = orders[oi];
+    const sectionFirst = pdfDoc.addPage([pw, ph]);
+    const sectionPages: PDFPage[] = [sectionFirst];
+    allPages.push(sectionFirst);
+    drawPdfReportHeader(sectionFirst, title, font, boldFont);
+    const { height } = sectionFirst.getSize();
+    let y = height - PDF_LAYOUT.headerHeight - 16;
+    if (metadataLines.length && oi === 0) {
+      y = drawPdfExtraMetadataLines(sectionFirst, font, metadataLines, y) - 8;
+    }
+
+    sectionFirst.drawText(sanitizePdfText(`Purchase Order ${order.orderNumber ?? `#${order.id}`}`), {
+      x: PDF_LAYOUT.margin,
+      y,
+      size: 14,
+      font: boldFont,
+      color: PDF_LAYOUT.text,
+    });
+    y -= 22;
+
+    const supplier = order.supplier ?? {};
+    const mid = PDF_LAYOUT.margin + (pw - 2 * PDF_LAYOUT.margin) * 0.46;
+    const leftW = mid - PDF_LAYOUT.margin - 10;
+    const rightX = mid + 8;
+    const rightW = pw - PDF_LAYOUT.margin - rightX - 8;
+
+    let yL = y;
+    yL = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, yL, "Supplier", String(supplier.name ?? "—"), leftW);
+    if (supplier.address) {
+      yL = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, yL, "Address", String(supplier.address), leftW);
+    }
+    const contactBits = [supplier.contactName, supplier.email, supplier.phone].filter(Boolean);
+    if (contactBits.length) {
+      yL = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, yL, "Contact", contactBits.join(" · "), leftW);
+    }
+
+    let yR = y;
+    yR = drawLabelValueColumn(sectionFirst, boldFont, font, rightX, yR, "Status", String(order.status ?? "—"), rightW);
+    yR = drawLabelValueColumn(sectionFirst, boldFont, font, rightX, yR, "Payment", String(order.paymentStatus ?? "—"), rightW);
+    yR = drawLabelValueColumn(sectionFirst, boldFont, font, rightX, yR, "Order date", formatPdfCell(order.orderDate, { date: true }), rightW);
+    if (order.expectedDeliveryDate) {
+      yR = drawLabelValueColumn(
+        sectionFirst,
+        boldFont,
+        font,
+        rightX,
+        yR,
+        "Expected delivery",
+        formatPdfCell(order.expectedDeliveryDate, { date: true }),
+        rightW,
+      );
+    }
+    if (order.deliveryAddress) {
+      yR = drawLabelValueColumn(sectionFirst, boldFont, font, rightX, yR, "Ship to", String(order.deliveryAddress), rightW);
+    }
+
+    y = Math.min(yL, yR) - 12;
+    sectionFirst.drawLine({
+      start: { x: PDF_LAYOUT.margin, y },
+      end: { x: pw - PDF_LAYOUT.margin, y },
+      thickness: 0.5,
+      color: PDF_LAYOUT.border,
+    });
+    y -= 16;
+
+    const items = Array.isArray(order.items) ? order.items : [];
+    const headers = ["SKU", "Item", "Qty", "Rcvd", "Unit", "Line total"];
+    const colWidths = [72, 180, 44, 44, 72, 100];
+    const rows = items.map((line: any) => {
+      const inv = line.item;
+      return [
+        formatPdfCell(inv?.sku ?? "—"),
+        formatPdfCell(inv?.name ?? "—"),
+        formatPdfCell(line.quantity),
+        formatPdfCell(line.receivedQuantity ?? 0),
+        formatPdfCell(line.unitPrice, { currency: true }),
+        formatPdfCell(line.totalPrice, { currency: true }),
+      ];
+    });
+    if (!rows.length) {
+      rows.push(["—", "No line items", "—", "—", "—", "—"]);
+    }
+    rows.push(["", "", "", "", "Total", formatPdfCell(order.totalAmount, { currency: true })]);
+
+    drawBorderedTableWrapped(pdfDoc, sectionPages, title, headers, colWidths, rows, font, boldFont, y);
+    for (let i = 1; i < sectionPages.length; i++) {
+      allPages.push(sectionPages[i]);
+    }
+  }
+
+  const totalPages = allPages.length;
+  allPages.forEach((p, i) => drawPdfReportFooter(p, i + 1, font, totalPages));
+  return Buffer.from(await pdfDoc.save());
+}
+
+/** Requisitions with `items`, optional `requestor`, `approver`, `supplier` (from getRequisitionWithDetails). */
+export async function generateRequisitionsDocumentPdf(
+  requisitions: any[],
+  title: string,
+  metadataLines: string[] = [],
+): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  applyPdfMetadata(pdfDoc, title);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pw = PDF_LAYOUT.pageHeight;
+  const ph = PDF_LAYOUT.pageWidth;
+  const allPages: PDFPage[] = [];
+
+  if (!requisitions.length) {
+    const page = pdfDoc.addPage([pw, ph]);
+    allPages.push(page);
+    drawPdfReportHeader(page, title, font, boldFont);
+    let y = page.getSize().height - PDF_LAYOUT.headerHeight - 16;
+    if (metadataLines.length) y = drawPdfExtraMetadataLines(page, font, metadataLines, y) - 8;
+    page.drawText("No requisitions in this export.", {
+      x: PDF_LAYOUT.margin,
+      y: y - 20,
+      size: 11,
+      font,
+      color: PDF_LAYOUT.muted,
+    });
+    const totalPages = allPages.length;
+    allPages.forEach((p, i) => drawPdfReportFooter(p, i + 1, font, totalPages));
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  for (let ri = 0; ri < requisitions.length; ri++) {
+    const req = requisitions[ri];
+    const sectionFirst = pdfDoc.addPage([pw, ph]);
+    const sectionPages: PDFPage[] = [sectionFirst];
+    allPages.push(sectionFirst);
+    drawPdfReportHeader(sectionFirst, title, font, boldFont);
+    const { height } = sectionFirst.getSize();
+    let y = height - PDF_LAYOUT.headerHeight - 16;
+    if (metadataLines.length && ri === 0) {
+      y = drawPdfExtraMetadataLines(sectionFirst, font, metadataLines, y) - 8;
+    }
+
+    sectionFirst.drawText(sanitizePdfText(`Requisition ${req.requisitionNumber ?? `#${req.id}`}`), {
+      x: PDF_LAYOUT.margin,
+      y,
+      size: 14,
+      font: boldFont,
+      color: PDF_LAYOUT.text,
+    });
+    y -= 22;
+
+    const mid = PDF_LAYOUT.margin + (pw - 2 * PDF_LAYOUT.margin) * 0.46;
+    const leftW = mid - PDF_LAYOUT.margin - 10;
+    const rightX = mid + 8;
+    const rightW = pw - PDF_LAYOUT.margin - rightX - 8;
+
+    let yL = y;
+    yL = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, yL, "Requestor", userDisplayName(req.requestor), leftW);
+    yL = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, yL, "Approver", userDisplayName(req.approver), leftW);
+    if (req.supplier?.name) {
+      yL = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, yL, "Supplier", String(req.supplier.name), leftW);
+    }
+
+    let yR = y;
+    yR = drawLabelValueColumn(sectionFirst, boldFont, font, rightX, yR, "Status", String(req.status ?? "—"), rightW);
+    yR = drawLabelValueColumn(sectionFirst, boldFont, font, rightX, yR, "Required date", formatPdfCell(req.requiredDate, { date: true }), rightW);
+    yR = drawLabelValueColumn(sectionFirst, boldFont, font, rightX, yR, "Approval date", formatPdfCell(req.approvalDate, { date: true }), rightW);
+    if (req.rejectionReason) {
+      yR = drawLabelValueColumn(sectionFirst, boldFont, font, rightX, yR, "Rejection", String(req.rejectionReason), rightW);
+    }
+
+    y = Math.min(yL, yR) - 12;
+    if (req.justification) {
+      y = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, y, "Justification", String(req.justification), pw - 2 * PDF_LAYOUT.margin);
+    }
+    if (req.notes) {
+      y = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, y, "Notes", String(req.notes), pw - 2 * PDF_LAYOUT.margin);
+    }
+
+    y -= 8;
+    sectionFirst.drawLine({
+      start: { x: PDF_LAYOUT.margin, y },
+      end: { x: pw - PDF_LAYOUT.margin, y },
+      thickness: 0.5,
+      color: PDF_LAYOUT.border,
+    });
+    y -= 16;
+
+    const items = Array.isArray(req.items) ? req.items : [];
+    const headers = ["SKU", "Item", "Qty", "Unit", "Line total", "Line notes"];
+    const colWidths = [72, 160, 40, 72, 80, 148];
+    const rows = items.map((line: any) => {
+      const inv = line.item;
+      return [
+        formatPdfCell(inv?.sku ?? "—"),
+        formatPdfCell(inv?.name ?? "—"),
+        formatPdfCell(line.quantity),
+        formatPdfCell(line.unitPrice, { currency: true }),
+        formatPdfCell(line.totalPrice, { currency: true }),
+        formatPdfCell(line.notes ?? "—"),
+      ];
+    });
+    if (!rows.length) {
+      rows.push(["—", "No line items", "—", "—", "—", "—"]);
+    }
+    rows.push(["", "", "", "Total", formatPdfCell(req.totalAmount, { currency: true }), ""]);
+
+    drawBorderedTableWrapped(pdfDoc, sectionPages, title, headers, colWidths, rows, font, boldFont, y);
+    for (let i = 1; i < sectionPages.length; i++) {
+      allPages.push(sectionPages[i]);
+    }
+  }
+
+  const totalPages = allPages.length;
+  allPages.forEach((p, i) => drawPdfReportFooter(p, i + 1, font, totalPages));
+  return Buffer.from(await pdfDoc.save());
+}
+
+export type ActivityLogForPdf = ActivityLog & { userName?: string | null };
+
+/** Chronological audit-style PDF; rows should include `userName` when available. */
+export async function generateActivityLogsDocumentPdf(
+  logs: ActivityLogForPdf[],
+  title: string,
+  metadataLines: string[] = [],
+): Promise<Buffer> {
+  const sorted = [...logs].sort(
+    (a, b) =>
+      new Date(a.timestamp as string | number | Date).getTime() -
+      new Date(b.timestamp as string | number | Date).getTime(),
+  );
+  const pdfDoc = await PDFDocument.create();
+  applyPdfMetadata(pdfDoc, title);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pw = PDF_LAYOUT.pageHeight;
+  const ph = PDF_LAYOUT.pageWidth;
+  const page = pdfDoc.addPage([pw, ph]);
+  const pages: PDFPage[] = [page];
+  drawPdfReportHeader(page, title, font, boldFont);
+  const { height } = page.getSize();
+  let yMeta = height - PDF_LAYOUT.headerHeight - 16;
+  if (metadataLines.length) {
+    yMeta = drawPdfExtraMetadataLines(page, font, metadataLines, yMeta) - 8;
+  }
+  const oldest = sorted.length ? format(new Date(sorted[0].timestamp as string | number | Date), "yyyy-MM-dd HH:mm") : "—";
+  const newest = sorted.length
+    ? format(new Date(sorted[sorted.length - 1].timestamp as string | number | Date), "yyyy-MM-dd HH:mm")
+    : "—";
+  page.drawText(sanitizePdfText(`Chronological audit log · ${sorted.length} entries · ${oldest} → ${newest}`), {
+    x: PDF_LAYOUT.margin,
+    y: yMeta,
+    size: 9,
+    font,
+    color: PDF_LAYOUT.muted,
+  });
+  const tableTop = yMeta - 14;
+  const headers = ["Time (UTC)", "User", "Action", "Description", "Ref type", "Ref ID"];
+  const colWidths = [100, 88, 88, 220, 72, 52];
+  const rows = sorted.map((log) => {
+    const d = new Date(log.timestamp as string | number | Date);
+    const timeStr = Number.isNaN(d.getTime()) ? "—" : format(d, "yyyy-MM-dd HH:mm");
+    return [
+      sanitizePdfText(timeStr),
+      formatPdfCell(log.userName ?? "—"),
+      formatPdfCell(log.action),
+      formatPdfCell(log.description),
+      formatPdfCell(log.referenceType ?? "—"),
+      formatPdfCell(log.referenceId ?? "—"),
+    ];
+  });
+  if (!rows.length) {
+    rows.push(["—", "—", "—", "No activity in range", "—", "—"]);
+  }
+  drawBorderedTableWrapped(pdfDoc, pages, title, headers, colWidths, rows, font, boldFont, tableTop);
+  const totalPages = pages.length;
+  pages.forEach((p, i) => drawPdfReportFooter(p, i + 1, font, totalPages));
+  return Buffer.from(await pdfDoc.save());
+}
+
+export async function generateSupplierProfilePdf(
+  supplier: Supplier,
+  title: string,
+  metadataLines: string[] = [],
+): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  applyPdfMetadata(pdfDoc, title);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pw = PDF_LAYOUT.pageWidth;
+  const ph = PDF_LAYOUT.pageHeight;
+  const page = pdfDoc.addPage([pw, ph]);
+  drawPdfReportHeader(page, title, font, boldFont);
+  let y = ph - PDF_LAYOUT.headerHeight - 16;
+  if (metadataLines.length) y = drawPdfExtraMetadataLines(page, font, metadataLines, y) - 8;
+
+  page.drawText(sanitizePdfText(`Supplier profile: ${supplier.name}`), {
+    x: PDF_LAYOUT.margin,
+    y,
+    size: 14,
+    font: boldFont,
+    color: PDF_LAYOUT.text,
+  });
+  y -= 24;
+
+  const w = pw - 2 * PDF_LAYOUT.margin;
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "General", [supplier.contactName, supplier.email, supplier.phone].filter(Boolean).join(" · ") || "—", w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Address", String(supplier.address ?? "—"), w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Tax ID", String(supplier.taxIdentificationNumber ?? "—"), w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Default currency", String(supplier.defaultCurrencyCode ?? "—"), w);
+  y -= 4;
+  page.drawText("Banking", { x: PDF_LAYOUT.margin, y, size: 11, font: boldFont, color: PDF_LAYOUT.accent });
+  y -= 16;
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Bank", String(supplier.bankName ?? "—"), w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Account", String(supplier.bankAccountNumber ?? "—"), w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "SWIFT", String(supplier.bankSwift ?? "—"), w);
+  y -= 4;
+  page.drawText("Compliance & notes", { x: PDF_LAYOUT.margin, y, size: 11, font: boldFont, color: PDF_LAYOUT.accent });
+  y -= 16;
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Insurance expiry", formatPdfCell(supplier.insuranceExpiry, { date: true }), w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Compliance", String(supplier.complianceNotes ?? "—"), w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Notes", String(supplier.notes ?? "—"), w);
+
+  drawPdfReportFooter(page, 1, font, 1);
+  return Buffer.from(await pdfDoc.save());
+}
+
+export async function generateWarehouseProfilePdf(
+  warehouse: Warehouse,
+  title: string,
+  metadataLines: string[] = [],
+): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  applyPdfMetadata(pdfDoc, title);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pw = PDF_LAYOUT.pageWidth;
+  const ph = PDF_LAYOUT.pageHeight;
+  const page = pdfDoc.addPage([pw, ph]);
+  drawPdfReportHeader(page, title, font, boldFont);
+  let y = ph - PDF_LAYOUT.headerHeight - 16;
+  if (metadataLines.length) y = drawPdfExtraMetadataLines(page, font, metadataLines, y) - 8;
+
+  page.drawText(sanitizePdfText(`Warehouse: ${warehouse.name}`), {
+    x: PDF_LAYOUT.margin,
+    y,
+    size: 14,
+    font: boldFont,
+    color: PDF_LAYOUT.text,
+  });
+  y -= 24;
+
+  const w = pw - 2 * PDF_LAYOUT.margin;
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Location", String(warehouse.location ?? "—"), w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Address", String(warehouse.address ?? "—"), w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Contact", [warehouse.contactPerson, warehouse.contactPhone].filter(Boolean).join(" · ") || "—", w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Default warehouse", warehouse.isDefault ? "Yes" : "No", w);
+  if (warehouse.aisle) {
+    y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Primary aisle", String(warehouse.aisle), w);
+  }
+  const aisles = Array.isArray(warehouse.aisles) ? warehouse.aisles : [];
+  if (aisles.length) {
+    y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Aisles", aisles.join(", "), w);
+  }
+  const bins = Array.isArray(warehouse.bins) ? warehouse.bins : [];
+  const binLines = bins.length
+    ? bins.map((b) => `${b.code}${b.aisle ? ` (aisle ${b.aisle})` : ""}`).join("; ")
+    : "—";
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Bins", binLines, w);
+  const details =
+    warehouse.locationDetails && typeof warehouse.locationDetails === "object"
+      ? sanitizePdfText(JSON.stringify(warehouse.locationDetails))
+      : "—";
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Location details (JSON)", details, w);
+
+  drawPdfReportFooter(page, 1, font, 1);
+  return Buffer.from(await pdfDoc.save());
+}
+
+async function generatePdfByLayout(
+  layout: ReportPdfLayout,
+  normalizedData: any[],
+  title: string,
+  columns: { header: string; key: string; width: number }[],
+  entry: ReturnType<typeof getReportExportEntry>,
+  metadataLines: string[],
+): Promise<Buffer> {
+  switch (layout) {
+    case "purchase_orders":
+      return generatePurchaseOrdersDocumentPdf(normalizedData, title, metadataLines);
+    case "purchase_requisitions":
+      return generateRequisitionsDocumentPdf(normalizedData, title, metadataLines);
+    case "activity_logs":
+      return generateActivityLogsDocumentPdf(normalizedData as ActivityLogForPdf[], title, metadataLines);
+    case "supplier_profile":
+      if (normalizedData.length === 1) {
+        return generateSupplierProfilePdf(normalizedData[0] as Supplier, title, metadataLines);
+      }
+      return generateGenericPdf(normalizedData, title, columns, {
+        orientation: entry.orientation,
+        metadataLines,
+        useWrappedTable: entry.pdfWrapCells,
+      });
+    case "warehouse_profile":
+      if (normalizedData.length === 1) {
+        return generateWarehouseProfilePdf(normalizedData[0] as Warehouse, title, metadataLines);
+      }
+      return generateGenericPdf(normalizedData, title, columns, {
+        orientation: entry.orientation,
+        metadataLines,
+        useWrappedTable: entry.pdfWrapCells,
+      });
+    case "generic":
+    default:
+      return generateGenericPdf(normalizedData, title, columns, {
+        orientation: entry.orientation,
+        metadataLines,
+        useWrappedTable: entry.pdfWrapCells,
+      });
+  }
 }
 
 /**
@@ -1355,11 +1847,14 @@ export async function generateDocument(
           pdfTemplate as "standard" | "compact",
         );
       } else {
-        reportBuffer = await generateGenericPdf(normalizedData, title, columns, {
-          orientation: entry.orientation,
+        reportBuffer = await generatePdfByLayout(
+          entry.pdfLayout ?? "generic",
+          normalizedData,
+          title,
+          columns,
+          entry,
           metadataLines,
-          useWrappedTable: entry.pdfWrapCells,
-        });
+        );
       }
       if (options?.pdfTemplate === "custom" && options?.customTemplateBuffer?.length) {
         reportBuffer = await mergePdfWithTemplate(options.customTemplateBuffer, reportBuffer);

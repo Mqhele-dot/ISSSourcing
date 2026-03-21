@@ -49,3 +49,7 @@ npm run verify:changes
 ```
 
 Optionally add `npm run test:e2e` if the app is started (e.g. in a job that runs the server and then runs Playwright).
+
+## After production / staging deploy
+
+See **[DEPLOYMENT.md — Post-deploy verification](DEPLOYMENT.md#post-deploy-verification-smoke)** (`test-api-contract`, currency POST check, export PDF smoke).

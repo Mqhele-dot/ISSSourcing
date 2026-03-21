@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { requestJson } from "@/lib/queryClient";
 import { PageHeader } from "@/components/page-header";
+import { fetchInventoryArray, fetchStatsSafe } from "@/pages/analytics/analytics-data-fetchers";
 import TutorialButton from "@/components/ui/tutorial-button";
 import { TopItems } from "@/components/analytics/top-items";
 import { InventoryValue } from "@/components/analytics/inventory-value";
@@ -10,30 +10,6 @@ import { CustomGraphBuilder } from "@/components/dashboard/custom-graph-builder"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
-
-/** Normalize API response to array (handles envelope or raw array); never throw */
-async function fetchInventoryArray(): Promise<unknown[]> {
-  try {
-    const raw = await requestJson<unknown>("GET", "/api/inventory");
-    if (Array.isArray(raw)) return raw;
-    const data = (raw as { data?: unknown[] })?.data;
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-}
-
-/** Fetch inventory stats for analytics; never throw */
-async function fetchStatsSafe(): Promise<{ totalItems?: number; lowStockItems?: number; outOfStockItems?: number; inventoryValue?: number }> {
-  try {
-    const raw = await requestJson<unknown>("GET", "/api/inventory/stats");
-    const unwrapped = (raw as { data?: unknown })?.data ?? raw;
-    if (typeof unwrapped === "object" && unwrapped !== null) return unwrapped as { totalItems?: number; lowStockItems?: number; outOfStockItems?: number; inventoryValue?: number };
-    return {};
-  } catch {
-    return {};
-  }
-}
 
 /**
  * Dedicated Analytics page - consolidates all analytics components

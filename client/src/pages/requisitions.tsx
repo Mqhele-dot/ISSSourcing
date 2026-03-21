@@ -90,7 +90,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
       >("GET", `/api/approval-history/requisition/${historyDialogReq?.id}`),
   });
 
-  const { data: requisitionsRaw, isLoading, error, refetch } = useQuery({
+  const { data: requisitionsRaw, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/purchase-requisitions"],
     queryFn: async () => {
       const raw = await requestJson<PurchaseRequisition[] | { data?: PurchaseRequisition[] }>("GET", "/api/purchase-requisitions");
@@ -237,7 +237,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
 
       <DataState
         loading={isLoading}
-        error={error}
+        error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
         data={filtered}
         isEmpty={(d) => (Array.isArray(d) ? d : []).length === 0}
         emptyTitle="No requisitions found"

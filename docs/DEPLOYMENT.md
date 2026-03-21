@@ -37,3 +37,14 @@ Run: `caddy run --config Caddyfile`
 - Ensure the app trusts the proxy (it uses `X-Forwarded-Proto` and `X-Forwarded-For` when present).
 
 See `.env.production.example` and `docs/ENV-CONFIG.md` for variables.
+
+## Post-deploy verification (smoke)
+
+After each deploy to an environment you can reach over HTTP:
+
+1. **API contract** (optional): `BASE_URL=https://your-host npx tsx scripts/test-api-contract.ts`  
+   - Skips gracefully if the server is down; with a healthy app checks login, inventory shape, currencies, etc.
+
+2. **Currency POST path** (manual): authenticated `POST /api/currencies` with `code` + `name` and **omit** `symbol` — response row should include a non-empty `symbol` (server normalizes before zod). Confirm in browser Network tab if testing from the UI.
+
+3. **Dedicated export PDFs** (optional): with admin session, `GET /api/export/purchase_orders/pdf` and `GET /api/export/purchase_requisitions/pdf` should return `Content-Type: application/pdf` and a body starting with `%PDF-`.

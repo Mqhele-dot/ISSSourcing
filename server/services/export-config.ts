@@ -6,6 +6,15 @@ import type { ReportType } from "@shared/schema";
 
 export type ReportExportOrientation = "portrait" | "landscape";
 
+/** Dedicated PDF layout (generic = column-driven table via generateGenericPdf). */
+export type ReportPdfLayout =
+  | "generic"
+  | "purchase_orders"
+  | "purchase_requisitions"
+  | "activity_logs"
+  | "supplier_profile"
+  | "warehouse_profile";
+
 export interface ReportColumnDef {
   header: string;
   key: string;
@@ -18,6 +27,8 @@ export interface ReportExportEntry {
   orientation: ReportExportOrientation;
   /** Use wrap-first multi-line cells in generic PDF tables */
   pdfWrapCells: boolean;
+  /** When not generic, generateDocument uses a dedicated PDF builder (may fall back for edge cases). */
+  pdfLayout: ReportPdfLayout;
   columns: ReportColumnDef[];
 }
 
@@ -38,12 +49,14 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
     defaultTitle: "Inventory Report",
     orientation: "portrait",
     pdfWrapCells: true,
+    pdfLayout: "generic",
     columns: INVENTORY_COLS,
   },
   categories: {
     defaultTitle: "Categories Report",
     orientation: "portrait",
     pdfWrapCells: true,
+    pdfLayout: "generic",
     columns: [
       { header: "ID", key: "id", width: 10 },
       { header: "Name", key: "name", width: 30 },
@@ -54,6 +67,7 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
     defaultTitle: "Suppliers Report",
     orientation: "landscape",
     pdfWrapCells: true,
+    pdfLayout: "supplier_profile",
     columns: [
       { header: "ID", key: "id", width: 8 },
       { header: "Name", key: "name", width: 22 },
@@ -70,6 +84,7 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
     defaultTitle: "Warehouses Report",
     orientation: "portrait",
     pdfWrapCells: true,
+    pdfLayout: "warehouse_profile",
     columns: [
       { header: "ID", key: "id", width: 10 },
       { header: "Name", key: "name", width: 30 },
@@ -84,6 +99,7 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
     defaultTitle: "Reorder Requests Report",
     orientation: "landscape",
     pdfWrapCells: true,
+    pdfLayout: "generic",
     columns: [
       { header: "ID", key: "id", width: 10 },
       { header: "Request Number", key: "requestNumber", width: 20 },
@@ -100,6 +116,7 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
     defaultTitle: "Purchase Orders Report",
     orientation: "landscape",
     pdfWrapCells: true,
+    pdfLayout: "purchase_orders",
     columns: [
       { header: "ID", key: "id", width: 10 },
       { header: "Order Number", key: "orderNumber", width: 20 },
@@ -115,6 +132,7 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
     defaultTitle: "Purchase Requisitions Report",
     orientation: "landscape",
     pdfWrapCells: true,
+    pdfLayout: "purchase_requisitions",
     columns: [
       { header: "ID", key: "id", width: 10 },
       { header: "Requisition Number", key: "requisitionNumber", width: 20 },
@@ -130,6 +148,7 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
     defaultTitle: "Users Report",
     orientation: "landscape",
     pdfWrapCells: true,
+    pdfLayout: "generic",
     columns: [
       { header: "ID", key: "id", width: 10 },
       { header: "Username", key: "username", width: 20 },
@@ -144,6 +163,7 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
     defaultTitle: "Stock Movements Report",
     orientation: "landscape",
     pdfWrapCells: true,
+    pdfLayout: "generic",
     columns: [
       { header: "ID", key: "id", width: 10 },
       { header: "Date", key: "createdAt", width: 20 },
@@ -160,6 +180,7 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
     defaultTitle: "Activity Logs Report",
     orientation: "landscape",
     pdfWrapCells: true,
+    pdfLayout: "activity_logs",
     columns: [
       { header: "ID", key: "id", width: 10 },
       { header: "Timestamp", key: "timestamp", width: 20 },
@@ -177,6 +198,7 @@ const DEFAULT_ENTRY: ReportExportEntry = {
   defaultTitle: "Report",
   orientation: "portrait",
   pdfWrapCells: true,
+  pdfLayout: "generic",
   columns: [
     { header: "ID", key: "id", width: 10 },
     { header: "Name", key: "name", width: 30 },

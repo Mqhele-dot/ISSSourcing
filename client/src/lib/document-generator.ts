@@ -1,10 +1,11 @@
 /**
  * Document Generator
  *
- * This module provides utilities for generating various document formats
- * including PDFs, Excel spreadsheets, and CSV files. It uses the Electron
- * bridge for desktop environments and falls back to web-based alternatives
- * in browser environments.
+ * **Web production policy:** Prefer server-authoritative exports via
+ * `GET /api/export/:reportType/:format` (see `generatePdf`, and `generateExcel` /
+ * `generateCsv` when `reportType` is set). Client-side CSV/Excel fallbacks exist
+ * only for **Electron** or **dev** (`import.meta.env.DEV`) when no `reportType`
+ * is provided — avoids silent low-quality exports in production.
  */
 import { isElectronEnvironment } from './electron-bridge';
 
@@ -189,18 +190,56 @@ export async function generatePdf(
   return "PDF download started";
 }
 
+async function downloadExportFromApi(
+  reportType: string,
+  format: "excel" | "csv",
+  searchParams: string | undefined,
+  fallbackFilename: string,
+): Promise<string> {
+  const safeType = String(reportType).replace(/[^a-z0-9_-]/gi, "");
+  if (!safeType) {
+    throw new Error("Invalid report type for export");
+  }
+  const qs = searchParams?.startsWith("?")
+    ? searchParams
+    : searchParams
+      ? `?${searchParams}`
+      : "";
+  const url = `/api/export/${encodeURIComponent(safeType)}/${format}${qs}`;
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) {
+    let detail = `Export failed (${response.status})`;
+    try {
+      const errBody = (await response.json()) as { message?: string; error?: { message?: string } };
+      if (errBody?.error?.message) detail = errBody.error.message;
+      else if (errBody?.message) detail = errBody.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  const blob = await response.blob();
+  const ext = format === "excel" ? "xlsx" : "csv";
+  const base = fallbackFilename.replace(/\.(csv|xlsx)$/i, "");
+  const filename = fallbackFilename.endsWith(`.${ext}`) ? fallbackFilename : `${base}.${ext}`;
+  downloadBlob(blob, filename);
+  return `${format.toUpperCase()} download started`;
+}
+
 /**
  * Generate an Excel document
  */
 export async function generateExcel(
   data: any[],
-  options: { 
-    sheetName?: string; 
+  options: {
+    sheetName?: string;
     filename?: string;
     columns?: Array<{ header: string; key: string; width?: number }>;
-  } = {}
+    /** When set (web), downloads from `GET /api/export/:reportType/excel`. */
+    reportType?: string;
+    searchParams?: string;
+  } = {},
 ): Promise<string> {
-  // In Electron, use the native Excel generation
   if (isElectronEnvironment()) {
     return electronDocumentGenerator.generateExcel(data, {
       sheetName: options.sheetName,
@@ -208,17 +247,29 @@ export async function generateExcel(
       dialog: true,
     });
   }
-  
-  // In browser, create a CSV as fallback since Excel is harder to generate
-  // In a real app, you might use a library like exceljs
-  const filename = options.filename || 'data.csv';
-  const headers = options.columns?.map(col => col.header);
-  const keys = options.columns?.map(col => col.key);
-  
-  // If columns are specified, map the data to match the column keys
+
+  if (options.reportType) {
+    return downloadExportFromApi(
+      options.reportType,
+      "excel",
+      options.searchParams,
+      options.filename || `${options.reportType}-report.xlsx`,
+    );
+  }
+
+  if (!import.meta.env.DEV) {
+    throw new Error(
+      "Excel export in the browser requires a reportType (server /api/export/.../excel) or Electron.",
+    );
+  }
+
+  const filename = options.filename || "data.csv";
+  const headers = options.columns?.map((col) => col.header);
+  const keys = options.columns?.map((col) => col.key);
+
   let processedData = data;
   if (keys) {
-    processedData = data.map(item => {
+    processedData = data.map((item) => {
       const newItem: Record<string, any> = {};
       keys.forEach((key, index) => {
         const header = headers?.[index] || key;
@@ -227,12 +278,12 @@ export async function generateExcel(
       return newItem;
     });
   }
-  
+
   const csv = createCsvString(processedData, headers);
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const blob = new Blob([csv], { type: "text/csv" });
   downloadBlob(blob, filename);
-  
-  return 'CSV download started';
+
+  return "CSV download started (dev fallback)";
 }
 
 /**
@@ -240,13 +291,15 @@ export async function generateExcel(
  */
 export async function generateCsv(
   data: any[],
-  options: { 
+  options: {
     filename?: string;
     headers?: string[];
     delimiter?: string;
-  } = {}
+    /** When set (web), downloads from `GET /api/export/:reportType/csv`. */
+    reportType?: string;
+    searchParams?: string;
+  } = {},
 ): Promise<string> {
-  // In Electron, use the native CSV generation
   if (isElectronEnvironment()) {
     return electronDocumentGenerator.generateCsv(data, {
       headers: options.headers,
@@ -254,12 +307,26 @@ export async function generateCsv(
       dialog: true,
     });
   }
-  
-  // In browser, generate and download the CSV
-  const filename = options.filename || 'data.csv';
+
+  if (options.reportType) {
+    return downloadExportFromApi(
+      options.reportType,
+      "csv",
+      options.searchParams,
+      options.filename || `${options.reportType}-report.csv`,
+    );
+  }
+
+  if (!import.meta.env.DEV) {
+    throw new Error(
+      "CSV export in the browser requires a reportType (server /api/export/.../csv) or Electron.",
+    );
+  }
+
+  const filename = options.filename || "data.csv";
   const csv = createCsvString(data, options.headers, options.delimiter);
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const blob = new Blob([csv], { type: "text/csv" });
   downloadBlob(blob, filename);
-  
-  return 'CSV download started';
+
+  return "CSV download started (dev fallback)";
 }
