@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -125,6 +126,23 @@ export default function CycleCountsPage() {
     },
   });
 
+  const startCount = useMutation({
+    mutationFn: (id: number) =>
+      requestJson("PATCH", `/api/cycle-counts/${id}`, { status: "in_progress" }),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cycle-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cycle-count-lines", id] });
+      toast({ title: "Count started", description: "Status set to in progress — capture lines, then post." });
+    },
+    onError: (e) => {
+      toast({
+        title: "Could not start count",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
   const postCount = useMutation({
     mutationFn: (id: number) => requestJson("POST", `/api/cycle-counts/${id}/post`),
     onSuccess: (_, id) => {
@@ -144,9 +162,16 @@ export default function CycleCountsPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
+      <Alert>
+        <AlertTitle>Cycle count workflow</AlertTitle>
+        <AlertDescription className="text-sm">
+          Create a count → add lines (system vs counted qty) → <strong>Start</strong> to set{" "}
+          <code>in_progress</code> → <strong>Post</strong> to book variances to inventory.
+        </AlertDescription>
+      </Alert>
       <PageHeader
         title="Cycle Counts"
-        subtitle="Plan counts, capture counted quantities, and post inventory adjustments."
+        subtitle="Workflow: create a count → Start (in progress) → add lines → Post adjustments. Planned counts can be opened and edited before posting."
       />
 
       <Card>
@@ -201,13 +226,25 @@ export default function CycleCountsPage() {
               {cycleCounts.map((count) => (
                 <TableRow key={count.id}>
                   <TableCell>#{count.id}</TableCell>
-                  <TableCell>{count.warehouseId}</TableCell>
+                  <TableCell>
+                    {warehouses.find((w) => w.id === count.warehouseId)?.name ?? `#${count.warehouseId}`}
+                  </TableCell>
                   <TableCell>{count.status}</TableCell>
                   <TableCell>{count.variance ?? 0}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => setSelectedCountId(count.id)}>
                         Open
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => startCount.mutate(count.id)}
+                        disabled={
+                          startCount.isPending || count.status === "completed" || count.status === "in_progress"
+                        }
+                      >
+                        Start
                       </Button>
                       <Button
                         size="sm"

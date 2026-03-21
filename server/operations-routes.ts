@@ -14,6 +14,7 @@ import {
   listOperationalInventory,
   listOperationalPurchaseOrders,
   listOperationalShipments,
+  patchOperationalShipmentMeta,
   runOperationalExceptionChecks,
   receiveOperationalPurchaseOrder,
   runOperationalConnector,
@@ -232,6 +233,11 @@ function mapExceptionMutationError(error: unknown): never {
 }
 
 export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
+  /**
+   * GET /api/inventory (list) — canonical handler when this module registers before `routes.ts`.
+   * Returns operational rollup: onHand, allocated, available, expiry/mfg, envelope `{ ok, data }`.
+   * Do not add a second conflicting GET without changing registration order in `registerRoutes`.
+   */
   app.get(
     "/api/inventory",
     withApiContract(async (req: Request, res: Response) => {
@@ -624,16 +630,70 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       const poNumber = typeof req.body?.poNumber === "string" ? req.body.poNumber.trim() : "";
       const carrier = typeof req.body?.carrier === "string" ? req.body.carrier.trim() : null;
       const eta = typeof req.body?.eta === "string" ? new Date(req.body.eta) : null;
+      const trackingNumber =
+        typeof req.body?.trackingNumber === "string"
+          ? req.body.trackingNumber.trim() || null
+          : typeof req.body?.tracking_number === "string"
+            ? req.body.tracking_number.trim() || null
+            : null;
       if (!poNumber) {
         throw contractError(400, "PO_REQUIRED", "poNumber is required");
       }
       const inserted = await pool.query(
-        `INSERT INTO shipments (po_number, carrier, status, eta, drift_minutes, created_at, updated_at)
-         VALUES ($1, $2, 'created', $3, 0, now(), now())
-         RETURNING id, po_number AS "poNumber", carrier, status, eta, drift_minutes AS "driftMinutes", created_at AS "createdAt", updated_at AS "updatedAt"`,
-        [poNumber, carrier, eta],
+        `INSERT INTO shipments (po_number, carrier, status, eta, drift_minutes, tracking_number, created_at, updated_at)
+         VALUES ($1, $2, 'created', $3, 0, $4, now(), now())
+         RETURNING id, po_number AS "poNumber", carrier, status, eta, drift_minutes AS "driftMinutes",
+                   tracking_number AS "trackingNumber", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [poNumber, carrier, eta, trackingNumber],
       );
       respondOk(res, inserted.rows[0], 201);
+    }),
+  );
+
+  app.patch(
+    "/api/logistics/shipments/:id",
+    auth.ensureAuthenticated,
+    withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
+      try {
+        const carrier =
+          typeof req.body?.carrier === "string" ? req.body.carrier.trim() || null : undefined;
+        const eta =
+          typeof req.body?.eta === "string" && req.body.eta.trim()
+            ? new Date(req.body.eta)
+            : req.body?.eta === null
+              ? null
+              : undefined;
+        const trackingNumber =
+          typeof req.body?.trackingNumber === "string"
+            ? req.body.trackingNumber.trim() || null
+            : typeof req.body?.tracking_number === "string"
+              ? req.body.tracking_number.trim() || null
+              : undefined;
+        const detail = await withTimeout(
+          patchOperationalShipmentMeta({
+            shipmentId: req.params.id,
+            carrier,
+            eta,
+            trackingNumber,
+            actor: resolveActor(req),
+          }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
+        respondOk(res, detail);
+      } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
+        mapShipmentError(error);
+      }
     }),
   );
 
@@ -927,6 +987,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const limitRaw = Number(req.query.limit);
         const entityType = typeof req.query.entity_type === "string" ? req.query.entity_type : "";
         const entityId = typeof req.query.entity_id === "string" ? req.query.entity_id : "";
+        const action = typeof req.query.action === "string" ? req.query.action : "";
         const actor = typeof req.query.actor === "string" ? req.query.actor.trim().toLowerCase() : "";
         const from = typeof req.query.from === "string" ? new Date(req.query.from) : null;
         const to = typeof req.query.to === "string" ? new Date(req.query.to) : null;
@@ -935,6 +996,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             limit: Number.isFinite(limitRaw) ? limitRaw : 20,
             entityType,
             entityId,
+            action,
           }),
           OPERATIONS_QUERY_TIMEOUT_MS,
         );

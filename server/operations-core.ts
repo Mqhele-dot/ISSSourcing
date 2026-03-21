@@ -83,6 +83,8 @@ type ActivityListFilters = {
   limit?: number;
   entityType?: string;
   entityId?: string;
+  /** Case-insensitive substring match on action */
+  action?: string;
 };
 
 const OPERATIONAL_TABLE_DDLS = [
@@ -165,6 +167,9 @@ const OPERATIONAL_TABLE_DDLS = [
     created_at timestamp NOT NULL DEFAULT now(),
     updated_at timestamp NOT NULL DEFAULT now()
   )
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS tracking_number text
   `,
   `
   CREATE TABLE IF NOT EXISTS shipment_events (
@@ -411,6 +416,8 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
     location: string | null;
     default_location: string | null;
     updated_at: Date | null;
+    expiry_date: Date | null;
+    manufacturing_date: Date | null;
   }>(
     `
     SELECT
@@ -423,7 +430,9 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
       i.low_stock_threshold,
       i.location,
       i.default_location,
-      i.updated_at
+      i.updated_at,
+      i.expiry_date,
+      i.manufacturing_date
     FROM inventory_items i
     ${whereSql}
     ORDER BY i.name ASC
@@ -499,6 +508,8 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
         allocated,
         available,
         updatedAt: aggregate?.updatedAt ?? row.updated_at,
+        expiryDate: row.expiry_date,
+        manufacturingDate: row.manufacturing_date,
       };
     })
     .filter((item) => {
@@ -880,6 +891,9 @@ type PurchaseOrderLine = {
   itemId: number;
   sku: string;
   itemName: string;
+  supplierPartNumber: string | null;
+  commodityCode: string | null;
+  commodityDescription: string | null;
   qtyOrdered: number;
   qtyReceived: number;
   unitPrice: number;
@@ -893,6 +907,7 @@ type PurchaseOrderShipment = {
   eta: Date | null;
   driftMinutes: number;
   updatedAt: Date | null;
+  trackingNumber?: string | null;
 };
 
 type ReceivePurchaseLineInput = {
@@ -983,6 +998,9 @@ async function getPurchaseOrderLines(orderId: number): Promise<PurchaseOrderLine
     unit_price: number;
     sku: string | null;
     item_name: string | null;
+    supplier_part_number: string | null;
+    commodity_code: string | null;
+    commodity_description: string | null;
   }>(
     `
     SELECT
@@ -992,9 +1010,13 @@ async function getPurchaseOrderLines(orderId: number): Promise<PurchaseOrderLine
       pol.received_quantity,
       pol.unit_price,
       i.sku,
-      i.name AS item_name
+      i.name AS item_name,
+      i.supplier_part_number,
+      cc.code AS commodity_code,
+      cc.description AS commodity_description
     FROM purchase_order_items pol
     LEFT JOIN inventory_items i ON i.id = pol.item_id
+    LEFT JOIN commodity_codes cc ON cc.id = i.commodity_code_id
     WHERE pol.order_id = $1
     ORDER BY pol.id ASC
     `,
@@ -1009,12 +1031,40 @@ async function getPurchaseOrderLines(orderId: number): Promise<PurchaseOrderLine
       itemId: line.item_id,
       sku: line.sku ?? `ITEM-${line.item_id}`,
       itemName: line.item_name ?? `Item #${line.item_id}`,
+      supplierPartNumber: line.supplier_part_number ?? null,
+      commodityCode: line.commodity_code ?? null,
+      commodityDescription: line.commodity_description ?? null,
       qtyOrdered,
       qtyReceived,
       unitPrice: toNumber(line.unit_price, 0),
       expectedRemaining: Math.max(qtyOrdered - qtyReceived, 0),
     };
   });
+}
+
+/**
+ * Replace reserved allocations for this PO so receive can consume them FIFO.
+ * Called when a PO moves to approved (expected inbound commitment / planning bucket).
+ */
+async function syncPurchaseOrderAllocations(orderId: number): Promise<void> {
+  await pool.query(`DELETE FROM inventory_allocations WHERE order_id = $1 AND status = 'reserved'`, [orderId]);
+  const lines = await getPurchaseOrderLines(orderId);
+  for (const line of lines) {
+    const remaining = Math.max(0, line.qtyOrdered - line.qtyReceived);
+    if (remaining <= 0) continue;
+    const whRes = await pool.query<{ default_warehouse_id: number | null }>(
+      `SELECT default_warehouse_id FROM inventory_items WHERE id = $1 LIMIT 1`,
+      [line.itemId],
+    );
+    const warehouseId = whRes.rows[0]?.default_warehouse_id ?? null;
+    await pool.query(
+      `
+      INSERT INTO inventory_allocations (item_id, warehouse_id, quantity, order_id, status, updated_at)
+      VALUES ($1, $2, $3, $4, 'reserved', now())
+      `,
+      [line.itemId, warehouseId, remaining, orderId],
+    );
+  }
 }
 
 async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrderShipment[]> {
@@ -1025,9 +1075,10 @@ async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrde
     eta: Date | null;
     drift_minutes: number;
     updated_at: Date | null;
+    tracking_number: string | null;
   }>(
     `
-    SELECT id, carrier, status, eta, drift_minutes, updated_at
+    SELECT id, carrier, status, eta, drift_minutes, updated_at, tracking_number
     FROM shipments
     WHERE po_number = $1
     ORDER BY updated_at DESC
@@ -1042,6 +1093,7 @@ async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrde
     eta: shipment.eta,
     driftMinutes: toNumber(shipment.drift_minutes, 0),
     updatedAt: shipment.updated_at,
+    trackingNumber: shipment.tracking_number,
   }));
 }
 
@@ -1215,6 +1267,14 @@ export async function transitionOperationalPurchaseOrderStatus(
     `,
     [order.id, toStatus],
   );
+
+  if (toStatus === "approved") {
+    try {
+      await syncPurchaseOrderAllocations(order.id);
+    } catch (allocationError) {
+      console.warn("[operations] syncPurchaseOrderAllocations failed:", allocationError);
+    }
+  }
 
   await pool.query(
     `
@@ -1741,9 +1801,11 @@ export async function listOperationalShipments(filters: {
     drift_minutes: number;
     created_at: Date | null;
     updated_at: Date | null;
+    tracking_number: string | null;
   }>(
     `
-    SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at
+    SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at,
+           tracking_number
     FROM shipments s
     ${whereSql}
     ORDER BY s.updated_at DESC
@@ -1773,6 +1835,7 @@ export async function listOperationalShipments(filters: {
       driftMinutes: toNumber(row.drift_minutes, 0),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      trackingNumber: row.tracking_number,
       atRisk,
     });
   }
@@ -1799,9 +1862,10 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     drift_minutes: number;
     created_at: Date | null;
     updated_at: Date | null;
+    tracking_number: string | null;
   }>(
     `
-    SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at
+    SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at, tracking_number
     FROM shipments
     WHERE id = $1
     LIMIT 1
@@ -1851,6 +1915,7 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     driftMinutes: toNumber(shipment.drift_minutes, 0),
     createdAt: shipment.created_at,
     updatedAt: shipment.updated_at,
+    trackingNumber: shipment.tracking_number,
     atRisk,
     timeline: timelineResult.rows.map((event) => ({
       id: event.id,
@@ -1868,6 +1933,49 @@ const SHIPMENT_TRANSITIONS: Record<string, string[]> = {
   delivered: [],
   cancelled: [],
 };
+
+export async function patchOperationalShipmentMeta(input: {
+  shipmentId: string;
+  carrier?: string | null;
+  eta?: Date | string | null;
+  trackingNumber?: string | null;
+  actor?: string;
+}) {
+  const existing = await getOperationalShipmentDetail(input.shipmentId);
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let n = 1;
+  if (input.carrier !== undefined) {
+    sets.push(`carrier = $${n++}`);
+    vals.push(input.carrier);
+  }
+  if (input.eta !== undefined) {
+    sets.push(`eta = $${n++}`);
+    if (input.eta === null) {
+      vals.push(null);
+    } else {
+      vals.push(typeof input.eta === "string" ? new Date(input.eta) : input.eta);
+    }
+  }
+  if (input.trackingNumber !== undefined) {
+    sets.push(`tracking_number = $${n++}`);
+    vals.push(input.trackingNumber);
+  }
+  if (sets.length === 0) {
+    return existing;
+  }
+  vals.push(existing.id);
+  await pool.query(
+    `UPDATE shipments SET ${sets.join(", ")}, updated_at = now() WHERE id = $${n}`,
+    vals,
+  );
+  await pool.query(`INSERT INTO shipment_events (shipment_id, status, note) VALUES ($1, $2, $3)`, [
+    existing.id,
+    existing.status,
+    `Shipment details updated (${input.actor ?? "user"})`,
+  ]);
+  return getOperationalShipmentDetail(input.shipmentId);
+}
 
 export async function updateOperationalShipmentStatus(input: {
   shipmentId: string;
@@ -2212,6 +2320,11 @@ export async function listOperationalActivity(filters: ActivityListFilters = {})
     whereClauses.push(`entity_id = $${params.length}`);
   }
 
+  if (filters.action && filters.action.trim()) {
+    params.push(`%${filters.action.trim().toLowerCase()}%`);
+    whereClauses.push(`lower(action) LIKE $${params.length}`);
+  }
+
   const limit = Math.min(Math.max(filters.limit ?? 20, 1), 200);
   params.push(limit);
   const limitParam = `$${params.length}`;
@@ -2302,12 +2415,46 @@ export async function getOperationalControlTowerOverview() {
     exceptionsBySeverity[row.severity] = toNumber(row.count, 0);
   }
 
+  const openExceptionsTotal = Object.values(exceptionsBySeverity).reduce((a, c) => a + c, 0);
+
+  let pendingRequisitions = 0;
+  let inTransitShipments = 0;
+  let overdueInvoices = 0;
+  try {
+    const pr = await pool.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM purchase_requisitions WHERE status IN ('PENDING','DRAFT')`,
+    );
+    pendingRequisitions = toNumber(pr.rows[0]?.count, 0);
+  } catch {
+    pendingRequisitions = 0;
+  }
+  try {
+    const sh = await pool.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM shipments WHERE lower(status) IN ('created','in_transit','delayed')`,
+    );
+    inTransitShipments = toNumber(sh.rows[0]?.count, 0);
+  } catch {
+    inTransitShipments = 0;
+  }
+  try {
+    const inv = await pool.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM invoices WHERE status = 'OVERDUE'`,
+    );
+    overdueInvoices = toNumber(inv.rows[0]?.count, 0);
+  } catch {
+    overdueInvoices = 0;
+  }
+
   return {
     kpis: {
       exceptionsBySeverity,
+      openExceptionsTotal,
       lateShipments: toNumber(lateShipmentsResult.rows[0]?.count, 0),
       posAwaitingAction: toNumber(poAwaitingActionResult.rows[0]?.count, 0),
       lowStockSkus: toNumber(lowStockResult.rows[0]?.count, 0),
+      pendingRequisitions,
+      inTransitShipments,
+      overdueInvoices,
     },
     activity: activity.map((entry) => ({
       id: entry.id,

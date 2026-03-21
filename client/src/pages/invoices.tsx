@@ -1,5 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { DataState } from "@/components/ui/data-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +23,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, requestJson } from "@/lib/queryClient";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import type { InventoryItem } from "@shared/schema";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 
 type Invoice = {
@@ -45,6 +64,30 @@ type MatchResult = {
   mismatches: Array<{ type: string; itemId: number; message: string }>;
 };
 
+type InvoiceLineRow = {
+  id: number;
+  invoiceId: number;
+  itemId: number;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discount?: number | null;
+  taxRate?: number | null;
+  taxAmount?: number | null;
+  totalPrice: number;
+};
+
+function invoiceLineTotals(qty: number, unitPrice: number, taxRatePct: number) {
+  const lineSubtotal = qty * unitPrice;
+  const taxAmount = (lineSubtotal * taxRatePct) / 100;
+  return { taxAmount, totalPrice: lineSubtotal + taxAmount };
+}
+
+function isInvoiceLinesLocked(status: string) {
+  const s = String(status).toUpperCase();
+  return s === "PAID" || s === "CANCELLED" || s === "VOID";
+}
+
 export default function InvoicesPage() {
   const { toast } = useToast();
   const [supplierId, setSupplierId] = useState<string>("none");
@@ -54,8 +97,26 @@ export default function InvoicesPage() {
   const [taxCodeId, setTaxCodeId] = useState<string>("none");
   const [matchResults, setMatchResults] = useState<Record<number, MatchResult>>({});
   const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
+  const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
+  const [editStatus, setEditStatus] = useState("");
+  const [editDue, setEditDue] = useState("");
+  const [deleteInvoice, setDeleteInvoice] = useState<Invoice | null>(null);
+  const [linesEditInvoice, setLinesEditInvoice] = useState<Invoice | null>(null);
+  const [lineDrafts, setLineDrafts] = useState<
+    Record<number, { quantity: string; unitPrice: string; taxRate: string }>
+  >({});
+  const [newLineItemId, setNewLineItemId] = useState<string>("none");
+  const [newLineQty, setNewLineQty] = useState("1");
+  const [newLineUnitPrice, setNewLineUnitPrice] = useState("");
+  const [newLineTaxRate, setNewLineTaxRate] = useState("0");
 
-  const { data: invoices = [], isLoading } = useQuery({
+  const {
+    data: invoices = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ["/api/invoices"],
     queryFn: () => requestJson<Invoice[]>("GET", "/api/invoices"),
   });
@@ -70,6 +131,14 @@ export default function InvoicesPage() {
   const { data: taxCodes = [] } = useQuery({
     queryKey: ["/api/tax-codes"],
     queryFn: () => requestJson<TaxCode[]>("GET", "/api/tax-codes"),
+  });
+  const { data: inventoryForLines = [] } = useQuery({
+    queryKey: ["/api/inventory", "invoice-lines"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/inventory");
+      return normalizeApiList<InventoryItem>(raw);
+    },
+    enabled: !!linesEditInvoice,
   });
   const { data: selectedPoItems = [] } = useQuery({
     queryKey: ["/api/purchase-orders/items", purchaseOrderId],
@@ -89,6 +158,12 @@ export default function InvoicesPage() {
     () => taxCodes.find((code) => String(code.id) === taxCodeId),
     [taxCodes, taxCodeId],
   );
+
+  const poById = useMemo(() => {
+    const m = new Map<number, PurchaseOrder>();
+    for (const o of purchaseOrders) m.set(o.id, o);
+    return m;
+  }, [purchaseOrders]);
 
   const createInvoice = useMutation({
     mutationFn: () => {
@@ -149,6 +224,144 @@ export default function InvoicesPage() {
     onError: (e) => {
       toast({
         title: "Failed to create invoice",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const patchInvoice = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: { status?: string; dueDate?: string | null } }) =>
+      requestJson("PATCH", `/api/invoices/${id}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      setEditInvoice(null);
+      toast({ title: "Invoice updated" });
+    },
+    onError: (e) => {
+      toast({
+        title: "Update failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteInvoiceMut = useMutation({
+    mutationFn: (id: number) => requestJson("DELETE", `/api/invoices/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      setDeleteInvoice(null);
+      toast({ title: "Invoice removed" });
+    },
+    onError: (e) => {
+      toast({
+        title: "Delete failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const {
+    data: invoiceLineRows = [],
+    refetch: refetchInvoiceLines,
+    isLoading: invoiceLinesLoading,
+  } = useQuery({
+    queryKey: ["/api/invoices", linesEditInvoice?.id, "items"],
+    enabled: !!linesEditInvoice,
+    queryFn: () => requestJson<InvoiceLineRow[]>("GET", `/api/invoices/${linesEditInvoice!.id}/items`),
+  });
+
+  useEffect(() => {
+    if (!linesEditInvoice) {
+      setLineDrafts({});
+      return;
+    }
+    const next: Record<number, { quantity: string; unitPrice: string; taxRate: string }> = {};
+    for (const row of invoiceLineRows) {
+      next[row.id] = {
+        quantity: String(row.quantity),
+        unitPrice: String(row.unitPrice),
+        taxRate: String(row.taxRate ?? 0),
+      };
+    }
+    setLineDrafts(next);
+  }, [linesEditInvoice, invoiceLineRows]);
+
+  const saveInvoiceLine = useMutation({
+    mutationFn: async ({
+      invoiceId,
+      line,
+      body,
+    }: {
+      invoiceId: number;
+      line: InvoiceLineRow;
+      body: { quantity: number; unitPrice: number; taxRate: number; taxAmount: number; totalPrice: number };
+    }) => requestJson("PATCH", `/api/invoices/${invoiceId}/items/${line.id}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void refetchInvoiceLines();
+      toast({ title: "Line updated" });
+    },
+    onError: (e) => {
+      toast({
+        title: "Line save failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addInvoiceLine = useMutation({
+    mutationFn: async (payload: {
+      invoiceId: number;
+      itemId: number;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate: number;
+      taxAmount: number;
+      totalPrice: number;
+    }) =>
+      requestJson("POST", `/api/invoices/${payload.invoiceId}/items`, {
+        itemId: payload.itemId,
+        description: payload.description,
+        quantity: payload.quantity,
+        unitPrice: payload.unitPrice,
+        taxRate: payload.taxRate,
+        taxAmount: payload.taxAmount,
+        totalPrice: payload.totalPrice,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void refetchInvoiceLines();
+      setNewLineItemId("none");
+      setNewLineQty("1");
+      setNewLineUnitPrice("");
+      setNewLineTaxRate("0");
+      toast({ title: "Line added" });
+    },
+    onError: (e) => {
+      toast({
+        title: "Add line failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteInvoiceLine = useMutation({
+    mutationFn: async ({ invoiceId, lineId }: { invoiceId: number; lineId: number }) =>
+      requestJson("DELETE", `/api/invoices/${invoiceId}/items/${lineId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void refetchInvoiceLines();
+      toast({ title: "Line removed" });
+    },
+    onError: (e) => {
+      toast({
+        title: "Delete line failed",
         description: e instanceof Error ? e.message : String(e),
         variant: "destructive",
       });
@@ -258,63 +471,409 @@ export default function InvoicesPage() {
           <CardTitle>Invoice list</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading invoices...</div>
-          ) : invoices.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No invoices created yet.</div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead>PO</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Due date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invoices.map((invoice) => {
-                  const match = matchResults[invoice.id];
-                  return (
-                    <TableRow key={invoice.id}>
-                      <TableCell>{invoice.invoiceNumber}</TableCell>
-                      <TableCell>{invoice.purchaseOrderId ? `PO #${invoice.purchaseOrderId}` : "-"}</TableCell>
-                      <TableCell>{match?.status ?? invoice.status}</TableCell>
-                      <TableCell>${Number(invoice.totalAmount ?? 0).toFixed(2)}</TableCell>
-                      <TableCell>{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "-"}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => runMatch.mutate(invoice.id)}
-                          disabled={runMatch.isPending || !invoice.purchaseOrderId}
-                        >
-                          Run 3-way match
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="ml-2"
-                          onClick={() => setActiveInvoiceId(invoice.id)}
-                        >
-                          Documents
-                        </Button>
-                        {match && match.mismatches.length > 0 ? (
-                          <div className="mt-1 text-xs text-destructive">
-                            {match.mismatches.length} mismatch(es): {match.mismatches[0]?.message}
-                          </div>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
+          <DataState
+            loading={isLoading}
+            error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
+            data={invoices}
+            isEmpty={(rows) => rows.length === 0}
+            emptyTitle="No invoices yet"
+            emptyDescription="Create an invoice from a purchase order above."
+            onRetry={refetch}
+          >
+            {(rows) => (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Invoice</TableHead>
+                    <TableHead>PO</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Due date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((invoice) => {
+                    const match = matchResults[invoice.id];
+                    const poLabel =
+                      invoice.purchaseOrderId != null
+                        ? poById.get(invoice.purchaseOrderId)?.orderNumber ?? `PO #${invoice.purchaseOrderId}`
+                        : "-";
+                    return (
+                      <TableRow key={invoice.id}>
+                        <TableCell>{invoice.invoiceNumber}</TableCell>
+                        <TableCell>{poLabel}</TableCell>
+                        <TableCell>{match?.status ?? invoice.status}</TableCell>
+                        <TableCell>${Number(invoice.totalAmount ?? 0).toFixed(2)}</TableCell>
+                        <TableCell>{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "-"}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => runMatch.mutate(invoice.id)}
+                            disabled={runMatch.isPending || !invoice.purchaseOrderId}
+                          >
+                            Run 3-way match
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="ml-2"
+                            onClick={() => {
+                              setEditInvoice(invoice);
+                              setEditStatus(invoice.status);
+                              setEditDue(invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : "");
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="ml-2"
+                            onClick={() => setLinesEditInvoice(invoice)}
+                          >
+                            Lines
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="ml-2"
+                            onClick={() => setActiveInvoiceId(invoice.id)}
+                          >
+                            Documents
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="ml-2 text-destructive"
+                            onClick={() => setDeleteInvoice(invoice)}
+                          >
+                            Delete
+                          </Button>
+                          {match && match.mismatches.length > 0 ? (
+                            <div className="mt-1 text-xs text-destructive">
+                              {match.mismatches.length} mismatch(es): {match.mismatches[0]?.message}
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button size="sm" variant="link" className="h-auto p-0 pl-1 text-xs">
+                                    Details
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-lg">
+                                  <DialogHeader>
+                                    <DialogTitle>3-way match mismatches</DialogTitle>
+                                  </DialogHeader>
+                                  <ul className="list-disc space-y-2 pl-4 text-sm">
+                                    {match.mismatches.map((m, i) => (
+                                      <li key={`${m.type}-${m.itemId}-${i}`}>
+                                        <span className="font-medium">{m.type}</span> (item #{m.itemId}):{" "}
+                                        {m.message}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </DialogContent>
+                              </Dialog>
+                            </div>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </DataState>
         </CardContent>
       </Card>
+
+      <Dialog open={!!editInvoice} onOpenChange={(o) => !o && setEditInvoice(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit invoice {editInvoice?.invoiceNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="space-y-1">
+              <Label>Status</Label>
+              <Input value={editStatus} onChange={(e) => setEditStatus(e.target.value)} placeholder="DRAFT, SENT, PAID…" />
+            </div>
+            <div className="space-y-1">
+              <Label>Due date</Label>
+              <Input type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setEditInvoice(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!editInvoice) return;
+                patchInvoice.mutate({
+                  id: editInvoice.id,
+                  body: {
+                    status: editStatus || undefined,
+                    dueDate: editDue ? new Date(editDue).toISOString() : null,
+                  },
+                });
+              }}
+              disabled={patchInvoice.isPending}
+            >
+              Save
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteInvoice} onOpenChange={(o) => !o && setDeleteInvoice(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete invoice?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove {deleteInvoice?.invoiceNumber} and related lines if the server allows it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteInvoice && deleteInvoiceMut.mutate(deleteInvoice.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={!!linesEditInvoice}
+        onOpenChange={(o) => {
+          if (!o) {
+            setLinesEditInvoice(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Invoice lines — {linesEditInvoice?.invoiceNumber}</DialogTitle>
+          </DialogHeader>
+          {linesEditInvoice && isInvoiceLinesLocked(linesEditInvoice.status) ? (
+            <p className="text-sm text-muted-foreground">
+              This invoice cannot be edited in its current status ({linesEditInvoice.status}).
+            </p>
+          ) : null}
+          {linesEditInvoice && !isInvoiceLinesLocked(linesEditInvoice.status) ? (
+            <div className="space-y-4">
+              {invoiceLinesLoading ? (
+                <p className="text-sm text-muted-foreground">Loading lines…</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="w-24">Qty</TableHead>
+                      <TableHead className="w-28">Unit $</TableHead>
+                      <TableHead className="w-24">Tax %</TableHead>
+                      <TableHead className="text-right w-28">Line total</TableHead>
+                      <TableHead className="text-right w-36">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {invoiceLineRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-muted-foreground text-sm">
+                          No lines yet. Add one below.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    {invoiceLineRows.map((line) => {
+                      const draft = lineDrafts[line.id] ?? {
+                        quantity: String(line.quantity),
+                        unitPrice: String(line.unitPrice),
+                        taxRate: String(line.taxRate ?? 0),
+                      };
+                      const qty = Number(draft.quantity);
+                      const up = Number(draft.unitPrice);
+                      const tr = Number(draft.taxRate);
+                      const { totalPrice } = invoiceLineTotals(
+                        Number.isFinite(qty) ? qty : 0,
+                        Number.isFinite(up) ? up : 0,
+                        Number.isFinite(tr) ? tr : 0,
+                      );
+                      const inv = inventoryForLines.find((i) => i.id === line.itemId);
+                      return (
+                        <TableRow key={line.id}>
+                          <TableCell className="text-sm">
+                            <div className="font-medium">{inv?.name ?? `Item #${line.itemId}`}</div>
+                            <div className="text-xs text-muted-foreground">{inv?.sku ?? line.description}</div>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-8"
+                              value={draft.quantity}
+                              onChange={(e) =>
+                                setLineDrafts((d) => ({
+                                  ...d,
+                                  [line.id]: { ...draft, quantity: e.target.value },
+                                }))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-8"
+                              value={draft.unitPrice}
+                              onChange={(e) =>
+                                setLineDrafts((d) => ({
+                                  ...d,
+                                  [line.id]: { ...draft, unitPrice: e.target.value },
+                                }))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-8"
+                              value={draft.taxRate}
+                              onChange={(e) =>
+                                setLineDrafts((d) => ({
+                                  ...d,
+                                  [line.id]: { ...draft, taxRate: e.target.value },
+                                }))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-right text-sm">${totalPrice.toFixed(2)}</TableCell>
+                          <TableCell className="text-right space-x-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              disabled={saveInvoiceLine.isPending}
+                              onClick={() => {
+                                if (!linesEditInvoice) return;
+                                const q = Number(draft.quantity);
+                                const u = Number(draft.unitPrice);
+                                const t = Number(draft.taxRate);
+                                if (!Number.isFinite(q) || q <= 0 || !Number.isFinite(u) || u < 0) {
+                                  toast({
+                                    title: "Invalid line",
+                                    description: "Quantity and unit price must be valid numbers.",
+                                    variant: "destructive",
+                                  });
+                                  return;
+                                }
+                                const { taxAmount, totalPrice: tp } = invoiceLineTotals(q, u, t);
+                                saveInvoiceLine.mutate({
+                                  invoiceId: linesEditInvoice.id,
+                                  line,
+                                  body: {
+                                    quantity: q,
+                                    unitPrice: u,
+                                    taxRate: t,
+                                    taxAmount,
+                                    totalPrice: tp,
+                                  },
+                                });
+                              }}
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive"
+                              disabled={deleteInvoiceLine.isPending}
+                              onClick={() => {
+                                if (!linesEditInvoice) return;
+                                deleteInvoiceLine.mutate({
+                                  invoiceId: linesEditInvoice.id,
+                                  lineId: line.id,
+                                });
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="text-sm font-medium">Add line</div>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div className="space-y-1 min-w-[200px]">
+                    <Label>Inventory item</Label>
+                    <Select value={newLineItemId} onValueChange={setNewLineItemId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select item" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Select item</SelectItem>
+                        {inventoryForLines.map((it) => (
+                          <SelectItem key={it.id} value={String(it.id)}>
+                            {it.sku} — {it.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1 w-24">
+                    <Label>Qty</Label>
+                    <Input value={newLineQty} onChange={(e) => setNewLineQty(e.target.value)} />
+                  </div>
+                  <div className="space-y-1 w-28">
+                    <Label>Unit $</Label>
+                    <Input value={newLineUnitPrice} onChange={(e) => setNewLineUnitPrice(e.target.value)} />
+                  </div>
+                  <div className="space-y-1 w-24">
+                    <Label>Tax %</Label>
+                    <Input value={newLineTaxRate} onChange={(e) => setNewLineTaxRate(e.target.value)} />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="default"
+                    disabled={addInvoiceLine.isPending || newLineItemId === "none"}
+                    onClick={() => {
+                      if (!linesEditInvoice) return;
+                      const itemId = Number(newLineItemId);
+                      const q = Number(newLineQty);
+                      const u = Number(newLineUnitPrice);
+                      const t = Number(newLineTaxRate);
+                      const picked = inventoryForLines.find((i) => i.id === itemId);
+                      if (!picked || !Number.isFinite(q) || q <= 0 || !Number.isFinite(u) || u < 0) {
+                        toast({
+                          title: "Invalid new line",
+                          description: "Pick an item and enter valid quantity and unit price.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      const { taxAmount, totalPrice: tp } = invoiceLineTotals(q, u, t);
+                      addInvoiceLine.mutate({
+                        invoiceId: linesEditInvoice.id,
+                        itemId,
+                        description: `${picked.sku} — ${picked.name}`,
+                        quantity: q,
+                        unitPrice: u,
+                        taxRate: t,
+                        taxAmount,
+                        totalPrice: tp,
+                      });
+                    }}
+                  >
+                    Add line
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <EntityDocumentsCard
         entityType="invoice"

@@ -8,6 +8,7 @@ import { DataState } from "@/components/ui/data-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -36,6 +37,7 @@ import {
   deleteShipment,
   fetchShipment,
   fetchShipmentsEnvelope,
+  patchShipmentMeta,
   updateShipmentStatus,
   type ShipmentDetail,
   type ShipmentListItem,
@@ -83,6 +85,7 @@ function ShipmentListView() {
   const [newPoNumber, setNewPoNumber] = useState("");
   const [newCarrier, setNewCarrier] = useState("");
   const [newEta, setNewEta] = useState("");
+  const [newTracking, setNewTracking] = useState("");
   const [carrierCode, setCarrierCode] = useState("");
   const [carrierName, setCarrierName] = useState("");
   const [carrierContact, setCarrierContact] = useState("");
@@ -243,6 +246,12 @@ function ShipmentListView() {
                   type="date"
                   className="w-36"
                 />
+                <Input
+                  value={newTracking}
+                  onChange={(event) => setNewTracking(event.target.value)}
+                  placeholder="Tracking #"
+                  className="w-40"
+                />
                 <Button
                   onClick={async () => {
                     try {
@@ -250,10 +259,12 @@ function ShipmentListView() {
                         poNumber: newPoNumber,
                         carrier: newCarrier || undefined,
                         eta: newEta || undefined,
+                        trackingNumber: newTracking.trim() || undefined,
                       });
                       setNewPoNumber("");
                       setNewCarrier("");
                       setNewEta("");
+                      setNewTracking("");
                       await refreshNow();
                     } catch (createError) {
                       toast({
@@ -307,6 +318,7 @@ function ShipmentListView() {
                 <TableHead>Carrier</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>ETA</TableHead>
+                <TableHead>Tracking</TableHead>
                 <TableHead>Risk</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -325,6 +337,9 @@ function ShipmentListView() {
                     <StatusBadge status={shipment.status} />
                   </TableCell>
                   <TableCell>{formatDate(shipment.eta)}</TableCell>
+                  <TableCell className="max-w-[140px] truncate font-mono text-xs">
+                    {shipment.trackingNumber?.trim() || "—"}
+                  </TableCell>
                   <TableCell>{shipment.atRisk ? "Late risk" : "-"}</TableCell>
                   <TableCell className="text-right">
                     <Can roles={["manager", "admin"]}>
@@ -430,12 +445,58 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
   const [toStatus, setToStatus] = useState("in_transit");
   const [note, setNote] = useState("");
   const [updating, setUpdating] = useState(false);
+  const [metaCarrier, setMetaCarrier] = useState("");
+  const [metaEta, setMetaEta] = useState("");
+  const [metaTracking, setMetaTracking] = useState("");
+  const [metaSaving, setMetaSaving] = useState(false);
 
   const fetcher = useCallback(
     (): Promise<ShipmentDetail> => fetchShipment(shipmentId),
     [shipmentId],
   );
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
+
+  // Sync form from server when shipment changes or server row updates (e.g. after PATCH refetch).
+  useEffect(() => {
+    if (!data) return;
+    setMetaCarrier(data.carrier ?? "");
+    setMetaEta(
+      data.eta
+        ? typeof data.eta === "string"
+          ? data.eta.slice(0, 10)
+          : new Date(data.eta).toISOString().slice(0, 10)
+        : "",
+    );
+    setMetaTracking(data.trackingNumber?.trim() ?? "");
+  }, [
+    data?.id,
+    data?.updatedAt,
+    data?.carrier,
+    data?.eta,
+    data?.trackingNumber,
+  ]);
+
+  const submitMeta = async () => {
+    setMetaSaving(true);
+    try {
+      await patchShipmentMeta({
+        id: shipmentId,
+        carrier: metaCarrier.trim() || null,
+        eta: metaEta.trim() || null,
+        trackingNumber: metaTracking.trim() || null,
+      });
+      await refetch();
+      toast({ title: "Shipment details updated" });
+    } catch (e) {
+      toast({
+        title: "Update failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setMetaSaving(false);
+    }
+  };
 
   const submitStatus = async () => {
     setUpdating(true);
@@ -521,6 +582,48 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                 <CardContent>{shipment.driftMinutes} min</CardContent>
               </Card>
             </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Carrier, ETA & tracking</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-carrier-${shipment.id}`}>Carrier</Label>
+                    <Input
+                      id={`sh-carrier-${shipment.id}`}
+                      value={metaCarrier}
+                      onChange={(e) => setMetaCarrier(e.target.value)}
+                      placeholder="Carrier name"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-eta-${shipment.id}`}>ETA</Label>
+                    <Input
+                      id={`sh-eta-${shipment.id}`}
+                      type="date"
+                      value={metaEta}
+                      onChange={(e) => setMetaEta(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-trk-${shipment.id}`}>Tracking #</Label>
+                    <Input
+                      id={`sh-trk-${shipment.id}`}
+                      value={metaTracking}
+                      onChange={(e) => setMetaTracking(e.target.value)}
+                      placeholder="PRO…"
+                    />
+                  </div>
+                </div>
+                <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
+                  <Button onClick={() => void submitMeta()} disabled={metaSaving}>
+                    Save carrier / ETA / tracking
+                  </Button>
+                </Can>
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>

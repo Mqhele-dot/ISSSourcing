@@ -8,7 +8,10 @@ import {
   purchaseRequisitions, type PurchaseRequisition, type InsertPurchaseRequisition,
   purchaseRequisitionItems, type PurchaseRequisitionItem, type InsertPurchaseRequisitionItem,
   purchaseOrders, type PurchaseOrder, type InsertPurchaseOrder,
-  purchaseOrderItems, type PurchaseOrderItem, type InsertPurchaseOrderItem,
+  purchaseOrderItems,
+  type PurchaseOrderItem,
+  type InsertPurchaseOrderItem,
+  type PurchaseOrderItemReceiveMeta,
   activityLogs, type ActivityLog, type InsertActivityLog,
   appSettings, type AppSettings, type InsertAppSettings,
   supplierLogos, type SupplierLogo, type InsertSupplierLogo,
@@ -458,8 +461,13 @@ export class DatabaseStorage implements IStorage {
   
   async resetFailedLoginAttempts(userId: number): Promise<void> {
     try {
-      // This is a simplified implementation for now
-      console.log(`Reset failed login attempts for user ID: ${userId}`);
+      await db.delete(userAccessLogs).where(
+        and(eq(userAccessLogs.userId, userId), eq(userAccessLogs.action, "login_failure")),
+      );
+      await db
+        .update(users)
+        .set({ failedLoginAttempts: 0, updatedAt: new Date() })
+        .where(eq(users.id, userId));
     } catch (error) {
       console.error("Error resetting failed login attempts:", error);
     }
@@ -1872,8 +1880,12 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
   
-  async recordPurchaseOrderItemReceived(itemId: number, receivedQuantity: number): Promise<PurchaseOrderItem | undefined> {
-    return this.memStorage.recordPurchaseOrderItemReceived(itemId, receivedQuantity);
+  async recordPurchaseOrderItemReceived(
+    itemId: number,
+    receivedQuantity: number,
+    meta?: PurchaseOrderItemReceiveMeta,
+  ): Promise<PurchaseOrderItem | undefined> {
+    return this.memStorage.recordPurchaseOrderItemReceived(itemId, receivedQuantity, meta);
   }
   
   async createPurchaseOrderFromRequisition(requisitionId: number): Promise<PurchaseOrder | undefined> {

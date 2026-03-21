@@ -2,6 +2,8 @@
 
 Honest backlog aligned with post-release review. **Done well:** `export-config.ts`, PDF orientation/wrap/metadata foundation, auth/Codespaces handling, `page-shell`, `use-reports-data`, `API_CONTRACTS.md`, `normalizeApiList`, server-first PDF in `document-generator.ts` (web).
 
+**Master supply-chain backlog:** The full phased plan (phases 1–6, pending vs done counts) lives in **[`PROGRESS-REPORT.md`](../PROGRESS-REPORT.md)** at the repo root. This doc focuses on **recent implementation slices** and follow-ups; it does not replace that roadmap.
+
 ### Recently landed (plan: close remaining gaps)
 
 - **Dedicated PDFs:** PO + requisition + activity log + single-row supplier/warehouse profile (`pdfLayout` in [`export-config.ts`](../server/services/export-config.ts), generators in [`document-generator-service.ts`](../server/services/document-generator-service.ts)); export route enriches PO/requisition PDF data and activity `userName`.
@@ -9,7 +11,7 @@ Honest backlog aligned with post-release review. **Done well:** `export-config.t
 - **Splits:** [`warehouse-table.tsx`](../client/src/pages/warehouses/warehouse-table.tsx), [`use-suppliers-core-queries.ts`](../client/src/pages/suppliers/use-suppliers-core-queries.ts), requisition [`use-requisition-form-route.ts`](../client/src/pages/requisitions/use-requisition-form-route.ts) + [`requisition-lines-editor.tsx`](../client/src/pages/requisitions/requisition-lines-editor.tsx), analytics fetchers + dashboard hash-scroll hook.
 - **Client export policy:** [`document-generator.ts`](../client/src/lib/document-generator.ts) — web Excel/CSV via `/api/export` when `reportType` set; dev-only fallback without it.
 - **UX:** read-only [`/suppliers/:id`](../client/src/pages/supplier-detail.tsx) and [`/warehouses/:id`](../client/src/pages/warehouse-detail.tsx) + list links.
-- **Verify:** post-deploy smoke in [`DEPLOYMENT.md`](DEPLOYMENT.md); PDF checks in [`test-exports.ts`](../scripts/test-exports.ts), [`test-procurement-flow.ts`](../scripts/test-procurement-flow.ts), [`test-requisitions.ts`](../scripts/test-requisitions.ts).
+- **Verify:** post-deploy smoke in [`DEPLOYMENT.md`](DEPLOYMENT.md); PDF checks in [`test-exports.ts`](../scripts/test-exports.ts), [`test-procurement-flow.ts`](../scripts/test-procurement-flow.ts), [`test-requisitions.ts`](../scripts/test-requisitions.ts). Full scripted demo + UI gap notes: [`DEMO_WORKFLOW.md`](DEMO_WORKFLOW.md), [`demo-supply-chain-e2e.ts`](../scripts/demo-supply-chain-e2e.ts).
 
 ---
 

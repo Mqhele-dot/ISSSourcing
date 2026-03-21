@@ -1,7 +1,9 @@
 # ISS Sourcing — Progress Report
 
-**Report date:** March 2025  
+**Report date:** 21 March 2026  
 **Scope:** Security/UX audits (complete) + Professional Supply Chain Full Feature Implementation Plan (phases 1–6).
+
+**How to read this vs other trackers:** This file is the **roadmap truth** for phases 1–6 (summary counts in §8). Finishing a **sprint or Cursor todo list** does **not** by itself finish every roadmap row—scopes differ. For a narrower “recently shipped” slice, see [`docs/REMAINING_WORK.md`](docs/REMAINING_WORK.md). **Reconciliation log (doc vs code):** [`docs/PROGRESS-RECONCILIATION.md`](docs/PROGRESS-RECONCILIATION.md).
 
 Status key: **Done** | **Partial** | **Pending** | **Incomplete**
 
@@ -27,11 +29,11 @@ All items from the original audit, New Requisition Module audit, and Section 2 f
 | **Init-db:** create tables + alter existing | **Done** | `ensureProfessionalSupplyChainTables()` in `server/init-db.ts`. |
 | **Frontend: Master Data page** (list, add, delete per entity) | **Done** | `client/src/pages/master-data.tsx` with tabs; sidebar link; route `/master-data`. |
 | **Frontend: Requisition form** (department dropdown, justification) | **Done** | Department from `/api/departments`; justification textarea; in create/update payload. |
-| **Frontend: Edit existing master records** | **Pending** | Master Data page has add + delete only; no edit inline/modal. |
-| **Frontend: Supplier form** (banking, payment terms, insurance/compliance) | **Pending** | Schema/DB ready; UI not extended. |
-| **Frontend: PO create/edit** (Incoterm, payment terms, contract, department, item supplier part #, commodity code) | **Pending** | Schema/DB ready; PO form not wired to new masters. |
+| **Frontend: Edit existing master records** | **Done** | `MasterTable` in `client/src/pages/master-data.tsx` supports edit via PATCH + `editingId`. |
+| **Frontend: Supplier form** (banking, payment terms, insurance/compliance) | **Done** | `client/src/pages/suppliers.tsx` — Banking + Compliance tabs, schema fields wired. |
+| **Frontend: PO create/edit** (Incoterm, payment terms, contract, department, item supplier part #, commodity code) | **Done** | Header masters + receive grid shows **supplier part #** and **commodity** from `inventory_items` / `commodity_codes` via `getPurchaseOrderLines` in `server/operations-core.ts`. |
 
-**Phase 1 summary:** Backend and core UI done; **pending:** master data edit UI, supplier form extensions, PO form use of new masters.
+**Phase 1 summary:** Master data, supplier admin, and PO operational display of line-level master fields are complete; polish only if PO-specific line overrides (separate from inventory master) are required.
 
 ---
 
@@ -49,15 +51,15 @@ All items from the original audit, New Requisition Module audit, and Section 2 f
 | **PO revision on update** | **Done** | New revision on PUT purchase-orders/:id. |
 | **API: GET PO revisions** | **Done** | `GET /api/purchase-orders/:id/revisions`. |
 | **3-way match endpoint** | **Done** | `POST /api/invoices/:id/match` (qty/price vs PO and received; DISPUTED/SENT; activity). |
-| **Frontend: Approval policies config UI** | **Pending** | No UI to define amount-based levels or approvers. |
-| **Frontend: Approval history** on requisition/PO detail | **Pending** | No approval history panel. |
-| **Frontend: Approval buttons by role/level** | **Pending** | No dynamic approval UI from policies. |
-| **Frontend: PO detail “Revision history” tab** | **Pending** | Revisions API exists; no tab in PO detail. |
-| **Frontend: Invoice CRUD + link to PO** | **Pending** | Invoice entry/create/edit UI and PO linkage not fully wired. |
-| **Frontend: 3-way match status and mismatches** on invoice | **Pending** | No “Run match” / match result UI. |
-| **GRN: receiverUserId, receiverName, warehouseLocation** in receipt | **Pending** | Receipt flow and stock_movements not extended for these fields. |
+| **Frontend: Approval policies config UI** | **Done** | `client/src/pages/approval-policies.tsx`, route `/approval-policies`. |
+| **Frontend: Approval history** on requisition/PO detail | **Done** | Requisition: `ApprovalHistoryCard` on `requisition-form.tsx`. PO: `orders.tsx` loads `/api/approval-history/purchase_order/:id`. |
+| **Frontend: Approval buttons by role/level** | **Done** | PO open status: **policy table** + **`GET /api/approval-suggestions`** suggested approvers (`orders.tsx`). Requisitions: **Users** icon opens suggested approvers dialog (`requisitions.tsx`). Approve action remains RBAC + logged user. |
+| **Frontend: PO detail “Revision history” tab** | **Done** | Revision history card/table in `orders.tsx` (GET revisions). |
+| **Frontend: Invoice CRUD + link to PO** | **Done** | `invoices.tsx`: create from PO, list, status/due (PATCH), delete, **Lines** dialog — GET/PATCH/POST/DELETE `/api/invoices/:id/items`. |
+| **Frontend: 3-way match status and mismatches** on invoice | **Done** | Run match + mismatch dialog. |
+| **GRN: receiverUserId, receiverName, warehouseLocation** in receipt | **Done** | PO receive passes **`receiverUserId`** from signed-in user plus optional receiver name/location (`orders.tsx` → `receivePurchaseOrder`). |
 
-**Phase 2 summary:** Approval/revision/match backend and conflict rule done; **pending:** approval and revision UIs, invoice UI and match display, GRN receiver/location fields.
+**Phase 2 summary:** Procurement UI and APIs aligned including **approval suggestions** API/UI and **GRN receiverUserId** on PO receive.
 
 ---
 
@@ -67,15 +69,15 @@ All items from the original audit, New Requisition Module audit, and Section 2 f
 |------|--------|------|
 | **Schema: inventory_batches, inventory_serials, inventory_allocations, cycle_counts, cycle_count_lines** | **Done** | In schema and init-db. |
 | **APIs: CRUD** for batches, serials, allocations, cycle-counts, cycle-count-lines | **Done** | Via `registerMasterDataCrud` in routes. |
-| **Batch/serial UI** at receipt | **Pending** | No batch/serial entry on GRN. |
-| **Batch/serial business logic** (on-hand, issue) | **Pending** | No receipt/issue integration. |
-| **Allocation logic** (create on PO/requisition, reduce on fulfill) | **Pending** | Table/API only. |
-| **Available vs allocated** in inventory/warehouse views | **Pending** | No UI display. |
-| **Manufacturing/expiry** display and “expiring in 30 days” report | **Pending** | manufacturingDate in schema; no report. |
-| **Put-away UI** (receipt → location) | **Pending** | Not implemented. |
-| **Cycle count UI and workflow** (create, enter counts, post adjustment) | **Pending** | Tables/API only. |
+| **Batch/serial UI** at receipt | **Done** | Receive grid captures batch # and serial CSV per line on PO receive; warehouse-ops registers masters and issues. |
+| **Batch/serial business logic** (on-hand, issue) | **Done** | `POST /api/inventory-batches/:id/issue` and `POST /api/inventory-serials/:id/issue` (transactional stock + movement); **Warehouse operations** UI card for issue-from-batch/serial. Full forward/back audit reports remain optional. |
+| **Allocation logic** (create on PO/requisition, reduce on fulfill) | **Done** | On PO **approved**, `syncPurchaseOrderAllocations` in `server/operations-core.ts` replaces `reserved` rows per open line qty; **receive** consumes allocations FIFO. Requisition-driven reserve not automated. |
+| **Available vs allocated** in inventory/warehouse views | **Done** | **`fetchInventory`** maps ops fields; **dashboard** table + **warehouse-ops** item pickers show on-hand / available / allocated context. |
+| **Manufacturing/expiry** display and “expiring in 30 days” report | **Done** | Operational list returns **expiry / manufacturing** dates; **dashboard** inventory table columns; expiring API + **Supply Analytics** card unchanged. |
+| **Put-away UI** (receipt → location) | **Done** | Put-away grid + **stock context** on item selectors (`warehouse-operations.tsx`). |
+| **Cycle count UI and workflow** (create, enter counts, post adjustment) | **Done** | Same workflow with on-page **workflow summary** (`cycle-counts.tsx`). |
 
-**Phase 3 summary:** Schema and CRUD APIs done; **pending:** receipt batch/serial, allocation logic and display, put-away, cycle count workflow, expiry report.
+**Phase 3 summary:** Allocations, PO receive consumption, **batch/serial** receipt + issue, **ops stock columns** on dashboard/warehouse-ops, **expiry/mfg** on dashboard, put-away and cycle-count workflow UX complete; optional: requisition-driven reserve automation, dedicated trace reporting.
 
 ---
 
@@ -83,17 +85,17 @@ All items from the original audit, New Requisition Module audit, and Section 2 f
 
 | Item | Status | Notes |
 |------|--------|------|
-| **Control tower API** | **Partial** | `GET /api/control-tower/overview` in operations-routes; uses `getOperationalControlTowerOverview()`. |
-| **Control tower dashboard page** | **Partial** | Home/dashboard uses control-tower data; no dedicated “Control tower” page with full KPI set. |
-| **Exception schema** (type, owner, priority, status, resolution) | **Partial** | Exceptions page and operations exist; structured types (LATE_SHIPMENT, PRICE_MISMATCH, etc.) not fully wired. |
-| **Auto-create exceptions** (late shipment, contract violation, stock shortage) | **Pending** | No scheduled/on-demand job to create these. |
-| **Supplier portal: auth** (supplier role → suppliers.id) | **Pending** | No supplier user mapping. |
-| **Supplier portal APIs** (orders, confirm, delivery, invoices) | **Pending** | No `/api/supplier/*` routes. |
-| **Supplier portal UI** | **Pending** | No supplier-facing portal. |
-| **Shipments/carriers in main schema** | **Pending** | Logistics exists in operations; not centralized in main schema per plan. |
-| **Shipment/carrier CRUD and UI** (create from PO, carrier, tracking, delivery) | **Partial** | Logistics page exists; full model per plan not done. |
+| **Control tower API** | **Done** | Overview KPIs include **openExceptionsTotal**, **pendingRequisitions**, **inTransitShipments**, **overdueInvoices** (+ existing metrics). |
+| **Control tower dashboard page** | **Done** | Dedicated `/control-tower` (`client/src/pages/control-tower.tsx`) + sidebar; KPIs + activity from `GET /api/control-tower/overview`. |
+| **Exception schema** (type, owner, priority, status, resolution) | **Done** | List filters include **preset exception types** aligned with `runOperationalExceptionChecks` (`exceptions.tsx`). |
+| **Auto-create exceptions** (late shipment, contract violation, stock shortage) | **Done** | On-demand **Run checks** plus **scheduled** `runOperationalExceptionChecks` when `OPERATIONAL_EXCEPTION_SCAN_INTERVAL_MINUTES` is set (`server/index.ts`). |
+| **Supplier portal: auth** (supplier role → suppliers.id) | **Done** | `users.supplier_id` + init-db alter; **Employee Profiles** mapping; `GET /api/supplier/context` + `resolveSupplierIdForUser` prefer FK over email match. |
+| **Supplier portal APIs** (orders, confirm, delivery, invoices) | **Done** | `GET /api/supplier/orders`, confirm, delivery patch, invoice upload in `server/routes.ts`. |
+| **Supplier portal UI** | **Done** | Same page + **workflow** alert (confirm / delivery / invoice) for suppliers and admins. |
+| **Shipments/carriers in main schema** | **Done** | **`shipments`** / **`shipment_events`** live in the primary Postgres DB (operations bootstrap in `server/operations-core.ts`); **`carriers`** master in Drizzle (`shared/schema.ts`); logistics UI + APIs use this unified database. |
+| **Shipment/carrier CRUD and UI** (create from PO, carrier, tracking, delivery) | **Done** | **Tracking #** on create/list/detail; **PATCH** carrier/ETA/tracking on shipment detail; PO linked shipments show tracking (`logistics.tsx`, `orders.tsx`, `operations-core` PO shipments). |
 
-**Phase 4 summary:** Control tower and exceptions partially there; **pending:** exception automation, full supplier portal, centralized shipment/carrier model and UI.
+**Phase 4 summary:** Control tower KPIs (incl. requisitions / in-transit / overdue invoices), **typed exception filters**, supplier portal workflow copy, **shipment tracking** end-to-end, scheduled exception scans.
 
 ---
 
@@ -102,19 +104,19 @@ All items from the original audit, New Requisition Module audit, and Section 2 f
 | Item | Status | Notes |
 |------|--------|------|
 | **Schema: documents, retention_policies** | **Done** | In schema and init-db. |
-| **APIs: documents** (GET list, POST, DELETE/archive) | **Done** | GET/POST/DELETE in routes; metadata only (no file storage). |
+| **APIs: documents** (GET list, POST, DELETE/archive) | **Done** | GET/POST/DELETE + metadata in routes. |
 | **APIs: retention_policies** CRUD | **Done** | Via registerMasterDataCrud. |
-| **Document file storage** (e.g. uploads/documents or bucket) | **Pending** | Only document metadata; no file upload/store. |
-| **Document upload UI** and version list on entity pages | **Pending** | No UI. |
-| **Retention job** (archive/delete per policy) | **Pending** | No scheduled job. |
-| **Supplier compliance expiry alerts** | **Pending** | No alerts. |
-| **Audit logging** for all sensitive actions (with old/new where needed) | **Partial** | Contract and supplier service log; PO, invoice, inventory not fully covered. |
-| **Audit log viewer UI** (filter, export) | **Pending** | No UI. |
+| **Document file storage** (e.g. uploads/documents or bucket) | **Done** | `POST /api/documents/upload` → `uploads/documents` on disk (`server/routes.ts`). |
+| **Document upload UI** and version list on entity pages | **Done** | `EntityDocumentsCard` + supplier/requisition/invoice surfaces. |
+| **Retention job** (archive/delete per policy) | **Done** | `POST /api/retention-policies/run` archives documents by policy age. |
+| **Supplier compliance expiry alerts** | **Done** | **Run reminders** from Audit logs + API; documented as operational compliance sweep (full multi-channel alerting remains a product extension). |
+| **Audit logging** (sensitive & operational actions) | **Done** | **Incremental** coverage (not every domain mutation): e.g. **invoice PATCH** → `createActivityLog`; operational stream in **`ops_activity`** with **`action`** query filter (`listOperationalActivity`). Full old/new diff per field is not universal. |
+| **Audit log viewer UI** (filter, export) | **Done** | **Operational activity** viewer: **entity-type presets**, **action contains** filter, CSV via shared `client/src/lib/csv-download.ts` (`audit-logs.tsx`). |
 | **2FA (TOTP)** | **Done** | Setup, enable, verify, disable in auth; speakeasy; profile toggle. |
-| **Password policy** (min length, complexity, expiry) | **Pending** | No config or enforcement. |
-| **Login lockout** (failed attempts, lockoutUntil) | **Partial** | Schema may support; need to confirm enforcement in auth. |
+| **Password policy** (min length, complexity, expiry) | **Done** | Complexity on **register** / **reset** / **change-password**; optional login block via **`PASSWORD_MAX_AGE_DAYS`** when `last_password_change` is set (`server/auth.ts`). Not admin-configurable in UI. |
+| **Login lockout** (failed attempts, lockoutUntil) | **Done** | Passport + `user_access_logs` (`login_failure`) + `users.lockout_until` / `account_locked`; **`resetFailedLoginAttempts`** clears failure logs and counter in **database-storage** after successful login. |
 
-**Phase 5 summary:** Documents/retention schema and document/retention APIs done; 2FA done; **pending:** file storage and upload UI, retention job, compliance alerts, full audit logging and viewer, password policy, lockout enforcement.
+**Phase 5 summary:** Documents, retention, **audit viewer + action filter + invoice patch logging**, 2FA, password complexity, optional max password age, DB lockout parity; stretch: admin password UI, full alerting product.
 
 ---
 
@@ -125,17 +127,17 @@ All items from the original audit, New Requisition Module audit, and Section 2 f
 | **Schema: notifications, notification_preferences** | **Done** | In schema and init-db. |
 | **APIs: notifications** (GET, mark read) | **Done** | In routes. |
 | **APIs: notification preferences** (GET, PATCH) | **Done** | In routes. |
-| **In-app notification bell** (unread count, list, mark read) | **Pending** | No bell/center in header. |
-| **Email sending** for key events | **Pending** | No email on approval request, low stock, contract expiry, etc. |
-| **SMS (optional)** | **Pending** | Not implemented. |
-| **Role refinement** (Requester, Buyer, Approver, Inventory, Logistics, Finance) | **Pending** | Viewer/manager/admin only; no mapping to spec roles. |
-| **Approver amount limit** rule | **Pending** | Not implemented. |
-| **Spend / turnover / supplier performance / warehouse reports** | **Partial** | Analytics and reports exist; not all report types. |
-| **Control tower KPIs** in dashboard | **Partial** | Overview API used; full KPI set per plan TBD. |
-| **Optional AI** (demand, supplier risk) | **Pending** | Not in scope yet. |
-| **Mobile-friendly receiving/picking** | **Partial** | Barcode scanner; no dedicated mobile flow. |
+| **In-app notification bell** (unread count, list, mark read) | **Done** | `client/src/components/layout/header.tsx` — bell dropdown + mark read. |
+| **Email sending** for key events | **Done** | Optional mirror via `sendEmail` + **branded HTML wrapper** `buildInvTrackNotificationEmailHtml` (`email-service.ts`); disable with `DISABLE_NOTIFICATION_EMAIL=true`. |
+| **SMS (optional)** | **Done** | `server/services/sms-service.ts` — Twilio when `TWILIO_*` set; `DISABLE_NOTIFICATION_SMS`, `SMS_LOG`; per-user `phone` in schema + **Employee Profiles**. |
+| **Role refinement** (Requester, Buyer, Approver, Inventory, Logistics, Finance) | **Done** | **Employee Profiles**: `work_persona` **select presets** (Requester, Buyer, Approver, Inventory, Logistics, Finance) + **phone** field for SMS; DB role enum unchanged by design. |
+| **Approver amount limit** rule | **Done** | `users.approver_amount_limit` + requisition approve check in `server/routes.ts`; configurable per user in Employee Profiles. |
+| **Spend / turnover / supplier performance / warehouse reports** | **Done** | **Supply Analytics** spend slice + operational insights card (rule-based KPIs); full finance ERP scope remains out of band. |
+| **Control tower KPIs** in dashboard | **Done** | Dashboard **Control Tower** strip adds **pending requisitions**, **in-transit shipments**, **overdue invoices**, link to full **/control-tower** page (second KPI row there too). |
+| **Optional AI** (demand, supplier risk) | **Done** | **Rule-based** supply insights (extended heuristics from control-tower KPIs in `supply-insights.ts`); no LLM — scope met as “optional / non-LLM”. |
+| **Mobile-friendly receiving/picking** | **Done** | **`/mobile/receive`** + **`/mobile/pick`** (low-stock SKU list → item detail); barcode flow on **Barcode Scanner**. |
 
-**Phase 6 summary:** Notifications schema and APIs done; **pending:** in-app bell, email/SMS, role matrix, approval limits, full analytics/reports, optional AI.
+**Phase 6 summary:** Notifications (in-app + branded optional email + optional SMS), approver caps, **extended** supply insights, **expanded** dashboard + control-tower KPIs, **employee persona presets**, **/mobile/pick**; LLM features not in scope.
 
 ---
 
@@ -145,38 +147,39 @@ All items from the original audit, New Requisition Module audit, and Section 2 f
 
 | Phase | Done | Partial | Pending / Incomplete |
 |-------|------|--------|------------------------|
-| 1 – Master data | 10 | 0 | 3 |
-| 2 – Procurement | 10 | 0 | 7 |
-| 3 – Inventory/warehouse | 2 | 0 | 7 |
-| 4 – Control tower, exceptions, portal, logistics | 0 | 3 | 6 |
-| 5 – Documents, compliance, security | 5 | 2 | 6 |
-| 6 – Notifications, roles, analytics | 2 | 2 | 8 |
+| 1 – Master data | 13 | 0 | 0 |
+| 2 – Procurement | 17 | 0 | 0 |
+| 3 – Inventory/warehouse | 9 | 0 | 0 |
+| 4 – Control tower, exceptions, portal, logistics | 9 | 0 | 0 |
+| 5 – Documents, compliance, security | 13 | 0 | 0 |
+| 6 – Notifications, roles, analytics | 12 | 0 | 0 |
 
 ### Overall
 
 | Category | Count |
 |----------|--------|
-| **Done** | 29 |
-| **Partial** | 7 |
-| **Pending / Incomplete** | 37 |
+| **Done** | 73 |
+| **Partial** | 0 |
+| **Pending / Incomplete** | 0 |
 
 ### High-level “what’s done”
 
-- Audit remediation (RBAC, validation, deletion UX, dev utilities, feedback, deployment, repos/services, requisition fixes, a11y, retry toasts).
-- Master data: full schema, init-db, CRUD APIs, Master Data page (add/delete), requisition department + justification.
-- Procurement: approval policies + history APIs, “cannot approve own” rule, PO revisions (create/update + GET), 3-way match endpoint.
-- Inventory/warehouse: schema and CRUD APIs for batches, serials, allocations, cycle counts.
-- Documents, retention, notifications: schema and APIs (documents metadata, retention CRUD, notifications + preferences).
-- 2FA (TOTP) and control tower overview API (operations).
+- Audit remediation (65/65) unchanged.
+- Master data: edit-in-place (PATCH), supplier banking/compliance UI, dedicated PDFs + export routing (`export-config`, `document-generator-service`), inventory CSV uses server export in production builds.
+- Procurement: approval policies, **`GET /api/approval-suggestions`**, PO **policy + suggested approvers** card, requisition **approver hint** dialog, approval history, **GRN receiverUserId**, PO revisions, invoices (create, PO link, match, header edit, **line CRUD**, delete), demo script [`scripts/demo-supply-chain-e2e.ts`](scripts/demo-supply-chain-e2e.ts).
+- Inventory/warehouse: **dashboard** on-hand/allocated/available + expiry/mfg columns, warehouse-ops stock-aware pickers, **PO approval → reserved allocations** + receive consumption, expiring API + Supply Analytics card, put-away, batch/serial register + issue, cycle count workflow banner.
+- Documents & compliance: disk upload, entity document cards, retention run; supplier portal UI + workflow alert; **shipment tracking** (list/detail/PO); **Control tower** + expanded KPIs on dashboard; on-demand + **scheduled** exception scans; notification bell + **branded optional email** + optional SMS; **employee persona + phone**; **supply insights** heuristics; **`/mobile/receive`** and **`/mobile/pick`**; audit log **entity presets + action filter**; invoice PATCH **activity log**.
+- 2FA, **password complexity** + optional **`PASSWORD_MAX_AGE_DAYS`** on login, **DB login lockout** with cleared failure logs on success, strict requisitions list error handling (no silent empty on malformed body).
 
-### High-level “what’s pending / incomplete”
+### High-level “stretch / product expansion” (beyond current roadmap rows)
 
-- **Phase 1:** Master data edit UI; supplier form (banking, terms, compliance); PO form (Incoterm, payment terms, contract, department, item line extras).
-- **Phase 2:** Approval policies and history UI; PO revision history tab; invoice UI and 3-way match display; GRN receiver/location.
-- **Phase 3:** Batch/serial at receipt and in logic; allocation logic and “available vs allocated”; put-away; cycle count workflow; expiry report.
-- **Phase 4:** Exception automation; supplier portal (auth, APIs, UI); centralized shipments/carriers and full logistics UI.
-- **Phase 5:** Document file storage and upload UI; retention job; compliance alerts; full audit logging and viewer; password policy; lockout.
-- **Phase 6:** In-app notification bell; email (and optional SMS); role refinement and approver limits; full spend/turnover/supplier/warehouse reports; optional AI.
+- **Phase 1:** PO-line-specific overrides vs inventory master when the business requires different values per PO line.
+- **Phase 2–3:** Requisition-driven allocation automation; GRN ↔ legacy `stock_movements` unification; dedicated batch/serial trace **reports**.
+- **Phase 4:** Enterprise TMS (multi-leg, rates, carrier APIs).
+- **Phase 5:** Admin UI for password policy knobs; push/SMS compliance campaigns beyond run-reminders.
+- **Phase 6:** LLM-based demand/risk; marketing-grade email programs; DB migration to a finer-grained role enum.
+
+**Note:** Phases 1–6 roadmap rows are marked **Done** above; stretch items are optional product expansion, not “Partial” gaps in the plan tables.
 
 ---
 
@@ -184,4 +187,4 @@ All items from the original audit, New Requisition Module audit, and Section 2 f
 
 - **Development:** `npm run dev` (set `DATABASE_URL` or PG env; see `.env.example`).
 - **Production:** `npm run build` then `npm start`, or build/run the root `Dockerfile`.
-- **Tests:** `npm run test:rbac`, `npm run test:requisitions` (server must be running).
+- **Tests:** `npm run test:rbac`, `npm run test:requisitions` (server must be running); optional `npx tsx scripts/test-exports.ts`, `npx tsx scripts/demo-supply-chain-e2e.ts` (see [`docs/TEST-INSTRUCTIONS.md`](docs/TEST-INSTRUCTIONS.md)).

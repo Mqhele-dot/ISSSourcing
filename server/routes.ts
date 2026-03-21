@@ -27,7 +27,10 @@ import { registerDocumentExtractorRoutes } from "./controllers/document-extracto
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument } from "./services/document-generator-service";
-import { sendEmail } from "./services/email-service";
+import { sendEmail, buildInvTrackNotificationEmailHtml } from "./services/email-service";
+import { getApprovalSuggestions } from "./approval-suggestions";
+import { maybeSendSms } from "./services/sms-service";
+import { buildSupplyInsights } from "./supply-insights";
 import type { ReportFormat, ReportType} from "@shared/schema";
 import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { registerOperationalRoutes } from "./operations-routes";
@@ -90,9 +93,11 @@ import {
   notificationPreferences,
   documents,
   retentionPolicies,
+  inventoryItems,
   inventoryBatches,
   inventorySerials,
   inventoryAllocations,
+  warehouseInventory,
   cycleCounts,
   cycleCountLines,
   invoices,
@@ -590,6 +595,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const invRead = [auth.ensureAuthenticated];
   const invWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
 
+  /**
+   * NOTE: `registerOperationalRoutes(app)` runs earlier in this file and registers GET `/api/inventory`.
+   * Express uses the first matching route — this handler is therefore unused for plain list GET in normal
+   * startup. Kept as documentation/fallback if operational registration is ever reordered or disabled.
+   * Sub-routes below (`/api/inventory/low-stock`, `/api/inventory/:id`, etc.) remain active.
+   */
   // Inventory items endpoints (return 200 + empty/safe payload on error so UI never 502s)
   app.get("/api/inventory", ...invRead, async (req: Request, res: Response) => {
     try {
@@ -623,6 +634,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(items);
     } catch (error) {
       console.error("Error fetching out of stock items:", error);
+      res.status(200).json([]);
+    }
+  });
+
+  /** Items with expiryDate within the next `days` (default 30). */
+  app.get("/api/inventory/expiring", ...invRead, async (req: Request, res: Response) => {
+    try {
+      const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+      const now = new Date();
+      const horizon = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      const all = await storage.getAllInventoryItems();
+      const expiring = all.filter((row) => {
+        const exp = (row as { expiryDate?: Date | string | null }).expiryDate;
+        if (exp == null) return false;
+        const d = exp instanceof Date ? exp : new Date(exp);
+        if (Number.isNaN(d.getTime())) return false;
+        return d >= now && d <= horizon;
+      });
+      res.json(expiring);
+    } catch (error) {
+      console.error("Error fetching expiring inventory:", error);
       res.status(200).json([]);
     }
   });
@@ -793,6 +825,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       entityType: payload.entityType ?? null,
       entityId: payload.entityId ?? null,
     } as any);
+
+    if (process.env.DISABLE_NOTIFICATION_EMAIL !== "true") {
+      try {
+        const rows = await db
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, payload.userId))
+          .limit(1);
+        const to = rows[0]?.email;
+        if (to) {
+          const textBody = payload.body ?? "";
+          await sendEmail({
+            to,
+            subject: payload.title,
+            html: buildInvTrackNotificationEmailHtml(payload.title, textBody),
+            text: textBody,
+          });
+        }
+      } catch (emailErr) {
+        console.warn("[emitNotification] optional email mirror failed:", emailErr);
+      }
+    }
+
+    if (process.env.DISABLE_NOTIFICATION_SMS !== "true") {
+      try {
+        const u = await storage.getUser(payload.userId);
+        const phone = u?.phone?.trim();
+        if (phone) {
+          await maybeSendSms(phone, `${payload.title}\n${payload.body ?? ""}`.trim().slice(0, 320));
+        }
+      } catch (smsErr) {
+        console.warn("[emitNotification] optional SMS mirror failed:", smsErr);
+      }
+    }
   };
 
   const emitNotificationToRoles = async (
@@ -998,6 +1064,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching approval policies:", error);
       res.status(500).json({ message: "Failed to fetch approval policies" });
+    }
+  });
+
+  app.get("/api/approval-suggestions", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const entityType = String(req.query.entityType ?? "");
+      const amount = Number(req.query.amount ?? NaN);
+      if (entityType !== "requisition" && entityType !== "purchase_order") {
+        return sendError(res, 400, "INVALID_ENTITY", "entityType must be requisition or purchase_order");
+      }
+      if (!Number.isFinite(amount) || amount < 0) {
+        return sendError(res, 400, "INVALID_AMOUNT", "amount must be a non-negative number");
+      }
+      const out = await getApprovalSuggestions(entityType, amount);
+      return sendOk(res, out);
+    } catch (error) {
+      console.error("Error building approval suggestions:", error);
+      return sendError(res, 500, "SUGGESTIONS_FAILED", "Failed to load approval suggestions");
     }
   });
 
@@ -1338,6 +1422,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /** Supplier portal: maps authenticated supplier user → suppliers.id (see users.supplier_id). */
+  app.get("/api/supplier/context", ...masterRead, async (req: Request, res: Response) => {
+    const sessionUser = (req as Request & { user?: { id?: number; role?: string } }).user;
+    const role = String(sessionUser?.role ?? "").toLowerCase();
+    if (role !== "supplier") {
+      return res.status(403).json({ message: "Supplier role required" });
+    }
+    const uid = sessionUser?.id;
+    if (uid == null) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const u = await storage.getUser(Number(uid));
+    const mappedSupplierId = u?.supplierId != null ? Number(u.supplierId) : null;
+    res.json({
+      mappedSupplierId,
+      note:
+        mappedSupplierId == null
+          ? "Set Supplier ID on this user in Employee Profiles to scope portal orders."
+          : null,
+    });
+  });
+
   app.get("/api/reports/analytics", ...masterRead, async (req: Request, res: Response) => {
     try {
       const supplierList = await storage.getAllSuppliers();
@@ -1455,6 +1561,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/analytics/supply-insights", ...masterRead, async (_req: Request, res: Response) => {
+    try {
+      const out = await buildSupplyInsights();
+      return sendOk(res, out);
+    } catch (error) {
+      console.error("Error building supply insights:", error);
+      return sendError(res, 500, "INSIGHTS_FAILED", "Failed to build supply insights");
+    }
+  });
+
   app.post("/api/compliance/run-reminders", ...masterWrite, async (_req: Request, res: Response) => {
     try {
       const suppliers = await storage.getAllSuppliers();
@@ -1515,6 +1631,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const explicit = Number(req.query.supplierId ?? req.body?.supplierId);
     const hasExplicit = Number.isFinite(explicit) && explicit > 0;
     if (user.role === "supplier") {
+      const fullUser = await storage.getUser(Number(user.id));
+      const mapped = fullUser?.supplierId != null ? Number(fullUser.supplierId) : null;
+      if (mapped != null && Number.isFinite(mapped) && mapped > 0) {
+        return mapped;
+      }
       const supplierRows = await supplierRepo.findAll();
       const fallback = supplierRows.find((supplier) => supplier.email && user.email && supplier.email.toLowerCase() === user.email.toLowerCase());
       // Supplier users are always scoped to their own mapped supplier, even if query/body includes supplierId.
@@ -2144,6 +2265,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return sendFunctionError(res, 403, "approvePurchaseRequisition", "Requester cannot approve their own requisition");
       }
       const requisitionTotal = Number(existing.totalAmount ?? 0);
+      const approverUser = await storage.getUser(approverId);
+      const userCap = approverUser?.approverAmountLimit != null ? Number(approverUser.approverAmountLimit) : null;
+      if (userCap != null && userCap > 0 && requisitionTotal > userCap) {
+        return sendFunctionError(
+          res,
+          403,
+          "approvePurchaseRequisition",
+          `Requisition total exceeds your approver limit (${userCap.toFixed(2)}).`,
+        );
+      }
       const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
       const applicable = policies
         .filter((policy) => {
@@ -2739,12 +2870,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid purchase order item ID" });
       }
       
-      const { receivedQuantity } = req.body;
+      const { receivedQuantity, receiverName, warehouseLocation, receivedAt, receiverUserId } = req.body ?? {};
       if (receivedQuantity === undefined || isNaN(Number(receivedQuantity)) || Number(receivedQuantity) < 0) {
         return res.status(400).json({ message: "Valid received quantity is required" });
       }
-      
-      const updatedItem = await storage.recordPurchaseOrderItemReceived(id, Number(receivedQuantity));
+
+      const meta =
+        receiverName != null || warehouseLocation != null || receivedAt != null || receiverUserId != null
+          ? {
+              receiverName: typeof receiverName === "string" ? receiverName : null,
+              warehouseLocation: typeof warehouseLocation === "string" ? warehouseLocation : null,
+              receivedAt: typeof receivedAt === "string" ? receivedAt : null,
+              receiverUserId:
+                receiverUserId != null && !isNaN(Number(receiverUserId)) ? Number(receiverUserId) : null,
+            }
+          : undefined;
+
+      const updatedItem = await storage.recordPurchaseOrderItemReceived(id, Number(receivedQuantity), meta);
       
       if (!updatedItem) {
         return res.status(404).json({ message: "Purchase order item not found" });
@@ -4000,6 +4142,214 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error issuing stock:", error);
       res.status(500).json({ message: error instanceof Error ? error.message : "Failed to issue stock" });
+    }
+  });
+
+  /**
+   * Issue quantity from a tracked batch: decrements batch on-hand, warehouse row (if any), master item qty, and records ISSUE movement.
+   */
+  app.post("/api/inventory-batches/:id/issue", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        return sendError(res, 400, "INVALID_ID", "Invalid batch id");
+      }
+      const qty = Number(req.body?.quantity);
+      const notes = typeof req.body?.notes === "string" ? req.body.notes : "";
+      if (!Number.isFinite(qty) || qty < 1) {
+        return sendError(res, 400, "INVALID_QTY", "quantity must be a positive integer");
+      }
+
+      const userId = req.user && "id" in req.user ? (req.user as { id: number }).id : null;
+
+      const result = await db.transaction(async (tx) => {
+        const [batchRow] = await tx.select().from(inventoryBatches).where(eq(inventoryBatches.id, id));
+        if (!batchRow) {
+          throw Object.assign(new Error("NOT_FOUND"), { status: 404 });
+        }
+        if ((batchRow.quantityOnHand ?? 0) < qty) {
+          throw Object.assign(new Error("Insufficient quantity on batch"), { status: 400 });
+        }
+
+        const newOh = (batchRow.quantityOnHand ?? 0) - qty;
+        await tx
+          .update(inventoryBatches)
+          .set({ quantityOnHand: newOh, updatedAt: new Date() })
+          .where(eq(inventoryBatches.id, id));
+
+        const [itemRow] = await tx.select().from(inventoryItems).where(eq(inventoryItems.id, batchRow.itemId));
+        if (!itemRow) {
+          throw Object.assign(new Error("Item not found for batch"), { status: 400 });
+        }
+        if ((itemRow.quantity ?? 0) < qty) {
+          throw Object.assign(new Error("Insufficient master item quantity"), { status: 400 });
+        }
+
+        if (batchRow.warehouseId != null) {
+          const [wiRow] = await tx
+            .select()
+            .from(warehouseInventory)
+            .where(
+              and(
+                eq(warehouseInventory.warehouseId, batchRow.warehouseId),
+                eq(warehouseInventory.itemId, batchRow.itemId),
+              ),
+            );
+          if (!wiRow || (wiRow.quantity ?? 0) < qty) {
+            throw Object.assign(new Error("Insufficient warehouse quantity for this batch"), { status: 400 });
+          }
+          await tx
+            .update(warehouseInventory)
+            .set({ quantity: (wiRow.quantity ?? 0) - qty, updatedAt: new Date() })
+            .where(eq(warehouseInventory.id, wiRow.id));
+        }
+
+        const prevItemQty = itemRow.quantity ?? 0;
+        await tx
+          .update(inventoryItems)
+          .set({ quantity: prevItemQty - qty, updatedAt: new Date() })
+          .where(eq(inventoryItems.id, batchRow.itemId));
+
+        const noteStr = `Batch issue ${batchRow.batchNumber}${notes ? `: ${notes}` : ""}`.slice(0, 900);
+        const [mov] = await tx
+          .insert(stockMovements)
+          .values({
+            itemId: batchRow.itemId,
+            quantity: -qty,
+            type: "ISSUE",
+            sourceWarehouseId: batchRow.warehouseId,
+            notes: noteStr,
+            userId,
+            previousQuantity: prevItemQty,
+            newQuantity: prevItemQty - qty,
+          })
+          .returning();
+
+        return { movement: mov, batch: { ...batchRow, quantityOnHand: newOh } };
+      });
+
+      if (result.batch.warehouseId != null) {
+        try {
+          const { notifyInventoryUpdate } = await import("./websocket-service");
+          const wi = await storage.getWarehouseInventoryItem(result.batch.warehouseId, result.batch.itemId);
+          const newQ = wi?.quantity ?? 0;
+          await notifyInventoryUpdate(result.batch.itemId, result.batch.warehouseId, newQ, newQ + qty);
+        } catch (wsError) {
+          console.error("WebSocket notify after batch issue:", wsError);
+        }
+      }
+
+      return sendOk(res, result, 201);
+    } catch (error: unknown) {
+      const e = error as { status?: number; message?: string };
+      if (e?.status === 404) {
+        return sendError(res, 404, "NOT_FOUND", "Batch not found");
+      }
+      if (e?.status === 400) {
+        return sendError(res, 400, "BATCH_ISSUE_INVALID", e.message ?? "Cannot issue from batch");
+      }
+      console.error("Error in batch issue:", error);
+      return sendError(res, 500, "BATCH_ISSUE_FAILED", "Failed to issue from batch");
+    }
+  });
+
+  /** Issue a single serial unit (available or allocated): marks serial issued, decrements stock, records movement. */
+  app.post("/api/inventory-serials/:id/issue", async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        return sendError(res, 400, "INVALID_ID", "Invalid serial id");
+      }
+      const notes = typeof req.body?.notes === "string" ? req.body.notes : "";
+      const userId = req.user && "id" in req.user ? (req.user as { id: number }).id : null;
+
+      const result = await db.transaction(async (tx) => {
+        const [ser] = await tx.select().from(inventorySerials).where(eq(inventorySerials.id, id));
+        if (!ser) {
+          throw Object.assign(new Error("NOT_FOUND"), { status: 404 });
+        }
+        const st = String(ser.status ?? "").toLowerCase();
+        if (st !== "available" && st !== "allocated") {
+          throw Object.assign(new Error("Serial is not available to issue"), { status: 400 });
+        }
+
+        const [itemRow] = await tx.select().from(inventoryItems).where(eq(inventoryItems.id, ser.itemId));
+        if (!itemRow) {
+          throw Object.assign(new Error("Item not found"), { status: 400 });
+        }
+        if ((itemRow.quantity ?? 0) < 1) {
+          throw Object.assign(new Error("Insufficient master item quantity"), { status: 400 });
+        }
+
+        if (ser.warehouseId != null) {
+          const [wiRow] = await tx
+            .select()
+            .from(warehouseInventory)
+            .where(
+              and(eq(warehouseInventory.warehouseId, ser.warehouseId), eq(warehouseInventory.itemId, ser.itemId)),
+            );
+          if (!wiRow || (wiRow.quantity ?? 0) < 1) {
+            throw Object.assign(new Error("Insufficient warehouse quantity for this serial"), { status: 400 });
+          }
+          await tx
+            .update(warehouseInventory)
+            .set({ quantity: (wiRow.quantity ?? 0) - 1, updatedAt: new Date() })
+            .where(eq(warehouseInventory.id, wiRow.id));
+        }
+
+        await tx
+          .update(inventorySerials)
+          .set({ status: "issued", updatedAt: new Date() })
+          .where(eq(inventorySerials.id, id));
+
+        const prevItemQty = itemRow.quantity ?? 0;
+        await tx
+          .update(inventoryItems)
+          .set({ quantity: prevItemQty - 1, updatedAt: new Date() })
+          .where(eq(inventoryItems.id, ser.itemId));
+
+        const noteStr = `Serial issue ${ser.serialNumber}${notes ? `: ${notes}` : ""}`.slice(0, 900);
+        const [mov] = await tx
+          .insert(stockMovements)
+          .values({
+            itemId: ser.itemId,
+            quantity: -1,
+            type: "ISSUE",
+            sourceWarehouseId: ser.warehouseId,
+            referenceType: "inventory_serial",
+            referenceId: ser.id,
+            notes: noteStr,
+            userId,
+            previousQuantity: prevItemQty,
+            newQuantity: prevItemQty - 1,
+          })
+          .returning();
+
+        return { movement: mov, serial: { ...ser, status: "issued" as const } };
+      });
+
+      if (result.serial.warehouseId != null) {
+        try {
+          const { notifyInventoryUpdate } = await import("./websocket-service");
+          const wi = await storage.getWarehouseInventoryItem(result.serial.warehouseId, result.serial.itemId);
+          const newQ = wi?.quantity ?? 0;
+          await notifyInventoryUpdate(result.serial.itemId, result.serial.warehouseId, newQ, newQ + 1);
+        } catch (wsError) {
+          console.error("WebSocket notify after serial issue:", wsError);
+        }
+      }
+
+      return sendOk(res, result, 201);
+    } catch (error: unknown) {
+      const e = error as { status?: number; message?: string };
+      if (e?.status === 404) {
+        return sendError(res, 404, "NOT_FOUND", "Serial not found");
+      }
+      if (e?.status === 400) {
+        return sendError(res, 400, "SERIAL_ISSUE_INVALID", e.message ?? "Cannot issue serial");
+      }
+      console.error("Error in serial issue:", error);
+      return sendError(res, 500, "SERIAL_ISSUE_FAILED", "Failed to issue serial");
     }
   });
 
@@ -5506,7 +5856,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Update invoice
       const updatedInvoice = await storage.updateInvoice(id, invoiceData);
-      
+      if (!updatedInvoice) {
+        return sendError(res, 500, "UPDATE_INVOICE_FAILED", "Invoice update returned no row");
+      }
+
+      try {
+        const uid = (req as Request & { user?: { id: number } }).user?.id;
+        await storage.createActivityLog({
+          action: "Invoice header updated",
+          description: `Invoice #${id} (${updatedInvoice.invoiceNumber}) updated`,
+          userId: uid,
+          referenceType: "invoice",
+          referenceId: id,
+        });
+      } catch (logErr) {
+        console.warn("[invoice patch] activity log:", logErr);
+      }
+
       return sendOk(res, updatedInvoice);
     } catch (error) {
       console.error("Error updating invoice:", error);

@@ -40,10 +40,15 @@ const ExceptionsPage = lazy(() => import("@/pages/exceptions"));
 const IntegrationsPage = lazy(() => import("@/pages/integrations"));
 const MasterDataPage = lazy(() => import("@/pages/master-data"));
 const CycleCountsPage = lazy(() => import("@/pages/cycle-counts"));
+const ApprovalPoliciesPage = lazy(() => import("@/pages/approval-policies"));
+const WarehouseOperationsPage = lazy(() => import("@/pages/warehouse-operations"));
 const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
 const SupplierPortalPage = lazy(() => import("@/pages/supplier-portal"));
 const DocumentsPage = lazy(() => import("@/pages/documents"));
 const SupplyAnalyticsPage = lazy(() => import("@/pages/supply-analytics"));
+const ControlTowerPage = lazy(() => import("@/pages/control-tower"));
+const MobileReceivePage = lazy(() => import("@/pages/mobile-receive"));
+const MobilePickPage = lazy(() => import("@/pages/mobile-pick"));
 
 function RouteFallback() {
   return (
@@ -71,6 +76,7 @@ export function AppRouter() {
     <Suspense fallback={<RouteFallback />}>
       <Switch>
         <ProtectedRoute path="/" component={Home} />
+        <ProtectedRoute path="/control-tower" component={ControlTowerPage} />
         <ProtectedRoute path="/dashboard" component={Dashboard} />
         <ProtectedRoute path="/analytics" component={Analytics} />
         <ProtectedRoute path="/inventory" component={Inventory} />
@@ -102,6 +108,10 @@ export function AppRouter() {
         <ProtectedRoute path="/suppliers" component={SuppliersPage} />
         <ProtectedRoute path="/contracts" component={ContractsPage} />
         <ProtectedRoute path="/invoices" component={InvoicesPage} />
+        <ProtectedRoute path="/approval-policies" component={ApprovalPoliciesPage} />
+        <ProtectedRoute path="/warehouse-operations" component={WarehouseOperationsPage} />
+        <ProtectedRoute path="/mobile/receive" component={MobileReceivePage} />
+        <ProtectedRoute path="/mobile/pick" component={MobilePickPage} />
         <ProtectedRoute path="/reports" component={Reports} />
         <ProtectedRoute path="/reorder" component={ReorderPage} />
         <ProtectedRoute path="/barcode-scanner" component={BarcodeScannerPage} />

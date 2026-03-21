@@ -21,13 +21,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
-import { formatMutationError, queryClient, requestJson } from "@/lib/queryClient";
+import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
   approvePurchaseOrder,
+  fetchApprovalSuggestions,
   fetchPurchaseOrder,
   fetchPurchaseOrdersEnvelope,
   receivePurchaseOrder,
@@ -36,6 +37,7 @@ import {
   type PurchaseOrderListItem,
   type PurchaseReceiveResult,
 } from "@/api/client";
+import { useAuth } from "@/hooks/use-auth";
 import type { FallbackKind } from "@/components/ui/data-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import RequisitionsPage from "@/pages/requisitions";
@@ -328,6 +330,7 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
 function PurchaseOrderDetailView({ po }: { po: string }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const [receiving, setReceiving] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
@@ -395,6 +398,39 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
   const { data: incoterms = [] } = useQuery({
     queryKey: ["/api/incoterms"],
     queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/incoterms"),
+  });
+  const { data: approvalPoliciesRaw } = useQuery({
+    queryKey: ["/api/approval-policies"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/approval-policies");
+      return normalizeApiList<{
+        id: number;
+        name: string;
+        entityType: string;
+        amountMin: number;
+        amountMax: number | null;
+        approvalLevel: number;
+        approverRole: string | null;
+        isActive: boolean | null;
+      }>(raw);
+    },
+  });
+  const poApprovalPolicies = useMemo(() => {
+    const rows = approvalPoliciesRaw ?? [];
+    return rows
+      .filter((p) => String(p.entityType).toLowerCase() === "purchase_order" && p.isActive !== false)
+      .slice()
+      .sort((a, b) => a.approvalLevel - b.approvalLevel || a.amountMin - b.amountMin);
+  }, [approvalPoliciesRaw]);
+
+  const { data: poApproverSuggestions } = useQuery({
+    queryKey: ["/api/approval-suggestions", "purchase_order", data?.totalAmount, data?.status],
+    enabled: Boolean(data && canApprove(data.status)),
+    queryFn: () =>
+      fetchApprovalSuggestions({
+        entityType: "purchase_order",
+        amount: Number(data?.totalAmount ?? 0),
+      }),
   });
 
   const saveCommercialTerms = useMutation({
@@ -467,7 +503,12 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
       const actionLabel = action === "approve" ? "Approve PO" : "Send PO";
       toast({
         title: "Update failed",
-        description: formatMutationError(actionLabel, "POST", `/api/purchase/orders/${po}/transition`, err),
+        description: formatMutationError(
+          actionLabel,
+          "POST",
+          action === "approve" ? `/api/purchase/orders/${po}/approve` : `/api/purchase/orders/${po}/send`,
+          err,
+        ),
         variant: "destructive",
         action: (
           <ToastAction altText="Retry" onClick={() => updateStatus(action)}>
@@ -492,6 +533,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
     setReceiving(true);
     try {
       const result = await receivePurchaseOrder(po, receivePayload, {
+        receiverUserId: typeof user?.id === "number" ? user.id : undefined,
         receiverName: receiverName.trim() || undefined,
         warehouseLocation: warehouseLocation.trim() || undefined,
         receivedAt: new Date().toISOString(),
@@ -689,6 +731,8 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                     <TableRow>
                       <TableHead>SKU</TableHead>
                       <TableHead>Item</TableHead>
+                      <TableHead>Supplier part #</TableHead>
+                      <TableHead>Commodity</TableHead>
                       <TableHead className="text-right">Ordered</TableHead>
                       <TableHead className="text-right">Received</TableHead>
                       <TableHead className="text-right">Remaining</TableHead>
@@ -702,6 +746,14 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                       <TableRow key={line.id}>
                         <TableCell className="font-medium">{line.sku}</TableCell>
                         <TableCell>{line.itemName}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {line.supplierPartNumber?.trim() ? line.supplierPartNumber : "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {line.commodityCode
+                            ? `${line.commodityCode}${line.commodityDescription ? ` — ${line.commodityDescription}` : ""}`
+                            : "—"}
+                        </TableCell>
                         <TableCell className="text-right">{line.qtyOrdered}</TableCell>
                         <TableCell className="text-right">{line.qtyReceived}</TableCell>
                         <TableCell className="text-right">{line.expectedRemaining}</TableCell>
@@ -761,6 +813,12 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                       value={receiverName}
                       onChange={(event) => setReceiverName(event.target.value)}
                     />
+                    {typeof user?.id === "number" ? (
+                      <p className="text-xs text-muted-foreground">
+                        Signed-in user #{user.id} is recorded as{" "}
+                        <span className="font-medium">receiverUserId</span> on the GRN / stock movement.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="receive-location">Warehouse location</Label>
@@ -882,6 +940,65 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
               </CardContent>
             </Card>
 
+            {canApprove(detail.status) && (poApprovalPolicies.length > 0 || (poApproverSuggestions?.suggestedApprovers?.length ?? 0) > 0) ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>PO approval policy & suggested approvers</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {poApprovalPolicies.length > 0 ? (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Active purchase-order policies (amount bands). Your approve action is logged against your account.
+                      </p>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Level</TableHead>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Amount range</TableHead>
+                            <TableHead>Approver role</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {poApprovalPolicies.map((p) => (
+                            <TableRow key={p.id}>
+                              <TableCell>{p.approvalLevel}</TableCell>
+                              <TableCell>{p.name}</TableCell>
+                              <TableCell>
+                                {p.amountMin}
+                                {p.amountMax != null ? ` – ${p.amountMax}` : "+"}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">{p.approverRole ?? "—"}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : null}
+                  {(poApproverSuggestions?.suggestedApprovers?.length ?? 0) > 0 ? (
+                    <div>
+                      <p className="text-sm font-medium">Suggested approvers for this PO total</p>
+                      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                        {(poApproverSuggestions?.suggestedApprovers ?? []).map((a) => (
+                          <li key={a.userId}>
+                            <span className="text-foreground font-medium">
+                              {a.fullName || a.username}
+                            </span>{" "}
+                            ({a.email}) — level {a.approvalLevel} · {a.matchedPolicyName}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No specific users matched policies for this amount; managers/planners may still approve per RBAC.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
+
             <Card>
               <CardHeader>
                 <CardTitle>Approval history</CardTitle>
@@ -928,6 +1045,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                     <TableRow>
                       <TableHead>ID</TableHead>
                       <TableHead>Carrier</TableHead>
+                      <TableHead>Tracking</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>ETA</TableHead>
                       <TableHead>Updated</TableHead>
@@ -936,7 +1054,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                   <TableBody>
                     {detail.shipments.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                        <TableCell colSpan={6} className="text-sm text-muted-foreground">
                           No linked shipments
                         </TableCell>
                       </TableRow>
@@ -945,6 +1063,9 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                         <TableRow key={shipment.id}>
                           <TableCell>{shipment.id}</TableCell>
                           <TableCell>{shipment.carrier || "-"}</TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {shipment.trackingNumber?.trim() ? shipment.trackingNumber : "—"}
+                          </TableCell>
                           <TableCell>
                             <StatusBadge status={shipment.status} />
                           </TableCell>

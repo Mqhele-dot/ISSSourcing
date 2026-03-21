@@ -1,191 +1,24 @@
-import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
-import type { PurchaseRequisition, PurchaseRequisitionItem, Supplier, InventoryItem } from "@shared/schema";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 import { useRequisitionFormRoute } from "@/pages/requisitions/use-requisition-form-route";
-import { RequisitionLinesEditor, type ReqLineDraft } from "@/pages/requisitions/requisition-lines-editor";
-
-type ReqItem = ReqLineDraft;
+import { RequisitionLinesEditor } from "@/pages/requisitions/requisition-lines-editor";
+import { ApprovalHistoryCard } from "@/components/procurement/approval-history-card";
+import { useRequisitionForm } from "@/pages/requisitions/use-requisition-form";
+import { RequisitionHeaderFields } from "@/pages/requisitions/requisition-header-fields";
 
 export default function RequisitionFormPage() {
   const { id, isNew, listPath } = useRequisitionFormRoute();
   const [, setLocation] = useLocation();
 
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [notes, setNotes] = useState("");
-  const [supplierId, setSupplierId] = useState<number | "">("");
-  const [departmentId, setDepartmentId] = useState<number | "">("");
-  const [justification, setJustification] = useState("");
-  const [requiredDate, setRequiredDate] = useState("");
-  const [items, setItems] = useState<ReqItem[]>([{ itemId: 0, quantity: 1, unitPrice: 0 }]);
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"supplierId" | "departmentId" | "requiredDate" | "items", string>>>({});
-
-  const { data: requisition, isLoading } = useQuery({
-    queryKey: ["/api/purchase-requisitions", id],
-    queryFn: () => requestJson<PurchaseRequisition & { items?: (PurchaseRequisitionItem & { itemName?: string; sku?: string })[] }>("GET", `/api/purchase-requisitions/${id}`),
-    enabled: !!id && !isNew,
-  });
-
-  const { data: suppliers = [] } = useQuery({
-    queryKey: ["/api/suppliers"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/suppliers");
-      return normalizeApiList<Supplier>(raw);
-    },
-  });
-
-  const { data: inventoryItems = [] } = useQuery({
-    queryKey: ["/api/inventory"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/inventory");
-      return normalizeApiList<InventoryItem>(raw);
-    },
-  });
-
-  const { data: departments = [] } = useQuery({
-    queryKey: ["/api/departments"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/departments");
-      return normalizeApiList<{ id: number; code: string; name: string }>(raw);
-    },
-  });
-
-  useEffect(() => {
-    if (requisition) {
-      setNotes(requisition.notes ?? "");
-      setSupplierId(requisition.supplierId ?? "");
-      setDepartmentId((requisition as PurchaseRequisition & { departmentId?: number | null }).departmentId ?? "");
-      setJustification((requisition as PurchaseRequisition & { justification?: string | null }).justification ?? "");
-      setRequiredDate(requisition.requiredDate ? new Date(requisition.requiredDate).toISOString().slice(0, 10) : "");
-      if (requisition.items?.length) {
-        setItems(
-          requisition.items.map((i) => ({
-            itemId: i.itemId,
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
-            notes: i.notes ?? undefined,
-          }))
-        );
-      }
-    }
-  }, [requisition]);
-
-  const createMutation = useMutation({
-    mutationFn: async () => {
-      const body = {
-        notes: notes || undefined,
-        supplierId: supplierId || undefined,
-        departmentId: departmentId || undefined,
-        justification: justification || undefined,
-        requiredDate: requiredDate ? new Date(requiredDate).toISOString() : undefined,
-        items: items
-          .filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0)
-          .map((i) => ({
-            itemId: i.itemId,
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
-            notes: i.notes,
-          })),
-      };
-      const res = await apiRequest("POST", "/api/purchase-requisitions", body);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
-      toast({ title: "Requisition created", variant: "default" });
-      setLocation(listPath);
-    },
-    onError: (e) => {
-      toast({ title: "Create failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async () => {
-      const body = {
-        notes: notes || undefined,
-        supplierId: supplierId || undefined,
-        departmentId: departmentId || undefined,
-        justification: justification || undefined,
-        requiredDate: requiredDate ? new Date(requiredDate).toISOString() : undefined,
-      };
-      await apiRequest("PUT", `/api/purchase-requisitions/${id}`, body);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
-      toast({ title: "Requisition updated", variant: "default" });
-    },
-    onError: (e) => {
-      toast({ title: "Update failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
-    },
-  });
-
-  const addItem = () => setItems((prev) => [...prev, { itemId: 0, quantity: 1, unitPrice: 0 }]);
-  const removeItem = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx));
-  const updateItem = (idx: number, field: keyof ReqItem, value: number | string) => {
-    setItems((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], [field]: value };
-      return next;
-    });
-  };
-
-  const handleSubmit = () => {
-    const nextErrors: Partial<Record<"supplierId" | "departmentId" | "requiredDate" | "items", string>> = {};
-    if (!supplierId) nextErrors.supplierId = "Supplier is required";
-    if (!departmentId) nextErrors.departmentId = "Department is required";
-    if (!requiredDate) nextErrors.requiredDate = "Required date is required";
-    const validItems = items.filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0);
-    if (validItems.length === 0) {
-      nextErrors.items = "Add at least one valid item with qty > 0 and unit price > 0";
-    }
-    setFieldErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) {
-      if (nextErrors.items) {
-        toast({ title: nextErrors.items, variant: "destructive" });
-      } else {
-        toast({ title: "Please fix highlighted fields", variant: "destructive" });
-      }
-      return;
-    }
-    if (validItems.length === 0) {
-      const hasItems = items.some((i) => i.itemId > 0);
-      if (!hasItems) {
-        toast({ title: "Add at least one item", variant: "destructive" });
-      } else if (items.some((i) => i.itemId > 0 && i.quantity <= 0)) {
-        toast({ title: "Quantity must be greater than zero for each item", variant: "destructive" });
-      } else {
-        toast({ title: "Unit price must be greater than zero for each item", variant: "destructive" });
-      }
-      return;
-    }
-    if (isNew) createMutation.mutate();
-    else updateMutation.mutate();
-  };
-
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const f = useRequisitionForm({ id, isNew, listPath, setLocation });
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <PageHeader
-        title={isNew ? "New Requisition" : `Edit ${requisition?.requisitionNumber ?? ""}`}
+        title={isNew ? "New Requisition" : `Edit ${f.requisition?.requisitionNumber ?? ""}`}
         subtitle={isNew ? "Create a purchase requisition" : "Update requisition details"}
         breadcrumb={
           <Link href={listPath} className="text-muted-foreground hover:text-foreground flex items-center gap-1">
@@ -195,88 +28,42 @@ export default function RequisitionFormPage() {
         }
       />
 
-      {!isNew && isLoading ? (
+      {!isNew && f.isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin" />
         </div>
       ) : (
         <div className="space-y-6" role="form" aria-label="Purchase requisition form">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="req-supplier">Supplier *</Label>
-              <Select value={String(supplierId)} onValueChange={(v) => setSupplierId(v ? Number(v) : "")}>
-                <SelectTrigger id="req-supplier" aria-label="Select supplier">
-                  <SelectValue placeholder="Select supplier..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {fieldErrors.supplierId ? <p className="text-xs text-destructive">{fieldErrors.supplierId}</p> : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="req-department">Department</Label>
-              <Select value={String(departmentId)} onValueChange={(v) => setDepartmentId(v ? Number(v) : "")}>
-                <SelectTrigger id="req-department" aria-label="Select department">
-                  <SelectValue placeholder="Select department..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((d) => (
-                    <SelectItem key={d.id} value={String(d.id)}>
-                      {d.code} - {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {fieldErrors.departmentId ? <p className="text-xs text-destructive">{fieldErrors.departmentId}</p> : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="req-required-date">Required date *</Label>
-              <Input
-                id="req-required-date"
-                aria-label="Required date"
-                type="date"
-                value={requiredDate}
-                onChange={(e) => setRequiredDate(e.target.value)}
-              />
-              {fieldErrors.requiredDate ? <p className="text-xs text-destructive">{fieldErrors.requiredDate}</p> : null}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="req-justification">Justification</Label>
-            <Textarea
-              id="req-justification"
-              aria-label="Requisition justification"
-              value={justification}
-              onChange={(e) => setJustification(e.target.value)}
-              rows={2}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="req-notes">Notes</Label>
-            <Textarea id="req-notes" aria-label="Requisition notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-          </div>
+          <RequisitionHeaderFields
+            suppliers={f.suppliers}
+            departments={f.departments}
+            supplierId={f.supplierId}
+            departmentId={f.departmentId}
+            requiredDate={f.requiredDate}
+            justification={f.justification}
+            notes={f.notes}
+            fieldErrors={f.fieldErrors}
+            onSupplierChange={f.setSupplierId}
+            onDepartmentChange={f.setDepartmentId}
+            onRequiredDateChange={f.setRequiredDate}
+            onJustificationChange={f.setJustification}
+            onNotesChange={f.setNotes}
+          />
 
           {isNew && (
             <RequisitionLinesEditor
-              items={items}
-              inventoryItems={inventoryItems}
-              fieldError={fieldErrors.items}
-              onAddRow={addItem}
-              onRemoveRow={removeItem}
-              onUpdateRow={updateItem}
+              items={f.items}
+              inventoryItems={f.inventoryItems}
+              fieldError={f.fieldErrors.items}
+              onAddRow={f.addItem}
+              onRemoveRow={f.removeItem}
+              onUpdateRow={f.updateItem}
             />
           )}
 
           <div className="flex gap-2">
-            <Button onClick={handleSubmit} disabled={isPending}>
-              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button onClick={f.handleSubmit} disabled={f.isPending}>
+              {f.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isNew ? "Create" : "Update"}
             </Button>
             <Button variant="outline" asChild>
@@ -284,11 +71,10 @@ export default function RequisitionFormPage() {
             </Button>
           </div>
           {!isNew && id ? (
-            <EntityDocumentsCard
-              entityType="requisition"
-              entityId={id}
-              title="Requisition Attachments"
-            />
+            <>
+              <ApprovalHistoryCard entityType="requisition" entityId={id} />
+              <EntityDocumentsCard entityType="requisition" entityId={id} title="Requisition Attachments" />
+            </>
           ) : null}
         </div>
       )}

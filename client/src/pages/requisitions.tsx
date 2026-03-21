@@ -11,6 +11,7 @@ import {
   Loader2,
   ChevronRight,
   History,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,7 @@ import { ToastAction } from "@/components/ui/toast";
 import { apiRequest, requestJson } from "@/lib/queryClient";
 import type { PurchaseRequisition, PurchaseRequisitionItem, User, Supplier, InventoryItem } from "@shared/schema";
 import { Can } from "@/components/auth/can";
+import { fetchApprovalSuggestions } from "@/api/client";
 
 function formatDate(value: string | Date | null) {
   if (value == null) return "-";
@@ -71,6 +73,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const [rejectDialogReq, setRejectDialogReq] = useState<PurchaseRequisition | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [historyDialogReq, setHistoryDialogReq] = useState<PurchaseRequisition | null>(null);
+  const [approverHelpAmount, setApproverHelpAmount] = useState<number | null>(null);
 
   const { data: approvalHistory = [], isLoading: historyLoading } = useQuery({
     queryKey: ["/api/approval-history", historyDialogReq?.id],
@@ -93,8 +96,18 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const { data: requisitionsRaw, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/purchase-requisitions"],
     queryFn: async () => {
-      const raw = await requestJson<PurchaseRequisition[] | { data?: PurchaseRequisition[] }>("GET", "/api/purchase-requisitions");
-      return Array.isArray(raw) ? raw : (raw as { data?: PurchaseRequisition[] })?.data ?? [];
+      const raw = await requestJson<unknown>("GET", "/api/purchase-requisitions");
+      if (Array.isArray(raw)) return raw as PurchaseRequisition[];
+      if (raw && typeof raw === "object" && "data" in raw && Array.isArray((raw as { data: unknown }).data)) {
+        return (raw as { data: PurchaseRequisition[] }).data;
+      }
+      if (raw && typeof raw === "object" && "ok" in raw && (raw as { ok?: boolean }).ok === false) {
+        throw new Error("Requisitions request failed");
+      }
+      if (raw !== null && raw !== undefined && typeof raw === "object" && !Array.isArray(raw)) {
+        throw new Error("Unexpected requisitions response shape");
+      }
+      return [];
     },
   });
   const requisitions = Array.isArray(requisitionsRaw) ? requisitionsRaw : [];
@@ -107,6 +120,16 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const { data: suppliers = [] } = useQuery({
     queryKey: ["/api/suppliers"],
     queryFn: () => requestJson<Supplier[]>("GET", "/api/suppliers"),
+  });
+
+  const { data: reqApproverHints, isLoading: approverHintsLoading } = useQuery({
+    queryKey: ["/api/approval-suggestions", "requisition", approverHelpAmount],
+    enabled: approverHelpAmount !== null,
+    queryFn: () =>
+      fetchApprovalSuggestions({
+        entityType: "requisition",
+        amount: Number(approverHelpAmount),
+      }),
   });
 
   const filtered = requisitions.filter(
@@ -291,6 +314,16 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                       </Can>
                       {req.status === "PENDING" && (
                         <>
+                          <Can roles={["manager", "admin"]} reason="Requires Manager or Admin">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Suggested approvers"
+                              onClick={() => setApproverHelpAmount(Number(req.totalAmount ?? 0))}
+                            >
+                              <Users className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                          </Can>
                           <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to approve">
                             <Button
                               variant="ghost"
@@ -480,6 +513,48 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
             >
               {rejectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={approverHelpAmount !== null}
+        onOpenChange={(open) => {
+          if (!open) setApproverHelpAmount(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Suggested approvers</DialogTitle>
+            <DialogDescription>
+              From active requisition approval policies for total amount ${approverHelpAmount?.toFixed(2) ?? "0.00"}.
+              Approval still runs as the signed-in user; policies may require a specific role or user.
+            </DialogDescription>
+          </DialogHeader>
+          {approverHintsLoading ? (
+            <div className="text-sm text-muted-foreground">Loading suggestions…</div>
+          ) : (reqApproverHints?.suggestedApprovers?.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No users matched configured policies for this amount. Check Approval policies or use an admin account.
+            </p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {reqApproverHints!.suggestedApprovers.map((a) => (
+                <li key={a.userId} className="rounded border p-2">
+                  <div className="font-medium">{a.fullName || a.username}</div>
+                  <div className="text-muted-foreground text-xs">{a.email}</div>
+                  <div className="text-xs mt-1">
+                    Level {a.approvalLevel} · {a.matchedPolicyName}
+                    {a.role ? ` · role ${a.role}` : ""}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApproverHelpAmount(null)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

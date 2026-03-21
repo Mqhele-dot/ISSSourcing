@@ -19,11 +19,20 @@ type Employee = {
   email: string;
   role: string | null;
   warehouseId?: number | null;
+  supplierId?: number | null;
+  approverAmountLimit?: number | null;
+  phone?: string | null;
+  workPersona?: string | null;
   active?: boolean | null;
   lastLogin?: string | null;
 };
 
 type WarehouseOption = {
+  id: number;
+  name: string;
+};
+
+type SupplierOption = {
   id: number;
   name: string;
 };
@@ -88,6 +97,17 @@ const ROLE_OPTIONS = [
   "viewer",
 ];
 
+/** Supply-chain persona labels (informational; DB role remains the permission source). */
+const WORK_PERSONA_OPTIONS = [
+  { value: "none", label: "Not set" },
+  { value: "Requester", label: "Requester" },
+  { value: "Buyer", label: "Buyer" },
+  { value: "Approver", label: "Approver" },
+  { value: "Inventory", label: "Inventory" },
+  { value: "Logistics", label: "Logistics" },
+  { value: "Finance", label: "Finance" },
+];
+
 export default function EmployeeProfilesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -108,6 +128,12 @@ export default function EmployeeProfilesPage() {
     queryKey: ["/api/warehouses", "employee-profiles"],
     enabled: canManageEmployees,
     queryFn: () => requestJson<WarehouseOption[]>("GET", "/api/warehouses"),
+  });
+
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["/api/suppliers", "employee-profiles"],
+    enabled: canManageEmployees,
+    queryFn: () => requestJson<SupplierOption[]>("GET", "/api/suppliers"),
   });
 
   const { data: activityLogs = [] } = useQuery({
@@ -226,6 +252,10 @@ export default function EmployeeProfilesPage() {
                         email: employee.email,
                         role: employee.role ?? "viewer",
                         warehouseId: employee.warehouseId ?? null,
+                        supplierId: employee.supplierId ?? null,
+                        approverAmountLimit: employee.approverAmountLimit ?? null,
+                        phone: employee.phone ?? "",
+                        workPersona: employee.workPersona ?? "",
                         active: employee.active ?? true,
                       });
                     }}
@@ -274,6 +304,42 @@ export default function EmployeeProfilesPage() {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="employee-phone">Phone (SMS / alerts)</Label>
+                    <Input
+                      id="employee-phone"
+                      type="tel"
+                      placeholder="E.164 or local"
+                      value={String(draft.phone ?? "")}
+                      onChange={(event) => setDraft((current) => ({ ...current, phone: event.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="employee-persona">Work persona</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Optional label for org charts and training; permissions still follow <strong>Role</strong> above.
+                    </p>
+                    <Select
+                      value={draft.workPersona?.trim() ? String(draft.workPersona) : "none"}
+                      onValueChange={(value) =>
+                        setDraft((current) => ({
+                          ...current,
+                          workPersona: value === "none" ? null : value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger id="employee-persona">
+                        <SelectValue placeholder="Select persona" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {WORK_PERSONA_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="employee-role">Role</Label>
                     <Select
                       value={String(draft.role ?? "viewer")}
@@ -312,6 +378,52 @@ export default function EmployeeProfilesPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="employee-supplier">Supplier portal link</Label>
+                    <p className="text-xs text-muted-foreground">
+                      For users with role <strong>supplier</strong>, selects which supplier account the portal APIs use.
+                    </p>
+                    <Select
+                      value={String(draft.supplierId ?? "none")}
+                      onValueChange={(value) =>
+                        setDraft((current) => ({ ...current, supplierId: value === "none" ? null : Number(value) }))
+                      }
+                    >
+                      <SelectTrigger id="employee-supplier">
+                        <SelectValue placeholder="No supplier mapping" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {suppliers.map((supplier) => (
+                          <SelectItem key={supplier.id} value={String(supplier.id)}>
+                            {supplier.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="employee-approver-cap">Requisition approver limit (optional)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Maximum requisition total this user may approve (same currency as requisition). Leave empty for no cap
+                      beyond approval policies.
+                    </p>
+                    <Input
+                      id="employee-approver-cap"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      placeholder="e.g. 50000"
+                      value={draft.approverAmountLimit != null ? String(draft.approverAmountLimit) : ""}
+                      onChange={(event) => {
+                        const raw = event.target.value.trim();
+                        setDraft((current) => ({
+                          ...current,
+                          approverAmountLimit: raw === "" ? null : Number(raw),
+                        }));
+                      }}
+                    />
+                  </div>
                   <div className="md:col-span-2 flex items-center justify-between rounded-md border p-3">
                     <div>
                       <p className="text-sm font-medium">Active account</p>
@@ -335,6 +447,10 @@ export default function EmployeeProfilesPage() {
                           email: selectedEmployee.email,
                           role: selectedEmployee.role ?? "viewer",
                           warehouseId: selectedEmployee.warehouseId ?? null,
+                          supplierId: selectedEmployee.supplierId ?? null,
+                          approverAmountLimit: selectedEmployee.approverAmountLimit ?? null,
+                          phone: selectedEmployee.phone ?? "",
+                          workPersona: selectedEmployee.workPersona ?? "",
                           active: selectedEmployee.active ?? true,
                         })
                       }
@@ -351,6 +467,17 @@ export default function EmployeeProfilesPage() {
                             email: draft.email ?? selectedEmployee.email,
                             role: draft.role ?? selectedEmployee.role,
                             warehouseId: draft.warehouseId ?? selectedEmployee.warehouseId ?? null,
+                            supplierId: draft.supplierId ?? selectedEmployee.supplierId ?? null,
+                            approverAmountLimit:
+                              draft.approverAmountLimit ?? selectedEmployee.approverAmountLimit ?? null,
+                            phone:
+                              String(draft.phone ?? "").trim() === ""
+                                ? null
+                                : String(draft.phone ?? "").trim(),
+                            workPersona:
+                              String(draft.workPersona ?? "").trim() === ""
+                                ? null
+                                : String(draft.workPersona ?? "").trim(),
                             active: draft.active ?? selectedEmployee.active ?? true,
                           },
                         })

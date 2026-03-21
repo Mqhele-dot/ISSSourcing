@@ -355,6 +355,10 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS receiver_name TEXT;
       ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS warehouse_location TEXT;
       ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS received_at TIMESTAMP;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS supplier_id INTEGER;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS approver_amount_limit REAL;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS work_persona TEXT;
     `);
     console.log('Professional supply chain tables and columns ready');
   } catch (err) {

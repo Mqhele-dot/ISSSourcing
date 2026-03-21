@@ -6,6 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -14,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { requestJson } from "@/lib/queryClient";
+import { downloadCsv } from "@/lib/csv-download";
 import { Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -27,40 +35,33 @@ type ActivityLog = {
   summary: Record<string, unknown> | null;
 };
 
-function downloadCsv(filename: string, rows: string[][]) {
-  const escaped = rows.map((row) =>
-    row
-      .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
-      .join(","),
-  );
-  const csv = "sep=,\n" + escaped.join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const href = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(href);
-}
+const ENTITY_TYPE_PRESETS = [
+  { value: "any", label: "Any entity" },
+  { value: "purchase_order", label: "Purchase order" },
+  { value: "shipment", label: "Shipment" },
+  { value: "invoice", label: "Invoice" },
+  { value: "requisition", label: "Requisition" },
+  { value: "supplier", label: "Supplier" },
+];
 
 export default function AuditLogsPage() {
   const { toast } = useToast();
   const [entityType, setEntityType] = useState("");
   const [entityId, setEntityId] = useState("");
   const [actor, setActor] = useState("");
+  const [actionFilter, setActionFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
   const { data: logs = [], isLoading, refetch } = useQuery({
-    queryKey: ["/api/activity", entityType, entityId, actor, fromDate, toDate],
+    queryKey: ["/api/activity", entityType, entityId, actor, actionFilter, fromDate, toDate],
     queryFn: () => {
       const search = new URLSearchParams();
       search.set("limit", "200");
       if (entityType.trim()) search.set("entity_type", entityType.trim());
       if (entityId.trim()) search.set("entity_id", entityId.trim());
       if (actor.trim()) search.set("actor", actor.trim());
+      if (actionFilter.trim()) search.set("action", actionFilter.trim());
       if (fromDate.trim()) search.set("from", fromDate.trim());
       if (toDate.trim()) search.set("to", toDate.trim());
       return requestJson<ActivityLog[]>("GET", `/api/activity?${search.toString()}`);
@@ -102,21 +103,48 @@ export default function AuditLogsPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
         title="Audit Logs"
-        subtitle="Review and export sensitive action history across entities."
+        subtitle="Operational activity stream (ops_activity): filter by entity, actor, action substring, and date range. Export CSV."
       />
 
       <Card>
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
+        <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
             <Label htmlFor="audit-entity-type">Entity type</Label>
+            <Select
+              value={
+                entityType.trim() === ""
+                  ? "any"
+                  : ENTITY_TYPE_PRESETS.some((p) => p.value === entityType)
+                    ? entityType
+                    : "__custom__"
+              }
+              onValueChange={(v) => {
+                if (v === "any") setEntityType("");
+                else if (v === "__custom__") {
+                  /* Preserve manual entity_type; do not clear */
+                } else setEntityType(v);
+              }}
+            >
+              <SelectTrigger id="audit-entity-type">
+                <SelectValue placeholder="Filter entity" />
+              </SelectTrigger>
+              <SelectContent>
+                {ENTITY_TYPE_PRESETS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__">Custom…</SelectItem>
+              </SelectContent>
+            </Select>
             <Input
-              id="audit-entity-type"
               value={entityType}
               onChange={(e) => setEntityType(e.target.value)}
-              placeholder="e.g. purchase_order, invoice"
+              placeholder="Or type entity_type manually"
+              className="mt-1"
             />
           </div>
           <div className="space-y-1">
@@ -135,6 +163,15 @@ export default function AuditLogsPage() {
               value={actor}
               onChange={(e) => setActor(e.target.value)}
               placeholder="username/email/system"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="audit-action">Action contains</Label>
+            <Input
+              id="audit-action"
+              value={actionFilter}
+              onChange={(e) => setActionFilter(e.target.value)}
+              placeholder="e.g. transition, receive, invoice"
             />
           </div>
           <div className="space-y-1">

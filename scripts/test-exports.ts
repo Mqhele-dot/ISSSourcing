@@ -20,6 +20,7 @@ const exportCases: ExportCase[] = [
   { reportType: "purchase_requisitions", format: "pdf", expectedMimePrefix: "application/pdf" },
   { reportType: "purchase_requisitions", format: "docx", expectedMimePrefix: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
   { reportType: "activity_logs", format: "pdf", expectedMimePrefix: "application/pdf" },
+  { reportType: "warehouses", format: "pdf", expectedMimePrefix: "application/pdf" },
 ];
 
 function isPdfMagic(buf: ArrayBuffer): boolean {

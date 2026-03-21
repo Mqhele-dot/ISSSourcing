@@ -9,7 +9,10 @@ import {
   purchaseRequisitions, type PurchaseRequisition, type InsertPurchaseRequisition,
   purchaseRequisitionItems, type PurchaseRequisitionItem, type InsertPurchaseRequisitionItem,
   purchaseOrders, type PurchaseOrder, type InsertPurchaseOrder,
-  purchaseOrderItems, type PurchaseOrderItem, type InsertPurchaseOrderItem,
+  purchaseOrderItems,
+  type PurchaseOrderItem,
+  type InsertPurchaseOrderItem,
+  type PurchaseOrderItemReceiveMeta,
   activityLogs, type ActivityLog, type InsertActivityLog,
   appSettings, type AppSettings, type InsertAppSettings,
   supplierLogos, type SupplierLogo, type InsertSupplierLogo,
@@ -313,7 +316,11 @@ getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined>;
   deletePurchaseOrderItem(id: number): Promise<boolean>;
   updatePurchaseOrderStatus(id: number, status: PurchaseOrderStatus): Promise<PurchaseOrder | undefined>;
   updatePurchaseOrderPaymentStatus(id: number, paymentStatus: PaymentStatus, reference?: string): Promise<PurchaseOrder | undefined>;
-  recordPurchaseOrderItemReceived(itemId: number, receivedQuantity: number): Promise<PurchaseOrderItem | undefined>;
+  recordPurchaseOrderItemReceived(
+    itemId: number,
+    receivedQuantity: number,
+    meta?: PurchaseOrderItemReceiveMeta,
+  ): Promise<PurchaseOrderItem | undefined>;
   createPurchaseOrderFromRequisition(requisitionId: number): Promise<PurchaseOrder | undefined>;
   sendPurchaseOrderEmail(id: number, recipientEmail: string): Promise<boolean>;
   
@@ -1717,6 +1724,10 @@ export class MemStorage implements IStorage {
       email: insertUser.email ?? '',
       role: insertUser.role ?? 'viewer',
       warehouseId: null,
+      supplierId: insertUser.supplierId ?? null,
+      approverAmountLimit: insertUser.approverAmountLimit ?? null,
+      phone: insertUser.phone ?? null,
+      workPersona: insertUser.workPersona ?? null,
       active: insertUser.active ?? true,
       emailVerified: false,
       twoFactorEnabled: false,
@@ -3862,8 +3873,9 @@ export class MemStorage implements IStorage {
   }
   
   async recordPurchaseOrderItemReceived(
-    itemId: number, 
-    receivedQuantity: number
+    itemId: number,
+    receivedQuantity: number,
+    meta?: PurchaseOrderItemReceiveMeta,
   ): Promise<PurchaseOrderItem | undefined> {
     const poItem = this.purchaseOrderItems.get(itemId);
     if (!poItem) return undefined;
@@ -3907,19 +3919,29 @@ export class MemStorage implements IStorage {
       }
     }
     
+    const grnParts: string[] = [];
+    if (meta?.receiverName?.trim()) grnParts.push(`receiver: ${meta.receiverName.trim()}`);
+    if (meta?.warehouseLocation?.trim()) grnParts.push(`location: ${meta.warehouseLocation.trim()}`);
+    if (meta?.receivedAt?.trim()) grnParts.push(`receivedAt: ${meta.receivedAt.trim()}`);
+    const grnSuffix = grnParts.length ? ` (${grnParts.join("; ")})` : "";
+    const actorUserId =
+      meta?.receiverUserId != null && Number.isFinite(Number(meta.receiverUserId))
+        ? Number(meta.receiverUserId)
+        : 1;
+
     // Create activity log
     await this.createActivityLog({
       action: "Item Received",
-      description: `Received ${receivedQuantity} unit(s) of item #${poItem.itemId} from PO #${poItem.orderId}`,
+      description: `Received ${receivedQuantity} unit(s) of item #${poItem.itemId} from PO #${poItem.orderId}${grnSuffix}`,
       itemId: poItem.itemId,
       referenceType: "purchase_order",
       referenceId: poItem.orderId,
-      userId: 1 // Default to admin user
+      userId: actorUserId,
     });
-    
+
     return updatedItem;
   }
-  
+
   async createPurchaseOrderFromRequisition(requisitionId: number): Promise<PurchaseOrder | undefined> {
     const requisition = this.purchaseRequisitions.get(requisitionId);
     if (!requisition) return undefined;

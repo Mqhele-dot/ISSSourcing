@@ -30,6 +30,7 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import { useToast } from "@/hooks/use-toast";
+import { downloadCsv } from "@/lib/csv-download";
 import { formatMutationError, requestJson } from "@/lib/queryClient";
 import {
   addExceptionComment,
@@ -48,22 +49,15 @@ function formatDate(value: string | null) {
   return parsed.toLocaleString();
 }
 
-function downloadCsv(filename: string, rows: string[][]) {
-  const csv =
-    "sep=,\n" +
-    rows
-      .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(","))
-      .join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const href = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(href);
-}
+/** Matches types emitted by runOperationalExceptionChecks / ops rules */
+const EXCEPTION_TYPE_PRESETS = [
+  { value: "__all__", label: "All types" },
+  { value: "late_shipment", label: "Late shipment" },
+  { value: "stock_shortage", label: "Stock shortage" },
+  { value: "inventory_shortage", label: "Inventory shortage" },
+  { value: "contract_violation", label: "Contract violation" },
+  { value: "po_mismatch", label: "PO mismatch" },
+];
 
 function ExceptionListView() {
   const [, setLocation] = useLocation();
@@ -129,10 +123,28 @@ function ExceptionListView() {
     }
   };
 
+  const exceptionTypeFilter = String(queryState.type || "");
+  const exceptionTypeSelectValue =
+    exceptionTypeFilter === ""
+      ? "__all__"
+      : EXCEPTION_TYPE_PRESETS.some((p) => p.value === exceptionTypeFilter)
+        ? exceptionTypeFilter
+        : "__custom__";
+
   const handleRunChecks = async () => {
     try {
-      await requestJson("POST", "/api/exceptions/run-checks");
-      toast({ title: "Exception checks completed" });
+      const result = await requestJson<{
+        created: { lateShipments: number; stockShortages: number; contractViolations: number };
+        touched: { lateShipments: number; stockShortages: number; contractViolations: number };
+      }>("POST", "/api/exceptions/run-checks");
+      const c = result?.created;
+      const t = result?.touched;
+      toast({
+        title: "Exception checks completed",
+        description: c
+          ? `New: late ${c.lateShipments}, stock ${c.stockShortages}, contract ${c.contractViolations}. Scanned: late ${t?.lateShipments ?? 0}, stock ${t?.stockShortages ?? 0}, contract ${t?.contractViolations ?? 0}.`
+          : "Scan finished.",
+      });
       await refreshNow();
     } catch (error) {
       toast({
@@ -167,11 +179,32 @@ function ExceptionListView() {
               placeholder="Status"
               className="w-44"
             />
+            <Select
+              value={exceptionTypeSelectValue}
+              onValueChange={(v) => {
+                if (v === "__all__") setQueryState({ type: "" });
+                else if (v === "__custom__") {
+                  /* Keep current typed filter; only switches UI to “custom” mode */
+                } else setQueryState({ type: v });
+              }}
+            >
+              <SelectTrigger className="w-52">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                {EXCEPTION_TYPE_PRESETS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__">Custom…</SelectItem>
+              </SelectContent>
+            </Select>
             <Input
               value={String(queryState.type || "")}
               onChange={(event) => setQueryState({ type: event.target.value })}
-              placeholder="Type"
-              className="w-60"
+              placeholder="Custom type (e.g. mismatch)"
+              className="w-48"
             />
           </>
         }

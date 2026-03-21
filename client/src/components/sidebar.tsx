@@ -15,9 +15,12 @@ import {
   LayoutDashboard,
   Moon,
   QrCode,
+  Radar,
   RefreshCw,
   Settings,
+  ShieldCheck,
   ShoppingCart,
+  Smartphone,
   Sun,
   Users,
   X,
@@ -131,6 +134,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
           <div className="space-y-1">
             <SectionTitle>Control Tower</SectionTitle>
             <NavItem path="/" icon={<Home className="h-5 w-5" />} helpTitle="Home" helpDescription="Landing page and quick overview of the app.">Home</NavItem>
+            <NavItem path="/control-tower" icon={<Radar className="h-5 w-5" />} helpTitle="Control tower" helpDescription="KPIs, exceptions summary, and recent operational activity.">Control tower</NavItem>
             <NavItem path="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} helpTitle="Dashboard" helpDescription="Overview of inventory status, stats, charts, and recent orders.">Dashboard</NavItem>
             <NavItem path="/analytics" icon={<BarChart2 className="h-5 w-5" />} helpTitle="Analytics" helpDescription="Charts, top items, inventory value, and custom graphs.">Analytics</NavItem>
 
@@ -146,10 +150,14 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             <NavItem path="/purchase" icon={<ShoppingCart className="h-5 w-5" />} helpTitle="Purchase Orders" helpDescription="View and manage purchase orders. Use the Requisitions tab to create or approve requisitions.">Purchase Orders</NavItem>
             <NavItem path="/purchase/requisitions" icon={<FileText className="h-5 w-5" />} helpTitle="Requisitions" helpDescription="Create, edit, approve, and share purchase requisitions; convert approved ones to purchase orders.">Requisitions</NavItem>
             <NavItem path="/invoices" icon={<FileText className="h-5 w-5" />} helpTitle="Invoices" helpDescription="Create and manage supplier invoices linked to purchase orders, and run 3-way match checks.">Invoices</NavItem>
+            <NavItem path="/approval-policies" icon={<ShieldCheck className="h-5 w-5" />} helpTitle="Approval policies" helpDescription="Configure amount bands and approvers for requisitions and purchase orders.">Approval policies</NavItem>
             <NavItem path="/supplier-portal" icon={<Users className="h-5 w-5" />} helpTitle="Supplier Portal" helpDescription="Supplier-facing view for confirming POs and updating expected delivery dates.">Supplier Portal</NavItem>
 
             <SectionTitle>Inventory Operations</SectionTitle>
             <NavItem path="/cycle-counts" icon={<RefreshCw className="h-5 w-5" />} helpTitle="Cycle Counts" helpDescription="Plan and post cycle counts with automatic stock adjustment entries.">Cycle Counts</NavItem>
+            <NavItem path="/warehouse-operations" icon={<Building className="h-5 w-5" />} helpTitle="Warehouse operations" helpDescription="Allocations, put-away locations, and batch/serial registration.">Warehouse ops</NavItem>
+            <NavItem path="/mobile/receive" icon={<Smartphone className="h-5 w-5" />} helpTitle="Mobile receive" helpDescription="Touch-friendly list of POs ready to receive; opens standard PO receive flow.">Mobile receive</NavItem>
+            <NavItem path="/mobile/pick" icon={<Smartphone className="h-5 w-5" />} helpTitle="Mobile pick" helpDescription="Touch list of low-stock SKUs with links to item detail for picking and adjustments.">Mobile pick</NavItem>
             <NavItem path="/reorder" icon={<RefreshCw className="h-5 w-5" />} helpTitle="Reorder Requests" helpDescription="View and manage reorder requests.">Reorder Requests</NavItem>
 
             <SectionTitle>Logistics</SectionTitle>

@@ -275,10 +275,19 @@ export async function fetchInventoryDetail(sku: string): Promise<InventoryDetail
   };
 }
 
+function isoDateField(v: unknown): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === "string" && v.trim()) return v;
+  return null;
+}
+
 export async function fetchInventory(params?: {
   location?: string;
   q?: string;
   category?: string;
+  /** Alias for operational inventory category filter */
+  categoryId?: string;
   lowStock?: boolean;
 }): Promise<InventoryListItem[]> {
   const search = new URLSearchParams();
@@ -288,8 +297,9 @@ export async function fetchInventory(params?: {
   if (params?.q) {
     search.set("q", params.q);
   }
-  if (params?.category) {
-    search.set("category", params.category);
+  const category = params?.category ?? params?.categoryId;
+  if (category) {
+    search.set("category", category);
   }
   if (typeof params?.lowStock === "boolean") {
     search.set("low", params.lowStock ? "1" : "0");
@@ -301,7 +311,7 @@ export async function fetchInventory(params?: {
   return rawItems.map((item) => {
     const onHand = Number(item.onHand ?? item.quantity ?? 0);
     const allocated = Number(item.allocated ?? 0);
-    const lowStockThreshold = Number(item.lowStockThreshold ?? 0);
+    const lowStockThreshold = Number(item.lowStockThreshold ?? item.low_stock_threshold ?? 0);
 
     return {
       id: typeof item.id === "number" ? item.id : undefined,
@@ -314,6 +324,10 @@ export async function fetchInventory(params?: {
             ? item.category_id
             : null,
       quantity: typeof item.quantity === "number" ? item.quantity : undefined,
+      price: (() => {
+        const p = typeof item.price === "number" ? item.price : Number(item.price);
+        return Number.isFinite(p) ? p : 0;
+      })(),
       lowStockThreshold,
       onHand,
       allocated,
@@ -325,8 +339,45 @@ export async function fetchInventory(params?: {
           : typeof item.updated_at === "string" || item.updated_at instanceof Date
             ? item.updated_at
             : null,
+      expiryDate: isoDateField(item.expiryDate ?? item.expiry_date),
+      manufacturingDate: isoDateField(item.manufacturingDate ?? item.manufacturing_date),
     } satisfies InventoryListItem;
   });
+}
+
+export type ApprovalSuggestionsResult = {
+  entityType: string;
+  amount: number;
+  applicablePolicies: Array<{
+    id: number;
+    name: string;
+    amountMin: number;
+    amountMax: number | null;
+    approvalLevel: number;
+    approverRole: string | null;
+    approverUserId: number | null;
+  }>;
+  suggestedApprovers: Array<{
+    userId: number;
+    username: string;
+    fullName: string | null;
+    email: string;
+    role: string | null;
+    approverAmountLimit: number | null;
+    matchedPolicyId: number;
+    matchedPolicyName: string;
+    approvalLevel: number;
+  }>;
+};
+
+export async function fetchApprovalSuggestions(params: {
+  entityType: "requisition" | "purchase_order";
+  amount: number;
+}): Promise<ApprovalSuggestionsResult> {
+  const search = new URLSearchParams();
+  search.set("entityType", params.entityType);
+  search.set("amount", String(params.amount));
+  return apiFetch<ApprovalSuggestionsResult>(`/api/approval-suggestions?${search.toString()}`);
 }
 
 export async function fetchPurchaseOrders(params?: {
@@ -472,8 +523,22 @@ export async function createShipment(input: {
   poNumber: string;
   carrier?: string;
   eta?: string;
+  trackingNumber?: string;
 }): Promise<ShipmentListItem> {
   return apiMutate<ShipmentListItem>("POST", "/api/logistics/shipments", input);
+}
+
+export async function patchShipmentMeta(input: {
+  id: string | number;
+  carrier?: string | null;
+  eta?: string | null;
+  trackingNumber?: string | null;
+}): Promise<ShipmentDetail> {
+  return apiMutate<ShipmentDetail>("PATCH", `/api/logistics/shipments/${input.id}`, {
+    carrier: input.carrier,
+    eta: input.eta,
+    trackingNumber: input.trackingNumber,
+  });
 }
 
 export async function deleteShipment(id: string | number): Promise<{ id: number }> {

@@ -50,6 +50,20 @@ interface EmailOptions {
   from?: string;
 }
 
+/** Branded HTML wrapper for operational / notification emails (transactional baseline). */
+export function buildInvTrackNotificationEmailHtml(title: string, bodyText: string): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const bodyHtml = esc(bodyText).replace(/\n/g, "<br/>");
+  return `<!DOCTYPE html><html><body style="font-family:system-ui,Segoe UI,sans-serif;font-size:14px;line-height:1.5;color:#111;background:#f4f4f5;margin:0;padding:24px">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;border:1px solid #e4e4e7;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+    <p style="margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#71717a">InvTrack</p>
+    <h1 style="margin:0 0 16px;font-size:20px;color:#18181b">${esc(title)}</h1>
+    <div style="color:#3f3f46">${bodyHtml}</div>
+    <hr style="margin:24px 0;border:none;border-top:1px solid #e4e4e7"/>
+    <p style="margin:0;font-size:12px;color:#a1a1aa">Automated message from your supply chain workspace.</p>
+  </div></body></html>`;
+}
+
 /**
  * Send an email using the configured transporter
  */

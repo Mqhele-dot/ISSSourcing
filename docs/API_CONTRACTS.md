@@ -18,6 +18,7 @@ We use **option (b): dual contract** during migration.
 | Legacy pass-through | Responses without `ok` are returned as `T` unchanged (may be an array or object). |
 | List normalization | Use [`normalizeApiList<T>`](../client/src/lib/queryClient.ts) for any `GET` that must behave as an array when the wire shape might be `T[]` **or** `{ data: T[] }` (legacy, no `ok`). |
 | `normalizeApiList` caveat | If the server returns **200** with a JSON object that is **not** an array and **not** `{ data: T[] }`, normalization yields **`[]`**. The request still looks like a **successful empty list**, not an error. Use `isError` from React Query for failed requests; for strict body validation, check shape explicitly or prefer envelope responses with `ok: false`. |
+| Purchase requisitions list | [`requisitions.tsx`](../client/src/pages/requisitions.tsx) validates success body: unknown non-list objects throw so the UI shows **error** instead of a silent empty table. |
 | Warehouses + fallback | [`unwrapOperationalResponse`](../client/src/lib/queryClient.ts) after `requestJson` for `/api/warehouses` when the payload may be `Warehouse[]` or `{ data: Warehouse[]; meta? }`. |
 | New code | Prefer `requestJson` / `invTrackFetch` over raw `fetch` for consistent unwrap + timeouts. |
 | Bootstrap 401 noise | [`shouldSuppressGlobalError`](../client/src/lib/queryClient.ts): suppresses global error center for **GET** **401** on `/api/user`, `/api/me`, `/api/auth/*`, `/auth`, `/auth/*`. |

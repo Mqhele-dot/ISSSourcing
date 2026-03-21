@@ -174,6 +174,22 @@ app.use((req, res, next) => {
     setupLowStockAlertInterval();
   }, 24 * 60 * 60 * 1000);
 
+  // Optional: periodic operational exception scans (same engine as POST /api/exceptions/run-checks)
+  const exceptionScanMinutes = Number(process.env.OPERATIONAL_EXCEPTION_SCAN_INTERVAL_MINUTES || 0);
+  if (exceptionScanMinutes > 0) {
+    const safeMinutes = Math.max(5, exceptionScanMinutes);
+    const ms = safeMinutes * 60 * 1000;
+    console.log(`Operational exception scans every ${safeMinutes} minutes (OPERATIONAL_EXCEPTION_SCAN_INTERVAL_MINUTES)`);
+    setInterval(async () => {
+      try {
+        const { runOperationalExceptionChecks } = await import("./operations-core");
+        await runOperationalExceptionChecks("scheduler");
+      } catch (err) {
+        console.error("Scheduled operational exception scan failed:", err instanceof Error ? err.message : err);
+      }
+    }, ms);
+  }
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

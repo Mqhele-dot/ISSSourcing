@@ -69,12 +69,15 @@ export type InventoryListItem = {
   sku: string;
   categoryId?: number | null;
   quantity?: number;
+  price?: number;
   lowStockThreshold: number;
   onHand: number;
   allocated: number;
   available: number;
   location: string | null;
   updatedAt?: string | Date | null;
+  expiryDate?: string | Date | null;
+  manufacturingDate?: string | Date | null;
 };
 
 export type InventoryItem = InventoryListItem;
@@ -135,6 +138,11 @@ export type PurchaseOrderDetailLine = {
   itemId: number;
   sku: string;
   itemName: string;
+  /** From inventory master (supplier part #) */
+  supplierPartNumber?: string | null;
+  /** HS / commodity code from inventory master */
+  commodityCode?: string | null;
+  commodityDescription?: string | null;
   qtyOrdered: number;
   qtyReceived: number;
   unitPrice: number;
@@ -148,6 +156,7 @@ export type PurchaseOrderShipment = {
   eta: string | null;
   driftMinutes: number;
   updatedAt: string | null;
+  trackingNumber?: string | null;
 };
 
 export type PurchaseOrderDetail = {
@@ -205,6 +214,7 @@ export type ShipmentListItem = {
   createdAt: string | null;
   updatedAt: string | null;
   atRisk: boolean;
+  trackingNumber?: string | null;
 };
 
 export type ShipmentTimelineEvent = {
@@ -249,9 +259,13 @@ export type IntegrationRun = {
 export type ControlTowerOverview = {
   kpis: {
     exceptionsBySeverity: Record<string, number>;
+    openExceptionsTotal?: number;
     lateShipments: number;
     posAwaitingAction: number;
     lowStockSkus: number;
+    pendingRequisitions?: number;
+    inTransitShipments?: number;
+    overdueInvoices?: number;
   };
   activity: Array<{
     id: number;

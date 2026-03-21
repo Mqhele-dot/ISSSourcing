@@ -27,6 +27,7 @@ import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useToast } from "@/hooks/use-toast";
 import { requestJson } from "@/lib/queryClient";
+import { downloadCsv } from "@/lib/csv-download";
 import { fetchInventory, type InventoryListItem } from "@/api/client";
 
 type Category = {
@@ -49,24 +50,6 @@ function getAvailabilityStatus(item: InventoryListItem): string {
 function isLowFilterEnabled(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
-}
-
-function downloadCsv(filename: string, rows: string[][]) {
-  const escaped = rows.map((row) =>
-    row
-      .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
-      .join(","),
-  );
-  const csv = "sep=,\n" + escaped.join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const href = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(href);
 }
 
 export default function InventoryPage() {
@@ -115,7 +98,7 @@ export default function InventoryPage() {
   }, [queryState.q]);
 
   const handleExportCsv = () => {
-    try {
+    const runClientCsv = () => {
       const items = displayedItems;
       const rows: string[][] = [
         ["sku", "name", "location", "on_hand", "allocated", "available", "updated_at"],
@@ -131,13 +114,40 @@ export default function InventoryPage() {
       ];
       downloadCsv("inventory-export.csv", rows);
       toast({ title: "Export complete", description: "inventory-export.csv downloaded." });
-    } catch (err) {
-      toast({
-        title: "Export failed",
-        description: err instanceof Error ? err.message : "Failed to export CSV",
-        variant: "destructive",
-      });
-    }
+    };
+
+    const runServerCsv = async () => {
+      const res = await fetch("/api/export/inventory/csv", { credentials: "include" });
+      if (!res.ok) {
+        throw new Error(`Server export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = "inventory-report.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+      toast({ title: "Export complete", description: "Downloaded server inventory CSV." });
+    };
+
+    void (async () => {
+      try {
+        if (import.meta.env.DEV) {
+          runClientCsv();
+        } else {
+          await runServerCsv();
+        }
+      } catch (err) {
+        toast({
+          title: "Export failed",
+          description: err instanceof Error ? err.message : "Failed to export CSV",
+          variant: "destructive",
+        });
+      }
+    })();
   };
 
   const knownLocations = useMemo(() => {
@@ -187,7 +197,7 @@ export default function InventoryPage() {
             <Button
               variant="outline"
               onClick={handleExportCsv}
-              disabled={displayedItems.length === 0}
+              disabled={import.meta.env.DEV && displayedItems.length === 0}
               className="gap-2"
             >
               <Download className="h-4 w-4" />

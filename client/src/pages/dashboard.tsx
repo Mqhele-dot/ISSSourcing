@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
-import { useState } from "react";
+import { fetchInventory, type InventoryListItem } from "@/api/client";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Archive, AlertTriangle, ShoppingCart, DollarSign, Plus, FileDown, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -61,15 +62,11 @@ export default function Dashboard() {
 
   // Fetch inventory items
   const { data: inventoryItems, isLoading: itemsLoading } = useQuery({
-    queryKey: ["/api/inventory", selectedCategory],
-    queryFn: async () => {
-      const endpoint =
-        selectedCategory !== "all"
-          ? `/api/inventory?categoryId=${selectedCategory}`
-          : "/api/inventory";
-      const raw = await requestJson<unknown>("GET", endpoint);
-      return normalizeApiList<InventoryItem>(raw);
-    },
+    queryKey: ["/api/inventory", "dashboard", selectedCategory],
+    queryFn: () =>
+      fetchInventory(
+        selectedCategory !== "all" ? { categoryId: selectedCategory } : undefined,
+      ),
   });
   const { data: controlTower } = useQuery({
     queryKey: ["/api/control-tower/overview"],
@@ -78,9 +75,21 @@ export default function Dashboard() {
         lateShipments?: number;
         posAwaitingAction?: number;
         lowStockSkus?: number;
+        exceptionsBySeverity?: Record<string, number>;
+        openExceptionsTotal?: number;
+        pendingRequisitions?: number;
+        inTransitShipments?: number;
+        overdueInvoices?: number;
       };
     }>("GET", "/api/control-tower/overview"),
   });
+
+  const openOperationalExceptions = useMemo(() => {
+    const total = controlTower?.kpis?.openExceptionsTotal;
+    if (typeof total === "number" && Number.isFinite(total)) return total;
+    const bySev = controlTower?.kpis?.exceptionsBySeverity ?? {};
+    return Object.values(bySev).reduce((a, n) => a + Number(n ?? 0), 0);
+  }, [controlTower?.kpis?.exceptionsBySeverity, controlTower?.kpis?.openExceptionsTotal]);
 
   // Export report handler
   const handleExport = async (format: DocumentType) => {
@@ -138,7 +147,7 @@ export default function Dashboard() {
       header: "Category",
       cell: ({ row }: any) => {
         const categoryId = row.getValue("categoryId");
-        const category = categories?.find(c => c.id === categoryId);
+        const category = categories?.find((c: Category) => c.id === categoryId);
         return (
           <div className="text-sm text-neutral-900 dark:text-white">
             {category?.name || "Uncategorized"}
@@ -147,13 +156,41 @@ export default function Dashboard() {
       },
     },
     {
-      accessorKey: "quantity",
-      header: "Stock",
-      cell: ({ row }: any) => (
-        <div className="text-sm text-neutral-900 dark:text-white">
-          {row.getValue("quantity")}
-        </div>
-      ),
+      id: "stockOps",
+      header: "On hand / avail.",
+      cell: ({ row }: any) => {
+        const item = row.original as InventoryListItem;
+        const oh = item.onHand ?? item.quantity ?? 0;
+        const av = item.available ?? oh - (item.allocated ?? 0);
+        return (
+          <div className="text-sm text-neutral-900 dark:text-white">
+            <span className="font-medium">{oh}</span>
+            <span className="text-neutral-500 dark:text-neutral-400"> / {av} avail.</span>
+            {(item.allocated ?? 0) > 0 ? (
+              <div className="text-xs text-muted-foreground">{item.allocated} allocated</div>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      id: "expiryCol",
+      header: "Expiry / Mfg",
+      cell: ({ row }: any) => {
+        const item = row.original as InventoryListItem;
+        const exp = item.expiryDate
+          ? new Date(item.expiryDate).toLocaleDateString()
+          : "—";
+        const mfg = item.manufacturingDate
+          ? new Date(item.manufacturingDate).toLocaleDateString()
+          : "—";
+        return (
+          <div className="text-xs text-neutral-700 dark:text-neutral-300">
+            <div>Exp: {exp}</div>
+            <div className="text-muted-foreground">Mfg: {mfg}</div>
+          </div>
+        );
+      },
     },
     {
       accessorKey: "price",
@@ -168,8 +205,12 @@ export default function Dashboard() {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }: any) => {
-        const item = row.original as InventoryItem;
-        const status = getItemStatus(item);
+        const item = row.original as InventoryListItem;
+        const q = item.available ?? item.quantity ?? item.onHand ?? 0;
+        const status = getItemStatus({
+          quantity: q,
+          lowStockThreshold: item.lowStockThreshold,
+        });
         const statusStyle = getStatusColor(status);
         
         return (
@@ -182,7 +223,7 @@ export default function Dashboard() {
     {
       id: "actions",
       cell: ({ row }: any) => {
-        const item = row.original as InventoryItem;
+        const item = row.original as InventoryListItem;
         return (
           <div className="text-right">
             <Button
@@ -191,7 +232,11 @@ export default function Dashboard() {
               className="text-primary hover:text-primary/80 mr-3"
               data-help-title="Edit item"
               data-help-description="Open the item form to change name, SKU, category, quantity, or price."
-              onClick={(e) => { e.stopPropagation(); setEditingItem(item); setShowItemForm(true); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingItem(item as unknown as InventoryItem);
+                setShowItemForm(true);
+              }}
             >
               Edit
             </Button>
@@ -201,7 +246,10 @@ export default function Dashboard() {
               className="text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
               data-help-title="View item"
               data-help-description="Open a read-only view of this item; you can then click Edit to change it."
-              onClick={(e) => { e.stopPropagation(); setViewingItem(item); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setViewingItem(item as unknown as InventoryItem);
+              }}
             >
               View
             </Button>
@@ -310,7 +358,7 @@ export default function Dashboard() {
           <h3 className="text-lg font-medium text-neutral-900 dark:text-white">Control Tower</h3>
           <p className="text-sm text-muted-foreground">Monitor critical workflow exceptions and jump to deep-dive modules.</p>
         </div>
-        <div className="p-4 grid gap-3 md:grid-cols-3">
+        <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded border p-3">
             <div className="text-sm text-muted-foreground">Open approvals</div>
             <div className="text-2xl font-semibold">{controlTower?.kpis?.posAwaitingAction ?? 0}</div>
@@ -326,10 +374,45 @@ export default function Dashboard() {
             </Button>
           </div>
           <div className="rounded border p-3">
-            <div className="text-sm text-muted-foreground">Low stock alerts</div>
+            <div className="text-sm text-muted-foreground">Low-stock SKUs</div>
             <div className="text-2xl font-semibold">{controlTower?.kpis?.lowStockSkus ?? 0}</div>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/inventory?filter=low-stock")}>
+              View inventory
+            </Button>
+          </div>
+          <div className="rounded border p-3">
+            <div className="text-sm text-muted-foreground">Open operational exceptions</div>
+            <div className="text-2xl font-semibold">{openOperationalExceptions}</div>
             <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/exceptions")}>
               View exceptions
+            </Button>
+          </div>
+          <div className="rounded border p-3">
+            <div className="text-sm text-muted-foreground">Pending requisitions</div>
+            <div className="text-2xl font-semibold">{controlTower?.kpis?.pendingRequisitions ?? 0}</div>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/requisitions")}>
+              Requisitions
+            </Button>
+          </div>
+          <div className="rounded border p-3">
+            <div className="text-sm text-muted-foreground">In-transit shipments</div>
+            <div className="text-2xl font-semibold">{controlTower?.kpis?.inTransitShipments ?? 0}</div>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/logistics")}>
+              Logistics
+            </Button>
+          </div>
+          <div className="rounded border p-3">
+            <div className="text-sm text-muted-foreground">Overdue invoices</div>
+            <div className="text-2xl font-semibold">{controlTower?.kpis?.overdueInvoices ?? 0}</div>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/invoices")}>
+              Invoices
+            </Button>
+          </div>
+          <div className="rounded border p-3">
+            <div className="text-sm text-muted-foreground">Control tower</div>
+            <div className="text-2xl font-semibold">→</div>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/control-tower")}>
+              Full overview
             </Button>
           </div>
         </div>
@@ -356,7 +439,7 @@ export default function Dashboard() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Categories</SelectItem>
-                      {categories?.map((category) => (
+                      {categories?.map((category: Category) => (
                         <SelectItem key={category.id} value={String(category.id)}>
                           {category.name}
                         </SelectItem>

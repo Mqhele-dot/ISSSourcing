@@ -303,6 +303,19 @@ export function setupAuth(app: Express) {
           });
         }
       }
+
+      // Optional password max age (set PASSWORD_MAX_AGE_DAYS in production)
+      const maxAgeDays = Number(process.env.PASSWORD_MAX_AGE_DAYS || 0);
+      if (maxAgeDays > 0 && user.lastPasswordChange) {
+        const changed = new Date(user.lastPasswordChange).getTime();
+        const maxMs = maxAgeDays * 86400000;
+        if (Number.isFinite(changed) && Date.now() - changed > maxMs) {
+          return done(null, false, {
+            message:
+              "[PASSWORD_EXPIRED] Your password has expired. Use “Forgot password” to set a new one, or ask an administrator to reset your account.",
+          });
+        }
+      }
       
       // Temporarily bypass email verification for development 
       // In production, uncomment this check

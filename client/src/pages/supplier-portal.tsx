@@ -117,6 +117,17 @@ export default function SupplierPortalPage() {
         subtitle="Review your assigned purchase orders and share acknowledgments/delivery dates."
       />
 
+      <Alert>
+        <AlertTitle>Workflow</AlertTitle>
+        <AlertDescription className="text-sm space-y-1">
+          <ol className="list-decimal pl-4 space-y-1">
+            <li>Confirm open POs so procurement sees acknowledgment.</li>
+            <li>Update expected delivery when dates slip.</li>
+            <li>Submit invoices linked to a PO (optional document upload).</li>
+          </ol>
+        </AlertDescription>
+      </Alert>
+
       {canChooseSupplier ? (
         <Card>
           <CardHeader>

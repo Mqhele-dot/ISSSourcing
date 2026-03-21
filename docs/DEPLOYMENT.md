@@ -38,6 +38,8 @@ Run: `caddy run --config Caddyfile`
 
 See `.env.production.example` and `docs/ENV-CONFIG.md` for variables.
 
+After pulling releases that add `users.supplier_id` / `users.approver_amount_limit`, run **`npm run db:push`** (or rely on `init-db` alters if you use the raw SQL path) so Postgres matches `shared/schema.ts`.
+
 ## Post-deploy verification (smoke)
 
 After each deploy to an environment you can reach over HTTP:
@@ -48,3 +50,7 @@ After each deploy to an environment you can reach over HTTP:
 2. **Currency POST path** (manual): authenticated `POST /api/currencies` with `code` + `name` and **omit** `symbol` — response row should include a non-empty `symbol` (server normalizes before zod). Confirm in browser Network tab if testing from the UI.
 
 3. **Dedicated export PDFs** (optional): with admin session, `GET /api/export/purchase_orders/pdf` and `GET /api/export/purchase_requisitions/pdf` should return `Content-Type: application/pdf` and a body starting with `%PDF-`.
+
+4. **Export matrix** (optional): `BASE_URL=https://your-host npx tsx scripts/test-exports.ts` — checks PDF/CSV/Excel across inventory, suppliers, POs, requisitions, activity logs, warehouses.
+
+5. **Supply-chain demo** (optional): `BASE_URL=https://your-host npx tsx scripts/demo-supply-chain-e2e.ts` — full API walk (requisition → receipt → invoice → payment → export → activity); see [`docs/DEMO_WORKFLOW.md`](DEMO_WORKFLOW.md).

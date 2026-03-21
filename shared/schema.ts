@@ -68,6 +68,17 @@ export const users = pgTable("users", {
   fullName: text("full_name"),
   role: userRoleEnum("role").default("viewer"),
   warehouseId: integer("warehouse_id"),
+  /** When role is `supplier`, scopes portal APIs to this supplier PK */
+  supplierId: integer("supplier_id"),
+  /** Max requisition total (same currency as requisition) this user may approve; null = no extra cap */
+  approverAmountLimit: real("approver_amount_limit"),
+  /** E.164 or local digits; used for optional SMS notification mirror */
+  phone: text("phone"),
+  /**
+   * Persona label for UX/RBAC docs (Requester, Buyer, Approver, Inventory, Logistics, Finance).
+   * Does not replace `role`; use with coarse `user_role` enum.
+   */
+  workPersona: text("work_persona"),
   active: boolean("active").default(true),
   emailVerified: boolean("email_verified").default(false),
   twoFactorEnabled: boolean("two_factor_enabled").default(false),
@@ -819,6 +830,14 @@ export type PurchaseOrderForm = z.infer<typeof purchaseOrderFormSchema>;
 
 export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
 export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
+
+/** Optional GRN metadata for `POST /api/purchase-order-items/:id/receive` (receiver / put-away hints). */
+export type PurchaseOrderItemReceiveMeta = {
+  receiverUserId?: number | null;
+  receiverName?: string | null;
+  warehouseLocation?: string | null;
+  receivedAt?: string | null;
+};
 
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
