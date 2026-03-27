@@ -1,5 +1,7 @@
 # Deployment
 
+**Local Windows development** (not production deploy): **[`WINDOWS-LOCAL-SETUP.md`](./WINDOWS-LOCAL-SETUP.md)**.
+
 ## Running behind a reverse proxy with TLS
 
 For production, run the Node app behind a reverse proxy (e.g. nginx or Caddy) and terminate TLS at the proxy.

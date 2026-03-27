@@ -57,7 +57,7 @@ export default function SupplyAnalyticsPage() {
         subtitle="Spend, turnover, supplier performance, and warehouse utilization views."
       />
 
-      <Card>
+      <Card data-tour="supply-insights">
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle>Operational insights</CardTitle>
@@ -105,7 +105,7 @@ export default function SupplyAnalyticsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card data-tour="supply-filters">
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
@@ -133,7 +133,7 @@ export default function SupplyAnalyticsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card data-tour="supply-expiring">
         <CardHeader>
           <CardTitle>Expiring inventory (30 days)</CardTitle>
         </CardHeader>

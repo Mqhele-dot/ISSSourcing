@@ -144,8 +144,6 @@ export default function Reports() {
         );
       }
       const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      
       const fileExtension = exportFormat === "excel" ? "xlsx" : exportFormat;
       const filenameSuffix =
         exportFormat === "pdf"
@@ -155,10 +153,8 @@ export default function Reports() {
           : exportFormat === "csv"
             ? "raw-data"
             : "analysis";
-      downloadFile(objectUrl, `${activeTab}-${filenameSuffix}.${fileExtension}`);
-      
-      URL.revokeObjectURL(objectUrl);
-      
+      downloadFile(blob, `${activeTab}-${filenameSuffix}.${fileExtension}`);
+
       toast({
         title: "Export Successful",
         description: `${getReportTitle(activeTab)} has been exported as ${exportFormat === "excel" ? "XLSX" : exportFormat === "docx" ? "DOCX" : exportFormat.toUpperCase()}`,
@@ -221,7 +217,7 @@ export default function Reports() {
         title="Reports"
         description="Generate and export inventory reports in multiple formats"
         actions={
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3" data-tour="reports-section">
           <Select value={exportFormat} onValueChange={(value) => setExportFormat(value as DocumentType)}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Select format" />
@@ -319,7 +315,7 @@ export default function Reports() {
       />
       
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportTab)} className="mb-6">
-        <TabsList className="mb-4">
+        <TabsList className="mb-4" data-tour="reports-tabs">
           <TabsTrigger value="inventory" className="flex items-center">
             <FileText className="mr-2 h-4 w-4" />
             Inventory Report

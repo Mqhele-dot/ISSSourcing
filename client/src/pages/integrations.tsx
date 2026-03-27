@@ -99,7 +99,7 @@ export default function IntegrationsPage() {
           const runList = Array.isArray(runs) ? runs : [];
           return (
           <>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-3" data-tour="integrations-connectors">
               {CONNECTORS.map((connector) => {
                 const latest = latestByConnector.get(connector);
                 return (
@@ -129,7 +129,7 @@ export default function IntegrationsPage() {
               })}
             </div>
 
-            <Card>
+            <Card data-tour="integrations-runs">
               <CardHeader>
                 <CardTitle>Run log</CardTitle>
               </CardHeader>

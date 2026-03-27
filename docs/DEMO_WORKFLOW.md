@@ -12,7 +12,7 @@ This is the **canonical UI path** for stakeholders. An automated API walkthrough
 6. **Invoice** — `/invoices` → create from PO → **Run 3-way match** → open **Details** if mismatches appear.
 7. **Payment** — `/billing` or invoice payment actions (where exposed in UI).
 8. **Export** — `/reports` or PO PDF export as applicable.
-9. **Audit / activity** — `/audit-logs` and/or `GET /api/activity-logs?limit=50` for operational activity.
+9. **Audit / activity** — `/audit-logs` uses **`GET /api/activity`** (operational stream). Small widgets may still use `GET /api/activity-logs?limit=50` (legacy); see [API_CONTRACTS.md](./API_CONTRACTS.md) § Activity and audit endpoints.
 
 ## Known UI / product gaps (non-exhaustive)
 

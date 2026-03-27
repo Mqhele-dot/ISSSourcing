@@ -1,3 +1,4 @@
+import "dotenv/config";
 import type { Pool as PgPool } from "pg";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";

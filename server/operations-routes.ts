@@ -28,6 +28,8 @@ import { pool } from "./db";
 import { readiness } from "./readiness";
 import { seedOperationalIfEmpty } from "./seed-operational";
 import { seedDatabaseIfEmpty } from "./seed";
+import { storage } from "./storage";
+import { generatePurchaseOrdersDocumentPdf } from "./services/document-generator-service";
 
 type AuthGuards = {
   ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => void;
@@ -36,6 +38,7 @@ type AuthGuards = {
 const INVENTORY_ROUTE_RESERVED_SEGMENTS = new Set([
   "low-stock",
   "out-of-stock",
+  "expiring",
   "stats",
   "bulk-import",
   "find-by-barcode",
@@ -332,7 +335,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       setEndpointHeader(res, req.path);
       const sku = req.params.sku;
       if (INVENTORY_ROUTE_RESERVED_SEGMENTS.has(sku)) {
-        next();
+        // Delegate to a later-registered route (e.g. GET /api/inventory/expiring).
+        // Plain next() does not re-enter the router for a better match.
+        next("route");
         return;
       }
       if (isOperationsDegraded()) {
@@ -353,6 +358,60 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       }
 
       respondOk(res, detail);
+    }),
+  );
+
+  app.get(
+    "/api/purchase/orders/:po/signed-pdf",
+    auth.ensureAuthenticated,
+    withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+      }
+      const poParam = req.params.po;
+      try {
+        const detail = await withTimeout(
+          getOperationalPurchaseOrderDetail(poParam),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
+        if (!detail) {
+          throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
+        }
+        const full = await storage.getPurchaseOrderWithDetails(detail.id);
+        if (!full) {
+          throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
+        }
+        const actor =
+          typeof req.user?.username === "string" && req.user.username.trim()
+            ? req.user.username.trim()
+            : typeof req.user?.email === "string" && req.user.email.trim()
+              ? req.user.email.trim()
+              : "user";
+        const metadataLines = [
+          `Generated: ${new Date().toISOString()}`,
+          `Exported by: ${actor}`,
+          `PO: ${full.orderNumber}`,
+        ];
+        const buffer = await generatePurchaseOrdersDocumentPdf(
+          [full],
+          `Purchase Order — ${full.orderNumber}`,
+          metadataLines,
+        );
+        const safeName = String(full.orderNumber).replace(/[^\w.-]+/g, "_");
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="PO-${safeName}-for-signature.pdf"`);
+        res.send(buffer);
+      } catch (error) {
+        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+          logOperationalError(req.path, Date.now() - start, error);
+          setFallbackHeader(res, error);
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
+        mapPurchaseStatusError(error);
+      }
     }),
   );
 

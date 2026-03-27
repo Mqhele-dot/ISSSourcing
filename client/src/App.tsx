@@ -118,7 +118,7 @@ function ReadinessBanner() {
 
   if (error) {
     return (
-      <div className="sticky top-0 z-40 p-3">
+      <div className="sticky top-0 z-40 shrink-0 p-3">
         <Alert variant="destructive">
           <AlertTitle>System readiness check failed</AlertTitle>
           <AlertDescription>
@@ -140,7 +140,7 @@ function ReadinessBanner() {
   if (unavailable.length === 0) return null;
 
   return (
-    <div className="sticky top-0 z-40 p-3">
+    <div className="sticky top-0 z-40 shrink-0 p-3">
       <Alert variant="destructive">
         <AlertTitle>Limited mode: backend is not fully ready</AlertTitle>
         <AlertDescription>
@@ -174,7 +174,7 @@ function App() {
                 <TutorialProvider>
                   <HelpExplainProvider>
                     <ElectronProvider>
-                      <div className="app-shell relative min-h-screen">
+                      <div className="app-shell relative flex h-svh min-h-0 flex-col overflow-hidden">
                         <ReadinessBanner />
                         <Route path="/auth">
                           <AppRouter />

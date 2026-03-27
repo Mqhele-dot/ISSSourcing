@@ -4,12 +4,13 @@ Separate configuration for development and production.
 
 ## Development
 
-1. Copy the development example:  
-   `cp .env.development.example .env`
-2. Set `DATABASE_URL` to your local Postgres (and optionally `SESSION_SECRET`).
-3. Run `npm run dev`. With an empty DB, demo data is seeded automatically if `AUTO_SEED_ON_EMPTY_DB` is not set to `false`.
+1. Copy **`.env.example`** to **`.env`** in the repo root (`.env` is loaded automatically via `dotenv` in `server/db.ts` and `drizzle.config.ts`).
+2. Set **`DATABASE_URL`** to your local Postgres (and **`SESSION_SECRET`**). On local Postgres without SSL, set **`PGSSLMODE=disable`** or add **`?sslmode=disable`** to the URL.
+3. Run **`npm run dev`**. With an empty DB, demo data is seeded automatically if `AUTO_SEED_ON_EMPTY_DB` is not set to `false`.
 
-See `.env.development.example` for all supported variables.
+**Windows:** step-by-step setup is in **[`WINDOWS-LOCAL-SETUP.md`](./WINDOWS-LOCAL-SETUP.md)**.
+
+See **`.env.example`** for supported variables.
 
 ## Production
 

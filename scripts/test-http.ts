@@ -36,6 +36,8 @@ export type ApiJsonResult = {
   status: number;
   ok: boolean;
   json: unknown;
+  /** Present on all mutating responses when server sets `X-Request-Id` (see `server/index.ts`). */
+  requestId: string | null;
 };
 
 /**
@@ -66,7 +68,7 @@ export async function apiJsonRequest(
   });
   captureCookieFromResponse(res);
   const json = await res.json().catch(() => null);
-  return { status: res.status, ok: res.ok, json };
+  return { status: res.status, ok: res.ok, json, requestId: res.headers.get("x-request-id") };
 }
 
 /**

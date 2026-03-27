@@ -130,6 +130,25 @@ function normalizeEndpointPath(url: string): string {
   }
 }
 
+/** Set after `queryClient` is created — clears stale cached user when APIs return 401 */
+let invalidateUserQueryOn401: (() => void) | null = null;
+
+/**
+ * When the server rejects a request as unauthenticated, force `/api/user` to refetch.
+ * Avoids a stuck UI: default query staleTime can keep a logged-in user in cache after sessions are reset or cookies are invalid.
+ */
+function scheduleAuthInvalidateOn401(status: number, method: string, url: string) {
+  if (status !== 401) return;
+  const path = normalizeEndpointPath(url);
+  /** `/api/user` uses on401 returnNull — cache is already cleared; invalidating would refetch in a tight loop */
+  if (path === "/api/user") return;
+  const m = method.toUpperCase();
+  if (path === "/api/login" || path === "/api/auth/login") return;
+  if (path === "/api/register" && m === "POST") return;
+  if (path === "/api/logout" && m === "POST") return;
+  queueMicrotask(() => invalidateUserQueryOn401?.());
+}
+
 function summarizeRequestPayload(data: unknown): string | undefined {
   if (data == null) return undefined;
   if (typeof data === "string") return data.slice(0, 300);
@@ -181,6 +200,7 @@ async function throwIfResNotOk(res: Response, context?: { method?: string; url?:
   if (!res.ok) {
     const payload = await parseJsonOrText(res);
     const message = formatServerErrorPayload(payload) ?? res.statusText;
+    scheduleAuthInvalidateOn401(res.status, context?.method ?? "UNKNOWN", context?.url ?? res.url);
     reportRequestError({
       method: context?.method ?? "UNKNOWN",
       url: context?.url ?? res.url,
@@ -263,6 +283,7 @@ export async function invTrackFetch<T>(
   if (!res.ok) {
     const payload = await parseJsonOrText(res);
     const msg = formatServerErrorPayload(payload) ?? res.statusText;
+    scheduleAuthInvalidateOn401(res.status, method, url);
     reportRequestError({
       method,
       url,
@@ -303,6 +324,7 @@ export async function invTrackFetch<T>(
       };
     }
     const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
+    scheduleAuthInvalidateOn401(res.status, method, url);
     reportRequestError({
       method,
       url,
@@ -420,6 +442,26 @@ export function normalizeApiList<T>(raw: unknown): T[] {
   return [];
 }
 
+/**
+ * Like {@link normalizeApiList} but logs a dev warning when a 200 body looks like a list endpoint
+ * yet `.data` is missing or not an array (silent empty list risk).
+ */
+export function normalizeApiListStrict<T>(raw: unknown, context?: string): T[] {
+  if (Array.isArray(raw)) return raw as T[];
+  if (raw && typeof raw === "object" && "data" in raw) {
+    const inner = (raw as { data: unknown }).data;
+    if (Array.isArray(inner)) return inner as T[];
+    if (inner !== undefined && isDevRuntime && context) {
+      console.warn(`[${context}] Expected array in response.data, got:`, typeof inner);
+    }
+    return [];
+  }
+  if (raw != null && raw !== undefined && isDevRuntime && context) {
+    console.warn(`[${context}] Unexpected list response shape:`, typeof raw);
+  }
+  return [];
+}
+
 /** Unwrap operational list response that may include meta.fallback (timeout | db-error | degraded) */
 export function unwrapOperationalResponse<T>(
   payload: T | { data: T; meta?: { fallback?: string } },
@@ -455,3 +497,7 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+invalidateUserQueryOn401 = () => {
+  void queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+};

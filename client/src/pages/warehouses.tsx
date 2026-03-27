@@ -1,227 +1,18 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, requestJson, unwrapOperationalResponse } from '@/lib/queryClient';
-import { Plus, Pencil, Trash2, Loader2, Building } from 'lucide-react';
-import { PageHeader } from '@/components/page-header';
-import { PageDataState } from '@/components/page-shell';
-import type { Warehouse, BinLocation, FormData, WarehousePayload } from '@/pages/warehouses/warehouse-types';
-import {
-  emptyWarehouseForm,
-  validateWarehouseForm,
-  warehouseFormToPayload,
-} from '@/pages/warehouses/warehouse-types';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogClose,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { WarehouseTable } from '@/pages/warehouses/warehouse-table';
-import { Switch } from '@/components/ui/switch';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useToast } from '@/hooks/use-toast';
-import { ToastAction } from '@/components/ui/toast';
-import { Can } from '@/components/auth/can';
+import { Plus, Loader2, Building } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
+import { PageDataState } from "@/components/page-shell";
+import { Button } from "@/components/ui/button";
+import { WarehouseTable } from "@/pages/warehouses/warehouse-table";
+import { WarehouseDialogs } from "@/pages/warehouses/warehouse-dialogs";
+import { useWarehouseCrud } from "@/pages/warehouses/use-warehouse-crud";
+import { Card, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Can } from "@/components/auth/can";
+import { useState } from "react";
 
 export default function WarehousesPage() {
-  const { toast } = useToast();
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
-  const [formData, setFormData] = useState<FormData>(emptyWarehouseForm());
-
-  // Fetch warehouses (response may include meta.fallback when server used fallback)
-  const { data: warehousesRaw, isLoading, isError, error, refetch } = useQuery<
-    Warehouse[] | { data: Warehouse[]; meta: { fallback?: string } }
-  >({
-    queryKey: ['/api/warehouses'],
-    queryFn: () => requestJson<Warehouse[] | { data: Warehouse[]; meta: { fallback?: string } }>('GET', '/api/warehouses'),
-  });
-  const { data: warehouseList, fallback: listFallback } = unwrapOperationalResponse(
-    warehousesRaw ?? [],
-  );
-  const list = Array.isArray(warehouseList) ? warehouseList : [];
-
-  // Create warehouse mutation
-  const createWarehouse = useMutation<unknown, Error, WarehousePayload>({
-    mutationFn: async (data: WarehousePayload) => requestJson('POST', '/api/warehouses', data),
-    onSuccess: (_data, variables) => {
-      const createdName = variables.name.trim();
-      queryClient.invalidateQueries({ queryKey: ['/api/warehouses'] });
-      setIsCreateDialogOpen(false);
-      resetForm();
-      toast({
-        title: 'Warehouse created',
-        description: 'Warehouse has been created successfully',
-      });
-      // Post-create verification: if refetched list doesn't include the new item, warn
-      queryClient.fetchQuery({ queryKey: ['/api/warehouses'] }).then((list: unknown) => {
-        const arr = Array.isArray(list) ? list : [];
-        if (!arr.some((w: { name?: string }) => w.name === createdName)) {
-          toast({
-            variant: 'destructive',
-            title: 'Created but not visible yet',
-            description: 'Check backend persistence.',
-          });
-        }
-      }).catch(() => {});
-    },
-    onError: (error: Error, data: WarehousePayload | undefined) => {
-      toast({
-        variant: 'destructive',
-        title: 'Failed to create warehouse (POST /api/warehouses)',
-        description: error.message,
-        action: data != null ? (
-          <ToastAction altText="Retry" onClick={() => createWarehouse.mutate(data)}>
-            Retry
-          </ToastAction>
-        ) : undefined,
-      });
-    },
-  });
-
-  // Update warehouse mutation
-  const updateWarehouse = useMutation<unknown, Error, { id: number; data: WarehousePayload }>({
-    mutationFn: async ({ id, data }: { id: number; data: WarehousePayload }) =>
-      requestJson('PATCH', `/api/warehouses/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/warehouses'] });
-      setIsEditDialogOpen(false);
-      setSelectedWarehouse(null);
-      toast({
-        title: 'Warehouse updated',
-        description: 'Warehouse has been updated successfully',
-      });
-    },
-    onError: (error: Error, vars: { id: number; data: WarehousePayload } | undefined) => {
-      toast({
-        variant: 'destructive',
-        title: `Failed to update warehouse (PATCH /api/warehouses/${vars?.id ?? selectedWarehouse?.id ?? '?'})`,
-        description: error.message,
-        action: vars ? (
-          <ToastAction altText="Retry" onClick={() => updateWarehouse.mutate(vars)}>
-            Retry
-          </ToastAction>
-        ) : undefined,
-      });
-    },
-  });
-
-  // Delete warehouse mutation
-  const deleteWarehouse = useMutation<boolean, Error, number>({
-    mutationFn: async (id: number) => {
-      await requestJson('DELETE', `/api/warehouses/${id}`);
-      return true;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/warehouses'] });
-      setIsDeleteDialogOpen(false);
-      setSelectedWarehouse(null);
-      toast({
-        title: 'Warehouse deleted',
-        description: 'Warehouse has been deleted successfully',
-      });
-    },
-    onError: (error: Error, id: number | undefined) => {
-      toast({
-        variant: 'destructive',
-        title: `Failed to delete warehouse (DELETE /api/warehouses/${id ?? selectedWarehouse?.id ?? '?'})`,
-        description: error.message,
-        action: id != null ? (
-          <ToastAction altText="Retry" onClick={() => deleteWarehouse.mutate(id)}>
-            Retry
-          </ToastAction>
-        ) : undefined,
-      });
-    },
-  });
-
-  const handleCreateSubmit = () => {
-    const err = validateWarehouseForm(formData);
-    if (err) {
-      toast({
-        variant: 'destructive',
-        title: 'Validation',
-        description: err,
-      });
-      return;
-    }
-    createWarehouse.mutate(warehouseFormToPayload(formData));
-  };
-
-  const handleEditSubmit = () => {
-    if (!selectedWarehouse) return;
-    const err = validateWarehouseForm(formData);
-    if (err) {
-      toast({
-        variant: 'destructive',
-        title: 'Validation',
-        description: err,
-      });
-      return;
-    }
-    updateWarehouse.mutate({
-      id: selectedWarehouse.id,
-      data: warehouseFormToPayload(formData),
-    });
-  };
-
-  const handleDeleteConfirm = () => {
-    if (selectedWarehouse) {
-      deleteWarehouse.mutate(selectedWarehouse.id);
-    }
-  };
-
-  const resetForm = () => {
-    setFormData(emptyWarehouseForm());
-  };
-
-  const openEditDialog = (warehouse: Warehouse) => {
-    setSelectedWarehouse(warehouse);
-    const aislesList = warehouse.aisles ?? [];
-    const details = warehouse.locationDetails;
-    setFormData({
-      name: warehouse.name,
-      address: warehouse.address || '',
-      location: warehouse.location || '',
-      contactPerson: warehouse.contactPerson || '',
-      contactPhone: warehouse.contactPhone || '',
-      isDefault: warehouse.isDefault || false,
-      aisles: Array.isArray(aislesList) ? aislesList.join(', ') : '',
-      bins: (warehouse.bins ?? []).map((b) => (typeof b === 'object' ? b : { code: String(b), aisle: '', row: '', shelf: '' })),
-      locationDetails: details && typeof details === 'object' ? JSON.stringify(details, null, 2) : (typeof details === 'string' ? details : ''),
-    });
-    setIsEditDialogOpen(true);
-  };
-
-  const addBin = () => {
-    setFormData({ ...formData, bins: [...formData.bins, { code: '', aisle: '', row: '', shelf: '' }] });
-  };
-
-  const updateBin = (index: number, field: keyof BinLocation, value: string) => {
-    const next = [...formData.bins];
-    next[index] = { ...next[index], [field]: value };
-    setFormData({ ...formData, bins: next });
-  };
-
-  const removeBin = (index: number) => {
-    setFormData({ ...formData, bins: formData.bins.filter((_, i) => i !== index) });
-  };
-
-  const openDeleteDialog = (warehouse: Warehouse) => {
-    setSelectedWarehouse(warehouse);
-    setIsDeleteDialogOpen(true);
-  };
+  const crud = useWarehouseCrud();
+  const [createWarehouseFormVariant, setCreateWarehouseFormVariant] = useState<"quick" | "full">("quick");
 
   return (
     <div className="container mx-auto py-6 max-w-7xl">
@@ -229,21 +20,24 @@ export default function WarehousesPage() {
         title="Warehouses"
         description="Manage your warehouse locations and inventory distribution"
         actions={
-          <Can roles={['manager', 'admin']} reason="Requires Manager or Admin to add warehouses">
-            <Button
-              onClick={() => {
-                resetForm();
-                setIsCreateDialogOpen(true);
-              }}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add Warehouse
-            </Button>
-          </Can>
+          <span data-tour="warehouses-actions">
+            <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add warehouses">
+              <Button
+                onClick={() => {
+                  crud.resetForm();
+                  setCreateWarehouseFormVariant("quick");
+                  crud.setIsCreateDialogOpen(true);
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Warehouse
+              </Button>
+            </Can>
+          </span>
         }
       />
 
-      {listFallback ? (
+      {crud.listFallback ? (
         <Alert variant="default" className="mb-4 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
           <AlertTitle>Temporary data outage</AlertTitle>
           <AlertDescription>
@@ -251,19 +45,19 @@ export default function WarehousesPage() {
           </AlertDescription>
         </Alert>
       ) : null}
-      <Card>
+      <Card data-tour="warehouses-table">
         <CardContent className="p-0">
           <PageDataState
-            isLoading={isLoading}
-            error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
-            isEmpty={!isLoading && !isError && list.length === 0}
+            isLoading={crud.isLoading}
+            error={crud.isError ? (crud.error instanceof Error ? crud.error : new Error(String(crud.error))) : null}
+            isEmpty={!crud.isLoading && !crud.isError && crud.list.length === 0}
             loadingView={
               <div className="flex justify-center items-center h-64">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
             }
             errorTitle="Failed to load warehouses"
-            onRetry={() => refetch()}
+            onRetry={() => crud.refetch()}
             emptyView={
               <div className="flex flex-col items-center justify-center h-64 text-center px-4">
                 <Building className="h-12 w-12 text-gray-400 mb-4" />
@@ -272,11 +66,12 @@ export default function WarehousesPage() {
                   You haven&apos;t added any warehouses yet. Add your first warehouse to start managing inventory across
                   multiple locations.
                 </p>
-                <Can roles={['manager', 'admin']} reason="Requires Manager or Admin to add warehouses">
+                <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add warehouses">
                   <Button
                     onClick={() => {
-                      resetForm();
-                      setIsCreateDialogOpen(true);
+                      crud.resetForm();
+                      setCreateWarehouseFormVariant("quick");
+                      crud.setIsCreateDialogOpen(true);
                     }}
                   >
                     <Plus className="mr-2 h-4 w-4" />
@@ -286,366 +81,33 @@ export default function WarehousesPage() {
               </div>
             }
           >
-            <WarehouseTable list={list} onEdit={openEditDialog} onDelete={openDeleteDialog} />
+            <WarehouseTable list={crud.list} onEdit={crud.openEditDialog} onDelete={crud.openDeleteDialog} />
           </PageDataState>
         </CardContent>
       </Card>
 
-      {/* Create Warehouse Dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add New Warehouse</DialogTitle>
-            <DialogDescription>
-              Enter the details for the new warehouse location.
-            </DialogDescription>
-          </DialogHeader>
-          {/* We use custom toast validation; native HTML validation is disabled. */}
-          <form
-            noValidate
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleCreateSubmit();
-            }}
-            aria-label="Create warehouse form"
-          >
-            <fieldset className="grid gap-4 py-4" disabled={createWarehouse.isPending}>
-              <div className="grid gap-2">
-                <Label htmlFor="name">Warehouse Name *</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Main Warehouse"
-                  aria-required="true"
-                  aria-label="Warehouse name"
-                />
-              </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="location">Location</Label>
-                <Input
-                  id="location"
-                  name="location"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  placeholder="Building A, Floor 2"
-                  aria-label="Warehouse location"
-                />
-              </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="address">Address</Label>
-                <Textarea
-                  id="address"
-                  name="address"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  placeholder="123 Main Street, City, Country"
-                  rows={2}
-                  aria-label="Warehouse address"
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="contactPerson">Contact Person</Label>
-                  <Input
-                    id="contactPerson"
-                    name="contactPerson"
-                    value={formData.contactPerson}
-                    onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
-                    placeholder="John Doe"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="contactPhone">Contact Phone</Label>
-                  <Input
-                    id="contactPhone"
-                    name="contactPhone"
-                    value={formData.contactPhone}
-                    onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })}
-                    placeholder="+1 (555) 123-4567"
-                  />
-                </div>
-              </div>
-              
-              <p className="text-sm font-medium text-muted-foreground pt-2 border-t">Aisles, Bins & Locations</p>
-              <div className="grid gap-2">
-                <Label htmlFor="aisles">Aisles (comma-separated)</Label>
-                <Input
-                  id="aisles"
-                  value={formData.aisles}
-                  onChange={(e) => setFormData({ ...formData, aisles: e.target.value })}
-                  placeholder="A-1, A-2, B-1, B-2"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="locationDetails">Location details (optional JSON)</Label>
-                <Textarea
-                  id="locationDetails"
-                  value={formData.locationDetails}
-                  onChange={(e) => setFormData({ ...formData, locationDetails: e.target.value })}
-                  placeholder='{"zone": "A", "floor": 1}'
-                  rows={2}
-                  className="font-mono text-sm"
-                />
-                <p className="text-xs text-muted-foreground">Add custom fields as JSON for zones, floors, etc.</p>
-              </div>
-              <div className="grid gap-2">
-                <div className="flex justify-between items-center">
-                  <Label>Bins / Locations</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addBin} aria-label="Add bin or location">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add bin
-                  </Button>
-                </div>
-                {formData.bins.map((bin, i) => (
-                  <div key={i} className="flex gap-2 items-center p-2 border rounded-md">
-                    <Input
-                      placeholder="Code"
-                      value={bin.code}
-                      onChange={(e) => updateBin(i, 'code', e.target.value)}
-                      className="flex-1"
-                    />
-                    <Input
-                      placeholder="Aisle"
-                      value={bin.aisle ?? ''}
-                      onChange={(e) => updateBin(i, 'aisle', e.target.value)}
-                      className="w-20"
-                    />
-                    <Input
-                      placeholder="Row"
-                      value={bin.row ?? ''}
-                      onChange={(e) => updateBin(i, 'row', e.target.value)}
-                      className="w-20"
-                    />
-                    <Input
-                      placeholder="Shelf"
-                      value={bin.shelf ?? ''}
-                      onChange={(e) => updateBin(i, 'shelf', e.target.value)}
-                      className="w-20"
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeBin(i)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center space-x-2 mt-2">
-                <Switch
-                  id="isDefault"
-                  checked={formData.isDefault}
-                  onCheckedChange={(checked) => setFormData({ ...formData, isDefault: checked })}
-                />
-                <Label htmlFor="isDefault">Set as default warehouse</Label>
-              </div>
-            </fieldset>
-            <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setIsCreateDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createWarehouse.isPending}>
-                {createWarehouse.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Warehouse
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Warehouse Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Warehouse</DialogTitle>
-            <DialogDescription>
-              Update the warehouse details.
-            </DialogDescription>
-          </DialogHeader>
-          {/* We use custom toast validation; native HTML validation is disabled. */}
-          <form
-            noValidate
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleEditSubmit();
-            }}
-            aria-label="Edit warehouse form"
-          >
-            <fieldset className="grid gap-4 py-4" disabled={updateWarehouse.isPending}>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-name">Warehouse Name *</Label>
-                <Input
-                  id="edit-name"
-                  name="name"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  aria-required="true"
-                  aria-label="Warehouse name"
-                />
-              </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="edit-location">Location</Label>
-                <Input
-                  id="edit-location"
-                  name="location"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                />
-              </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="edit-address">Address</Label>
-                <Textarea
-                  id="edit-address"
-                  name="address"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  rows={2}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-contactPerson">Contact Person</Label>
-                  <Input
-                    id="edit-contactPerson"
-                    name="contactPerson"
-                    value={formData.contactPerson}
-                    onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-contactPhone">Contact Phone</Label>
-                  <Input
-                    id="edit-contactPhone"
-                    name="contactPhone"
-                    value={formData.contactPhone}
-                    onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })}
-                  />
-                </div>
-              </div>
-              
-              <p className="text-sm font-medium text-muted-foreground pt-2 border-t">Aisles, Bins & Locations</p>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-aisles">Aisles (comma-separated)</Label>
-                <Input
-                  id="edit-aisles"
-                  value={formData.aisles}
-                  onChange={(e) => setFormData({ ...formData, aisles: e.target.value })}
-                  placeholder="A-1, A-2, B-1, B-2"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-locationDetails">Location details (optional JSON)</Label>
-                <Textarea
-                  id="edit-locationDetails"
-                  value={formData.locationDetails}
-                  onChange={(e) => setFormData({ ...formData, locationDetails: e.target.value })}
-                  placeholder='{"zone": "A", "floor": 1}'
-                  rows={2}
-                  className="font-mono text-sm"
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex justify-between items-center">
-                  <Label>Bins / Locations</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={addBin} aria-label="Add bin or location">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add bin
-                  </Button>
-                </div>
-                {formData.bins.map((bin, i) => (
-                  <div key={i} className="flex gap-2 items-center p-2 border rounded-md">
-                    <Input
-                      placeholder="Code"
-                      value={bin.code}
-                      onChange={(e) => updateBin(i, 'code', e.target.value)}
-                      className="flex-1"
-                    />
-                    <Input
-                      placeholder="Aisle"
-                      value={bin.aisle ?? ''}
-                      onChange={(e) => updateBin(i, 'aisle', e.target.value)}
-                      className="w-20"
-                    />
-                    <Input
-                      placeholder="Row"
-                      value={bin.row ?? ''}
-                      onChange={(e) => updateBin(i, 'row', e.target.value)}
-                      className="w-20"
-                    />
-                    <Input
-                      placeholder="Shelf"
-                      value={bin.shelf ?? ''}
-                      onChange={(e) => updateBin(i, 'shelf', e.target.value)}
-                      className="w-20"
-                    />
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeBin(i)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center space-x-2 mt-2">
-                <Switch
-                  id="edit-isDefault"
-                  checked={formData.isDefault}
-                  onCheckedChange={(checked) => setFormData({ ...formData, isDefault: checked })}
-                />
-                <Label htmlFor="edit-isDefault">Set as default warehouse</Label>
-              </div>
-            </fieldset>
-            <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setIsEditDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={updateWarehouse.isPending}>
-                {updateWarehouse.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete Warehouse</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete {selectedWarehouse?.name}? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-4">
-            <Alert variant="destructive">
-              <AlertTitle>Warning</AlertTitle>
-              <AlertDescription>
-                Deleting this warehouse will remove all associated inventory records. 
-                Consider transferring inventory to another warehouse first.
-              </AlertDescription>
-            </Alert>
-          </div>
-          <DialogFooter className="mt-6">
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteConfirm}
-              disabled={deleteWarehouse.isPending}
-            >
-              {deleteWarehouse.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Delete Warehouse
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <WarehouseDialogs
+        isCreateDialogOpen={crud.isCreateDialogOpen}
+        setIsCreateDialogOpen={crud.setIsCreateDialogOpen}
+        createFormVariant={createWarehouseFormVariant}
+        setCreateFormVariant={setCreateWarehouseFormVariant}
+        isEditDialogOpen={crud.isEditDialogOpen}
+        setIsEditDialogOpen={crud.setIsEditDialogOpen}
+        isDeleteDialogOpen={crud.isDeleteDialogOpen}
+        setIsDeleteDialogOpen={crud.setIsDeleteDialogOpen}
+        formData={crud.formData}
+        setFormData={crud.setFormData}
+        selectedWarehouse={crud.selectedWarehouse}
+        createWarehouse={crud.createWarehouse}
+        updateWarehouse={crud.updateWarehouse}
+        deleteWarehouse={crud.deleteWarehouse}
+        addBin={crud.addBin}
+        updateBin={crud.updateBin}
+        removeBin={crud.removeBin}
+        handleCreateSubmit={crud.handleCreateSubmit}
+        handleEditSubmit={crud.handleEditSubmit}
+        handleDeleteConfirm={crud.handleDeleteConfirm}
+      />
     </div>
   );
 }

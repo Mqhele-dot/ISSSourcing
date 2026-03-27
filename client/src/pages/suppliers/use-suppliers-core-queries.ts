@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { normalizeApiList, requestJson } from "@/lib/queryClient";
+import { normalizeApiListStrict, requestJson } from "@/lib/queryClient";
 import type { Supplier } from "@shared/schema";
 
 export type SupplierPerformanceRow = {
@@ -19,7 +19,7 @@ export function useSuppliersCoreQueries() {
     retry: 1,
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/suppliers");
-      return normalizeApiList<Supplier>(raw);
+      return normalizeApiListStrict<Supplier>(raw, "GET /api/suppliers");
     },
   });
 

@@ -7,3 +7,6 @@ vite.config.ts.*
 .env
 .env.*
 !.env.example
+
+# Local dev: last URL/port written by server on listen (see server/index.ts)
+.local-dev-url

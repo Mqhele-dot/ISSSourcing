@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useElectron } from '../../contexts/electron-provider';
 import { TitleBar } from '../electron';
 import { OfflineModeIndicator } from '../electron/offline-mode-indicator';
@@ -6,6 +6,7 @@ import Sidebar from '../sidebar';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TutorialButton } from '@/components/tutorial/tutorial-button';
+import { TutorialPageHint } from '@/components/tutorial/tutorial-page-hint';
 import { Header } from './header';
 import { FallbackBanner } from '@/components/fallback-banner';
 import { CommandMenu } from '@/components/command-menu';
@@ -21,9 +22,26 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
 }) => {
   const { isElectron } = useElectron();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setSidebarCollapsed(localStorage.getItem("invtrack-sidebar-collapsed") === "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("invtrack-sidebar-collapsed", sidebarCollapsed ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarCollapsed]);
 
   return (
-    <div className="app-shell flex flex-col min-h-screen">
+    <div className="app-shell flex min-h-0 flex-1 flex-col overflow-hidden">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground focus:outline-none"
@@ -33,12 +51,16 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
       <CommandMenu />
       {isElectron && <TitleBar title={title} />}
       
-      <div className="flex flex-1">
-        {/* Sidebar */}
-        <Sidebar open={sidebarOpen} setOpen={setSidebarOpen} />
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <Sidebar
+          open={sidebarOpen}
+          setOpen={setSidebarOpen}
+          collapsed={sidebarCollapsed}
+          setCollapsed={setSidebarCollapsed}
+        />
         
         {/* Main content */}
-        <div className="flex-1 relative flex flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col relative">
           {/* Header with profile icon */}
           <Header />
 
@@ -59,7 +81,12 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
           
           {isElectron && <OfflineModeIndicator />}
           
-          <main id="main-content" className="flex-1 p-4 md:p-6 relative" tabIndex={-1}>
+          <main
+            id="main-content"
+            className="relative flex-1 min-h-0 min-w-0 overflow-x-auto overflow-y-auto p-4 md:p-6"
+            tabIndex={-1}
+          >
+            <TutorialPageHint />
             {children}
           </main>
           

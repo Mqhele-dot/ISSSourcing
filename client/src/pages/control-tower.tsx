@@ -32,7 +32,7 @@ export default function ControlTowerPage() {
         subtitle="Operational KPIs, risk signals, and recent control-tower activity."
         breadcrumb={<span>Operations / Control tower</span>}
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2" data-tour="control-tower-shortcuts">
             <Button variant="outline" size="sm" asChild>
               <Link href="/exceptions">Exceptions</Link>
             </Button>
@@ -56,6 +56,7 @@ export default function ControlTowerPage() {
       >
         {() => (
           <>
+            <div className="space-y-4" data-tour="control-tower-kpis">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -154,6 +155,7 @@ export default function ControlTowerPage() {
                   )}
                 </CardContent>
               </Card>
+            </div>
             </div>
 
             <Card>

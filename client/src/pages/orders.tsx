@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
-import { ArrowLeft, CheckCircle2, FileText, Printer, Send, ShoppingCart, Truck } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  FileDown,
+  FileText,
+  Loader2,
+  Printer,
+  Send,
+  ShoppingCart,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,12 +31,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { downloadFile } from "@/lib/utils";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
   approvePurchaseOrder,
+  downloadPurchaseOrderSignedPdf,
   fetchApprovalSuggestions,
   fetchPurchaseOrder,
   fetchPurchaseOrdersEnvelope,
@@ -41,6 +52,9 @@ import { useAuth } from "@/hooks/use-auth";
 import type { FallbackKind } from "@/components/ui/data-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import RequisitionsPage from "@/pages/requisitions";
+import { PoReceivePanel } from "@/pages/orders/po-receive-panel";
+import { PoRevisionHistoryCard } from "@/pages/orders/po-revision-history-card";
+import { PoApprovalPolicyCard } from "@/pages/orders/po-approval-policy-card";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -180,6 +194,8 @@ async function fetchPurchaseOrderRecordById(id: number): Promise<{
 
 function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [exportingPo, setExportingPo] = useState<string | null>(null);
   const { queryState, setQueryState } = useQueryState({
     status: "",
     supplier: "",
@@ -200,6 +216,26 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   const data = envelope?.data ?? null;
   const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
 
+  const exportSignedPdfForRow = async (poNumber: string) => {
+    setExportingPo(poNumber);
+    try {
+      const blob = await downloadPurchaseOrderSignedPdf(poNumber);
+      downloadFile(blob, `PO-${poNumber}-for-signature.pdf`, "application/pdf");
+      toast({
+        title: "Signable PDF downloaded",
+        description: `PO ${poNumber} — includes terms and signature page.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Could not export PDF",
+        description: err instanceof Error ? err.message : "Request failed",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingPo(null);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       {!embedded && (
@@ -210,6 +246,7 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
         />
       )}
 
+      <div data-tour="po-list" className="space-y-4">
       <Toolbar
         sticky
         left={
@@ -293,6 +330,7 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12 text-center">PDF</TableHead>
                 <TableHead>PO</TableHead>
                 <TableHead>Supplier</TableHead>
                 <TableHead>Status</TableHead>
@@ -308,6 +346,27 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                   className="cursor-pointer"
                   onClick={() => setLocation(`/purchase/${order.poNumber}`)}
                 >
+                  <TableCell
+                    className="text-center"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      title="Download signable PDF"
+                      disabled={exportingPo === order.poNumber}
+                      onClick={() => void exportSignedPdfForRow(order.poNumber)}
+                    >
+                      {exportingPo === order.poNumber ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      ) : (
+                        <FileDown className="h-4 w-4" aria-hidden />
+                      )}
+                      <span className="sr-only">Download signable PDF for {order.poNumber}</span>
+                    </Button>
+                  </TableCell>
                   <TableCell className="font-medium">{order.poNumber}</TableCell>
                   <TableCell>{order.supplierName || `Supplier #${order.supplierId}`}</TableCell>
                   <TableCell>
@@ -323,12 +382,14 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
           );
         }}
       </DataState>
+      </div>
     </div>
   );
 }
 
 function PurchaseOrderDetailView({ po }: { po: string }) {
-  const [, setLocation] = useLocation();
+  const [pathname, setLocation] = useLocation();
+  const backToPoList = () => setLocation(pathname.startsWith("/orders") ? "/orders" : "/purchase");
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -340,6 +401,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
   const [receiverName, setReceiverName] = useState("");
   const [warehouseLocation, setWarehouseLocation] = useState("");
   const [lastChangeSummary, setLastChangeSummary] = useState<PurchaseReceiveResult | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [departmentId, setDepartmentId] = useState<string>("none");
   const [contractId, setContractId] = useState<string>("none");
   const [paymentTermsId, setPaymentTermsId] = useState<string>("none");
@@ -561,12 +623,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
-      <Button variant="ghost" onClick={() => setLocation("/purchase")} className="w-fit">
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Back to purchase orders
-      </Button>
-
+    <div className="mx-auto max-w-7xl">
       <DataState
         loading={loading}
         error={error}
@@ -575,17 +632,79 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
         emptyTitle="PO detail unavailable"
         onRetry={refetch}
       >
-        {(detail) => (
+        {(detail) => {
+          const downloadSignedPdf = async () => {
+            setPdfLoading(true);
+            try {
+              const blob = await downloadPurchaseOrderSignedPdf(detail.poNumber);
+              downloadFile(blob, `PO-${detail.poNumber}-for-signature.pdf`, "application/pdf");
+              toast({
+                title: "Signable PDF downloaded",
+                description: "Includes line items, standard terms, and buyer/supplier signature lines.",
+              });
+            } catch (err) {
+              toast({
+                title: "Could not export PDF",
+                description: err instanceof Error ? err.message : "Request failed",
+                variant: "destructive",
+              });
+            } finally {
+              setPdfLoading(false);
+            }
+          };
+
+          const sectionLinks = [
+            { href: "#po-summary", label: "Summary" },
+            { href: "#po-document", label: "Official PDF" },
+            { href: "#po-commercial", label: "Commercial" },
+            { href: "#po-receive", label: "Lines & GRN" },
+            { href: "#po-shipments", label: "Shipments" },
+            { href: "#po-approval-history", label: "Approvals" },
+            { href: "#po-activity", label: "Activity" },
+          ] as const;
+
+          return (
           <>
-            <PageHeader
-              title={`PO ${detail.poNumber}`}
-              subtitle={detail.supplierName || `Supplier #${detail.supplierId}`}
-              breadcrumb={<span>Operations / Purchase Orders / {detail.poNumber}</span>}
-              actions={
-                <>
-                  <Button variant="outline" className="gap-2" onClick={() => openPurchaseOrderPrintView(detail)}>
-                    <Printer className="h-4 w-4" />
-                    Print view
+            <Button
+              variant="ghost"
+              onClick={backToPoList}
+              className="mb-3 -ml-2 w-fit text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Purchase orders
+            </Button>
+
+            <header className="sticky top-0 z-20 -mx-4 mb-6 border-b border-border/80 bg-background/90 px-4 py-3 shadow-sm backdrop-blur-md md:-mx-6 md:px-6 supports-[backdrop-filter]:bg-background/80">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    Operations / Purchase orders / {detail.poNumber}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="truncate text-xl font-semibold tracking-tight">PO {detail.poNumber}</h1>
+                    <StatusBadge status={detail.status} />
+                  </div>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {detail.supplierName || `Supplier #${detail.supplierId}`}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    className="gap-2"
+                    disabled={pdfLoading}
+                    onClick={() => void downloadSignedPdf()}
+                  >
+                    {pdfLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <FileDown className="h-4 w-4" aria-hidden />
+                    )}
+                    Signable PDF
+                  </Button>
+                  <Button type="button" variant="outline" className="gap-2" onClick={() => openPurchaseOrderPrintView(detail)}>
+                    <Printer className="h-4 w-4" aria-hidden />
+                    Quick print
                   </Button>
                   <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
                     <Button
@@ -594,7 +713,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                       disabled={!canApprove(detail.status) || statusUpdating}
                       onClick={() => updateStatus("approve")}
                     >
-                      <CheckCircle2 className="h-4 w-4" />
+                      <CheckCircle2 className="h-4 w-4" aria-hidden />
                       Approve
                     </Button>
                   </Can>
@@ -605,44 +724,63 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                       disabled={!canSend(detail.status) || statusUpdating}
                       onClick={() => updateStatus("send")}
                     >
-                      <Send className="h-4 w-4" />
+                      <Send className="h-4 w-4" aria-hidden />
                       Send
                     </Button>
                   </Can>
-                </>
-              }
-            />
+                </div>
+              </div>
+              <nav
+                className="mt-3 flex flex-wrap gap-1 border-t border-border/60 pt-3 text-xs font-medium"
+                aria-label="On-page sections"
+              >
+                {sectionLinks.map((item) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    className="rounded-full bg-muted/70 px-3 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </nav>
+            </header>
 
-            <div className="grid gap-4 md:grid-cols-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Status</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <StatusBadge status={detail.status} />
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Requested</CardTitle>
-                </CardHeader>
-                <CardContent>{formatDate(detail.requestedDate)}</CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Progress</CardTitle>
-                </CardHeader>
-                <CardContent>{detail.progress.percent}%</CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Total</CardTitle>
-                </CardHeader>
-                <CardContent>${detail.totalAmount.toFixed(2)}</CardContent>
-              </Card>
-            </div>
+            <div className="grid gap-8 xl:grid-cols-12">
+              <div className="space-y-6 xl:col-span-8">
+                <section id="po-summary" className="scroll-mt-36 space-y-3">
+                  <h2 className="sr-only">Summary</h2>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Status</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <StatusBadge status={detail.status} />
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Requested</CardTitle>
+                      </CardHeader>
+                      <CardContent className="text-lg font-semibold">{formatDate(detail.requestedDate)}</CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Receive progress</CardTitle>
+                      </CardHeader>
+                      <CardContent className="text-lg font-semibold">{detail.progress.percent}%</CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Order total</CardTitle>
+                      </CardHeader>
+                      <CardContent className="text-lg font-semibold">${detail.totalAmount.toFixed(2)}</CardContent>
+                    </Card>
+                  </div>
+                </section>
 
-            <Card>
+            <Card id="po-commercial" className="scroll-mt-36">
               <CardHeader>
                 <CardTitle>Commercial terms</CardTitle>
               </CardHeader>
@@ -721,129 +859,28 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Receive panel</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Supplier part #</TableHead>
-                      <TableHead>Commodity</TableHead>
-                      <TableHead className="text-right">Ordered</TableHead>
-                      <TableHead className="text-right">Received</TableHead>
-                      <TableHead className="text-right">Remaining</TableHead>
-                      <TableHead>Batch</TableHead>
-                      <TableHead>Serial numbers</TableHead>
-                      <TableHead className="text-right">Receive now</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {detail.lines.map((line) => (
-                      <TableRow key={line.id}>
-                        <TableCell className="font-medium">{line.sku}</TableCell>
-                        <TableCell>{line.itemName}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {line.supplierPartNumber?.trim() ? line.supplierPartNumber : "—"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-xs">
-                          {line.commodityCode
-                            ? `${line.commodityCode}${line.commodityDescription ? ` — ${line.commodityDescription}` : ""}`
-                            : "—"}
-                        </TableCell>
-                        <TableCell className="text-right">{line.qtyOrdered}</TableCell>
-                        <TableCell className="text-right">{line.qtyReceived}</TableCell>
-                        <TableCell className="text-right">{line.expectedRemaining}</TableCell>
-                        <TableCell>
-                          <Input
-                            placeholder="Batch #"
-                            value={batchState[line.sku] ?? ""}
-                            onChange={(event) =>
-                              setBatchState((current) => ({
-                                ...current,
-                                [line.sku]: event.target.value,
-                              }))
-                            }
-                            disabled={!canReceive(detail.status)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            placeholder="Serials CSV"
-                            value={serialState[line.sku] ?? ""}
-                            onChange={(event) =>
-                              setSerialState((current) => ({
-                                ...current,
-                                [line.sku]: event.target.value,
-                              }))
-                            }
-                            disabled={!canReceive(detail.status)}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Input
-                            className="ml-auto w-28 text-right"
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={receiveState[line.sku] ?? 0}
-                            onChange={(event) =>
-                              setReceiveState((current) => ({
-                                ...current,
-                                [line.sku]: Number(event.target.value),
-                              }))
-                            }
-                            disabled={!canReceive(detail.status)}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="receive-receiver-name">Receiver name</Label>
-                    <Input
-                      id="receive-receiver-name"
-                      placeholder="Who received this?"
-                      value={receiverName}
-                      onChange={(event) => setReceiverName(event.target.value)}
-                    />
-                    {typeof user?.id === "number" ? (
-                      <p className="text-xs text-muted-foreground">
-                        Signed-in user #{user.id} is recorded as{" "}
-                        <span className="font-medium">receiverUserId</span> on the GRN / stock movement.
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="receive-location">Warehouse location</Label>
-                    <Input
-                      id="receive-location"
-                      placeholder="Aisle/Bin/Location"
-                      value={warehouseLocation}
-                      onChange={(event) => setWarehouseLocation(event.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
-                    <Button onClick={submitReceive} disabled={!canReceive(detail.status) || receiving}>
-                      <Truck className="mr-2 h-4 w-4" />
-                      Receive selected
-                    </Button>
-                  </Can>
-                </div>
-              </CardContent>
-            </Card>
+            <PoReceivePanel
+              sectionId="po-receive"
+              className="scroll-mt-36"
+              detail={detail}
+              canReceive={canReceive(detail.status)}
+              receiveState={receiveState}
+              setReceiveState={setReceiveState}
+              batchState={batchState}
+              setBatchState={setBatchState}
+              serialState={serialState}
+              setSerialState={setSerialState}
+              receiverName={receiverName}
+              setReceiverName={setReceiverName}
+              warehouseLocation={warehouseLocation}
+              setWarehouseLocation={setWarehouseLocation}
+              userId={typeof user?.id === "number" ? user.id : undefined}
+              receiving={receiving}
+              onSubmitReceive={submitReceive}
+            />
 
             {lastChangeSummary ? (
-              <Card>
+              <Card id="po-last-receive" className="scroll-mt-36">
                 <CardHeader>
                   <CardTitle>What changed</CardTitle>
                 </CardHeader>
@@ -905,101 +942,24 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
               </Card>
             ) : null}
 
-            <EntityActivityPanel entityType="purchase_order" entityId={detail.poNumber} />
+            <section id="po-activity" className="scroll-mt-36">
+              <EntityActivityPanel entityType="purchase_order" entityId={detail.poNumber} />
+            </section>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Revision history</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {revisions.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No revisions found.</div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Revision</TableHead>
-                        <TableHead>Created by</TableHead>
-                        <TableHead>Created</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {revisions
-                        .slice()
-                        .sort((a, b) => b.revisionNumber - a.revisionNumber)
-                        .map((revision) => (
-                          <TableRow key={revision.id}>
-                            <TableCell>#{revision.revisionNumber}</TableCell>
-                            <TableCell>{revision.createdBy ? `User #${revision.createdBy}` : "-"}</TableCell>
-                            <TableCell>{formatDateTime(revision.createdAt)}</TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+            <div id="po-revisions" className="scroll-mt-36">
+              <PoRevisionHistoryCard revisions={revisions} formatDateTime={formatDateTime} />
+            </div>
 
             {canApprove(detail.status) && (poApprovalPolicies.length > 0 || (poApproverSuggestions?.suggestedApprovers?.length ?? 0) > 0) ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>PO approval policy & suggested approvers</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {poApprovalPolicies.length > 0 ? (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        Active purchase-order policies (amount bands). Your approve action is logged against your account.
-                      </p>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Level</TableHead>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Amount range</TableHead>
-                            <TableHead>Approver role</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {poApprovalPolicies.map((p) => (
-                            <TableRow key={p.id}>
-                              <TableCell>{p.approvalLevel}</TableCell>
-                              <TableCell>{p.name}</TableCell>
-                              <TableCell>
-                                {p.amountMin}
-                                {p.amountMax != null ? ` – ${p.amountMax}` : "+"}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">{p.approverRole ?? "—"}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  ) : null}
-                  {(poApproverSuggestions?.suggestedApprovers?.length ?? 0) > 0 ? (
-                    <div>
-                      <p className="text-sm font-medium">Suggested approvers for this PO total</p>
-                      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                        {(poApproverSuggestions?.suggestedApprovers ?? []).map((a) => (
-                          <li key={a.userId}>
-                            <span className="text-foreground font-medium">
-                              {a.fullName || a.username}
-                            </span>{" "}
-                            ({a.email}) — level {a.approvalLevel} · {a.matchedPolicyName}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      No specific users matched policies for this amount; managers/planners may still approve per RBAC.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+              <div id="po-approval-rules" className="scroll-mt-36">
+                <PoApprovalPolicyCard
+                  policies={poApprovalPolicies}
+                  suggestedApprovers={poApproverSuggestions?.suggestedApprovers ?? []}
+                />
+              </div>
             ) : null}
 
-            <Card>
+            <Card id="po-approval-history" className="scroll-mt-36">
               <CardHeader>
                 <CardTitle>Approval history</CardTitle>
               </CardHeader>
@@ -1035,7 +995,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card id="po-shipments" className="scroll-mt-36">
               <CardHeader>
                 <CardTitle>Linked shipments</CardTitle>
               </CardHeader>
@@ -1078,8 +1038,39 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                 </Table>
               </CardContent>
             </Card>
+              </div>
+
+              <aside className="space-y-4 xl:col-span-4">
+                <Card id="po-document" className="scroll-mt-36 border-primary/30 bg-muted/25">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Official order document</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm text-muted-foreground">
+                    <p>
+                      Portrait PDF matches a typical purchase order packet: header, supplier block, line table with
+                      totals, standard terms, and separate signature lines for buyer and supplier (wet ink or your
+                      e-sign tool).
+                    </p>
+                    <Button
+                      type="button"
+                      className="w-full gap-2 sm:w-auto"
+                      disabled={pdfLoading}
+                      onClick={() => void downloadSignedPdf()}
+                    >
+                      {pdfLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      ) : (
+                        <FileDown className="h-4 w-4" aria-hidden />
+                      )}
+                      Download signable PDF
+                    </Button>
+                  </CardContent>
+                </Card>
+              </aside>
+            </div>
           </>
-        )}
+          );
+        }}
       </DataState>
     </div>
   );

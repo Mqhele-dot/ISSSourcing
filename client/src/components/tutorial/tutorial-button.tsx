@@ -13,11 +13,17 @@ import {
   FileText, 
   ShoppingCart, 
   QrCode, 
-  RefreshCw
+  RefreshCw,
+  PlayCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useTutorial } from "@/contexts/tutorial-context";
+import {
+  getPageTourForPath,
+  needsNavigateForTour,
+  TOUR_START_ROUTES,
+} from "@/components/tutorial/tutorial-route-map";
 import { useHelpExplain } from "@/contexts/help-explain-context";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
@@ -49,7 +55,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
  * A button component that provides access to the application tutorials and error scanning
  */
 export function TutorialButton() {
-  const [, setLocation] = useLocation();
+  const [pathname, setLocation] = useLocation();
   const { startTutorial, scanForErrors, fixErrors } = useTutorial();
   const { setExplainMode } = useHelpExplain();
   const { toast } = useToast();
@@ -172,29 +178,14 @@ export function TutorialButton() {
     }
   ];
   
+  const suggestedPageTour = getPageTourForPath(pathname);
+
   // Start a tutorial with the given ID - navigate to relevant page first when needed
   const handleStartTutorial = (tourId: string) => {
     setShowDialog(false);
-    const routeMap: Record<string, string> = {
-      main: "/dashboard",
-      dashboard: "/dashboard",
-      inventory: "/inventory",
-      reports: "/reports",
-      analytics: "/analytics",
-      suppliers: "/suppliers",
-      users: "/user-roles",
-      settings: "/settings",
-      database: "/settings",
-      documents: "/reports",
-      purchase: "/purchase",
-      barcode: "/barcode-scanner",
-      sync: "/sync-dashboard",
-      billing: "/billing",
-      "setup-wizard": "/dashboard",
-    };
-    const targetRoute = routeMap[tourId] || (tourId === "main" ? "/dashboard" : undefined);
+    const targetRoute = TOUR_START_ROUTES[tourId];
     const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
-    const needsNavigation = targetRoute && !currentPath.startsWith(targetRoute);
+    const needsNavigation = targetRoute ? needsNavigateForTour(currentPath, targetRoute) : false;
 
     const tryStart = (retryCount = 0) => {
       const started = startTutorial(tourId);
@@ -312,6 +303,25 @@ export function TutorialButton() {
             </TabsList>
             
             <TabsContent value="tutorials" className="mt-4 space-y-4">
+              {suggestedPageTour ? (
+                <Card className="border-primary/30 bg-primary/5">
+                  <CardHeader className="p-4 pb-2">
+                    <CardTitle className="text-sm">This page</CardTitle>
+                    <CardDescription>
+                      Interactive spotlight tour for <strong>{suggestedPageTour.label}</strong> — highlights real
+                      controls, not a generic slideshow.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0 flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => handleStartTutorial(suggestedPageTour.tourId)}>
+                      Tour {suggestedPageTour.label}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleStartTutorial("full-app")}>
+                      Full supply-chain tour
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : null}
               {(suppliers.length === 0 || inventoryItems.length === 0) && (
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
@@ -364,7 +374,11 @@ export function TutorialButton() {
                   onClick={() => handleStartTutorial("main")}
                 >
                   <BookOpen className="h-4 w-4 mr-2" />
-                  Start Complete Tour
+                  Platform orientation (modal)
+                </Button>
+                <Button variant="secondary" className="w-full" onClick={() => handleStartTutorial("full-app")}>
+                  <PlayCircle className="h-4 w-4 mr-2" />
+                  Spotlight: operations walkthrough
                 </Button>
               </div>
             </TabsContent>

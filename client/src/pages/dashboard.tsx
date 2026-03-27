@@ -97,13 +97,10 @@ export default function Dashboard() {
       const url = `/api/export/inventory/${format}`;
       const response = await apiRequest("GET", url);
       const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      
       // Use .xlsx extension for Excel files
       const fileExtension = format === 'excel' ? 'xlsx' : format;
-      downloadFile(objectUrl, `inventory-report.${fileExtension}`);
-      
-      URL.revokeObjectURL(objectUrl);
+      // Pass the Blob — not URL.createObjectURL(blob): downloadFile() treats non-Blob strings as file *content*, so a blob: URL string becomes a useless text "PDF".
+      downloadFile(blob, `inventory-report.${fileExtension}`);
       
       toast({
         title: "Export Successful",

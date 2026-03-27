@@ -163,6 +163,8 @@ function ShipmentListView() {
         breadcrumb={<span>Operations / Logistics</span>}
       />
 
+      <div data-tour="shipments-list" className="space-y-4">
+      <div data-tour="logistics-toolbar">
       <Toolbar
         sticky
         left={
@@ -286,6 +288,7 @@ function ShipmentListView() {
           </div>
         }
       />
+      </div>
 
       <DataState
         loading={loading}
@@ -310,6 +313,7 @@ function ShipmentListView() {
         {(shipments) => {
           const list = Array.isArray(shipments) ? shipments : [];
           return (
+          <div data-tour="shipments-table">
           <Table>
             <TableHeader>
               <TableRow>
@@ -368,9 +372,11 @@ function ShipmentListView() {
               ))}
             </TableBody>
           </Table>
+          </div>
           );
         }}
       </DataState>
+      </div>
 
       {carriersError ? (
         <Alert variant="destructive">

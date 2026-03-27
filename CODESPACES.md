@@ -1,6 +1,10 @@
 # GitHub Codespaces Setup
 
-This repository now includes a `.devcontainer` configuration so it can boot in GitHub Codespaces with the required services:
+> **Running on your own Windows PC instead?** Use **[`docs/WINDOWS-LOCAL-SETUP.md`](docs/WINDOWS-LOCAL-SETUP.md)** and the root **[`README.md`](README.md)** — no devcontainer required.
+
+> **Dev container folder name:** If this clone has **`.devcontainer.disabled`** instead of **`.devcontainer`**, Dev Containers were turned off to avoid **Docker / WSL** prompts on Windows. **GitHub Codespaces** still needs **`.devcontainer`** at the repo root. Rename the folder back (see **`.devcontainer.disabled/WHY-DISABLED.md`**) before relying on Codespaces, or restore that name on `main` in your team repo.
+
+This repository includes a devcontainer configuration (under **`.devcontainer`** when present) so it can boot in GitHub Codespaces with the required services:
 
 - Node.js 20
 - PostgreSQL 16

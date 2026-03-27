@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { fetchApprovalSuggestions } from "@/api/client";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +33,17 @@ const ENTITY_TYPES = [
   { value: "requisition", label: "Purchase requisition" },
   { value: "purchase_order", label: "Purchase order" },
 ] as const;
+
+function rangesOverlap(
+  aMin: number,
+  aMax: number | null,
+  bMin: number,
+  bMax: number | null,
+): boolean {
+  const aHi = aMax == null ? Number.POSITIVE_INFINITY : aMax;
+  const bHi = bMax == null ? Number.POSITIVE_INFINITY : bMax;
+  return Math.max(aMin, bMin) <= Math.min(aHi, bHi);
+}
 
 const APPROVER_ROLES = [
   "admin",
@@ -59,6 +73,8 @@ export default function ApprovalPoliciesPage() {
   const { toast } = useToast();
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [previewEntity, setPreviewEntity] = useState<(typeof ENTITY_TYPES)[number]["value"]>("requisition");
+  const [previewAmount, setPreviewAmount] = useState("5000");
 
   const { data: policies = [], isLoading } = useQuery({
     queryKey: ["/api/approval-policies"],
@@ -85,6 +101,58 @@ export default function ApprovalPoliciesPage() {
       }),
     [policies],
   );
+
+  const overlappingPolicyIds = useMemo(() => {
+    const ids = new Set<number>();
+    const active = policies.filter((p) => p.isActive);
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const a = active[i];
+        const b = active[j];
+        if (String(a.entityType) !== String(b.entityType)) continue;
+        const aMin = Number(a.amountMin ?? 0);
+        const bMin = Number(b.amountMin ?? 0);
+        const aMax = a.amountMax == null ? null : Number(a.amountMax);
+        const bMax = b.amountMax == null ? null : Number(b.amountMax);
+        if (rangesOverlap(aMin, aMax, bMin, bMax)) {
+          ids.add(a.id);
+          ids.add(b.id);
+        }
+      }
+    }
+    return ids;
+  }, [policies]);
+
+  const policiesByEntityChain = useMemo(() => {
+    const map = new Map<string, ApprovalPolicy[]>();
+    for (const t of ENTITY_TYPES) {
+      map.set(t.value, []);
+    }
+    for (const p of policies.filter((x) => x.isActive)) {
+      const key = String(p.entityType);
+      const list = map.get(key);
+      if (list) list.push(p);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => Number(a.approvalLevel ?? 0) - Number(b.approvalLevel ?? 0));
+    }
+    return map;
+  }, [policies]);
+
+  const previewMutation = useMutation({
+    mutationFn: () => {
+      const amt = Number(previewAmount);
+      if (!Number.isFinite(amt) || amt < 0) throw new Error("Enter a valid non-negative amount");
+      return fetchApprovalSuggestions({ entityType: previewEntity, amount: amt });
+    },
+    onError: (e) => {
+      toast({
+        title: "Preview failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -314,9 +382,139 @@ export default function ApprovalPoliciesPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Policy chain (active only)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Policies grouped by entity, sorted by approval level (ascending). Rows flagged when two active policies on
+            the same entity have overlapping amount bands.
+          </p>
+          {ENTITY_TYPES.map((t) => {
+            const chain = policiesByEntityChain.get(t.value) ?? [];
+            return (
+              <div key={t.value} className="rounded-md border p-3">
+                <div className="mb-2 font-medium">{t.label}</div>
+                {chain.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No active policies.</p>
+                ) : (
+                  <ul className="space-y-2 text-sm">
+                    {chain.map((p) => (
+                      <li key={p.id} className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs">L{p.approvalLevel}</span>
+                        <span>{p.name}</span>
+                        <span className="text-muted-foreground">
+                          {Number(p.amountMin ?? 0).toLocaleString()} —{" "}
+                          {p.amountMax == null ? "∞" : Number(p.amountMax).toLocaleString()}
+                        </span>
+                        {overlappingPolicyIds.has(p.id) ? (
+                          <Badge variant="destructive" className="text-xs">
+                            Overlap risk
+                          </Badge>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Preview routing</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Dry-run: see which active policies apply and suggested approvers for a sample amount (no data is written).
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-2">
+              <Label>Entity</Label>
+              <Select
+                value={previewEntity}
+                onValueChange={(v) => setPreviewEntity(v as (typeof ENTITY_TYPES)[number]["value"])}
+              >
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ENTITY_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="preview-amt">Amount</Label>
+              <Input
+                id="preview-amt"
+                type="number"
+                min={0}
+                step="0.01"
+                className="w-40"
+                value={previewAmount}
+                onChange={(e) => setPreviewAmount(e.target.value)}
+              />
+            </div>
+            <Button type="button" onClick={() => previewMutation.mutate()} disabled={previewMutation.isPending}>
+              {previewMutation.isPending ? "Running…" : "Run preview"}
+            </Button>
+          </div>
+          {previewMutation.data ? (
+            <div className="space-y-3 rounded-md border p-3 text-sm">
+              <div>
+                <div className="font-medium">Applicable policies</div>
+                {previewMutation.data.applicablePolicies.length === 0 ? (
+                  <p className="text-muted-foreground">None for this amount.</p>
+                ) : (
+                  <ul className="mt-1 list-disc pl-4">
+                    {previewMutation.data.applicablePolicies.map((ap) => (
+                      <li key={ap.id}>
+                        {ap.name} (level {ap.approvalLevel},{" "}
+                        {Number(ap.amountMin).toLocaleString()} —{" "}
+                        {ap.amountMax == null ? "∞" : Number(ap.amountMax).toLocaleString()})
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <div className="font-medium">Suggested approvers</div>
+                {previewMutation.data.suggestedApprovers.length === 0 ? (
+                  <p className="text-muted-foreground">No users matched policy role/user rules.</p>
+                ) : (
+                  <ul className="mt-1 list-disc pl-4">
+                    {previewMutation.data.suggestedApprovers.map((s) => (
+                      <li key={s.userId}>
+                        {s.fullName || s.username} (#{s.userId}) — {s.matchedPolicyName}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Configured policies</CardTitle>
         </CardHeader>
         <CardContent>
+          {overlappingPolicyIds.size > 0 ? (
+            <Alert variant="default" className="mb-4 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+              <AlertTitle>Overlapping amount bands</AlertTitle>
+              <AlertDescription>
+                Multiple active policies share overlapping amount ranges on the same entity type (see highlighted rows).
+                Review levels and min/max so approval routing stays clear.
+              </AlertDescription>
+            </Alert>
+          ) : null}
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : sortedPolicies.length === 0 ? (
@@ -336,7 +534,10 @@ export default function ApprovalPoliciesPage() {
               </TableHeader>
               <TableBody>
                 {sortedPolicies.map((p) => (
-                  <TableRow key={p.id}>
+                  <TableRow
+                    key={p.id}
+                    className={overlappingPolicyIds.has(p.id) ? "bg-amber-50/80 dark:bg-amber-950/20" : undefined}
+                  >
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="text-xs">{p.entityType}</TableCell>
                     <TableCell className="text-xs whitespace-nowrap">

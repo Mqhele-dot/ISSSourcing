@@ -163,6 +163,8 @@ function ExceptionListView() {
         breadcrumb={<span>Operations / Exceptions</span>}
       />
 
+      <div data-tour="exceptions-list" className="space-y-4">
+      <div data-tour="exceptions-toolbar">
       <Toolbar
         sticky
         left={
@@ -239,6 +241,7 @@ function ExceptionListView() {
           </div>
         }
       />
+      </div>
 
       <DataState
         loading={loading}
@@ -263,6 +266,7 @@ function ExceptionListView() {
         {(exceptions) => {
           const list = Array.isArray(exceptions) ? exceptions : [];
           return (
+          <div data-tour="exceptions-table">
           <Table>
             <TableHeader>
               <TableRow>
@@ -295,9 +299,11 @@ function ExceptionListView() {
               ))}
             </TableBody>
           </Table>
+          </div>
           );
         }}
       </DataState>
+      </div>
     </div>
   );
 }

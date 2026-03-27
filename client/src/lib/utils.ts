@@ -70,16 +70,27 @@ export function formatCurrency(
 }
 
 /**
- * Download a file from a blob or data URL
- * @param data The data to download (Blob or base64 string)
- * @param filename The name to give the downloaded file
- * @param mimeType The MIME type of the file (if data is a base64 string)
+ * Download a file from a Blob or raw string content.
+ * Do not pass `URL.createObjectURL(blob)` here — non-Blob strings are wrapped as file *bytes*, so a `blob:http://...` string produces a broken tiny file.
  */
 export function downloadFile(
   data: Blob | string,
   filename: string,
   mimeType?: string
 ): void {
+  if (typeof data === "string" && data.startsWith("blob:")) {
+    const link = document.createElement("a");
+    link.href = data;
+    link.download = filename;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(data);
+    }, 100);
+    return;
+  }
   const blob = data instanceof Blob 
     ? data 
     : new Blob([data], { type: mimeType || 'application/octet-stream' });

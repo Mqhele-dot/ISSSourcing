@@ -1,6 +1,8 @@
 import type { Response, NextFunction } from "express";
 import express, { type Request } from "express";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeWebSocketService, checkLowStockAlerts } from "./websocket-service";
@@ -225,6 +227,31 @@ app.use((req, res, next) => {
       : null;
 
   server.listen(port, host, () => {
+    const isDev = app.get("env") === "development";
+    const bannerLine = "=".repeat(76);
+    console.log(`\n${bannerLine}`);
+    console.log("  ISS Sourcing — web app (API + static/Vite)");
+    console.log(`  Browser URL:  ${localUrl}`);
+    console.log(`  Port:         ${port}   (set PORT in .env to change; default 5000)`);
+    console.log(`  Health check: ${localUrl}/api/ready`);
+    if (forwardedUrl) {
+      console.log(`  Codespaces:   ${forwardedUrl}`);
+    }
+    if (isDev) {
+      const urlFile = path.join(process.cwd(), ".local-dev-url");
+      try {
+        fs.writeFileSync(
+          urlFile,
+          `# Written on server start — open this file to copy the app URL\nAPP_URL=${localUrl}\nPORT=${port}\n`,
+          "utf8",
+        );
+        console.log(`  URL file:     ${urlFile}  (gitignored, for copy/paste)`);
+      } catch {
+        // ignore disk errors
+      }
+    }
+    console.log(`${bannerLine}\n`);
+
     log(`serving on ${host}:${port}`);
     log(`Startup URL (local): ${localUrl}`);
     if (forwardedUrl) {

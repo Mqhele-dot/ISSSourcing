@@ -193,6 +193,23 @@ async function main() {
 
   const matchRes = await apiJsonRequest(`/invoices/${invoiceId}/match`, { method: "POST", cookie: adminCookie });
   if (!expectStatus("POST /api/invoices/:id/match", 200, matchRes.status)) failures++;
+  const matchRoot = asRecord(matchRes.json);
+  const matchPayload =
+    matchRoot.ok === true && matchRoot.data && typeof matchRoot.data === "object"
+      ? asRecord(matchRoot.data)
+      : matchRoot;
+  if (typeof matchPayload.matched !== "boolean") {
+    console.log("  ✗ Match response missing boolean `matched`");
+    failures++;
+  } else {
+    const mm = asArray(matchPayload.mismatches);
+    console.log(
+      "  ✓ 3-way match payload: matched=%s mismatchCount=%d status=%s",
+      matchPayload.matched,
+      mm.length,
+      String(matchPayload.status ?? ""),
+    );
+  }
 
   const paymentRes = await apiJsonRequest(`/invoices/${invoiceId}/payments`, {
     method: "POST",
@@ -222,7 +239,19 @@ async function main() {
   const logsRes = await apiJsonRequest("/activity-logs?limit=20", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/activity-logs?limit=20", 200, logsRes.status)) failures++;
   const logs = asArray(logsRes.json);
-  console.log("  ✓ Activity log sample count: %d", logs.length);
+  console.log("  ✓ Legacy activity-logs sample count: %d", logs.length);
+
+  const opsActRes = await apiJsonRequest("/activity?limit=10", { method: "GET", cookie: adminCookie });
+  if (!expectStatus("GET /api/activity?limit=10", 200, opsActRes.status)) failures++;
+  const opsRoot = asRecord(opsActRes.json);
+  const opsRows = opsRoot.ok === true && Array.isArray(opsRoot.data) ? opsRoot.data : asArray(opsActRes.json);
+  console.log("  ✓ Operational /api/activity sample count: %d", opsRows.length);
+
+  const sugRes = await apiJsonRequest(
+    "/approval-suggestions?entityType=requisition&amount=100",
+    { method: "GET", cookie: adminCookie },
+  );
+  if (!expectStatus("GET /api/approval-suggestions (preview)", 200, sugRes.status)) failures++;
 
   console.log("\nDemo result: %d failure(s)", failures);
   printUiGaps();

@@ -39,7 +39,7 @@ import { sendError, sendOk } from "./api-response";
 import { createContractRepository, createSupplierRepository, createWarehouseRepository } from "./repositories";
 import { createContractService, ContractDateError } from "./services/contract-service";
 import { createSupplierService } from "./services/supplier-service";
-import { eq, and, isNull, gte, lte } from "drizzle-orm";
+import { eq, and, isNull, gte, lte, asc } from "drizzle-orm";
 import { 
   insertInventoryItemSchema, 
   insertCategorySchema, 
@@ -145,6 +145,12 @@ const pdfTemplateUpload = multer({
     else cb(new Error('Only PDF files are allowed for the template.'));
   },
 });
+/** Create on boot so /api/ready uploadPathReady is true before any upload. */
+function ensureUploadDirectories(): void {
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  if (!fs.existsSync(documentsDir)) fs.mkdirSync(documentsDir, { recursive: true });
+}
+
 const documentUpload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => {
@@ -194,6 +200,7 @@ function sendFunctionError(
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  ensureUploadDirectories();
   app.use("/uploads", express.static(uploadsDir));
   // Set up authentication routes and middleware
   const auth = setupAuth(app);
@@ -3116,8 +3123,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (filter.status) {
             reorderRequests = reorderRequests.filter(req => req.status === filter.status);
           }
-          
-          data = reorderRequests;
+
+          const rrItems = await storage.getAllInventoryItems();
+          const rrItemById = new Map(rrItems.map((i) => [i.id, i]));
+          const rrUsers = await storage.getAllUsers();
+          const rrUserLabel = new Map(
+            rrUsers.map((u) => [u.id, (u.fullName || u.username || "").trim() || `User #${u.id}`]),
+          );
+          const rrSuppliers = await storage.getAllSuppliers();
+          const rrSupplierNames = new Map(rrSuppliers.map((s) => [s.id, s.name]));
+          const rrWarehouses = await storage.getAllWarehouses();
+          const rrWarehouseNames = new Map(rrWarehouses.map((w) => [w.id, w.name]));
+          data = reorderRequests.map((req) => ({
+            ...req,
+            itemName: rrItemById.get(req.itemId)?.name ?? `Item #${req.itemId}`,
+            requestorName:
+              req.requestorId != null ? (rrUserLabel.get(req.requestorId) ?? "") : "",
+            supplierName:
+              req.supplierId != null ? (rrSupplierNames.get(req.supplierId) ?? "") : "",
+            warehouseName:
+              req.warehouseId != null ? (rrWarehouseNames.get(req.warehouseId) ?? "") : "",
+          }));
           title = 'Reorder Requests Report' + filterText;
           break;
           
@@ -3190,9 +3216,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
           if (format === "pdf") {
             const enrichedReq: unknown[] = [];
+            const allUsersForReqPdf = await storage.getAllUsers();
+            const userLabelForReqPdf = new Map(
+              allUsersForReqPdf.map((u) => [
+                u.id,
+                `${(u.fullName || u.username || "").trim() || `User #${u.id}`}`,
+              ]),
+            );
             for (const r of requisitions) {
               const d = await storage.getRequisitionWithDetails(r.id);
-              if (d) enrichedReq.push(d);
+              if (d) {
+                const hist = await db
+                  .select()
+                  .from(approvalHistory)
+                  .where(
+                    and(eq(approvalHistory.entityType, "requisition"), eq(approvalHistory.entityId, r.id)),
+                  )
+                  .orderBy(asc(approvalHistory.performedAt));
+                const approvalHistoryForPdf = hist.map((row) => ({
+                  ...row,
+                  performedByLabel: userLabelForReqPdf.get(row.performedBy) ?? `User #${row.performedBy}`,
+                }));
+                enrichedReq.push({ ...d, approvalHistoryForPdf });
+              }
             }
             data = enrichedReq;
           } else {

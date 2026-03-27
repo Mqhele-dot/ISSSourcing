@@ -252,7 +252,7 @@ export default function InventoryDetailPage() {
               </Alert>
             ) : null}
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-3" data-tour="inventory-detail-summary">
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">On hand</CardTitle>
@@ -278,7 +278,7 @@ export default function InventoryDetailPage() {
               </Card>
             </div>
 
-            <Card>
+            <Card data-tour="inventory-positions">
               <CardHeader>
                 <CardTitle>Positions by location</CardTitle>
               </CardHeader>

@@ -28,7 +28,7 @@ export default function PurchasePage() {
           else setLocation(basePath);
         }}
       >
-        <TabsList className="mb-4 orders-tabs" aria-label="Purchase Orders and Requisitions">
+        <TabsList className="mb-4 orders-tabs" aria-label="Purchase Orders and Requisitions" data-tour="purchase-tabs">
           <TabsTrigger value="orders" asChild>
             <Link href={basePath}>
               <ShoppingCart className="mr-2 h-4 w-4" />

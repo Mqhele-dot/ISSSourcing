@@ -560,18 +560,32 @@ export default function InvoicesPage() {
                                     Details
                                   </Button>
                                 </DialogTrigger>
-                                <DialogContent className="max-w-lg">
+                                <DialogContent className="max-w-2xl">
                                   <DialogHeader>
-                                    <DialogTitle>3-way match mismatches</DialogTitle>
+                                    <DialogTitle>3-way match review</DialogTitle>
                                   </DialogHeader>
-                                  <ul className="list-disc space-y-2 pl-4 text-sm">
-                                    {match.mismatches.map((m, i) => (
-                                      <li key={`${m.type}-${m.itemId}-${i}`}>
-                                        <span className="font-medium">{m.type}</span> (item #{m.itemId}):{" "}
-                                        {m.message}
-                                      </li>
-                                    ))}
-                                  </ul>
+                                  <p className="text-sm text-muted-foreground mb-3">
+                                    Compare invoice lines to the purchase order and received quantities. Each row explains
+                                    why the invoice may be marked DISPUTED.
+                                  </p>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Mismatch type</TableHead>
+                                        <TableHead>Invoice line</TableHead>
+                                        <TableHead>Explanation</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {match.mismatches.map((m, i) => (
+                                        <TableRow key={`${m.type}-${m.itemId}-${i}`}>
+                                          <TableCell className="font-mono text-xs">{m.type}</TableCell>
+                                          <TableCell className="whitespace-nowrap">#{m.itemId}</TableCell>
+                                          <TableCell className="text-sm">{m.message}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
                                 </DialogContent>
                               </Dialog>
                             </div>

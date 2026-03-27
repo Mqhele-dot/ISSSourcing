@@ -56,6 +56,18 @@ We use **option (b): dual contract** during migration.
 
 Operational mutations (PO status, receive, exceptions, etc.) use **envelope** — see `sendOk`/`sendError` in routes.
 
+## Activity and audit endpoints (two streams)
+
+The codebase exposes **two** activity-related read paths. They serve different stores and clients; names overlap historically.
+
+| Path | Purpose | Typical clients | Query params (GET) | Backend |
+|------|---------|-----------------|---------------------|---------|
+| **`GET /api/activity`** | **Operational activity** stream for the audit/ops viewer (`ops_activity` via `listOperationalActivity`). | [`audit-logs.tsx`](../client/src/pages/audit-logs.tsx), [`client/src/api/client.ts`](../client/src/api/client.ts) `fetchOperationalActivity` | `limit`, `entity_type`, `entity_id`, `action`, `actor`, `from`, `to` | [`server/operations-routes.ts`](../server/operations-routes.ts) — envelope `respondOk`; may return `[]` with degraded meta on DB issues. |
+| **`GET /api/activity-logs`** | **Legacy / simpler** activity log list (older `activity_logs` style storage in main routes). | [`recent-activity.tsx`](../client/src/components/inventory/recent-activity.tsx), [`employee-profiles.tsx`](../client/src/pages/employee-profiles.tsx), demo script | `limit` (and any filters implemented on that handler) | [`server/routes.ts`](../server/routes.ts) |
+| **`POST /api/activity-logs`** | Create legacy activity log row (server use / integrations). | Server or admin tools | Body per route handler | [`server/routes.ts`](../server/routes.ts) |
+
+**Recommendation for new code:** Prefer **`GET /api/activity`** for full-text filtering, entity presets, and CSV export aligned with the **Audit logs** page. Keep **`/api/activity-logs`** for small widgets and scripts until a follow-up consolidates storage and deprecates one path (only after grepping the repo for callers).
+
 ## Testing
 
 - Contract smoke: [`scripts/test-api-contract.ts`](../scripts/test-api-contract.ts) (inventory dual shape, currencies, warehouses, PO flow).

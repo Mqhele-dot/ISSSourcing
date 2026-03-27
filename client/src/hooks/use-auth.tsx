@@ -43,6 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   } = useQuery<User | null, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
+    /** Session can be cleared server-side (reset DB, new cookie); avoid treating cached user as valid for 60s */
+    staleTime: 0,
   });
 
   const loginMutation = useMutation({

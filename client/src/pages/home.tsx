@@ -6,9 +6,20 @@ import { DataState } from "@/components/ui/data-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
+import { queryClient } from "@/lib/queryClient";
 import {
   fetchControlTowerOverviewEnvelope,
   fetchReady,
@@ -19,6 +30,8 @@ import {
 } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
 import { useTutorial } from "@/contexts/tutorial-context";
+
+const LAST_WALKTHROUGH_KEY = "invtrack:lastWalkthrough";
 
 export const KPI_DEEP_LINKS = {
   exceptions: "/exceptions?status=open&severity=high",
@@ -97,8 +110,21 @@ export default function HomePage() {
   } = useAutoRefresh(refetch);
   const [walkthrough, setWalkthrough] = useState<DemoWalkthroughResult | null>(null);
   const [runningWalkthrough, setRunningWalkthrough] = useState(false);
+  const [walkthroughConfirmOpen, setWalkthroughConfirmOpen] = useState(false);
   const [startingTutorial, setStartingTutorial] = useState(false);
   const { startTutorial } = useTutorial();
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem(LAST_WALKTHROUGH_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as DemoWalkthroughResult;
+      if (parsed?.steps?.length) setWalkthrough(parsed);
+    } catch {
+      /* ignore */
+    }
+    sessionStorage.removeItem(LAST_WALKTHROUGH_KEY);
+  }, []);
 
   const openExceptions = data?.kpis?.exceptionsBySeverity
     ? Object.values(data.kpis.exceptionsBySeverity).reduce((sum, count) => sum + count, 0)
@@ -141,15 +167,22 @@ export default function HomePage() {
   };
 
   const handleRunWalkthrough = async () => {
+    setWalkthroughConfirmOpen(false);
     setRunningWalkthrough(true);
     try {
       const result = await runDemoWalkthrough();
-      setWalkthrough(result);
-      await refreshNow();
+      /** Server runs full demo reset (TRUNCATE public tables), which clears connect-pg-simple sessions — current cookie is dead. */
+      try {
+        sessionStorage.setItem(LAST_WALKTHROUGH_KEY, JSON.stringify(result));
+      } catch {
+        /* ignore quota */
+      }
+      queryClient.clear();
       toast({
         title: "Demo walkthrough complete",
-        description: "Operational demo data has been prepared.",
+        description: "Database was reset and reseeded. Sign in again (e.g. admin / Admin123!) to continue.",
       });
+      window.location.assign("/auth?reason=demo-walkthrough");
     } catch (walkthroughError) {
       const msg =
         walkthroughError instanceof Error ? walkthroughError.message : "Failed to run walkthrough";
@@ -177,7 +210,7 @@ export default function HomePage() {
         subtitle="Operational command center"
         breadcrumb={<span>Overview / Control Tower</span>}
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2" data-tour="control-tower-actions">
             <Button
               onClick={handleStartTutorial}
               disabled={startingTutorial}
@@ -188,7 +221,7 @@ export default function HomePage() {
             </Button>
             <Button
               variant="outline"
-              onClick={handleRunWalkthrough}
+              onClick={() => setWalkthroughConfirmOpen(true)}
               disabled={runningWalkthrough}
               className="gap-2"
             >
@@ -212,6 +245,34 @@ export default function HomePage() {
           </div>
         }
       />
+
+      <AlertDialog open={walkthroughConfirmOpen} onOpenChange={setWalkthroughConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run demo walkthrough?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  This runs a <strong className="text-foreground">full database reset</strong> (same as demo reseed):
+                  all public tables are truncated and demo data is recreated.
+                </p>
+                <p>
+                  Your <strong className="text-foreground">login session is cleared</strong> because session rows are
+                  removed. After it finishes you will be sent to the sign-in page — that avoids broken API calls and
+                  error popups from a stale session.
+                </p>
+                <p>Demo login after reset: <span className="font-mono text-foreground">admin</span> / <span className="font-mono text-foreground">Admin123!</span></p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={runningWalkthrough}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleRunWalkthrough()} disabled={runningWalkthrough}>
+              {runningWalkthrough ? "Running…" : "Reset DB & run walkthrough"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <DataState
         loading={loading}

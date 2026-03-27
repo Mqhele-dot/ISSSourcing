@@ -118,6 +118,24 @@ Another process is already using port 5000 (often a previous `npm run dev` or `n
 1. Stopping the other process (close the other terminal or run `pkill -f "node dist/index"` / `pkill -f "tsx server"` in the Codespace), or
 2. Setting `PORT=5001` (or another free port) before `npm run start` if you want to use a different port.
 
+**Windows (PowerShell or cmd):** find the process:
+
+```text
+netstat -ano | findstr :5000
+```
+
+Note the PID in the last column, then end it from Task Manager → **Details**, or:
+
+```powershell
+taskkill /PID <pid> /F
+```
+
+Or set `PORT=5001` in `.env` and restart `npm run dev`.
+
+### Windows local setup (full checklist)
+
+See **[`docs/WINDOWS-LOCAL-SETUP.md`](docs/WINDOWS-LOCAL-SETUP.md)** for Node, PostgreSQL, Visual Studio Build Tools (native modules), `.env`, and `npm run db:push`.
+
 ### Schema Issues
 
 If you encounter schema errors:

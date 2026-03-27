@@ -2,7 +2,7 @@
  * End-to-end procurement flow smoke test.
  *
  * Covers:
- * requisition -> approval -> PO conversion -> shipment -> invoice -> payment.
+ * requisition -> approval -> PO conversion -> PO line receive -> shipment -> invoice -> payment.
  *
  * Requires server running and seeded users.
  *
@@ -90,6 +90,12 @@ async function main() {
     },
   });
   if (!expectStatus("POST /api/purchase-requisitions", 201, requisitionRes.status)) failures++;
+  if (requisitionRes.requestId) {
+    console.log("  ✓ X-Request-Id present on POST /api/purchase-requisitions");
+  } else {
+    console.log("  ✗ Missing X-Request-Id on POST /api/purchase-requisitions");
+    failures++;
+  }
   const requisition = asRecord(requisitionRes.json);
   const requisitionId = Number(requisition.id ?? 0);
   if (!requisitionId) {
@@ -116,6 +122,40 @@ async function main() {
   if (!poId || !poNumber) {
     console.log("  ✗ PO conversion did not return id/orderNumber.");
     exitTest(1);
+  }
+
+  const poDetailRes = await apiJsonRequest(`/purchase-orders/${poId}`, { method: "GET", cookie: adminCookie });
+  if (!expectStatus("GET /api/purchase-orders/:id", 200, poDetailRes.status)) failures++;
+  const poDetail = asRecord(poDetailRes.json);
+  const poLines = asArray<{ id?: number; quantity?: number }>(poDetail.items);
+  const poLineId = Number(poLines[0]?.id ?? 0);
+  if (!poLineId) {
+    console.log("  ✗ PO detail missing line id for receive step.");
+    exitTest(1);
+  }
+  const receiveRes = await apiJsonRequest(`/purchase-order-items/${poLineId}/receive`, {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      receivedQuantity: 2,
+      receiverName: "E2E procurement flow",
+      warehouseLocation: "Receiving dock",
+    },
+  });
+  if (!expectStatus("POST /api/purchase-order-items/:id/receive", 200, receiveRes.status)) failures++;
+  if (receiveRes.requestId) {
+    console.log("  ✓ X-Request-Id present on POST receive");
+  } else {
+    console.log("  ✗ Missing X-Request-Id on POST receive");
+    failures++;
+  }
+  const receivedLine = asRecord(receiveRes.json);
+  const rcvd = Number(receivedLine.receivedQuantity ?? 0);
+  if (rcvd >= 2) {
+    console.log("  ✓ PO line receivedQuantity >= 2 (got %d)", rcvd);
+  } else {
+    console.log("  ✗ Expected receivedQuantity >= 2 after receive, got %d", rcvd);
+    failures++;
   }
 
   const poPdfRes = await apiRawRequest("/export/purchase_orders/pdf", { method: "GET", cookie: adminCookie });

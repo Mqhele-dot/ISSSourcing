@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
@@ -143,6 +144,27 @@ export default function CycleCountsPage() {
     },
   });
 
+  const lineDiscrepancySummary = useMemo(() => {
+    if (!cycleCountLines.length) {
+      return { total: 0, withVariance: 0, netVariance: 0, absVariance: 0 };
+    }
+    let withVariance = 0;
+    let netVariance = 0;
+    let absVariance = 0;
+    for (const line of cycleCountLines) {
+      const v = Number(line.variance ?? 0);
+      netVariance += v;
+      absVariance += Math.abs(v);
+      if (v !== 0) withVariance += 1;
+    }
+    return {
+      total: cycleCountLines.length,
+      withVariance,
+      netVariance,
+      absVariance,
+    };
+  }, [cycleCountLines]);
+
   const postCount = useMutation({
     mutationFn: (id: number) => requestJson("POST", `/api/cycle-counts/${id}/post`),
     onSuccess: (_, id) => {
@@ -268,6 +290,33 @@ export default function CycleCountsPage() {
             <CardTitle>Cycle count lines (#{selectedCountId})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {cycleCountLines.length > 0 ? (
+              <div className="rounded-md border p-4 grid gap-2 sm:grid-cols-2 md:grid-cols-4 text-sm">
+                <div>
+                  <div className="text-muted-foreground">Lines</div>
+                  <div className="text-lg font-semibold">{lineDiscrepancySummary.total}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">With discrepancy</div>
+                  <div className="text-lg font-semibold flex items-center gap-2">
+                    {lineDiscrepancySummary.withVariance}
+                    {lineDiscrepancySummary.withVariance > 0 ? (
+                      <Badge variant="secondary">Review before post</Badge>
+                    ) : (
+                      <Badge variant="outline">Balanced</Badge>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Net variance (sum)</div>
+                  <div className="text-lg font-semibold">{lineDiscrepancySummary.netVariance}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Total |variance|</div>
+                  <div className="text-lg font-semibold">{lineDiscrepancySummary.absVariance}</div>
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-3 md:grid-cols-5">
               <div className="space-y-1">
                 <Label htmlFor="cycle-item">Item</Label>
@@ -316,7 +365,10 @@ export default function CycleCountsPage() {
               </TableHeader>
               <TableBody>
                 {cycleCountLines.map((line) => (
-                  <TableRow key={line.id}>
+                  <TableRow
+                    key={line.id}
+                    className={Number(line.variance ?? 0) !== 0 ? "bg-amber-50/80 dark:bg-amber-950/25" : undefined}
+                  >
                     <TableCell>{line.itemId}</TableCell>
                     <TableCell>{line.location || "-"}</TableCell>
                     <TableCell>{line.systemQuantity}</TableCell>

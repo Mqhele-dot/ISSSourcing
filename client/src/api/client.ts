@@ -407,6 +407,25 @@ export async function fetchPurchaseOrder(po: string): Promise<PurchaseOrderDetai
   return apiFetch<PurchaseOrderDetail>(`/api/purchase/orders/${encodeURIComponent(po)}`);
 }
 
+/** Official PO PDF with line items, terms, and dual signature lines (for wet ink or e-sign workflow). */
+export async function downloadPurchaseOrderSignedPdf(po: string): Promise<Blob> {
+  const res = await fetch(`/api/purchase/orders/${encodeURIComponent(po)}/signed-pdf`, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const j = (await res.json()) as { error?: { message?: string }; message?: string };
+      if (j?.error?.message) detail = j.error.message;
+      else if (typeof j?.message === "string") detail = j.message;
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(detail);
+  }
+  return res.blob();
+}
+
 export async function transitionPurchaseOrderStatus(
   po: string,
   toStatus: string,

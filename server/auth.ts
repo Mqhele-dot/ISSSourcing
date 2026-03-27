@@ -588,7 +588,7 @@ export function setupAuth(app: Express) {
         if (err) {
           const authMessage =
             err.message?.includes("ECONNREFUSED") || err.message?.includes("connect")
-              ? "Authentication service unavailable. Check database connection."
+              ? "Authentication service unavailable: database unreachable (e.g. PostgreSQL not running on port 5432). Start Postgres, run npm run db:push, restart the server. Windows: docs/WINDOWS-LOCAL-SETUP.md"
               : "Authentication failed";
           if (options.envelope) {
             return res.status(503).json({

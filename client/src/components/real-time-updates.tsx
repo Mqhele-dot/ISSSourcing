@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Activity, AlertTriangle, Info, PackageOpen, RefreshCw, Zap, Wifi } from 'lucide-react';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
 import { setFeatureFlag } from '@/lib/config';
+import { cn } from '@/lib/utils';
 
 type UpdateItem = {
   id: string;
@@ -20,7 +21,12 @@ type UpdateItem = {
   details?: unknown;
 };
 
-export function RealTimeUpdates() {
+type RealTimeUpdatesProps = {
+  /** Merged onto the root Card — use for layout contexts (e.g. sidebar column max height). */
+  cardClassName?: string;
+};
+
+export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
   const [isListening, setIsListening] = useState(true);
   const [updates, setUpdates] = useState<UpdateItem[]>([]);
   const [alerts, setAlerts] = useState<UpdateItem[]>([]);
@@ -145,9 +151,9 @@ export function RealTimeUpdates() {
   };
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className={cn("flex min-h-0 flex-col", cardClassName)}>
       {!webSocketsEnabled && !isElectronEnvironment() && (
-        <Alert variant="warning" className="mb-4 mx-6 mt-6">
+        <Alert variant="warning" className="mx-4 mb-4 mt-4 shrink-0 sm:mx-6">
           <Info className="h-4 w-4" />
           <AlertDescription className="flex flex-col space-y-2">
             <span>Real-time activity updates are currently disabled in development mode.</span>
@@ -226,7 +232,7 @@ export function RealTimeUpdates() {
                 </p>
               </div>
             ) : (
-              <ScrollArea className="h-[350px]">
+              <ScrollArea className="h-[min(22rem,calc(100dvh-14rem))] max-h-[50vh]">
                 <div className="space-y-3">
                   {updates.map(update => (
                     <UpdateCard key={update.id} update={update} />
@@ -246,7 +252,7 @@ export function RealTimeUpdates() {
                 </p>
               </div>
             ) : (
-              <ScrollArea className="h-[350px]">
+              <ScrollArea className="h-[min(22rem,calc(100dvh-14rem))] max-h-[50vh]">
                 <div className="space-y-3">
                   {alerts.map(alert => (
                     <Alert 

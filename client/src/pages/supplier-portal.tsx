@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -110,12 +110,51 @@ export default function SupplierPortalPage() {
     },
   });
 
+  const portalStats = useMemo(() => {
+    const list = orders;
+    const active = list.filter((o) => {
+      const s = String(o.status ?? "").toLowerCase();
+      return !["received", "cancelled", "completed"].includes(s);
+    });
+    const needsAttention = list.filter((o) => {
+      const s = String(o.status ?? "").toLowerCase();
+      return s === "open" || s === "sent" || s === "approved";
+    });
+    return { total: list.length, active: active.length, needsAttention: needsAttention.length };
+  }, [orders]);
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
         title="Supplier Portal"
         subtitle="Review your assigned purchase orders and share acknowledgments/delivery dates."
       />
+
+      {(!canChooseSupplier || supplierScopeId != null) && !isLoading ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Assigned POs</CardTitle>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">{portalStats.total}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Active (not fully received)</CardTitle>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">{portalStats.active}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Likely action needed</CardTitle>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">{portalStats.needsAttention}</CardContent>
+            <p className="text-xs text-muted-foreground px-6 pb-4">
+              Open / sent / approved rows — confirm or update delivery as appropriate.
+            </p>
+          </Card>
+        </div>
+      ) : null}
 
       <Alert>
         <AlertTitle>Workflow</AlertTitle>

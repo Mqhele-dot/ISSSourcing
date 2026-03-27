@@ -470,6 +470,98 @@ function wrapPdfCellLines(text: string, font: PDFFont, fontSize: number, maxInne
   return lines.length ? lines : [""];
 }
 
+/** Per-PO continuation page: boilerplate terms + dual signature lines. */
+function appendPurchaseOrderTermsPage(
+  pdfDoc: PDFDocument,
+  allPages: PDFPage[],
+  reportTitle: string,
+  pw: number,
+  ph: number,
+  font: PDFFont,
+  boldFont: PDFFont,
+): void {
+  const page = pdfDoc.addPage([pw, ph]);
+  allPages.push(page);
+  drawPdfReportHeader(page, reportTitle, font, boldFont);
+  const { height, width } = page.getSize();
+  let y = height - PDF_LAYOUT.headerHeight - 20;
+  const maxW = width - 2 * PDF_LAYOUT.margin;
+
+  page.drawText(sanitizePdfText("Terms & conditions"), {
+    x: PDF_LAYOUT.margin,
+    y,
+    size: 12,
+    font: boldFont,
+    color: PDF_LAYOUT.text,
+  });
+  y -= 16;
+  page.drawText(sanitizePdfText("Use wet ink or your approved e-signature process. This page is the formal acceptance record for the order above."), {
+    x: PDF_LAYOUT.margin,
+    y,
+    size: 9,
+    font,
+    color: PDF_LAYOUT.muted,
+  });
+  y -= 22;
+
+  const termParas = [
+    "1. Payment is due per agreed payment terms. Title and risk pass as stated on this order or per the referenced Incoterm / contract.",
+    "2. Deliveries are subject to inspection; quantity or quality disputes must be notified in writing within five (5) business days of receipt.",
+    "3. This purchase order is issued under the buyer's standard purchasing policies and any executed agreement that applies to this supplier.",
+  ];
+  for (const para of termParas) {
+    for (const line of wrapPdfCellLines(para, font, PDF_LAYOUT.fontSize, maxW)) {
+      page.drawText(line, {
+        x: PDF_LAYOUT.margin,
+        y,
+        size: PDF_LAYOUT.fontSize,
+        font,
+        color: PDF_LAYOUT.text,
+      });
+      y -= 12;
+    }
+    y -= 4;
+  }
+
+  y -= 8;
+  page.drawText(sanitizePdfText("Authorized acceptance"), {
+    x: PDF_LAYOUT.margin,
+    y,
+    size: 11,
+    font: boldFont,
+    color: PDF_LAYOUT.accent,
+  });
+  y -= 22;
+  const midX = PDF_LAYOUT.margin + maxW * 0.5;
+  page.drawLine({
+    start: { x: PDF_LAYOUT.margin, y },
+    end: { x: midX - 14, y },
+    thickness: 0.5,
+    color: PDF_LAYOUT.border,
+  });
+  page.drawLine({
+    start: { x: midX + 14, y },
+    end: { x: PDF_LAYOUT.margin + maxW, y },
+    thickness: 0.5,
+    color: PDF_LAYOUT.border,
+  });
+  y -= 12;
+  page.drawText("Buyer / authorized signatory", {
+    x: PDF_LAYOUT.margin,
+    y,
+    size: 9,
+    font,
+    color: PDF_LAYOUT.muted,
+  });
+  page.drawText("Supplier / authorized signatory", {
+    x: midX + 14,
+    y,
+    size: 9,
+    font,
+    color: PDF_LAYOUT.muted,
+  });
+}
+
 /** Bordered table with wrap-first cells and dynamic row height (top-aligned text). */
 function drawBorderedTableWrapped(
   pdfDoc: PDFDocument,
@@ -1064,6 +1156,8 @@ export async function generatePurchaseOrdersDocumentPdf(
     for (let i = 1; i < sectionPages.length; i++) {
       allPages.push(sectionPages[i]);
     }
+
+    appendPurchaseOrderTermsPage(pdfDoc, allPages, title, pw, ph, font, boldFont);
   }
 
   const totalPages = allPages.length;
@@ -1184,6 +1278,44 @@ export async function generateRequisitionsDocumentPdf(
     for (let i = 1; i < sectionPages.length; i++) {
       allPages.push(sectionPages[i]);
     }
+
+    const hist = Array.isArray(req.approvalHistoryForPdf) ? req.approvalHistoryForPdf : [];
+    if (hist.length > 0) {
+      const apFirst = pdfDoc.addPage([pw, ph]);
+      const apPages: PDFPage[] = [apFirst];
+      allPages.push(apFirst);
+      drawPdfReportHeader(apFirst, title, font, boldFont);
+      const { height: hAp } = apFirst.getSize();
+      let yAp = hAp - PDF_LAYOUT.headerHeight - 20;
+      apFirst.drawText(sanitizePdfText(`Approval trail — ${req.requisitionNumber ?? `#${req.id}`}`), {
+        x: PDF_LAYOUT.margin,
+        y: yAp,
+        size: 12,
+        font: boldFont,
+        color: PDF_LAYOUT.text,
+      });
+      yAp -= 22;
+      const h2 = ["When (UTC)", "Action", "Lvl", "By", "Status chg", "Comment"];
+      const cw2 = [102, 76, 28, 108, 108, 194];
+      const r2 = hist.map((row: Record<string, unknown>) => {
+        const ts = row.performedAt;
+        const d = ts != null ? new Date(ts as string | number | Date) : null;
+        const when =
+          d && !Number.isNaN(d.getTime()) ? format(d, "yyyy-MM-dd HH:mm") : "—";
+        return [
+          formatPdfCell(when),
+          formatPdfCell(row.action),
+          formatPdfCell(row.level),
+          formatPdfCell(row.performedByLabel ?? row.performedBy ?? "—"),
+          formatPdfCell(`${row.previousStatus ?? "—"} -> ${row.newStatus ?? "—"}`),
+          formatPdfCell(row.comment ?? "—"),
+        ];
+      });
+      drawBorderedTableWrapped(pdfDoc, apPages, title, h2, cw2, r2, font, boldFont, yAp);
+      for (let j = 1; j < apPages.length; j++) {
+        allPages.push(apPages[j]);
+      }
+    }
   }
 
   const totalPages = allPages.length;
@@ -1222,16 +1354,21 @@ export async function generateActivityLogsDocumentPdf(
   const newest = sorted.length
     ? format(new Date(sorted[sorted.length - 1].timestamp as string | number | Date), "yyyy-MM-dd HH:mm")
     : "—";
-  page.drawText(sanitizePdfText(`Chronological audit log · ${sorted.length} entries · ${oldest} → ${newest}`), {
-    x: PDF_LAYOUT.margin,
-    y: yMeta,
-    size: 9,
-    font,
-    color: PDF_LAYOUT.muted,
-  });
+  page.drawText(
+    sanitizePdfText(
+      `Chronological audit log · ${sorted.length} entries · ${oldest} → ${newest} · Export may omit or mask sensitive fields per policy.`,
+    ),
+    {
+      x: PDF_LAYOUT.margin,
+      y: yMeta,
+      size: 9,
+      font,
+      color: PDF_LAYOUT.muted,
+    },
+  );
   const tableTop = yMeta - 14;
   const headers = ["Time (UTC)", "User", "Action", "Description", "Ref type", "Ref ID"];
-  const colWidths = [100, 88, 88, 220, 72, 52];
+  const colWidths = [94, 84, 84, 236, 68, 48];
   const rows = sorted.map((log) => {
     const d = new Date(log.timestamp as string | number | Date);
     const timeStr = Number.isNaN(d.getTime()) ? "—" : format(d, "yyyy-MM-dd HH:mm");
@@ -1295,6 +1432,25 @@ export async function generateSupplierProfilePdf(
   y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Insurance expiry", formatPdfCell(supplier.insuranceExpiry, { date: true }), w);
   y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Compliance", String(supplier.complianceNotes ?? "—"), w);
   y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Notes", String(supplier.notes ?? "—"), w);
+  y -= 4;
+  page.drawText("Documents & attachments", {
+    x: PDF_LAYOUT.margin,
+    y,
+    size: 11,
+    font: boldFont,
+    color: PDF_LAYOUT.accent,
+  });
+  y -= 16;
+  y = drawLabelValueColumn(
+    page,
+    boldFont,
+    font,
+    PDF_LAYOUT.margin,
+    y,
+    "Summary",
+    "File versions and retention are tracked in ISS Sourcing (Supplier → Documents). This PDF summarizes master-data fields only.",
+    w,
+  );
 
   drawPdfReportFooter(page, 1, font, 1);
   return Buffer.from(await pdfDoc.save());
@@ -1312,6 +1468,7 @@ export async function generateWarehouseProfilePdf(
   const pw = PDF_LAYOUT.pageWidth;
   const ph = PDF_LAYOUT.pageHeight;
   const page = pdfDoc.addPage([pw, ph]);
+  const pages: PDFPage[] = [page];
   drawPdfReportHeader(page, title, font, boldFont);
   let y = ph - PDF_LAYOUT.headerHeight - 16;
   if (metadataLines.length) y = drawPdfExtraMetadataLines(page, font, metadataLines, y) - 8;
@@ -1337,18 +1494,47 @@ export async function generateWarehouseProfilePdf(
   if (aisles.length) {
     y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Aisles", aisles.join(", "), w);
   }
-  const bins = Array.isArray(warehouse.bins) ? warehouse.bins : [];
-  const binLines = bins.length
-    ? bins.map((b) => `${b.code}${b.aisle ? ` (aisle ${b.aisle})` : ""}`).join("; ")
-    : "—";
-  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Bins", binLines, w);
   const details =
     warehouse.locationDetails && typeof warehouse.locationDetails === "object"
       ? sanitizePdfText(JSON.stringify(warehouse.locationDetails))
-      : "—";
-  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Location details (JSON)", details, w);
+      : typeof warehouse.locationDetails === "string" && String(warehouse.locationDetails).trim()
+        ? sanitizePdfText(String(warehouse.locationDetails))
+        : "";
+  if (details) {
+    y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Location details (JSON)", details, w);
+  }
 
-  drawPdfReportFooter(page, 1, font, 1);
+  const bins = Array.isArray(warehouse.bins) ? warehouse.bins : [];
+  if (bins.length > 0) {
+    y -= 6;
+    page.drawText("Bin locations", {
+      x: PDF_LAYOUT.margin,
+      y,
+      size: 11,
+      font: boldFont,
+      color: PDF_LAYOUT.accent,
+    });
+    y -= 16;
+    const headers = ["Code", "Aisle", "Row", "Shelf"];
+    const colWidths = [120, 100, 100, 100];
+    const binRows = bins.map((b: { code?: string; aisle?: string; row?: string; shelf?: string } | string) => {
+      if (typeof b === "string" || typeof b === "number") {
+        return [formatPdfCell(String(b)), "—", "—", "—"];
+      }
+      return [
+        formatPdfCell(b.code ?? "—"),
+        formatPdfCell(b.aisle ?? "—"),
+        formatPdfCell(b.row ?? "—"),
+        formatPdfCell(b.shelf ?? "—"),
+      ];
+    });
+    drawBorderedTableWrapped(pdfDoc, pages, title, headers, colWidths, binRows, font, boldFont, y);
+  } else {
+    y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Bins", "—", w);
+  }
+
+  const totalPages = pages.length;
+  pages.forEach((p, i) => drawPdfReportFooter(p, i + 1, font, totalPages));
   return Buffer.from(await pdfDoc.save());
 }
 

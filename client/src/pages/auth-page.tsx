@@ -74,6 +74,15 @@ export default function AuthPage() {
         variant: "default"
       });
     }
+
+    const reason = urlParams.get("reason");
+    if (reason === "demo-walkthrough") {
+      toast({
+        title: "Session ended after demo reset",
+        description: "Sign in again with admin / Admin123! Your walkthrough checklist will appear on Control Tower after login.",
+      });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, [toast]);
 
   // Redirect if user is already logged in

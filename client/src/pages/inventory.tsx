@@ -215,7 +215,7 @@ export default function InventoryPage() {
         sticky
         left={
           <>
-            <div className="relative w-full min-w-[220px] max-w-sm">
+            <div className="relative w-full min-w-[220px] max-w-sm" data-tour="inventory-search">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={searchInput}
@@ -266,16 +266,18 @@ export default function InventoryPage() {
           </>
         }
         right={
-          <Button
-            variant={isLowFilterEnabled(String(queryState.low || "")) ? "default" : "outline"}
-            onClick={() =>
-              setQueryState({
-                low: isLowFilterEnabled(String(queryState.low || "")) ? "" : "1",
-              })
-            }
-          >
-            Low stock only
-          </Button>
+          <span data-tour="inventory-low-toggle">
+            <Button
+              variant={isLowFilterEnabled(String(queryState.low || "")) ? "default" : "outline"}
+              onClick={() =>
+                setQueryState({
+                  low: isLowFilterEnabled(String(queryState.low || "")) ? "" : "1",
+                })
+              }
+            >
+              Low stock only
+            </Button>
+          </span>
         }
       />
 
@@ -301,6 +303,7 @@ export default function InventoryPage() {
         onRetry={refetchInventory}
       >
         {(items) => (
+          <div data-tour="inventory-table">
           <Table>
             <TableHeader>
               <TableRow>
@@ -337,6 +340,7 @@ export default function InventoryPage() {
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
       </DataState>
     </div>

@@ -48,7 +48,7 @@ export default function BarcodeScannerPage() {
       <h1 className="text-3xl font-bold tracking-tight mb-6">Barcode & QR Scanner</h1>
       
       {/* Main content area */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid items-start gap-6 lg:grid-cols-3">
         {/* Left column - Barcode scanning and generation */}
         <div className="space-y-6 lg:col-span-2">
           <Tabs value={tab} onValueChange={setTab} className="w-full">
@@ -132,10 +132,9 @@ export default function BarcodeScannerPage() {
           </Card>
         </div>
         
-        {/* Right column - Real-time inventory updates */}
-        <div className="lg:col-span-1">
-          {/* Real-time updates component */}
-          <RealTimeUpdates />
+        {/* Right column — capped height + sticky within main scroll so it does not stretch the full grid row */}
+        <div className="lg:sticky lg:top-2 lg:col-span-1 lg:self-start">
+          <RealTimeUpdates cardClassName="lg:max-h-[min(36rem,calc(100dvh-9rem))]" />
         </div>
       </div>
     </div>
