@@ -12,6 +12,8 @@ const statusMap: Record<string, StatusVariant> = {
   sent: "info",
   received: "success",
   delivered: "success",
+  in_transit: "info",
+  late: "warning",
   low: "warning",
   pending: "warning",
   draft: "neutral",
@@ -24,6 +26,17 @@ const statusMap: Record<string, StatusVariant> = {
 function toVariant(status: string): StatusVariant {
   const normalized = status.toLowerCase().replace(/\s+/g, "_");
   return statusMap[normalized] ?? "neutral";
+}
+
+/** Human-readable label while keeping raw value for variant matching */
+function formatStatusLabel(status: string): string {
+  const s = status.trim();
+  if (!s) return "—";
+  return s
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
 }
 
 const variantClassName: Record<StatusVariant, string> = {
@@ -43,7 +56,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   const variant = toVariant(status);
   return (
     <Badge variant="outline" className={cn(variantClassName[variant], className)}>
-      {status}
+      {formatStatusLabel(status)}
     </Badge>
   );
 }

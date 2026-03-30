@@ -24,6 +24,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
@@ -90,11 +97,27 @@ function ExceptionListView() {
     markRefreshed,
   } = useAutoRefresh(refetch);
 
+  const [quickException, setQuickException] = useState<OperationalException | null>(null);
+  const [quickStatus, setQuickStatus] = useState("in_progress");
+  const [quickAssignee, setQuickAssignee] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+
   useEffect(() => {
     if (data && !lastRefreshedAt) {
       markRefreshed();
     }
   }, [data, lastRefreshedAt, markRefreshed]);
+
+  useEffect(() => {
+    if (quickException) {
+      setQuickAssignee(quickException.assignee?.trim() || "");
+      setQuickStatus(
+        ["open", "in_progress", "resolved", "closed"].includes(quickException.status)
+          ? quickException.status
+          : "in_progress",
+      );
+    }
+  }, [quickException]);
 
   const handleExportCsv = () => {
     try {
@@ -276,6 +299,7 @@ function ExceptionListView() {
                 <TableHead>Status</TableHead>
                 <TableHead>Title</TableHead>
                 <TableHead>Assignee</TableHead>
+                <TableHead className="w-[100px] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -295,6 +319,18 @@ function ExceptionListView() {
                   </TableCell>
                   <TableCell>{exception.title}</TableCell>
                   <TableCell>{exception.assignee || "-"}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setQuickException(exception);
+                      }}
+                    >
+                      Update
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -303,6 +339,87 @@ function ExceptionListView() {
           );
         }}
       </DataState>
+
+      <Dialog open={!!quickException} onOpenChange={(open) => !open && setQuickException(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Quick update
+              {quickException ? ` — #${quickException.id}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {quickException ? (
+            <div className="grid gap-3 py-2">
+              <p className="text-sm text-muted-foreground line-clamp-2">{quickException.title}</p>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={quickStatus} onValueChange={setQuickStatus}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">open</SelectItem>
+                    <SelectItem value="in_progress">in_progress</SelectItem>
+                    <SelectItem value="resolved">resolved</SelectItem>
+                    <SelectItem value="closed">closed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quick-assignee">Assignee</Label>
+                <Input
+                  id="quick-assignee"
+                  value={quickAssignee}
+                  onChange={(e) => setQuickAssignee(e.target.value)}
+                  placeholder="User or team name"
+                />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            {quickException ? (
+              <Button variant="link" className="px-0" asChild>
+                <Link href={`/exceptions/${quickException.id}`}>Open full detail</Link>
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setQuickException(null)}>
+                Cancel
+              </Button>
+              <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                <Button
+                  disabled={!quickException || quickSaving}
+                  onClick={async () => {
+                    if (!quickException) return;
+                    setQuickSaving(true);
+                    try {
+                      await updateExceptionStatus(quickException.id, quickStatus);
+                      if (quickAssignee.trim()) {
+                        await assignException(quickException.id, quickAssignee.trim());
+                      }
+                      toast({ title: "Exception updated" });
+                      setQuickException(null);
+                      await refreshNow();
+                    } catch (err) {
+                      toast({
+                        title: "Update failed",
+                        description: err instanceof Error ? err.message : String(err),
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setQuickSaving(false);
+                    }
+                  }}
+                >
+                  Save
+                </Button>
+              </Can>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       </div>
     </div>
   );

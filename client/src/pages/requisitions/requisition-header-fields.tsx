@@ -16,28 +16,35 @@ type Dept = { id: number; code: string; name: string };
 export function RequisitionHeaderFields({
   suppliers,
   departments,
+  projects = [],
   supplierId,
   departmentId,
+  projectId,
   requiredDate,
   justification,
   notes,
   fieldErrors,
   onSupplierChange,
   onDepartmentChange,
+  onProjectChange,
   onRequiredDateChange,
   onJustificationChange,
   onNotesChange,
 }: {
   suppliers: Supplier[];
   departments: Dept[];
+  /** From `/api/extensions/projects` when extensions are enabled */
+  projects?: { id: number; code: string; name: string }[];
   supplierId: number | "";
   departmentId: number | "";
+  projectId: number | "";
   requiredDate: string;
   justification: string;
   notes: string;
   fieldErrors: RequisitionFieldErrors;
   onSupplierChange: (v: number | "") => void;
   onDepartmentChange: (v: number | "") => void;
+  onProjectChange: (v: number | "") => void;
   onRequiredDateChange: (v: string) => void;
   onJustificationChange: (v: string) => void;
   onNotesChange: (v: string) => void;
@@ -88,6 +95,28 @@ export function RequisitionHeaderFields({
           />
           {fieldErrors.requiredDate ? <p className="text-xs text-destructive">{fieldErrors.requiredDate}</p> : null}
         </div>
+        {projects.length > 0 ? (
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="req-project">Project (optional)</Label>
+            <Select
+              value={projectId === "" ? "__none__" : String(projectId)}
+              onValueChange={(v) => onProjectChange(v === "__none__" ? "" : Number(v))}
+            >
+              <SelectTrigger id="req-project" aria-label="Project">
+                <SelectValue placeholder="No project" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No project</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.code} — {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {fieldErrors.projectId ? <p className="text-xs text-destructive">{fieldErrors.projectId}</p> : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-2">

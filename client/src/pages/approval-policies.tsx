@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { fetchApprovalSuggestions } from "@/api/client";
 import { PageHeader } from "@/components/page-header";
@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import type { ApprovalPolicy } from "@shared/schema";
 
@@ -223,6 +224,12 @@ export default function ApprovalPoliciesPage() {
     },
   });
 
+  const [, setLocation] = useLocation();
+  const isLgUp = useMediaQuery("(min-width: 1024px)");
+  useEffect(() => {
+    if (!isLgUp) setLocation("/m/home");
+  }, [isLgUp, setLocation]);
+
   const startEdit = (p: ApprovalPolicy) => {
     setEditingId(p.id);
     setForm({
@@ -237,8 +244,17 @@ export default function ApprovalPoliciesPage() {
     });
   };
 
+  if (!isLgUp) {
+    return (
+      <div className="mx-auto max-w-lg p-6 text-center text-sm text-muted-foreground">
+        Approval policies are available on large screens (1024px and wider). Use a desktop browser or resize the
+        window. Sending you to the mobile hub…
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6">
       <PageHeader
         title="Approval policies"
         subtitle="Configure amount bands, approval levels, and required roles or users. Requisition approve/reject routes enforce active policies."

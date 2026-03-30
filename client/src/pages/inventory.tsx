@@ -185,7 +185,7 @@ export default function InventoryPage() {
   }, [inventoryData, queryState.category, queryState.location, queryState.low, queryState.q]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
       <PageHeader
         title="Inventory"
         subtitle="Operational inventory overview"
@@ -304,17 +304,22 @@ export default function InventoryPage() {
       >
         {(items) => (
           <div data-tour="inventory-table">
-          <Table>
+          <Table className="table-fixed w-full">
             <TableHeader>
               <TableRow>
-                <TableHead>SKU</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead className="text-right">On hand</TableHead>
-                <TableHead className="text-right">Allocated</TableHead>
-                <TableHead className="text-right">Available</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Updated</TableHead>
+                <TableHead className="w-[10%]">SKU</TableHead>
+                <TableHead className="w-[22%]">Name</TableHead>
+                <TableHead className="w-[14%]">Location</TableHead>
+                <TableHead className="w-[20%] text-right">
+                  <span className="inline-flex flex-col items-end gap-0.5 tabular-nums">
+                    <span className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                      Stock
+                    </span>
+                    <span>On hand / Alloc / Avail</span>
+                  </span>
+                </TableHead>
+                <TableHead className="w-[12%]">Status</TableHead>
+                <TableHead className="w-[14%] text-right">Updated</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -324,12 +329,18 @@ export default function InventoryPage() {
                   className="cursor-pointer"
                   onClick={() => setLocation(`/inventory/${item.sku}`)}
                 >
-                  <TableCell className="font-medium">{item.sku}</TableCell>
-                  <TableCell>{item.name}</TableCell>
-                  <TableCell>{item.location || "Unassigned"}</TableCell>
-                  <TableCell className="text-right">{item.onHand}</TableCell>
-                  <TableCell className="text-right">{item.allocated}</TableCell>
-                  <TableCell className="text-right">{item.available}</TableCell>
+                  <TableCell className="font-medium align-top">{item.sku}</TableCell>
+                  <TableCell className="align-top">{item.name}</TableCell>
+                  <TableCell className="align-top text-sm">{item.location || "Unassigned"}</TableCell>
+                  <TableCell className="text-right align-top tabular-nums">
+                    <span className="inline-flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5">
+                      <span>{item.onHand}</span>
+                      <span className="text-muted-foreground">/</span>
+                      <span>{item.allocated}</span>
+                      <span className="text-muted-foreground">/</span>
+                      <span>{item.available}</span>
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={getAvailabilityStatus(item)} />
                   </TableCell>

@@ -42,6 +42,7 @@ import {
 import { formatMutationError, requestJson } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { type ReorderRequest, ReorderRequestStatus } from "@shared/schema";
+import { enqueueOfflineAction } from "@/lib/offline-queue";
 
 export default function ReorderRequestsPage() {
   const { toast } = useToast();
@@ -76,13 +77,20 @@ export default function ReorderRequestsPage() {
       });
       setApprovalDialogOpen(false);
     },
-    onError: (error) => {
+    onError: async (error, id) => {
       toast({
         title: "Approve request failed",
         description: formatMutationError("Approve reorder request", "POST", "/api/reorder-requests/.../approve", error),
         variant: "destructive",
       });
-    }
+      if (typeof id === "number") {
+        await enqueueOfflineAction("generic", {
+          kind: "reorder_approve",
+          reorderRequestId: id,
+          approverId: 1,
+        });
+      }
+    },
   });
   
   // Reject request mutation
@@ -224,7 +232,7 @@ export default function ReorderRequestsPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)]">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
         <div>
           <h2 className="text-2xl font-semibold text-neutral-900 dark:text-white">Reorder Requests</h2>

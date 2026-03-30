@@ -34,6 +34,7 @@ export function useSettings() {
   // Default settings if API call fails or is loading
   const defaultSettings: AppSettings = {
     id: 1,
+    organizationId: 1,
     companyName: "Inventory Manager",
     companyLogo: null,
     primaryColor: "#0f766e",

@@ -51,6 +51,7 @@ export function SuppliersListCard({
           isLoading={isLoading}
           error={isError ? error : null}
           isEmpty={!isLoading && !isError && (!suppliers || suppliers.length === 0)}
+          warnEmptyWhenDegraded
           errorTitle="Could not load suppliers"
           onRetry={() => refetch()}
           loadingView={

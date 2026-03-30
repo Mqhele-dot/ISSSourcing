@@ -42,6 +42,13 @@ See `.env.production.example` and `docs/ENV-CONFIG.md` for variables.
 
 After pulling releases that add `users.supplier_id` / `users.approver_amount_limit`, run **`npm run db:push`** (or rely on `init-db` alters if you use the raw SQL path) so Postgres matches `shared/schema.ts`.
 
+## PWA (install on phone / tablet)
+
+- The app ships [`client/public/manifest.webmanifest`](../client/public/manifest.webmanifest) and a minimal [`client/public/sw.js`](../client/public/sw.js). The service worker is registered in production builds (`client/src/main.tsx`).
+- Serve the site over **HTTPS** (or `localhost`); browsers require a secure context for service workers and “Add to Home Screen”.
+- After `npm run build`, static assets under `dist/public` must be reachable at `/manifest.webmanifest` and `/sw.js` (Vite embeds `public/` into the build output).
+- On mobile: open the deployed URL in Chrome or Safari, use **Add to Home Screen** / **Install app** when offered.
+
 ## Post-deploy verification (smoke)
 
 After each deploy to an environment you can reach over HTTP:

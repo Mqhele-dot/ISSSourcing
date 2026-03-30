@@ -45,10 +45,14 @@ const WarehouseOperationsPage = lazy(() => import("@/pages/warehouse-operations"
 const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
 const SupplierPortalPage = lazy(() => import("@/pages/supplier-portal"));
 const DocumentsPage = lazy(() => import("@/pages/documents"));
+const UploadsPathRedirect = lazy(() => import("@/pages/uploads-redirect"));
 const SupplyAnalyticsPage = lazy(() => import("@/pages/supply-analytics"));
 const ControlTowerPage = lazy(() => import("@/pages/control-tower"));
 const MobileReceivePage = lazy(() => import("@/pages/mobile-receive"));
 const MobilePickPage = lazy(() => import("@/pages/mobile-pick"));
+const MobileHubHome = lazy(() => import("@/pages/mobile-hub-home"));
+const MobileHubTasks = lazy(() => import("@/pages/mobile-hub-tasks"));
+const MobileHubMore = lazy(() => import("@/pages/mobile-hub-more"));
 
 function RouteFallback() {
   return (
@@ -75,6 +79,11 @@ export function AppRouter() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Switch>
+        <ProtectedRoute path="/m/home" component={MobileHubHome} />
+        <ProtectedRoute path="/m/tasks" component={MobileHubTasks} />
+        <ProtectedRoute path="/m/scan" component={BarcodeScannerPage} />
+        <ProtectedRoute path="/m/approvals" component={PurchasePage} />
+        <ProtectedRoute path="/m/more" component={MobileHubMore} />
         <ProtectedRoute path="/" component={Home} />
         <ProtectedRoute path="/control-tower" component={ControlTowerPage} />
         <ProtectedRoute path="/dashboard" component={Dashboard} />
@@ -103,6 +112,8 @@ export function AppRouter() {
         <ProtectedRoute path="/audit-logs" component={AuditLogsPage} />
         <ProtectedRoute path="/supplier-portal" component={SupplierPortalPage} />
         <ProtectedRoute path="/documents" component={DocumentsPage} />
+        <ProtectedRoute path="/uploads/*" component={UploadsPathRedirect} />
+        <ProtectedRoute path="/Uploads/*" component={UploadsPathRedirect} />
         <ProtectedRoute path="/supply-analytics" component={SupplyAnalyticsPage} />
         <ProtectedRoute path="/suppliers/:id" component={SupplierDetailPage} />
         <ProtectedRoute path="/suppliers" component={SuppliersPage} />

@@ -34,6 +34,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { downloadFile } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Download } from "lucide-react";
 import type { InventoryItem } from "@shared/schema";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 
@@ -109,6 +117,44 @@ export default function InvoicesPage() {
   const [newLineQty, setNewLineQty] = useState("1");
   const [newLineUnitPrice, setNewLineUnitPrice] = useState("");
   const [newLineTaxRate, setNewLineTaxRate] = useState("0");
+  const [invoiceExporting, setInvoiceExporting] = useState(false);
+
+  const exportInvoices = async (format: "pdf" | "csv" | "excel" | "docx") => {
+    if (invoiceExporting) return;
+    setInvoiceExporting(true);
+    try {
+      const qs = new URLSearchParams();
+      if (format === "pdf") qs.set("template", "standard");
+      const q = qs.toString();
+      const url = `/api/export/invoices/${format}${q ? `?${q}` : ""}`;
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        let detail = `Export failed (${response.status})`;
+        try {
+          const errBody = (await response.json()) as { message?: string };
+          if (errBody?.message) detail = errBody.message;
+        } catch {
+          /* not JSON */
+        }
+        throw new Error(detail);
+      }
+      const blob = await response.blob();
+      const ext = format === "excel" ? "xlsx" : format;
+      downloadFile(blob, `invoices-report.${ext}`);
+      toast({
+        title: "Export ready",
+        description: `Invoices exported as ${format === "excel" ? "XLSX" : format.toUpperCase()}.`,
+      });
+    } catch (e) {
+      toast({
+        title: "Export failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setInvoiceExporting(false);
+    }
+  };
 
   const {
     data: invoices = [],
@@ -391,10 +437,26 @@ export default function InvoicesPage() {
   });
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6">
       <PageHeader
         title="Invoices"
         subtitle="Create supplier invoices linked to POs and run 3-way match checks."
+        actions={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={invoiceExporting}>
+                <Download className="mr-2 h-4 w-4" />
+                {invoiceExporting ? "Exporting…" : "Export"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => void exportInvoices("pdf")}>PDF</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void exportInvoices("csv")}>CSV</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void exportInvoices("excel")}>Excel</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void exportInvoices("docx")}>Word</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
       />
 
       <Card>

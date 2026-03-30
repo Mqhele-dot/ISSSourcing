@@ -1429,6 +1429,7 @@ export async function receiveOperationalPurchaseOrder(
       await pool.query(
         `
         INSERT INTO stock_movements (
+          organization_id,
           item_id,
           warehouse_id,
           type,
@@ -1444,7 +1445,7 @@ export async function receiveOperationalPurchaseOrder(
           timestamp,
           created_at
         )
-        VALUES ($1, NULL, 'RECEIPT', $2, $3, 'purchase_order', $4, $5, $6, $7, $8, $9, now(), now())
+        VALUES (1, $1, NULL, 'RECEIPT', $2, $3, 'purchase_order', $4, $5, $6, $7, $8, $9, now(), now())
         `,
         [
           line.itemId,
@@ -2555,6 +2556,7 @@ export async function runOperationalDemoWalkthrough(actor: string) {
   const poInsert = await pool.query<{ id: number; order_number: string }>(
     `
     INSERT INTO purchase_orders (
+      organization_id,
       order_number,
       supplier_id,
       status,
@@ -2563,7 +2565,7 @@ export async function runOperationalDemoWalkthrough(actor: string) {
       created_at,
       updated_at
     )
-    VALUES ($1, $2, 'sent', now(), $3, now(), now())
+    VALUES (1, $1, $2, 'sent', now(), $3, now(), now())
     RETURNING id, order_number
     `,
     [poNumber, supplierId, lineTotal],
@@ -2662,23 +2664,4 @@ export async function runOperationalDemoWalkthrough(actor: string) {
   };
 }
 
-export async function getOperationalExceptionSummary() {
-  const result = await pool.query<{
-    users: number;
-    warehouses: number;
-    suppliers: number;
-    items: number;
-    settings: number;
-  }>(
-    `
-    SELECT
-      (SELECT count(*)::int FROM users) AS users,
-      (SELECT count(*)::int FROM warehouses) AS warehouses,
-      (SELECT count(*)::int FROM suppliers) AS suppliers,
-      (SELECT count(*)::int FROM inventory_items) AS items,
-      (SELECT count(*)::int FROM app_settings) AS settings
-    `,
-  );
-
-  return result.rows[0];
-}
+export { getOperationalExceptionSummary } from "./operations-internal/exception-summary";

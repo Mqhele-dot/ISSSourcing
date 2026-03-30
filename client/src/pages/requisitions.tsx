@@ -19,7 +19,8 @@ import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Badge } from "@/components/ui/badge";
+import { RequisitionsDialogs } from "@/pages/requisitions/requisitions-dialogs";
+import { formatRequisitionDate, getRequisitionErrorMessage } from "@/pages/requisitions/requisitions-helpers";
 import {
   Table,
   TableBody,
@@ -28,33 +29,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { apiRequest, requestJson } from "@/lib/queryClient";
 import type { PurchaseRequisition, PurchaseRequisitionItem, User, Supplier, InventoryItem } from "@shared/schema";
 import { Can } from "@/components/auth/can";
 import { fetchApprovalSuggestions } from "@/api/client";
-
-function formatDate(value: string | Date | null) {
-  if (value == null) return "-";
-  const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
-}
-
-function getErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
 
 interface RequisitionsPageProps {
   embedded?: boolean;
@@ -149,7 +129,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     onError: (e, id) => {
       toast({
         title: "Approve failed",
-        description: getErrorMessage(e),
+        description: getRequisitionErrorMessage(e),
         variant: "destructive",
         action: (
           <ToastAction altText="Retry" onClick={() => id != null && approveMutation.mutate(id)}>
@@ -170,7 +150,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     onError: (e, vars) => {
       toast({
         title: "Reject failed",
-        description: getErrorMessage(e),
+        description: getRequisitionErrorMessage(e),
         variant: "destructive",
         action: vars && (
           <ToastAction altText="Retry" onClick={() => rejectMutation.mutate(vars)}>
@@ -191,7 +171,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     onError: (e, id) => {
       toast({
         title: "Convert failed",
-        description: getErrorMessage(e),
+        description: getRequisitionErrorMessage(e),
         variant: "destructive",
         action: (
           <ToastAction altText="Retry" onClick={() => id != null && convertMutation.mutate(id)}>
@@ -211,7 +191,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
       setShareOpen(false);
     },
     onError: (e) => {
-      toast({ title: "Share failed", description: getErrorMessage(e), variant: "destructive" });
+      toast({ title: "Share failed", description: getRequisitionErrorMessage(e), variant: "destructive" });
     },
   });
 
@@ -301,8 +281,8 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                     {suppliers.find((s) => s.id === req.supplierId)?.name ?? (req.supplierId ? "Supplier #" + req.supplierId : "-")}
                   </TableCell>
                   <TableCell>${Number(req.totalAmount || 0).toFixed(2)}</TableCell>
-                  <TableCell>{formatDate(req.requiredDate)}</TableCell>
-                  <TableCell>{formatDate(req.createdAt)}</TableCell>
+                  <TableCell>{formatRequisitionDate(req.requiredDate)}</TableCell>
+                  <TableCell>{formatRequisitionDate(req.createdAt)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to edit">
@@ -394,217 +374,28 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
         )}
       </DataState>
 
-      {/* Share requisition with team members */}
-      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Share Requisition</DialogTitle>
-            <DialogDescription>
-              Share {selectedReq?.requisitionNumber} with team members. Selected users will have access to view this requisition.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Share with users</Label>
-              <Select
-                value=""
-                onValueChange={(v) => {
-                  const id = Number(v);
-                  if (id && !shareUserIds.includes(id)) {
-                    setShareUserIds([...shareUserIds, id]);
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select user to add..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {users
-                    .filter((u) => !shareUserIds.includes(u.id))
-                    .map((u) => (
-                      <SelectItem key={u.id} value={String(u.id)}>
-                        {u.fullName || u.username}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              {shareUserIds.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {shareUserIds.map((uid) => {
-                    const u = users.find((x) => x.id === uid);
-                    return (
-                      <Badge
-                        key={uid}
-                        variant="secondary"
-                        className="cursor-pointer"
-                        onClick={() => setShareUserIds(shareUserIds.filter((id) => id !== uid))}
-                      >
-                        {(u?.fullName || u?.username || "User #" + uid) + " ×"}
-                      </Badge>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShareOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!selectedReq) return;
-                shareMutation.mutate({ id: selectedReq.id, userIds: shareUserIds });
-              }}
-              disabled={shareMutation.isPending || shareUserIds.length === 0}
-            >
-              {shareMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Share
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reject requisition — reason (optional) */}
-      <Dialog
-        open={rejectDialogReq !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRejectDialogReq(null);
-            setRejectReason("");
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reject requisition</DialogTitle>
-            <DialogDescription>
-              {rejectDialogReq
-                ? "Reject " + rejectDialogReq.requisitionNumber + "? You can optionally provide a reason."
-                : "Provide an optional reason for rejection."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="reject-reason">Reason (optional)</Label>
-              <Input
-                id="reject-reason"
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="e.g. Budget hold"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setRejectDialogReq(null); setRejectReason(""); }}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (rejectDialogReq) {
-                  rejectMutation.mutate(
-                    { id: rejectDialogReq.id, reason: rejectReason },
-                    { onSettled: () => { setRejectDialogReq(null); setRejectReason(""); } }
-                  );
-                }
-              }}
-              disabled={rejectMutation.isPending}
-            >
-              {rejectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Reject
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={approverHelpAmount !== null}
-        onOpenChange={(open) => {
-          if (!open) setApproverHelpAmount(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Suggested approvers</DialogTitle>
-            <DialogDescription>
-              From active requisition approval policies for total amount ${approverHelpAmount?.toFixed(2) ?? "0.00"}.
-              Approval still runs as the signed-in user; policies may require a specific role or user.
-            </DialogDescription>
-          </DialogHeader>
-          {approverHintsLoading ? (
-            <div className="text-sm text-muted-foreground">Loading suggestions…</div>
-          ) : (reqApproverHints?.suggestedApprovers?.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No users matched configured policies for this amount. Check Approval policies or use an admin account.
-            </p>
-          ) : (
-            <ul className="space-y-2 text-sm">
-              {reqApproverHints!.suggestedApprovers.map((a) => (
-                <li key={a.userId} className="rounded border p-2">
-                  <div className="font-medium">{a.fullName || a.username}</div>
-                  <div className="text-muted-foreground text-xs">{a.email}</div>
-                  <div className="text-xs mt-1">
-                    Level {a.approvalLevel} · {a.matchedPolicyName}
-                    {a.role ? ` · role ${a.role}` : ""}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setApproverHelpAmount(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Approval history */}
-      <Dialog
-        open={historyDialogReq !== null}
-        onOpenChange={(open) => {
-          if (!open) setHistoryDialogReq(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Approval history</DialogTitle>
-            <DialogDescription>
-              {historyDialogReq
-                ? `History for ${historyDialogReq.requisitionNumber}`
-                : "Approval history"}
-            </DialogDescription>
-          </DialogHeader>
-          {historyLoading ? (
-            <div className="text-sm text-muted-foreground">Loading history...</div>
-          ) : approvalHistory.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No approval history found for this requisition.</div>
-          ) : (
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {approvalHistory.map((entry) => (
-                <div key={entry.id} className="rounded border p-2 text-sm">
-                  <div className="font-medium">
-                    {entry.action.toUpperCase()} (Level {entry.level})
-                  </div>
-                  <div className="text-muted-foreground">
-                    By user #{entry.performedBy} on {formatDate(entry.performedAt)}
-                  </div>
-                  <div className="text-muted-foreground">
-                    {entry.previousStatus ?? "-"} {"->"} {entry.newStatus ?? "-"}
-                  </div>
-                  {entry.comment ? <div className="mt-1">{entry.comment}</div> : null}
-                </div>
-              ))}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setHistoryDialogReq(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RequisitionsDialogs
+        shareOpen={shareOpen}
+        setShareOpen={setShareOpen}
+        selectedReq={selectedReq}
+        users={users}
+        shareUserIds={shareUserIds}
+        setShareUserIds={setShareUserIds}
+        shareMutation={shareMutation}
+        rejectDialogReq={rejectDialogReq}
+        setRejectDialogReq={setRejectDialogReq}
+        rejectReason={rejectReason}
+        setRejectReason={setRejectReason}
+        rejectMutation={rejectMutation}
+        approverHelpAmount={approverHelpAmount}
+        setApproverHelpAmount={setApproverHelpAmount}
+        reqApproverHints={reqApproverHints}
+        approverHintsLoading={approverHintsLoading}
+        historyDialogReq={historyDialogReq}
+        setHistoryDialogReq={setHistoryDialogReq}
+        approvalHistory={approvalHistory}
+        historyLoading={historyLoading}
+      />
     </div>
   );
 }

@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { getFallbackState, subscribeFallbackState } from "@/lib/fallback-store";
 import { cn } from "@/lib/utils";
 
 /** Top toolbar row (filters, actions) — composes with PageHeader */
@@ -47,6 +50,8 @@ type PageDataStateProps = {
   emptyView: ReactNode;
   errorTitle?: string;
   onRetry?: () => void;
+  /** When the list is empty and the API reported degraded mode, show a banner above the empty state (e.g. strict list pages). */
+  warnEmptyWhenDegraded?: boolean;
   children: ReactNode;
 };
 
@@ -62,8 +67,12 @@ export function PageDataState({
   emptyView,
   errorTitle = "Something went wrong",
   onRetry,
+  warnEmptyWhenDegraded = false,
   children,
 }: PageDataStateProps) {
+  const [globalFallback, setGlobalFallback] = useState<string | null>(() => getFallbackState().fallback);
+  useEffect(() => subscribeFallbackState((s) => setGlobalFallback(s.fallback)), []);
+
   if (isLoading) {
     return <>{loadingView ?? <div className="py-12 text-center text-muted-foreground">Loading…</div>}</>;
   }
@@ -81,7 +90,21 @@ export function PageDataState({
     );
   }
   if (isEmpty) {
-    return <>{emptyView}</>;
+    const showDegraded = warnEmptyWhenDegraded && globalFallback;
+    return (
+      <>
+        {showDegraded ? (
+          <Alert className="mb-4 border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/25">
+            <AlertTitle>Data may be incomplete</AlertTitle>
+            <AlertDescription>
+              Operations are degraded ({globalFallback}). This list may be empty because the response was truncated or
+              defaulted—retry or check connectivity.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {emptyView}
+      </>
+    );
   }
   return <>{children}</>;
 }

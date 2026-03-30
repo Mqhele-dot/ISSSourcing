@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,12 +10,15 @@ import { cn } from "@/lib/utils";
 import { format, addDays, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
 import { type ReportFilter, type Category, type Warehouse, type Supplier } from "@shared/schema";
 
+type ReportProjectOption = { id: number; code: string; name: string };
+
 interface ReportFiltersProps {
   filter: ReportFilter;
   setFilter: (filter: ReportFilter) => void;
   categories?: Category[];
   warehouses?: Warehouse[];
   suppliers?: Supplier[];
+  projects?: ReportProjectOption[];
   reportType: string;
 }
 
@@ -24,6 +28,7 @@ export function ReportFilters({
   categories, 
   warehouses, 
   suppliers,
+  projects,
   reportType 
 }: ReportFiltersProps) {
   const reportTypeKey = reportType as string;
@@ -105,7 +110,7 @@ export function ReportFilters({
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-4 mb-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-medium">Report Filters</h3>
-        {(filter.startDate || filter.categoryId || filter.warehouseId || filter.supplierId || filter.status || (filter.tags && filter.tags.length > 0)) && (
+        {(filter.startDate || filter.categoryId || filter.warehouseId || filter.supplierId || filter.projectId || filter.status || filter.shipmentPo || filter.shipmentCarrier || filter.shipmentRisk || (filter.tags && filter.tags.length > 0)) && (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
             Clear all
           </Button>
@@ -232,8 +237,8 @@ export function ReportFilters({
           </div>
         )}
         
-        {/* Supplier filter - for orders, requisitions, and reorder requests */}
-        {(["purchase-orders", "purchase_orders", "purchase-requisitions", "purchase_requisitions", "reorder-requests", "reorder_requests"].includes(reportTypeKey)) && 
+        {/* Supplier filter - for orders, requisitions, reorder, and suppliers directory */}
+        {(["purchase-orders", "purchase_orders", "purchase-requisitions", "purchase_requisitions", "reorder-requests", "reorder_requests", "suppliers", "invoices"].includes(reportTypeKey)) && 
           suppliers && suppliers.length > 0 && (
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Supplier</div>
@@ -261,9 +266,39 @@ export function ReportFilters({
             </Select>
           </div>
         )}
+
+        {(["purchase-orders", "purchase_orders", "purchase-requisitions", "purchase_requisitions"].includes(reportTypeKey)) &&
+          projects &&
+          projects.length > 0 && (
+            <div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Project</div>
+              <Select
+                value={filter.projectId?.toString() ?? ALL_SENTINEL}
+                onValueChange={(value) => {
+                  const id = norm(value);
+                  setFilter({
+                    ...filter,
+                    projectId: id ? parseInt(id, 10) : undefined,
+                  });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All projects" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_SENTINEL}>All projects</SelectItem>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id.toString()}>
+                      {p.code} — {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         
         {/* Status filter - for orders, requisitions, and reorder requests */}
-        {(["purchase-orders", "purchase_orders", "purchase-requisitions", "purchase_requisitions", "reorder-requests", "reorder_requests"].includes(reportTypeKey)) && (
+        {(["purchase-orders", "purchase_orders", "purchase-requisitions", "purchase_requisitions", "reorder-requests", "reorder_requests", "invoices", "shipments"].includes(reportTypeKey)) && (
           <div>
             <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Status</div>
             <Select
@@ -308,14 +343,77 @@ export function ReportFilters({
                     <SelectItem value="CONVERTED">Converted</SelectItem>
                   </>
                 )}
+                {reportTypeKey === "invoices" && (
+                  <>
+                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="SENT">Sent</SelectItem>
+                    <SelectItem value="OVERDUE">Overdue</SelectItem>
+                    <SelectItem value="PAID">Paid</SelectItem>
+                    <SelectItem value="PARTIALLY_PAID">Partially paid</SelectItem>
+                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                    <SelectItem value="VOID">Void</SelectItem>
+                    <SelectItem value="DISPUTED">Disputed</SelectItem>
+                  </>
+                )}
+                {reportTypeKey === "shipments" && (
+                  <>
+                    <SelectItem value="created">Created</SelectItem>
+                    <SelectItem value="in_transit">In transit</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="delayed">Delayed</SelectItem>
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>
         )}
+
+        {reportTypeKey === "shipments" && (
+          <>
+            <div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">PO contains</div>
+              <Input
+                placeholder="PO number"
+                value={filter.shipmentPo ?? ""}
+                onChange={(e) =>
+                  setFilter({ ...filter, shipmentPo: e.target.value || undefined })
+                }
+              />
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Carrier contains</div>
+              <Input
+                placeholder="Carrier"
+                value={filter.shipmentCarrier ?? ""}
+                onChange={(e) =>
+                  setFilter({ ...filter, shipmentCarrier: e.target.value || undefined })
+                }
+              />
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Late risk</div>
+              <Select
+                value={filter.shipmentRisk ?? ALL_SENTINEL}
+                onValueChange={(value) => {
+                  const v = norm(value);
+                  setFilter({ ...filter, shipmentRisk: v === "late" ? "late" : undefined });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_SENTINEL}>All</SelectItem>
+                  <SelectItem value="late">Late only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
       </div>
       
       {/* Active filters display */}
-      {(filter.startDate || filter.categoryId || filter.warehouseId || filter.supplierId || filter.status || (filter.tags && filter.tags.length > 0)) && (
+      {(filter.startDate || filter.categoryId || filter.warehouseId || filter.supplierId || filter.projectId || filter.status || filter.shipmentPo || filter.shipmentCarrier || filter.shipmentRisk || (filter.tags && filter.tags.length > 0)) && (
         <div className="mt-4 flex flex-wrap gap-2">
           {filter.startDate && filter.endDate && (
             <Badge variant="outline" className="flex items-center gap-1">
@@ -372,6 +470,22 @@ export function ReportFilters({
               </Button>
             </Badge>
           )}
+
+          {filter.projectId && projects && (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <span>
+                Project: {projects.find((p) => p.id === filter.projectId)?.code ?? filter.projectId}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 p-0 ml-1"
+                onClick={() => setFilter({ ...filter, projectId: undefined })}
+              >
+                ×
+              </Button>
+            </Badge>
+          )}
           
           {filter.status && (
             <Badge variant="outline" className="flex items-center gap-1">
@@ -381,6 +495,48 @@ export function ReportFilters({
                 size="icon" 
                 className="h-4 w-4 p-0 ml-1" 
                 onClick={() => setFilter({ ...filter, status: undefined })}
+              >
+                ×
+              </Button>
+            </Badge>
+          )}
+
+          {filter.shipmentPo && (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <span>PO: {filter.shipmentPo}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 p-0 ml-1"
+                onClick={() => setFilter({ ...filter, shipmentPo: undefined })}
+              >
+                ×
+              </Button>
+            </Badge>
+          )}
+
+          {filter.shipmentCarrier && (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <span>Carrier: {filter.shipmentCarrier}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 p-0 ml-1"
+                onClick={() => setFilter({ ...filter, shipmentCarrier: undefined })}
+              >
+                ×
+              </Button>
+            </Badge>
+          )}
+
+          {filter.shipmentRisk && (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <span>Risk: {filter.shipmentRisk}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 p-0 ml-1"
+                onClick={() => setFilter({ ...filter, shipmentRisk: undefined })}
               >
                 ×
               </Button>

@@ -91,10 +91,12 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="topbar-glass h-16 border-b border-border sticky top-0 z-30 flex items-center justify-between px-4 pl-14 md:pl-4">
-      <div className="flex min-w-0 flex-1 pr-2 md:pr-4">
-        <p className="text-xs text-muted-foreground truncate">{breadcrumb || "Overview"}</p>
-        <form className="relative mt-1 max-w-md" onSubmit={handleSearchSubmit}>
+    <header className="topbar-glass h-16 border-b border-border sticky top-0 z-30 flex items-center justify-between gap-3 px-4 pl-14 md:pl-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-center md:gap-4 md:pr-2">
+        <p className="order-1 max-w-full truncate text-xs text-muted-foreground md:order-none md:max-w-[min(28rem,40vw)]">
+          {breadcrumb || "Overview"}
+        </p>
+        <form className="relative order-2 w-full max-w-md md:order-none" onSubmit={handleSearchSubmit}>
           <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             aria-label="Global search"

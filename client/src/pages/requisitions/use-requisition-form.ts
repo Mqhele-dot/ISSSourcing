@@ -6,7 +6,7 @@ import type { PurchaseRequisition, PurchaseRequisitionItem, Supplier, InventoryI
 import type { ReqLineDraft } from "@/pages/requisitions/requisition-lines-editor";
 
 export type RequisitionFieldErrors = Partial<
-  Record<"supplierId" | "departmentId" | "requiredDate" | "items", string>
+  Record<"supplierId" | "departmentId" | "requiredDate" | "items" | "projectId", string>
 >;
 
 export function useRequisitionForm(params: {
@@ -24,6 +24,7 @@ export function useRequisitionForm(params: {
   const [departmentId, setDepartmentId] = useState<number | "">("");
   const [justification, setJustification] = useState("");
   const [requiredDate, setRequiredDate] = useState("");
+  const [projectId, setProjectId] = useState<number | "">("");
   const [items, setItems] = useState<ReqLineDraft[]>([{ itemId: 0, quantity: 1, unitPrice: 0 }]);
   const [fieldErrors, setFieldErrors] = useState<RequisitionFieldErrors>({});
 
@@ -60,6 +61,19 @@ export function useRequisitionForm(params: {
     },
   });
 
+  const { data: extensionProjects = [] } = useQuery({
+    queryKey: ["/api/extensions/projects"],
+    queryFn: async () => {
+      try {
+        const raw = await requestJson<unknown>("GET", "/api/extensions/projects");
+        return normalizeApiList<{ id: number; code: string; name: string }>(raw);
+      } catch {
+        return [];
+      }
+    },
+    retry: false,
+  });
+
   useEffect(() => {
     if (requisition) {
       setNotes(requisition.notes ?? "");
@@ -67,6 +81,7 @@ export function useRequisitionForm(params: {
       setDepartmentId((requisition as PurchaseRequisition & { departmentId?: number | null }).departmentId ?? "");
       setJustification((requisition as PurchaseRequisition & { justification?: string | null }).justification ?? "");
       setRequiredDate(requisition.requiredDate ? new Date(requisition.requiredDate).toISOString().slice(0, 10) : "");
+      setProjectId((requisition as PurchaseRequisition & { projectId?: number | null }).projectId ?? "");
       if (requisition.items?.length) {
         setItems(
           requisition.items.map((i) => ({
@@ -88,6 +103,7 @@ export function useRequisitionForm(params: {
         departmentId: departmentId || undefined,
         justification: justification || undefined,
         requiredDate: requiredDate ? new Date(requiredDate).toISOString() : undefined,
+        projectId: projectId === "" ? undefined : Number(projectId),
         items: items
           .filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0)
           .map((i) => ({
@@ -118,6 +134,7 @@ export function useRequisitionForm(params: {
         departmentId: departmentId || undefined,
         justification: justification || undefined,
         requiredDate: requiredDate ? new Date(requiredDate).toISOString() : undefined,
+        projectId: projectId === "" ? undefined : Number(projectId),
       };
       await apiRequest("PUT", `/api/purchase-requisitions/${id}`, body);
     },
@@ -181,6 +198,9 @@ export function useRequisitionForm(params: {
     suppliers,
     inventoryItems,
     departments,
+    extensionProjects,
+    projectId,
+    setProjectId,
     notes,
     setNotes,
     supplierId,

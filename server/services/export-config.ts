@@ -192,6 +192,42 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
       { header: "Reference ID", key: "referenceId", width: 15 },
     ],
   },
+  invoices: {
+    defaultTitle: "Invoices Report",
+    orientation: "landscape",
+    pdfWrapCells: true,
+    pdfLayout: "generic",
+    columns: [
+      { header: "Invoice #", key: "invoiceNumber", width: 18 },
+      { header: "Status", key: "status", width: 12 },
+      { header: "Supplier", key: "supplierName", width: 22 },
+      { header: "Issue date", key: "issueDate", width: 14 },
+      { header: "Due date", key: "dueDate", width: 14 },
+      { header: "Subtotal", key: "subtotal", width: 12 },
+      { header: "Tax", key: "tax", width: 10 },
+      { header: "Total", key: "total", width: 12 },
+      { header: "Paid", key: "paidAmount", width: 12 },
+      { header: "Due", key: "dueAmount", width: 12 },
+      { header: "PO ID", key: "purchaseOrderId", width: 10 },
+    ],
+  },
+  shipments: {
+    defaultTitle: "Shipments Report",
+    orientation: "landscape",
+    pdfWrapCells: true,
+    pdfLayout: "generic",
+    columns: [
+      { header: "ID", key: "id", width: 8 },
+      { header: "PO", key: "poNumber", width: 18 },
+      { header: "Carrier", key: "carrier", width: 18 },
+      { header: "Status", key: "status", width: 14 },
+      { header: "ETA", key: "eta", width: 18 },
+      { header: "Tracking", key: "trackingNumber", width: 22 },
+      { header: "Drift (min)", key: "driftMinutes", width: 12 },
+      { header: "Late risk", key: "lateRisk", width: 10 },
+      { header: "Updated", key: "updatedAt", width: 18 },
+    ],
+  },
 };
 
 /** Fallback for unknown report types at runtime */

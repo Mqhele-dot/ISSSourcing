@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { enqueueOfflineAction } from "@/lib/offline-queue";
 import {
   Table,
   TableBody,
@@ -173,12 +174,18 @@ export default function CycleCountsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
       toast({ title: "Cycle count posted", description: "Inventory adjusted for variances." });
     },
-    onError: (e) => {
+    onError: async (e, id) => {
       toast({
         title: "Failed to post cycle count",
         description: e instanceof Error ? e.message : String(e),
         variant: "destructive",
       });
+      if (typeof id === "number") {
+        await enqueueOfflineAction("generic", {
+          kind: "cycle_count_post",
+          cycleCountId: id,
+        });
+      }
     },
   });
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { Route } from "wouter";
+import { Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -17,9 +17,11 @@ import { AuthProvider } from "@/hooks/use-auth";
 import { isElectronEnvironment } from "./lib/electron-bridge";
 import { ElectronProvider } from "./contexts/electron-provider";
 import { DesktopLayout } from "./components/layout/desktop-layout";
+import { MobileLayout } from "./components/layout/mobile-layout";
 import { UpdateNotification } from "./components/electron";
 import { GlobalActionErrorCenter } from "./components/diagnostics/global-action-error-center";
 import { AppRouter } from "./router";
+import { OfflineSyncBridge } from "./components/offline-sync-bridge";
 
 // Error boundary component
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -66,6 +68,16 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 }
 
 function AppLayout({ children }: { children: React.ReactNode }) {
+  const [loc] = useLocation();
+  const mobileShell = loc.startsWith("/m");
+  if (mobileShell) {
+    return (
+      <MobileLayout>
+        <UpdateNotification />
+        {children}
+      </MobileLayout>
+    );
+  }
   return (
     <DesktopLayout>
       <UpdateNotification />
@@ -171,6 +183,7 @@ function App() {
           <AccentProvider>
             <QueryClientProvider client={queryClient}>
               <AuthProvider>
+                <OfflineSyncBridge />
                 <TutorialProvider>
                   <HelpExplainProvider>
                     <ElectronProvider>

@@ -1,6 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { normalizeApiList, requestJson } from "@/lib/queryClient";
-import type { Category, InventoryItem, InventoryStats, Warehouse, Supplier } from "@shared/schema";
+import type {
+  Category,
+  InventoryItem,
+  InventoryStats,
+  Warehouse,
+  Supplier,
+  PurchaseOrder,
+  PurchaseRequisition,
+  ReorderRequest,
+  Project,
+} from "@shared/schema";
 
 /**
  * Data hooks for the reports page (split from monolithic reports.tsx).
@@ -65,11 +75,53 @@ export function useReportsPageData() {
     },
   });
 
+  const { data: purchaseOrders, isLoading: poLoading } = useQuery({
+    queryKey: ["/api/purchase-orders"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/purchase-orders");
+      return normalizeApiList<PurchaseOrder>(raw);
+    },
+  });
+
+  const { data: purchaseRequisitions, isLoading: requisitionsLoading } = useQuery({
+    queryKey: ["/api/purchase-requisitions"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/purchase-requisitions");
+      return normalizeApiList<PurchaseRequisition>(raw);
+    },
+  });
+
+  const { data: reorderRequests, isLoading: reorderLoading } = useQuery({
+    queryKey: ["/api/reorder-requests"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/reorder-requests");
+      return normalizeApiList<ReorderRequest>(raw);
+    },
+  });
+
+  const { data: extensionProjects } = useQuery({
+    queryKey: ["/api/extensions/projects"],
+    queryFn: async () => {
+      try {
+        const raw = await requestJson<unknown>("GET", "/api/extensions/projects");
+        return normalizeApiList<Project>(raw);
+      } catch {
+        return [] as Project[];
+      }
+    },
+  });
+
   const safeInventoryItems = Array.isArray(inventoryItems) ? inventoryItems : [];
   const safeLowStockItems = Array.isArray(lowStockItems) ? lowStockItems : [];
   const safeCategories = Array.isArray(categories) ? categories : [];
   const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
   const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
+  const safePurchaseOrders = Array.isArray(purchaseOrders) ? purchaseOrders : [];
+  const safePurchaseRequisitions = Array.isArray(purchaseRequisitions) ? purchaseRequisitions : [];
+  const safeReorderRequests = Array.isArray(reorderRequests) ? reorderRequests : [];
+  const safeProjects = Array.isArray(extensionProjects)
+    ? extensionProjects.map((p) => ({ id: p.id, code: p.code, name: p.name }))
+    : [];
 
   return {
     safeInventoryItems,
@@ -77,6 +129,13 @@ export function useReportsPageData() {
     safeCategories,
     safeWarehouses,
     safeSuppliers,
+    safePurchaseOrders,
+    safePurchaseRequisitions,
+    safeReorderRequests,
+    safeProjects,
+    poLoading,
+    requisitionsLoading,
+    reorderLoading,
     stats,
     itemsLoading,
     itemsError,

@@ -121,3 +121,13 @@ export function isConnectionRefused(err: unknown): boolean {
   const e = err as NodeJS.ErrnoException & { cause?: { code?: string } };
   return e?.code === "ECONNREFUSED" || e?.cause?.code === "ECONNREFUSED";
 }
+
+/** Log pass/fail for `X-Request-Id` on a response (shared by procurement / demo scripts). */
+export function expectRequestId(label: string, requestId: string | null): boolean {
+  if (requestId && requestId.length > 0) {
+    console.log("  ✓ %s X-Request-Id", label);
+    return true;
+  }
+  console.log("  ✗ %s missing X-Request-Id", label);
+  return false;
+}

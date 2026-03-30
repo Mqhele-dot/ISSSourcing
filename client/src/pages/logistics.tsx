@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Download, FileDown, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
-import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +43,31 @@ import {
 } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
 import { queryClient, requestJson } from "@/lib/queryClient";
+import { downloadFile } from "@/lib/utils";
+
+async function downloadShipmentDeliveryNote(shipmentId: number): Promise<void> {
+  const res = await fetch(`/api/logistics/shipments/${shipmentId}/delivery-note.pdf`, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    let detail = `Download failed (${res.status})`;
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body?.message) detail = body.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  const blob = await res.blob();
+  downloadFile(blob, `delivery-note-${shipmentId}.pdf`);
+}
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Carrier = {
   id: number;
@@ -90,6 +114,7 @@ function ShipmentListView() {
   const [carrierName, setCarrierName] = useState("");
   const [carrierContact, setCarrierContact] = useState("");
   const [carrierEditId, setCarrierEditId] = useState<number | null>(null);
+  const [shipmentExporting, setShipmentExporting] = useState(false);
   const {
     data: carriers = [],
     error: carriersError,
@@ -155,8 +180,53 @@ function ShipmentListView() {
     }
   }, [data, lastRefreshedAt, markRefreshed]);
 
+  const exportShipments = async (format: "pdf" | "csv" | "excel" | "docx") => {
+    if (shipmentExporting) return;
+    setShipmentExporting(true);
+    try {
+      const qs = new URLSearchParams();
+      if (format === "pdf") qs.set("template", "standard");
+      const st = String(queryState.status || "").trim();
+      if (st) qs.set("status", st);
+      const po = String(queryState.po || "").trim();
+      if (po) qs.set("po", po);
+      const carrier = String(queryState.carrier || "").trim();
+      if (carrier) qs.set("carrier", carrier);
+      const risk = String(queryState.risk || "").trim();
+      if (risk) qs.set("risk", risk);
+      const q = qs.toString();
+      const url = `/api/export/shipments/${format}${q ? `?${q}` : ""}`;
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        let detail = `Export failed (${response.status})`;
+        try {
+          const errBody = (await response.json()) as { message?: string };
+          if (errBody?.message) detail = errBody.message;
+        } catch {
+          /* not JSON */
+        }
+        throw new Error(detail);
+      }
+      const blob = await response.blob();
+      const ext = format === "excel" ? "xlsx" : format;
+      downloadFile(blob, `shipments-report.${ext}`);
+      toast({
+        title: "Export ready",
+        description: `Shipments exported as ${format === "excel" ? "XLSX" : format.toUpperCase()}.`,
+      });
+    } catch (e) {
+      toast({
+        title: "Export failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setShipmentExporting(false);
+    }
+  };
+
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
       <PageHeader
         title="Logistics"
         subtitle="Shipment tracking and status management"
@@ -164,34 +234,56 @@ function ShipmentListView() {
       />
 
       <div data-tour="shipments-list" className="space-y-4">
-      <div data-tour="logistics-toolbar">
-      <Toolbar
-        sticky
-        left={
-          <>
+      <div
+        data-tour="logistics-toolbar"
+        className="sticky top-16 z-20 space-y-4 rounded-lg border border-border bg-card p-4 shadow-sm"
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-status" className="text-xs text-muted-foreground">
+              Status contains
+            </Label>
             <Input
+              id="ship-filter-status"
               value={String(queryState.status || "")}
               onChange={(event) => setQueryState({ status: event.target.value })}
-              placeholder="Status"
-              className="w-40"
+              placeholder="e.g. in_transit"
+              className="w-full min-w-0"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-po" className="text-xs text-muted-foreground">
+              PO number
+            </Label>
             <Input
+              id="ship-filter-po"
               value={String(queryState.po || "")}
               onChange={(event) => setQueryState({ po: event.target.value })}
-              placeholder="PO"
-              className="w-52"
+              placeholder="Filter by PO"
+              className="w-full min-w-0"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-carrier" className="text-xs text-muted-foreground">
+              Carrier
+            </Label>
             <Input
+              id="ship-filter-carrier"
               value={String(queryState.carrier || "")}
               onChange={(event) => setQueryState({ carrier: event.target.value })}
-              placeholder="Carrier"
-              className="w-52"
+              placeholder="Carrier name"
+              className="w-full min-w-0"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-risk" className="text-xs text-muted-foreground">
+              Risk
+            </Label>
             <Select
               value={String(queryState.risk || "") || "all"}
               onValueChange={(value) => setQueryState({ risk: value === "all" ? "" : value })}
             >
-              <SelectTrigger className="w-44">
+              <SelectTrigger id="ship-filter-risk" className="w-full min-w-0">
                 <SelectValue placeholder="Risk" />
               </SelectTrigger>
               <SelectContent>
@@ -199,41 +291,79 @@ function ShipmentListView() {
                 <SelectItem value="late">Late risk</SelectItem>
               </SelectContent>
             </Select>
-          </>
-        }
-        right={
-          <div className="flex items-center gap-2">
-            <Button
-              variant={autoRefreshEnabled ? "default" : "outline"}
-              onClick={() => setAutoRefreshEnabled((current) => !current)}
-            >
-              Auto-refresh: {autoRefreshEnabled ? "On" : "Off"}
-            </Button>
-            <Button variant="outline" onClick={refreshNow}>
-              Refresh
-            </Button>
-            <Can roles={["manager", "admin"]}>
-              <div className="flex items-center gap-2">
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" disabled={shipmentExporting} className="shrink-0">
+                <Download className="mr-2 h-4 w-4" />
+                {shipmentExporting ? "Exporting…" : "Export"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onSelect={() => void exportShipments("pdf")}>PDF</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void exportShipments("csv")}>CSV</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void exportShipments("excel")}>Excel</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void exportShipments("docx")}>Word</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            type="button"
+            variant={autoRefreshEnabled ? "default" : "outline"}
+            size="sm"
+            className="shrink-0"
+            onClick={() => setAutoRefreshEnabled((current) => !current)}
+          >
+            Auto-refresh: {autoRefreshEnabled ? "On" : "Off"}
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={refreshNow}>
+            Refresh
+          </Button>
+          <span className="ml-auto text-xs text-muted-foreground">Last refreshed: {lastRefreshedLabel}</span>
+        </div>
+
+        <Can roles={["manager", "admin"]}>
+          <div className="space-y-3 border-t border-border pt-4">
+            <p className="text-xs font-medium text-muted-foreground">New shipment</p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
+                <Label htmlFor="ship-new-po" className="text-xs">
+                  PO number
+                </Label>
                 <Input
+                  id="ship-new-po"
                   value={newPoNumber}
                   onChange={(event) => setNewPoNumber(event.target.value)}
-                  placeholder="PO number"
-                  className="w-36"
+                  placeholder="Required"
+                  className="min-w-0"
                 />
-                {carriersError ? (
+              </div>
+              {carriersError ? (
+                <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
+                  <Label htmlFor="ship-new-carrier-txt" className="text-xs">
+                    Carrier
+                  </Label>
                   <Input
+                    id="ship-new-carrier-txt"
                     value={newCarrier}
                     onChange={(event) => setNewCarrier(event.target.value)}
                     placeholder="Carrier name"
-                    className="w-36"
+                    className="min-w-0"
                   />
-                ) : (
+                </div>
+              ) : (
+                <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
+                  <Label htmlFor="ship-new-carrier-sel" className="text-xs">
+                    Carrier
+                  </Label>
                   <Select value={newCarrier || "none"} onValueChange={(value) => setNewCarrier(value === "none" ? "" : value)}>
-                    <SelectTrigger className="w-36">
-                      <SelectValue placeholder="Carrier" />
+                    <SelectTrigger id="ship-new-carrier-sel" className="min-w-0">
+                      <SelectValue placeholder="Select carrier" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Carrier</SelectItem>
+                      <SelectItem value="none">Select carrier</SelectItem>
                       {carriers.map((carrier) => (
                         <SelectItem key={carrier.id} value={carrier.name}>
                           {carrier.name}
@@ -241,53 +371,63 @@ function ShipmentListView() {
                       ))}
                     </SelectContent>
                   </Select>
-                )}
+                </div>
+              )}
+              <div className="grid w-full min-w-[8rem] max-w-[10rem] gap-1.5">
+                <Label htmlFor="ship-new-eta" className="text-xs">
+                  ETA
+                </Label>
                 <Input
+                  id="ship-new-eta"
                   value={newEta}
                   onChange={(event) => setNewEta(event.target.value)}
                   type="date"
-                  className="w-36"
+                  className="min-w-0"
                 />
+              </div>
+              <div className="grid min-w-[10rem] flex-1 gap-1.5 sm:max-w-md">
+                <Label htmlFor="ship-new-trk" className="text-xs">
+                  Tracking #
+                </Label>
                 <Input
+                  id="ship-new-trk"
                   value={newTracking}
                   onChange={(event) => setNewTracking(event.target.value)}
-                  placeholder="Tracking #"
-                  className="w-40"
+                  placeholder="Optional"
+                  className="min-w-0"
                 />
-                <Button
-                  onClick={async () => {
-                    try {
-                      await createShipment({
-                        poNumber: newPoNumber,
-                        carrier: newCarrier || undefined,
-                        eta: newEta || undefined,
-                        trackingNumber: newTracking.trim() || undefined,
-                      });
-                      setNewPoNumber("");
-                      setNewCarrier("");
-                      setNewEta("");
-                      setNewTracking("");
-                      await refreshNow();
-                    } catch (createError) {
-                      toast({
-                        title: "Create shipment failed",
-                        description: createError instanceof Error ? createError.message : "Unknown error",
-                        variant: "destructive",
-                      });
-                    }
-                  }}
-                  disabled={!newPoNumber.trim()}
-                >
-                  Add shipment
-                </Button>
               </div>
-            </Can>
-            <span className="text-xs text-muted-foreground">
-              Last refreshed: {lastRefreshedLabel}
-            </span>
+              <Button
+                type="button"
+                className="shrink-0"
+                onClick={async () => {
+                  try {
+                    await createShipment({
+                      poNumber: newPoNumber,
+                      carrier: newCarrier || undefined,
+                      eta: newEta || undefined,
+                      trackingNumber: newTracking.trim() || undefined,
+                    });
+                    setNewPoNumber("");
+                    setNewCarrier("");
+                    setNewEta("");
+                    setNewTracking("");
+                    await refreshNow();
+                  } catch (createError) {
+                    toast({
+                      title: "Create shipment failed",
+                      description: createError instanceof Error ? createError.message : "Unknown error",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+                disabled={!newPoNumber.trim()}
+              >
+                Add shipment
+              </Button>
+            </div>
           </div>
-        }
-      />
+        </Can>
       </div>
 
       <DataState
@@ -346,27 +486,47 @@ function ShipmentListView() {
                   </TableCell>
                   <TableCell>{shipment.atRisk ? "Late risk" : "-"}</TableCell>
                   <TableCell className="text-right">
-                    <Can roles={["manager", "admin"]}>
+                    <div className="inline-flex flex-wrap items-center justify-end gap-1">
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        onClick={async (event) => {
+                        className="gap-1"
+                        onClick={(event) => {
                           event.stopPropagation();
-                          try {
-                            await deleteShipment(shipment.id);
-                            await refreshNow();
-                          } catch (deleteError) {
+                          void downloadShipmentDeliveryNote(shipment.id).catch((err) => {
                             toast({
-                              title: "Delete shipment failed",
-                              description: deleteError instanceof Error ? deleteError.message : "Unknown error",
+                              title: "Delivery note failed",
+                              description: err instanceof Error ? err.message : String(err),
                               variant: "destructive",
                             });
-                          }
+                          });
                         }}
                       >
-                        Delete
+                        <FileDown className="h-3.5 w-3.5" />
+                        Delivery PDF
                       </Button>
-                    </Can>
+                      <Can roles={["manager", "admin"]}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async (event) => {
+                            event.stopPropagation();
+                            try {
+                              await deleteShipment(shipment.id);
+                              await refreshNow();
+                            } catch (deleteError) {
+                              toast({
+                                title: "Delete shipment failed",
+                                description: deleteError instanceof Error ? deleteError.message : "Unknown error",
+                                variant: "destructive",
+                              });
+                            }
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </Can>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -455,6 +615,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
   const [metaEta, setMetaEta] = useState("");
   const [metaTracking, setMetaTracking] = useState("");
   const [metaSaving, setMetaSaving] = useState(false);
+  const [deliveryPdfLoading, setDeliveryPdfLoading] = useState(false);
 
   const fetcher = useCallback(
     (): Promise<ShipmentDetail> => fetchShipment(shipmentId),
@@ -534,7 +695,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
       <Button variant="ghost" onClick={() => setLocation("/logistics")} className="w-fit">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to logistics
@@ -554,6 +715,33 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
               title={`Shipment #${shipment.id}`}
               subtitle={`PO ${shipment.poNumber}`}
               breadcrumb={<span>Operations / Logistics / {shipment.id}</span>}
+              actions={
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={deliveryPdfLoading}
+                  onClick={() => {
+                    setDeliveryPdfLoading(true);
+                    void downloadShipmentDeliveryNote(shipment.id)
+                      .catch((err) => {
+                        toast({
+                          title: "Delivery note failed",
+                          description: err instanceof Error ? err.message : String(err),
+                          variant: "destructive",
+                        });
+                      })
+                      .finally(() => setDeliveryPdfLoading(false));
+                  }}
+                >
+                  {deliveryPdfLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : (
+                    <FileDown className="h-4 w-4" aria-hidden />
+                  )}
+                  Delivery PDF
+                </Button>
+              }
             />
 
             {shipment.atRisk ? (

@@ -22,6 +22,7 @@ import {
   generateSetupResponse
 } from "./services/two-factor-service";
 import { sendError, sendOk } from "./api-response";
+import { organizationContextMiddleware } from "./middleware/organization-context";
 
 import type { User as SchemaUser } from "@shared/schema";
 declare global {
@@ -249,6 +250,7 @@ export function setupAuth(app: Express) {
   // Initialize Passport and restore authentication state from session
   app.use(passport.initialize());
   app.use(passport.session());
+  app.use(organizationContextMiddleware);
 
   // CSRF protection for all state-changing routes
   // Temporarily disable CSRF protection for these routes
@@ -586,10 +588,19 @@ export function setupAuth(app: Express) {
         info: { message: string; requiresEmailVerification?: boolean } | undefined,
       ) => {
         if (err) {
-          const authMessage =
-            err.message?.includes("ECONNREFUSED") || err.message?.includes("connect")
-              ? "Authentication service unavailable: database unreachable (e.g. PostgreSQL not running on port 5432). Start Postgres, run npm run db:push, restart the server. Windows: docs/WINDOWS-LOCAL-SETUP.md"
-              : "Authentication failed";
+          const raw = err instanceof Error ? err.message : String(err);
+          const authMessage = (() => {
+            if (raw.includes("ECONNREFUSED") || (raw.includes("connect") && raw.includes("postgres"))) {
+              return "Authentication service unavailable: database unreachable (e.g. PostgreSQL not running on port 5432). Start Postgres, run npm run db:push, restart the server. Windows: docs/WINDOWS-LOCAL-SETUP.md";
+            }
+            if (/does not exist|42703|42P01/i.test(raw)) {
+              return `Database schema mismatch (${raw.slice(0, 200)}). Run: npm run db:push, then npm run db:seed, restart npm run dev.`;
+            }
+            if (raw && raw !== "Authentication failed") {
+              return `Authentication failed: ${raw.slice(0, 300)}`;
+            }
+            return "Authentication failed";
+          })();
           if (options.envelope) {
             return res.status(503).json({
               ok: false,

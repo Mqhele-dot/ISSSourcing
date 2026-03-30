@@ -9,7 +9,14 @@
  */
 import process from "node:process";
 import { exitTest } from "./test-exit.ts";
-import { apiJsonRequest, apiRawRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
+import {
+  apiJsonRequest,
+  apiRawRequest,
+  expectRequestId,
+  getTestBaseUrl,
+  isConnectionRefused,
+  loginForTests,
+} from "./test-http.ts";
 
 function asArray<T = Record<string, unknown>>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -51,6 +58,7 @@ async function main() {
 
   const userRes = await apiJsonRequest("/user", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/user", 200, userRes.status)) failures++;
+  if (!expectRequestId("GET /api/user", userRes.requestId)) failures++;
   const currentUser = asRecord(userRes.json);
   const createdBy = Number(currentUser.id ?? 1);
 
@@ -102,6 +110,7 @@ async function main() {
     body: requisitionBody,
   });
   if (!expectStatus("POST /api/purchase-requisitions", 201, requisitionRes.status)) failures++;
+  if (!expectRequestId("POST /api/purchase-requisitions", requisitionRes.requestId)) failures++;
   const requisition = asRecord(requisitionRes.json);
   const requisitionId = Number(requisition.id ?? 0);
   if (!requisitionId) {
@@ -128,6 +137,7 @@ async function main() {
     body: {},
   });
   if (!expectStatus("POST /api/purchase-requisitions/:id/convert", 201, convertRes.status)) failures++;
+  if (!expectRequestId("POST /api/purchase-requisitions/:id/convert", convertRes.requestId)) failures++;
   const po = asRecord(convertRes.json);
   const poId = Number(po.id ?? 0);
   const poNumber = String(po.orderNumber ?? "");
@@ -184,6 +194,7 @@ async function main() {
     },
   });
   if (!expectStatus("POST /api/invoices", 201, invoiceCreateRes.status)) failures++;
+  if (!expectRequestId("POST /api/invoices", invoiceCreateRes.requestId)) failures++;
   const invoice = asRecord(invoiceCreateRes.json);
   const invoiceId = Number(invoice.id ?? 0);
   if (!invoiceId) {

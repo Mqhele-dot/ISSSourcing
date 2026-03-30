@@ -5,6 +5,8 @@ type HttpResult = {
   status: number;
   ok: boolean;
   json: unknown;
+  /** Correlation id when server sets `X-Request-Id` (`server/index.ts`). */
+  requestId: string | null;
 };
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -88,6 +90,7 @@ async function main() {
       status: response.status,
       ok: response.ok,
       json,
+      requestId: response.headers.get("x-request-id"),
     };
   };
 
@@ -142,6 +145,10 @@ async function main() {
   assert(
     login.ok,
     `Login failed with status ${login.status}: ${extractErrorMessage(login.json)}`,
+  );
+  assert(
+    typeof login.requestId === "string" && login.requestId.length > 0,
+    "Login response should include non-empty X-Request-Id header",
   );
 
   const reset = await requestApi("/admin/demo/reset", { method: "POST" });

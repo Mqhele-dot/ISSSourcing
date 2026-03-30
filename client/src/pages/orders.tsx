@@ -2,19 +2,24 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
 import {
+  Activity,
   ArrowLeft,
+  Briefcase,
   CheckCircle2,
+  ClipboardList,
+  FileBadge,
   FileDown,
   FileText,
   Loader2,
+  Package,
   Printer,
   Send,
+  ShieldCheck,
   ShoppingCart,
+  Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
@@ -55,6 +60,8 @@ import RequisitionsPage from "@/pages/requisitions";
 import { PoReceivePanel } from "@/pages/orders/po-receive-panel";
 import { PoRevisionHistoryCard } from "@/pages/orders/po-revision-history-card";
 import { PoApprovalPolicyCard } from "@/pages/orders/po-approval-policy-card";
+import { PoCommercialTermsCard } from "@/pages/orders/po-commercial-terms-card";
+import { PoLastReceiveSummaryCard } from "@/pages/orders/po-last-receive-summary-card";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -237,7 +244,7 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
       {!embedded && (
         <PageHeader
           title="Purchase Orders"
@@ -623,7 +630,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)]">
       <DataState
         loading={loading}
         error={error}
@@ -654,13 +661,13 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
           };
 
           const sectionLinks = [
-            { href: "#po-summary", label: "Summary" },
-            { href: "#po-document", label: "Official PDF" },
-            { href: "#po-commercial", label: "Commercial" },
-            { href: "#po-receive", label: "Lines & GRN" },
-            { href: "#po-shipments", label: "Shipments" },
-            { href: "#po-approval-history", label: "Approvals" },
-            { href: "#po-activity", label: "Activity" },
+            { href: "#po-summary", label: "Summary", icon: ClipboardList },
+            { href: "#po-document", label: "Official PDF", icon: FileBadge },
+            { href: "#po-commercial", label: "Commercial", icon: Briefcase },
+            { href: "#po-receive", label: "Lines & GRN", icon: Package },
+            { href: "#po-shipments", label: "Shipments", icon: Truck },
+            { href: "#po-approval-history", label: "Approvals", icon: ShieldCheck },
+            { href: "#po-activity", label: "Activity", icon: Activity },
           ] as const;
 
           return (
@@ -734,15 +741,19 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                 className="mt-3 flex flex-wrap gap-1 border-t border-border/60 pt-3 text-xs font-medium"
                 aria-label="On-page sections"
               >
-                {sectionLinks.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    className="rounded-full bg-muted/70 px-3 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    {item.label}
-                  </a>
-                ))}
+                {sectionLinks.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <a
+                      key={item.href}
+                      href={item.href}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-3 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                      {item.label}
+                    </a>
+                  );
+                })}
               </nav>
             </header>
 
@@ -780,84 +791,21 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
                   </div>
                 </section>
 
-            <Card id="po-commercial" className="scroll-mt-36">
-              <CardHeader>
-                <CardTitle>Commercial terms</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor="po-department">Department</Label>
-                  <Select value={departmentId} onValueChange={setDepartmentId}>
-                    <SelectTrigger id="po-department">
-                      <SelectValue placeholder="Select department" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {departments.map((department) => (
-                        <SelectItem key={department.id} value={String(department.id)}>
-                          {department.code} - {department.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="po-contract">Contract reference</Label>
-                  <Select value={contractId} onValueChange={setContractId}>
-                    <SelectTrigger id="po-contract">
-                      <SelectValue placeholder="Select contract" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {contracts
-                        .filter((contract) => contract.supplierId === detail.supplierId)
-                        .map((contract) => (
-                          <SelectItem key={contract.id} value={String(contract.id)}>
-                            #{contract.id} - {contract.title}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="po-payment-terms">Payment terms</Label>
-                  <Select value={paymentTermsId} onValueChange={setPaymentTermsId}>
-                    <SelectTrigger id="po-payment-terms">
-                      <SelectValue placeholder="Select payment terms" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {paymentTerms.map((term) => (
-                        <SelectItem key={term.id} value={String(term.id)}>
-                          {term.code} - {term.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="po-incoterm">Incoterm</Label>
-                  <Select value={incotermId} onValueChange={setIncotermId}>
-                    <SelectTrigger id="po-incoterm">
-                      <SelectValue placeholder="Select incoterm" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {incoterms.map((incoterm) => (
-                        <SelectItem key={incoterm.id} value={String(incoterm.id)}>
-                          {incoterm.code} - {incoterm.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="md:col-span-2 flex justify-end">
-                  <Button onClick={() => saveCommercialTerms.mutate()} disabled={saveCommercialTerms.isPending}>
-                    Save terms
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <PoCommercialTermsCard
+              departmentId={departmentId}
+              setDepartmentId={setDepartmentId}
+              contractId={contractId}
+              setContractId={setContractId}
+              paymentTermsId={paymentTermsId}
+              setPaymentTermsId={setPaymentTermsId}
+              incotermId={incotermId}
+              setIncotermId={setIncotermId}
+              departments={departments}
+              contractsForSupplier={contracts.filter((contract) => contract.supplierId === detail.supplierId)}
+              paymentTerms={paymentTerms}
+              incoterms={incoterms}
+              saveCommercialTerms={saveCommercialTerms}
+            />
 
             <PoReceivePanel
               sectionId="po-receive"
@@ -879,68 +827,7 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
               onSubmitReceive={submitReceive}
             />
 
-            {lastChangeSummary ? (
-              <Card id="po-last-receive" className="scroll-mt-36">
-                <CardHeader>
-                  <CardTitle>What changed</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label>Inventory deltas</Label>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>SKU</TableHead>
-                          <TableHead>Location</TableHead>
-                          <TableHead className="text-right">Delta</TableHead>
-                          <TableHead className="text-right">On hand</TableHead>
-                          <TableHead className="text-right">Available</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {lastChangeSummary.inventoryChanges.map((change, index) => (
-                          <TableRow key={`${change.sku}-${index}`}>
-                            <TableCell>{change.sku}</TableCell>
-                            <TableCell>{change.location}</TableCell>
-                            <TableCell className="text-right">+{change.delta}</TableCell>
-                            <TableCell className="text-right">{change.onHand}</TableCell>
-                            <TableCell className="text-right">{change.available}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  <div>
-                    <Label>Shipment updates</Label>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Shipment ID</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {lastChangeSummary.shipmentUpdates.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={2} className="text-sm text-muted-foreground">
-                              No linked shipment changes
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          lastChangeSummary.shipmentUpdates.map((update) => (
-                            <TableRow key={update.shipmentId}>
-                              <TableCell>{update.shipmentId}</TableCell>
-                              <TableCell>{update.toStatus}</TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
+            {lastChangeSummary ? <PoLastReceiveSummaryCard summary={lastChangeSummary} /> : null}
 
             <section id="po-activity" className="scroll-mt-36">
               <EntityActivityPanel entityType="purchase_order" entityId={detail.poNumber} />
@@ -1098,7 +985,7 @@ export default function OrdersPage() {
   // On /purchase, show tabbed view: Purchase Orders | Requisitions
   if (isPurchaseRoute) {
     return (
-      <div className="mx-auto max-w-7xl space-y-4">
+      <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
         <PageHeader
           title="Purchase"
           subtitle="Manage purchase orders and requisitions"
@@ -1128,7 +1015,7 @@ export default function OrdersPage() {
 
   // On /orders show tabbed view: Purchase Orders | Requisitions (same as /purchase)
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
       <PageHeader
         title="Purchase Orders"
         subtitle="Manage purchase orders and requisitions"

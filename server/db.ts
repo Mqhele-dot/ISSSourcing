@@ -1,4 +1,5 @@
-import "dotenv/config";
+import { config } from "dotenv";
+config({ path: ".env", override: true });
 import type { Pool as PgPool } from "pg";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -21,7 +22,7 @@ function buildConnectionStringFromEnv(): string | undefined {
     return undefined;
   }
 
-  return `postgresql://${user}:${password}@${host}:${port}/${database}`;
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
 }
 
 console.log("Connecting to database...");

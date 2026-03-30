@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Search, ShieldCheck, UserCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { requestJson, apiRequest } from "@/lib/queryClient";
@@ -11,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 type Employee = {
   id: number;
@@ -112,6 +114,11 @@ export default function EmployeeProfilesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
+  const isLgUp = useMediaQuery("(min-width: 1024px)");
+  useEffect(() => {
+    if (!isLgUp) setLocation("/m/home");
+  }, [isLgUp, setLocation]);
   const [search, setSearch] = useState("");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [draft, setDraft] = useState<Partial<Employee>>({});
@@ -198,6 +205,15 @@ export default function EmployeeProfilesPage() {
             Employee profile management is available to Manager and Admin roles only.
           </AlertDescription>
         </Alert>
+      </div>
+    );
+  }
+
+  if (!isLgUp) {
+    return (
+      <div className="mx-auto max-w-lg p-6 text-center text-sm text-muted-foreground">
+        Employee profiles are available on large screens (1024px and wider). Use a desktop browser or resize the
+        window. Sending you to the mobile hub…
       </div>
     );
   }

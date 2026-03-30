@@ -54,8 +54,8 @@ export async function seedOperationalIfEmpty(): Promise<{
         const status = i === 0 ? "approved" : i === 1 ? "sent" : "received";
         const total = items.slice(0, 2).reduce((sum, it) => sum + (Number(it.price) || 10) * 5, 0);
         const poInsert = await pool.query<{ id: number }>(
-          `INSERT INTO purchase_orders (order_number, supplier_id, status, order_date, total_amount, created_at, updated_at)
-           VALUES ($1, $2, $3, now(), $4, now(), now())
+          `INSERT INTO purchase_orders (organization_id, order_number, supplier_id, status, order_date, total_amount, created_at, updated_at)
+           VALUES (1, $1, $2, $3, now(), $4, now(), now())
            RETURNING id`,
           [orderNumber, supplier.id, status, total],
         );

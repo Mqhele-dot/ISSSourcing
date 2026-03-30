@@ -4,26 +4,41 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
 import {
   Activity,
+  AlertTriangle,
   Archive,
+  ArrowDownToLine,
   BarChart2,
   Building,
   Camera,
+  ClipboardList,
+  CreditCard,
   Database,
-  FileText,
-  FileUp,
+  FileSpreadsheet,
+  FolderOpen,
   Home,
+  IdCard,
   LayoutDashboard,
+  LineChart,
+  ListOrdered,
   Moon,
+  PackagePlus,
+  PackageSearch,
+  Plug,
   QrCode,
   Radar,
+  Receipt,
   RefreshCw,
+  ScanSearch,
+  ScrollText,
   ChevronsLeft,
   ChevronsRight,
   Settings,
   ShieldCheck,
   ShoppingCart,
   Smartphone,
+  Store,
   Sun,
+  Truck,
   Users,
   X,
 } from "lucide-react";
@@ -65,7 +80,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
   }) => {
     const label = typeof children === "string" ? children : helpTitle ?? "";
     return (
-      <Link href={path} title={collapsed ? label : undefined}>
+      <Link href={path} title={collapsed ? label : undefined} onClick={() => setOpen(false)}>
         <div
           className={cn(
             "flex items-center gap-3 rounded-md cursor-pointer transition-all",
@@ -122,7 +137,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-full max-h-svh w-64 max-w-[85vw] flex-col overflow-hidden bg-card border-r border-border shadow-[var(--shadow-elev-1)] accent-glow transition-[transform,width] duration-200 ease-out transform md:translate-x-0 md:static md:z-0 md:h-full md:max-h-full md:max-w-none md:shrink-0",
+          "fixed inset-y-0 left-0 z-50 flex h-full max-h-svh w-64 max-w-[85vw] flex-col overflow-hidden bg-card border-r border-border shadow-[var(--shadow-elev-1)] accent-glow transition-[transform,width] duration-200 ease-out transform md:translate-x-0 md:static md:z-0 md:h-svh md:max-h-svh md:max-w-none md:shrink-0",
           open ? "translate-x-0" : "-translate-x-full",
           collapsed ? "md:w-[4.25rem] md:min-w-[4.25rem]" : "md:w-64 md:min-w-[16rem]",
         )}
@@ -171,15 +186,18 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
         
         <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-4">
           <div className="space-y-1">
-            <SectionTitle>Control Tower</SectionTitle>
+            <SectionTitle>Operations</SectionTitle>
+            <NavItem path="/m/home" icon={<Smartphone className="h-5 w-5" />} helpTitle="Mobile task hub" helpDescription="Phone-friendly tasks, scan, and approvals with bottom navigation.">Mobile hub</NavItem>
             <NavItem path="/" icon={<Home className="h-5 w-5" />} helpTitle="Home" helpDescription="Landing page and quick overview of the app.">Home</NavItem>
             <NavItem path="/control-tower" icon={<Radar className="h-5 w-5" />} helpTitle="Control tower" helpDescription="KPIs, exceptions summary, and recent operational activity.">Control tower</NavItem>
             <NavItem path="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} helpTitle="Dashboard" helpDescription="Overview of inventory status, stats, charts, and recent orders.">Dashboard</NavItem>
             <NavItem path="/analytics" icon={<BarChart2 className="h-5 w-5" />} helpTitle="Analytics" helpDescription="Charts, top items, inventory value, and custom graphs.">Analytics</NavItem>
 
-            <SectionTitle>Master Data</SectionTitle>
+            <SectionTitle>Supply network</SectionTitle>
             <NavItem path="/inventory" icon={<Archive className="h-5 w-5" />} helpTitle="Inventory" helpDescription="Manage products, stock levels, and item details.">Inventory</NavItem>
-            <NavItem path="/master-data" icon={<Database className="h-5 w-5" />} helpTitle="Master Data" helpDescription="Manage reference data like units, currencies, tax codes, payment terms, and departments.">Master Data</NavItem>
+            <div className="hidden lg:block">
+              <NavItem path="/master-data" icon={<Database className="h-5 w-5" />} helpTitle="Master Data" helpDescription="Manage reference data like units, currencies, tax codes, payment terms, and departments.">Master Data</NavItem>
+            </div>
             <NavItem path="/suppliers" icon={<Users className="h-5 w-5" />} helpTitle="Suppliers" helpDescription="Manage vendor information and contacts.">Suppliers</NavItem>
             <NavItem path="/warehouses" icon={<Building className="h-5 w-5" />} helpTitle="Warehouses" helpDescription="Manage warehouse locations and stock.">Warehouses</NavItem>
             <NavItem path="/barcode-scanner" icon={<QrCode className="h-5 w-5" />} helpTitle="Barcode Scanner" helpDescription="Scan and generate barcodes for inventory items.">Barcode Scanner</NavItem>
@@ -187,38 +205,38 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
 
             <SectionTitle>Procurement</SectionTitle>
             <NavItem path="/purchase" icon={<ShoppingCart className="h-5 w-5" />} helpTitle="Purchase Orders" helpDescription="View and manage purchase orders. Use the Requisitions tab to create or approve requisitions.">Purchase Orders</NavItem>
-            <NavItem path="/purchase/requisitions" icon={<FileText className="h-5 w-5" />} helpTitle="Requisitions" helpDescription="Create, edit, approve, and share purchase requisitions; convert approved ones to purchase orders.">Requisitions</NavItem>
-            <NavItem path="/invoices" icon={<FileText className="h-5 w-5" />} helpTitle="Invoices" helpDescription="Create and manage supplier invoices linked to purchase orders, and run 3-way match checks.">Invoices</NavItem>
+            <NavItem path="/purchase/requisitions" icon={<ClipboardList className="h-5 w-5" />} helpTitle="Requisitions" helpDescription="Create, edit, approve, and share purchase requisitions; convert approved ones to purchase orders.">Requisitions</NavItem>
+            <NavItem path="/invoices" icon={<Receipt className="h-5 w-5" />} helpTitle="Invoices" helpDescription="Create and manage supplier invoices linked to purchase orders, and run 3-way match checks.">Invoices</NavItem>
             <NavItem path="/approval-policies" icon={<ShieldCheck className="h-5 w-5" />} helpTitle="Approval policies" helpDescription="Configure amount bands and approvers for requisitions and purchase orders.">Approval policies</NavItem>
-            <NavItem path="/supplier-portal" icon={<Users className="h-5 w-5" />} helpTitle="Supplier Portal" helpDescription="Supplier-facing view for confirming POs and updating expected delivery dates.">Supplier Portal</NavItem>
+            <NavItem path="/supplier-portal" icon={<Store className="h-5 w-5" />} helpTitle="Supplier Portal" helpDescription="Supplier-facing view for confirming POs and updating expected delivery dates.">Supplier Portal</NavItem>
 
             <SectionTitle>Inventory Operations</SectionTitle>
             <NavItem path="/cycle-counts" icon={<RefreshCw className="h-5 w-5" />} helpTitle="Cycle Counts" helpDescription="Plan and post cycle counts with automatic stock adjustment entries.">Cycle Counts</NavItem>
-            <NavItem path="/warehouse-operations" icon={<Building className="h-5 w-5" />} helpTitle="Warehouse operations" helpDescription="Allocations, put-away locations, and batch/serial registration.">Warehouse ops</NavItem>
-            <NavItem path="/mobile/receive" icon={<Smartphone className="h-5 w-5" />} helpTitle="Mobile receive" helpDescription="Touch-friendly list of POs ready to receive; opens standard PO receive flow.">Mobile receive</NavItem>
-            <NavItem path="/mobile/pick" icon={<Smartphone className="h-5 w-5" />} helpTitle="Mobile pick" helpDescription="Touch list of low-stock SKUs with links to item detail for picking and adjustments.">Mobile pick</NavItem>
-            <NavItem path="/reorder" icon={<RefreshCw className="h-5 w-5" />} helpTitle="Reorder Requests" helpDescription="View and manage reorder requests.">Reorder Requests</NavItem>
+            <NavItem path="/warehouse-operations" icon={<PackageSearch className="h-5 w-5" />} helpTitle="Warehouse operations" helpDescription="Allocations, put-away locations, and batch/serial registration.">Warehouse ops</NavItem>
+            <NavItem path="/mobile/receive" icon={<PackagePlus className="h-5 w-5" />} helpTitle="Mobile receive" helpDescription="Touch-friendly list of POs ready to receive; opens standard PO receive flow.">Mobile receive</NavItem>
+            <NavItem path="/mobile/pick" icon={<ArrowDownToLine className="h-5 w-5" />} helpTitle="Mobile pick" helpDescription="Touch list of low-stock SKUs with links to item detail for picking and adjustments.">Mobile pick</NavItem>
+            <NavItem path="/reorder" icon={<ListOrdered className="h-5 w-5" />} helpTitle="Reorder Requests" helpDescription="View and manage reorder requests.">Reorder Requests</NavItem>
 
             <SectionTitle>Logistics</SectionTitle>
-            <NavItem path="/logistics" icon={<Building className="h-5 w-5" />} helpTitle="Shipments" helpDescription="Track shipments and logistics.">Shipments</NavItem>
+            <NavItem path="/logistics" icon={<Truck className="h-5 w-5" />} helpTitle="Shipments" helpDescription="Track shipments and logistics.">Shipments</NavItem>
 
             <SectionTitle>Finance</SectionTitle>
-            <NavItem path="/billing" icon={<FileText className="h-5 w-5" />} helpTitle="Payments & Billing" helpDescription="Track payments and billing configuration.">Payments</NavItem>
+            <NavItem path="/billing" icon={<CreditCard className="h-5 w-5" />} helpTitle="Payments & Billing" helpDescription="Track payments and billing configuration.">Payments</NavItem>
 
             <SectionTitle>Compliance</SectionTitle>
-            <NavItem path="/contracts" icon={<FileText className="h-5 w-5" />} helpTitle="Contracts" helpDescription="Manage contracts with each supplier, view summaries, and find copies.">Contracts</NavItem>
+            <NavItem path="/contracts" icon={<ScrollText className="h-5 w-5" />} helpTitle="Contracts" helpDescription="Manage contracts with each supplier, view summaries, and find copies.">Contracts</NavItem>
             <NavItem path="/audit-logs" icon={<Activity className="h-5 w-5" />} helpTitle="Audit Logs" helpDescription="Filter and export audit/activity records for compliance review.">Audit Logs</NavItem>
-            <NavItem path="/documents" icon={<FileUp className="h-5 w-5" />} helpTitle="Documents" helpDescription="Upload and manage document versions with retention support.">Documents</NavItem>
-            <NavItem path="/exceptions" icon={<Activity className="h-5 w-5" />} helpTitle="Exceptions" helpDescription="View and resolve inventory or order exceptions.">Exceptions</NavItem>
+            <NavItem path="/documents" icon={<FolderOpen className="h-5 w-5" />} helpTitle="Documents" helpDescription="Upload and manage document versions with retention support.">Documents</NavItem>
+            <NavItem path="/exceptions" icon={<AlertTriangle className="h-5 w-5" />} helpTitle="Exceptions" helpDescription="View and resolve inventory or order exceptions.">Exceptions</NavItem>
 
             <SectionTitle>Analytics</SectionTitle>
-            <NavItem path="/reports" icon={<FileText className="h-5 w-5" />} helpTitle="Reports" helpDescription="Analytics and custom reports (PDF, Excel, CSV).">Reports</NavItem>
-            <NavItem path="/supply-analytics" icon={<BarChart2 className="h-5 w-5" />} helpTitle="Supply Analytics" helpDescription="Spend, turnover, and warehouse utilization snapshots.">Supply Analytics</NavItem>
+            <NavItem path="/reports" icon={<FileSpreadsheet className="h-5 w-5" />} helpTitle="Reports" helpDescription="Analytics and custom reports (PDF, Excel, CSV).">Reports</NavItem>
+            <NavItem path="/supply-analytics" icon={<LineChart className="h-5 w-5" />} helpTitle="Supply Analytics" helpDescription="Spend, turnover, and warehouse utilization snapshots.">Supply Analytics</NavItem>
 
-            <SectionTitle>Settings</SectionTitle>
-            <NavItem path="/integrations" icon={<FileUp className="h-5 w-5" />} helpTitle="Connectors" helpDescription="Connect external systems and data sources.">Connectors</NavItem>
-            <NavItem path="/document-extractor" icon={<FileUp className="h-5 w-5" />} helpTitle="Document Extractor" helpDescription="Extract data from documents (e.g. invoices).">Document Extractor</NavItem>
-            <NavItem path="/employee-profiles" icon={<Users className="h-5 w-5" />} helpTitle="Employee Profiles" helpDescription="Manage employee profile information, roles, permissions, and activity.">Employee Profiles</NavItem>
+            <SectionTitle>Admin</SectionTitle>
+            <NavItem path="/integrations" icon={<Plug className="h-5 w-5" />} helpTitle="Connectors" helpDescription="Connect external systems and data sources.">Connectors</NavItem>
+            <NavItem path="/document-extractor" icon={<ScanSearch className="h-5 w-5" />} helpTitle="Document Extractor" helpDescription="Extract data from documents (e.g. invoices).">Document Extractor</NavItem>
+            <NavItem path="/employee-profiles" icon={<IdCard className="h-5 w-5" />} helpTitle="Employee Profiles" helpDescription="Manage employee profile information, roles, permissions, and activity.">Employee Profiles</NavItem>
             <NavItem path="/settings" icon={<Settings className="h-5 w-5" />} helpTitle="Settings" helpDescription="Configure application preferences.">Settings</NavItem>
           </div>
         </nav>

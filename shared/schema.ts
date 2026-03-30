@@ -1,4 +1,15 @@
-import { pgTable, text, serial, integer, real, boolean, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  serial,
+  integer,
+  real,
+  boolean,
+  timestamp,
+  pgEnum,
+  jsonb,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -13,7 +24,9 @@ export const reportTypeEnum = [
   'reorder_requests',
   'purchase_orders',
   'purchase_requisitions',
-  'activity_logs'
+  'activity_logs',
+  'invoices',
+  'shipments',
 ] as const;
 
 export type ReportType = typeof reportTypeEnum[number];
@@ -59,6 +72,28 @@ export const permissions = pgTable("permissions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+/** Multi-tenant root: all operational data is scoped to an organization. */
+export const organizations = pgTable("organizations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/** Per-organization branding, plan, and feature flags (Phase 4 selling readiness). */
+export const organizationSettings = pgTable("organization_settings", {
+  organizationId: integer("organization_id")
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  displayName: text("display_name"),
+  logoUrl: text("logo_url"),
+  reportFooter: text("report_footer"),
+  planTier: text("plan_tier").default("standard"),
+  featureFlags: jsonb("feature_flags").$type<Record<string, boolean>>().default({}),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // User schema for authentication
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -92,9 +127,28 @@ export const users = pgTable("users", {
   lastPasswordChange: timestamp("last_password_change"),
   profilePicture: text("profile_picture"),
   preferences: jsonb("preferences"),
+  /** Default org for new sessions; resolved with organization_members. */
+  defaultOrganizationId: integer("default_organization_id").references(() => organizations.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+/** Links users to organizations with a membership role. */
+export const organizationMembers = pgTable(
+  "organization_members",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("member"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("organization_members_org_user_uidx").on(t.organizationId, t.userId)],
+);
 
 // User verification token schema
 export const userVerificationTokens = pgTable("user_verification_tokens", {
@@ -118,11 +172,14 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastActivity: timestamp("last_activity").defaultNow().notNull(),
   isValid: boolean("is_valid").default(true),
+  /** Active org for this session (multi-tenant). */
+  activeOrganizationId: integer("active_organization_id").references(() => organizations.id),
 });
 
 export const insertUserSchema = createInsertSchema(users)
   .omit({
     id: true,
+    defaultOrganizationId: true,
     emailVerified: true,
     twoFactorEnabled: true,
     twoFactorSecret: true,
@@ -228,11 +285,19 @@ export const insertPermissionSchema = createInsertSchema(permissions).omit({
 });
 
 // Category schema for organizing inventory
-export const categories = pgTable("categories", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  description: text("description"),
-});
+export const categories = pgTable(
+  "categories",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+  },
+  (t) => [uniqueIndex("categories_org_name_uidx").on(t.organizationId, t.name)],
+);
 
 export const insertCategorySchema = createInsertSchema(categories).pick({
   name: true,
@@ -307,25 +372,41 @@ export const paymentTerms = pgTable("payment_terms", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const departments = pgTable("departments", {
-  id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
-  name: text("name").notNull(),
-  costCenterId: text("cost_center_id"),
-  active: boolean("active").default(true),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const departments = pgTable(
+  "departments",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    costCenterId: text("cost_center_id"),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("departments_org_code_uidx").on(t.organizationId, t.code)],
+);
 
-export const carriers = pgTable("carriers", {
-  id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
-  name: text("name").notNull(),
-  contact: text("contact"),
-  active: boolean("active").default(true),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const carriers = pgTable(
+  "carriers",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    contact: text("contact"),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("carriers_org_code_uidx").on(t.organizationId, t.code)],
+);
 
 export const insertUnitOfMeasureSchema = createInsertSchema(unitsOfMeasure).omit({
   id: true,
@@ -371,6 +452,10 @@ export const insertCarrierSchema = createInsertSchema(carriers).omit({
 // Supplier schema
 export const suppliers = pgTable("suppliers", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   name: text("name").notNull(),
   contactName: text("contact_name"),
   email: text("email"),
@@ -398,6 +483,10 @@ export const insertSupplierSchema = createInsertSchema(suppliers).omit({
 // Supplier contract schema - manage contracts with each supplier
 export const supplierContracts = pgTable("supplier_contracts", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   supplierId: integer("supplier_id").notNull(),
   title: text("title").notNull(),
   contractType: text("contract_type").notNull().default("master"), // master, framework, one-off, renewal
@@ -434,41 +523,49 @@ export const supplierContractFormSchema = insertSupplierContractSchema.extend({
 );
 
 // Inventory item schema
-export const inventoryItems = pgTable("inventory_items", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  sku: text("sku").notNull().unique(),
-  description: text("description"),
-  categoryId: integer("category_id"),
-  quantity: integer("quantity").default(0).notNull(),
-  price: real("price").notNull(),
-  cost: real("cost"),
-  lowStockThreshold: integer("low_stock_threshold").default(10),
-  location: text("location"),
-  supplierId: integer("supplier_id"),
-  barcode: text("barcode"),
-  barcodeType: text("barcode_type").default("CODE128"),
-  dimensions: text("dimensions"),
-  weight: real("weight"),
-  unitOfMeasure: text("unit_of_measure").default("each"),
-  supplierPartNumber: text("supplier_part_number"),
-  commodityCodeId: integer("commodity_code_id"),
-  defaultWarehouseId: integer("default_warehouse_id"),
-  minOrderQuantity: integer("min_order_quantity").default(1),
-  leadTime: integer("lead_time"), // In days
-  reorderPoint: integer("reorder_point"),
-  maxStockLevel: integer("max_stock_level"),
-  taxable: boolean("taxable").default(true),
-  status: text("status").default("active"),
-  expiryDate: timestamp("expiry_date"),
-  manufacturingDate: timestamp("manufacturing_date"),
-  lastCountDate: timestamp("last_count_date"),
-  images: jsonb("images"),
-  tags: text("tags").array(),
-  customFields: jsonb("custom_fields"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const inventoryItems = pgTable(
+  "inventory_items",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    sku: text("sku").notNull(),
+    description: text("description"),
+    categoryId: integer("category_id"),
+    quantity: integer("quantity").default(0).notNull(),
+    price: real("price").notNull(),
+    cost: real("cost"),
+    lowStockThreshold: integer("low_stock_threshold").default(10),
+    location: text("location"),
+    supplierId: integer("supplier_id"),
+    barcode: text("barcode"),
+    barcodeType: text("barcode_type").default("CODE128"),
+    dimensions: text("dimensions"),
+    weight: real("weight"),
+    unitOfMeasure: text("unit_of_measure").default("each"),
+    supplierPartNumber: text("supplier_part_number"),
+    commodityCodeId: integer("commodity_code_id"),
+    defaultWarehouseId: integer("default_warehouse_id"),
+    minOrderQuantity: integer("min_order_quantity").default(1),
+    leadTime: integer("lead_time"), // In days
+    reorderPoint: integer("reorder_point"),
+    maxStockLevel: integer("max_stock_level"),
+    taxable: boolean("taxable").default(true),
+    status: text("status").default("active"),
+    expiryDate: timestamp("expiry_date"),
+    manufacturingDate: timestamp("manufacturing_date"),
+    lastCountDate: timestamp("last_count_date"),
+    images: jsonb("images"),
+    tags: text("tags").array(),
+    customFields: jsonb("custom_fields"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("inventory_items_org_sku_uidx").on(t.organizationId, t.sku)],
+);
 
 export const insertInventoryItemSchema = createInsertSchema(inventoryItems).omit({
   id: true,
@@ -486,10 +583,16 @@ export const purchaseRequisitionStatusEnum = pgEnum("purchase_requisition_status
 ]);
 
 // Purchase Requisition schema
-export const purchaseRequisitions = pgTable("purchase_requisitions", {
-  id: serial("id").primaryKey(),
-  requisitionNumber: text("requisition_number").notNull().unique(),
-  requestorId: integer("requestor_id"),
+export const purchaseRequisitions = pgTable(
+  "purchase_requisitions",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    requisitionNumber: text("requisition_number").notNull(),
+    requestorId: integer("requestor_id"),
   status: text("status").notNull().default("DRAFT"),
   notes: text("notes"),
   requiredDate: timestamp("required_date"),
@@ -501,9 +604,13 @@ export const purchaseRequisitions = pgTable("purchase_requisitions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   approverId: integer("approver_id"),
-  approvalDate: timestamp("approval_date"),
-  rejectionReason: text("rejection_reason"),
-});
+    approvalDate: timestamp("approval_date"),
+    rejectionReason: text("rejection_reason"),
+    /** Optional construction / project tag (extensions demo); validated in API against `projects`. */
+    projectId: integer("project_id"),
+  },
+  (t) => [uniqueIndex("purchase_req_org_number_uidx").on(t.organizationId, t.requisitionNumber)],
+);
 
 export const insertPurchaseRequisitionSchema = createInsertSchema(purchaseRequisitions).omit({
   id: true,
@@ -538,10 +645,16 @@ export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [
 ]);
 
 // Purchase Order schema
-export const purchaseOrders = pgTable("purchase_orders", {
-  id: serial("id").primaryKey(),
-  orderNumber: text("order_number").notNull().unique(),
-  supplierId: integer("supplier_id").notNull(),
+export const purchaseOrders = pgTable(
+  "purchase_orders",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    orderNumber: text("order_number").notNull(),
+    supplierId: integer("supplier_id").notNull(),
   requisitionId: integer("requisition_id"),
   departmentId: integer("department_id"),
   contractId: integer("contract_id"),
@@ -558,9 +671,13 @@ export const purchaseOrders = pgTable("purchase_orders", {
   paymentStatus: text("payment_status").default("UNPAID"),
   paymentDate: timestamp("payment_date"),
   paymentReference: text("payment_reference"),
-  emailSent: boolean("email_sent").default(false),
-  emailSentDate: timestamp("email_sent_date"),
-});
+    emailSent: boolean("email_sent").default(false),
+    emailSentDate: timestamp("email_sent_date"),
+    /** Optional construction / project tag (extensions demo); validated in API against `projects`. */
+    projectId: integer("project_id"),
+  },
+  (t) => [uniqueIndex("purchase_orders_org_number_uidx").on(t.organizationId, t.orderNumber)],
+);
 
 export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({
   id: true,
@@ -586,6 +703,10 @@ export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderIte
 
 export const approvalPolicies = pgTable("approval_policies", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   name: text("name").notNull(),
   entityType: text("entity_type").notNull(), // requisition, purchase_order
   amountMin: real("amount_min").notNull().default(0),
@@ -623,6 +744,10 @@ export const purchaseOrderRevisions = pgTable("purchase_order_revisions", {
 // Activity log schema for tracking changes
 export const activityLogs = pgTable("activity_logs", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   action: text("action").notNull(),
   description: text("description").notNull(),
   itemId: integer("item_id"),
@@ -876,9 +1001,15 @@ export interface ReportFilter {
   categoryId?: number;
   warehouseId?: number;
   supplierId?: number;
+  /** Filter PO / requisition exports by project (construction extensions). */
+  projectId?: number;
   status?: string;
   tags?: string[];
   search?: string;
+  /** Shipment list export: partial PO number (matches logistics filters). */
+  shipmentPo?: string;
+  shipmentCarrier?: string;
+  shipmentRisk?: string;
 }
 
 // Purchase Requisition Status
@@ -909,10 +1040,16 @@ export enum PaymentStatus {
 }
 
 // Reorder Request schema
-export const reorderRequests = pgTable("reorder_requests", {
-  id: serial("id").primaryKey(),
-  requestNumber: text("request_number").notNull().unique(),
-  itemId: integer("item_id").notNull(),
+export const reorderRequests = pgTable(
+  "reorder_requests",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    requestNumber: text("request_number").notNull(),
+    itemId: integer("item_id").notNull(),
   quantity: integer("quantity").notNull().default(1),
   supplierId: integer("supplier_id"), // Added for auto-reordering
   warehouseId: integer("warehouse_id"), // Added to track which warehouse needs the reorder
@@ -927,8 +1064,10 @@ export const reorderRequests = pgTable("reorder_requests", {
   approvalDate: timestamp("approval_date"),
   rejectionReason: text("rejection_reason"),
   convertedToRequisition: boolean("converted_to_requisition").default(false),
-  requisitionId: integer("requisition_id")
-});
+    requisitionId: integer("requisition_id"),
+  },
+  (t) => [uniqueIndex("reorder_requests_org_reqnum_uidx").on(t.organizationId, t.requestNumber)],
+);
 
 export const insertReorderRequestSchema = createInsertSchema(reorderRequests).omit({
   id: true,
@@ -950,10 +1089,16 @@ export const reorderRequestFormSchema = insertReorderRequestSchema.extend({
   warehouseId: z.number().int().positive("Warehouse ID must be a positive number").optional(),
 });
 
-// App Settings schema
-export const appSettings = pgTable("app_settings", {
-  id: serial("id").primaryKey(),
-  companyName: text("company_name").notNull().default("InvTrack"),
+// App Settings schema (one logical row per organization)
+export const appSettings = pgTable(
+  "app_settings",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    companyName: text("company_name").notNull().default("InvTrack"),
   companyLogo: text("company_logo"),
   primaryColor: text("primary_color").default("#0F172A"),
   dateFormat: text("date_format").default("YYYY-MM-DD"),
@@ -985,9 +1130,11 @@ export const appSettings = pgTable("app_settings", {
   defaultVatCountry: text("default_vat_country").default("US"),
   showPricesWithVat: boolean("show_prices_with_vat").default(true),
   // Database settings (for Electron app)
-  databaseSettings: jsonb("database_settings"),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-});
+    databaseSettings: jsonb("database_settings"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("app_settings_org_uidx").on(t.organizationId)],
+);
 
 export const insertAppSettingsSchema = createInsertSchema(appSettings).omit({
   id: true,
@@ -1096,9 +1243,15 @@ export type SupplierLogo = typeof supplierLogos.$inferSelect;
 export type InsertSupplierLogo = z.infer<typeof insertSupplierLogoSchema>;
 
 // Warehouse schema for multi-warehouse management
-export const warehouses = pgTable("warehouses", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
+export const warehouses = pgTable(
+  "warehouses",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    name: text("name").notNull(),
   location: text("location"),
   address: text("address"),
   contactPerson: text("contact_person"),
@@ -1109,9 +1262,11 @@ export const warehouses = pgTable("warehouses", {
   aisles: jsonb("aisles").$type<string[]>().default([]),
   bins: jsonb("bins").$type<{ code: string; aisle?: string; row?: string; shelf?: string }[]>().default([]),
   locationDetails: jsonb("location_details").$type<Record<string, unknown>>(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("warehouses_org_name_uidx").on(t.organizationId, t.name)],
+);
 
 export const insertWarehouseSchema = createInsertSchema(warehouses).omit({
   id: true,
@@ -1148,6 +1303,10 @@ export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
 // Stock movements schema for tracking inventory changes
 export const stockMovements = pgTable("stock_movements", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   itemId: integer("item_id").notNull(),
   warehouseId: integer("warehouse_id"),
   type: stockMovementTypeEnum("type").notNull(),
@@ -1183,6 +1342,10 @@ export const stockMovementFormSchema = insertStockMovementSchema.extend({
 // Warehouse Inventory schema for tracking inventory per warehouse
 export const warehouseInventory = pgTable("warehouse_inventory", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   itemId: integer("item_id").notNull(),
   warehouseId: integer("warehouse_id").notNull(),
   quantity: integer("quantity").default(0).notNull(),
@@ -1199,6 +1362,10 @@ export const insertWarehouseInventorySchema = createInsertSchema(warehouseInvent
 
 export const inventoryBatches = pgTable("inventory_batches", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   itemId: integer("item_id").notNull(),
   warehouseId: integer("warehouse_id"),
   batchNumber: text("batch_number").notNull(),
@@ -1210,19 +1377,31 @@ export const inventoryBatches = pgTable("inventory_batches", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const inventorySerials = pgTable("inventory_serials", {
-  id: serial("id").primaryKey(),
-  itemId: integer("item_id").notNull(),
-  warehouseId: integer("warehouse_id"),
-  serialNumber: text("serial_number").notNull().unique(),
-  status: text("status").default("available").notNull(), // available, allocated, sold
-  currentLocation: text("current_location"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const inventorySerials = pgTable(
+  "inventory_serials",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    itemId: integer("item_id").notNull(),
+    warehouseId: integer("warehouse_id"),
+    serialNumber: text("serial_number").notNull(),
+    status: text("status").default("available").notNull(), // available, allocated, sold
+    currentLocation: text("current_location"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("inventory_serials_org_sn_uidx").on(t.organizationId, t.serialNumber)],
+);
 
 export const inventoryAllocations = pgTable("inventory_allocations", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   itemId: integer("item_id").notNull(),
   warehouseId: integer("warehouse_id"),
   quantity: integer("quantity").notNull(),
@@ -1237,6 +1416,10 @@ export const inventoryAllocations = pgTable("inventory_allocations", {
 
 export const cycleCounts = pgTable("cycle_counts", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   warehouseId: integer("warehouse_id").notNull(),
   zone: text("zone"),
   status: text("status").default("planned").notNull(), // planned, in_progress, completed
@@ -1282,14 +1465,22 @@ export const insertCycleCountLineSchema = createInsertSchema(cycleCountLines).om
 });
 
 // Barcode schema for product identification
-export const barcodes = pgTable("barcodes", {
-  id: serial("id").primaryKey(),
-  itemId: integer("item_id").notNull(),
-  type: text("type").default("CODE128"),
-  value: text("value").notNull().unique(),
-  isPrimary: boolean("is_primary").default(true),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const barcodes = pgTable(
+  "barcodes",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    itemId: integer("item_id").notNull(),
+    type: text("type").default("CODE128"),
+    value: text("value").notNull(),
+    isPrimary: boolean("is_primary").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("barcodes_org_value_uidx").on(t.organizationId, t.value)],
+);
 
 export const insertBarcodeSchema = createInsertSchema(barcodes).omit({
   id: true,
@@ -1304,6 +1495,10 @@ export const barcodeFormSchema = insertBarcodeSchema.extend({
 // AI prediction settings
 export const demandForecasts = pgTable("demand_forecasts", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   itemId: integer("item_id").notNull(),
   forecastedDemand: real("forecasted_demand").notNull(),
   confidenceLevel: real("confidence_level"),
@@ -1324,6 +1519,10 @@ export const insertDemandForecastSchema = createInsertSchema(demandForecasts).om
 // Integration schema for external systems
 export const externalIntegrations = pgTable("external_integrations", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   name: text("name").notNull(),
   type: text("type").notNull(), // accounting, ecommerce, erp, pos
   apiKey: text("api_key"),
@@ -1342,16 +1541,24 @@ export const insertExternalIntegrationSchema = createInsertSchema(externalIntegr
 
 // Audit log for security tracking
 // Custom Roles - For creating user-defined roles with specific permissions
-export const customRoles = pgTable("custom_roles", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  description: text("description"),
-  createdBy: integer("created_by").notNull(), // Reference to user who created this role
-  isActive: boolean("is_active").default(true),
-  isSystemRole: boolean("is_system_role").default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const customRoles = pgTable(
+  "custom_roles",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdBy: integer("created_by").notNull(), // Reference to user who created this role
+    isActive: boolean("is_active").default(true),
+    isSystemRole: boolean("is_system_role").default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("custom_roles_org_name_uidx").on(t.organizationId, t.name)],
+);
 
 export const insertCustomRoleSchema = createInsertSchema(customRoles).omit({
   id: true,
@@ -1477,6 +1684,10 @@ export const insertTimeRestrictionSchema = createInsertSchema(timeRestrictions).
 
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   userId: integer("user_id"),
   action: text("action").notNull(),
   resourceType: text("resource_type").notNull(),
@@ -1494,6 +1705,10 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
 
 export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   entityType: text("entity_type").notNull(), // contract, invoice, delivery_note, compliance_certificate
   entityId: integer("entity_id").notNull(),
   fileUrl: text("file_url").notNull(),
@@ -1518,6 +1733,10 @@ export const retentionPolicies = pgTable("retention_policies", {
 
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   userId: integer("user_id").notNull(),
   type: text("type").notNull(),
   title: text("title").notNull(),
@@ -1543,6 +1762,7 @@ export const notificationPreferences = pgTable("notification_preferences", {
 
 export const insertDocumentSchema = createInsertSchema(documents).omit({
   id: true,
+  organizationId: true,
   uploadedAt: true,
 });
 export const insertRetentionPolicySchema = createInsertSchema(retentionPolicies).omit({
@@ -1671,10 +1891,16 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
 ]);
 
 // Invoice Table Schema
-export const invoices = pgTable("invoices", {
-  id: serial("id").primaryKey(),
-  invoiceNumber: text("invoice_number").notNull().unique(),
-  customerId: integer("customer_id"), // Optional when invoice is supplier-side AP
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    invoiceNumber: text("invoice_number").notNull(),
+    customerId: integer("customer_id"), // Optional when invoice is supplier-side AP
   supplierId: integer("supplier_id"),
   status: invoiceStatusEnum("status").notNull().default("DRAFT"),
   issueDate: timestamp("issue_date").defaultNow().notNull(),
@@ -1692,8 +1918,10 @@ export const invoices = pgTable("invoices", {
   dueAmount: real("due_amount").default(0),
   sentDate: timestamp("sent_date"),
   paidDate: timestamp("paid_date"),
-  createdBy: integer("created_by").notNull(), // User who created the invoice
-});
+    createdBy: integer("created_by").notNull(), // User who created the invoice
+  },
+  (t) => [uniqueIndex("invoices_org_number_uidx").on(t.organizationId, t.invoiceNumber)],
+);
 
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
   id: true,
@@ -1971,3 +2199,80 @@ export const insertImageAnalysisLogSchema = createInsertSchema(imageAnalysisLogs
 
 export type ImageAnalysisLog = typeof imageAnalysisLogs.$inferSelect;
 export type InsertImageAnalysisLog = z.infer<typeof insertImageAnalysisLogSchema>;
+
+// --- Multi-tenant core (types) ---
+export type Organization = typeof organizations.$inferSelect;
+export type OrganizationMember = typeof organizationMembers.$inferSelect;
+export type OrganizationSettingsRow = typeof organizationSettings.$inferSelect;
+
+/** Industry extensions: projects/sites (construction) and tracked assets (gas, equipment). */
+export const projects = pgTable(
+  "projects",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    status: text("status").default("active"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("projects_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const sites = pgTable(
+  "sites",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    projectId: integer("project_id").references(() => projects.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    address: text("address"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("sites_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const trackedAssets = pgTable("tracked_assets", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
+  assetType: text("asset_type").notNull(),
+  serialNumber: text("serial_number"),
+  status: text("status").default("active"),
+  warehouseId: integer("warehouse_id"),
+  siteId: integer("site_id").references(() => sites.id),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const assetEvents = pgTable("asset_events", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
+  assetId: integer("asset_id")
+    .notNull()
+    .references(() => trackedAssets.id),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload"),
+  performedBy: integer("performed_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type Project = typeof projects.$inferSelect;
+export type Site = typeof sites.$inferSelect;
+export type TrackedAsset = typeof trackedAssets.$inferSelect;
+export type AssetEvent = typeof assetEvents.$inferSelect;

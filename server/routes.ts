@@ -27,40 +27,28 @@ import { registerDocumentExtractorRoutes } from "./controllers/document-extracto
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument } from "./services/document-generator-service";
-import { sendEmail, buildInvTrackNotificationEmailHtml } from "./services/email-service";
+import { loadLogoBytesForPdf } from "./services/pdf-logo-loader";
 import { getApprovalSuggestions } from "./approval-suggestions";
-import { maybeSendSms } from "./services/sms-service";
 import { buildSupplyInsights } from "./supply-insights";
 import type { ReportFormat, ReportType} from "@shared/schema";
 import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
-import { registerOperationalRoutes } from "./operations-routes";
+import { registerOperationsRoutes as registerOperationalRoutes } from "./modules/operations/register-operations-routes";
+import { registerDomainModules } from "./modules/register-domain-modules";
+import { registerRbacRoutes } from "./modules/rbac/register-rbac-routes";
+import { registerCatalogRoutes } from "./modules/catalog/register-catalog-routes";
+import { getActiveOrganizationId } from "./organization-context";
+import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisabled } from "./org-features";
 import { readiness } from "./readiness";
-import { sendError, sendOk } from "./api-response";
-import { createContractRepository, createSupplierRepository, createWarehouseRepository } from "./repositories";
-import { createContractService, ContractDateError } from "./services/contract-service";
-import { createSupplierService } from "./services/supplier-service";
+import { sendError, sendOk, sendFunctionError } from "./api-response";
+import { emitNotification, emitNotificationToRoles } from "./services/notification-emitter";
 import { eq, and, isNull, gte, lte, asc } from "drizzle-orm";
 import { 
   insertInventoryItemSchema, 
-  insertCategorySchema, 
-  insertActivityLogSchema,
-  insertSupplierSchema,
-  insertSupplierContractSchema,
-  insertPurchaseRequisitionSchema,
-  insertPurchaseRequisitionItemSchema,
-  insertPurchaseOrderSchema,
-  insertPurchaseOrderItemSchema,
   bulkImportInventorySchema,
   insertAppSettingsSchema,
-  insertSupplierLogoSchema,
   appSettingsFormSchema,
-  insertReorderRequestSchema,
-  reorderRequestFormSchema,
   insertBarcodeSchema,
   barcodeFormSchema,
-  insertWarehouseSchema,
-  warehouseFormSchema,
-  insertWarehouseInventorySchema,
   insertStockMovementSchema,
   stockMovementFormSchema,
   insertUnitOfMeasureSchema,
@@ -88,9 +76,6 @@ import {
   carriers,
   approvalPolicies,
   approvalHistory,
-  purchaseOrderRevisions,
-  notifications,
-  notificationPreferences,
   documents,
   retentionPolicies,
   inventoryItems,
@@ -105,782 +90,41 @@ import {
   purchaseOrderItems,
   purchaseRequisitions,
   stockMovements,
-  users,
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
-  ReorderRequestStatus,
   userRoleEnum,
   resourceEnum,
   permissionTypeEnum,
-  UserRoleEnum,
-  type UserRole,
-  type Resource,
-  type PermissionType,
-  createCustomRoleSchema,
-  type DocumentType
+  type DocumentType,
+  organizationSettings,
+  projects,
 } from "@shared/schema";
 
 import * as fs from 'fs';
 import * as path from 'path';
-import multer from 'multer';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import Excel from 'exceljs';
 import { createObjectCsvWriter } from 'csv-writer';
-
-// Multer config for custom PDF template upload (stores to uploads/custom-pdf-template.pdf)
-const uploadsDir = path.join(process.cwd(), 'uploads');
-const documentsDir = path.join(uploadsDir, "documents");
-const pdfTemplateUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => {
-      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-      cb(null, uploadsDir);
-    },
-    filename: (_req, _file, cb) => cb(null, 'custom-pdf-template.pdf'),
-  }),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype === 'application/pdf') cb(null, true);
-    else cb(new Error('Only PDF files are allowed for the template.'));
-  },
-});
-/** Create on boot so /api/ready uploadPathReady is true before any upload. */
-function ensureUploadDirectories(): void {
-  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-  if (!fs.existsSync(documentsDir)) fs.mkdirSync(documentsDir, { recursive: true });
-}
-
-const documentUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => {
-      if (!fs.existsSync(documentsDir)) fs.mkdirSync(documentsDir, { recursive: true });
-      cb(null, documentsDir);
-    },
-    filename: (_req, file, cb) => {
-      const safeBase = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-      cb(null, `${Date.now()}-${safeBase}`);
-    },
-  }),
-  limits: { fileSize: 20 * 1024 * 1024 },
-});
-
-// Helper function to convert Excel workbook to Buffer safely
-async function workbookToBuffer(workbook: Excel.Workbook): Promise<Buffer> {
-  const excelBuffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(excelBuffer);
-}
-
-/** Prepend UTF-8 BOM + sep=, and use CRLF so Excel opens CSV as a clean table */
-function csvBufferForExcel(buffer: Buffer): Buffer {
-  const content = buffer.toString("utf8").replace(/\r?\n/g, "\r\n");
-  return Buffer.from("\uFEFFsep=,\r\n" + content, "utf8");
-}
-
-function sendFunctionError(
-  res: Response,
-  status: number,
-  functionName: string,
-  message: string,
-  details?: unknown,
-) {
-  const normalizedMessage = `${functionName}: ${message}`;
-  return sendError(
-    res,
-    status,
-    functionName.toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
-    normalizedMessage,
-    {
-      details: {
-        functionName,
-        ...(details !== undefined ? { details } : {}),
-      },
-    },
-  );
-}
+import {
+  mountUploadsStatic,
+  pdfTemplateUpload,
+  uploadsDir,
+} from "./http/upload-config";
+import { csvBufferForExcel, workbookToBuffer } from "./http/export-helpers";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  ensureUploadDirectories();
-  app.use("/uploads", express.static(uploadsDir));
+  mountUploadsStatic(app);
   // Set up authentication routes and middleware
   const auth = setupAuth(app);
-  const contractRepo = createContractRepository(storage);
-  const contractService = createContractService(contractRepo, storage);
-  const supplierRepo = createSupplierRepository(storage);
-  const supplierService = createSupplierService(supplierRepo, storage);
-  const warehouseRepo = createWarehouseRepository(storage);
   registerOperationalRoutes(app, auth);
-  
-  // Role and permission routes
-  
-  // Get all system roles
-  app.get('/api/roles', async (req, res) => {
-    try {
-      const roles = await storage.getSystemRoles();
-      res.json(roles);
-    } catch (error) {
-      console.error("Error fetching system roles:", error);
-      res.status(500).json({ message: "Error fetching system roles" });
-    }
-  });
-  
-  // Get all permissions for a role
-  app.get('/api/roles/:role/permissions', async (req, res) => {
-    try {
-      const role = req.params.role as UserRole;
-      
-      // Validate that this is a valid role
-      const validRoles = await storage.getSystemRoles();
-      if (!validRoles.includes(role)) {
-        return res.status(404).json({ message: "Role not found" });
-      }
-      
-      const permissions = await storage.getRolePermissions(role);
-      res.json(permissions);
-    } catch (error) {
-      console.error("Error fetching role permissions:", error);
-      res.status(500).json({ message: "Error fetching role permissions" });
-    }
-  });
-  
-  // Custom roles management
-  
-  // Get all custom roles
-  app.get('/api/custom-roles', auth.ensureAuthenticated, async (req, res) => {
-    try {
-      const roles = await storage.getCustomRoles();
-      res.json(roles);
-    } catch (error) {
-      console.error("Error fetching custom roles:", error);
-      res.status(500).json({ message: "Error fetching custom roles" });
-    }
-  });
-  
-  // Get a specific custom role
-  app.get('/api/custom-roles/:id', auth.ensureAuthenticated, async (req, res) => {
-    try {
-      const roleId = parseInt(req.params.id);
-      if (isNaN(roleId)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      const role = await storage.getCustomRole(roleId);
-      if (!role) {
-        return res.status(404).json({ message: "Custom role not found" });
-      }
-      
-      res.json(role);
-    } catch (error) {
-      console.error("Error fetching custom role:", error);
-      res.status(500).json({ message: "Error fetching custom role" });
-    }
-  });
-  
-  // Create a new custom role
-  app.post('/api/custom-roles', auth.ensurePermission('custom_roles', 'create'), async (req, res) => {
-    try {
-      const { name, description, isActive } = req.body;
-      
-      if (!name) {
-        return res.status(400).json({ message: "Name is required" });
-      }
-      
-      // Check if role with this name already exists
-      const existingRole = await storage.getCustomRoleByName(name);
-      if (existingRole) {
-        return res.status(400).json({ message: "A role with this name already exists" });
-      }
-      
-      const newRole = await storage.createCustomRole({
-        name,
-        description,
-        isActive,
-        createdBy: req.user!.id,
-        isSystemRole: false
-      });
-      
-      res.status(201).json(newRole);
-    } catch (error) {
-      console.error("Error creating custom role:", error);
-      res.status(500).json({ message: "Error creating custom role" });
-    }
-  });
-  
-  // Update a custom role
-  app.put('/api/custom-roles/:id', auth.ensurePermission('custom_roles', 'update'), async (req, res) => {
-    try {
-      const roleId = parseInt(req.params.id);
-      if (isNaN(roleId)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      const { name, description, isActive } = req.body;
-      
-      // Check if role exists
-      const existingRole = await storage.getCustomRole(roleId);
-      if (!existingRole) {
-        return res.status(404).json({ message: "Custom role not found" });
-      }
-      
-      // Check if updating to a name that already exists
-      if (name && name !== existingRole.name) {
-        const duplicateRole = await storage.getCustomRoleByName(name);
-        if (duplicateRole && duplicateRole.id !== roleId) {
-          return res.status(400).json({ message: "A role with this name already exists" });
-        }
-      }
-      
-      const updatedRole = await storage.updateCustomRole(roleId, {
-        name,
-        description,
-        isActive
-      });
-      
-      res.json(updatedRole);
-    } catch (error) {
-      console.error("Error updating custom role:", error);
-      res.status(500).json({ message: "Error updating custom role" });
-    }
-  });
-  
-  // Delete a custom role
-  app.delete('/api/custom-roles/:id', auth.ensurePermission('custom_roles', 'delete'), async (req, res) => {
-    try {
-      const roleId = parseInt(req.params.id);
-      if (isNaN(roleId)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      // Check if role exists
-      const existingRole = await storage.getCustomRole(roleId);
-      if (!existingRole) {
-        return res.status(404).json({ message: "Custom role not found" });
-      }
-      
-      // Check if any users are using this role
-      // This would require a new method in the storage interface to check user-role associations
-      
-      const deleted = await storage.deleteCustomRole(roleId);
-      if (!deleted) {
-        return res.status(500).json({ message: "Failed to delete custom role" });
-      }
-      
-      res.status(204).end();
-    } catch (error) {
-      console.error("Error deleting custom role:", error);
-      res.status(500).json({ message: "Error deleting custom role" });
-    }
-  });
-  
-  // Get permissions for a custom role
-  app.get('/api/custom-roles/:id/permissions', auth.ensureAuthenticated, async (req, res) => {
-    try {
-      const roleId = parseInt(req.params.id);
-      if (isNaN(roleId)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      // Check if role exists
-      const existingRole = await storage.getCustomRole(roleId);
-      if (!existingRole) {
-        return res.status(404).json({ message: "Custom role not found" });
-      }
-      
-      const permissions = await storage.getCustomRolePermissions(roleId);
-      res.json(permissions);
-    } catch (error) {
-      console.error("Error fetching custom role permissions:", error);
-      res.status(500).json({ message: "Error fetching custom role permissions" });
-    }
-  });
-  
-  // Add a permission to a custom role
-  app.post('/api/custom-roles/:id/permissions', auth.ensurePermission('custom_roles', 'update'), async (req, res) => {
-    try {
-      const roleId = parseInt(req.params.id);
-      if (isNaN(roleId)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      const { resource, permissionType } = req.body;
-      
-      if (!resource || !permissionType) {
-        return res.status(400).json({ message: "Resource and permissionType are required" });
-      }
-      
-      // Validate resource and permissionType
-      const validResources = [
-        "inventory", "purchases", "suppliers", "categories", "warehouses", 
-        "reports", "users", "settings", "reorder_requests", "stock_movements",
-        "analytics", "dashboards", "notifications", "audit_logs", "user_profiles",
-        "documents", "custom_roles", "activity_logs", "import_export", "system"
-      ];
-      
-      const validPermissionTypes = [
-        "create", "read", "update", "delete", "approve", "export", "import", "assign",
-        "manage", "execute", "transfer", "print", "scan", "view_reports", "admin", 
-        "configure", "restrict", "download", "upload", "audit", "verify"
-      ];
-      
-      if (!validResources.includes(resource)) {
-        return res.status(400).json({ message: "Invalid resource" });
-      }
-      
-      if (!validPermissionTypes.includes(permissionType)) {
-        return res.status(400).json({ message: "Invalid permission type" });
-      }
-      
-      // Check if role exists
-      const existingRole = await storage.getCustomRole(roleId);
-      if (!existingRole) {
-        return res.status(404).json({ message: "Custom role not found" });
-      }
-      
-      const newPermission = await storage.addCustomRolePermission(roleId, resource, permissionType);
-      res.status(201).json(newPermission);
-    } catch (error) {
-      console.error("Error adding permission to custom role:", error);
-      res.status(500).json({ message: "Error adding permission to custom role" });
-    }
-  });
-  
-  // Remove a permission from a custom role
-  app.delete('/api/custom-roles/:roleId/permissions/:permissionId', auth.ensurePermission('custom_roles', 'update'), async (req, res) => {
-    try {
-      const roleId = parseInt(req.params.roleId);
-      const permissionId = parseInt(req.params.permissionId);
-      
-      if (isNaN(roleId) || isNaN(permissionId)) {
-        return res.status(400).json({ message: "Invalid role ID or permission ID" });
-      }
-      
-      // Check if role exists
-      const existingRole = await storage.getCustomRole(roleId);
-      if (!existingRole) {
-        return res.status(404).json({ message: "Custom role not found" });
-      }
-      
-      const removed = await storage.removeCustomRolePermission(roleId, permissionId);
-      if (!removed) {
-        return res.status(404).json({ message: "Permission not found or already removed" });
-      }
-      
-      res.status(204).end();
-    } catch (error) {
-      console.error("Error removing permission from custom role:", error);
-      res.status(500).json({ message: "Error removing permission from custom role" });
-    }
-  });
-  
-  // Check if a user has a specific permission
-  app.get('/api/check-permission', auth.ensureAuthenticated, async (req, res) => {
-    try {
-      const { resource, permissionType } = req.query;
-      
-      if (!resource || !permissionType) {
-        return res.status(400).json({ message: "Resource and permissionType are required" });
-      }
-      
-      const user = req.user!;
-      let hasPermission = false;
-      
-      // Admin has all permissions
-      if (user.role === 'admin') {
-        hasPermission = true;
-      } 
-      // Custom role permissions
-      else if (user.role === 'custom') {
-        const customRoleId = await storage.getUserCustomRoleId(user.id);
-        if (customRoleId) {
-          hasPermission = await storage.checkCustomRolePermission(
-            customRoleId,
-            resource as Resource,
-            permissionType as PermissionType
-          );
-        }
-      } 
-      // System role permissions
-      else {
-        hasPermission = await storage.checkPermission(
-          user.role as string, 
-          resource as string, 
-          permissionType as string
-        );
-      }
-      
-      res.json({ hasPermission });
-    } catch (error) {
-      console.error("Error checking permission:", error);
-      res.status(500).json({ message: "Error checking permission" });
-    }
-  });
-  // Categories — RBAC: read for authenticated; manager/admin for write
-  const categoryRead = [auth.ensureAuthenticated];
-  const categoryWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
-
-  // Categories endpoints
-  app.get("/api/categories", ...categoryRead, async (_req: Request, res: Response) => {
-    try {
-      const categories = await storage.getAllCategories();
-      res.json(categories);
-    } catch (error) {
-      console.error("Error fetching categories:", error);
-      res.status(200).json([]);
-    }
-  });
-
-  app.post("/api/categories", ...categoryWrite, async (req: Request, res: Response) => {
-    try {
-      const validatedData = insertCategorySchema.parse(req.body);
-      
-      // Check if category with this name already exists
-      const existingCategory = await storage.getCategoryByName(validatedData.name);
-      if (existingCategory) {
-        return res.status(400).json({ message: "Category with this name already exists" });
-      }
-      
-      const newCategory = await storage.createCategory(validatedData);
-      res.status(201).json(newCategory);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating category:", error);
-        res.status(500).json({ message: "Failed to create category" });
-      }
-    }
-  });
-
-  app.put("/api/categories/:id", ...categoryWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid category ID" });
-      }
-      
-      const validatedData = insertCategorySchema.parse(req.body);
-      const updatedCategory = await storage.updateCategory(id, validatedData);
-      
-      if (!updatedCategory) {
-        return res.status(404).json({ message: "Category not found" });
-      }
-      
-      res.json(updatedCategory);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating category:", error);
-        res.status(500).json({ message: "Failed to update category" });
-      }
-    }
-  });
-
-  app.delete("/api/categories/:id", ...categoryWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid category ID" });
-      }
-      
-      const success = await storage.deleteCategory(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Category not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting category:", error);
-      res.status(500).json({ message: "Failed to delete category" });
-    }
-  });
-
-  // Inventory — RBAC: viewer read-only; manager/admin for create/update/delete/bulk-import
-  const invRead = [auth.ensureAuthenticated];
-  const invWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
-
-  /**
-   * NOTE: `registerOperationalRoutes(app)` runs earlier in this file and registers GET `/api/inventory`.
-   * Express uses the first matching route — this handler is therefore unused for plain list GET in normal
-   * startup. Kept as documentation/fallback if operational registration is ever reordered or disabled.
-   * Sub-routes below (`/api/inventory/low-stock`, `/api/inventory/:id`, etc.) remain active.
-   */
-  // Inventory items endpoints (return 200 + empty/safe payload on error so UI never 502s)
-  app.get("/api/inventory", ...invRead, async (req: Request, res: Response) => {
-    try {
-      const query = req.query.search as string | undefined;
-      const categoryId = req.query.categoryId ? Number(req.query.categoryId) : undefined;
-      if (query) {
-        const items = await storage.searchInventoryItems(query, categoryId);
-        return res.json(items);
-      }
-      const items = await storage.getAllInventoryItems();
-      res.json(items);
-    } catch (error) {
-      console.error("Error fetching inventory items:", error);
-      res.status(200).json([]);
-    }
-  });
-
-  app.get("/api/inventory/low-stock", ...invRead, async (_req: Request, res: Response) => {
-    try {
-      const items = await storage.getLowStockItems();
-      res.json(items);
-    } catch (error) {
-      console.error("Error fetching low stock items:", error);
-      res.status(200).json([]);
-    }
-  });
-
-  app.get("/api/inventory/out-of-stock", ...invRead, async (_req: Request, res: Response) => {
-    try {
-      const items = await storage.getOutOfStockItems();
-      res.json(items);
-    } catch (error) {
-      console.error("Error fetching out of stock items:", error);
-      res.status(200).json([]);
-    }
-  });
-
-  /** Items with expiryDate within the next `days` (default 30). */
-  app.get("/api/inventory/expiring", ...invRead, async (req: Request, res: Response) => {
-    try {
-      const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
-      const now = new Date();
-      const horizon = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-      const all = await storage.getAllInventoryItems();
-      const expiring = all.filter((row) => {
-        const exp = (row as { expiryDate?: Date | string | null }).expiryDate;
-        if (exp == null) return false;
-        const d = exp instanceof Date ? exp : new Date(exp);
-        if (Number.isNaN(d.getTime())) return false;
-        return d >= now && d <= horizon;
-      });
-      res.json(expiring);
-    } catch (error) {
-      console.error("Error fetching expiring inventory:", error);
-      res.status(200).json([]);
-    }
-  });
-
-  app.get("/api/inventory/stats", ...invRead, async (_req: Request, res: Response) => {
-    try {
-      const stats = await storage.getInventoryStats();
-      res.json(stats);
-    } catch (error) {
-      console.error("Error fetching inventory stats:", error);
-      res.status(200).json({
-        totalItems: 0,
-        lowStockItems: 0,
-        outOfStockItems: 0,
-        inventoryValue: 0,
-      });
-    }
-  });
-
-  app.get("/api/inventory/:id", ...invRead, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid inventory item ID" });
-      }
-
-      const item = await storage.getInventoryItem(id);
-
-      if (!item) {
-        return res.status(404).json({ message: "Inventory item not found" });
-      }
-
-      const qty = Number((item as { quantity?: number }).quantity ?? 0);
-      const payload = {
-        ...item,
-        onHand: qty,
-        allocated: 0,
-        available: qty,
-        summary: {
-          onHand: qty,
-          allocated: 0,
-          available: qty,
-        },
-        positions: [{ location: (item as { location?: string }).location ?? "Main Warehouse", onHand: qty, allocated: 0, available: qty, updatedAt: (item as { updatedAt?: Date }).updatedAt }],
-        movements: [] as unknown[],
-      };
-      res.json(payload);
-    } catch (error) {
-      console.error("Error fetching inventory item:", error);
-      res.status(500).json({ message: "Failed to fetch inventory item" });
-    }
-  });
-
-  app.post("/api/inventory", ...invWrite, async (req: Request, res: Response) => {
-    try {
-      const validatedData = insertInventoryItemSchema.parse(req.body);
-      
-      // Check if item with this SKU already exists
-      const existingItem = await storage.getInventoryItemBySku(validatedData.sku);
-      if (existingItem) {
-        return res.status(400).json({ message: "Item with this SKU already exists" });
-      }
-      
-      const newItem = await storage.createInventoryItem(validatedData);
-      res.status(201).json(newItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating inventory item:", error);
-        res.status(500).json({ message: "Failed to create inventory item" });
-      }
-    }
-  });
-
-  app.put("/api/inventory/:id", ...invWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid inventory item ID" });
-      }
-      
-      const validatedData = insertInventoryItemSchema.partial().parse(req.body);
-      const updatedItem = await storage.updateInventoryItem(id, validatedData);
-      
-      if (!updatedItem) {
-        return res.status(404).json({ message: "Inventory item not found" });
-      }
-      
-      res.json(updatedItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating inventory item:", error);
-        res.status(500).json({ message: "Failed to update inventory item" });
-      }
-    }
-  });
-
-  app.delete("/api/inventory/:id", ...invWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid inventory item ID" });
-      }
-      
-      const success = await storage.deleteInventoryItem(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Inventory item not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting inventory item:", error);
-      res.status(500).json({ message: "Failed to delete inventory item" });
-    }
-  });
-
-  // Activity logs endpoints
-  app.get("/api/activity-logs", async (req: Request, res: Response) => {
-    try {
-      const limit = req.query.limit ? Number(req.query.limit) : undefined;
-      const logs = await storage.getAllActivityLogs(limit);
-      res.json(logs);
-    } catch (error) {
-      console.error("Error fetching activity logs:", error);
-      res.status(500).json({ message: "Failed to fetch activity logs" });
-    }
-  });
-
-  app.post("/api/activity-logs", async (req: Request, res: Response) => {
-    try {
-      const validatedData = insertActivityLogSchema.parse(req.body);
-      const newLog = await storage.createActivityLog(validatedData);
-      res.status(201).json(newLog);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating activity log:", error);
-        res.status(500).json({ message: "Failed to create activity log" });
-      }
-    }
-  });
+  registerDomainModules(app, auth);
+  registerRbacRoutes(app, auth);
+  registerCatalogRoutes(app, auth);
 
   // Master data endpoints — foundational reference data
   const masterRead = [auth.ensureAuthenticated];
   const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
-
-  const emitNotification = async (payload: {
-    userId: number;
-    type: string;
-    title: string;
-    body?: string;
-    entityType?: string;
-    entityId?: number;
-  }) => {
-    await db.insert(notifications).values({
-      userId: payload.userId,
-      type: payload.type,
-      title: payload.title,
-      body: payload.body ?? null,
-      entityType: payload.entityType ?? null,
-      entityId: payload.entityId ?? null,
-    } as any);
-
-    if (process.env.DISABLE_NOTIFICATION_EMAIL !== "true") {
-      try {
-        const rows = await db
-          .select({ email: users.email })
-          .from(users)
-          .where(eq(users.id, payload.userId))
-          .limit(1);
-        const to = rows[0]?.email;
-        if (to) {
-          const textBody = payload.body ?? "";
-          await sendEmail({
-            to,
-            subject: payload.title,
-            html: buildInvTrackNotificationEmailHtml(payload.title, textBody),
-            text: textBody,
-          });
-        }
-      } catch (emailErr) {
-        console.warn("[emitNotification] optional email mirror failed:", emailErr);
-      }
-    }
-
-    if (process.env.DISABLE_NOTIFICATION_SMS !== "true") {
-      try {
-        const u = await storage.getUser(payload.userId);
-        const phone = u?.phone?.trim();
-        if (phone) {
-          await maybeSendSms(phone, `${payload.title}\n${payload.body ?? ""}`.trim().slice(0, 320));
-        }
-      } catch (smsErr) {
-        console.warn("[emitNotification] optional SMS mirror failed:", smsErr);
-      }
-    }
-  };
-
-  const emitNotificationToRoles = async (
-    roles: string[],
-    payload: Omit<Parameters<typeof emitNotification>[0], "userId">,
-  ) => {
-    const roleUsers = (await db.select().from(users)) as any[];
-    const targets = roleUsers.filter((user) =>
-      roles.some((role) => String(user.role ?? "").toLowerCase() === role.toLowerCase()),
-    );
-    for (const user of targets) {
-      if (!user.id) continue;
-      await emitNotification({ userId: Number(user.id), ...payload });
-    }
-  };
 
   const registerMasterDataCrud = <TInsert>(
     basePath: string,
@@ -1154,251 +398,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Notifications
-  app.get("/api/notifications", ...masterRead, async (req: Request, res: Response) => {
-    try {
-      const userId = (req as Request & { user?: { id: number } }).user?.id;
-      if (!userId) return res.status(401).json({ message: "Unauthorized" });
-      const rows = await db.select().from(notifications).where(eq(notifications.userId, userId));
-      res.json(rows);
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
-      res.status(500).json({ message: "Failed to fetch notifications" });
-    }
-  });
-
-  app.post("/api/notifications/:id/read", ...masterRead, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid notification ID" });
-      const updatedRows = (await db
-        .update(notifications)
-        .set({ readAt: new Date() })
-        .where(eq(notifications.id, id))
-        .returning()) as any[];
-      const updated = updatedRows[0];
-      if (!updated) return res.status(404).json({ message: "Notification not found" });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error marking notification read:", error);
-      res.status(500).json({ message: "Failed to update notification" });
-    }
-  });
-
-  app.get("/api/notification-preferences", ...masterRead, async (req: Request, res: Response) => {
-    try {
-      const userId = (req as Request & { user?: { id: number } }).user?.id;
-      if (!userId) return res.status(401).json({ message: "Unauthorized" });
-      const prefRows = (await db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId))) as any[];
-      const prefs = prefRows[0];
-      if (!prefs) {
-        const createdRows = (await db
-          .insert(notificationPreferences)
-          .values({ userId } as any)
-          .returning()) as any[];
-        const created = createdRows[0];
-        return res.json(created);
-      }
-      res.json(prefs);
-    } catch (error) {
-      console.error("Error fetching notification preferences:", error);
-      res.status(500).json({ message: "Failed to fetch notification preferences" });
-    }
-  });
-
-  app.patch("/api/notification-preferences", ...masterRead, async (req: Request, res: Response) => {
-    try {
-      const userId = (req as Request & { user?: { id: number } }).user?.id;
-      if (!userId) return res.status(401).json({ message: "Unauthorized" });
-      const existingRows = (await db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId))) as any[];
-      const existing = existingRows[0];
-      if (!existing) {
-        const createdRows = (await db
-          .insert(notificationPreferences)
-          .values({ userId, ...(req.body || {}) } as any)
-          .returning()) as any[];
-        const created = createdRows[0];
-        return res.json(created);
-      }
-      const updatedRows = (await db
-        .update(notificationPreferences)
-        .set(req.body || {})
-        .where(eq(notificationPreferences.userId, userId))
-        .returning()) as any[];
-      const updated = updatedRows[0];
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating notification preferences:", error);
-      res.status(500).json({ message: "Failed to update notification preferences" });
-    }
-  });
-
-  app.post("/api/notifications/send", ...masterWrite, async (req: Request, res: Response) => {
-    try {
-      const payload = req.body as {
-        userId: number;
-        type: string;
-        title: string;
-        body?: string;
-        entityType?: string;
-        entityId?: number;
-      };
-      if (!payload?.userId || !payload?.type || !payload?.title) {
-        return res.status(400).json({ message: "userId, type and title are required" });
-      }
-      const createdRows = (await db
-        .insert(notifications)
-        .values({
-          userId: payload.userId,
-          type: payload.type,
-          title: payload.title,
-          body: payload.body ?? null,
-          entityType: payload.entityType ?? null,
-          entityId: payload.entityId ?? null,
-        } as any)
-        .returning()) as any[];
-      const created = createdRows[0];
-
-      const prefRows = (await db
-        .select()
-        .from(notificationPreferences)
-        .where(eq(notificationPreferences.userId, payload.userId))) as any[];
-      const prefs = prefRows[0];
-      const userRows = (await db.select().from(users).where(eq(users.id, payload.userId))) as any[];
-      const user = userRows[0];
-
-      if (user?.email && prefs?.emailEnabled !== false) {
-        await sendEmail({
-          to: user.email,
-          subject: payload.title,
-          html: `<p>${payload.body ?? ""}</p>`,
-          text: payload.body ?? payload.title,
-        }).catch(() => {});
-      }
-      // Optional SMS hook: keep as integration point for providers like Twilio.
-      if (prefs?.smsEnabled === true) {
-        console.log("[sms-hook]", "send", { userId: payload.userId, title: payload.title });
-      }
-
-      res.status(201).json(created);
-    } catch (error) {
-      console.error("Error sending notification:", error);
-      res.status(500).json({ message: "Failed to send notification" });
-    }
-  });
-
   // Retention policies (admin)
   registerMasterDataCrud("/api/retention-policies", retentionPolicies, insertRetentionPolicySchema as any);
-
-  // Document metadata routes (versioned attachments by entity)
-  app.get("/api/documents", ...masterRead, async (req: Request, res: Response) => {
-    try {
-      const entityType = typeof req.query.entityType === "string" ? req.query.entityType : undefined;
-      const entityId = typeof req.query.entityId === "string" ? Number(req.query.entityId) : undefined;
-      let rows = await db.select().from(documents);
-      if (entityType) {
-        rows = await db.select().from(documents).where(eq(documents.entityType, entityType));
-      }
-      if (entityType && entityId != null && !isNaN(entityId)) {
-        rows = await db
-          .select()
-          .from(documents)
-          .where(and(eq(documents.entityType, entityType), eq(documents.entityId, entityId)));
-      }
-      res.json(rows);
-    } catch (error) {
-      console.error("Error fetching documents:", error);
-      res.status(500).json({ message: "Failed to fetch documents" });
-    }
-  });
-
-  app.post("/api/documents", ...masterWrite, async (req: Request, res: Response) => {
-    try {
-      const payload = req.body as {
-        entityType: string;
-        entityId: number;
-        fileUrl: string;
-        fileName: string;
-        mimeType?: string;
-        fileSize?: number;
-        checksum?: string;
-      };
-      if (!payload?.entityType || !payload?.entityId || !payload?.fileUrl || !payload?.fileName) {
-        return res.status(400).json({ message: "entityType, entityId, fileUrl and fileName are required" });
-      }
-      const existing = await db
-        .select()
-        .from(documents)
-        .where(and(eq(documents.entityType, payload.entityType), eq(documents.entityId, payload.entityId)));
-      const version = existing.length > 0 ? Math.max(...existing.map((d) => Number(d.version ?? 1))) + 1 : 1;
-      const createdRows = (await db
-        .insert(documents)
-        .values({
-          ...payload,
-          version,
-          uploadedBy: (req as Request & { user?: { id: number } }).user?.id,
-        } as any)
-        .returning()) as any[];
-      const created = createdRows[0];
-      res.status(201).json(created);
-    } catch (error) {
-      console.error("Error creating document record:", error);
-      res.status(500).json({ message: "Failed to create document record" });
-    }
-  });
-
-  app.post("/api/documents/upload", ...masterWrite, documentUpload.single("file"), async (req: Request, res: Response) => {
-    try {
-      if (!req.file) return res.status(400).json({ message: "File is required" });
-      const entityType = typeof req.body?.entityType === "string" ? req.body.entityType : "";
-      const entityId = Number(req.body?.entityId);
-      if (!entityType || !Number.isFinite(entityId)) {
-        return res.status(400).json({ message: "entityType and entityId are required" });
-      }
-
-      const fileUrl = `/uploads/documents/${req.file.filename}`;
-      const existing = await db
-        .select()
-        .from(documents)
-        .where(and(eq(documents.entityType, entityType), eq(documents.entityId, entityId)));
-      const version = existing.length > 0 ? Math.max(...existing.map((d) => Number(d.version ?? 1))) + 1 : 1;
-      const createdRows = (await db
-        .insert(documents)
-        .values({
-          entityType,
-          entityId,
-          fileUrl,
-          fileName: req.file.originalname,
-          mimeType: req.file.mimetype,
-          fileSize: req.file.size,
-          version,
-          uploadedBy: (req as Request & { user?: { id: number } }).user?.id ?? null,
-        } as any)
-        .returning()) as any[];
-      res.status(201).json(createdRows[0]);
-    } catch (error) {
-      console.error("Error uploading document:", error);
-      res.status(500).json({ message: "Failed to upload document" });
-    }
-  });
-
-  app.delete("/api/documents/:id", ...masterWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid document ID" });
-      const updatedRows = (await db
-        .update(documents)
-        .set({ archivedAt: new Date() } as any)
-        .where(eq(documents.id, id))
-        .returning()) as any[];
-      const updated = updatedRows[0];
-      if (!updated) return res.status(404).json({ message: "Document not found" });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error archiving document:", error);
-      res.status(500).json({ message: "Failed to archive document" });
-    }
-  });
 
   app.post("/api/retention-policies/run", ...masterWrite, async (_req: Request, res: Response) => {
     try {
@@ -1628,413 +629,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Supplier endpoints — RBAC: viewer read-only; manager/admin can create/update/delete
-  const supplierRead = [auth.ensureAuthenticated];
-  const supplierWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
-
-  const resolveSupplierIdForUser = async (req: Request): Promise<number | null> => {
-    const user = (req as Request & { user?: { id: number; role?: string; email?: string } }).user;
-    if (!user) return null;
-    const explicit = Number(req.query.supplierId ?? req.body?.supplierId);
-    const hasExplicit = Number.isFinite(explicit) && explicit > 0;
-    if (user.role === "supplier") {
-      const fullUser = await storage.getUser(Number(user.id));
-      const mapped = fullUser?.supplierId != null ? Number(fullUser.supplierId) : null;
-      if (mapped != null && Number.isFinite(mapped) && mapped > 0) {
-        return mapped;
-      }
-      const supplierRows = await supplierRepo.findAll();
-      const fallback = supplierRows.find((supplier) => supplier.email && user.email && supplier.email.toLowerCase() === user.email.toLowerCase());
-      // Supplier users are always scoped to their own mapped supplier, even if query/body includes supplierId.
-      return fallback?.id ?? null;
-    }
-    if (user.role === "admin" || user.role === "manager") {
-      return hasExplicit ? explicit : null;
-    }
-    return null;
-  };
-
-  app.get("/api/suppliers", ...supplierRead, async (_req: Request, res: Response) => {
-    try {
-      const suppliers = await supplierRepo.findAll();
-      res.json(suppliers);
-    } catch (error) {
-      console.error("Error fetching suppliers:", error);
-      res.status(200).json([]);
-    }
-  });
-
-  app.get("/api/suppliers/performance", ...supplierRead, async (_req: Request, res: Response) => {
-    try {
-      const supplierList = await supplierRepo.findAll();
-      const purchaseOrders = await storage.getAllPurchaseOrders();
-      const stockMovements = await storage.getAllStockMovements();
-      const invoices = await storage.getAllInvoices();
-
-      const performance = supplierList.map((supplier) => {
-        const supplierOrders = purchaseOrders.filter((po) => po.supplierId === supplier.id);
-        const supplierInvoices = invoices.filter((invoice) => Number((invoice as any).supplierId ?? 0) === supplier.id);
-
-        let onTimeCount = 0;
-        let measuredOrders = 0;
-        for (const order of supplierOrders) {
-          if (!order.expectedDeliveryDate) continue;
-          const receipts = stockMovements
-            .filter(
-              (movement) =>
-                movement.referenceType === "purchase_order" &&
-                Number(movement.referenceId ?? 0) === order.id &&
-                movement.type === "RECEIPT",
-            )
-            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-          if (receipts.length === 0) continue;
-          measuredOrders += 1;
-          const eta = new Date(order.expectedDeliveryDate);
-          const firstReceipt = new Date(receipts[0].receivedAt ?? receipts[0].timestamp);
-          if (!Number.isNaN(eta.getTime()) && !Number.isNaN(firstReceipt.getTime()) && firstReceipt <= eta) {
-            onTimeCount += 1;
-          }
-        }
-
-        const disputeCount = supplierInvoices.filter((invoice) => String(invoice.status).toUpperCase() === "DISPUTED").length;
-        const invoiceMeasured = supplierInvoices.length;
-        const priceComplianceRate =
-          invoiceMeasured > 0 ? Number((((invoiceMeasured - disputeCount) / invoiceMeasured) * 100).toFixed(1)) : 100;
-        const onTimeDeliveryRate =
-          measuredOrders > 0 ? Number(((onTimeCount / measuredOrders) * 100).toFixed(1)) : 0;
-        const overallRating = Number(((onTimeDeliveryRate * 0.6 + priceComplianceRate * 0.4) / 20).toFixed(1)); // /5 scale
-
-        return {
-          supplierId: supplier.id,
-          supplierName: supplier.name,
-          onTimeDeliveryRate,
-          priceComplianceRate,
-          ordersMeasured: measuredOrders,
-          invoicesMeasured: invoiceMeasured,
-          overallRating,
-        };
-      });
-
-      res.json(performance);
-    } catch (error) {
-      console.error("Error fetching supplier performance:", error);
-      res.status(500).json({ message: "Failed to fetch supplier performance" });
-    }
-  });
-
-  app.get("/api/suppliers/:id", ...supplierRead, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid supplier ID" });
-      }
-      
-      const supplier = await supplierRepo.findById(id);
-      
-      if (!supplier) {
-        return res.status(404).json({ message: "Supplier not found" });
-      }
-      
-      res.json(supplier);
-    } catch (error) {
-      console.error("Error fetching supplier:", error);
-      res.status(500).json({ message: "Failed to fetch supplier" });
-    }
-  });
-
-  app.post("/api/suppliers", ...supplierWrite, async (req: Request, res: Response) => {
-    try {
-      const validatedData = insertSupplierSchema.parse(req.body);
-      
-      // Check if supplier with this name already exists
-      const existingSupplier = await supplierRepo.findByName(validatedData.name);
-      if (existingSupplier) {
-        return res.status(400).json({ message: "Supplier with this name already exists" });
-      }
-      
-      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      const newSupplier = await supplierService.create(validatedData, userId);
-      res.status(201).json(newSupplier);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating supplier:", error);
-        res.status(500).json({ message: "Failed to create supplier" });
-      }
-    }
-  });
-
-  const handleUpdateSupplier = async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid supplier ID" });
-      }
-      const validatedData = insertSupplierSchema.partial().parse(req.body);
-      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      const updatedSupplier = await supplierService.update(id, validatedData, userId);
-      if (!updatedSupplier) {
-        return res.status(404).json({ message: "Supplier not found" });
-      }
-      res.json(updatedSupplier);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating supplier:", error);
-        res.status(500).json({ message: "Failed to update supplier" });
-      }
-    }
-  };
-
-  app.put("/api/suppliers/:id", ...supplierWrite, handleUpdateSupplier);
-  app.patch("/api/suppliers/:id", ...supplierWrite, handleUpdateSupplier);
-
-  app.delete("/api/suppliers/:id", ...supplierWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid supplier ID" });
-      }
-      
-      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      const success = await supplierService.delete(id, userId);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Supplier not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting supplier:", error);
-      res.status(500).json({ message: "Failed to delete supplier" });
-    }
-  });
-
-  // Supplier portal APIs
-  app.get("/api/supplier/orders", ...supplierRead, async (req: Request, res: Response) => {
-    try {
-      const user = (req as Request & { user?: { role?: string } }).user;
-      if (!user) return sendFunctionError(res, 401, "getSupplierPortalOrders", "Unauthorized");
-      if (!["supplier", "admin", "manager"].includes(String(user.role ?? ""))) {
-        return sendFunctionError(res, 403, "getSupplierPortalOrders", "Forbidden");
-      }
-      const supplierId = await resolveSupplierIdForUser(req);
-      if (!supplierId) return sendFunctionError(res, 400, "getSupplierPortalOrders", "Supplier mapping not found for user");
-      const orders = await storage.getAllPurchaseOrders();
-      res.json(orders.filter((order) => order.supplierId === supplierId));
-    } catch (error) {
-      console.error("Error fetching supplier orders:", error);
-      return sendFunctionError(res, 500, "getSupplierPortalOrders", "Failed to fetch supplier orders", error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  app.post("/api/supplier/orders/:id/confirm", ...supplierRead, async (req: Request, res: Response) => {
-    try {
-      const user = (req as Request & { user?: { role?: string } }).user;
-      if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
-        return sendFunctionError(res, 403, "confirmSupplierPortalOrder", "Forbidden");
-      }
-      const id = Number(req.params.id);
-      if (isNaN(id)) return sendFunctionError(res, 400, "confirmSupplierPortalOrder", "Invalid order ID");
-      const supplierId = await resolveSupplierIdForUser(req);
-      if (!supplierId) return sendFunctionError(res, 400, "confirmSupplierPortalOrder", "Supplier mapping not found for user");
-      const order = await storage.getPurchaseOrder(id);
-      if (!order || order.supplierId !== supplierId) return sendFunctionError(res, 404, "confirmSupplierPortalOrder", "Order not found");
-      const updated = await storage.updatePurchaseOrderStatus(id, PurchaseOrderStatus.ACKNOWLEDGED);
-      if (!updated) return sendFunctionError(res, 404, "confirmSupplierPortalOrder", "Unable to update order status");
-      await storage.createActivityLog({
-        action: "Supplier PO Confirmed",
-        description: `Supplier acknowledged PO ${order.orderNumber}`,
-        referenceType: "purchase_order",
-        referenceId: id,
-        userId: (req as Request & { user?: { id: number } }).user?.id ?? null,
-      });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error confirming supplier order:", error);
-      return sendFunctionError(res, 500, "confirmSupplierPortalOrder", "Failed to confirm order", error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  app.patch("/api/supplier/orders/:id/delivery", ...supplierRead, async (req: Request, res: Response) => {
-    try {
-      const user = (req as Request & { user?: { role?: string } }).user;
-      if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
-        return sendFunctionError(res, 403, "updateSupplierPortalDelivery", "Forbidden");
-      }
-      const id = Number(req.params.id);
-      if (isNaN(id)) return sendFunctionError(res, 400, "updateSupplierPortalDelivery", "Invalid order ID");
-      const supplierId = await resolveSupplierIdForUser(req);
-      if (!supplierId) return sendFunctionError(res, 400, "updateSupplierPortalDelivery", "Supplier mapping not found for user");
-      const order = await storage.getPurchaseOrder(id);
-      if (!order || order.supplierId !== supplierId) return sendFunctionError(res, 404, "updateSupplierPortalDelivery", "Order not found");
-      const expectedDeliveryDate = req.body?.expectedDeliveryDate ? new Date(req.body.expectedDeliveryDate) : null;
-      if (!expectedDeliveryDate || Number.isNaN(expectedDeliveryDate.getTime())) {
-        return sendFunctionError(res, 400, "updateSupplierPortalDelivery", "Valid expectedDeliveryDate is required");
-      }
-      const updated = await storage.updatePurchaseOrder(id, { expectedDeliveryDate });
-      if (!updated) return sendFunctionError(res, 404, "updateSupplierPortalDelivery", "Unable to update purchase order delivery date");
-      await storage.createActivityLog({
-        action: "Supplier Delivery Updated",
-        description: `Supplier updated delivery for PO ${order.orderNumber}`,
-        referenceType: "purchase_order",
-        referenceId: id,
-        userId: (req as Request & { user?: { id: number } }).user?.id ?? null,
-      });
-      await emitNotificationToRoles(["manager", "admin"], {
-        type: "shipment_delay",
-        title: `Supplier updated ETA for PO ${order.orderNumber}`,
-        body: `Expected delivery changed to ${expectedDeliveryDate.toISOString().slice(0, 10)}.`,
-        entityType: "purchase_order",
-        entityId: id,
-      });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating supplier delivery:", error);
-      return sendFunctionError(res, 500, "updateSupplierPortalDelivery", "Failed to update delivery", error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  app.post("/api/supplier/invoices", ...supplierRead, async (req: Request, res: Response) => {
-    try {
-      const user = (req as Request & { user?: { role?: string } }).user;
-      if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
-        return sendFunctionError(res, 403, "createSupplierPortalInvoice", "Forbidden");
-      }
-      const supplierId = await resolveSupplierIdForUser(req);
-      if (!supplierId) return sendFunctionError(res, 400, "createSupplierPortalInvoice", "Supplier mapping not found for user");
-      const payload = req.body as any;
-      const poId = Number(payload?.purchaseOrderId);
-      if (!Number.isFinite(poId)) return sendFunctionError(res, 400, "createSupplierPortalInvoice", "purchaseOrderId is required");
-      const order = await storage.getPurchaseOrder(poId);
-      if (!order || order.supplierId !== supplierId) return sendFunctionError(res, 404, "createSupplierPortalInvoice", "Purchase order not found");
-      const now = new Date();
-      const due = payload?.dueDate ? new Date(payload.dueDate) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-      const total = Number(payload?.total ?? order.totalAmount ?? 0);
-      if (!Number.isFinite(total) || total <= 0) {
-        return sendFunctionError(res, 400, "createSupplierPortalInvoice", "Invoice total must be a positive number");
-      }
-      const invoice = await storage.createInvoice(
-        {
-          invoiceNumber: payload?.invoiceNumber || `INV-SUP-${Date.now().toString().slice(-8)}`,
-          issueDate: payload?.issueDate ? new Date(payload.issueDate) : now,
-          dueDate: due,
-          customerId: null,
-          supplierId,
-          purchaseOrderId: poId,
-          subtotal: Number(payload?.subtotal ?? total),
-          tax: Number(payload?.tax ?? 0),
-          discount: Number(payload?.discount ?? 0),
-          total,
-          paidAmount: 0,
-          dueAmount: total,
-          currency: payload?.currency ?? "USD",
-          status: "DRAFT",
-          notes: payload?.notes ?? null,
-          createdBy: Number((req as Request & { user?: { id?: number } }).user?.id ?? 1),
-        } as any,
-        Array.isArray(payload?.items) ? payload.items : [],
-      );
-      res.status(201).json(invoice);
-    } catch (error) {
-      console.error("Error creating supplier invoice:", error);
-      return sendFunctionError(res, 500, "createSupplierPortalInvoice", "Failed to create supplier invoice", error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  // Supplier contracts — RBAC: viewer read-only; manager/admin can create/update/delete
-  const contractRead = [auth.ensureAuthenticated];
-  const contractWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
-
-  app.get("/api/contracts", ...contractRead, async (req: Request, res: Response) => {
-    try {
-      const supplierId = req.query.supplierId;
-      const id = typeof supplierId === "string" ? Number(supplierId) : undefined;
-      const contracts = await contractRepo.findAll(isNaN(id as number) ? undefined : id);
-      res.json(contracts);
-    } catch (error) {
-      console.error("Error fetching contracts:", error);
-      res.status(500).json({ message: "Failed to fetch contracts" });
-    }
-  });
-
-  app.get("/api/contracts/:id", ...contractRead, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
-      const contract = await contractRepo.findById(id);
-      if (!contract) return res.status(404).json({ message: "Contract not found" });
-      res.json(contract);
-    } catch (error) {
-      console.error("Error fetching contract:", error);
-      res.status(500).json({ message: "Failed to fetch contract" });
-    }
-  });
-
-  app.post("/api/contracts", ...contractWrite, async (req: Request, res: Response) => {
-    try {
-      const body = { ...req.body };
-      if (typeof body.startDate === "string") body.startDate = new Date(body.startDate);
-      if (body.endDate != null && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
-      const validated = insertSupplierContractSchema.parse(body);
-      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      const contract = await contractService.create(validated, userId);
-      res.status(201).json(contract);
-    } catch (error) {
-      if (error instanceof ContractDateError) {
-        return res.status(400).json({ message: error.message });
-      }
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        return res.status(400).json({ message: validationError.message });
-      }
-      console.error("Error creating contract:", error);
-      res.status(500).json({ message: "Failed to create contract" });
-    }
-  });
-
-  app.patch("/api/contracts/:id", ...contractWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
-      const body = { ...req.body };
-      if (typeof body.startDate === "string") body.startDate = new Date(body.startDate);
-      if (body.endDate != null && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
-      const validated = insertSupplierContractSchema.partial().parse(body);
-      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      const contract = await contractService.update(id, validated, userId);
-      if (!contract) return res.status(404).json({ message: "Contract not found" });
-      res.json(contract);
-    } catch (error) {
-      if (error instanceof ContractDateError) {
-        return res.status(400).json({ message: error.message });
-      }
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        return res.status(400).json({ message: validationError.message });
-      }
-      console.error("Error updating contract:", error);
-      res.status(500).json({ message: "Failed to update contract" });
-    }
-  });
-
-  app.delete("/api/contracts/:id", ...contractWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid contract ID" });
-      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      const ok = await contractService.delete(id, userId);
-      if (!ok) return res.status(404).json({ message: "Contract not found" });
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting contract:", error);
-      res.status(500).json({ message: "Failed to delete contract" });
-    }
-  });
+  const invWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
 
   // Bulk import inventory items
   app.post("/api/inventory/bulk-import", ...invWrite, async (req: Request, res: Response) => {
@@ -2053,859 +648,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Purchase Requisition & Purchase Order — RBAC: viewer read-only; manager/admin for create/update/delete/approve
-  const poRead = [auth.ensureAuthenticated];
-  const poWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
-  const roleMatchesPolicy = (policyRole: string | null | undefined, actorRole: string) => {
-    if (!policyRole) return true;
-    const normalizedActor = actorRole.trim().toLowerCase();
-    if (!normalizedActor) return false;
-    if (normalizedActor === "admin") return true;
-    const allowedRoles = policyRole
-      .split(/[,\s|/]+/)
-      .map((role) => role.trim().toLowerCase())
-      .filter(Boolean);
-    if (allowedRoles.length === 0) return true;
-    return allowedRoles.includes(normalizedActor);
-  };
-
-  app.get("/api/purchase-requisitions", ...poRead, async (_req: Request, res: Response) => {
-    try {
-      const requisitions = await storage.getAllPurchaseRequisitions();
-      res.json(requisitions);
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error("Error fetching purchase requisitions:", error);
-      res.status(500).json({
-        message: "Failed to fetch purchase requisitions",
-        ...(process.env.NODE_ENV !== "production" && { detail: errMsg }),
-      });
-    }
-  });
-
-  app.get("/api/purchase-requisitions/:id", ...poRead, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
-      }
-      
-      const requisition = await storage.getRequisitionWithDetails(id);
-      
-      if (!requisition) {
-        return res.status(404).json({ message: "Purchase requisition not found" });
-      }
-      
-      res.json(requisition);
-    } catch (error) {
-      console.error("Error fetching purchase requisition:", error);
-      res.status(500).json({ message: "Failed to fetch purchase requisition" });
-    }
-  });
-
-  app.post("/api/purchase-requisitions", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
-        return sendFunctionError(res, 400, "createPurchaseRequisition", "At least one item is required");
-      }
-      for (let i = 0; i < req.body.items.length; i++) {
-        const it = req.body.items[i];
-        if (Number(it?.quantity) <= 0) {
-          return sendFunctionError(res, 400, "createPurchaseRequisition", `Item ${i + 1}: quantity must be greater than zero`);
-        }
-        const price = Number(it?.unitPrice);
-        if (price < 0) {
-          return sendFunctionError(res, 400, "createPurchaseRequisition", `Item ${i + 1}: unit price cannot be negative`);
-        }
-        if (price === 0) {
-          return sendFunctionError(res, 400, "createPurchaseRequisition", `Item ${i + 1}: unit price must be greater than zero`);
-        }
-      }
-      
-      const validatedReqData = insertPurchaseRequisitionSchema.parse(req.body);
-      const validatedItemsData = req.body.items.map((item: any) => 
-        insertPurchaseRequisitionItemSchema.omit({ requisitionId: true }).parse(item)
-      );
-      if (!validatedReqData.supplierId) {
-        return sendFunctionError(res, 400, "createPurchaseRequisition", "Supplier is required");
-      }
-      const supplier = await storage.getSupplier(Number(validatedReqData.supplierId));
-      if (!supplier) {
-        return sendFunctionError(res, 400, "createPurchaseRequisition", "Supplier does not exist");
-      }
-      if (validatedReqData.departmentId) {
-        const deptRows = await db
-          .select({ id: departments.id })
-          .from(departments)
-          .where(eq(departments.id, Number(validatedReqData.departmentId)))
-          .limit(1);
-        if (deptRows.length === 0) {
-          return sendFunctionError(res, 400, "createPurchaseRequisition", "Department does not exist");
-        }
-      }
-      
-      // Generate a unique requisition number
-      if (!validatedReqData.requisitionNumber) {
-        const date = new Date();
-        const year = date.getFullYear().toString().substr(-2);
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-        validatedReqData.requisitionNumber = `REQ-${year}${month}-${random}`;
-      }
-      
-      // Default to PENDING so requisitions immediately enter approval workflow.
-      if (!validatedReqData.status) {
-        validatedReqData.status = PurchaseRequisitionStatus.PENDING;
-      }
-      
-      const newRequisition = await storage.createPurchaseRequisition(
-        validatedReqData, 
-        validatedItemsData
-      );
-      
-      res.status(201).json(newRequisition);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        return sendFunctionError(res, 400, "createPurchaseRequisition", validationError.message);
-      } else {
-        console.error("Error creating purchase requisition:", error);
-        return sendFunctionError(
-          res,
-          500,
-          "createPurchaseRequisition",
-          "Failed to create purchase requisition",
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
-  });
-
-  app.put("/api/purchase-requisitions/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return sendFunctionError(res, 400, "updatePurchaseRequisition", "Invalid purchase requisition ID");
-      }
-      
-      const validatedData = insertPurchaseRequisitionSchema.partial().parse(req.body);
-      if (validatedData.supplierId != null) {
-        const supplier = await storage.getSupplier(Number(validatedData.supplierId));
-        if (!supplier) {
-          return sendFunctionError(res, 400, "updatePurchaseRequisition", "Supplier does not exist");
-        }
-      }
-      if (validatedData.departmentId != null) {
-        const deptRows = await db
-          .select({ id: departments.id })
-          .from(departments)
-          .where(eq(departments.id, Number(validatedData.departmentId)))
-          .limit(1);
-        if (deptRows.length === 0) {
-          return sendFunctionError(res, 400, "updatePurchaseRequisition", "Department does not exist");
-        }
-      }
-      const updatedRequisition = await storage.updatePurchaseRequisition(id, validatedData);
-      
-      if (!updatedRequisition) {
-        return sendFunctionError(res, 404, "updatePurchaseRequisition", "Purchase requisition not found");
-      }
-      
-      res.json(updatedRequisition);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        return sendFunctionError(res, 400, "updatePurchaseRequisition", validationError.message);
-      } else {
-        console.error("Error updating purchase requisition:", error);
-        return sendFunctionError(
-          res,
-          500,
-          "updatePurchaseRequisition",
-          "Failed to update purchase requisition",
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
-  });
-
-  app.delete("/api/purchase-requisitions/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
-      }
-      
-      const success = await storage.deletePurchaseRequisition(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Purchase requisition not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting purchase requisition:", error);
-      res.status(500).json({ message: "Failed to delete purchase requisition" });
-    }
-  });
-
-  app.post("/api/purchase-requisitions/:id/approve", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return sendFunctionError(res, 400, "approvePurchaseRequisition", "Invalid purchase requisition ID");
-      }
-      
-      const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
-      const approverRole = String((req as any).user?.role ?? "");
-      const existing = await storage.getPurchaseRequisition(id);
-      if (!existing) return sendFunctionError(res, 404, "approvePurchaseRequisition", "Purchase requisition not found");
-      if (![PurchaseRequisitionStatus.PENDING, PurchaseRequisitionStatus.DRAFT].includes(existing.status as PurchaseRequisitionStatus)) {
-        return sendFunctionError(
-          res,
-          409,
-          "approvePurchaseRequisition",
-          `Requisition must be PENDING or DRAFT before approval; current status is ${existing.status}`,
-        );
-      }
-      if (existing.requestorId != null && approverId === existing.requestorId && approverRole.toLowerCase() !== "admin") {
-        return sendFunctionError(res, 403, "approvePurchaseRequisition", "Requester cannot approve their own requisition");
-      }
-      const requisitionTotal = Number(existing.totalAmount ?? 0);
-      const approverUser = await storage.getUser(approverId);
-      const userCap = approverUser?.approverAmountLimit != null ? Number(approverUser.approverAmountLimit) : null;
-      if (userCap != null && userCap > 0 && requisitionTotal > userCap) {
-        return sendFunctionError(
-          res,
-          403,
-          "approvePurchaseRequisition",
-          `Requisition total exceeds your approver limit (${userCap.toFixed(2)}).`,
-        );
-      }
-      const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
-      const applicable = policies
-        .filter((policy) => {
-          if (!policy.isActive) return false;
-          const min = Number(policy.amountMin ?? 0);
-          const max = policy.amountMax == null ? Number.POSITIVE_INFINITY : Number(policy.amountMax);
-          return requisitionTotal >= min && requisitionTotal <= max;
-        })
-        .sort((a, b) => Number(b.approvalLevel ?? 0) - Number(a.approvalLevel ?? 0))[0];
-      if (applicable) {
-        if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
-          return sendFunctionError(res, 403, "approvePurchaseRequisition", "Only the configured approver can approve this requisition");
-        }
-        if (!roleMatchesPolicy(applicable.approverRole, approverRole)) {
-          return sendFunctionError(res, 403, "approvePurchaseRequisition", "Your role is not allowed to approve this requisition amount");
-        }
-      }
-      
-      const updatedRequisition = await storage.approvePurchaseRequisition(id, approverId);
-      
-      if (!updatedRequisition) return sendFunctionError(res, 404, "approvePurchaseRequisition", "Purchase requisition not found");
-      await db.insert(approvalHistory).values({
-        entityType: "requisition",
-        entityId: id,
-        level: Number(applicable?.approvalLevel ?? 1),
-        action: "approved",
-        performedBy: approverId,
-        previousStatus: existing.status,
-        newStatus: updatedRequisition.status,
-        comment: typeof req.body?.comment === "string" ? req.body.comment : null,
-      } as any);
-      if (existing.requestorId) {
-        await emitNotification({
-          userId: Number(existing.requestorId),
-          type: "approval_request",
-          title: `Requisition ${existing.requisitionNumber ?? `#${id}`} approved`,
-          body: `Your requisition has been approved.`,
-          entityType: "requisition",
-          entityId: id,
-        });
-      }
-      
-      res.json(updatedRequisition);
-    } catch (error) {
-      console.error("Error approving purchase requisition:", error);
-      return sendFunctionError(
-        res,
-        500,
-        "approvePurchaseRequisition",
-        "Failed to approve purchase requisition",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  });
-
-  app.post("/api/purchase-requisitions/:id/reject", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return sendFunctionError(res, 400, "rejectPurchaseRequisition", "Invalid purchase requisition ID");
-      }
-      
-      const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
-      const approverRole = String((req as any).user?.role ?? "");
-      const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
-      const existing = await storage.getPurchaseRequisition(id);
-      if (!existing) return sendFunctionError(res, 404, "rejectPurchaseRequisition", "Purchase requisition not found");
-      if (existing.requestorId != null && approverId === existing.requestorId && approverRole.toLowerCase() !== "admin") {
-        return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Requester cannot reject their own requisition");
-      }
-      const requisitionTotal = Number(existing.totalAmount ?? 0);
-      const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
-      const applicable = policies
-        .filter((policy) => {
-          if (!policy.isActive) return false;
-          const min = Number(policy.amountMin ?? 0);
-          const max = policy.amountMax == null ? Number.POSITIVE_INFINITY : Number(policy.amountMax);
-          return requisitionTotal >= min && requisitionTotal <= max;
-        })
-        .sort((a, b) => Number(b.approvalLevel ?? 0) - Number(a.approvalLevel ?? 0))[0];
-      if (applicable) {
-        if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
-          return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Only the configured approver can reject this requisition");
-        }
-        if (!roleMatchesPolicy(applicable.approverRole, approverRole)) {
-          return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Your role is not allowed to reject this requisition amount");
-        }
-      }
-      
-      const updatedRequisition = await storage.rejectPurchaseRequisition(id, approverId, reason);
-      
-      if (!updatedRequisition) return sendFunctionError(res, 404, "rejectPurchaseRequisition", "Purchase requisition not found");
-      await db.insert(approvalHistory).values({
-        entityType: "requisition",
-        entityId: id,
-        level: Number(applicable?.approvalLevel ?? 1),
-        action: "rejected",
-        performedBy: approverId,
-        previousStatus: existing.status,
-        newStatus: updatedRequisition.status,
-        comment: reason || null,
-      } as any);
-      if (existing.requestorId) {
-        await emitNotification({
-          userId: Number(existing.requestorId),
-          type: "approval_request",
-          title: `Requisition ${existing.requisitionNumber ?? `#${id}`} rejected`,
-          body: reason || "Your requisition has been rejected.",
-          entityType: "requisition",
-          entityId: id,
-        });
-      }
-      
-      res.json(updatedRequisition);
-    } catch (error) {
-      console.error("Error rejecting purchase requisition:", error);
-      return sendFunctionError(
-        res,
-        500,
-        "rejectPurchaseRequisition",
-        "Failed to reject purchase requisition",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  });
-
-  app.post("/api/purchase-requisitions/:id/convert", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return sendFunctionError(res, 400, "convertPurchaseRequisitionToPO", "Invalid purchase requisition ID");
-      }
-      
-      const purchaseOrder = await storage.createPurchaseOrderFromRequisition(id);
-      
-      if (!purchaseOrder) {
-        return sendFunctionError(
-          res,
-          404,
-          "convertPurchaseRequisitionToPO",
-          "Failed to convert requisition to purchase order. Make sure the requisition exists and is approved.",
-        );
-      }
-      
-      res.status(201).json(purchaseOrder);
-    } catch (error) {
-      console.error("Error converting requisition to purchase order:", error);
-      return sendFunctionError(
-        res,
-        500,
-        "convertPurchaseRequisitionToPO",
-        "Failed to convert requisition to purchase order",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  });
-
-  app.post("/api/purchase-requisitions/:id/share", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
-      }
-      const { userIds } = req.body as { userIds?: number[] };
-      if (!Array.isArray(userIds)) {
-        return res.status(400).json({ message: "userIds must be an array of user IDs" });
-      }
-      const updated = await storage.updatePurchaseRequisition(id, { sharedWithUserIds: userIds });
-      if (!updated) {
-        return res.status(404).json({ message: "Purchase requisition not found" });
-      }
-      res.json(updated);
-    } catch (error) {
-      console.error("Error sharing requisition:", error);
-      res.status(500).json({ message: "Failed to share requisition" });
-    }
-  });
-
-  // Purchase Requisition Items endpoints
-  app.get("/api/purchase-requisitions/:reqId/items", ...poRead, async (req: Request, res: Response) => {
-    try {
-      const reqId = Number(req.params.reqId);
-      if (isNaN(reqId)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
-      }
-      
-      const items = await storage.getPurchaseRequisitionItems(reqId);
-      res.json(items);
-    } catch (error) {
-      console.error("Error fetching purchase requisition items:", error);
-      res.status(500).json({ message: "Failed to fetch purchase requisition items" });
-    }
-  });
-
-  app.post("/api/purchase-requisitions/:reqId/items", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const reqId = Number(req.params.reqId);
-      if (isNaN(reqId)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
-      }
-      
-      const validatedData = insertPurchaseRequisitionItemSchema.parse({
-        ...req.body,
-        requisitionId: reqId
-      });
-      
-      const newItem = await storage.addPurchaseRequisitionItem(validatedData);
-      res.status(201).json(newItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error adding purchase requisition item:", error);
-        res.status(500).json({ message: "Failed to add purchase requisition item" });
-      }
-    }
-  });
-
-  app.put("/api/purchase-requisitions-items/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition item ID" });
-      }
-      
-      const validatedData = insertPurchaseRequisitionItemSchema.partial().parse(req.body);
-      const updatedItem = await storage.updatePurchaseRequisitionItem(id, validatedData);
-      
-      if (!updatedItem) {
-        return res.status(404).json({ message: "Purchase requisition item not found" });
-      }
-      
-      res.json(updatedItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating purchase requisition item:", error);
-        res.status(500).json({ message: "Failed to update purchase requisition item" });
-      }
-    }
-  });
-
-  app.delete("/api/purchase-requisitions-items/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition item ID" });
-      }
-      
-      const success = await storage.deletePurchaseRequisitionItem(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Purchase requisition item not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting purchase requisition item:", error);
-      res.status(500).json({ message: "Failed to delete purchase requisition item" });
-    }
-  });
-
-  // Purchase Order endpoints (same RBAC as requisitions)
-  app.get("/api/purchase-orders", ...poRead, async (_req: Request, res: Response) => {
-    try {
-      const orders = await storage.getAllPurchaseOrders();
-      res.json(orders);
-    } catch (error) {
-      console.error("Error fetching purchase orders:", error);
-      res.status(500).json({ message: "Failed to fetch purchase orders" });
-    }
-  });
-
-  app.get("/api/purchase-orders/:id", ...poRead, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
-      }
-      
-      const order = await storage.getPurchaseOrderWithDetails(id);
-      
-      if (!order) {
-        return res.status(404).json({ message: "Purchase order not found" });
-      }
-      
-      res.json(order);
-    } catch (error) {
-      console.error("Error fetching purchase order:", error);
-      res.status(500).json({ message: "Failed to fetch purchase order" });
-    }
-  });
-
-  app.post("/api/purchase-orders", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
-        return res.status(400).json({ message: "At least one item is required" });
-      }
-      
-      const validatedOrderData = insertPurchaseOrderSchema.parse(req.body);
-      const validatedItemsData = req.body.items.map((item: any) => 
-        insertPurchaseOrderItemSchema.omit({ orderId: true }).parse(item)
-      );
-      
-      // Generate a unique order number
-      if (!validatedOrderData.orderNumber) {
-        const date = new Date();
-        const year = date.getFullYear().toString().substr(-2);
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-        validatedOrderData.orderNumber = `PO-${year}${month}-${random}`;
-      }
-      
-      // Set default status if not provided
-      if (!validatedOrderData.status) {
-        validatedOrderData.status = PurchaseOrderStatus.DRAFT;
-      }
-      
-      const newOrder = await storage.createPurchaseOrder(
-        validatedOrderData, 
-        validatedItemsData
-      );
-      const creatorId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      await db.insert(purchaseOrderRevisions).values({
-        orderId: newOrder.id,
-        revisionNumber: 1,
-        snapshot: {
-          order: newOrder,
-          items: validatedItemsData,
-          source: "create",
-        },
-        createdBy: creatorId,
-      } as any);
-      
-      res.status(201).json(newOrder);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating purchase order:", error);
-        res.status(500).json({ message: "Failed to create purchase order" });
-      }
-    }
-  });
-
-  app.put("/api/purchase-orders/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
-      }
-      
-      const validatedData = insertPurchaseOrderSchema.partial().parse(req.body);
-      const updatedOrder = await storage.updatePurchaseOrder(id, validatedData);
-      
-      if (!updatedOrder) {
-        return res.status(404).json({ message: "Purchase order not found" });
-      }
-      
-      const rev = await pool.query<{ max: number }>(
-        "SELECT COALESCE(MAX(revision_number), 0) AS max FROM purchase_order_revisions WHERE order_id = $1",
-        [id],
-      );
-      const nextRevision = Number(rev.rows[0]?.max ?? 0) + 1;
-      const updaterId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      await db.insert(purchaseOrderRevisions).values({
-        orderId: id,
-        revisionNumber: nextRevision,
-        snapshot: {
-          update: validatedData,
-          orderAfterUpdate: updatedOrder,
-          source: "update",
-        },
-        createdBy: updaterId,
-      } as any);
-      res.json(updatedOrder);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating purchase order:", error);
-        res.status(500).json({ message: "Failed to update purchase order" });
-      }
-    }
-  });
-
-  app.get("/api/purchase-orders/:id/revisions", ...poRead, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid purchase order ID" });
-      const rows = await db.select().from(purchaseOrderRevisions).where(eq(purchaseOrderRevisions.orderId, id));
-      res.json(rows);
-    } catch (error) {
-      console.error("Error fetching purchase order revisions:", error);
-      res.status(500).json({ message: "Failed to fetch purchase order revisions" });
-    }
-  });
-
-  app.delete("/api/purchase-orders/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
-      }
-      
-      const success = await storage.deletePurchaseOrder(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Purchase order not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting purchase order:", error);
-      res.status(500).json({ message: "Failed to delete purchase order" });
-    }
-  });
-
-  app.post("/api/purchase-orders/:id/update-status", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
-      }
-      
-      const { status } = req.body;
-      if (!status || !Object.values(PurchaseOrderStatus).includes(status as PurchaseOrderStatus)) {
-        return res.status(400).json({ message: "Valid status is required" });
-      }
-      
-      const updatedOrder = await storage.updatePurchaseOrderStatus(id, status);
-      
-      if (!updatedOrder) {
-        return res.status(404).json({ message: "Purchase order not found" });
-      }
-      
-      res.json(updatedOrder);
-    } catch (error) {
-      console.error("Error updating purchase order status:", error);
-      res.status(500).json({ message: "Failed to update purchase order status" });
-    }
-  });
-
-  app.post("/api/purchase-orders/:id/update-payment", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
-      }
-      
-      const { paymentStatus, reference } = req.body;
-      if (!paymentStatus || !Object.values(PaymentStatus).includes(paymentStatus as PaymentStatus)) {
-        return res.status(400).json({ message: "Valid payment status is required" });
-      }
-      
-      const updatedOrder = await storage.updatePurchaseOrderPaymentStatus(id, paymentStatus, reference);
-      
-      if (!updatedOrder) {
-        return res.status(404).json({ message: "Purchase order not found" });
-      }
-      
-      res.json(updatedOrder);
-    } catch (error) {
-      console.error("Error updating purchase order payment status:", error);
-      res.status(500).json({ message: "Failed to update purchase order payment status" });
-    }
-  });
-
-  app.post("/api/purchase-orders/:id/send-email", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
-      }
-      
-      const { email } = req.body;
-      if (!email) {
-        return res.status(400).json({ message: "Recipient email is required" });
-      }
-      
-      const success = await storage.sendPurchaseOrderEmail(id, email);
-      
-      if (!success) {
-        return res.status(500).json({ message: "Failed to send purchase order email" });
-      }
-      
-      // Update the order status to SENT if successful
-      await storage.updatePurchaseOrderStatus(id, PurchaseOrderStatus.SENT);
-      
-      res.json({ message: "Purchase order email sent successfully" });
-    } catch (error) {
-      console.error("Error sending purchase order email:", error);
-      res.status(500).json({ message: "Failed to send purchase order email" });
-    }
-  });
-
-  // Purchase Order Items endpoints
-  app.get("/api/purchase-orders/:orderId/items", ...poRead, async (req: Request, res: Response) => {
-    try {
-      const orderId = Number(req.params.orderId);
-      if (isNaN(orderId)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
-      }
-      
-      const items = await storage.getPurchaseOrderItems(orderId);
-      res.json(items);
-    } catch (error) {
-      console.error("Error fetching purchase order items:", error);
-      res.status(500).json({ message: "Failed to fetch purchase order items" });
-    }
-  });
-
-  app.post("/api/purchase-orders/:orderId/items", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const orderId = Number(req.params.orderId);
-      if (isNaN(orderId)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
-      }
-      
-      const validatedData = insertPurchaseOrderItemSchema.parse({
-        ...req.body,
-        orderId
-      });
-      
-      const newItem = await storage.addPurchaseOrderItem(validatedData);
-      res.status(201).json(newItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error adding purchase order item:", error);
-        res.status(500).json({ message: "Failed to add purchase order item" });
-      }
-    }
-  });
-
-  app.put("/api/purchase-order-items/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order item ID" });
-      }
-      
-      const validatedData = insertPurchaseOrderItemSchema.partial().parse(req.body);
-      const updatedItem = await storage.updatePurchaseOrderItem(id, validatedData);
-      
-      if (!updatedItem) {
-        return res.status(404).json({ message: "Purchase order item not found" });
-      }
-      
-      res.json(updatedItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating purchase order item:", error);
-        res.status(500).json({ message: "Failed to update purchase order item" });
-      }
-    }
-  });
-
-  app.delete("/api/purchase-order-items/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order item ID" });
-      }
-      
-      const success = await storage.deletePurchaseOrderItem(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Purchase order item not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting purchase order item:", error);
-      res.status(500).json({ message: "Failed to delete purchase order item" });
-    }
-  });
-
-  app.post("/api/purchase-order-items/:id/receive", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order item ID" });
-      }
-      
-      const { receivedQuantity, receiverName, warehouseLocation, receivedAt, receiverUserId } = req.body ?? {};
-      if (receivedQuantity === undefined || isNaN(Number(receivedQuantity)) || Number(receivedQuantity) < 0) {
-        return res.status(400).json({ message: "Valid received quantity is required" });
-      }
-
-      const meta =
-        receiverName != null || warehouseLocation != null || receivedAt != null || receiverUserId != null
-          ? {
-              receiverName: typeof receiverName === "string" ? receiverName : null,
-              warehouseLocation: typeof warehouseLocation === "string" ? warehouseLocation : null,
-              receivedAt: typeof receivedAt === "string" ? receivedAt : null,
-              receiverUserId:
-                receiverUserId != null && !isNaN(Number(receiverUserId)) ? Number(receiverUserId) : null,
-            }
-          : undefined;
-
-      const updatedItem = await storage.recordPurchaseOrderItemReceived(id, Number(receivedQuantity), meta);
-      
-      if (!updatedItem) {
-        return res.status(404).json({ message: "Purchase order item not found" });
-      }
-      
-      res.json(updatedItem);
-    } catch (error) {
-      console.error("Error recording received quantity:", error);
-      res.status(500).json({ message: "Failed to record received quantity" });
-    }
-  });
-
   // Custom PDF template upload (for report export with template=custom)
   app.post("/api/settings/pdf-template", pdfTemplateUpload.single("template"), (req: Request, res: Response) => {
     if (!req.file) {
@@ -2917,6 +659,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Document generation endpoints
   app.get("/api/export/:reportType/:format", async (req: Request, res: Response) => {
     try {
+      const flags = await getFeatureFlagsForActiveOrg();
+      if (!isOrgFeatureEnabled(flags, "exports")) {
+        return sendOrgFeatureDisabled(res, "exports");
+      }
+
       const reportType = req.params.reportType;
       const format = req.params.format;
       
@@ -2944,7 +691,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const categoryIdParam = req.query.categoryId as string;
       const warehouseIdParam = req.query.warehouseId as string;
       const supplierIdParam = req.query.supplierId as string;
+      const projectIdParam = req.query.projectId as string;
       const statusParam = req.query.status as string;
+      const poParam = typeof req.query.po === "string" ? req.query.po : undefined;
+      const carrierParam = typeof req.query.carrier === "string" ? req.query.carrier : undefined;
+      const riskParam = typeof req.query.risk === "string" ? req.query.risk : undefined;
       const templateParam = (req.query.template as string) || "standard";
 
       // Create filter object
@@ -2988,9 +739,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           filter.supplierId = supplierId;
         }
       }
+
+      if (projectIdParam) {
+        const projectId = parseInt(projectIdParam);
+        if (!isNaN(projectId)) {
+          filter.projectId = projectId;
+        }
+      }
       
       if (statusParam) {
         filter.status = statusParam;
+      }
+      if (poParam) {
+        filter.po = poParam;
+      }
+      if (carrierParam) {
+        filter.carrier = carrierParam;
+      }
+      if (riskParam) {
+        filter.risk = riskParam;
       }
       
       // Build filter text for title
@@ -3019,9 +786,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
           filterTexts.push(`Supplier: ${supplier.name}`);
         }
       }
+
+      if (filter.projectId) {
+        const [proj] = await db
+          .select({ name: projects.name, code: projects.code })
+          .from(projects)
+          .where(
+            and(eq(projects.id, filter.projectId), eq(projects.organizationId, getActiveOrganizationId())),
+          )
+          .limit(1);
+        if (proj) {
+          filterTexts.push(`Project: ${proj.code} — ${proj.name}`);
+        }
+      }
       
       if (filter.status) {
         filterTexts.push(`Status: ${filter.status}`);
+      }
+      if (filter.po) {
+        filterTexts.push(`PO: ${filter.po}`);
+      }
+      if (filter.carrier) {
+        filterTexts.push(`Carrier: ${filter.carrier}`);
+      }
+      if (filter.risk) {
+        filterTexts.push(`Risk: ${filter.risk}`);
       }
       
       const filterText = filterTexts.length > 0 ? ` (${filterTexts.join(', ')})` : '';
@@ -3167,6 +956,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (filter.status) {
             orders = orders.filter(order => order.status === filter.status);
           }
+          if (filter.projectId) {
+            orders = orders.filter(
+              (order) => (order as { projectId?: number | null }).projectId === filter.projectId,
+            );
+          }
 
           const poSuppliers = await storage.getAllSuppliers();
           const poSupplierNames = new Map(poSuppliers.map((s) => [s.id, s.name]));
@@ -3206,6 +1000,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Apply status filter if provided
           if (filter.status) {
             requisitions = requisitions.filter(req => req.status === filter.status);
+          }
+          if (filter.projectId) {
+            requisitions = requisitions.filter(
+              (req) => (req as { projectId?: number | null }).projectId === filter.projectId,
+            );
           }
 
           const reqSuppliers = await storage.getAllSuppliers();
@@ -3273,6 +1072,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
           title = 'Activity Logs Report' + filterText;
           break;
         }
+
+        case "invoices": {
+          let invList = await storage.getAllInvoices();
+          if (filter.startDate && filter.endDate) {
+            invList = invList.filter((inv) => {
+              const t = inv.issueDate ? new Date(inv.issueDate).getTime() : 0;
+              return t >= filter.startDate.getTime() && t <= filter.endDate.getTime();
+            });
+          }
+          if (filter.supplierId) {
+            invList = invList.filter((inv) => inv.supplierId === filter.supplierId);
+          }
+          if (filter.status) {
+            const st = String(filter.status).toUpperCase();
+            invList = invList.filter((inv) => String(inv.status).toUpperCase() === st);
+          }
+          const allSuppliers = await storage.getAllSuppliers();
+          const supNames = new Map(allSuppliers.map((s) => [s.id, s.name]));
+          const fmtInvDate = (d: Date | null | undefined) =>
+            d && !Number.isNaN(new Date(d).getTime())
+              ? new Date(d).toISOString().slice(0, 10)
+              : "";
+          data = invList.map((inv) => ({
+            ...inv,
+            supplierName: inv.supplierId != null ? (supNames.get(inv.supplierId) ?? "") : "",
+            issueDate: fmtInvDate(inv.issueDate),
+            dueDate: fmtInvDate(inv.dueDate),
+            subtotal: inv.subtotal ?? 0,
+            tax: inv.tax ?? 0,
+            total: inv.total ?? 0,
+            paidAmount: inv.paidAmount ?? 0,
+            dueAmount: inv.dueAmount ?? 0,
+            purchaseOrderId: inv.purchaseOrderId ?? "",
+          }));
+          title = "Invoices Report" + filterText;
+          break;
+        }
+
+        case "shipments": {
+          const params: string[] = [];
+          const whereParts: string[] = [];
+          if (filter.status?.trim()) {
+            params.push(filter.status.trim().toLowerCase());
+            whereParts.push(`lower(s.status) = $${params.length}`);
+          }
+          if (filter.po?.trim()) {
+            params.push(`%${filter.po.trim().toLowerCase()}%`);
+            whereParts.push(`lower(s.po_number) LIKE $${params.length}`);
+          }
+          if (filter.carrier?.trim()) {
+            params.push(`%${filter.carrier.trim().toLowerCase()}%`);
+            whereParts.push(`lower(COALESCE(s.carrier, '')) LIKE $${params.length}`);
+          }
+          if (filter.startDate && filter.endDate) {
+            params.push(filter.startDate.toISOString(), filter.endDate.toISOString());
+            whereParts.push(
+              `s.updated_at >= $${params.length - 1}::timestamptz AND s.updated_at <= $${params.length}::timestamptz`,
+            );
+          }
+          const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+          const shResult = await pool.query<{
+            id: number;
+            po_number: string;
+            carrier: string | null;
+            status: string;
+            eta: Date | null;
+            drift_minutes: number;
+            created_at: Date | null;
+            updated_at: Date | null;
+            tracking_number: string | null;
+          }>(
+            `
+            SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at, tracking_number
+            FROM shipments s
+            ${whereSql}
+            ORDER BY s.updated_at DESC NULLS LAST
+            `,
+            params,
+          );
+          const fmtTs = (d: Date | null | undefined) =>
+            d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(0, 19).replace("T", " ") : "";
+          let shipRows = shResult.rows.map((row) => {
+            const statusLower = row.status.toLowerCase();
+            const eta = row.eta;
+            const atRisk = Boolean(
+              eta && eta.getTime() < Date.now() && statusLower !== "delivered",
+            );
+            return {
+              id: row.id,
+              poNumber: row.po_number,
+              carrier: row.carrier ?? "",
+              status: statusLower,
+              eta: fmtTs(row.eta),
+              trackingNumber: row.tracking_number ?? "",
+              driftMinutes: row.drift_minutes ?? 0,
+              lateRisk: atRisk ? "Yes" : "No",
+              atRisk,
+              createdAt: fmtTs(row.created_at),
+              updatedAt: fmtTs(row.updated_at),
+            };
+          });
+          if (filter.risk?.trim().toLowerCase() === "late") {
+            shipRows = shipRows.filter((r) => r.atRisk);
+          }
+          data = shipRows.map(({ atRisk: _ar, ...rest }) => rest);
+          title = "Shipments Report" + filterText;
+          break;
+        }
           
         default:
           return res.status(400).json({ message: "Unsupported report type" });
@@ -3302,6 +1209,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...(filterTexts.length ? [`Filters: ${filterTexts.join("; ")}`] : []),
         ...(requestId ? [`Request ID: ${requestId}`] : []),
       ];
+      let organizationFooter: string | undefined;
+      let organizationDisplayName: string | undefined;
+      let organizationLogoUrl: string | undefined;
+      try {
+        const [osRow] = await db
+          .select({
+            reportFooter: organizationSettings.reportFooter,
+            displayName: organizationSettings.displayName,
+            logoUrl: organizationSettings.logoUrl,
+          })
+          .from(organizationSettings)
+          .where(eq(organizationSettings.organizationId, getActiveOrganizationId()))
+          .limit(1);
+        organizationFooter = osRow?.reportFooter?.trim() || undefined;
+        organizationDisplayName = osRow?.displayName?.trim() || undefined;
+        organizationLogoUrl = osRow?.logoUrl?.trim() || undefined;
+      } catch {
+        organizationFooter = undefined;
+        organizationDisplayName = undefined;
+        organizationLogoUrl = undefined;
+      }
+      let organizationLogoPng: Uint8Array | undefined;
+      if (format === "pdf" && organizationLogoUrl) {
+        organizationLogoPng = await loadLogoBytesForPdf(organizationLogoUrl);
+      }
       const buffer = await generateDocument(
         normalizedReportType as ReportType,
         format as ReportFormat,
@@ -3311,6 +1243,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           pdfTemplate: templateParam as "standard" | "compact" | "custom",
           customTemplateBuffer,
           metadataLines,
+          organizationFooter,
+          organizationDisplayName,
+          ...(organizationLogoPng?.length ? { organizationLogoPng } : {}),
         },
       );
 
@@ -3537,394 +1472,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Diagnostics fix error:", err);
       result.message = err instanceof Error ? err.message : String(err);
       res.status(500).json(result);
-    }
-  });
-
-  // Supplier Logo endpoints (same RBAC as suppliers)
-  app.get("/api/suppliers/:id/logo", ...supplierRead, async (req: Request, res: Response) => {
-    try {
-      const supplierId = Number(req.params.id);
-      if (isNaN(supplierId)) {
-        return res.status(400).json({ message: "Invalid supplier ID" });
-      }
-      
-      const logo = await storage.getSupplierLogo(supplierId);
-      if (!logo) {
-        return res.status(404).json({ message: "Supplier logo not found" });
-      }
-      
-      res.json(logo);
-    } catch (error) {
-      console.error("Error fetching supplier logo:", error);
-      res.status(500).json({ message: "Failed to fetch supplier logo" });
-    }
-  });
-
-  app.post("/api/suppliers/:id/logo", ...supplierWrite, async (req: Request, res: Response) => {
-    try {
-      const supplierId = Number(req.params.id);
-      if (isNaN(supplierId)) {
-        return res.status(400).json({ message: "Invalid supplier ID" });
-      }
-      
-      // Check if the supplier exists
-      const supplier = await storage.getSupplier(supplierId);
-      if (!supplier) {
-        return res.status(404).json({ message: "Supplier not found" });
-      }
-      
-      const validatedData = insertSupplierLogoSchema.parse({
-        ...req.body,
-        supplierId
-      });
-      
-      const logo = await storage.createSupplierLogo(validatedData);
-      res.status(201).json(logo);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating supplier logo:", error);
-        res.status(500).json({ message: "Failed to create supplier logo" });
-      }
-    }
-  });
-
-  app.put("/api/suppliers/:id/logo", ...supplierWrite, async (req: Request, res: Response) => {
-    try {
-      const supplierId = Number(req.params.id);
-      if (isNaN(supplierId)) {
-        return res.status(400).json({ message: "Invalid supplier ID" });
-      }
-      
-      if (!req.body.logoUrl) {
-        return res.status(400).json({ message: "Logo URL is required" });
-      }
-      
-      const updatedLogo = await storage.updateSupplierLogo(supplierId, req.body.logoUrl);
-      if (!updatedLogo) {
-        return res.status(404).json({ message: "Supplier logo not found" });
-      }
-      
-      res.json(updatedLogo);
-    } catch (error) {
-      console.error("Error updating supplier logo:", error);
-      res.status(500).json({ message: "Failed to update supplier logo" });
-    }
-  });
-
-  app.delete("/api/suppliers/:id/logo", ...supplierWrite, async (req: Request, res: Response) => {
-    try {
-      const supplierId = Number(req.params.id);
-      if (isNaN(supplierId)) {
-        return res.status(400).json({ message: "Invalid supplier ID" });
-      }
-      
-      const success = await storage.deleteSupplierLogo(supplierId);
-      if (!success) {
-        return res.status(404).json({ message: "Supplier logo not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting supplier logo:", error);
-      res.status(500).json({ message: "Failed to delete supplier logo" });
-    }
-  });
-
-  // Warehouse endpoints — RBAC: viewer read-only; manager/admin can create/update/delete
-  const warehouseRead = [auth.ensureAuthenticated];
-  const warehouseWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
-
-  app.get("/api/warehouses", ...warehouseRead, async (_req: Request, res: Response) => {
-    try {
-      const warehouses = await warehouseRepo.findAll();
-      res.json(warehouses);
-    } catch (error) {
-      console.error("Error fetching warehouses:", error);
-      res.status(200).json([]);
-    }
-  });
-
-  app.get("/api/warehouses/default", ...warehouseRead, async (_req: Request, res: Response) => {
-    try {
-      const warehouse = await warehouseRepo.findDefault();
-      if (!warehouse) {
-        return res.status(404).json({ message: "No default warehouse found" });
-      }
-      res.json(warehouse);
-    } catch (error) {
-      console.error("Error fetching default warehouse:", error);
-      res.status(500).json({ message: "Failed to fetch default warehouse" });
-    }
-  });
-
-  app.get("/api/warehouses/:id", ...warehouseRead, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid warehouse ID" });
-      }
-      
-      const warehouse = await warehouseRepo.findById(id);
-      
-      if (!warehouse) {
-        return res.status(404).json({ message: "Warehouse not found" });
-      }
-      
-      res.json(warehouse);
-    } catch (error) {
-      console.error("Error fetching warehouse:", error);
-      res.status(500).json({ message: "Failed to fetch warehouse" });
-    }
-  });
-
-  app.post("/api/warehouses", ...warehouseWrite, async (req: Request, res: Response) => {
-    try {
-      const validatedData = insertWarehouseSchema.parse(req.body);
-      const newWarehouse = await warehouseRepo.create(validatedData);
-      res.status(201).json(newWarehouse);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating warehouse:", error);
-        res.status(500).json({ message: "Failed to create warehouse" });
-      }
-    }
-  });
-
-  app.put("/api/warehouses/:id", ...warehouseWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid warehouse ID" });
-      }
-      
-      const validatedData = insertWarehouseSchema.partial().parse(req.body);
-      const updatedWarehouse = await warehouseRepo.update(id, validatedData);
-      
-      if (!updatedWarehouse) {
-        return res.status(404).json({ message: "Warehouse not found" });
-      }
-      
-      res.json(updatedWarehouse);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating warehouse:", error);
-        res.status(500).json({ message: "Failed to update warehouse" });
-      }
-    }
-  });
-  
-  // Add PATCH endpoint for warehouse updates - serves the same purpose as PUT
-  app.patch("/api/warehouses/:id", ...warehouseWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid warehouse ID" });
-      }
-      
-      const validatedData = insertWarehouseSchema.partial().parse(req.body);
-      const updatedWarehouse = await warehouseRepo.update(id, validatedData);
-      
-      if (!updatedWarehouse) {
-        return res.status(404).json({ message: "Warehouse not found" });
-      }
-      
-      res.json(updatedWarehouse);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating warehouse:", error);
-        res.status(500).json({ message: "Failed to update warehouse" });
-      }
-    }
-  });
-
-  app.delete("/api/warehouses/:id", ...warehouseWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid warehouse ID" });
-      }
-      
-      const success = await warehouseRepo.delete(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Warehouse not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting warehouse:", error);
-      res.status(500).json({ message: "Failed to delete warehouse" });
-    }
-  });
-
-  app.put("/api/warehouses/:id/set-default", ...warehouseWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid warehouse ID" });
-      }
-      
-      const warehouse = await warehouseRepo.setDefault(id);
-      
-      if (!warehouse) {
-        return res.status(404).json({ message: "Warehouse not found" });
-      }
-      
-      res.json(warehouse);
-    } catch (error) {
-      console.error("Error setting default warehouse:", error);
-      res.status(500).json({ message: "Failed to set default warehouse" });
-    }
-  });
-
-  // Warehouse inventory endpoints
-  app.get("/api/warehouse-inventory/:warehouseId", async (req: Request, res: Response) => {
-    try {
-      const warehouseId = Number(req.params.warehouseId);
-      if (isNaN(warehouseId)) {
-        return res.status(400).json({ message: "Invalid warehouse ID" });
-      }
-      
-      const inventory = await storage.getWarehouseInventory(warehouseId);
-      res.json(inventory);
-    } catch (error) {
-      console.error("Error fetching warehouse inventory:", error);
-      res.status(500).json({ message: "Failed to fetch warehouse inventory" });
-    }
-  });
-
-  app.get("/api/warehouse-inventory/:warehouseId/:itemId", async (req: Request, res: Response) => {
-    try {
-      const warehouseId = Number(req.params.warehouseId);
-      const itemId = Number(req.params.itemId);
-      if (isNaN(warehouseId) || isNaN(itemId)) {
-        return res.status(400).json({ message: "Invalid warehouse or item ID" });
-      }
-      
-      const inventoryItem = await storage.getWarehouseInventoryItem(warehouseId, itemId);
-      
-      if (!inventoryItem) {
-        return res.status(404).json({ message: "Warehouse inventory item not found" });
-      }
-      
-      res.json(inventoryItem);
-    } catch (error) {
-      console.error("Error fetching warehouse inventory item:", error);
-      res.status(500).json({ message: "Failed to fetch warehouse inventory item" });
-    }
-  });
-
-  app.post("/api/warehouse-inventory", async (req: Request, res: Response) => {
-    try {
-      const validatedData = insertWarehouseInventorySchema.parse(req.body);
-      const newInventoryItem = await storage.createWarehouseInventory(validatedData);
-      res.status(201).json(newInventoryItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating warehouse inventory item:", error);
-        res.status(500).json({ message: "Failed to create warehouse inventory item" });
-      }
-    }
-  });
-
-  app.put("/api/warehouse-inventory/:id", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid inventory item ID" });
-      }
-      
-      const validatedData = insertWarehouseInventorySchema.partial().parse(req.body);
-      
-      // Get the previous state for comparison
-      const previousItem = await storage.getWarehouseInventoryById(id);
-      if (!previousItem) {
-        return res.status(404).json({ message: "Warehouse inventory item not found" });
-      }
-      
-      const previousQuantity = previousItem.quantity;
-      const updatedItem = await storage.updateWarehouseInventory(id, validatedData);
-      
-      if (!updatedItem) {
-        return res.status(404).json({ message: "Warehouse inventory item not found" });
-      }
-      
-      // If quantity changed, notify via WebSocket
-      if (validatedData.quantity !== undefined && validatedData.quantity !== previousQuantity) {
-        try {
-          const { notifyInventoryUpdate } = await import('./websocket-service');
-          notifyInventoryUpdate(
-            updatedItem.itemId, 
-            updatedItem.warehouseId, 
-            updatedItem.quantity, 
-            previousQuantity
-          );
-        } catch (wsError) {
-          console.error("Failed to notify inventory update via WebSocket:", wsError);
-          // Continue with the response even if WebSocket notification fails
-        }
-      }
-      
-      res.json(updatedItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating warehouse inventory item:", error);
-        res.status(500).json({ message: "Failed to update warehouse inventory item" });
-      }
-    }
-  });
-
-  app.delete("/api/warehouse-inventory/:id", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid inventory item ID" });
-      }
-      
-      const success = await storage.deleteWarehouseInventory(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Warehouse inventory item not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting warehouse inventory item:", error);
-      res.status(500).json({ message: "Failed to delete warehouse inventory item" });
-    }
-  });
-  
-  // Get inventory of an item across all warehouses
-  app.get("/api/inventory/:itemId/warehouses", async (req: Request, res: Response) => {
-    try {
-      const itemId = Number(req.params.itemId);
-      if (isNaN(itemId)) {
-        return res.status(400).json({ message: "Invalid item ID" });
-      }
-      
-      const inventory = await storage.getItemWarehouseInventory(itemId);
-      res.json(inventory);
-    } catch (error) {
-      console.error("Error fetching item warehouse inventory:", error);
-      res.status(500).json({ message: "Failed to fetch item warehouse inventory" });
     }
   });
 
@@ -4535,198 +2082,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Reorder request endpoints
-  app.get("/api/reorder-requests", async (req: Request, res: Response) => {
-    try {
-      const startDateParam = req.query.startDate as string;
-      const endDateParam = req.query.endDate as string;
-      
-      if (startDateParam && endDateParam) {
-        const startDate = new Date(startDateParam);
-        const endDate = new Date(endDateParam);
-        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-          return res.status(400).json({ message: "Invalid date format" });
-        }
-        
-        const requests = await storage.getReorderRequestsByDateRange(startDate, endDate);
-        return res.json(requests);
-      }
-      
-      const requests = await storage.getAllReorderRequests();
-      res.json(requests);
-    } catch (error) {
-      console.error("Error fetching reorder requests:", error);
-      res.status(500).json({ message: "Failed to fetch reorder requests" });
-    }
-  });
-  
-  app.get("/api/reorder-requests/:id", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid reorder request ID" });
-      }
-      
-      const request = await storage.getReorderRequestWithDetails(id);
-      
-      if (!request) {
-        return res.status(404).json({ message: "Reorder request not found" });
-      }
-      
-      res.json(request);
-    } catch (error) {
-      console.error("Error fetching reorder request:", error);
-      res.status(500).json({ message: "Failed to fetch reorder request" });
-    }
-  });
-  
-  app.post("/api/reorder-requests", async (req: Request, res: Response) => {
-    try {
-      const validatedData = reorderRequestFormSchema.parse(req.body);
-      
-      // Set status to PENDING if not specified
-      if (!validatedData.status) {
-        validatedData.status = ReorderRequestStatus.PENDING;
-      }
-      
-      // Generate request number if not provided
-      if (!validatedData.requestNumber) {
-        const date = new Date();
-        const year = date.getFullYear().toString();
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const day = date.getDate().toString().padStart(2, '0');
-        const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        validatedData.requestNumber = `RO-${year}${month}${day}-${random}`;
-      }
-      
-      const newRequest = await storage.createReorderRequest(validatedData);
-      res.status(201).json(newRequest);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating reorder request:", error);
-        res.status(500).json({ message: "Failed to create reorder request" });
-      }
-    }
-  });
-  
-  app.put("/api/reorder-requests/:id", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid reorder request ID" });
-      }
-      
-      const validatedData = reorderRequestFormSchema.partial().parse(req.body);
-      const updatedRequest = await storage.updateReorderRequest(id, validatedData);
-      
-      if (!updatedRequest) {
-        return res.status(404).json({ message: "Reorder request not found" });
-      }
-      
-      res.json(updatedRequest);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating reorder request:", error);
-        res.status(500).json({ message: "Failed to update reorder request" });
-      }
-    }
-  });
-  
-  app.delete("/api/reorder-requests/:id", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid reorder request ID" });
-      }
-      
-      const success = await storage.deleteReorderRequest(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Reorder request not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting reorder request:", error);
-      res.status(500).json({ message: "Failed to delete reorder request" });
-    }
-  });
-  
-  app.post("/api/reorder-requests/:id/approve", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid reorder request ID" });
-      }
-      
-      // In a real application, we would get the current user ID from authentication
-      const approverId = req.body.approverId || 1; // Using default admin user ID
-      
-      const approvedRequest = await storage.approveReorderRequest(id, approverId);
-      
-      if (!approvedRequest) {
-        return res.status(404).json({ message: "Reorder request not found" });
-      }
-      
-      res.json(approvedRequest);
-    } catch (error) {
-      console.error("Error approving reorder request:", error);
-      res.status(500).json({ message: "Failed to approve reorder request" });
-    }
-  });
-  
-  app.post("/api/reorder-requests/:id/reject", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid reorder request ID" });
-      }
-      
-      const { approverId = 1, reason } = req.body;
-      
-      if (!reason) {
-        return res.status(400).json({ message: "Rejection reason is required" });
-      }
-      
-      const rejectedRequest = await storage.rejectReorderRequest(id, approverId, reason);
-      
-      if (!rejectedRequest) {
-        return res.status(404).json({ message: "Reorder request not found" });
-      }
-      
-      res.json(rejectedRequest);
-    } catch (error) {
-      console.error("Error rejecting reorder request:", error);
-      res.status(500).json({ message: "Failed to reject reorder request" });
-    }
-  });
-  
-  app.post("/api/reorder-requests/:id/convert", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid reorder request ID" });
-      }
-      
-      const requisition = await storage.convertReorderRequestToRequisition(id);
-      
-      if (!requisition) {
-        return res.status(404).json({ message: "Reorder request not found or cannot be converted" });
-      }
-      
-      res.json(requisition);
-    } catch (error) {
-      console.error("Error converting reorder request to requisition:", error);
-      res.status(500).json({ message: "Failed to convert reorder request to requisition" });
-    }
-  });
-
   // Analytics and forecasting endpoints
   app.get("/api/analytics/demand-forecast/:itemId", async (req: Request, res: Response) => {
     try {
@@ -5283,240 +2638,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to delete time restriction" });
     }
   });
-  
-  // ================== ROLE MANAGEMENT ENDPOINTS ==================
-  
-  // System Roles and Permissions
-  app.get("/api/roles", async (_req: Request, res: Response) => {
-    try {
-      // Return a list of all available roles from UserRole enum
-      res.json(Object.values(UserRoleEnum));
-    } catch (error) {
-      console.error("Error fetching roles:", error);
-      res.status(500).json({ message: "Failed to fetch roles" });
-    }
-  });
-  
-  app.get("/api/roles/:role/permissions", async (req: Request, res: Response) => {
-    try {
-      const role = req.params.role as keyof typeof UserRoleEnum;
-      
-      // Validate role exists
-      if (!Object.values(UserRoleEnum).includes(role as UserRoleEnum)) {
-        return res.status(400).json({ message: "Invalid role" });
-      }
-      
-      const permissions = await storage.getPermissionsByRole(role);
-      res.json(permissions);
-    } catch (error) {
-      console.error("Error fetching role permissions:", error);
-      res.status(500).json({ message: "Failed to fetch role permissions" });
-    }
-  });
-  
-  // Custom Roles
-  app.get("/api/custom-roles", async (_req: Request, res: Response) => {
-    try {
-      const roles = await storage.getAllCustomRoles();
-      res.json(roles);
-    } catch (error) {
-      console.error("Error fetching custom roles:", error);
-      res.status(500).json({ message: "Failed to fetch custom roles" });
-    }
-  });
-  
-  app.get("/api/custom-roles/:id", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      const role = await storage.getCustomRole(id);
-      
-      if (!role) {
-        return res.status(404).json({ message: "Custom role not found" });
-      }
-      
-      res.json(role);
-    } catch (error) {
-      console.error("Error fetching custom role:", error);
-      res.status(500).json({ message: "Failed to fetch custom role" });
-    }
-  });
-  
-  app.post("/api/custom-roles", async (req: Request, res: Response) => {
-    try {
-      // Admin only endpoint
-      if (req.user && req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Unauthorized to access this resource" });
-      }
-      
-      // Parse request using the schema with defaults
-      const validatedData = createCustomRoleSchema.safeParse({
-        ...req.body,
-        createdBy: req.user ? req.user.id : 1 // Use authenticated user's ID if available
-      });
-      
-      if (!validatedData.success) {
-        return res.status(400).json({ 
-          message: "Invalid role data", 
-          errors: validatedData.error.errors 
-        });
-      }
-      
-      const roleData = validatedData.data;
-      
-      const newRole = await storage.createCustomRole(roleData);
-      res.status(201).json(newRole);
-    } catch (error) {
-      console.error("Error creating custom role:", error);
-      res.status(500).json({ message: "Failed to create custom role" });
-    }
-  });
-  
-  app.put("/api/custom-roles/:id", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      // Admin only endpoint
-      if (req.user && req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Unauthorized to access this resource" });
-      }
-      
-      // Check if it's a system role
-      const role = await storage.getCustomRole(id);
-      if (role && role.isSystemRole) {
-        return res.status(403).json({ message: "Cannot modify system roles" });
-      }
-      
-      const roleData = {
-        ...req.body,
-        updatedById: req.user ? req.user.id : undefined // Use authenticated user's ID if available
-      };
-      
-      const updatedRole = await storage.updateCustomRole(id, roleData);
-      
-      if (!updatedRole) {
-        return res.status(404).json({ message: "Custom role not found" });
-      }
-      
-      res.json(updatedRole);
-    } catch (error) {
-      console.error("Error updating custom role:", error);
-      res.status(500).json({ message: "Failed to update custom role" });
-    }
-  });
-  
-  app.delete("/api/custom-roles/:id", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      // Admin only endpoint
-      if (req.user && req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Unauthorized to access this resource" });
-      }
-      
-      // Check if it's a system role
-      const role = await storage.getCustomRole(id);
-      if (role && role.isSystemRole) {
-        return res.status(403).json({ message: "Cannot delete system roles" });
-      }
-      
-      const success = await storage.deleteCustomRole(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Custom role not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting custom role:", error);
-      res.status(500).json({ message: "Failed to delete custom role" });
-    }
-  });
-  
-  // Custom Role Permissions
-  app.get("/api/custom-roles/:id/permissions", async (req: Request, res: Response) => {
-    try {
-      const roleId = Number(req.params.id);
-      if (isNaN(roleId)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      const permissions = await storage.getAllCustomRolePermissions(roleId);
-      res.json(permissions);
-    } catch (error) {
-      console.error("Error fetching custom role permissions:", error);
-      res.status(500).json({ message: "Failed to fetch custom role permissions" });
-    }
-  });
-  
-  app.post("/api/custom-roles/:id/permissions", async (req: Request, res: Response) => {
-    try {
-      const roleId = Number(req.params.id);
-      if (isNaN(roleId)) {
-        return res.status(400).json({ message: "Invalid role ID" });
-      }
-      
-      // Admin only endpoint
-      if (req.user && req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Unauthorized to access this resource" });
-      }
-      
-      const permissionData = {
-        ...req.body,
-        roleId
-      };
-      
-      const newPermission = await storage.createCustomRolePermission(permissionData);
-      res.status(201).json(newPermission);
-    } catch (error) {
-      console.error("Error creating custom role permission:", error);
-      res.status(500).json({ message: "Failed to create custom role permission" });
-    }
-  });
-  
-  app.delete("/api/custom-roles/:roleId/permissions/:permissionId", async (req: Request, res: Response) => {
-    try {
-      const roleId = Number(req.params.roleId);
-      const permissionId = Number(req.params.permissionId);
-      
-      if (isNaN(roleId) || isNaN(permissionId)) {
-        return res.status(400).json({ message: "Invalid role or permission ID" });
-      }
-      
-      // Admin only endpoint
-      if (req.user && req.user.role !== 'admin') {
-        return res.status(403).json({ message: "Unauthorized to access this resource" });
-      }
-      
-      // Check if the permission belongs to the role
-      const permission = await storage.getCustomRolePermission(permissionId);
-      if (!permission || permission.roleId !== roleId) {
-        return res.status(404).json({ message: "Permission not found for this role" });
-      }
-      
-      const success = await storage.deleteCustomRolePermission(permissionId);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Permission not found" });
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting custom role permission:", error);
-      res.status(500).json({ message: "Failed to delete custom role permission" });
-    }
-  });
 
-  // Create the HTTP server
   // WebSocket test endpoint for real-time inventory updates
   app.post("/api/inventory-sync/test", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {

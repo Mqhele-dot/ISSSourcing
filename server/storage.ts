@@ -61,6 +61,9 @@ const MemoryStore = memorystore(session);
 const PostgresSessionStore = connectPgSimple(session);
 import crypto from "crypto";
 
+/** Default org for in-memory storage (matches seeded `organizations.id = 1`). */
+const MEM_DEFAULT_ORG_ID = 1;
+
 export interface IStorage {
   // Session store for Express sessions
   sessionStore: session.Store;
@@ -1041,6 +1044,7 @@ export class MemStorage implements IStorage {
     const newRole: CustomRole = {
       ...role,
       id,
+      organizationId: role.organizationId ?? MEM_DEFAULT_ORG_ID,
       createdAt: now,
       updatedAt: now,
       description: role.description || null,
@@ -1621,7 +1625,8 @@ export class MemStorage implements IStorage {
       ipAddress: ipAddress || null,
       userAgent: userAgent || null,
       lastActivity: now,
-      isValid: true
+      isValid: true,
+      activeOrganizationId: user.defaultOrganizationId ?? MEM_DEFAULT_ORG_ID,
     };
     
     this.sessions.set(session.id, session);
@@ -1718,6 +1723,7 @@ export class MemStorage implements IStorage {
     const user: User = { 
       ...insertUser, 
       id,
+      defaultOrganizationId: MEM_DEFAULT_ORG_ID,
       createdAt: now,
       updatedAt: now,
       fullName: insertUser.fullName ?? null,
@@ -2248,6 +2254,7 @@ export class MemStorage implements IStorage {
     const category: Category = { 
       ...insertCategory, 
       id,
+      organizationId: MEM_DEFAULT_ORG_ID,
       description: insertCategory.description || null
     };
     this.categories.set(id, category);
@@ -2301,6 +2308,7 @@ export class MemStorage implements IStorage {
     const warehouse: Warehouse = {
       ...insertWarehouse,
       id,
+      organizationId: insertWarehouse.organizationId ?? MEM_DEFAULT_ORG_ID,
       createdAt: now,
       updatedAt: now,
       address: insertWarehouse.address || null,
@@ -2464,6 +2472,7 @@ export class MemStorage implements IStorage {
     const wi: WarehouseInventory = {
       ...insertWI,
       id,
+      organizationId: insertWI.organizationId ?? MEM_DEFAULT_ORG_ID,
       updatedAt: now,
       quantity: insertWI.quantity || 0,
       location: insertWI.location || null,
@@ -2600,6 +2609,7 @@ export class MemStorage implements IStorage {
     const movement: StockMovement = {
       ...insertMovement,
       id,
+      organizationId: insertMovement.organizationId ?? MEM_DEFAULT_ORG_ID,
       timestamp: insertMovement.timestamp || now,
       createdAt: now,
       notes: insertMovement.notes || null,
@@ -2913,6 +2923,7 @@ export class MemStorage implements IStorage {
     const supplier: Supplier = {
       ...insertSupplier,
       id,
+      organizationId: insertSupplier.organizationId ?? MEM_DEFAULT_ORG_ID,
       email: insertSupplier.email || null,
       contactName: insertSupplier.contactName || null,
       phone: insertSupplier.phone || null,
@@ -3037,6 +3048,7 @@ export class MemStorage implements IStorage {
     const barcode: Barcode = {
       ...insertBarcode,
       id,
+      organizationId: insertBarcode.organizationId ?? MEM_DEFAULT_ORG_ID,
       createdAt: now,
       type: insertBarcode.type || null,
       isPrimary: insertBarcode.isPrimary || false
@@ -3124,6 +3136,7 @@ export class MemStorage implements IStorage {
     const item: InventoryItem = { 
       ...insertItem, 
       id,
+      organizationId: insertItem.organizationId ?? MEM_DEFAULT_ORG_ID,
       createdAt: now,
       updatedAt: now,
       status: insertItem.status ?? null,
@@ -3372,6 +3385,7 @@ export class MemStorage implements IStorage {
     const requisitionEntity: PurchaseRequisition = {
       ...requisition,
       id,
+      organizationId: requisition.organizationId ?? MEM_DEFAULT_ORG_ID,
       createdAt: now,
       updatedAt: now,
       status: requisition.status ?? 'PENDING',
@@ -3385,7 +3399,8 @@ export class MemStorage implements IStorage {
       departmentId: requisition.departmentId ?? null,
       justification: requisition.justification ?? null,
       totalAmount: requisition.totalAmount ?? 0,
-      sharedWithUserIds: (requisition as { sharedWithUserIds?: number[] }).sharedWithUserIds ?? []
+      sharedWithUserIds: (requisition as { sharedWithUserIds?: number[] }).sharedWithUserIds ?? [],
+      projectId: requisition.projectId ?? null,
     };
     
     this.purchaseRequisitions.set(id, requisitionEntity);
@@ -3627,6 +3642,7 @@ export class MemStorage implements IStorage {
     const orderEntity: PurchaseOrder = {
       ...order,
       id,
+      organizationId: order.organizationId ?? MEM_DEFAULT_ORG_ID,
       createdAt: now,
       updatedAt: now,
       status: order.status ?? 'DRAFT',
@@ -3644,7 +3660,8 @@ export class MemStorage implements IStorage {
       emailSent: order.emailSent ?? false,
       emailSentDate: order.emailSentDate ?? null,
       paymentDate: order.paymentDate ?? null,
-      paymentReference: order.paymentReference ?? null
+      paymentReference: order.paymentReference ?? null,
+      projectId: order.projectId ?? null,
     };
     
     this.purchaseOrders.set(id, orderEntity);
@@ -4074,6 +4091,7 @@ export class MemStorage implements IStorage {
       const inventoryItem = this.inventoryItems.get(item.itemId);
       const placeholder: InventoryItem = {
         id: item.itemId,
+        organizationId: MEM_DEFAULT_ORG_ID,
         name: "Unknown item",
         sku: `ITEM-${item.itemId}`,
         description: null,
@@ -4145,6 +4163,7 @@ export class MemStorage implements IStorage {
       supplier ??
       ({
         id: order.supplierId,
+        organizationId: MEM_DEFAULT_ORG_ID,
         name: "(Unknown supplier)",
         contactName: null,
         email: null,
@@ -4175,6 +4194,7 @@ export class MemStorage implements IStorage {
       const inventoryItem = this.inventoryItems.get(item.itemId);
       const placeholder: InventoryItem = {
         id: item.itemId,
+        organizationId: MEM_DEFAULT_ORG_ID,
         name: "Unknown item",
         sku: `ITEM-${item.itemId}`,
         description: null,
@@ -4238,6 +4258,7 @@ export class MemStorage implements IStorage {
     const log: ActivityLog = { 
       ...insertLog, 
       id,
+      organizationId: insertLog.organizationId ?? MEM_DEFAULT_ORG_ID,
       timestamp: now,
       itemId: insertLog.itemId || null,
       userId: insertLog.userId || null,
@@ -4311,6 +4332,7 @@ export class MemStorage implements IStorage {
       const id = this.settingsCurrentId++;
       const newSettings: AppSettings = {
         id,
+        organizationId: MEM_DEFAULT_ORG_ID,
         companyName: settings.companyName || "InvTrack",
         companyLogo: settings.companyLogo || null,
         primaryColor: settings.primaryColor || "#0F172A",
@@ -4444,6 +4466,7 @@ export class MemStorage implements IStorage {
     const contract: SupplierContract = {
       ...insert,
       id,
+      organizationId: insert.organizationId ?? MEM_DEFAULT_ORG_ID,
       attachments: (insert.attachments as SupplierContract["attachments"]) ?? [],
       createdAt: now,
       updatedAt: now,
@@ -4503,6 +4526,7 @@ export class MemStorage implements IStorage {
     const request: ReorderRequest = {
       ...insertRequest,
       id,
+      organizationId: insertRequest.organizationId ?? MEM_DEFAULT_ORG_ID,
       requestNumber,
       createdAt: now,
       updatedAt: now,
@@ -5190,6 +5214,7 @@ export class MemStorage implements IStorage {
     const newInvoice: Invoice = {
       ...invoice,
       id,
+      organizationId: invoice.organizationId ?? MEM_DEFAULT_ORG_ID,
       invoiceNumber,
       createdAt: now,
       updatedAt: now,

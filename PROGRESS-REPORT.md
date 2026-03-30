@@ -1,6 +1,6 @@
 # ISS Sourcing — Progress Report
 
-**Report date:** 21 March 2026  
+**Report date:** 29 March 2026  
 **Scope:** Security/UX audits (complete) + Professional Supply Chain Full Feature Implementation Plan (phases 1–6).
 
 **How to read this vs other trackers:** This file is the **roadmap truth** for phases 1–6 (summary counts in §8). Finishing a **sprint or Cursor todo list** does **not** by itself finish every roadmap row—scopes differ. For a narrower “recently shipped” slice, see [`docs/REMAINING_WORK.md`](docs/REMAINING_WORK.md). **Reconciliation log (doc vs code):** [`docs/PROGRESS-RECONCILIATION.md`](docs/PROGRESS-RECONCILIATION.md).
@@ -188,3 +188,15 @@ All items from the original audit, New Requisition Module audit, and Section 2 f
 - **Development:** `npm run dev` (set `DATABASE_URL` or PG env; see `.env.example`).
 - **Production:** `npm run build` then `npm start`, or build/run the root `Dockerfile`.
 - **Tests:** `npm run test:rbac`, `npm run test:requisitions` (server must be running); optional `npx tsx scripts/test-exports.ts`, `npx tsx scripts/demo-supply-chain-e2e.ts` (see [`docs/TEST-INSTRUCTIONS.md`](docs/TEST-INSTRUCTIONS.md)).
+
+### 9.1 Automated verification (currency + correlation IDs + procurement)
+
+Run against a **live, seeded** API (same as CI after `db:seed`):
+
+| Script | What it checks |
+|--------|----------------|
+| `npm run test:contracts` | [`scripts/test-api-contract.ts`](scripts/test-api-contract.ts) — master currency POST/PATCH symbol behavior, inventory/suppliers/PO receive, **`X-Request-Id` on login**, analytics samples. |
+| `npm run test:procurement-flow` | [`scripts/test-procurement-flow.ts`](scripts/test-procurement-flow.ts) — requisition → convert → receive → shipment → invoice → payment; **`X-Request-Id`** on key JSON responses. |
+| `npx tsx scripts/demo-supply-chain-e2e.ts` | Broader demo path + **`X-Request-Id`** assertions on selected steps. |
+
+**CI:** The GitHub Actions job **`org-api-isolation`** (Postgres + `drizzle-kit push` + `db:seed` + server) runs `test:org-api`, then **`test:contracts`** and **`test:procurement-flow`** so regressions surface before merge.

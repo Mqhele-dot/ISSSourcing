@@ -1,5 +1,5 @@
 // Document generator service
-import type { PDFPage, PDFFont } from 'pdf-lib';
+import type { PDFImage, PDFPage, PDFFont } from 'pdf-lib';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import Excel from 'exceljs';
 import {
@@ -19,21 +19,20 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
-import type { ActivityLog, InventoryItem, ReportType, ReportFormat } from "@shared/schema";
+import type {
+  ActivityLog,
+  InventoryItem,
+  ReportType,
+  ReportFormat,
+  User,
+  Supplier,
+  Warehouse,
+} from "@shared/schema";
 import {
   getReportColumnsFromConfig,
   getReportExportEntry,
   type ReportPdfLayout,
 } from "./export-config";
-import { 
-  ReorderRequest, 
-  User, 
-  Supplier, 
-  Warehouse, 
-  Category, 
-  PurchaseOrder, 
-  PurchaseRequisition
-} from '@shared/schema';
 import { format } from 'date-fns';
 
 // ——— Shared PDF layout (matches app style: InvTrack, accent blue, clean table) ———
@@ -42,6 +41,8 @@ const PDF_LAYOUT = {
   pageHeight: 792,
   margin: 50,
   headerTop: 50,
+  /** Vertical space from top of page through header rule + padding (see drawPdfReportHeader). */
+  headerBlockHeight: 132,
   headerHeight: 72,
   footerHeight: 28,
   tableRowHeight: 18,
@@ -59,11 +60,50 @@ const PDF_LAYOUT = {
 
 const APP_NAME = 'InvTrack';
 
+/** Set for the duration of `generateDocument` so all PDF footers can show org legal line without threading through every helper. */
+let activePdfOrganizationFooter: string | undefined;
+
+/** Org display name from `organization_settings.display_name` for PDF header/footer branding. */
+let activePdfBrandName: string = APP_NAME;
+
+/** Raw PNG/JPEG bytes from `organization_settings.logo_url` for the PDF header (set per `generateDocument`). */
+let activePdfLogoBytes: Uint8Array | undefined;
+
+/** Embedded once per PDF document after `embedPdfLogoIfNeeded`. */
+let activePdfLogoImage: PDFImage | null = null;
+
+async function embedPdfLogoIfNeeded(pdfDoc: PDFDocument): Promise<void> {
+  activePdfLogoImage = null;
+  if (!activePdfLogoBytes?.length) return;
+  try {
+    activePdfLogoImage = await pdfDoc.embedPng(activePdfLogoBytes);
+  } catch {
+    try {
+      activePdfLogoImage = await pdfDoc.embedJpg(activePdfLogoBytes);
+    } catch {
+      activePdfLogoImage = null;
+    }
+  }
+}
+
+/** Map common Unicode punctuation to ASCII so WinAnsi PDF text stays readable (avoids stray "?"). */
+function normalizePdfUnicode(input: string): string {
+  return String(input)
+    .replace(/\uFEFF/g, "")
+    .replace(/\uFF1A/g, ":")
+    .replace(/\uFF0B/g, "+")
+    .replace(/\u2010|\u2011|\u2012|\u2013|\u2014|\u2015|\u2212|\uFE58|\uFE63|\uFF0D/g, "-")
+    .replace(/\u00B7|\u2022|\u2023/g, " | ")
+    .replace(/\u2026/g, "...")
+    .replace(/\u00A0/g, " ")
+    .replace(/\u00AD/g, "");
+}
+
 /**
  * Standard 14 fonts (Helvetica) use WinAnsi; unsupported glyphs can break pdf-lib drawText.
  */
 function sanitizePdfText(input: string): string {
-  return String(input)
+  return normalizePdfUnicode(String(input))
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^\x20-\x7E]/g, "?");
@@ -152,6 +192,12 @@ function buildGenericSummaryMetrics(data: any[], columns: { header: string; key:
   ];
 }
 
+/** First body `y` below the header rule (PDF coords, origin bottom-left). */
+function getPdfBodyStartY(page: PDFPage): number {
+  const { height } = page.getSize();
+  return height - PDF_LAYOUT.headerBlockHeight;
+}
+
 function drawPdfReportHeader(
   page: PDFPage,
   title: string,
@@ -162,26 +208,39 @@ function drawPdfReportHeader(
   const m = PDF_LAYOUT.margin;
   const y = height - PDF_LAYOUT.headerTop;
   const markSize = 18;
-  const textX = m + markSize + 10;
+  let textX = m + markSize + 10;
 
-  // Vector brand mark (visible in all PDF viewers; not a separate raster asset).
-  page.drawRectangle({
-    x: m,
-    y: y - markSize + 2,
-    width: markSize,
-    height: markSize,
-    color: PDF_LAYOUT.accent,
-  });
-  page.drawText("IT", {
-    x: m + 3,
-    y: y - markSize + 6,
-    size: 9,
-    font: boldFont,
-    color: rgb(1, 1, 1),
-  });
+  if (activePdfLogoImage) {
+    const maxH = 36;
+    const scale = maxH / activePdfLogoImage.height;
+    const imgW = activePdfLogoImage.width * scale;
+    const imgH = maxH;
+    page.drawImage(activePdfLogoImage, {
+      x: m,
+      y: y - imgH + 2,
+      width: imgW,
+      height: imgH,
+    });
+    textX = m + imgW + 10;
+  } else {
+    page.drawRectangle({
+      x: m,
+      y: y - markSize + 2,
+      width: markSize,
+      height: markSize,
+      color: PDF_LAYOUT.accent,
+    });
+    page.drawText("IT", {
+      x: m + 3,
+      y: y - markSize + 6,
+      size: 9,
+      font: boldFont,
+      color: rgb(1, 1, 1),
+    });
+  }
 
   const safeTitle = sanitizePdfText(title);
-  page.drawText(sanitizePdfText(APP_NAME), {
+  page.drawText(sanitizePdfText(activePdfBrandName), {
     x: textX,
     y,
     size: 12,
@@ -216,22 +275,23 @@ function drawPdfReportFooter(
   page: PDFPage,
   pageNum: number,
   font: PDFFont,
-  totalPages?: number
+  totalPages?: number,
 ): void {
   const { width, height } = page.getSize();
   const m = PDF_LAYOUT.margin;
   const y = PDF_LAYOUT.footerHeight;
+  const organizationFooter = activePdfOrganizationFooter;
 
   // Clear footer band so we can safely redraw after pagination is finalized.
   page.drawRectangle({
     x: m - 2,
     y: y - 2,
     width: width - (m - 2) * 2,
-    height: 14,
+    height: organizationFooter ? 28 : 14,
     color: rgb(1, 1, 1),
   });
 
-  page.drawText(sanitizePdfText(`Generated by ${APP_NAME}`), {
+  page.drawText(sanitizePdfText(`Generated by ${activePdfBrandName}`), {
     x: m,
     y,
     size: 9,
@@ -247,6 +307,16 @@ function drawPdfReportFooter(
     font,
     color: PDF_LAYOUT.muted,
   });
+  if (organizationFooter?.trim()) {
+    const line = sanitizePdfText(organizationFooter.trim()).slice(0, 120);
+    page.drawText(line, {
+      x: m,
+      y: y - 12,
+      size: 8,
+      font,
+      color: PDF_LAYOUT.muted,
+    });
+  }
 }
 
 function drawSummarySection(
@@ -483,8 +553,9 @@ function appendPurchaseOrderTermsPage(
   const page = pdfDoc.addPage([pw, ph]);
   allPages.push(page);
   drawPdfReportHeader(page, reportTitle, font, boldFont);
-  const { height, width } = page.getSize();
-  let y = height - PDF_LAYOUT.headerHeight - 20;
+  const { width } = page.getSize();
+  /** Match first-page body start so terms never overlap the header band (was using headerHeight only). */
+  let y = getPdfBodyStartY(page) - 8;
   const maxW = width - 2 * PDF_LAYOUT.margin;
 
   page.drawText(sanitizePdfText("Terms & conditions"), {
@@ -653,7 +724,7 @@ function drawBorderedTableWrapped(
         pages.push(newPage);
         drawPdfReportHeader(newPage, reportTitle, font, boldFont);
         drawPdfReportFooter(newPage, pages.length, font);
-        const contTableTop = pageH - PDF_LAYOUT.headerHeight - PDF_LAYOUT.margin;
+        const contTableTop = pageH - PDF_LAYOUT.headerBlockHeight;
         drawHeaderBand(newPage, contTableTop);
         y = contTableTop - headerH;
       }
@@ -661,15 +732,17 @@ function drawBorderedTableWrapped(
 
     const rowBottom = y - rowH;
     let xPos = m + 4;
+    const useBoldRow = row.some((c) => String(c).trim() === "Total");
+    const cellFont = useBoldRow ? boldFont : font;
     row.forEach((_cell, i) => {
       const lines = cellLineBlocks[i] ?? [""];
       let lineBaseline = y - 6 - PDF_LAYOUT.fontSize;
       for (const ln of lines) {
-        currentPage().drawText(ln, {
+        currentPage().drawText(sanitizePdfText(ln), {
           x: xPos,
           y: lineBaseline,
           size: PDF_LAYOUT.fontSize,
-          font,
+          font: cellFont,
           color: PDF_LAYOUT.text,
         });
         lineBaseline -= lineSpacing;
@@ -732,6 +805,7 @@ export async function generateInventoryPdf(
   template: PdfTemplate = 'standard'
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
+  await embedPdfLogoIfNeeded(pdfDoc);
   applyPdfMetadata(pdfDoc, title);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -954,7 +1028,7 @@ function drawPdfExtraMetadataLines(page: PDFPage, font: PDFFont, lines: string[]
       font,
       color: PDF_LAYOUT.muted,
     });
-    y -= 10;
+    y -= 12;
   }
   return y;
 }
@@ -969,6 +1043,7 @@ export async function generateGenericPdf(
   options?: GenericPdfOptions,
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
+  await embedPdfLogoIfNeeded(pdfDoc);
   applyPdfMetadata(pdfDoc, title);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -1042,6 +1117,7 @@ export async function generatePurchaseOrdersDocumentPdf(
   metadataLines: string[] = [],
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
+  await embedPdfLogoIfNeeded(pdfDoc);
   applyPdfMetadata(pdfDoc, title);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -1053,7 +1129,7 @@ export async function generatePurchaseOrdersDocumentPdf(
     const page = pdfDoc.addPage([pw, ph]);
     allPages.push(page);
     drawPdfReportHeader(page, title, font, boldFont);
-    let y = page.getSize().height - PDF_LAYOUT.headerHeight - 16;
+    let y = getPdfBodyStartY(page);
     if (metadataLines.length) y = drawPdfExtraMetadataLines(page, font, metadataLines, y) - 8;
     page.drawText("No purchase orders in this export.", {
       x: PDF_LAYOUT.margin,
@@ -1073,20 +1149,19 @@ export async function generatePurchaseOrdersDocumentPdf(
     const sectionPages: PDFPage[] = [sectionFirst];
     allPages.push(sectionFirst);
     drawPdfReportHeader(sectionFirst, title, font, boldFont);
-    const { height } = sectionFirst.getSize();
-    let y = height - PDF_LAYOUT.headerHeight - 16;
+    let y = getPdfBodyStartY(sectionFirst);
     if (metadataLines.length && oi === 0) {
-      y = drawPdfExtraMetadataLines(sectionFirst, font, metadataLines, y) - 8;
+      y = drawPdfExtraMetadataLines(sectionFirst, font, metadataLines, y) - 18;
     }
 
-    sectionFirst.drawText(sanitizePdfText(`Purchase Order ${order.orderNumber ?? `#${order.id}`}`), {
+    sectionFirst.drawText(sanitizePdfText("Order details"), {
       x: PDF_LAYOUT.margin,
       y,
-      size: 14,
+      size: 12,
       font: boldFont,
       color: PDF_LAYOUT.text,
     });
-    y -= 22;
+    y -= 18;
 
     const supplier = order.supplier ?? {};
     const mid = PDF_LAYOUT.margin + (pw - 2 * PDF_LAYOUT.margin) * 0.46;
@@ -1101,7 +1176,7 @@ export async function generatePurchaseOrdersDocumentPdf(
     }
     const contactBits = [supplier.contactName, supplier.email, supplier.phone].filter(Boolean);
     if (contactBits.length) {
-      yL = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, yL, "Contact", contactBits.join(" · "), leftW);
+      yL = drawLabelValueColumn(sectionFirst, boldFont, font, PDF_LAYOUT.margin, yL, "Contact", contactBits.join(" - "), leftW);
     }
 
     let yR = y;
@@ -1150,7 +1225,14 @@ export async function generatePurchaseOrdersDocumentPdf(
     if (!rows.length) {
       rows.push(["—", "No line items", "—", "—", "—", "—"]);
     }
-    rows.push(["", "", "", "", "Total", formatPdfCell(order.totalAmount, { currency: true })]);
+    rows.push([
+      "",
+      "",
+      "",
+      "",
+      "Total",
+      formatPdfCell(order.totalAmount, { currency: true }),
+    ]);
 
     drawBorderedTableWrapped(pdfDoc, sectionPages, title, headers, colWidths, rows, font, boldFont, y);
     for (let i = 1; i < sectionPages.length; i++) {
@@ -1165,6 +1247,100 @@ export async function generatePurchaseOrdersDocumentPdf(
   return Buffer.from(await pdfDoc.save());
 }
 
+export type ShipmentDeliveryNoteInput = {
+  id: number;
+  poNumber: string;
+  carrier: string | null;
+  status: string;
+  eta: Date | null;
+  trackingNumber: string | null;
+};
+
+/** One-page delivery / packing slip for a single shipment (carrier, PO ref, ETA, tracking, sign-off). */
+export async function generateShipmentDeliveryNotePdf(
+  shipment: ShipmentDeliveryNoteInput,
+  options?: { organizationDisplayName?: string },
+): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  await embedPdfLogoIfNeeded(pdfDoc);
+  const titleStem = `Delivery note ${shipment.poNumber}`;
+  applyPdfMetadata(pdfDoc, titleStem);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const prevBrand = activePdfBrandName;
+  if (options?.organizationDisplayName?.trim()) {
+    activePdfBrandName = sanitizePdfText(options.organizationDisplayName.trim()) || APP_NAME;
+  }
+  try {
+    const page = pdfDoc.addPage([PDF_LAYOUT.pageWidth, PDF_LAYOUT.pageHeight]);
+    const pw = PDF_LAYOUT.pageWidth;
+    const m = PDF_LAYOUT.margin;
+    const innerW = pw - 2 * m;
+    drawPdfReportHeader(page, titleStem, font, boldFont);
+    let y = getPdfBodyStartY(page);
+    const heading = `Shipment #${shipment.id}   PO ${shipment.poNumber}`;
+    page.drawText(sanitizePdfText(heading), {
+      x: m,
+      y,
+      size: 13,
+      font: boldFont,
+      color: PDF_LAYOUT.text,
+    });
+    y -= 24;
+    y = drawLabelValueColumn(page, boldFont, font, m, y, "Carrier", (shipment.carrier ?? "").trim() || "—", innerW);
+    y = drawLabelValueColumn(page, boldFont, font, m, y, "Status", String(shipment.status ?? "—"), innerW);
+    y = drawLabelValueColumn(
+      page,
+      boldFont,
+      font,
+      m,
+      y,
+      "ETA",
+      shipment.eta ? formatPdfCell(shipment.eta, { date: true }) : "—",
+      innerW,
+    );
+    y = drawLabelValueColumn(
+      page,
+      boldFont,
+      font,
+      m,
+      y,
+      "Tracking",
+      (shipment.trackingNumber ?? "").trim() || "—",
+      innerW,
+    );
+    y -= 10;
+    page.drawText(sanitizePdfText("Receiver signature: ________________________________    Date: ______________"), {
+      x: m,
+      y,
+      size: 10,
+      font,
+      color: PDF_LAYOUT.text,
+    });
+    y -= 28;
+    const noteLines = wrapPdfCellLines(
+      "This delivery note records carrier and reference details for the shipment above. Verify quantities and note any damage at receipt.",
+      font,
+      9,
+      innerW,
+    );
+    for (const ln of noteLines) {
+      page.drawText(ln, {
+        x: m,
+        y,
+        size: 9,
+        font,
+        color: PDF_LAYOUT.muted,
+      });
+      y -= 11;
+    }
+    drawPdfReportFooter(page, 1, font, 1);
+    return Buffer.from(await pdfDoc.save());
+  } finally {
+    activePdfBrandName = prevBrand;
+  }
+}
+
 /** Requisitions with `items`, optional `requestor`, `approver`, `supplier` (from getRequisitionWithDetails). */
 export async function generateRequisitionsDocumentPdf(
   requisitions: any[],
@@ -1172,6 +1348,7 @@ export async function generateRequisitionsDocumentPdf(
   metadataLines: string[] = [],
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
+  await embedPdfLogoIfNeeded(pdfDoc);
   applyPdfMetadata(pdfDoc, title);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -1183,7 +1360,7 @@ export async function generateRequisitionsDocumentPdf(
     const page = pdfDoc.addPage([pw, ph]);
     allPages.push(page);
     drawPdfReportHeader(page, title, font, boldFont);
-    let y = page.getSize().height - PDF_LAYOUT.headerHeight - 16;
+    let y = getPdfBodyStartY(page);
     if (metadataLines.length) y = drawPdfExtraMetadataLines(page, font, metadataLines, y) - 8;
     page.drawText("No requisitions in this export.", {
       x: PDF_LAYOUT.margin,
@@ -1203,13 +1380,12 @@ export async function generateRequisitionsDocumentPdf(
     const sectionPages: PDFPage[] = [sectionFirst];
     allPages.push(sectionFirst);
     drawPdfReportHeader(sectionFirst, title, font, boldFont);
-    const { height } = sectionFirst.getSize();
-    let y = height - PDF_LAYOUT.headerHeight - 16;
+    let y = getPdfBodyStartY(sectionFirst);
     if (metadataLines.length && ri === 0) {
       y = drawPdfExtraMetadataLines(sectionFirst, font, metadataLines, y) - 8;
     }
 
-    sectionFirst.drawText(sanitizePdfText(`Requisition ${req.requisitionNumber ?? `#${req.id}`}`), {
+    sectionFirst.drawText(sanitizePdfText(`Requisition: ${String(req.requisitionNumber ?? `#${req.id}`)}`), {
       x: PDF_LAYOUT.margin,
       y,
       size: 14,
@@ -1337,6 +1513,7 @@ export async function generateActivityLogsDocumentPdf(
       new Date(b.timestamp as string | number | Date).getTime(),
   );
   const pdfDoc = await PDFDocument.create();
+  await embedPdfLogoIfNeeded(pdfDoc);
   applyPdfMetadata(pdfDoc, title);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -1396,6 +1573,7 @@ export async function generateSupplierProfilePdf(
   metadataLines: string[] = [],
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
+  await embedPdfLogoIfNeeded(pdfDoc);
   applyPdfMetadata(pdfDoc, title);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -1416,10 +1594,20 @@ export async function generateSupplierProfilePdf(
   y -= 24;
 
   const w = pw - 2 * PDF_LAYOUT.margin;
-  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "General", [supplier.contactName, supplier.email, supplier.phone].filter(Boolean).join(" · ") || "—", w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "General", [supplier.contactName, supplier.email, supplier.phone].filter(Boolean).join(" | ") || "—", w);
   y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Address", String(supplier.address ?? "—"), w);
   y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Tax ID", String(supplier.taxIdentificationNumber ?? "—"), w);
   y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Default currency", String(supplier.defaultCurrencyCode ?? "—"), w);
+  y = drawLabelValueColumn(
+    page,
+    boldFont,
+    font,
+    PDF_LAYOUT.margin,
+    y,
+    "Payment terms (master ref.)",
+    supplier.paymentTermsId != null ? `#${supplier.paymentTermsId}` : "—",
+    w,
+  );
   y -= 4;
   page.drawText("Banking", { x: PDF_LAYOUT.margin, y, size: 11, font: boldFont, color: PDF_LAYOUT.accent });
   y -= 16;
@@ -1462,6 +1650,7 @@ export async function generateWarehouseProfilePdf(
   metadataLines: string[] = [],
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
+  await embedPdfLogoIfNeeded(pdfDoc);
   applyPdfMetadata(pdfDoc, title);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -1980,6 +2169,12 @@ export interface GenerateDocumentOptions {
   customTemplateBuffer?: Buffer;
   /** Extra lines on PDF (under summary) and Summary sheet in multi-sheet Excel */
   metadataLines?: string[];
+  /** Optional org legal line from `organization_settings.report_footer` (Phase 4 branding). */
+  organizationFooter?: string;
+  /** Optional display name from `organization_settings.display_name` for PDF header/footer. */
+  organizationDisplayName?: string;
+  /** PNG or JPEG bytes from org logo URL (embedded in PDF header when valid). */
+  organizationLogoPng?: Uint8Array;
 }
 
 /**
@@ -2022,6 +2217,15 @@ export async function generateDocument(
   const normalizedData = Array.isArray(data) ? data : [];
   const metadataLines = options?.metadataLines ?? [];
 
+  const prevFooter = activePdfOrganizationFooter;
+  const prevBrand = activePdfBrandName;
+  const prevLogoBytes = activePdfLogoBytes;
+  activePdfOrganizationFooter = options?.organizationFooter?.trim() || undefined;
+  activePdfBrandName = sanitizePdfText(options?.organizationDisplayName?.trim() || "") || APP_NAME;
+  activePdfLogoBytes =
+    options?.organizationLogoPng && options.organizationLogoPng.length > 0
+      ? options.organizationLogoPng
+      : undefined;
   try {
     if (format === "pdf") {
       let reportBuffer: Buffer;
@@ -2063,5 +2267,10 @@ export async function generateDocument(
   } catch (error) {
     console.error(`Error generating ${format} document for ${reportType}:`, error);
     throw error;
+  } finally {
+    activePdfOrganizationFooter = prevFooter;
+    activePdfBrandName = prevBrand;
+    activePdfLogoBytes = prevLogoBytes;
+    activePdfLogoImage = null;
   }
 }

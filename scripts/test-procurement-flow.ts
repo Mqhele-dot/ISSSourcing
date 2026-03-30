@@ -11,9 +11,15 @@
  * or
  *   BASE_URL=http://127.0.0.1:5000 npx tsx scripts/test-procurement-flow.ts
  */
-import process from "node:process";
 import { exitTest } from "./test-exit.ts";
-import { apiJsonRequest, apiRawRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
+import {
+  apiJsonRequest,
+  apiRawRequest,
+  expectRequestId,
+  getTestBaseUrl,
+  isConnectionRefused,
+  loginForTests,
+} from "./test-http.ts";
 
 function asArray<T = Record<string, unknown>>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -46,6 +52,7 @@ async function main() {
 
   const userRes = await apiJsonRequest("/user", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/user", 200, userRes.status)) failures++;
+  if (!expectRequestId("GET /api/user", userRes.requestId)) failures++;
   const currentUser = asRecord(userRes.json);
   const createdBy = Number(currentUser.id ?? 1);
 
@@ -90,12 +97,7 @@ async function main() {
     },
   });
   if (!expectStatus("POST /api/purchase-requisitions", 201, requisitionRes.status)) failures++;
-  if (requisitionRes.requestId) {
-    console.log("  ✓ X-Request-Id present on POST /api/purchase-requisitions");
-  } else {
-    console.log("  ✗ Missing X-Request-Id on POST /api/purchase-requisitions");
-    failures++;
-  }
+  if (!expectRequestId("POST /api/purchase-requisitions", requisitionRes.requestId)) failures++;
   const requisition = asRecord(requisitionRes.json);
   const requisitionId = Number(requisition.id ?? 0);
   if (!requisitionId) {
@@ -116,6 +118,7 @@ async function main() {
     body: {},
   });
   if (!expectStatus("POST /api/purchase-requisitions/:id/convert", 201, convertRes.status)) failures++;
+  if (!expectRequestId("POST /api/purchase-requisitions/:id/convert", convertRes.requestId)) failures++;
   const po = asRecord(convertRes.json);
   const poId = Number(po.id ?? 0);
   const poNumber = String(po.orderNumber ?? "");
@@ -143,12 +146,7 @@ async function main() {
     },
   });
   if (!expectStatus("POST /api/purchase-order-items/:id/receive", 200, receiveRes.status)) failures++;
-  if (receiveRes.requestId) {
-    console.log("  ✓ X-Request-Id present on POST receive");
-  } else {
-    console.log("  ✗ Missing X-Request-Id on POST receive");
-    failures++;
-  }
+  if (!expectRequestId("POST /api/purchase-order-items/:id/receive", receiveRes.requestId)) failures++;
   const receivedLine = asRecord(receiveRes.json);
   const rcvd = Number(receivedLine.receivedQuantity ?? 0);
   if (rcvd >= 2) {
@@ -230,6 +228,7 @@ async function main() {
     },
   });
   if (!expectStatus("POST /api/invoices", 201, invoiceCreateRes.status)) failures++;
+  if (!expectRequestId("POST /api/invoices", invoiceCreateRes.requestId)) failures++;
   const invoice = asRecord(invoiceCreateRes.json);
   const invoiceId = Number(invoice.id ?? 0);
   if (!invoiceId) {
@@ -249,6 +248,7 @@ async function main() {
     },
   });
   if (!expectStatus("POST /api/invoices/:invoiceId/payments", 201, paymentRes.status)) failures++;
+  if (!expectRequestId("POST /api/invoices/:invoiceId/payments", paymentRes.requestId)) failures++;
 
   const verifyRes = await apiJsonRequest(`/invoices/${invoiceId}`, { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/invoices/:id", 200, verifyRes.status)) failures++;

@@ -8,35 +8,59 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { QrCode, Barcode, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { queryClient } from '@/lib/queryClient';
 import { RealTimeUpdates } from '@/components/real-time-updates';
+import { enqueueOfflineAction } from '@/lib/offline-queue';
 
 export default function BarcodeScannerPage() {
   const [tab, setTab] = useState('scan');
   const [scanHistory, setScanHistory] = useState<ScanResult[]>([]);
   const { toast } = useToast();
   
-  const handleScan = (result: ScanResult) => {
+  const handleScan = async (result: ScanResult) => {
     setScanHistory((prevHistory) => [result, ...prevHistory]);
-    
-    // In a real application, you would typically do something with the scan result,
-    // such as looking up an inventory item or updating a database
+
     toast({
-      title: 'Scan Processed',
+      title: 'Scan captured',
       description: `Looking up item with code: ${result.text}`,
     });
-    
-    // Simulate API call - this would be replaced with actual API call
-    // to look up item by barcode/QR code
-    setTimeout(() => {
-      // This is just for demonstration - in a real app, you would query the database
-      // queryClient.invalidateQueries({ queryKey: ['/api/inventory/byBarcode', result.text] });
-      
+
+    const offline =
+      typeof navigator !== 'undefined' && navigator.onLine === false;
+
+    try {
+      const res = await fetch(
+        `/api/inventory/find-by-barcode/${encodeURIComponent(result.text)}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) {
+        throw new Error(`Lookup failed (${res.status})`);
+      }
+      await res.json().catch(() => null);
       toast({
-        title: 'Item Found',
-        description: `Found item matching code: ${result.text}`,
+        title: 'Lookup complete',
+        description: `Resolved code: ${result.text}`,
       });
-    }, 1000);
+    } catch {
+      if (offline) {
+        await enqueueOfflineAction('scan', {
+          text: result.text,
+          format: result.format,
+        });
+        toast({
+          title: 'Offline — scan queued',
+          description: 'Will sync when you are back online (requires offline_sync feature).',
+        });
+      } else {
+        await enqueueOfflineAction('scan', {
+          text: result.text,
+          format: result.format,
+        });
+        toast({
+          title: 'Queued for retry',
+          description: 'Could not complete lookup; added to offline queue.',
+        });
+      }
+    }
   };
   
   const clearHistory = () => {

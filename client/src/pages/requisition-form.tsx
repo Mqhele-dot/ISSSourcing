@@ -37,14 +37,17 @@ export default function RequisitionFormPage() {
           <RequisitionHeaderFields
             suppliers={f.suppliers}
             departments={f.departments}
+            projects={f.extensionProjects}
             supplierId={f.supplierId}
             departmentId={f.departmentId}
+            projectId={f.projectId}
             requiredDate={f.requiredDate}
             justification={f.justification}
             notes={f.notes}
             fieldErrors={f.fieldErrors}
             onSupplierChange={f.setSupplierId}
             onDepartmentChange={f.setDepartmentId}
+            onProjectChange={f.setProjectId}
             onRequiredDateChange={f.setRequiredDate}
             onJustificationChange={f.setJustification}
             onNotesChange={f.setNotes}

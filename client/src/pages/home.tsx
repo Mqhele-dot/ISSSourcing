@@ -126,9 +126,11 @@ export default function HomePage() {
     sessionStorage.removeItem(LAST_WALKTHROUGH_KEY);
   }, []);
 
-  const openExceptions = data?.kpis?.exceptionsBySeverity
-    ? Object.values(data.kpis.exceptionsBySeverity).reduce((sum, count) => sum + count, 0)
-    : 0;
+  const openExceptions =
+    data?.kpis?.openExceptionsTotal ??
+    (data?.kpis?.exceptionsBySeverity
+      ? Object.values(data.kpis.exceptionsBySeverity).reduce((sum, count) => sum + count, 0)
+      : 0);
 
   useEffect(() => {
     if (data && !lastRefreshedAt) {

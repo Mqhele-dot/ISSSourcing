@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import {
   Activity,
@@ -30,6 +30,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { invTrackFetch, queryClient } from "@/lib/queryClient";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 /** Dispatched to open the palette from header or other chrome without prop drilling. */
 export const OPEN_COMMAND_PALETTE_EVENT = "invtrack:open-command-palette";
@@ -108,6 +109,9 @@ const SECTIONS: { heading: string; items: NavEntry[] }[] = [
   },
 ];
 
+/** Hidden from command palette below `lg` (1024px), same as sidebar / route guards. */
+const DESKTOP_ONLY_PATHS = new Set(["/master-data", "/approval-policies", "/employee-profiles"]);
+
 /** Warm cache for high-traffic lists when user opens the palette (enterprise “feel”). */
 function prefetchPrimaryData(): void {
   const warm: { queryKey: string[] }[] = [
@@ -135,6 +139,15 @@ function prefetchPrimaryData(): void {
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
   const [, navigate] = useLocation();
+  /** Match master-data and other wide-layout admin pages (lg+). */
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const sections = useMemo(() => {
+    if (isDesktop) return SECTIONS;
+    return SECTIONS.map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !DESKTOP_ONLY_PATHS.has(item.path)),
+    }));
+  }, [isDesktop]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -174,7 +187,7 @@ export function CommandMenu() {
       <CommandInput placeholder="Jump to module… (try “req”, “invoice”, “warehouse”)" />
       <CommandList>
         <CommandEmpty>No matching destination.</CommandEmpty>
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <CommandGroup key={section.heading} heading={section.heading}>
             {section.items.map((item) => (
               <CommandItem

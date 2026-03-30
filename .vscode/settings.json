@@ -1,3 +1,9 @@
 {
-  "remote.autoForwardPorts": false
+  "remote.autoForwardPorts": false,
+  "portsAttributes": {
+    "5000": {
+      "label": "ISS Sourcing (web)",
+      "onAutoForward": "notify"
+    }
+  }
 }

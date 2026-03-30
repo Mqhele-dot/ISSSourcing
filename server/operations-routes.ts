@@ -29,7 +29,10 @@ import { readiness } from "./readiness";
 import { seedOperationalIfEmpty } from "./seed-operational";
 import { seedDatabaseIfEmpty } from "./seed";
 import { storage } from "./storage";
-import { generatePurchaseOrdersDocumentPdf } from "./services/document-generator-service";
+import {
+  generatePurchaseOrdersDocumentPdf,
+  generateShipmentDeliveryNotePdf,
+} from "./services/document-generator-service";
 
 type AuthGuards = {
   ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => void;
@@ -390,14 +393,10 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             : typeof req.user?.email === "string" && req.user.email.trim()
               ? req.user.email.trim()
               : "user";
-        const metadataLines = [
-          `Generated: ${new Date().toISOString()}`,
-          `Exported by: ${actor}`,
-          `PO: ${full.orderNumber}`,
-        ];
+        const metadataLines = [`Exported by: ${actor}`];
         const buffer = await generatePurchaseOrdersDocumentPdf(
           [full],
-          `Purchase Order — ${full.orderNumber}`,
+          `Purchase order - ${full.orderNumber}`,
           metadataLines,
         );
         const safeName = String(full.orderNumber).replace(/[^\w.-]+/g, "_");
@@ -653,6 +652,51 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         mapPurchaseReceiveError(error);
       }
     }),
+  );
+
+  app.get(
+    "/api/logistics/shipments/:id/delivery-note.pdf",
+    auth.ensureAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id)) {
+          return res.status(400).json({ message: "Invalid shipment id" });
+        }
+        const r = await pool.query<{
+          id: number;
+          po_number: string;
+          carrier: string | null;
+          status: string;
+          eta: Date | null;
+          tracking_number: string | null;
+        }>(
+          `SELECT id, po_number, carrier, status, eta, tracking_number FROM shipments WHERE id = $1 LIMIT 1`,
+          [id],
+        );
+        const row = r.rows[0];
+        if (!row) {
+          return res.status(404).json({ message: "Shipment not found" });
+        }
+        const buffer = await generateShipmentDeliveryNotePdf({
+          id: row.id,
+          poNumber: row.po_number,
+          carrier: row.carrier,
+          status: String(row.status).toLowerCase(),
+          eta: row.eta,
+          trackingNumber: row.tracking_number,
+        });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="delivery-note-${row.id}.pdf"`,
+        );
+        return res.send(buffer);
+      } catch (error) {
+        console.error("delivery-note pdf:", error);
+        return res.status(500).json({ message: "Failed to generate delivery note PDF" });
+      }
+    },
   );
 
   app.get(

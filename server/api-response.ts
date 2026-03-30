@@ -48,3 +48,20 @@ export function sendError(
     } satisfies ApiErrorBody,
   });
 }
+
+/** Normalized error envelope for legacy route handlers that include a function name in the message. */
+export function sendFunctionError(
+  res: Response,
+  status: number,
+  functionName: string,
+  message: string,
+  details?: unknown,
+) {
+  const normalizedMessage = `${functionName}: ${message}`;
+  return sendError(res, status, functionName.toUpperCase().replace(/[^A-Z0-9]+/g, "_"), normalizedMessage, {
+    details: {
+      functionName,
+      ...(details !== undefined ? { details } : {}),
+    },
+  });
+}

@@ -56,6 +56,7 @@ import memorystore from "memorystore";
 import * as crypto from "node:crypto";
 import { db, pool } from "./db";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
+import { getActiveOrganizationId } from "./organization-context";
 import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
 import { inventoryLineValue } from "./forecast-service";
@@ -137,36 +138,72 @@ export class DatabaseStorage implements IStorage {
 
   // Category methods
   async getAllCategories(): Promise<Category[]> {
-    return db.select().from(categories);
+    return db
+      .select()
+      .from(categories)
+      .where(eq(categories.organizationId, getActiveOrganizationId()));
   }
 
   async getCategory(id: number): Promise<Category | undefined> {
-    const [category] = await db.select().from(categories).where(eq(categories.id, id));
+    const [category] = await db
+      .select()
+      .from(categories)
+      .where(
+        and(eq(categories.id, id), eq(categories.organizationId, getActiveOrganizationId())),
+      );
     return category;
   }
 
   async createCategory(category: InsertCategory): Promise<Category> {
-    const [newCategory] = await db.insert(categories).values(category).returning();
+    const [newCategory] = await db
+      .insert(categories)
+      .values({
+        ...category,
+        organizationId: getActiveOrganizationId(),
+      })
+      .returning();
     return newCategory;
   }
 
   // Inventory item methods
   async getAllInventoryItems(): Promise<InventoryItem[]> {
-    return db.select().from(inventoryItems);
+    return db
+      .select()
+      .from(inventoryItems)
+      .where(eq(inventoryItems.organizationId, getActiveOrganizationId()));
   }
 
   async getInventoryItem(id: number): Promise<InventoryItem | undefined> {
-    const [item] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, id));
+    const [item] = await db
+      .select()
+      .from(inventoryItems)
+      .where(
+        and(eq(inventoryItems.id, id), eq(inventoryItems.organizationId, getActiveOrganizationId())),
+      );
     return item;
   }
 
   async getInventoryItemBySku(sku: string): Promise<InventoryItem | undefined> {
-    const [item] = await db.select().from(inventoryItems).where(eq(inventoryItems.sku, sku));
+    const [item] = await db
+      .select()
+      .from(inventoryItems)
+      .where(
+        and(
+          eq(inventoryItems.sku, sku),
+          eq(inventoryItems.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return item;
   }
 
   async createInventoryItem(item: InsertInventoryItem): Promise<InventoryItem> {
-    const [newItem] = await db.insert(inventoryItems).values(item).returning();
+    const [newItem] = await db
+      .insert(inventoryItems)
+      .values({
+        ...item,
+        organizationId: item.organizationId ?? getActiveOrganizationId(),
+      })
+      .returning();
     return newItem;
   }
 
@@ -177,7 +214,9 @@ export class DatabaseStorage implements IStorage {
         ...item,
         updatedAt: new Date()
       })
-      .where(eq(inventoryItems.id, id))
+      .where(
+        and(eq(inventoryItems.id, id), eq(inventoryItems.organizationId, getActiveOrganizationId())),
+      )
       .returning();
     
     return updatedItem;
@@ -185,13 +224,18 @@ export class DatabaseStorage implements IStorage {
 
   // Settings methods
   async getSettings(): Promise<AppSettings> {
-    const [settings] = await db.select().from(appSettings);
+    const orgId = getActiveOrganizationId();
+    const [settings] = await db
+      .select()
+      .from(appSettings)
+      .where(eq(appSettings.organizationId, orgId));
     if (settings) {
       return settings;
     }
 
     // If no settings exist, create default settings
     const defaultSettings: InsertAppSettings = {
+      organizationId: orgId,
       companyName: "My Inventory System",
       primaryColor: "#4f46e5",
       dateFormat: "MM/DD/YYYY",
@@ -217,7 +261,9 @@ export class DatabaseStorage implements IStorage {
         ...settings,
         updatedAt: new Date()
       })
-      .where(eq(appSettings.id, currentSettings.id))
+      .where(
+        and(eq(appSettings.id, currentSettings.id), eq(appSettings.organizationId, getActiveOrganizationId())),
+      )
       .returning();
     
     return updatedSettings;
@@ -225,12 +271,22 @@ export class DatabaseStorage implements IStorage {
   
   // Activity log methods
   async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
-    const [newLog] = await db.insert(activityLogs).values(log).returning();
+    const [newLog] = await db
+      .insert(activityLogs)
+      .values({
+        ...log,
+        organizationId: log.organizationId ?? getActiveOrganizationId(),
+      })
+      .returning();
     return newLog;
   }
 
   async getAllActivityLogs(limit?: number): Promise<ActivityLog[]> {
-    const base = db.select().from(activityLogs).orderBy(desc(activityLogs.timestamp));
+    const base = db
+      .select()
+      .from(activityLogs)
+      .where(eq(activityLogs.organizationId, getActiveOrganizationId()))
+      .orderBy(desc(activityLogs.timestamp));
     return limit ? base.limit(limit) : base;
   }
 
@@ -246,12 +302,13 @@ export class DatabaseStorage implements IStorage {
     try {
       // Create an activity log entry
       const activityLogPromise = db.insert(activityLogs).values({
+        organizationId: getActiveOrganizationId(),
         action: "Image Analysis",
         description: `Analyzed image for item ${log.itemId || 'Unknown'}`,
         userId: log.userId,
         itemId: log.itemId || null,
         referenceType: "image_analysis",
-        timestamp: new Date()
+        timestamp: new Date(),
       });
       
       // Add the log entry
@@ -278,6 +335,8 @@ export class DatabaseStorage implements IStorage {
   
   async getItemImageAnalysisHistory(itemId: number): Promise<ImageAnalysisLog[]> {
     try {
+      const item = await this.getInventoryItem(itemId);
+      if (!item) return [];
       const logs = await db
         .select()
         .from(imageAnalysisLogs)
@@ -294,10 +353,20 @@ export class DatabaseStorage implements IStorage {
   
   async getImageAnalysisByUserId(userId: number): Promise<ImageAnalysisLog[]> {
     try {
+      const orgId = getActiveOrganizationId();
+      const orgItemIds = db
+        .select({ id: inventoryItems.id })
+        .from(inventoryItems)
+        .where(eq(inventoryItems.organizationId, orgId));
       const logs = await db
         .select()
         .from(imageAnalysisLogs)
-        .where(eq(imageAnalysisLogs.userId, userId))
+        .where(
+          and(
+            eq(imageAnalysisLogs.userId, userId),
+            or(isNull(imageAnalysisLogs.itemId), inArray(imageAnalysisLogs.itemId, orgItemIds)),
+          ),
+        )
         .orderBy(desc(imageAnalysisLogs.timestamp));
         
       return logs;
@@ -1283,153 +1352,337 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllSuppliers(): Promise<Supplier[]> {
-    return db.select().from(suppliers);
+    return db
+      .select()
+      .from(suppliers)
+      .where(eq(suppliers.organizationId, getActiveOrganizationId()));
   }
   
   async getSupplier(id: number): Promise<Supplier | undefined> {
-    const [row] = await db.select().from(suppliers).where(eq(suppliers.id, id));
+    const [row] = await db
+      .select()
+      .from(suppliers)
+      .where(and(eq(suppliers.id, id), eq(suppliers.organizationId, getActiveOrganizationId())));
     return row;
   }
   
   async getSupplierByName(name: string): Promise<Supplier | undefined> {
-    const [row] = await db.select().from(suppliers).where(eq(suppliers.name, name));
+    const [row] = await db
+      .select()
+      .from(suppliers)
+      .where(and(eq(suppliers.name, name), eq(suppliers.organizationId, getActiveOrganizationId())));
     return row;
   }
   
   async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
-    const [created] = await db.insert(suppliers).values(supplier).returning();
+    const [created] = await db
+      .insert(suppliers)
+      .values({ ...supplier, organizationId: supplier.organizationId ?? getActiveOrganizationId() })
+      .returning();
     return created;
   }
   
   async updateSupplier(id: number, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined> {
-    const [updated] = await db.update(suppliers).set(supplier).where(eq(suppliers.id, id)).returning();
+    const [updated] = await db
+      .update(suppliers)
+      .set(supplier)
+      .where(and(eq(suppliers.id, id), eq(suppliers.organizationId, getActiveOrganizationId())))
+      .returning();
     return updated;
   }
   
   async deleteSupplier(id: number): Promise<boolean> {
-    const result = await db.delete(suppliers).where(eq(suppliers.id, id));
+    const result = await db
+      .delete(suppliers)
+      .where(and(eq(suppliers.id, id), eq(suppliers.organizationId, getActiveOrganizationId())));
     return (result.rowCount ?? 0) > 0;
   }
   
   async getAllBarcodes(): Promise<Barcode[]> {
-    return this.memStorage.getAllBarcodes();
+    return db
+      .select()
+      .from(barcodes)
+      .where(eq(barcodes.organizationId, getActiveOrganizationId()));
   }
   
   async getBarcode(id: number): Promise<Barcode | undefined> {
-    return this.memStorage.getBarcode(id);
+    const [row] = await db
+      .select()
+      .from(barcodes)
+      .where(and(eq(barcodes.id, id), eq(barcodes.organizationId, getActiveOrganizationId())));
+    return row;
   }
   
   async getBarcodesByItemId(itemId: number): Promise<Barcode[]> {
-    return this.memStorage.getBarcodesByItemId(itemId);
+    return db
+      .select()
+      .from(barcodes)
+      .where(
+        and(
+          eq(barcodes.itemId, itemId),
+          eq(barcodes.organizationId, getActiveOrganizationId()),
+        ),
+      );
   }
   
   async getBarcodeByValue(value: string): Promise<Barcode | undefined> {
-    return this.memStorage.getBarcodeByValue(value);
+    const [row] = await db
+      .select()
+      .from(barcodes)
+      .where(
+        and(eq(barcodes.value, value), eq(barcodes.organizationId, getActiveOrganizationId())),
+      );
+    return row;
   }
   
   async createBarcode(barcode: InsertBarcode): Promise<Barcode> {
-    return this.memStorage.createBarcode(barcode);
+    const [created] = await db
+      .insert(barcodes)
+      .values({
+        ...barcode,
+        organizationId: barcode.organizationId ?? getActiveOrganizationId(),
+      })
+      .returning();
+    return created;
   }
   
   async updateBarcode(id: number, barcode: Partial<InsertBarcode>): Promise<Barcode | undefined> {
-    return this.memStorage.updateBarcode(id, barcode);
+    const [updated] = await db
+      .update(barcodes)
+      .set(barcode)
+      .where(and(eq(barcodes.id, id), eq(barcodes.organizationId, getActiveOrganizationId())))
+      .returning();
+    return updated;
   }
   
   async deleteBarcode(id: number): Promise<boolean> {
-    return this.memStorage.deleteBarcode(id);
+    const result = await db
+      .delete(barcodes)
+      .where(and(eq(barcodes.id, id), eq(barcodes.organizationId, getActiveOrganizationId())));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async findItemByBarcode(barcodeValue: string): Promise<InventoryItem | undefined> {
-    return this.memStorage.findItemByBarcode(barcodeValue);
+    const bc = await this.getBarcodeByValue(barcodeValue);
+    if (!bc) return undefined;
+    return this.getInventoryItem(bc.itemId);
   }
   
   async getAllWarehouses(): Promise<Warehouse[]> {
-    return db.select().from(warehouses);
+    return db
+      .select()
+      .from(warehouses)
+      .where(eq(warehouses.organizationId, getActiveOrganizationId()));
   }
   
   async getWarehouse(id: number): Promise<Warehouse | undefined> {
-    const [row] = await db.select().from(warehouses).where(eq(warehouses.id, id));
+    const [row] = await db
+      .select()
+      .from(warehouses)
+      .where(and(eq(warehouses.id, id), eq(warehouses.organizationId, getActiveOrganizationId())));
     return row;
   }
   
   async getDefaultWarehouse(): Promise<Warehouse | undefined> {
-    const [row] = await db.select().from(warehouses).where(eq(warehouses.isDefault, true)).limit(1);
+    const [row] = await db
+      .select()
+      .from(warehouses)
+      .where(
+        and(
+          eq(warehouses.isDefault, true),
+          eq(warehouses.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .limit(1);
     return row;
   }
   
   async createWarehouse(warehouse: InsertWarehouse): Promise<Warehouse> {
-    const [created] = await db.insert(warehouses).values(warehouse).returning();
+    const [created] = await db
+      .insert(warehouses)
+      .values({ ...warehouse, organizationId: warehouse.organizationId ?? getActiveOrganizationId() })
+      .returning();
     return created;
   }
   
   async updateWarehouse(id: number, warehouse: Partial<InsertWarehouse>): Promise<Warehouse | undefined> {
-    const [updated] = await db.update(warehouses).set({ ...warehouse, updatedAt: new Date() }).where(eq(warehouses.id, id)).returning();
+    const [updated] = await db
+      .update(warehouses)
+      .set({ ...warehouse, updatedAt: new Date() })
+      .where(and(eq(warehouses.id, id), eq(warehouses.organizationId, getActiveOrganizationId())))
+      .returning();
     return updated;
   }
   
   async deleteWarehouse(id: number): Promise<boolean> {
-    const result = await db.delete(warehouses).where(eq(warehouses.id, id));
+    const result = await db
+      .delete(warehouses)
+      .where(and(eq(warehouses.id, id), eq(warehouses.organizationId, getActiveOrganizationId())));
     return (result.rowCount ?? 0) > 0;
   }
   
   async setDefaultWarehouse(id: number): Promise<Warehouse | undefined> {
-    await db.update(warehouses).set({ isDefault: false, updatedAt: new Date() });
-    const [updated] = await db.update(warehouses).set({ isDefault: true, updatedAt: new Date() }).where(eq(warehouses.id, id)).returning();
+    const orgId = getActiveOrganizationId();
+    await db
+      .update(warehouses)
+      .set({ isDefault: false, updatedAt: new Date() })
+      .where(eq(warehouses.organizationId, orgId));
+    const [updated] = await db
+      .update(warehouses)
+      .set({ isDefault: true, updatedAt: new Date() })
+      .where(and(eq(warehouses.id, id), eq(warehouses.organizationId, orgId)))
+      .returning();
     return updated;
   }
   
   async getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]> {
-    return db.select().from(warehouseInventory).where(eq(warehouseInventory.warehouseId, warehouseId));
+    return db
+      .select()
+      .from(warehouseInventory)
+      .where(
+        and(
+          eq(warehouseInventory.warehouseId, warehouseId),
+          eq(warehouseInventory.organizationId, getActiveOrganizationId()),
+        ),
+      );
   }
 
   async getWarehouseInventoryById(id: number): Promise<WarehouseInventory | undefined> {
-    const [row] = await db.select().from(warehouseInventory).where(eq(warehouseInventory.id, id));
+    const [row] = await db
+      .select()
+      .from(warehouseInventory)
+      .where(
+        and(
+          eq(warehouseInventory.id, id),
+          eq(warehouseInventory.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
 
   async getWarehouseInventoryItem(warehouseId: number, itemId: number): Promise<WarehouseInventory | undefined> {
-    const [row] = await db.select().from(warehouseInventory).where(and(eq(warehouseInventory.warehouseId, warehouseId), eq(warehouseInventory.itemId, itemId)));
+    const [row] = await db
+      .select()
+      .from(warehouseInventory)
+      .where(
+        and(
+          eq(warehouseInventory.warehouseId, warehouseId),
+          eq(warehouseInventory.itemId, itemId),
+          eq(warehouseInventory.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async getItemWarehouseInventory(itemId: number): Promise<WarehouseInventory[]> {
-    return db.select().from(warehouseInventory).where(eq(warehouseInventory.itemId, itemId));
+    return db
+      .select()
+      .from(warehouseInventory)
+      .where(
+        and(
+          eq(warehouseInventory.itemId, itemId),
+          eq(warehouseInventory.organizationId, getActiveOrganizationId()),
+        ),
+      );
   }
   
   async createWarehouseInventory(wi: InsertWarehouseInventory): Promise<WarehouseInventory> {
-    const [created] = await db.insert(warehouseInventory).values({ ...wi, updatedAt: new Date() }).returning();
+    const [created] = await db
+      .insert(warehouseInventory)
+      .values({
+        ...wi,
+        organizationId: wi.organizationId ?? getActiveOrganizationId(),
+        updatedAt: new Date(),
+      })
+      .returning();
     return created;
   }
   
   async updateWarehouseInventory(id: number, wi: Partial<InsertWarehouseInventory>): Promise<WarehouseInventory | undefined> {
-    const [updated] = await db.update(warehouseInventory).set({ ...wi, updatedAt: new Date() }).where(eq(warehouseInventory.id, id)).returning();
+    const [updated] = await db
+      .update(warehouseInventory)
+      .set({ ...wi, updatedAt: new Date() })
+      .where(
+        and(
+          eq(warehouseInventory.id, id),
+          eq(warehouseInventory.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .returning();
     return updated;
   }
   
   async deleteWarehouseInventory(id: number): Promise<boolean> {
-    const result = await db.delete(warehouseInventory).where(eq(warehouseInventory.id, id));
+    const result = await db
+      .delete(warehouseInventory)
+      .where(
+        and(
+          eq(warehouseInventory.id, id),
+          eq(warehouseInventory.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return (result.rowCount ?? 0) > 0;
   }
   
   async getAllStockMovements(): Promise<StockMovement[]> {
-    return db.select().from(stockMovements).orderBy(desc(stockMovements.timestamp));
+    return db
+      .select()
+      .from(stockMovements)
+      .where(eq(stockMovements.organizationId, getActiveOrganizationId()))
+      .orderBy(desc(stockMovements.timestamp));
   }
   
   async getStockMovement(id: number): Promise<StockMovement | undefined> {
-    const [row] = await db.select().from(stockMovements).where(eq(stockMovements.id, id));
+    const [row] = await db
+      .select()
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.id, id),
+          eq(stockMovements.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async getStockMovementsByItemId(itemId: number): Promise<StockMovement[]> {
-    return db.select().from(stockMovements).where(eq(stockMovements.itemId, itemId)).orderBy(desc(stockMovements.timestamp));
+    return db
+      .select()
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.itemId, itemId),
+          eq(stockMovements.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .orderBy(desc(stockMovements.timestamp));
   }
   
   async getStockMovementsByWarehouseId(warehouseId: number): Promise<StockMovement[]> {
-    return db.select().from(stockMovements).where(or(eq(stockMovements.warehouseId, warehouseId), eq(stockMovements.sourceWarehouseId, warehouseId), eq(stockMovements.destinationWarehouseId, warehouseId))).orderBy(desc(stockMovements.timestamp));
+    return db
+      .select()
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.organizationId, getActiveOrganizationId()),
+          or(
+            eq(stockMovements.warehouseId, warehouseId),
+            eq(stockMovements.sourceWarehouseId, warehouseId),
+            eq(stockMovements.destinationWarehouseId, warehouseId),
+          ),
+        ),
+      )
+      .orderBy(desc(stockMovements.timestamp));
   }
   
   async createStockMovement(movement: InsertStockMovement): Promise<StockMovement> {
-    const [created] = await db.insert(stockMovements).values(movement).returning();
+    const [created] = await db
+      .insert(stockMovements)
+      .values({
+        ...movement,
+        organizationId: movement.organizationId ?? getActiveOrganizationId(),
+      })
+      .returning();
     return created;
   }
   
@@ -1453,6 +1706,7 @@ export class DatabaseStorage implements IStorage {
       ? `Transfer from ${sourceWarehouse.name} to ${destinationWarehouse.name}: ${reason}`
       : `Transfer from ${sourceWarehouse.name} to ${destinationWarehouse.name}`;
     const [movement] = await db.insert(stockMovements).values({
+      organizationId: getActiveOrganizationId(),
       itemId,
       quantity,
       type: "TRANSFER",
@@ -1467,46 +1721,118 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllReorderRequests(): Promise<ReorderRequest[]> {
-    return db.select().from(reorderRequests).orderBy(desc(reorderRequests.createdAt));
+    return db
+      .select()
+      .from(reorderRequests)
+      .where(eq(reorderRequests.organizationId, getActiveOrganizationId()))
+      .orderBy(desc(reorderRequests.createdAt));
   }
   
   async getReorderRequestsByDateRange(startDate: Date, endDate: Date): Promise<ReorderRequest[]> {
-    return db.select().from(reorderRequests).where(and(gte(reorderRequests.createdAt, startDate), lte(reorderRequests.createdAt, endDate))).orderBy(desc(reorderRequests.createdAt));
+    return db
+      .select()
+      .from(reorderRequests)
+      .where(
+        and(
+          eq(reorderRequests.organizationId, getActiveOrganizationId()),
+          gte(reorderRequests.createdAt, startDate),
+          lte(reorderRequests.createdAt, endDate),
+        ),
+      )
+      .orderBy(desc(reorderRequests.createdAt));
   }
   
   async getReorderRequest(id: number): Promise<ReorderRequest | undefined> {
-    const [row] = await db.select().from(reorderRequests).where(eq(reorderRequests.id, id));
+    const [row] = await db
+      .select()
+      .from(reorderRequests)
+      .where(
+        and(
+          eq(reorderRequests.id, id),
+          eq(reorderRequests.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async getReorderRequestByNumber(requestNumber: string): Promise<ReorderRequest | undefined> {
-    const [row] = await db.select().from(reorderRequests).where(eq(reorderRequests.requestNumber, requestNumber));
+    const [row] = await db
+      .select()
+      .from(reorderRequests)
+      .where(
+        and(
+          eq(reorderRequests.requestNumber, requestNumber),
+          eq(reorderRequests.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async createReorderRequest(request: InsertReorderRequest): Promise<ReorderRequest> {
     const reqNumber = request.requestNumber ?? `RO-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 1000)}`;
-    const [created] = await db.insert(reorderRequests).values({ ...request, requestNumber: reqNumber, updatedAt: new Date() }).returning();
+    const [created] = await db
+      .insert(reorderRequests)
+      .values({
+        ...request,
+        organizationId: request.organizationId ?? getActiveOrganizationId(),
+        requestNumber: reqNumber,
+        updatedAt: new Date(),
+      })
+      .returning();
     return created;
   }
   
   async updateReorderRequest(id: number, request: Partial<InsertReorderRequest>): Promise<ReorderRequest | undefined> {
-    const [updated] = await db.update(reorderRequests).set({ ...request, updatedAt: new Date() }).where(eq(reorderRequests.id, id)).returning();
+    const [updated] = await db
+      .update(reorderRequests)
+      .set({ ...request, updatedAt: new Date() })
+      .where(
+        and(
+          eq(reorderRequests.id, id),
+          eq(reorderRequests.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .returning();
     return updated;
   }
   
   async deleteReorderRequest(id: number): Promise<boolean> {
-    const result = await db.delete(reorderRequests).where(eq(reorderRequests.id, id));
+    const result = await db
+      .delete(reorderRequests)
+      .where(
+        and(
+          eq(reorderRequests.id, id),
+          eq(reorderRequests.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return (result.rowCount ?? 0) > 0;
   }
   
   async approveReorderRequest(id: number, approverId: number): Promise<ReorderRequest | undefined> {
-    const [updated] = await db.update(reorderRequests).set({ status: "APPROVED", approverId, approvalDate: new Date(), updatedAt: new Date() }).where(eq(reorderRequests.id, id)).returning();
+    const [updated] = await db
+      .update(reorderRequests)
+      .set({ status: "APPROVED", approverId, approvalDate: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(reorderRequests.id, id),
+          eq(reorderRequests.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .returning();
     return updated;
   }
   
   async rejectReorderRequest(id: number, approverId: number, reason: string): Promise<ReorderRequest | undefined> {
-    const [updated] = await db.update(reorderRequests).set({ status: "REJECTED", approverId, rejectionReason: reason, updatedAt: new Date() }).where(eq(reorderRequests.id, id)).returning();
+    const [updated] = await db
+      .update(reorderRequests)
+      .set({ status: "REJECTED", approverId, rejectionReason: reason, updatedAt: new Date() })
+      .where(
+        and(
+          eq(reorderRequests.id, id),
+          eq(reorderRequests.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .returning();
     return updated;
   }
   
@@ -1550,7 +1876,15 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getReorderRequestWithDetails(id: number): Promise<(ReorderRequest & { item: InventoryItem; requestor?: User; approver?: User; }) | undefined> {
-    const [req] = await db.select().from(reorderRequests).where(eq(reorderRequests.id, id));
+    const [req] = await db
+      .select()
+      .from(reorderRequests)
+      .where(
+        and(
+          eq(reorderRequests.id, id),
+          eq(reorderRequests.organizationId, getActiveOrganizationId()),
+        ),
+      );
     if (!req) return undefined;
     const item = await this.getInventoryItem(req.itemId);
     if (!item) return { ...req, item: {} as InventoryItem };
@@ -1584,21 +1918,43 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getContracts(supplierId?: number): Promise<SupplierContract[]> {
-    const base = db.select().from(supplierContracts).orderBy(desc(supplierContracts.createdAt));
+    const orgId = getActiveOrganizationId();
     if (supplierId != null) {
-      return base.where(eq(supplierContracts.supplierId, supplierId));
+      return db
+        .select()
+        .from(supplierContracts)
+        .where(
+          and(
+            eq(supplierContracts.organizationId, orgId),
+            eq(supplierContracts.supplierId, supplierId),
+          ),
+        )
+        .orderBy(desc(supplierContracts.createdAt));
     }
-    return base;
+    return db
+      .select()
+      .from(supplierContracts)
+      .where(eq(supplierContracts.organizationId, orgId))
+      .orderBy(desc(supplierContracts.createdAt));
   }
 
   async getContract(id: number): Promise<SupplierContract | undefined> {
-    const [row] = await db.select().from(supplierContracts).where(eq(supplierContracts.id, id));
+    const [row] = await db
+      .select()
+      .from(supplierContracts)
+      .where(
+        and(
+          eq(supplierContracts.id, id),
+          eq(supplierContracts.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
 
   async createContract(contract: InsertSupplierContract): Promise<SupplierContract> {
     const payload = {
       ...contract,
+      organizationId: contract.organizationId ?? getActiveOrganizationId(),
       startDate: contract.startDate instanceof Date ? contract.startDate : new Date(contract.startDate as string),
       endDate: contract.endDate != null ? (contract.endDate instanceof Date ? contract.endDate : new Date(contract.endDate as string)) : null,
       attachments: contract.attachments ?? [],
@@ -1616,35 +1972,65 @@ export class DatabaseStorage implements IStorage {
     if (contract.endDate !== undefined) {
       payload.endDate = contract.endDate != null ? (contract.endDate instanceof Date ? contract.endDate : new Date(contract.endDate as string)) : null;
     }
-    const [updated] = await db.update(supplierContracts).set(payload as Partial<InsertSupplierContract>).where(eq(supplierContracts.id, id)).returning();
+    const [updated] = await db
+      .update(supplierContracts)
+      .set(payload as Partial<InsertSupplierContract>)
+      .where(
+        and(
+          eq(supplierContracts.id, id),
+          eq(supplierContracts.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .returning();
     return updated;
   }
 
   async deleteContract(id: number): Promise<boolean> {
-    const result = await db.delete(supplierContracts).where(eq(supplierContracts.id, id));
+    const result = await db
+      .delete(supplierContracts)
+      .where(
+        and(
+          eq(supplierContracts.id, id),
+          eq(supplierContracts.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return (result.rowCount ?? 0) > 0;
   }
   
   async deleteInventoryItem(id: number): Promise<boolean> {
-    const result = await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
+    const result = await db
+      .delete(inventoryItems)
+      .where(
+        and(
+          eq(inventoryItems.id, id),
+          eq(inventoryItems.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return (result.rowCount ?? 0) > 0;
   }
   
   async searchInventoryItems(query: string, categoryId?: number): Promise<InventoryItem[]> {
+    const orgPred = eq(inventoryItems.organizationId, getActiveOrganizationId());
     const q = `%${query.trim()}%`;
     const textMatch = query.trim()
       ? or(like(inventoryItems.name, q), like(inventoryItems.sku, q))
       : undefined;
     const whereClause =
       textMatch && categoryId != null
-        ? and(textMatch, eq(inventoryItems.categoryId, categoryId))
-        : textMatch ?? (categoryId != null ? eq(inventoryItems.categoryId, categoryId) : undefined);
-    if (!whereClause) return db.select().from(inventoryItems);
+        ? and(orgPred, textMatch, eq(inventoryItems.categoryId, categoryId))
+        : textMatch
+          ? and(orgPred, textMatch)
+          : categoryId != null
+            ? and(orgPred, eq(inventoryItems.categoryId, categoryId))
+            : orgPred;
     return db.select().from(inventoryItems).where(whereClause);
   }
   
   async getLowStockItems(): Promise<InventoryItem[]> {
-    const items = await db.select().from(inventoryItems);
+    const items = await db
+      .select()
+      .from(inventoryItems)
+      .where(eq(inventoryItems.organizationId, getActiveOrganizationId()));
     return items.filter(
       (item) =>
         (item.quantity ?? 0) > 0 &&
@@ -1653,11 +2039,22 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getOutOfStockItems(): Promise<InventoryItem[]> {
-    return db.select().from(inventoryItems).where(eq(inventoryItems.quantity, 0));
+    return db
+      .select()
+      .from(inventoryItems)
+      .where(
+        and(
+          eq(inventoryItems.quantity, 0),
+          eq(inventoryItems.organizationId, getActiveOrganizationId()),
+        ),
+      );
   }
   
   async getInventoryStats(): Promise<InventoryStats> {
-    const items = await db.select().from(inventoryItems);
+    const items = await db
+      .select()
+      .from(inventoryItems)
+      .where(eq(inventoryItems.organizationId, getActiveOrganizationId()));
     const inventoryValue = items.reduce((sum, item) => sum + inventoryLineValue(item), 0);
     const lowStockItems = items.filter(
       (item) =>
@@ -1679,21 +2076,49 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllPurchaseRequisitions(): Promise<PurchaseRequisition[]> {
-    return db.select().from(purchaseRequisitions).orderBy(desc(purchaseRequisitions.createdAt));
+    return db
+      .select()
+      .from(purchaseRequisitions)
+      .where(eq(purchaseRequisitions.organizationId, getActiveOrganizationId()))
+      .orderBy(desc(purchaseRequisitions.createdAt));
   }
   
   async getPurchaseRequisition(id: number): Promise<PurchaseRequisition | undefined> {
-    const [row] = await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.id, id));
+    const [row] = await db
+      .select()
+      .from(purchaseRequisitions)
+      .where(
+        and(
+          eq(purchaseRequisitions.id, id),
+          eq(purchaseRequisitions.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async getPurchaseRequisitionByNumber(requisitionNumber: string): Promise<PurchaseRequisition | undefined> {
-    const [row] = await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.requisitionNumber, requisitionNumber));
+    const [row] = await db
+      .select()
+      .from(purchaseRequisitions)
+      .where(
+        and(
+          eq(purchaseRequisitions.requisitionNumber, requisitionNumber),
+          eq(purchaseRequisitions.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async createPurchaseRequisition(requisition: InsertPurchaseRequisition, items: Omit<InsertPurchaseRequisitionItem, "requisitionId">[]): Promise<PurchaseRequisition> {
-    const [created] = await db.insert(purchaseRequisitions).values({ ...requisition, updatedAt: new Date() }).returning();
+    const orgId = getActiveOrganizationId();
+    const [created] = await db
+      .insert(purchaseRequisitions)
+      .values({
+        ...requisition,
+        organizationId: requisition.organizationId ?? orgId,
+        updatedAt: new Date(),
+      })
+      .returning();
     let totalAmount = 0;
     for (const item of items) {
       const totalPrice = (Number(item.unitPrice) || 0) * (item.quantity || 0);
@@ -1701,25 +2126,55 @@ export class DatabaseStorage implements IStorage {
       await db.insert(purchaseRequisitionItems).values({ ...item, requisitionId: created.id, totalPrice });
     }
     if (totalAmount > 0) {
-      await db.update(purchaseRequisitions).set({ totalAmount, updatedAt: new Date() }).where(eq(purchaseRequisitions.id, created.id));
-      return (await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.id, created.id)))[0];
+      await db
+        .update(purchaseRequisitions)
+        .set({ totalAmount, updatedAt: new Date() })
+        .where(
+          and(eq(purchaseRequisitions.id, created.id), eq(purchaseRequisitions.organizationId, orgId)),
+        );
+      const [refetched] = await db
+        .select()
+        .from(purchaseRequisitions)
+        .where(
+          and(eq(purchaseRequisitions.id, created.id), eq(purchaseRequisitions.organizationId, orgId)),
+        );
+      return refetched ?? created;
     }
     return created;
   }
   
   async updatePurchaseRequisition(id: number, requisition: Partial<InsertPurchaseRequisition>): Promise<PurchaseRequisition | undefined> {
-    const [updated] = await db.update(purchaseRequisitions).set({ ...requisition, updatedAt: new Date() }).where(eq(purchaseRequisitions.id, id)).returning();
+    const [updated] = await db
+      .update(purchaseRequisitions)
+      .set({ ...requisition, updatedAt: new Date() })
+      .where(
+        and(
+          eq(purchaseRequisitions.id, id),
+          eq(purchaseRequisitions.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .returning();
     return updated;
   }
   
   async deletePurchaseRequisition(id: number): Promise<boolean> {
+    const orgId = getActiveOrganizationId();
+    const existing = await this.getPurchaseRequisition(id);
+    if (!existing) return false;
     await db.delete(purchaseRequisitionItems).where(eq(purchaseRequisitionItems.requisitionId, id));
-    const result = await db.delete(purchaseRequisitions).where(eq(purchaseRequisitions.id, id));
+    const result = await db
+      .delete(purchaseRequisitions)
+      .where(and(eq(purchaseRequisitions.id, id), eq(purchaseRequisitions.organizationId, orgId)));
     return (result.rowCount ?? 0) > 0;
   }
   
   async getPurchaseRequisitionItems(requisitionId: number): Promise<PurchaseRequisitionItem[]> {
-    return db.select().from(purchaseRequisitionItems).where(eq(purchaseRequisitionItems.requisitionId, requisitionId));
+    const parent = await this.getPurchaseRequisition(requisitionId);
+    if (!parent) return [];
+    return db
+      .select()
+      .from(purchaseRequisitionItems)
+      .where(eq(purchaseRequisitionItems.requisitionId, requisitionId));
   }
   
   async addPurchaseRequisitionItem(item: InsertPurchaseRequisitionItem): Promise<PurchaseRequisitionItem> {
@@ -1744,7 +2199,12 @@ export class DatabaseStorage implements IStorage {
         rejectionReason: null,
         updatedAt: new Date(),
       })
-      .where(eq(purchaseRequisitions.id, id))
+      .where(
+        and(
+          eq(purchaseRequisitions.id, id),
+          eq(purchaseRequisitions.organizationId, getActiveOrganizationId()),
+        ),
+      )
       .returning();
 
     if (!updated) return undefined;
@@ -1770,7 +2230,12 @@ export class DatabaseStorage implements IStorage {
         rejectionReason: reason ?? null,
         updatedAt: new Date(),
       })
-      .where(eq(purchaseRequisitions.id, id))
+      .where(
+        and(
+          eq(purchaseRequisitions.id, id),
+          eq(purchaseRequisitions.organizationId, getActiveOrganizationId()),
+        ),
+      )
       .returning();
 
     if (!updated) return undefined;
@@ -1787,21 +2252,49 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
-    return db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
+    return db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.organizationId, getActiveOrganizationId()))
+      .orderBy(desc(purchaseOrders.createdAt));
   }
   
   async getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> {
-    const [row] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    const [row] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          eq(purchaseOrders.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async getPurchaseOrderByNumber(orderNumber: string): Promise<PurchaseOrder | undefined> {
-    const [row] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.orderNumber, orderNumber));
+    const [row] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.orderNumber, orderNumber),
+          eq(purchaseOrders.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async createPurchaseOrder(order: InsertPurchaseOrder, items: Omit<InsertPurchaseOrderItem, "orderId">[]): Promise<PurchaseOrder> {
-    const [created] = await db.insert(purchaseOrders).values({ ...order, updatedAt: new Date() }).returning();
+    const orgId = getActiveOrganizationId();
+    const [created] = await db
+      .insert(purchaseOrders)
+      .values({
+        ...order,
+        organizationId: order.organizationId ?? orgId,
+        updatedAt: new Date(),
+      })
+      .returning();
     let totalAmount = 0;
     for (const item of items) {
       const totalPrice = (Number(item.unitPrice) || 0) * (item.quantity || 0);
@@ -1809,24 +2302,47 @@ export class DatabaseStorage implements IStorage {
       await db.insert(purchaseOrderItems).values({ ...item, orderId: created.id, totalPrice });
     }
     if (totalAmount > 0) {
-      await db.update(purchaseOrders).set({ totalAmount, updatedAt: new Date() }).where(eq(purchaseOrders.id, created.id));
-      return (await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, created.id)))[0];
+      await db
+        .update(purchaseOrders)
+        .set({ totalAmount, updatedAt: new Date() })
+        .where(and(eq(purchaseOrders.id, created.id), eq(purchaseOrders.organizationId, orgId)));
+      const [refetched] = await db
+        .select()
+        .from(purchaseOrders)
+        .where(and(eq(purchaseOrders.id, created.id), eq(purchaseOrders.organizationId, orgId)));
+      return refetched ?? created;
     }
     return created;
   }
   
   async updatePurchaseOrder(id: number, order: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined> {
-    const [updated] = await db.update(purchaseOrders).set({ ...order, updatedAt: new Date() }).where(eq(purchaseOrders.id, id)).returning();
+    const [updated] = await db
+      .update(purchaseOrders)
+      .set({ ...order, updatedAt: new Date() })
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          eq(purchaseOrders.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .returning();
     return updated;
   }
   
   async deletePurchaseOrder(id: number): Promise<boolean> {
+    const orgId = getActiveOrganizationId();
+    const existing = await this.getPurchaseOrder(id);
+    if (!existing) return false;
     await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));
-    const result = await db.delete(purchaseOrders).where(eq(purchaseOrders.id, id));
+    const result = await db
+      .delete(purchaseOrders)
+      .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, orgId)));
     return (result.rowCount ?? 0) > 0;
   }
   
   async getPurchaseOrderItems(orderId: number): Promise<PurchaseOrderItem[]> {
+    const parent = await this.getPurchaseOrder(orderId);
+    if (!parent) return [];
     return db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, orderId));
   }
   
@@ -1849,7 +2365,12 @@ export class DatabaseStorage implements IStorage {
         status,
         updatedAt: new Date(),
       })
-      .where(eq(purchaseOrders.id, id))
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          eq(purchaseOrders.organizationId, getActiveOrganizationId()),
+        ),
+      )
       .returning();
 
     if (!updated) return undefined;
@@ -1874,7 +2395,12 @@ export class DatabaseStorage implements IStorage {
         paymentDate: paymentStatus === PaymentStatus.PAID ? new Date() : null,
         updatedAt: new Date(),
       })
-      .where(eq(purchaseOrders.id, id))
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          eq(purchaseOrders.organizationId, getActiveOrganizationId()),
+        ),
+      )
       .returning();
 
     return updated;
@@ -1889,11 +2415,17 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createPurchaseOrderFromRequisition(requisitionId: number): Promise<PurchaseOrder | undefined> {
+    const orgId = getActiveOrganizationId();
     return db.transaction(async (tx) => {
       const [requisition] = await tx
         .select()
         .from(purchaseRequisitions)
-        .where(eq(purchaseRequisitions.id, requisitionId));
+        .where(
+          and(
+            eq(purchaseRequisitions.id, requisitionId),
+            eq(purchaseRequisitions.organizationId, orgId),
+          ),
+        );
       if (!requisition) return undefined;
       if (requisition.status !== PurchaseRequisitionStatus.APPROVED) {
         throw new Error(`Cannot create purchase order from requisition with status: ${requisition.status}`);
@@ -1917,9 +2449,11 @@ export class DatabaseStorage implements IStorage {
       const [order] = await tx
         .insert(purchaseOrders)
         .values({
+          organizationId: orgId,
           orderNumber,
           supplierId: requisition.supplierId,
           requisitionId: requisition.id,
+          projectId: requisition.projectId ?? null,
           status: PurchaseOrderStatus.DRAFT,
           orderDate: new Date(),
           expectedDeliveryDate,
@@ -1950,7 +2484,12 @@ export class DatabaseStorage implements IStorage {
           status: PurchaseRequisitionStatus.CONVERTED,
           updatedAt: new Date(),
         })
-        .where(eq(purchaseRequisitions.id, requisitionId));
+        .where(
+          and(
+            eq(purchaseRequisitions.id, requisitionId),
+            eq(purchaseRequisitions.organizationId, orgId),
+          ),
+        );
 
       await this.createActivityLog({
         action: "Purchase Order Created from Requisition",
@@ -2001,17 +2540,28 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getRequisitionWithDetails(id: number): Promise<(PurchaseRequisition & { items: (PurchaseRequisitionItem & { item: InventoryItem; })[]; requestor?: User; approver?: User; supplier?: Supplier; }) | undefined> {
-    const [req] = await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.id, id));
+    const orgId = getActiveOrganizationId();
+    const [req] = await db
+      .select()
+      .from(purchaseRequisitions)
+      .where(and(eq(purchaseRequisitions.id, id), eq(purchaseRequisitions.organizationId, orgId)));
     if (!req) return undefined;
     const items = await db.select().from(purchaseRequisitionItems).where(eq(purchaseRequisitionItems.requisitionId, id));
     const itemIds = [...new Set(items.map((i) => i.itemId))];
-    const invItems = itemIds.length > 0
-      ? await db.select().from(inventoryItems).where(inArray(inventoryItems.id, itemIds))
-      : [];
+    const invItems =
+      itemIds.length > 0
+        ? await db
+            .select()
+            .from(inventoryItems)
+            .where(
+              and(inArray(inventoryItems.id, itemIds), eq(inventoryItems.organizationId, orgId)),
+            )
+        : [];
     const invMap = new Map(invItems.map((i) => [i.id, i]));
     const now = new Date();
     const placeholderInventory = (itemId: number): InventoryItem => ({
       id: itemId,
+      organizationId: orgId,
       name: "Unknown item",
       sku: `ITEM-${itemId}`,
       description: null,
@@ -2064,22 +2614,26 @@ export class DatabaseStorage implements IStorage {
       result.approver = u;
     }
     if (req.supplierId) {
-      const [s] = await db.select().from(suppliers).where(eq(suppliers.id, req.supplierId));
-      result.supplier = s;
+      result.supplier = await this.getSupplier(req.supplierId);
     }
     return result;
   }
   
   async getPurchaseOrderWithDetails(id: number): Promise<(PurchaseOrder & { items: (PurchaseOrderItem & { item: InventoryItem; })[]; supplier: Supplier; requisition?: PurchaseRequisition; }) | undefined> {
-    const [order] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    const orgId = getActiveOrganizationId();
+    const [order] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, orgId)));
     if (!order) return undefined;
 
-    const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, order.supplierId));
+    const supplier = await this.getSupplier(order.supplierId);
     const now = new Date();
     const supplierResolved: Supplier =
       supplier ??
       ({
         id: order.supplierId,
+        organizationId: orgId,
         name: "(Unknown supplier)",
         contactName: null,
         email: null,
@@ -2102,11 +2656,17 @@ export class DatabaseStorage implements IStorage {
     const itemIds = [...new Set(items.map((line) => line.itemId))];
     const invItems =
       itemIds.length > 0
-        ? await db.select().from(inventoryItems).where(inArray(inventoryItems.id, itemIds))
+        ? await db
+            .select()
+            .from(inventoryItems)
+            .where(
+              and(inArray(inventoryItems.id, itemIds), eq(inventoryItems.organizationId, orgId)),
+            )
         : [];
     const invMap = new Map(invItems.map((item) => [item.id, item]));
     const placeholderInventory = (itemId: number): InventoryItem => ({
       id: itemId,
+      organizationId: orgId,
       name: "Unknown item",
       sku: `ITEM-${itemId}`,
       description: null,
@@ -2147,11 +2707,7 @@ export class DatabaseStorage implements IStorage {
 
     let requisition: PurchaseRequisition | undefined;
     if (order.requisitionId != null) {
-      const [req] = await db
-        .select()
-        .from(purchaseRequisitions)
-        .where(eq(purchaseRequisitions.id, order.requisitionId));
-      requisition = req;
+      requisition = await this.getPurchaseRequisition(order.requisitionId);
     }
 
     return {
@@ -2259,23 +2815,45 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllInvoices(): Promise<Invoice[]> {
-    return db.select().from(invoices).orderBy(desc(invoices.createdAt));
+    return db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.organizationId, getActiveOrganizationId()))
+      .orderBy(desc(invoices.createdAt));
   }
   
   async getInvoice(id: number): Promise<Invoice | undefined> {
-    const [row] = await db.select().from(invoices).where(eq(invoices.id, id));
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.id, id),
+          eq(invoices.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async getInvoiceByNumber(invoiceNumber: string): Promise<Invoice | undefined> {
-    const [row] = await db.select().from(invoices).where(eq(invoices.invoiceNumber, invoiceNumber));
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.invoiceNumber, invoiceNumber),
+          eq(invoices.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return row;
   }
   
   async createInvoice(invoice: InsertInvoice, items: InsertInvoiceItem[]): Promise<Invoice> {
+    const orgId = getActiveOrganizationId();
     return db.transaction(async (tx) => {
       const total = Number(invoice.total ?? 0);
       const payload = {
+        organizationId: invoice.organizationId ?? orgId,
         invoiceNumber: invoice.invoiceNumber ?? `INV-${Date.now().toString().slice(-8)}`,
         customerId: invoice.customerId ?? null,
         supplierId: invoice.supplierId ?? null,
@@ -2321,27 +2899,56 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(invoices)
       .set({ ...invoice, updatedAt: new Date() })
-      .where(eq(invoices.id, id))
+      .where(
+        and(
+          eq(invoices.id, id),
+          eq(invoices.organizationId, getActiveOrganizationId()),
+        ),
+      )
       .returning();
     return updated;
   }
   
   async deleteInvoice(id: number): Promise<boolean> {
+    const inv = await this.getInvoice(id);
+    if (!inv) return false;
     await db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, id));
     await db.delete(payments).where(eq(payments.invoiceId, id));
-    const result = await db.delete(invoices).where(eq(invoices.id, id));
+    const result = await db
+      .delete(invoices)
+      .where(
+        and(
+          eq(invoices.id, id),
+          eq(invoices.organizationId, getActiveOrganizationId()),
+        ),
+      );
     return (result.rowCount ?? 0) > 0;
   }
   
   async getInvoicesByCustomerId(customerId: number): Promise<Invoice[]> {
-    return db.select().from(invoices).where(eq(invoices.customerId, customerId)).orderBy(desc(invoices.createdAt));
+    return db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.customerId, customerId),
+          eq(invoices.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .orderBy(desc(invoices.createdAt));
   }
   
   async getInvoicesByDateRange(startDate: Date, endDate: Date): Promise<Invoice[]> {
     return db
       .select()
       .from(invoices)
-      .where(and(gte(invoices.issueDate, startDate), lte(invoices.issueDate, endDate)))
+      .where(
+        and(
+          eq(invoices.organizationId, getActiveOrganizationId()),
+          gte(invoices.issueDate, startDate),
+          lte(invoices.issueDate, endDate),
+        ),
+      )
       .orderBy(desc(invoices.issueDate));
   }
   
@@ -2349,7 +2956,12 @@ export class DatabaseStorage implements IStorage {
     return db
       .select()
       .from(invoices)
-      .where(eq(invoices.status, status as Invoice["status"]))
+      .where(
+        and(
+          eq(invoices.status, status as Invoice["status"]),
+          eq(invoices.organizationId, getActiveOrganizationId()),
+        ),
+      )
       .orderBy(desc(invoices.createdAt));
   }
   
@@ -2358,7 +2970,13 @@ export class DatabaseStorage implements IStorage {
     return db
       .select()
       .from(invoices)
-      .where(and(lt(invoices.dueDate, now), ne(invoices.status, "PAID")))
+      .where(
+        and(
+          eq(invoices.organizationId, getActiveOrganizationId()),
+          lt(invoices.dueDate, now),
+          ne(invoices.status, "PAID"),
+        ),
+      )
       .orderBy(desc(invoices.dueDate));
   }
   
@@ -2369,20 +2987,39 @@ export class DatabaseStorage implements IStorage {
     return db
       .select()
       .from(invoices)
-      .where(and(gte(invoices.dueDate, now), lte(invoices.dueDate, target), ne(invoices.status, "PAID")))
+      .where(
+        and(
+          eq(invoices.organizationId, getActiveOrganizationId()),
+          gte(invoices.dueDate, now),
+          lte(invoices.dueDate, target),
+          ne(invoices.status, "PAID"),
+        ),
+      )
       .orderBy(invoices.dueDate);
   }
   
   async getInvoiceItems(invoiceId: number): Promise<InvoiceItem[]> {
-    return db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId)).orderBy(invoiceItems.id);
+    const parent = await this.getInvoice(invoiceId);
+    if (!parent) return [];
+    return db
+      .select()
+      .from(invoiceItems)
+      .where(eq(invoiceItems.invoiceId, invoiceId))
+      .orderBy(invoiceItems.id);
   }
   
   async getInvoiceItem(id: number): Promise<InvoiceItem | undefined> {
     const [row] = await db.select().from(invoiceItems).where(eq(invoiceItems.id, id));
-    return row;
+    if (!row) return undefined;
+    const parent = await this.getInvoice(row.invoiceId);
+    return parent ? row : undefined;
   }
   
   async addInvoiceItem(item: InsertInvoiceItem): Promise<InvoiceItem> {
+    const parent = await this.getInvoice(Number(item.invoiceId));
+    if (!parent) {
+      throw new Error("Invoice not found");
+    }
     const payload = {
       invoiceId: Number(item.invoiceId),
       itemId: Number(item.itemId),
@@ -2400,6 +3037,8 @@ export class DatabaseStorage implements IStorage {
   }
   
   async updateInvoiceItem(id: number, item: Partial<InsertInvoiceItem>): Promise<InvoiceItem | undefined> {
+    const existing = await this.getInvoiceItem(id);
+    if (!existing) return undefined;
     const [updated] = await db
       .update(invoiceItems)
       .set(item)
@@ -2409,6 +3048,8 @@ export class DatabaseStorage implements IStorage {
   }
   
   async deleteInvoiceItem(id: number): Promise<boolean> {
+    const existing = await this.getInvoiceItem(id);
+    if (!existing) return false;
     const result = await db.delete(invoiceItems).where(eq(invoiceItems.id, id));
     return (result.rowCount ?? 0) > 0;
   }

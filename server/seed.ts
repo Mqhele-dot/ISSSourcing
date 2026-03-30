@@ -55,6 +55,7 @@ import {
   type InsertSupplierContract,
 } from "@shared/schema";
 import { db, pool } from "./db";
+import { ensureLegacyOrgIdColumnsForSeed, ensureProfessionalSupplyChainTables } from "./init-db";
 import { initializeOperationalData } from "./operations-core";
 
 const scryptAsync = promisify(scrypt);
@@ -188,7 +189,7 @@ async function ensureCategories(): Promise<Map<string, number>> {
   await db
     .insert(categories)
     .values(DEFAULT_CATEGORIES)
-    .onConflictDoNothing({ target: categories.name });
+    .onConflictDoNothing({ target: [categories.organizationId, categories.name] });
 
   const rows = await db.select({ id: categories.id, name: categories.name }).from(categories);
   return new Map(rows.map((row) => [row.name, row.id]));
@@ -252,13 +253,13 @@ async function ensureMasterData(): Promise<void> {
     { code: "PROC", name: "Procurement", costCenterId: "CC-PRC-001", active: true },
     { code: "FIN", name: "Finance", costCenterId: "CC-FIN-001", active: true },
     { code: "WH", name: "Warehousing", costCenterId: "CC-WH-001", active: true },
-  ]).onConflictDoNothing({ target: departments.code });
+  ]).onConflictDoNothing({ target: [departments.organizationId, departments.code] });
 
   await db.insert(carriers).values([
     { code: "DHL", name: "DHL Demo Freight", contact: "ops@dhl.example", active: true },
     { code: "UPS", name: "UPS Demo Express", contact: "ops@ups.example", active: true },
     { code: "FDEX", name: "FedEx Demo", contact: "ops@fedex.example", active: true },
-  ]).onConflictDoNothing({ target: carriers.code });
+  ]).onConflictDoNothing({ target: [carriers.organizationId, carriers.code] });
 }
 
 async function ensureSettings(): Promise<void> {
@@ -286,24 +287,37 @@ async function ensureSettings(): Promise<void> {
   await db.insert(appSettings).values(defaultSettings);
 }
 
-async function ensureAdminUser(): Promise<void> {
-  const hashedPassword = await hashPassword("Admin123!");
+async function ensureAdminUser(demoPasswordHash: string): Promise<void> {
+  const values = {
+    username: "admin",
+    email: "admin@example.com",
+    fullName: "System Administrator",
+    role: "admin" as const,
+    emailVerified: true,
+    password: demoPasswordHash,
+    active: true,
+  };
+  if (process.env.NODE_ENV === "production") {
+    await db.insert(users).values(values).onConflictDoNothing({ target: users.username });
+    return;
+  }
   await db
     .insert(users)
-    .values({
-      username: "admin",
-      email: "admin@example.com",
-      fullName: "System Administrator",
-      role: "admin",
-      emailVerified: true,
-      password: hashedPassword,
-      active: true,
-    })
-    .onConflictDoNothing({ target: users.username });
+    .values(values)
+    .onConflictDoUpdate({
+      target: users.username,
+      set: {
+        password: demoPasswordHash,
+        emailVerified: true,
+        active: true,
+        fullName: values.fullName,
+        email: values.email,
+        role: values.role,
+      },
+    });
 }
 
-async function ensureDemoUsers(): Promise<void> {
-  const hashedPassword = await hashPassword("Admin123!");
+async function ensureDemoUsers(demoPasswordHash: string): Promise<void> {
   const demoUsers = [
     {
       username: "planner",
@@ -326,15 +340,30 @@ async function ensureDemoUsers(): Promise<void> {
   ];
 
   for (const demoUser of demoUsers) {
-    await db
-      .insert(users)
-      .values({
-        ...demoUser,
-        emailVerified: true,
-        password: hashedPassword,
-        active: true,
-      })
-      .onConflictDoNothing({ target: users.username });
+    const row = {
+      ...demoUser,
+      emailVerified: true,
+      password: demoPasswordHash,
+      active: true,
+    };
+    if (process.env.NODE_ENV === "production") {
+      await db.insert(users).values(row).onConflictDoNothing({ target: users.username });
+    } else {
+      await db
+        .insert(users)
+        .values(row)
+        .onConflictDoUpdate({
+          target: users.username,
+          set: {
+            password: demoPasswordHash,
+            emailVerified: true,
+            active: true,
+            fullName: demoUser.fullName,
+            email: demoUser.email,
+            role: demoUser.role,
+          },
+        });
+    }
   }
 }
 
@@ -426,7 +455,7 @@ async function ensureInventoryItems(
       .insert(inventoryItems)
       .values(item)
       .onConflictDoUpdate({
-        target: inventoryItems.sku,
+        target: [inventoryItems.organizationId, inventoryItems.sku],
         set: {
           name: item.name,
           description: item.description,
@@ -973,6 +1002,8 @@ export async function getSchemaStatus(): Promise<SchemaStatus> {
 }
 
 export async function seedDatabase(): Promise<DemoDataSummary> {
+  await ensureLegacyOrgIdColumnsForSeed();
+  await ensureProfessionalSupplyChainTables();
   // Ensure operational tables exist before core seed references optional shipment IDs.
   await initializeOperationalData();
   const defaultWarehouseId = await getOrCreateDefaultWarehouse();
@@ -981,8 +1012,9 @@ export async function seedDatabase(): Promise<DemoDataSummary> {
 
   await ensureMasterData();
   await ensureSettings();
-  await ensureAdminUser();
-  await ensureDemoUsers();
+  const demoPasswordHash = await hashPassword("Admin123!");
+  await ensureAdminUser(demoPasswordHash);
+  await ensureDemoUsers(demoPasswordHash);
   await ensureInventoryItems(defaultWarehouseId, categoryMap, supplierMap);
   await ensureActivityLogs();
   await ensureReorderRequests(supplierMap);

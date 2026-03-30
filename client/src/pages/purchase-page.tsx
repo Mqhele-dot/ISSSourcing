@@ -20,7 +20,7 @@ export default function PurchasePage() {
   const showRequisitionsTab = !!(reqMatch || ordersReqMatch);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
       <Tabs
         value={showRequisitionsTab ? "requisitions" : "orders"}
         onValueChange={(v) => {

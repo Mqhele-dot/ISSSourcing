@@ -1,6 +1,17 @@
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  Building2,
+  Coins,
+  Globe2,
+  Percent,
+  Ruler,
+  ShieldCheck,
+  Tags,
+  Wallet,
+} from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -254,22 +265,62 @@ function ApprovalPoliciesRedirectCard() {
 }
 
 export default function MasterDataPage() {
+  const [, setLocation] = useLocation();
+  const isLgUp = useMediaQuery("(min-width: 1024px)");
+  useEffect(() => {
+    if (!isLgUp) {
+      setLocation("/m/home");
+    }
+  }, [isLgUp, setLocation]);
+
+  if (!isLgUp) {
+    return (
+      <div className="mx-auto max-w-lg p-6 text-center text-sm text-muted-foreground">
+        Master data is available on large screens (1024px and wider). Use a desktop browser or resize the window. Sending you to the mobile hub…
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6">
       <PageHeader
         title="Master Data"
         subtitle="Maintain shared reference data for procurement and finance."
       />
       <Tabs defaultValue="units" className="space-y-4">
-        <TabsList className="flex flex-wrap">
-          <TabsTrigger value="units">Units</TabsTrigger>
-          <TabsTrigger value="currencies">Currencies</TabsTrigger>
-          <TabsTrigger value="taxCodes">Tax Codes</TabsTrigger>
-          <TabsTrigger value="commodityCodes">Commodity Codes</TabsTrigger>
-          <TabsTrigger value="incoterms">Incoterms</TabsTrigger>
-          <TabsTrigger value="paymentTerms">Payment Terms</TabsTrigger>
-          <TabsTrigger value="departments">Departments</TabsTrigger>
-          <TabsTrigger value="approvalPolicies">Approval Policies</TabsTrigger>
+        <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1">
+          <TabsTrigger value="units" className="gap-1.5">
+            <Ruler className="h-4 w-4 shrink-0" />
+            Units
+          </TabsTrigger>
+          <TabsTrigger value="currencies" className="gap-1.5">
+            <Coins className="h-4 w-4 shrink-0" />
+            Currencies
+          </TabsTrigger>
+          <TabsTrigger value="taxCodes" className="gap-1.5">
+            <Percent className="h-4 w-4 shrink-0" />
+            Tax Codes
+          </TabsTrigger>
+          <TabsTrigger value="commodityCodes" className="gap-1.5">
+            <Tags className="h-4 w-4 shrink-0" />
+            Commodity Codes
+          </TabsTrigger>
+          <TabsTrigger value="incoterms" className="gap-1.5">
+            <Globe2 className="h-4 w-4 shrink-0" />
+            Incoterms
+          </TabsTrigger>
+          <TabsTrigger value="paymentTerms" className="gap-1.5">
+            <Wallet className="h-4 w-4 shrink-0" />
+            Payment Terms
+          </TabsTrigger>
+          <TabsTrigger value="departments" className="gap-1.5">
+            <Building2 className="h-4 w-4 shrink-0" />
+            Departments
+          </TabsTrigger>
+          <TabsTrigger value="approvalPolicies" className="gap-1.5">
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            Approval Policies
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="units">
           <MasterTable label="Units of Measure" endpoint={MASTER_ENDPOINTS.units} />

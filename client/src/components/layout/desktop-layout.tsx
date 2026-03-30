@@ -83,7 +83,7 @@ export const DesktopLayout: React.FC<DesktopLayoutProps> = ({
           
           <main
             id="main-content"
-            className="relative flex-1 min-h-0 min-w-0 overflow-x-auto overflow-y-auto p-4 md:p-6"
+            className="relative flex-1 min-h-0 min-w-0 overflow-x-auto overflow-y-auto p-4 md:p-6 lg:px-8"
             tabIndex={-1}
           >
             <TutorialPageHint />

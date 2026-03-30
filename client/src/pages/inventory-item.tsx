@@ -252,24 +252,27 @@ export default function InventoryDetailPage() {
               </Alert>
             ) : null}
 
-            <div className="grid gap-4 md:grid-cols-3" data-tour="inventory-detail-summary">
-              <Card>
+            <div
+              className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4"
+              data-tour="inventory-detail-summary"
+            >
+              <Card className="sm:min-w-0">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">On hand</CardTitle>
                 </CardHeader>
-                <CardContent className="text-3xl font-semibold">{numOrNa(summary.onHand)}</CardContent>
+                <CardContent className="text-3xl font-semibold tabular-nums">{numOrNa(summary.onHand)}</CardContent>
               </Card>
-              <Card>
+              <Card className="sm:min-w-0">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Allocated</CardTitle>
                 </CardHeader>
-                <CardContent className="text-3xl font-semibold">{numOrNa(summary.allocated)}</CardContent>
+                <CardContent className="text-3xl font-semibold tabular-nums">{numOrNa(summary.allocated)}</CardContent>
               </Card>
-              <Card>
+              <Card className="sm:min-w-0">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Available</CardTitle>
                 </CardHeader>
-                <CardContent className="flex items-center gap-3 text-3xl font-semibold">
+                <CardContent className="flex flex-wrap items-center gap-2 text-3xl font-semibold tabular-nums">
                   <span>{numOrNa(available)}</span>
                   <StatusBadge
                     status={Number(available) < 0 ? "error" : Number(available) === 0 ? "low" : "active"}

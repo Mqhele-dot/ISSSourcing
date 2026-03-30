@@ -16,6 +16,27 @@ import { PgTable } from 'drizzle-orm/pg-core';
 const execAsync = promisify(exec);
 
 /** Create the "session" table required by connect-pg-simple (Express session store). */
+/** Ensure row `organizations.id = 1` exists for single-org backfill and dev defaults. */
+export async function ensureDefaultOrganization(): Promise<void> {
+  try {
+    await pool.query(`
+      INSERT INTO organizations (id, name, slug, created_at, updated_at)
+      VALUES (1, 'Default Organization', 'default', NOW(), NOW())
+      ON CONFLICT (id) DO NOTHING
+    `);
+    await pool.query(`
+      INSERT INTO organization_settings (organization_id, plan_tier, updated_at)
+      VALUES (1, 'standard', NOW())
+      ON CONFLICT (organization_id) DO NOTHING
+    `);
+  } catch (err) {
+    console.warn(
+      'Could not ensure default organization:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 export async function ensureSessionTable(): Promise<void> {
   try {
     await pool.query(`
@@ -74,6 +95,208 @@ export async function ensureSuppliersTaxIdColumn(): Promise<void> {
   } catch (err) {
     console.warn('Could not ensure suppliers tax ID column:', err instanceof Error ? err.message : err);
   }
+}
+
+/** Tables that gained `organization_id` + composite unique indexes; legacy DBs may lack the column. */
+const LEGACY_ORG_SCOPED_TABLES: readonly {
+  table: string;
+  uniqueIndexName: string;
+  uniqueIndexCols: string;
+  fkName: string;
+}[] = [
+  {
+    table: "categories",
+    uniqueIndexName: "categories_org_name_uidx",
+    uniqueIndexCols: "(organization_id, name)",
+    fkName: "categories_organization_id_organizations_id_fk",
+  },
+  {
+    table: "departments",
+    uniqueIndexName: "departments_org_code_uidx",
+    uniqueIndexCols: "(organization_id, code)",
+    fkName: "departments_organization_id_organizations_id_fk",
+  },
+  {
+    table: "carriers",
+    uniqueIndexName: "carriers_org_code_uidx",
+    uniqueIndexCols: "(organization_id, code)",
+    fkName: "carriers_organization_id_organizations_id_fk",
+  },
+  {
+    table: "warehouses",
+    uniqueIndexName: "warehouses_org_name_uidx",
+    uniqueIndexCols: "(organization_id, name)",
+    fkName: "warehouses_organization_id_organizations_id_fk",
+  },
+  {
+    table: "inventory_items",
+    uniqueIndexName: "inventory_items_org_sku_uidx",
+    uniqueIndexCols: "(organization_id, sku)",
+    fkName: "inventory_items_organization_id_organizations_id_fk",
+  },
+  {
+    table: "app_settings",
+    uniqueIndexName: "app_settings_org_uidx",
+    uniqueIndexCols: "(organization_id)",
+    fkName: "app_settings_organization_id_organizations_id_fk",
+  },
+  {
+    table: "reorder_requests",
+    uniqueIndexName: "reorder_requests_org_reqnum_uidx",
+    uniqueIndexCols: "(organization_id, request_number)",
+    fkName: "reorder_requests_organization_id_organizations_id_fk",
+  },
+  {
+    table: "purchase_requisitions",
+    uniqueIndexName: "purchase_req_org_number_uidx",
+    uniqueIndexCols: "(organization_id, requisition_number)",
+    fkName: "purchase_requisitions_organization_id_organizations_id_fk",
+  },
+  {
+    table: "purchase_orders",
+    uniqueIndexName: "purchase_orders_org_number_uidx",
+    uniqueIndexCols: "(organization_id, order_number)",
+    fkName: "purchase_orders_organization_id_organizations_id_fk",
+  },
+  {
+    table: "inventory_serials",
+    uniqueIndexName: "inventory_serials_org_sn_uidx",
+    uniqueIndexCols: "(organization_id, serial_number)",
+    fkName: "inventory_serials_organization_id_organizations_id_fk",
+  },
+];
+
+/** Tables that need `organization_id` + FK but have no composite unique on (org, …) in legacy repair. */
+const LEGACY_ORG_ID_COLUMN_ONLY: readonly { table: string; fkName: string }[] = [
+  { table: "notifications", fkName: "notifications_organization_id_organizations_id_fk" },
+  { table: "suppliers", fkName: "suppliers_organization_id_organizations_id_fk" },
+  { table: "activity_logs", fkName: "activity_logs_organization_id_organizations_id_fk" },
+  { table: "stock_movements", fkName: "stock_movements_organization_id_organizations_id_fk" },
+  { table: "supplier_contracts", fkName: "supplier_contracts_organization_id_organizations_id_fk" },
+  { table: "invoices", fkName: "invoices_organization_id_organizations_id_fk" },
+  { table: "documents", fkName: "documents_organization_id_organizations_id_fk" },
+  { table: "approval_policies", fkName: "approval_policies_organization_id_organizations_id_fk" },
+  { table: "audit_logs", fkName: "audit_logs_organization_id_organizations_id_fk" },
+  { table: "inventory_batches", fkName: "inventory_batches_organization_id_organizations_id_fk" },
+  { table: "warehouse_inventory", fkName: "warehouse_inventory_organization_id_organizations_id_fk" },
+  { table: "inventory_allocations", fkName: "inventory_allocations_organization_id_organizations_id_fk" },
+  { table: "cycle_counts", fkName: "cycle_counts_organization_id_organizations_id_fk" },
+];
+
+async function ensureOrganizationIdColumnOnly(spec: (typeof LEGACY_ORG_ID_COLUMN_ONLY)[number]): Promise<void> {
+  const r = await pool.query(
+    `
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'organization_id'
+  `,
+    [spec.table],
+  );
+  if (r.rows.length > 0) return;
+
+  await ensureDefaultOrganization();
+
+  await pool.query(
+    `ALTER TABLE ${spec.table} ADD COLUMN organization_id INTEGER NOT NULL DEFAULT 1`,
+  );
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE ${spec.table}
+        ADD CONSTRAINT ${spec.fkName}
+        FOREIGN KEY (organization_id) REFERENCES organizations(id);
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+  console.log(`${spec.table}.organization_id column ready`);
+}
+
+async function ensureOrganizationIdOnLegacyTable(spec: (typeof LEGACY_ORG_SCOPED_TABLES)[number]): Promise<void> {
+  const r = await pool.query(
+    `
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'organization_id'
+  `,
+    [spec.table],
+  );
+
+  await ensureDefaultOrganization();
+
+  if (r.rows.length === 0) {
+    await pool.query(
+      `ALTER TABLE ${spec.table} ADD COLUMN organization_id INTEGER NOT NULL DEFAULT 1`,
+    );
+    await pool.query(`
+      DO $$ BEGIN
+        ALTER TABLE ${spec.table}
+          ADD CONSTRAINT ${spec.fkName}
+          FOREIGN KEY (organization_id) REFERENCES organizations(id);
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$
+    `);
+  }
+
+  // Column may already exist from a partial migration; Drizzle seed still needs the unique index for ON CONFLICT.
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS ${spec.uniqueIndexName} ON ${spec.table} ${spec.uniqueIndexCols}`,
+  );
+  console.log(`${spec.table}.organization_id column and index ready`);
+}
+
+/** Multi-tenant column on `users` — Drizzle INSERT may reference it; legacy DBs often lack it. */
+export async function ensureUsersDefaultOrganizationIdColumn(): Promise<void> {
+  try {
+    const r = await pool.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'default_organization_id'
+    `);
+    if (r.rows.length > 0) return;
+
+    await ensureDefaultOrganization();
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN default_organization_id INTEGER REFERENCES organizations(id)
+    `);
+    console.log("users.default_organization_id column ready");
+  } catch (err) {
+    console.warn(
+      "Could not ensure users.default_organization_id:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/**
+ * Backfill `organization_id` on org-scoped master tables when the DB predates multi-tenant columns.
+ * Covers seed inserts that hit categories, departments, carriers (see `ensureMasterData` in seed.ts),
+ * plus `users.default_organization_id` for Drizzle inserts.
+ */
+export async function ensureLegacyOrgIdColumnsForSeed(): Promise<void> {
+  for (const spec of LEGACY_ORG_SCOPED_TABLES) {
+    try {
+      await ensureOrganizationIdOnLegacyTable(spec);
+    } catch (err) {
+      console.warn(
+        `Could not ensure ${spec.table}.organization_id:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  for (const spec of LEGACY_ORG_ID_COLUMN_ONLY) {
+    try {
+      await ensureOrganizationIdColumnOnly(spec);
+    } catch (err) {
+      console.warn(
+        `Could not ensure ${spec.table}.organization_id:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  await ensureUsersDefaultOrganizationIdColumn();
+}
+
+/** @deprecated Use {@link ensureLegacyOrgIdColumnsForSeed} — kept for call sites that only referenced categories. */
+export async function ensureCategoriesOrganizationIdColumn(): Promise<void> {
+  await ensureLegacyOrgIdColumnsForSeed();
 }
 
 /** Ensure purchase_requisitions and purchase_requisition_items tables exist (for environments where drizzle-kit push has not run). */
@@ -345,10 +568,12 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS manufacturing_date TIMESTAMP;
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS department_id INTEGER;
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS justification TEXT;
+      ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS project_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS department_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS contract_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS incoterm_id INTEGER;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS project_id INTEGER;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_id INTEGER;
       ALTER TABLE invoices ALTER COLUMN customer_id DROP NOT NULL;
       ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS receiver_user_id INTEGER;
@@ -374,8 +599,10 @@ export async function initializeDatabase(): Promise<boolean> {
   console.log('Initializing database schema...');
 
   await ensureSessionTable();
+  await ensureDefaultOrganization();
   await ensureContractDateConstraint();
   await ensureSuppliersTaxIdColumn();
+  await ensureLegacyOrgIdColumnsForSeed();
   await ensurePurchaseRequisitionsTables();
   await ensureProfessionalSupplyChainTables();
 
