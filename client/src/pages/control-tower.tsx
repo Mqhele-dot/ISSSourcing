@@ -10,6 +10,7 @@ import {
   Truck,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { GasOpsCard } from "@/pages/control-tower/gas-ops-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataState } from "@/components/ui/data-state";
@@ -157,6 +158,8 @@ export default function ControlTowerPage() {
               </Card>
             </div>
             </div>
+
+            <GasOpsCard />
 
             <Card>
               <CardHeader>

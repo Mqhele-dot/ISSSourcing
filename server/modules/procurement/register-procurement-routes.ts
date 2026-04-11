@@ -98,10 +98,50 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         }
       }
       
-      const validatedReqData = insertPurchaseRequisitionSchema.parse(req.body);
-      const validatedItemsData = req.body.items.map((item: any) => 
-        insertPurchaseRequisitionItemSchema.omit({ requisitionId: true }).parse(item)
-      );
+      const requisitionInput = { ...(req.body ?? {}) } as Record<string, unknown>;
+      // Generate business defaults before strict schema parsing.
+      if (!requisitionInput.requisitionNumber) {
+        const date = new Date();
+        const year = date.getFullYear().toString().substr(-2);
+        const month = (date.getMonth() + 1).toString().padStart(2, "0");
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
+        requisitionInput.requisitionNumber = `REQ-${year}${month}-${random}`;
+      }
+      if (!requisitionInput.status) {
+        requisitionInput.status = PurchaseRequisitionStatus.PENDING;
+      }
+      if (typeof requisitionInput.requiredDate === "string" && requisitionInput.requiredDate.trim()) {
+        const parsedRequiredDate = new Date(requisitionInput.requiredDate);
+        if (!Number.isNaN(parsedRequiredDate.getTime())) {
+          requisitionInput.requiredDate = parsedRequiredDate;
+        }
+      }
+
+      const validatedReqData = insertPurchaseRequisitionSchema.parse(requisitionInput);
+      const validatedItemsData = req.body.items.map((item: any, index: number) => {
+        const qty = Number(item?.quantity);
+        const unit = Number(item?.unitPrice);
+        const itemId = Number(item?.itemId);
+        if (!Number.isFinite(itemId) || itemId <= 0) {
+          throw new Error(`createPurchaseRequisition:item_${index + 1}_itemId_invalid`);
+        }
+        if (!Number.isFinite(qty) || qty <= 0) {
+          throw new Error(`createPurchaseRequisition:item_${index + 1}_quantity_invalid`);
+        }
+        if (!Number.isFinite(unit) || unit <= 0) {
+          throw new Error(`createPurchaseRequisition:item_${index + 1}_unitPrice_invalid`);
+        }
+        const providedTotal = Number(item?.totalPrice);
+        const totalPrice =
+          Number.isFinite(providedTotal) && providedTotal > 0 ? providedTotal : qty * unit;
+        return {
+          itemId,
+          quantity: qty,
+          unitPrice: unit,
+          totalPrice,
+          notes: typeof item?.notes === "string" ? item.notes : null,
+        };
+      });
       if (!validatedReqData.supplierId) {
         return sendFunctionError(res, 400, "createPurchaseRequisition", "Supplier is required");
       }
@@ -124,20 +164,6 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         return sendFunctionError(res, 400, "createPurchaseRequisition", projectCheck.message);
       }
 
-      // Generate a unique requisition number
-      if (!validatedReqData.requisitionNumber) {
-        const date = new Date();
-        const year = date.getFullYear().toString().substr(-2);
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-        validatedReqData.requisitionNumber = `REQ-${year}${month}-${random}`;
-      }
-      
-      // Default to PENDING so requisitions immediately enter approval workflow.
-      if (!validatedReqData.status) {
-        validatedReqData.status = PurchaseRequisitionStatus.PENDING;
-      }
-      
       const newRequisition = await storage.createPurchaseRequisition(
         validatedReqData, 
         validatedItemsData
@@ -568,29 +594,64 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         return res.status(400).json({ message: "At least one item is required" });
       }
       
-      const validatedOrderData = insertPurchaseOrderSchema.parse(req.body);
-      const validatedItemsData = req.body.items.map((item: any) => 
-        insertPurchaseOrderItemSchema.omit({ orderId: true }).parse(item)
-      );
+      const purchaseOrderInput = { ...(req.body ?? {}) } as Record<string, unknown>;
+      // Generate business defaults before strict schema parsing.
+      if (!purchaseOrderInput.orderNumber) {
+        const date = new Date();
+        const year = date.getFullYear().toString().substr(-2);
+        const month = (date.getMonth() + 1).toString().padStart(2, "0");
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
+        purchaseOrderInput.orderNumber = `PO-${year}${month}-${random}`;
+      }
+      if (!purchaseOrderInput.status) {
+        purchaseOrderInput.status = PurchaseOrderStatus.DRAFT;
+      }
+      if (typeof purchaseOrderInput.orderDate === "string" && purchaseOrderInput.orderDate.trim()) {
+        const parsedOrderDate = new Date(purchaseOrderInput.orderDate);
+        if (!Number.isNaN(parsedOrderDate.getTime())) {
+          purchaseOrderInput.orderDate = parsedOrderDate;
+        }
+      }
+      if (
+        typeof purchaseOrderInput.expectedDeliveryDate === "string" &&
+        purchaseOrderInput.expectedDeliveryDate.trim()
+      ) {
+        const parsedExpectedDate = new Date(purchaseOrderInput.expectedDeliveryDate);
+        if (!Number.isNaN(parsedExpectedDate.getTime())) {
+          purchaseOrderInput.expectedDeliveryDate = parsedExpectedDate;
+        }
+      }
+
+      const validatedOrderData = insertPurchaseOrderSchema.parse(purchaseOrderInput);
+      const validatedItemsData = req.body.items.map((item: any, index: number) => {
+        const qty = Number(item?.quantity);
+        const unit = Number(item?.unitPrice);
+        const itemId = Number(item?.itemId);
+        if (!Number.isFinite(itemId) || itemId <= 0) {
+          throw new Error(`createPurchaseOrder:item_${index + 1}_itemId_invalid`);
+        }
+        if (!Number.isFinite(qty) || qty <= 0) {
+          throw new Error(`createPurchaseOrder:item_${index + 1}_quantity_invalid`);
+        }
+        if (!Number.isFinite(unit) || unit <= 0) {
+          throw new Error(`createPurchaseOrder:item_${index + 1}_unitPrice_invalid`);
+        }
+        const providedTotal = Number(item?.totalPrice);
+        const totalPrice =
+          Number.isFinite(providedTotal) && providedTotal > 0 ? providedTotal : qty * unit;
+        return {
+          itemId,
+          quantity: qty,
+          unitPrice: unit,
+          totalPrice,
+          notes: typeof item?.notes === "string" ? item.notes : null,
+        };
+      });
       const projectCheckPo = await validateProjectIdForOrg(validatedOrderData.projectId ?? undefined);
       if (!projectCheckPo.ok) {
         return res.status(400).json({ message: projectCheckPo.message });
       }
 
-      // Generate a unique order number
-      if (!validatedOrderData.orderNumber) {
-        const date = new Date();
-        const year = date.getFullYear().toString().substr(-2);
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-        validatedOrderData.orderNumber = `PO-${year}${month}-${random}`;
-      }
-      
-      // Set default status if not provided
-      if (!validatedOrderData.status) {
-        validatedOrderData.status = PurchaseOrderStatus.DRAFT;
-      }
-      
       const newOrder = await storage.createPurchaseOrder(
         validatedOrderData, 
         validatedItemsData

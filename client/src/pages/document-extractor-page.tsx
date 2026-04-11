@@ -73,6 +73,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { DocumentExtractorPageIntro } from '@/pages/document-extractor/document-extractor-page-intro';
 
 async function postFormData(url: string, formData: FormData) {
   const response = await fetch(url, {
@@ -425,12 +426,7 @@ const DocumentExtractorPage: React.FC = () => {
   return (
     <div className="container mx-auto py-8">
       <div className="flex flex-col space-y-6">
-        <div className="flex flex-col space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">Document Extractor</h1>
-          <p className="text-muted-foreground">
-            Extract and process data from various document formats (PDF, Excel, CSV) into structured data.
-          </p>
-        </div>
+        <DocumentExtractorPageIntro />
 
         <Tabs defaultValue="single" className="space-y-4">
           <TabsList>

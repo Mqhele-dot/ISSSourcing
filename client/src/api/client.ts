@@ -23,6 +23,9 @@ import type {
   ShipmentListItem,
   TutorialStartResult,
   TutorialStatus,
+  GasDashboardSummary,
+  GasComplianceAlertsResult,
+  MobileScanResolveResult,
 } from "./types";
 
 export type {
@@ -30,6 +33,9 @@ export type {
   ActivityItem,
   ApiErrorPayload,
   ControlTowerOverview,
+  GasDashboardSummary,
+  GasComplianceAlertsResult,
+  MobileScanResolveResult,
   DemoWalkthroughResult,
   ExceptionCase,
   InventoryDetail,
@@ -700,6 +706,26 @@ export async function runIntegration(connector: string): Promise<IntegrationRun>
     "POST",
     `/api/integrations/${encodeURIComponent(connector)}/run`,
   );
+}
+
+export async function fetchGasDashboardSummary(): Promise<GasDashboardSummary> {
+  const { data } = await fetchGasDashboardSummaryEnvelope();
+  return data;
+}
+
+export async function fetchGasDashboardSummaryEnvelope(): Promise<ApiEnvelopeResult<GasDashboardSummary>> {
+  return fetchWithMeta<GasDashboardSummary>("/api/gas/dashboard-summary");
+}
+
+export async function runGasComplianceAlerts(): Promise<GasComplianceAlertsResult> {
+  return apiMutate<GasComplianceAlertsResult>("POST", "/api/gas/run-compliance-alerts");
+}
+
+export async function resolveMobileScan(body: {
+  value: string;
+  intent?: string | null;
+}): Promise<MobileScanResolveResult> {
+  return apiMutate<MobileScanResolveResult>("POST", "/api/mobile/scan/resolve", body);
 }
 
 export async function fetchControlTowerOverview(): Promise<ControlTowerOverview> {

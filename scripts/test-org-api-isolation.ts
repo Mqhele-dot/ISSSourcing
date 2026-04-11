@@ -65,6 +65,14 @@ async function main() {
   let documentId: number | null = null;
 
   try {
+    await pool.query(
+      `SELECT setval(
+        pg_get_serial_sequence('organizations', 'id'),
+        COALESCE((SELECT MAX(id) FROM organizations), 0) + 1,
+        false
+      )`,
+    );
+
     const slug = `iso-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const orgRes = await pool.query<{ id: number }>(
       `INSERT INTO organizations (name, slug, created_at, updated_at)

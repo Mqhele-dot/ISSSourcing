@@ -57,6 +57,9 @@ export function handleCSRFError(err: any, req: Request, res: Response, next: Nex
 
 // Middleware for rate limiting login attempts
 export async function loginRateLimiter(req: Request, res: Response, next: NextFunction) {
+  if (process.env.DISABLE_LOGIN_RATE_LIMITER === "true") {
+    return next();
+  }
   try {
     const key = getRateLimiterKey(req, true);
     await loginLimiter.consume(key);

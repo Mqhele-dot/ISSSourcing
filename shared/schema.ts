@@ -2272,7 +2272,70 @@ export const assetEvents = pgTable("asset_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+/** Gas-industry extension: physical specs keyed to tracked_assets. */
+export const gasAssetProfiles = pgTable(
+  "gas_asset_profiles",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    trackedAssetId: integer("tracked_asset_id")
+      .notNull()
+      .references(() => trackedAssets.id),
+    technologyType: text("technology_type"),
+    gasFamily: text("gas_family"),
+    pressureClass: text("pressure_class"),
+    tareWeightKg: real("tare_weight_kg"),
+    waterCapacityL: real("water_capacity_l"),
+    testDueDate: timestamp("test_due_date"),
+    complianceStatus: text("compliance_status").default("unknown"),
+    condition: text("condition"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("gas_asset_profiles_asset_uidx").on(t.trackedAssetId)],
+);
+
+export const gasProducts = pgTable(
+  "gas_products",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    gasFamily: text("gas_family"),
+    hazardClass: text("hazard_class"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("gas_products_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const gasExchangeTransactions = pgTable("gas_exchange_transactions", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
+  deliveredAssetId: integer("delivered_asset_id").references(() => trackedAssets.id),
+  collectedAssetId: integer("collected_asset_id").references(() => trackedAssets.id),
+  customerId: integer("customer_id"),
+  status: text("status").notNull().default("pending"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export type Project = typeof projects.$inferSelect;
 export type Site = typeof sites.$inferSelect;
 export type TrackedAsset = typeof trackedAssets.$inferSelect;
 export type AssetEvent = typeof assetEvents.$inferSelect;
+export type GasAssetProfile = typeof gasAssetProfiles.$inferSelect;
+export type GasProduct = typeof gasProducts.$inferSelect;
+export type GasExchangeTransaction = typeof gasExchangeTransactions.$inferSelect;

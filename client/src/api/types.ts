@@ -279,6 +279,40 @@ export type ControlTowerOverview = {
 
 export type ActivityItem = ControlTowerOverview["activity"][number];
 
+export type GasDashboardSummary = {
+  productCount: number;
+  openExchanges: number;
+  profilesDueForTest30d: number;
+};
+
+export type GasComplianceAlertsResult = {
+  notificationsSent: number;
+  dueWithin30d: number;
+  blocked: number;
+};
+
+/** POST /api/mobile/scan/resolve — union of possible resolutions */
+export type MobileScanResolveResult =
+  | {
+      kind: "item";
+      intent: string | null;
+      item: { id: number; sku: string; name: string } | null;
+      barcode: { id: number; value: string };
+      nextActions: string[];
+    }
+  | {
+      kind: "asset";
+      intent: string | null;
+      asset: {
+        id: number;
+        assetType: string;
+        serialNumber: string | null;
+        status: string | null;
+      };
+      nextActions: string[];
+    }
+  | { kind: "unknown"; intent: string | null; value: string; nextActions: string[] };
+
 export type ActivityRecord = {
   id: number;
   createdAt: string | null;

@@ -11,19 +11,32 @@ function asArray<T = Record<string, unknown>>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function unwrapData<T>(value: unknown): T {
+  if (
+    value &&
+    typeof value === "object" &&
+    "ok" in value &&
+    (value as { ok?: unknown }).ok === true &&
+    "data" in value
+  ) {
+    return (value as { data: T }).data;
+  }
+  return value as T;
+}
+
 /**
  * Ensures at least one purchase order exists for the supplier (admin/manager + ?supplierId=).
  */
 async function ensureSupplierPurchaseOrder(adminCookie: string, supplierId: number): Promise<number | null> {
   const initial = await apiJsonRequest(`/supplier/orders?supplierId=${supplierId}`, { method: "GET", cookie: adminCookie });
   if (initial.status !== 200) return null;
-  let orders = asArray<{ id: number }>(initial.json);
+  let orders = asArray<{ id: number }>(unwrapData<unknown>(initial.json));
   let orderId = Number(orders[0]?.id ?? 0);
   if (orderId) return orderId;
 
   const itemsRes = await apiJsonRequest("/inventory", { method: "GET", cookie: adminCookie });
   if (itemsRes.status !== 200) return null;
-  const items = asArray<{ id: number; price?: number }>(itemsRes.json);
+  const items = asArray<{ id: number; price?: number }>(unwrapData<unknown>(itemsRes.json));
   const firstItem = items[0];
   if (!firstItem?.id) return null;
 
@@ -68,7 +81,7 @@ async function ensureSupplierPurchaseOrder(adminCookie: string, supplierId: numb
 
   const again = await apiJsonRequest(`/supplier/orders?supplierId=${supplierId}`, { method: "GET", cookie: adminCookie });
   if (again.status !== 200) return null;
-  orders = asArray<{ id: number }>(again.json);
+  orders = asArray<{ id: number }>(unwrapData<unknown>(again.json));
   orderId = Number(orders[0]?.id ?? 0);
   return orderId || null;
 }
@@ -95,7 +108,7 @@ async function main() {
 
   const suppliers = await apiJsonRequest("/suppliers", { method: "GET", cookie: adminCookie });
   expectStatus("GET /api/suppliers", 200, suppliers.status);
-  const supplierList = asArray<{ id: number }>(suppliers.json);
+  const supplierList = asArray<{ id: number }>(unwrapData<unknown>(suppliers.json));
   const supplierId = Number(supplierList[0]?.id ?? 0);
   if (!supplierId) {
     console.log("  ✗ Missing suppliers for supplier-portal test");

@@ -3,7 +3,9 @@ import { db } from "../../db";
 import { activityLogs } from "@shared/schema";
 import { getActiveOrganizationId } from "../../organization-context";
 import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisabled } from "../../org-features";
+import { sendOk } from "../../api-response";
 import { syncBatchBodySchema } from "./validators";
+import { registerMobileScanRoutes } from "./register-mobile-scan-routes";
 
 type Auth = {
   ensureAuthenticated: import("express").RequestHandler;
@@ -15,6 +17,7 @@ const processedKeys = new Set<string>();
  * Mobile offline queue flush: accepts idempotent batches (in-memory dedupe for this process).
  */
 export function registerSyncRoutes(app: Express, auth: Auth): void {
+  registerMobileScanRoutes(app, auth);
   app.post(
     "/api/sync/batch",
     auth.ensureAuthenticated,
@@ -61,8 +64,7 @@ export function registerSyncRoutes(app: Express, auth: Auth): void {
         }
       }
 
-      return res.status(200).json({
-        ok: true,
+      return sendOk(res, {
         organizationId: orgId,
         accepted,
         duplicates,

@@ -60,6 +60,13 @@ import { getActiveOrganizationId } from "./organization-context";
 import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
 import { inventoryLineValue } from "./forecast-service";
+import {
+  repoCreateInventoryItem,
+  repoGetAllInventoryItems,
+  repoGetInventoryItem,
+  repoGetInventoryItemBySku,
+  repoUpdateInventoryItem,
+} from "./repositories/inventory-item-repository";
 
 const PostgresSessionStore = connectPgSimple(session);
 
@@ -165,61 +172,25 @@ export class DatabaseStorage implements IStorage {
     return newCategory;
   }
 
-  // Inventory item methods
+  // Inventory item methods (persistence: repositories/inventory-item-repository.ts)
   async getAllInventoryItems(): Promise<InventoryItem[]> {
-    return db
-      .select()
-      .from(inventoryItems)
-      .where(eq(inventoryItems.organizationId, getActiveOrganizationId()));
+    return repoGetAllInventoryItems();
   }
 
   async getInventoryItem(id: number): Promise<InventoryItem | undefined> {
-    const [item] = await db
-      .select()
-      .from(inventoryItems)
-      .where(
-        and(eq(inventoryItems.id, id), eq(inventoryItems.organizationId, getActiveOrganizationId())),
-      );
-    return item;
+    return repoGetInventoryItem(id);
   }
 
   async getInventoryItemBySku(sku: string): Promise<InventoryItem | undefined> {
-    const [item] = await db
-      .select()
-      .from(inventoryItems)
-      .where(
-        and(
-          eq(inventoryItems.sku, sku),
-          eq(inventoryItems.organizationId, getActiveOrganizationId()),
-        ),
-      );
-    return item;
+    return repoGetInventoryItemBySku(sku);
   }
 
   async createInventoryItem(item: InsertInventoryItem): Promise<InventoryItem> {
-    const [newItem] = await db
-      .insert(inventoryItems)
-      .values({
-        ...item,
-        organizationId: item.organizationId ?? getActiveOrganizationId(),
-      })
-      .returning();
-    return newItem;
+    return repoCreateInventoryItem(item);
   }
 
   async updateInventoryItem(id: number, item: Partial<InsertInventoryItem>): Promise<InventoryItem | undefined> {
-    const [updatedItem] = await db
-      .update(inventoryItems)
-      .set({
-        ...item,
-        updatedAt: new Date()
-      })
-      .where(
-        and(eq(inventoryItems.id, id), eq(inventoryItems.organizationId, getActiveOrganizationId())),
-      )
-      .returning();
-    
-    return updatedItem;
+    return repoUpdateInventoryItem(id, item);
   }
 
   // Settings methods

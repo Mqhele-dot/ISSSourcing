@@ -9,6 +9,8 @@ type HttpResult = {
   requestId: string | null;
 };
 
+const LOGIN_RETRY_DELAYS_MS = [1000, 3000, 7000, 15000] as const;
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
@@ -59,6 +61,19 @@ function extractErrorMessage(payload: unknown): string {
   return JSON.stringify(payload);
 }
 
+function unwrapData<T>(payload: unknown): T {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "ok" in payload &&
+    (payload as { ok?: unknown }).ok === true &&
+    "data" in payload
+  ) {
+    return (payload as { data: T }).data;
+  }
+  return payload as T;
+}
+
 async function main() {
   const baseUrl = withNoTrailingSlash(process.env.BASE_URL ?? "http://127.0.0.1:5000");
   const apiBase = withNoTrailingSlash(process.env.API_BASE ?? `${baseUrl}/api`);
@@ -102,6 +117,37 @@ async function main() {
     },
   ) => request(`${apiBase}${path.startsWith("/") ? path : `/${path}`}`, options);
 
+  const loginWithFallback = async (): Promise<HttpResult> => {
+    const loginBody = {
+      username: "admin",
+      password: "Admin123!",
+    };
+    const tryPath = async (path: "/auth/login" | "/login"): Promise<HttpResult> => {
+      let result: HttpResult = {
+        status: 500,
+        ok: false,
+        json: { message: "login_not_attempted" },
+        requestId: null,
+      };
+      for (let i = 0; i < LOGIN_RETRY_DELAYS_MS.length; i++) {
+        result = await requestApi(path, { method: "POST", body: loginBody });
+        const transientStatus = result.status === 429 || result.status === 503;
+        const hasRetryLeft = i < LOGIN_RETRY_DELAYS_MS.length - 1;
+        if (!transientStatus || !hasRetryLeft) {
+          return result;
+        }
+        await delay(LOGIN_RETRY_DELAYS_MS[i]);
+      }
+      return result;
+    };
+
+    const primary = await tryPath("/auth/login");
+    if (!primary.ok && primary.status === 404) {
+      return tryPath("/login");
+    }
+    return primary;
+  };
+
   try {
     await waitForHealthy(baseUrl, 8_000);
   } catch (err) {
@@ -114,25 +160,7 @@ async function main() {
     return;
   }
 
-  const loginPrimary = await requestApi("/auth/login", {
-    method: "POST",
-    body: {
-      username: "admin",
-      password: "Admin123!",
-    },
-  });
-
-  let login = loginPrimary;
-  if (!login.ok && login.status === 404) {
-    // Backward compatibility with existing /api/login route.
-    login = await requestApi("/login", {
-      method: "POST",
-      body: {
-        username: "admin",
-        password: "Admin123!",
-      },
-    });
-  }
+  const login = await loginWithFallback();
 
   if (!login.ok && (login.status >= 500 || login.status === 429)) {
     console.warn(
@@ -155,6 +183,16 @@ async function main() {
   assert(
     reset.ok,
     `Demo reset failed with status ${reset.status}: ${extractErrorMessage(reset.json)}`,
+  );
+  // Reset truncates public tables (including session store); refresh auth cookie immediately.
+  const relogin = await loginWithFallback();
+  assert(
+    relogin.ok,
+    `Post-reset login failed with status ${relogin.status}: ${extractErrorMessage(relogin.json)}`,
+  );
+  assert(
+    typeof relogin.requestId === "string" && relogin.requestId.length > 0,
+    "Post-reset login response should include non-empty X-Request-Id header",
   );
 
   const inventoryList = await requestApi("/inventory");
@@ -181,8 +219,9 @@ async function main() {
 
   const suppliers = await requestApi("/suppliers");
   assert(suppliers.ok, "Suppliers request failed");
-  assert(Array.isArray(suppliers.json), "Suppliers endpoint should return array");
-  const firstSupplier = (suppliers.json as Array<Record<string, unknown>>)[0];
+  const supplierList = unwrapData<Array<Record<string, unknown>>>(suppliers.json);
+  assert(Array.isArray(supplierList), "Suppliers endpoint should return array");
+  const firstSupplier = supplierList[0];
   assert(firstSupplier && typeof firstSupplier.id === "number", "No supplier available");
 
   // Master data: currency POST without symbol (server defaults from code); PATCH name-only keeps symbol
@@ -192,7 +231,7 @@ async function main() {
     body: { code: curCode, name: "Contract Test Currency", decimalPlaces: 2 },
   });
   assert(createCur.ok, `Currency POST without symbol failed ${createCur.status}: ${extractErrorMessage(createCur.json)}`);
-  const createdCur = createCur.json as { id?: unknown; symbol?: unknown; code?: unknown };
+  const createdCur = unwrapData<{ id?: unknown; symbol?: unknown; code?: unknown }>(createCur.json);
   assert(typeof createdCur.id === "number", "Currency create missing id");
   assert(
     typeof createdCur.symbol === "string" && createdCur.symbol.length > 0,
@@ -204,7 +243,7 @@ async function main() {
     body: { name: "Contract Test Currency (renamed)" },
   });
   assert(patchCur.ok, `Currency PATCH failed ${patchCur.status}: ${extractErrorMessage(patchCur.json)}`);
-  const patchedCur = patchCur.json as { symbol?: unknown; name?: unknown };
+  const patchedCur = unwrapData<{ symbol?: unknown; name?: unknown }>(patchCur.json);
   assert(
     typeof patchedCur.symbol === "string" && patchedCur.symbol.length > 0,
     "PATCH without symbol should preserve/default symbol",
@@ -236,9 +275,10 @@ async function main() {
     },
   });
   assert(createPo.ok, `Create PO failed with status ${createPo.status}`);
+  const createdPo = unwrapData<{ orderNumber?: unknown }>(createPo.json);
   const poNumber =
-    typeof (createPo.json as { orderNumber?: unknown }).orderNumber === "string"
-      ? (createPo.json as { orderNumber: string }).orderNumber
+    typeof createdPo.orderNumber === "string"
+      ? (createdPo as { orderNumber: string }).orderNumber
       : null;
   assert(poNumber, "Created PO missing orderNumber");
 
@@ -316,11 +356,12 @@ async function main() {
   // Dashboard analytics: stock usage (used by Stock Use chart)
   const stockUsage = await requestApi("/analytics/stock-usage?limit=5");
   assert(stockUsage.ok, `Stock usage request failed with status ${stockUsage.status}`);
+  const stockUsageData = unwrapData<{ byItem?: unknown }>(stockUsage.json);
   assert(
-    typeof stockUsage.json === "object" && stockUsage.json !== null && "byItem" in stockUsage.json,
+    typeof stockUsageData === "object" && stockUsageData !== null && "byItem" in stockUsageData,
     "Stock usage response must have byItem",
   );
-  const byItem = (stockUsage.json as { byItem: unknown }).byItem;
+  const byItem = stockUsageData.byItem;
   assert(Array.isArray(byItem), "Stock usage byItem must be an array");
   if (byItem.length > 0) {
     const first = (byItem as Array<{ itemId?: unknown; itemName?: unknown; quantityUsed?: unknown }>)[0];
@@ -331,11 +372,12 @@ async function main() {
   // Dashboard: inventory value (used by Value by Category / Inventory Value)
   const inventoryValue = await requestApi("/analytics/inventory-value");
   assert(inventoryValue.ok, "Inventory value request failed");
+  const inventoryValueData = unwrapData<{ items?: unknown; totalValue?: unknown }>(inventoryValue.json);
   assert(
-    typeof inventoryValue.json === "object" &&
-      inventoryValue.json !== null &&
-      "items" in inventoryValue.json &&
-      "totalValue" in inventoryValue.json,
+    typeof inventoryValueData === "object" &&
+      inventoryValueData !== null &&
+      "items" in inventoryValueData &&
+      "totalValue" in inventoryValueData,
     "Inventory value response must have items and totalValue",
   );
 

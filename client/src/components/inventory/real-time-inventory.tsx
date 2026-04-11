@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import { useWebSocket } from '@/hooks/use-websocket';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,6 +25,8 @@ export function RealTimeInventory() {
   const [selectedWarehouses, setSelectedWarehouses] = useState<number[]>([]);
   const [recentUpdates, setRecentUpdates] = useState<InventoryUpdateEntry[]>([]);
   const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
+  /** Mirrors server / hook connection (not inferrable from lastMessage — disabled WS never receives messages). */
+  const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const { toast } = useToast();
 
   // Handle inventory updates from WebSocket
@@ -51,20 +53,26 @@ export function RealTimeInventory() {
     window.location.reload();
   };
 
-  // Connect to WebSocket for real-time updates
-  const { isConnected, lastMessage, webSocketsEnabled } = useWebSocket({
-    warehouses: selectedWarehouses,
-    onInventoryUpdate: handleInventoryUpdate,
-    onStockAlert: handleStockAlert,
-    onConnectionStatus: (connected) => {
+  const handleConnectionStatus = useCallback(
+    (connected: boolean) => {
+      setConnectionState(connected ? 'connected' : 'disconnected');
       if (connected) {
         toast({
           title: 'Connected',
           description: 'Real-time inventory synchronization is active',
-          variant: 'default'
+          variant: 'default',
         });
       }
-    }
+    },
+    [toast],
+  );
+
+  // Connect to WebSocket for real-time updates
+  const { isConnected, webSocketsEnabled } = useWebSocket({
+    warehouses: selectedWarehouses,
+    onInventoryUpdate: handleInventoryUpdate,
+    onStockAlert: handleStockAlert,
+    onConnectionStatus: handleConnectionStatus,
   });
 
   // Handle warehouse selection change
@@ -77,26 +85,34 @@ export function RealTimeInventory() {
     }
   };
 
-  // Determine connection status display
-  let connectionStatus = (
-    <Badge variant="outline" className="bg-gray-100 text-gray-500">
-      <RotateCw className="w-3 h-3 mr-1 animate-spin" />
-      Connecting...
-    </Badge>
-  );
-  
-  if (isConnected) {
+  // Status: when WS is off in dev, hook never connects — show "Off", not endless "Connecting..."
+  let connectionStatus: ReactNode;
+  if (!webSocketsEnabled && !isElectronEnvironment()) {
+    connectionStatus = (
+      <Badge variant="outline" className="bg-muted text-muted-foreground">
+        <Wifi className="w-3 h-3 mr-1" />
+        Off (dev)
+      </Badge>
+    );
+  } else if (isConnected || connectionState === 'connected') {
     connectionStatus = (
       <Badge variant="outline" className="bg-green-50 text-green-700">
         <CheckCircle2 className="w-3 h-3 mr-1" />
         Connected
       </Badge>
     );
-  } else if (lastMessage) {
+  } else if (connectionState === 'disconnected') {
     connectionStatus = (
       <Badge variant="outline" className="bg-red-50 text-red-700">
         <AlertCircle className="w-3 h-3 mr-1" />
         Disconnected
+      </Badge>
+    );
+  } else {
+    connectionStatus = (
+      <Badge variant="outline" className="bg-gray-100 text-gray-500">
+        <RotateCw className="w-3 h-3 mr-1 animate-spin" />
+        Connecting...
       </Badge>
     );
   }

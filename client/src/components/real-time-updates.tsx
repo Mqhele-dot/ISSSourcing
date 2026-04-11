@@ -182,13 +182,30 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
           </div>
           <div className="flex items-center gap-2">
             <Badge 
-              variant={connectionStatus === 'connected' ? 'default' : connectionStatus === 'connecting' ? 'outline' : 'destructive'}
-              className="flex gap-1 items-center"
+              variant={
+                !webSocketsEnabled && !isElectronEnvironment()
+                  ? 'outline'
+                  : connectionStatus === 'connected'
+                    ? 'default'
+                    : connectionStatus === 'connecting'
+                      ? 'outline'
+                      : 'destructive'
+              }
+              className={`flex gap-1 items-center ${!webSocketsEnabled && !isElectronEnvironment() ? 'bg-muted text-muted-foreground' : ''}`}
             >
-              {connectionStatus === 'connected' && <Zap className="h-3 w-3" />}
-              {connectionStatus === 'connecting' && <RefreshCw className="h-3 w-3 animate-spin" />}
-              {connectionStatus === 'disconnected' && <AlertTriangle className="h-3 w-3" />}
-              {connectionStatus === 'connected' ? 'Live' : connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+              {!webSocketsEnabled && !isElectronEnvironment() ? (
+                <>
+                  <Wifi className="h-3 w-3" />
+                  Off (dev)
+                </>
+              ) : (
+                <>
+                  {connectionStatus === 'connected' && <Zap className="h-3 w-3" />}
+                  {connectionStatus === 'connecting' && <RefreshCw className="h-3 w-3 animate-spin" />}
+                  {connectionStatus === 'disconnected' && <AlertTriangle className="h-3 w-3" />}
+                  {connectionStatus === 'connected' ? 'Live' : connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+                </>
+              )}
             </Badge>
             <Button 
               size="sm" 
