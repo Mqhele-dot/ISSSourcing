@@ -48,6 +48,7 @@ const DocumentsPage = lazy(() => import("@/pages/documents"));
 const UploadsPathRedirect = lazy(() => import("@/pages/uploads-redirect"));
 const SupplyAnalyticsPage = lazy(() => import("@/pages/supply-analytics"));
 const ControlTowerPage = lazy(() => import("@/pages/control-tower"));
+const AccountsPayablePage = lazy(() => import("@/pages/accounts-payable"));
 const MobileReceivePage = lazy(() => import("@/pages/mobile-receive"));
 const MobilePickPage = lazy(() => import("@/pages/mobile-pick"));
 const MobileHubHome = lazy(() => import("@/pages/mobile-hub-home"));
@@ -119,6 +120,7 @@ export function AppRouter() {
         <ProtectedRoute path="/suppliers" component={SuppliersPage} />
         <ProtectedRoute path="/contracts" component={ContractsPage} />
         <ProtectedRoute path="/invoices" component={InvoicesPage} />
+        <ProtectedRoute path="/accounts-payable" component={AccountsPayablePage} />
         <ProtectedRoute path="/approval-policies" component={ApprovalPoliciesPage} />
         <ProtectedRoute path="/warehouse-operations" component={WarehouseOperationsPage} />
         <ProtectedRoute path="/mobile/receive" component={MobileReceivePage} />

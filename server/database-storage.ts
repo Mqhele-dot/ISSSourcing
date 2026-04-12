@@ -81,6 +81,44 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  private async reconcileInvoicePayments(invoiceId: number): Promise<void> {
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice) return;
+
+    const paymentRows = await db
+      .select({ amount: payments.amount })
+      .from(payments)
+      .where(eq(payments.invoiceId, invoiceId));
+
+    const totalPaid = paymentRows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+    const invoiceTotal = Number(invoice.total ?? 0);
+    const dueAmount = Math.max(invoiceTotal - totalPaid, 0);
+    const nextStatus =
+      totalPaid <= 0
+        ? invoice.status === "PAID" || invoice.status === "PARTIALLY_PAID"
+          ? "APPROVED"
+          : invoice.status
+        : dueAmount <= 0
+          ? "PAID"
+          : "PARTIALLY_PAID";
+
+    await db
+      .update(invoices)
+      .set({
+        paidAmount: totalPaid,
+        dueAmount,
+        status: nextStatus,
+        paidDate: dueAmount <= 0 ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.organizationId, getActiveOrganizationId()),
+        ),
+      );
+  }
+
   // User methods
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
@@ -3026,31 +3064,94 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllPayments(): Promise<Payment[]> {
-    return this.memStorage.getAllPayments();
+    const rows = await db
+      .select({ payment: payments })
+      .from(payments)
+      .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+      .where(eq(invoices.organizationId, getActiveOrganizationId()))
+      .orderBy(desc(payments.paymentDate));
+    return rows.map((row) => row.payment);
   }
   
   async getPayment(id: number): Promise<Payment | undefined> {
-    return this.memStorage.getPayment(id);
+    const [row] = await db
+      .select({ payment: payments })
+      .from(payments)
+      .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+      .where(
+        and(
+          eq(payments.id, id),
+          eq(invoices.organizationId, getActiveOrganizationId()),
+        ),
+      );
+    return row?.payment;
   }
   
   async getPaymentsByInvoiceId(invoiceId: number): Promise<Payment[]> {
-    return this.memStorage.getPaymentsByInvoiceId(invoiceId);
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice) return [];
+    return db.select().from(payments).where(eq(payments.invoiceId, invoiceId)).orderBy(desc(payments.paymentDate));
   }
   
   async createPayment(payment: InsertPayment): Promise<Payment> {
-    return this.memStorage.createPayment(payment);
+    const invoice = await this.getInvoice(Number(payment.invoiceId));
+    if (!invoice) {
+      throw new Error("Invoice not found");
+    }
+
+    const [created] = await db
+      .insert(payments)
+      .values({
+        invoiceId: Number(payment.invoiceId),
+        amount: Number(payment.amount ?? 0),
+        method: payment.method ?? "BANK_TRANSFER",
+        transactionReference: payment.transactionReference ?? null,
+        paymentDate: payment.paymentDate ?? new Date(),
+        notes: payment.notes ?? null,
+        receivedBy: Number(payment.receivedBy ?? 1),
+      })
+      .returning();
+
+    await this.reconcileInvoicePayments(created.invoiceId);
+    return created;
   }
   
   async updatePayment(id: number, payment: Partial<InsertPayment>): Promise<Payment | undefined> {
-    return this.memStorage.updatePayment(id, payment);
+    const existing = await this.getPayment(id);
+    if (!existing) return undefined;
+
+    const [updated] = await db
+      .update(payments)
+      .set({
+        ...payment,
+        paymentDate: payment.paymentDate ?? existing.paymentDate,
+        receivedBy: payment.receivedBy != null ? Number(payment.receivedBy) : existing.receivedBy,
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, id))
+      .returning();
+
+    await this.reconcileInvoicePayments(updated.invoiceId);
+    return updated;
   }
   
   async deletePayment(id: number): Promise<boolean> {
-    return this.memStorage.deletePayment(id);
+    const existing = await this.getPayment(id);
+    if (!existing) return false;
+    const result = await db.delete(payments).where(eq(payments.id, id));
+    await this.reconcileInvoicePayments(existing.invoiceId);
+    return (result.rowCount ?? 0) > 0;
   }
   
   async recordInvoicePayment(invoiceId: number, amount: number, method: string, receivedBy: number, reference?: string, notes?: string): Promise<Payment> {
-    return this.memStorage.recordInvoicePayment(invoiceId, amount, method, receivedBy, reference, notes);
+    return this.createPayment({
+      invoiceId,
+      amount,
+      method: method as Payment["method"],
+      receivedBy,
+      transactionReference: reference,
+      notes,
+    });
   }
   
   async getBillingSettings(): Promise<BillingSetting | undefined> {

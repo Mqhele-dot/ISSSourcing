@@ -5396,7 +5396,11 @@ export class MemStorage implements IStorage {
       quantity: item.quantity ?? 1,
       discount: item.discount ?? null,
       taxRate: item.taxRate ?? null,
-      taxAmount: item.taxAmount ?? null
+      taxAmount: item.taxAmount ?? null,
+      glCode: item.glCode ?? null,
+      costCenter: item.costCenter ?? null,
+      projectCode: item.projectCode ?? null,
+      taxCode: item.taxCode ?? null,
     };
     
     this.invoiceItems.set(id, newItem);

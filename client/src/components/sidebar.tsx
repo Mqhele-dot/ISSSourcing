@@ -18,6 +18,7 @@ import {
   Home,
   IdCard,
   LayoutDashboard,
+  Landmark,
   LineChart,
   ListOrdered,
   Moon,
@@ -207,6 +208,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
             <NavItem path="/purchase" icon={<ShoppingCart className="h-5 w-5" />} helpTitle="Purchase Orders" helpDescription="View and manage purchase orders. Use the Requisitions tab to create or approve requisitions.">Purchase Orders</NavItem>
             <NavItem path="/purchase/requisitions" icon={<ClipboardList className="h-5 w-5" />} helpTitle="Requisitions" helpDescription="Create, edit, approve, and share purchase requisitions; convert approved ones to purchase orders.">Requisitions</NavItem>
             <NavItem path="/invoices" icon={<Receipt className="h-5 w-5" />} helpTitle="Invoices" helpDescription="Create and manage supplier invoices linked to purchase orders, and run 3-way match checks.">Invoices</NavItem>
+            <NavItem path="/accounts-payable" icon={<Landmark className="h-5 w-5" />} helpTitle="Accounts Payable" helpDescription="Stage invoice captures, route AP approvals, resolve exceptions, and release payment batches.">Accounts Payable</NavItem>
             <NavItem path="/approval-policies" icon={<ShieldCheck className="h-5 w-5" />} helpTitle="Approval policies" helpDescription="Configure amount bands and approvers for requisitions and purchase orders.">Approval policies</NavItem>
             <NavItem path="/supplier-portal" icon={<Store className="h-5 w-5" />} helpTitle="Supplier Portal" helpDescription="Supplier-facing view for confirming POs and updating expected delivery dates.">Supplier Portal</NavItem>
 

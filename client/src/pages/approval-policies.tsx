@@ -33,6 +33,8 @@ import type { ApprovalPolicy } from "@shared/schema";
 const ENTITY_TYPES = [
   { value: "requisition", label: "Purchase requisition" },
   { value: "purchase_order", label: "Purchase order" },
+  { value: "invoice", label: "Invoice approval" },
+  { value: "payment_batch", label: "Payment batch approval" },
 ] as const;
 
 function rangesOverlap(

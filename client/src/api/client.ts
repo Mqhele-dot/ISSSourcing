@@ -377,7 +377,7 @@ export type ApprovalSuggestionsResult = {
 };
 
 export async function fetchApprovalSuggestions(params: {
-  entityType: "requisition" | "purchase_order";
+  entityType: "requisition" | "purchase_order" | "invoice" | "payment_batch";
   amount: number;
 }): Promise<ApprovalSuggestionsResult> {
   const search = new URLSearchParams();

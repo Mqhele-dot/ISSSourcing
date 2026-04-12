@@ -252,13 +252,21 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     try {
       const entityType = String(req.query.entityType ?? "");
       const amount = Number(req.query.amount ?? NaN);
-      if (entityType !== "requisition" && entityType !== "purchase_order") {
-        return sendError(res, 400, "INVALID_ENTITY", "entityType must be requisition or purchase_order");
+      if (!["requisition", "purchase_order", "invoice", "payment_batch"].includes(entityType)) {
+        return sendError(
+          res,
+          400,
+          "INVALID_ENTITY",
+          "entityType must be requisition, purchase_order, invoice, or payment_batch",
+        );
       }
       if (!Number.isFinite(amount) || amount < 0) {
         return sendError(res, 400, "INVALID_AMOUNT", "amount must be a non-negative number");
       }
-      const out = await getApprovalSuggestions(entityType, amount);
+      const out = await getApprovalSuggestions(
+        entityType as "requisition" | "purchase_order" | "invoice" | "payment_batch",
+        amount,
+      );
       return sendOk(res, out);
     } catch (error) {
       console.error("Error building approval suggestions:", error);

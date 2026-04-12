@@ -1882,12 +1882,45 @@ export type InsertTimeRestriction = z.infer<typeof insertTimeRestrictionSchema>;
 // Invoice Status Enum
 export const invoiceStatusEnum = pgEnum("invoice_status", [
   "DRAFT",
+  "PENDING_APPROVAL",
+  "APPROVED",
   "SENT",
+  "DISPUTED",
   "OVERDUE",
+  "PARTIALLY_PAID",
   "PAID",
   "CANCELLED",
-  "PARTIALLY_PAID",
   "VOID"
+]);
+
+export const apCaptureStatusEnum = pgEnum("ap_capture_status", [
+  "STAGED",
+  "REVIEW_REQUIRED",
+  "READY_TO_PROMOTE",
+  "PROMOTED",
+  "REJECTED",
+]);
+
+export const apMatchStatusEnum = pgEnum("ap_match_status", [
+  "PENDING",
+  "MATCHED",
+  "MATCHED_WITH_TOLERANCE",
+  "EXCEPTION",
+  "WAIVED",
+]);
+
+export const apReceiptStatusEnum = pgEnum("ap_receipt_status", [
+  "DRAFT",
+  "POSTED",
+  "CANCELLED",
+]);
+
+export const apPaymentBatchStatusEnum = pgEnum("ap_payment_batch_status", [
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "APPROVED",
+  "RELEASED",
+  "CANCELLED",
 ]);
 
 // Invoice Table Schema
@@ -1962,6 +1995,10 @@ export const invoiceItems = pgTable("invoice_items", {
   discount: real("discount").default(0),
   taxRate: real("tax_rate").default(0),
   taxAmount: real("tax_amount").default(0),
+  glCode: text("gl_code"),
+  costCenter: text("cost_center"),
+  projectCode: text("project_code"),
+  taxCode: text("tax_code"),
   totalPrice: real("total_price").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1983,6 +2020,158 @@ export const invoiceItemFormSchema = insertInvoiceItemSchema.extend({
   quantity: z.number().min(0.01, "Quantity must be greater than 0"),
   unitPrice: z.number().min(0, "Unit price must be a positive number"),
   totalPrice: z.number().min(0, "Total price must be a positive number"),
+});
+
+export const apInvoiceCaptures = pgTable("ap_invoice_captures", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
+  source: text("source").notNull().default("manual_upload"),
+  status: apCaptureStatusEnum("status").notNull().default("STAGED"),
+  documentId: integer("document_id"),
+  supplierId: integer("supplier_id"),
+  invoiceNumber: text("invoice_number"),
+  issueDate: timestamp("issue_date"),
+  dueDate: timestamp("due_date"),
+  currencyCode: text("currency_code"),
+  subtotalAmount: real("subtotal_amount").default(0),
+  taxAmount: real("tax_amount").default(0),
+  totalAmount: real("total_amount").default(0),
+  confidenceScore: real("confidence_score").default(0),
+  duplicateCheckKey: text("duplicate_check_key"),
+  extractedHeader: jsonb("extracted_header").$type<Record<string, unknown>>().default({}),
+  extractedLines: jsonb("extracted_lines").$type<Array<Record<string, unknown>>>().default([]),
+  warnings: jsonb("warnings").$type<string[]>().default([]),
+  reviewerNotes: text("reviewer_notes"),
+  promotedInvoiceId: integer("promoted_invoice_id"),
+  createdBy: integer("created_by"),
+  reviewedBy: integer("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertApInvoiceCaptureSchema = createInsertSchema(apInvoiceCaptures).omit({
+  id: true,
+  reviewedAt: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  documentId: true,
+  supplierId: true,
+  invoiceNumber: true,
+  issueDate: true,
+  dueDate: true,
+  currencyCode: true,
+  subtotalAmount: true,
+  taxAmount: true,
+  totalAmount: true,
+  confidenceScore: true,
+  duplicateCheckKey: true,
+  extractedHeader: true,
+  extractedLines: true,
+  warnings: true,
+  reviewerNotes: true,
+  promotedInvoiceId: true,
+  createdBy: true,
+  reviewedBy: true,
+});
+
+export const apReceipts = pgTable(
+  "ap_receipts",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    receiptNumber: text("receipt_number").notNull(),
+    purchaseOrderId: integer("purchase_order_id").notNull(),
+    supplierId: integer("supplier_id"),
+    status: apReceiptStatusEnum("status").notNull().default("POSTED"),
+    receivedDate: timestamp("received_date").defaultNow().notNull(),
+    receivedBy: integer("received_by"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("ap_receipts_org_number_uidx").on(t.organizationId, t.receiptNumber)],
+);
+
+export const apReceiptItems = pgTable("ap_receipt_items", {
+  id: serial("id").primaryKey(),
+  receiptId: integer("receipt_id").notNull(),
+  purchaseOrderItemId: integer("purchase_order_item_id"),
+  itemId: integer("item_id").notNull(),
+  quantity: real("quantity").notNull().default(0),
+  acceptedQuantity: real("accepted_quantity").notNull().default(0),
+  rejectedQuantity: real("rejected_quantity").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertApReceiptSchema = createInsertSchema(apReceipts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  supplierId: true,
+  receivedBy: true,
+  notes: true,
+});
+
+export const insertApReceiptItemSchema = createInsertSchema(apReceiptItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  purchaseOrderItemId: true,
+  acceptedQuantity: true,
+  rejectedQuantity: true,
+  notes: true,
+});
+
+export const apInvoiceMatchResults = pgTable("ap_invoice_match_results", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
+  invoiceId: integer("invoice_id").notNull(),
+  purchaseOrderId: integer("purchase_order_id"),
+  receiptId: integer("receipt_id"),
+  status: apMatchStatusEnum("status").notNull().default("PENDING"),
+  matchType: text("match_type").notNull().default("3_way"),
+  priceTolerancePct: real("price_tolerance_pct").notNull().default(0),
+  quantityTolerancePct: real("quantity_tolerance_pct").notNull().default(0),
+  taxTolerancePct: real("tax_tolerance_pct").notNull().default(0),
+  matchedLineCount: integer("matched_line_count").notNull().default(0),
+  mismatchCount: integer("mismatch_count").notNull().default(0),
+  mismatchSummary: jsonb("mismatch_summary").$type<Array<Record<string, unknown>>>().default([]),
+  reviewedBy: integer("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertApInvoiceMatchResultSchema = createInsertSchema(apInvoiceMatchResults).omit({
+  id: true,
+  reviewedAt: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  purchaseOrderId: true,
+  receiptId: true,
+  priceTolerancePct: true,
+  quantityTolerancePct: true,
+  taxTolerancePct: true,
+  matchedLineCount: true,
+  mismatchCount: true,
+  mismatchSummary: true,
+  reviewedBy: true,
 });
 
 // Payment Methods Enum
@@ -2023,6 +2212,73 @@ export const paymentFormSchema = insertPaymentSchema.extend({
   invoiceId: z.number().int().positive("Invoice ID must be a positive number"),
   amount: z.number().min(0.01, "Amount must be greater than 0"),
   method: z.enum(["CASH", "CREDIT_CARD", "DEBIT_CARD", "BANK_TRANSFER", "CHECK", "PAYPAL", "OTHER"]),
+});
+
+export const apPaymentBatches = pgTable(
+  "ap_payment_batches",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    batchNumber: text("batch_number").notNull(),
+    status: apPaymentBatchStatusEnum("status").notNull().default("DRAFT"),
+    scheduledDate: timestamp("scheduled_date"),
+    approvedAt: timestamp("approved_at"),
+    releasedAt: timestamp("released_at"),
+    totalAmount: real("total_amount").notNull().default(0),
+    paymentMethod: paymentMethodEnum("payment_method").notNull().default("BANK_TRANSFER"),
+    exportMetadata: jsonb("export_metadata").$type<Record<string, unknown>>().default({}),
+    notes: text("notes"),
+    createdBy: integer("created_by"),
+    approvedBy: integer("approved_by"),
+    releasedBy: integer("released_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("ap_payment_batches_org_number_uidx").on(t.organizationId, t.batchNumber)],
+);
+
+export const apPaymentBatchItems = pgTable("ap_payment_batch_items", {
+  id: serial("id").primaryKey(),
+  batchId: integer("batch_id").notNull(),
+  invoiceId: integer("invoice_id").notNull(),
+  paymentId: integer("payment_id"),
+  amount: real("amount").notNull().default(0),
+  status: text("status").notNull().default("PENDING"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertApPaymentBatchSchema = createInsertSchema(apPaymentBatches).omit({
+  id: true,
+  approvedAt: true,
+  releasedAt: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  organizationId: true,
+  batchNumber: true,
+  status: true,
+  totalAmount: true,
+  paymentMethod: true,
+  scheduledDate: true,
+  exportMetadata: true,
+  notes: true,
+  createdBy: true,
+  approvedBy: true,
+  releasedBy: true,
+});
+
+export const insertApPaymentBatchItemSchema = createInsertSchema(apPaymentBatchItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial({
+  paymentId: true,
+  notes: true,
 });
 
 // Billing Settings Table Schema
@@ -2155,6 +2411,24 @@ export type InvoiceItemForm = z.infer<typeof invoiceItemFormSchema>;
 export type Payment = typeof payments.$inferSelect;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type PaymentForm = z.infer<typeof paymentFormSchema>;
+
+export type ApInvoiceCapture = typeof apInvoiceCaptures.$inferSelect;
+export type InsertApInvoiceCapture = z.infer<typeof insertApInvoiceCaptureSchema>;
+
+export type ApReceipt = typeof apReceipts.$inferSelect;
+export type InsertApReceipt = z.infer<typeof insertApReceiptSchema>;
+
+export type ApReceiptItem = typeof apReceiptItems.$inferSelect;
+export type InsertApReceiptItem = z.infer<typeof insertApReceiptItemSchema>;
+
+export type ApInvoiceMatchResult = typeof apInvoiceMatchResults.$inferSelect;
+export type InsertApInvoiceMatchResult = z.infer<typeof insertApInvoiceMatchResultSchema>;
+
+export type ApPaymentBatch = typeof apPaymentBatches.$inferSelect;
+export type InsertApPaymentBatch = z.infer<typeof insertApPaymentBatchSchema>;
+
+export type ApPaymentBatchItem = typeof apPaymentBatchItems.$inferSelect;
+export type InsertApPaymentBatchItem = z.infer<typeof insertApPaymentBatchItemSchema>;
 
 export type BillingSetting = typeof billingSettings.$inferSelect;
 export type InsertBillingSetting = z.infer<typeof insertBillingSettingsSchema>;

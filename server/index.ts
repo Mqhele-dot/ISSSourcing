@@ -11,6 +11,7 @@ import { pool } from "./db";
 import { initializeDatabase, ensureSessionTable } from "./init-db";
 import { seedDatabaseIfEmpty } from "./seed";
 import { initializeOperationalData } from "./operations-core";
+import { initializeAccountsPayableData } from "./modules/accounts-payable/ap-ddl";
 import { seedOperationalIfEmpty } from "./seed-operational";
 import { setDbReady, setSchemaReady, setSessionStoreReady, setWebsocketReady } from "./readiness";
 import { sendError } from "./api-response";
@@ -50,6 +51,7 @@ pool.connect()
       }
 
       await initializeOperationalData();
+      await initializeAccountsPayableData();
       const opSeed = await seedOperationalIfEmpty();
       setSchemaReady(true);
       console.log("✅ Operational workflow schema initialized");

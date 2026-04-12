@@ -26,7 +26,7 @@ function canApproveAmount(user: User, amount: number): boolean {
  * Users who may approve the given amount for an entity type, derived from active approval_policies.
  */
 export async function getApprovalSuggestions(
-  entityType: "requisition" | "purchase_order",
+  entityType: "requisition" | "purchase_order" | "invoice" | "payment_batch",
   amount: number,
 ): Promise<{
   entityType: string;

@@ -1,3 +1,6 @@
+import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
+
 /** Page title + subtitle for the document extractor (split from main page for clarity). */
 export function DocumentExtractorPageIntro() {
   return (
@@ -6,6 +9,11 @@ export function DocumentExtractorPageIntro() {
       <p className="text-muted-foreground">
         Extract and process data from various document formats (PDF, Excel, CSV) into structured data.
       </p>
+      <div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/accounts-payable">Open AP workspace</Link>
+        </Button>
+      </div>
     </div>
   );
 }
