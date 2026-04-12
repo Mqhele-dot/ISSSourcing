@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import {
   BarChart2,
   ClipboardList,
@@ -16,6 +17,7 @@ import type { DocumentType } from "@shared/schema";
 import { type ReportFilter } from "@shared/schema";
 import { QueryState } from "@/components/ui/query-state";
 import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { useReportsPageData } from "@/pages/reports/use-reports-data";
 import { useReportsExport } from "@/pages/reports/use-reports-export";
 import { ReportsExportToolbar } from "@/pages/reports/reports-export-toolbar";
@@ -32,10 +34,13 @@ import {
   ReportsValueTabPanel,
   type ReportsTabPanelsProps,
 } from "@/pages/reports/reports-tab-panels";
+import { APP_ROUTES, REPORT_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
+import { SectionNav } from "@/components/section-nav";
 
 export default function Reports() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<ReportTab>("inventory");
+  const [location, navigate] = useLocation();
+  const routeTab = asSectionSlug(location.split("/")[3], REPORT_SECTION_SLUGS, "inventory") as ReportTab;
   const [exportFormat, setExportFormat] = useState<DocumentType>("pdf");
   const [pdfTemplate, setPdfTemplate] = useState<"standard" | "compact" | "custom">("standard");
   const [customTemplateFile, setCustomTemplateFile] = useState<File | null>(null);
@@ -64,10 +69,10 @@ export default function Reports() {
   } = useReportsPageData();
 
   const isInventoryReportTab =
-    activeTab === "inventory" || activeTab === "low-stock" || activeTab === "value";
+    routeTab === "inventory" || routeTab === "low-stock" || routeTab === "value";
 
   const { exporting, handleExport } = useReportsExport({
-    activeTab,
+    activeTab: routeTab,
     exportFormat,
     pdfTemplate,
     filter,
@@ -152,10 +157,10 @@ export default function Reports() {
       error={isInventoryReportTab && itemsErrorDetail instanceof Error ? itemsErrorDetail : null}
       refetch={refetchInventory}
     >
-      <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6">
+      <PageShell variant="wide-table">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
-            <PageHeader title="Reports" description="Generate and export inventory reports in multiple formats" />
+            <PageHeader title="Reports" description="Structured tabular outputs backed by the shared export service." />
           </div>
           <div className="w-full shrink-0 lg:max-w-xl lg:pt-1">
             <ReportsExportToolbar
@@ -172,7 +177,27 @@ export default function Reports() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportTab)} className="space-y-4">
+        <SectionNav
+          items={[
+            { label: "Inventory", href: APP_ROUTES.analytics.reportSection("inventory") },
+            { label: "Low stock", href: APP_ROUTES.analytics.reportSection("low-stock") },
+            { label: "Value", href: APP_ROUTES.analytics.reportSection("value") },
+            { label: "Purchase orders", href: APP_ROUTES.analytics.reportSection("purchase-orders") },
+            { label: "Requisitions", href: APP_ROUTES.analytics.reportSection("purchase-requisitions") },
+            { label: "Suppliers", href: APP_ROUTES.analytics.reportSection("suppliers") },
+            { label: "Reorder", href: APP_ROUTES.analytics.reportSection("reorder-requests") },
+            { label: "Invoices", href: APP_ROUTES.analytics.reportSection("invoices") },
+            { label: "Shipments", href: APP_ROUTES.analytics.reportSection("shipments") },
+          ]}
+        />
+
+        <Tabs
+          value={routeTab}
+          onValueChange={(value) => {
+            navigate(APP_ROUTES.analytics.reportSection(value as ReportTab));
+          }}
+          className="space-y-4"
+        >
           <TabsList
             className="mb-0 inline-flex h-auto w-full max-w-full flex-nowrap justify-start gap-1 overflow-x-auto overflow-y-hidden rounded-md bg-muted/40 p-1"
             data-tour="reports-tabs"
@@ -225,7 +250,7 @@ export default function Reports() {
           <ReportsInvoicesTabPanel {...tabPanelProps} />
           <ReportsShipmentsTabPanel {...tabPanelProps} />
         </Tabs>
-      </div>
+      </PageShell>
     </QueryState>
   );
 }

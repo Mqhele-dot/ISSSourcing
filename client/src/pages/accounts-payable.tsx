@@ -13,6 +13,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, requestJson } from "@/lib/queryClient";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 type Supplier = { id: number; name: string };
 type Invoice = {
@@ -329,7 +331,7 @@ export default function AccountsPayablePage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <PageShell variant="wide-table">
       <PageHeader
         title="Accounts payable"
         subtitle="Enterprise AP inbox, approvals, exception handling, and payment batching."
@@ -337,13 +339,13 @@ export default function AccountsPayablePage() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link href="/document-extractor">Document extractor</Link>
+              <Link href={APP_ROUTES.admin.documentExtractor}>Document extractor</Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
-              <Link href="/approval-policies">Approval policies</Link>
+              <Link href={APP_ROUTES.finance.approvalPolicies}>Approval policies</Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
-              <Link href="/invoices">Legacy invoices</Link>
+              <Link href={APP_ROUTES.finance.invoices}>Legacy invoices</Link>
             </Button>
           </div>
         }
@@ -755,7 +757,7 @@ export default function AccountsPayablePage() {
           </>
         )}
       </DataState>
-    </div>
+    </PageShell>
   );
 }
 

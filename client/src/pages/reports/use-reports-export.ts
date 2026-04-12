@@ -60,6 +60,7 @@ export function useReportsExport({
       if (exportFormat === "pdf") {
         queryParams.set("template", pdfTemplate);
       }
+      queryParams.set("sourcePage", window.location.pathname);
       if (queryParams.toString()) {
         url += `?${queryParams.toString()}`;
       }

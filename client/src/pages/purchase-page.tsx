@@ -1,6 +1,7 @@
 import { Link, useLocation, useRoute } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShoppingCart, FileText } from "lucide-react";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import OrdersPage from "@/pages/orders";
 import RequisitionsPage from "@/pages/requisitions";
 
@@ -10,14 +11,15 @@ import RequisitionsPage from "@/pages/requisitions";
  * - /purchase/requisitions, /orders/requisitions → Requisitions tab (create/edit/approve/share)
  */
 export default function PurchasePage() {
+  const [canonicalReqMatch] = useRoute(APP_ROUTES.procurement.requisitions);
   const [reqMatch] = useRoute("/purchase/requisitions");
   const [ordersReqMatch] = useRoute("/orders/requisitions");
   const [path, setLocation] = useLocation();
-  const isOrdersBase = path.startsWith("/orders");
-  const basePath = isOrdersBase ? "/orders" : "/purchase";
-  const requisitionsPath = `${basePath}/requisitions`;
+  const basePath = path.startsWith("/procurement") ? APP_ROUTES.procurement.orders : path.startsWith("/orders") ? "/orders" : "/purchase";
+  const requisitionsPath =
+    path.startsWith("/procurement") ? APP_ROUTES.procurement.requisitions : `${basePath}/requisitions`;
 
-  const showRequisitionsTab = !!(reqMatch || ordersReqMatch);
+  const showRequisitionsTab = !!(canonicalReqMatch || reqMatch || ordersReqMatch);
 
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">

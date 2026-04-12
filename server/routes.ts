@@ -27,6 +27,7 @@ import { registerDocumentExtractorRoutes } from "./controllers/document-extracto
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument } from "./services/document-generator-service";
+import { recordExportHistory } from "./modules/exports/export-history-service";
 import { loadLogoBytesForPdf } from "./services/pdf-logo-loader";
 import type { ReportFormat, ReportType} from "@shared/schema";
 import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
@@ -740,9 +741,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       };
       const meta = formatMeta[format as ReportFormat];
+      const sourcePage = typeof req.query.sourcePage === "string" ? req.query.sourcePage : null;
+      const requestUrl = req.originalUrl || req.url;
+      const userId = Number((req as Request & { user?: { id?: number } }).user?.id);
       res.setHeader("Content-Type", meta.contentType);
       res.setHeader("X-Export-Row-Count", String(normalizedData.length));
       res.setHeader("Content-Disposition", `attachment; filename="${normalizedTitle}.${meta.extension}"`);
+
+      await recordExportHistory({
+        userId: Number.isFinite(userId) && userId > 0 ? userId : null,
+        dataset: normalizedReportType,
+        format,
+        filters: {
+          startDate: startDateParam,
+          endDate: endDateParam,
+          categoryId: categoryIdParam,
+          warehouseId: warehouseIdParam,
+          supplierId: supplierIdParam,
+          projectId: projectIdParam,
+          status: statusParam,
+          po: poParam,
+          carrier: carrierParam,
+          risk: riskParam,
+          template: templateParam,
+        },
+        status: "completed",
+        fileName: `${normalizedTitle}.${meta.extension}`,
+        fileSize: buffer.length,
+        mimeType: meta.contentType,
+        rowCount: normalizedData.length,
+        sourcePage,
+        requestUrl,
+      });
       
       // Send the document
       res.send(buffer);

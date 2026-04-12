@@ -12,6 +12,7 @@ import { initializeDatabase, ensureSessionTable } from "./init-db";
 import { seedDatabaseIfEmpty } from "./seed";
 import { initializeOperationalData } from "./operations-core";
 import { initializeAccountsPayableData } from "./modules/accounts-payable/ap-ddl";
+import { initializeExportCenterData } from "./modules/exports/export-center-ddl";
 import { seedOperationalIfEmpty } from "./seed-operational";
 import { setDbReady, setSchemaReady, setSessionStoreReady, setWebsocketReady } from "./readiness";
 import { sendError } from "./api-response";
@@ -52,6 +53,7 @@ pool.connect()
 
       await initializeOperationalData();
       await initializeAccountsPayableData();
+      await initializeExportCenterData();
       const opSeed = await seedOperationalIfEmpty();
       setSchemaReady(true);
       console.log("✅ Operational workflow schema initialized");

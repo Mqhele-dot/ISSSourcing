@@ -15,6 +15,7 @@ import { HelpExplainProvider } from "@/contexts/help-explain-context";
 import { TutorialSteps } from "@/components/tutorial/tutorial-steps";
 import { AuthProvider } from "@/hooks/use-auth";
 import { isElectronEnvironment } from "./lib/electron-bridge";
+import { resolveShell } from "@/lib/layout/resolve-shell";
 import { ElectronProvider } from "./contexts/electron-provider";
 import { DesktopLayout } from "./components/layout/desktop-layout";
 import { MobileLayout } from "./components/layout/mobile-layout";
@@ -69,8 +70,8 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const [loc] = useLocation();
-  const mobileShell = loc.startsWith("/m");
-  if (mobileShell) {
+  const layout = resolveShell(loc);
+  if (layout.shell === "mobile") {
     return (
       <MobileLayout>
         <UpdateNotification />

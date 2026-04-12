@@ -13,6 +13,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { APP_ROUTES, MASTER_DATA_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -257,7 +258,7 @@ function ApprovalPoliciesRedirectCard() {
           approvers).
         </p>
         <Button asChild variant="default">
-          <Link href="/approval-policies">Open approval policies</Link>
+          <Link href={APP_ROUTES.finance.approvalPolicies}>Open approval policies</Link>
         </Button>
       </CardContent>
     </Card>
@@ -265,8 +266,9 @@ function ApprovalPoliciesRedirectCard() {
 }
 
 export default function MasterDataPage() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const isLgUp = useMediaQuery("(min-width: 1024px)");
+  const activeSection = asSectionSlug(location.split("/")[3], MASTER_DATA_SECTION_SLUGS, "units");
   useEffect(() => {
     if (!isLgUp) {
       setLocation("/m/home");
@@ -287,7 +289,11 @@ export default function MasterDataPage() {
         title="Master Data"
         subtitle="Maintain shared reference data for procurement and finance."
       />
-      <Tabs defaultValue="units" className="space-y-4">
+      <Tabs
+        value={activeSection}
+        onValueChange={(value) => setLocation(APP_ROUTES.admin.masterDataSection(value as typeof activeSection))}
+        className="space-y-4"
+      >
         <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/40 p-1">
           <TabsTrigger value="units" className="gap-1.5">
             <Ruler className="h-4 w-4 shrink-0" />

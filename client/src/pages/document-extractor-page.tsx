@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useLocation } from "wouter";
 import { useDropzone } from 'react-dropzone';
 import { useMutation } from '@tanstack/react-query';
 import type { File} from 'lucide-react';
@@ -74,6 +75,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { DocumentExtractorPageIntro } from '@/pages/document-extractor/document-extractor-page-intro';
+import { APP_ROUTES, DOCUMENT_EXTRACTOR_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
 
 async function postFormData(url: string, formData: FormData) {
   const response = await fetch(url, {
@@ -143,6 +145,8 @@ type ProcessingOptions = {
 
 const DocumentExtractorPage: React.FC = () => {
   const { toast } = useToast();
+  const [location, navigate] = useLocation();
+  const activeMode = asSectionSlug(location.split("/")[3], DOCUMENT_EXTRACTOR_SECTION_SLUGS, "single");
 
   // State for formats and options
   const [formats, setFormats] = useState<SupportedFormats | null>(null);
@@ -428,7 +432,11 @@ const DocumentExtractorPage: React.FC = () => {
       <div className="flex flex-col space-y-6">
         <DocumentExtractorPageIntro />
 
-        <Tabs defaultValue="single" className="space-y-4">
+        <Tabs
+          value={activeMode}
+          onValueChange={(value) => navigate(APP_ROUTES.admin.documentExtractorMode(value as typeof activeMode))}
+          className="space-y-4"
+        >
           <TabsList>
             <TabsTrigger value="single">Single File</TabsTrigger>
             <TabsTrigger value="batch">Batch Processing</TabsTrigger>

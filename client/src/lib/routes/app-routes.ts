@@ -1,0 +1,183 @@
+export const ANALYTICS_SECTION_SLUGS = [
+  "overview",
+  "inventory",
+  "procurement",
+  "finance",
+  "logistics",
+  "reports",
+  "saved-reports",
+  "export-center",
+] as const;
+
+export const REPORT_SECTION_SLUGS = [
+  "inventory",
+  "low-stock",
+  "value",
+  "purchase-orders",
+  "purchase-requisitions",
+  "suppliers",
+  "reorder-requests",
+  "invoices",
+  "shipments",
+] as const;
+
+export const SETTINGS_SECTION_SLUGS = [
+  "general",
+  "inventory",
+  "realtime",
+  "database",
+  "forecasting",
+  "tax",
+  "billing",
+  "warehouses",
+  "security",
+] as const;
+
+export const MASTER_DATA_SECTION_SLUGS = [
+  "units",
+  "currencies",
+  "taxCodes",
+  "commodityCodes",
+  "incoterms",
+  "paymentTerms",
+  "departments",
+  "approvalPolicies",
+] as const;
+
+export const DOCUMENT_EXTRACTOR_SECTION_SLUGS = [
+  "single",
+  "batch",
+  "url",
+  "import",
+  "options",
+] as const;
+
+export type AnalyticsSectionSlug = (typeof ANALYTICS_SECTION_SLUGS)[number];
+export type ReportSectionSlug = (typeof REPORT_SECTION_SLUGS)[number];
+export type SettingsSectionSlug = (typeof SETTINGS_SECTION_SLUGS)[number];
+export type MasterDataSectionSlug = (typeof MASTER_DATA_SECTION_SLUGS)[number];
+export type DocumentExtractorSectionSlug = (typeof DOCUMENT_EXTRACTOR_SECTION_SLUGS)[number];
+
+export const APP_ROUTES = {
+  home: "/",
+  auth: "/auth",
+  operations: {
+    controlTower: "/operations/control-tower",
+    logistics: "/operations/logistics",
+    exceptions: "/operations/exceptions",
+    mobileHub: "/m/home",
+    mobileTasks: "/m/tasks",
+    mobileScan: "/m/scan",
+    mobileApprovals: "/m/approvals",
+    mobileMore: "/m/more",
+    mobileReceive: "/m/receive",
+    mobilePick: "/m/pick",
+  },
+  inventory: {
+    root: "/inventory",
+    item: (sku: string) => `/inventory/${sku}`,
+    reorder: "/inventory/reorder",
+    barcodeScanner: "/inventory/barcodes",
+    warehouses: "/inventory/warehouses",
+    warehouse: (id: string | number) => `/inventory/warehouses/${id}`,
+    cycleCounts: "/inventory/cycle-counts",
+    warehouseOperations: "/inventory/warehouse-operations",
+  },
+  procurement: {
+    orders: "/procurement/orders",
+    order: (po: string | number) => `/procurement/orders/${po}`,
+    requisitions: "/procurement/requisitions",
+    requisitionNew: "/procurement/requisitions/new",
+    requisition: (id: string | number) => `/procurement/requisitions/${id}`,
+    suppliers: "/procurement/suppliers",
+    supplier: (id: string | number) => `/procurement/suppliers/${id}`,
+    contracts: "/procurement/contracts",
+    supplierPortal: "/procurement/supplier-portal",
+  },
+  finance: {
+    accountsPayable: "/finance/accounts-payable",
+    invoices: "/finance/invoices",
+    approvalPolicies: "/finance/approval-policies",
+    billing: "/finance/billing",
+  },
+  analytics: {
+    root: "/analytics",
+    overview: "/analytics/overview",
+    inventory: "/analytics/inventory",
+    procurement: "/analytics/procurement",
+    finance: "/analytics/finance",
+    logistics: "/analytics/logistics",
+    reports: "/analytics/reports",
+    reportSection: (tab: ReportSectionSlug) => `/analytics/reports/${tab}`,
+    savedReports: "/analytics/saved-reports",
+    exportCenter: "/analytics/export-center",
+  },
+  admin: {
+    settings: "/admin/settings",
+    settingsSection: (section: SettingsSectionSlug) => `/admin/settings/${section}`,
+    masterData: "/admin/master-data",
+    masterDataSection: (section: MasterDataSectionSlug) => `/admin/master-data/${section}`,
+    documentExtractor: "/admin/document-extractor",
+    documentExtractorMode: (mode: DocumentExtractorSectionSlug) => `/admin/document-extractor/${mode}`,
+    integrations: "/admin/integrations",
+    auditLogs: "/admin/audit-logs",
+    documents: "/admin/documents",
+    employeeProfiles: "/admin/employee-profiles",
+    userRoles: "/admin/user-roles",
+    profile: "/admin/profile",
+    downloads: "/admin/downloads",
+    imageRecognition: "/admin/image-recognition",
+    syncDashboard: "/admin/sync-dashboard",
+    syncTest: "/admin/sync-test",
+    realTimeUpdates: "/admin/real-time-updates",
+  },
+} as const;
+
+export const LEGACY_ROUTE_REDIRECTS = {
+  dashboard: APP_ROUTES.analytics.overview,
+  analytics: APP_ROUTES.analytics.overview,
+  supplyAnalytics: APP_ROUTES.analytics.procurement,
+  reports: APP_ROUTES.analytics.reports,
+  purchase: APP_ROUTES.procurement.orders,
+  orders: APP_ROUTES.procurement.orders,
+  requisitions: APP_ROUTES.procurement.requisitions,
+  invoices: APP_ROUTES.finance.invoices,
+  accountsPayable: APP_ROUTES.finance.accountsPayable,
+  approvalPolicies: APP_ROUTES.finance.approvalPolicies,
+  suppliers: APP_ROUTES.procurement.suppliers,
+  contracts: APP_ROUTES.procurement.contracts,
+  logistics: APP_ROUTES.operations.logistics,
+  exceptions: APP_ROUTES.operations.exceptions,
+  barcodeScanner: APP_ROUTES.inventory.barcodeScanner,
+  warehouses: APP_ROUTES.inventory.warehouses,
+  cycleCounts: APP_ROUTES.inventory.cycleCounts,
+  reorder: APP_ROUTES.inventory.reorder,
+  warehouseOperations: APP_ROUTES.inventory.warehouseOperations,
+  settings: APP_ROUTES.admin.settings,
+  masterData: APP_ROUTES.admin.masterData,
+  documentExtractor: APP_ROUTES.admin.documentExtractor,
+  integrations: APP_ROUTES.admin.integrations,
+  auditLogs: APP_ROUTES.admin.auditLogs,
+  documents: APP_ROUTES.admin.documents,
+  employeeProfiles: APP_ROUTES.admin.employeeProfiles,
+  userRoles: APP_ROUTES.admin.userRoles,
+  profile: APP_ROUTES.admin.profile,
+  download: APP_ROUTES.admin.downloads,
+  imageRecognition: APP_ROUTES.admin.imageRecognition,
+  syncDashboard: APP_ROUTES.admin.syncDashboard,
+  syncTest: APP_ROUTES.admin.syncTest,
+  realTimeUpdates: APP_ROUTES.admin.realTimeUpdates,
+  mobileReceive: APP_ROUTES.operations.mobileReceive,
+  mobilePick: APP_ROUTES.operations.mobilePick,
+} as const;
+
+export function asSectionSlug<T extends readonly string[]>(
+  value: string | undefined,
+  allowed: T,
+  fallback: T[number],
+): T[number] {
+  if (value && (allowed as readonly string[]).includes(value)) {
+    return value as T[number];
+  }
+  return fallback;
+}

@@ -2,8 +2,28 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import type { PageShellVariant } from "@/lib/layout/layout-capabilities";
 import { getFallbackState, subscribeFallbackState } from "@/lib/fallback-store";
 import { cn } from "@/lib/utils";
+
+const PAGE_SHELL_VARIANTS: Record<PageShellVariant, string> = {
+  standard: "mx-auto w-full max-w-7xl space-y-6",
+  "wide-table": "mx-auto w-full max-w-[min(100%,96rem)] space-y-6",
+  "task-mode": "mx-auto flex w-full max-w-5xl flex-col gap-4",
+  "analytics-mode": "mx-auto w-full max-w-[min(100%,90rem)] space-y-6",
+};
+
+export function PageShell({
+  variant = "standard",
+  className,
+  children,
+}: {
+  variant?: PageShellVariant;
+  className?: string;
+  children: ReactNode;
+}) {
+  return <div className={cn(PAGE_SHELL_VARIANTS[variant], className)}>{children}</div>;
+}
 
 /** Top toolbar row (filters, actions) — composes with PageHeader */
 export function PageToolbar({ className, children }: { className?: string; children: ReactNode }) {

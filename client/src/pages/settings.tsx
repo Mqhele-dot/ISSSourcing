@@ -1,4 +1,5 @@
 import React from "react";
+import { useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -43,10 +44,12 @@ import {
   Loader2,
   RotateCcw,
 } from "lucide-react";
+import { APP_ROUTES, SETTINGS_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const [location, setLocation] = useLocation();
   const { accent, accentConfig, setAccentConfig, setPreset } = useAccent();
   const { density, setDensity } = useDensity();
   const isDevMode = import.meta.env.DEV;
@@ -62,6 +65,7 @@ export default function SettingsPage() {
   };
   const roleKey = (user?.role || "viewer").toLowerCase();
   const roleCapabilities = capabilitiesByRole[roleKey] ?? capabilitiesByRole.viewer;
+  const activeSection = asSectionSlug(location.split("/")[3], SETTINGS_SECTION_SLUGS, "general");
 
   const handleResetDemoData = async () => {
     setIsResettingDemoData(true);
@@ -227,7 +231,11 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="general" className="space-y-6">
+      <Tabs
+        value={activeSection}
+        onValueChange={(value) => setLocation(APP_ROUTES.admin.settingsSection(value as typeof activeSection))}
+        className="space-y-6"
+      >
         <TabsList className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 h-auto">
           <TabsTrigger value="general" className="flex items-center space-x-2 py-3">
             <UserCircle className="h-4 w-4" />

@@ -3,20 +3,33 @@ import { useLocation } from "wouter";
 import {
   Activity,
   Archive,
-  BarChart2,
+  ArrowDownToLine,
+  Bookmark,
   Building,
   Camera,
+  ClipboardList,
   Command as CommandIcon,
+  CreditCard,
   Database,
   FileText,
   FileUp,
+  FolderOpen,
   Home,
-  LayoutDashboard,
+  IdCard,
+  Landmark,
+  PackageSearch,
   QrCode,
+  Radar,
   RefreshCw,
+  Receipt,
   Search,
   Settings,
+  ShieldCheck,
   ShoppingCart,
+  Smartphone,
+  Store,
+  Truck,
+  UserRound,
   Users,
 } from "lucide-react";
 import {
@@ -29,6 +42,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
+import { COMMAND_MENU_SECONDARY_ITEMS, APP_NAV_SECTIONS } from "@/lib/routes/section-metadata";
 import { invTrackFetch, queryClient } from "@/lib/queryClient";
 import { useMediaQuery } from "@/hooks/use-media-query";
 
@@ -46,68 +60,36 @@ type NavEntry = {
   icon: React.ReactNode;
 };
 
-const SECTIONS: { heading: string; items: NavEntry[] }[] = [
-  {
-    heading: "Control Tower",
-    items: [
-      { label: "Home", path: "/", keywords: "landing overview", icon: <Home className="h-4 w-4" /> },
-      { label: "Dashboard", path: "/dashboard", keywords: "kpi metrics", icon: <LayoutDashboard className="h-4 w-4" /> },
-      { label: "Analytics", path: "/analytics", keywords: "charts graphs", icon: <BarChart2 className="h-4 w-4" /> },
-    ],
-  },
-  {
-    heading: "Master Data",
-    items: [
-      { label: "Inventory", path: "/inventory", keywords: "sku stock items", icon: <Archive className="h-4 w-4" /> },
-      { label: "Master Data", path: "/master-data", keywords: "uom currency tax", icon: <Database className="h-4 w-4" /> },
-      { label: "Suppliers", path: "/suppliers", keywords: "vendors", icon: <Users className="h-4 w-4" /> },
-      { label: "Warehouses", path: "/warehouses", keywords: "locations bins", icon: <Building className="h-4 w-4" /> },
-      { label: "Barcode Scanner", path: "/barcode-scanner", keywords: "qr scan", icon: <QrCode className="h-4 w-4" /> },
-      { label: "Image Recognition", path: "/image-recognition", keywords: "vision ocr", icon: <Camera className="h-4 w-4" /> },
-    ],
-  },
-  {
-    heading: "Procurement",
-    items: [
-      { label: "Purchase Orders", path: "/purchase", keywords: "po orders", icon: <ShoppingCart className="h-4 w-4" /> },
-      { label: "Requisitions", path: "/purchase/requisitions", keywords: "req approval", icon: <FileText className="h-4 w-4" /> },
-      { label: "Invoices", path: "/invoices", keywords: "ap three-way match", icon: <FileText className="h-4 w-4" /> },
-      { label: "Supplier Portal", path: "/supplier-portal", keywords: "vendor", icon: <Users className="h-4 w-4" /> },
-    ],
-  },
-  {
-    heading: "Operations",
-    items: [
-      { label: "Cycle Counts", path: "/cycle-counts", keywords: "physical count", icon: <RefreshCw className="h-4 w-4" /> },
-      { label: "Reorder Requests", path: "/reorder", keywords: "rop", icon: <RefreshCw className="h-4 w-4" /> },
-      { label: "Shipments", path: "/logistics", keywords: "carrier tracking", icon: <Building className="h-4 w-4" /> },
-    ],
-  },
-  {
-    heading: "Finance & compliance",
-    items: [
-      { label: "Payments & Billing", path: "/billing", keywords: "payments", icon: <FileText className="h-4 w-4" /> },
-      { label: "Contracts", path: "/contracts", keywords: "legal", icon: <FileText className="h-4 w-4" /> },
-      { label: "Audit Logs", path: "/audit-logs", keywords: "compliance sox", icon: <Activity className="h-4 w-4" /> },
-      { label: "Documents", path: "/documents", keywords: "attachments", icon: <FileUp className="h-4 w-4" /> },
-      { label: "Exceptions", path: "/exceptions", keywords: "issues", icon: <Activity className="h-4 w-4" /> },
-    ],
-  },
-  {
-    heading: "Analytics & tools",
-    items: [
-      { label: "Reports", path: "/reports", keywords: "export pdf excel", icon: <FileText className="h-4 w-4" /> },
-      { label: "Supply Analytics", path: "/supply-analytics", keywords: "spend utilization", icon: <BarChart2 className="h-4 w-4" /> },
-      { label: "Connectors", path: "/integrations", keywords: "api integration", icon: <FileUp className="h-4 w-4" /> },
-      { label: "Document Extractor", path: "/document-extractor", keywords: "parse invoice", icon: <FileUp className="h-4 w-4" /> },
-      { label: "Employee Profiles", path: "/employee-profiles", keywords: "hr users", icon: <Users className="h-4 w-4" /> },
-      { label: "Settings", path: "/settings", keywords: "preferences security", icon: <Settings className="h-4 w-4" /> },
-      { label: "Profile", path: "/profile", keywords: "account me", icon: <Users className="h-4 w-4" /> },
-      { label: "User roles", path: "/user-roles", keywords: "rbac permissions", icon: <Users className="h-4 w-4" /> },
-      { label: "Downloads", path: "/download", keywords: "export files", icon: <FileUp className="h-4 w-4" /> },
-    ],
-  },
-];
+const ICONS = {
+  activity: <Activity className="h-4 w-4" />,
+  archive: <Archive className="h-4 w-4" />,
+  "arrow-down-to-line": <ArrowDownToLine className="h-4 w-4" />,
+  bookmark: <Bookmark className="h-4 w-4" />,
+  building: <Building className="h-4 w-4" />,
+  camera: <Camera className="h-4 w-4" />,
+  "clipboard-list": <ClipboardList className="h-4 w-4" />,
+  "credit-card": <CreditCard className="h-4 w-4" />,
+  database: <Database className="h-4 w-4" />,
+  download: <ArrowDownToLine className="h-4 w-4" />,
+  "file-spreadsheet": <FileText className="h-4 w-4" />,
+  "folder-open": <FolderOpen className="h-4 w-4" />,
+  home: <Home className="h-4 w-4" />,
+  "id-card": <IdCard className="h-4 w-4" />,
+  landmark: <Landmark className="h-4 w-4" />,
+  "package-search": <PackageSearch className="h-4 w-4" />,
+  "qr-code": <QrCode className="h-4 w-4" />,
+  radar: <Radar className="h-4 w-4" />,
+  receipt: <Receipt className="h-4 w-4" />,
+  "refresh-cw": <RefreshCw className="h-4 w-4" />,
+  settings: <Settings className="h-4 w-4" />,
+  "shield-check": <ShieldCheck className="h-4 w-4" />,
+  "shopping-cart": <ShoppingCart className="h-4 w-4" />,
+  smartphone: <Smartphone className="h-4 w-4" />,
+  store: <Store className="h-4 w-4" />,
+  truck: <Truck className="h-4 w-4" />,
+  "user-round": <UserRound className="h-4 w-4" />,
+  users: <Users className="h-4 w-4" />,
+} as const;
 
 /** Hidden from command palette below `lg` (1024px), same as sidebar / route guards. */
 const DESKTOP_ONLY_PATHS = new Set(["/master-data", "/approval-policies", "/employee-profiles"]);
@@ -142,10 +124,33 @@ export function CommandMenu() {
   /** Match master-data and other wide-layout admin pages (lg+). */
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const sections = useMemo(() => {
-    if (isDesktop) return SECTIONS;
-    return SECTIONS.map((section) => ({
+    const primary = APP_NAV_SECTIONS.map((section) => ({
+      heading: section.label,
+      items: section.items.map((item) => ({
+        label: item.label,
+        path: item.path,
+        keywords: item.keywords,
+        icon: ICONS[item.icon as keyof typeof ICONS] ?? <FileUp className="h-4 w-4" />,
+        desktopOnly: item.desktopOnly,
+      })),
+    }));
+    const withSecondary = [
+      ...primary,
+      {
+        heading: "Additional",
+        items: COMMAND_MENU_SECONDARY_ITEMS.map((item) => ({
+          label: item.label,
+          path: item.path,
+          keywords: item.keywords,
+          icon: ICONS[item.icon as keyof typeof ICONS] ?? <FileUp className="h-4 w-4" />,
+          desktopOnly: item.desktopOnly,
+        })),
+      },
+    ];
+    if (isDesktop) return withSecondary;
+    return withSecondary.map((section) => ({
       ...section,
-      items: section.items.filter((item) => !DESKTOP_ONLY_PATHS.has(item.path)),
+      items: section.items.filter((item) => !DESKTOP_ONLY_PATHS.has(item.path) && !item.desktopOnly),
     }));
   }, [isDesktop]);
 
