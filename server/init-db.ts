@@ -176,6 +176,7 @@ const LEGACY_ORG_ID_COLUMN_ONLY: readonly { table: string; fkName: string }[] = 
   { table: "invoices", fkName: "invoices_organization_id_organizations_id_fk" },
   { table: "documents", fkName: "documents_organization_id_organizations_id_fk" },
   { table: "approval_policies", fkName: "approval_policies_organization_id_organizations_id_fk" },
+  { table: "approval_history", fkName: "approval_history_organization_id_organizations_id_fk" },
   { table: "audit_logs", fkName: "audit_logs_organization_id_organizations_id_fk" },
   { table: "inventory_batches", fkName: "inventory_batches_organization_id_organizations_id_fk" },
   { table: "warehouse_inventory", fkName: "warehouse_inventory_organization_id_organizations_id_fk" },
@@ -435,6 +436,7 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       );
       CREATE TABLE IF NOT EXISTS approval_history (
         id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
         entity_type TEXT NOT NULL,
         entity_id INTEGER NOT NULL,
         level INTEGER DEFAULT 1 NOT NULL,

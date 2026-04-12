@@ -55,6 +55,32 @@ const AP_DDLS = [
   ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS tax_code text
   `,
   `
+  ALTER TABLE approval_history ADD COLUMN IF NOT EXISTS organization_id integer DEFAULT 1
+  `,
+  `
+  DO $$
+  BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conname = 'approval_history_organization_id_organizations_id_fk'
+    ) THEN
+      ALTER TABLE approval_history
+      ADD CONSTRAINT approval_history_organization_id_organizations_id_fk
+      FOREIGN KEY (organization_id) REFERENCES organizations(id);
+    END IF;
+  END $$;
+  `,
+  `
+  UPDATE approval_history SET organization_id = 1 WHERE organization_id IS NULL
+  `,
+  `
+  ALTER TABLE approval_history ALTER COLUMN organization_id SET NOT NULL
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS approval_history_org_entity_idx
+  ON approval_history (organization_id, entity_type, entity_id)
+  `,
+  `
   CREATE TABLE IF NOT EXISTS ap_invoice_captures (
     id serial PRIMARY KEY,
     organization_id integer NOT NULL DEFAULT 1 REFERENCES organizations(id),

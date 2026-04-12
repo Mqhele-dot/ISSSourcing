@@ -292,7 +292,15 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           `Requisition total exceeds your approver limit (${userCap.toFixed(2)}).`,
         );
       }
-      const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
+      const policies = await db
+        .select()
+        .from(approvalPolicies)
+        .where(
+          and(
+            eq(approvalPolicies.organizationId, getActiveOrganizationId()),
+            eq(approvalPolicies.entityType, "requisition"),
+          ),
+        );
       const applicable = policies
         .filter((policy) => {
           if (!policy.isActive) return false;
@@ -314,6 +322,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       
       if (!updatedRequisition) return sendFunctionError(res, 404, "approvePurchaseRequisition", "Purchase requisition not found");
       await db.insert(approvalHistory).values({
+        organizationId: getActiveOrganizationId(),
         entityType: "requisition",
         entityId: id,
         level: Number(applicable?.approvalLevel ?? 1),
@@ -363,7 +372,15 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Requester cannot reject their own requisition");
       }
       const requisitionTotal = Number(existing.totalAmount ?? 0);
-      const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
+      const policies = await db
+        .select()
+        .from(approvalPolicies)
+        .where(
+          and(
+            eq(approvalPolicies.organizationId, getActiveOrganizationId()),
+            eq(approvalPolicies.entityType, "requisition"),
+          ),
+        );
       const applicable = policies
         .filter((policy) => {
           if (!policy.isActive) return false;
@@ -385,6 +402,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       
       if (!updatedRequisition) return sendFunctionError(res, 404, "rejectPurchaseRequisition", "Purchase requisition not found");
       await db.insert(approvalHistory).values({
+        organizationId: getActiveOrganizationId(),
         entityType: "requisition",
         entityId: id,
         level: Number(applicable?.approvalLevel ?? 1),

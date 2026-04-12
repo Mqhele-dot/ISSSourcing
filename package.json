@@ -18,6 +18,7 @@
     "test:requisitions": "tsx scripts/test-requisitions.ts",
     "test:procurement-flow": "tsx scripts/test-procurement-flow.ts",
     "test:ap-workflow": "tsx scripts/test-ap-workflow.ts",
+    "test:ap-controls": "tsx scripts/test-ap-controls.ts",
     "test:supplier-portal": "tsx scripts/test-supplier-portal.ts",
     "test:exports": "tsx scripts/test-exports.ts",
     "test:api": "npm run test:rbac && npm run test:requisitions && npm run test:procurement-flow && npm run test:supplier-portal && npm run test:exports && npm run test:org-api",

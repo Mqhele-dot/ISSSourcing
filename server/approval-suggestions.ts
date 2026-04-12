@@ -1,6 +1,7 @@
 import { db } from "./db";
-import { approvalPolicies, users, type User } from "@shared/schema";
+import { approvalPolicies, organizationMembers, users, type User } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
+import { getActiveOrganizationId } from "./organization-context";
 
 export type ApproverSuggestion = {
   userId: number;
@@ -43,6 +44,7 @@ export async function getApprovalSuggestions(
   suggestedApprovers: ApproverSuggestion[];
 }> {
   const amt = Number(amount);
+  const orgId = getActiveOrganizationId();
   if (!Number.isFinite(amt) || amt < 0) {
     return { entityType, amount: amt, applicablePolicies: [], suggestedApprovers: [] };
   }
@@ -50,7 +52,13 @@ export async function getApprovalSuggestions(
   const policies = await db
     .select()
     .from(approvalPolicies)
-    .where(and(eq(approvalPolicies.entityType, entityType), eq(approvalPolicies.isActive, true)));
+    .where(
+      and(
+        eq(approvalPolicies.organizationId, orgId),
+        eq(approvalPolicies.entityType, entityType),
+        eq(approvalPolicies.isActive, true),
+      ),
+    );
 
   const applicable = policies
     .filter((p) => {
@@ -60,18 +68,22 @@ export async function getApprovalSuggestions(
     })
     .sort((a, b) => a.approvalLevel - b.approvalLevel || a.amountMin - b.amountMin);
 
-  const allUsers = await db.select().from(users);
+  const allUsers = await db
+    .select({ user: users })
+    .from(organizationMembers)
+    .innerJoin(users, eq(organizationMembers.userId, users.id))
+    .where(eq(organizationMembers.organizationId, orgId));
   const suggested: ApproverSuggestion[] = [];
   const seen = new Set<number>();
 
   for (const p of applicable) {
     const candidates: User[] = [];
     if (p.approverUserId != null) {
-      const u = allUsers.find((x) => x.id === p.approverUserId);
+      const u = allUsers.map((row) => row.user).find((x) => x.id === p.approverUserId);
       if (u) candidates.push(u);
     } else if (p.approverRole && String(p.approverRole).trim()) {
       const want = String(p.approverRole).trim().toLowerCase();
-      for (const u of allUsers) {
+      for (const u of allUsers.map((row) => row.user)) {
         if (String(u.role ?? "").toLowerCase() === want) candidates.push(u);
       }
     }

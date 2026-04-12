@@ -6,6 +6,7 @@ import { db } from "../../db";
 import { storage } from "../../storage";
 import { sendError, sendOk } from "../../api-response";
 import { getApprovalSuggestions } from "../../approval-suggestions";
+import { getActiveOrganizationId } from "../../organization-context";
 import {
   insertApprovalPolicySchema,
   insertCarrierSchema,
@@ -240,7 +241,10 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
 
   app.get("/api/approval-policies", ...masterRead, async (_req, res: Response) => {
     try {
-      const rows = await db.select().from(approvalPolicies);
+      const rows = await db
+        .select()
+        .from(approvalPolicies)
+        .where(eq(approvalPolicies.organizationId, getActiveOrganizationId()));
       return sendOk(res, rows);
     } catch (error) {
       console.error("Error fetching approval policies:", error);
@@ -276,7 +280,10 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
 
   app.post("/api/approval-policies", ...masterWrite, async (req, res) => {
     try {
-      const payload = insertApprovalPolicySchema.parse(req.body);
+      const payload = insertApprovalPolicySchema.parse({
+        ...(req.body ?? {}),
+        organizationId: getActiveOrganizationId(),
+      });
       const createdRows = (await db.insert(approvalPolicies).values(payload).returning()) as any[];
       const created = createdRows[0];
       return sendOk(res, created, 201);
@@ -296,7 +303,11 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       const id = Number(req.params.id);
       if (isNaN(id)) return sendError(res, 400, "INVALID_ID", "Invalid policy ID");
       const payload = insertApprovalPolicySchema.partial().parse(req.body);
-      const updatedRows = (await db.update(approvalPolicies).set(payload).where(eq(approvalPolicies.id, id)).returning()) as any[];
+      const updatedRows = (await db
+        .update(approvalPolicies)
+        .set(payload)
+        .where(and(eq(approvalPolicies.id, id), eq(approvalPolicies.organizationId, getActiveOrganizationId())))
+        .returning()) as any[];
       const updated = updatedRows[0];
       if (!updated) return sendError(res, 404, "NOT_FOUND", "Approval policy not found");
       return sendOk(res, updated);
@@ -315,7 +326,10 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) return sendError(res, 400, "INVALID_ID", "Invalid policy ID");
-      const deleted = await db.delete(approvalPolicies).where(eq(approvalPolicies.id, id)).returning({ id: approvalPolicies.id });
+      const deleted = await db
+        .delete(approvalPolicies)
+        .where(and(eq(approvalPolicies.id, id), eq(approvalPolicies.organizationId, getActiveOrganizationId())))
+        .returning({ id: approvalPolicies.id });
       if (deleted.length === 0) return sendError(res, 404, "NOT_FOUND", "Approval policy not found");
       return res.status(204).send();
     } catch (error) {
@@ -332,7 +346,13 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       const rows = await db
         .select()
         .from(approvalHistory)
-        .where(and(eq(approvalHistory.entityType, entityType), eq(approvalHistory.entityId, entityId)));
+        .where(
+          and(
+            eq(approvalHistory.organizationId, getActiveOrganizationId()),
+            eq(approvalHistory.entityType, entityType),
+            eq(approvalHistory.entityId, entityId),
+          ),
+        );
       return sendOk(res, rows);
     } catch (error) {
       console.error("Error fetching approval history:", error);

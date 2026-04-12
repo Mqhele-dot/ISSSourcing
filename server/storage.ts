@@ -5197,6 +5197,9 @@ export class MemStorage implements IStorage {
   }
   
   async createInvoice(invoice: InsertInvoice, items: InsertInvoiceItem[] = []): Promise<Invoice> {
+    if (invoice.createdBy == null || Number(invoice.createdBy) <= 0) {
+      throw new Error("Invoice createdBy is required.");
+    }
     const id = this.invoiceCurrentId++;
     const now = new Date();
     
@@ -5484,6 +5487,9 @@ export class MemStorage implements IStorage {
   }
   
   async createPayment(payment: InsertPayment): Promise<Payment> {
+    if (payment.receivedBy == null || Number(payment.receivedBy) <= 0) {
+      throw new Error("Payment receivedBy is required.");
+    }
     const id = this.paymentCurrentId++;
     const now = new Date();
     

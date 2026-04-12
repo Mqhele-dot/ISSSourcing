@@ -2859,6 +2859,10 @@ export class DatabaseStorage implements IStorage {
   
   async createInvoice(invoice: InsertInvoice, items: InsertInvoiceItem[]): Promise<Invoice> {
     const orgId = getActiveOrganizationId();
+    const createdBy = Number(invoice.createdBy);
+    if (!Number.isFinite(createdBy) || createdBy <= 0) {
+      throw new Error("Invoice createdBy is required.");
+    }
     return db.transaction(async (tx) => {
       const total = Number(invoice.total ?? 0);
       const payload = {
@@ -2878,7 +2882,7 @@ export class DatabaseStorage implements IStorage {
         purchaseOrderId: invoice.purchaseOrderId ?? null,
         paidAmount: Number(invoice.paidAmount ?? 0),
         dueAmount: Number(invoice.dueAmount ?? total),
-        createdBy: Number(invoice.createdBy ?? 1),
+        createdBy,
         updatedAt: new Date(),
       };
 
@@ -3099,6 +3103,10 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Invoice not found");
     }
 
+    const receivedBy = Number(payment.receivedBy);
+    if (!Number.isFinite(receivedBy) || receivedBy <= 0) {
+      throw new Error("Payment receivedBy is required.");
+    }
     const [created] = await db
       .insert(payments)
       .values({
@@ -3108,7 +3116,7 @@ export class DatabaseStorage implements IStorage {
         transactionReference: payment.transactionReference ?? null,
         paymentDate: payment.paymentDate ?? new Date(),
         notes: payment.notes ?? null,
-        receivedBy: Number(payment.receivedBy ?? 1),
+        receivedBy,
       })
       .returning();
 

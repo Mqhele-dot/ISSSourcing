@@ -89,6 +89,36 @@ async function main() {
     }
   }
 
+  const invoicePolicyRes = await apiJsonRequest("/approval-policies", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      name: `AP Workflow Invoice Policy ${Date.now().toString().slice(-4)}`,
+      entityType: "invoice",
+      amountMin: 0,
+      amountMax: 1_000_000,
+      approvalLevel: 10,
+      approverRole: "admin",
+      isActive: true,
+    },
+  });
+  if (!expectStatus("POST /api/approval-policies (invoice)", 201, invoicePolicyRes.status)) failures++;
+
+  const batchPolicyRes = await apiJsonRequest("/approval-policies", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      name: `AP Workflow Batch Policy ${Date.now().toString().slice(-4)}`,
+      entityType: "payment_batch",
+      amountMin: 0,
+      amountMax: 1_000_000,
+      approvalLevel: 10,
+      approverRole: "admin",
+      isActive: true,
+    },
+  });
+  if (!expectStatus("POST /api/approval-policies (payment_batch)", 201, batchPolicyRes.status)) failures++;
+
   const captureRes = await apiJsonRequest("/ap/captures", {
     method: "POST",
     cookie: adminCookie,
@@ -259,7 +289,7 @@ async function main() {
   const approveInvoiceRes = await apiJsonRequest(`/ap/invoices/${invoiceId}/approve`, {
     method: "POST",
     cookie: adminCookie,
-    body: {},
+    body: { adminOverride: true, overrideReason: "Workflow smoke override for creator/approver split" },
   });
   if (!expectStatus("POST /api/ap/invoices/:id/approve", 200, approveInvoiceRes.status)) failures++;
 
@@ -279,14 +309,14 @@ async function main() {
   const approveBatchRes = await apiJsonRequest(`/ap/payment-batches/${batchId}/approve`, {
     method: "POST",
     cookie: adminCookie,
-    body: {},
+    body: { adminOverride: true, overrideReason: "Workflow smoke override for creator/approver split" },
   });
   if (!expectStatus("POST /api/ap/payment-batches/:id/approve", 200, approveBatchRes.status)) failures++;
 
   const releaseBatchRes = await apiJsonRequest(`/ap/payment-batches/${batchId}/release`, {
     method: "POST",
     cookie: adminCookie,
-    body: {},
+    body: { adminOverride: true, overrideReason: "Workflow smoke override for creator/releaser split" },
   });
   if (!expectStatus("POST /api/ap/payment-batches/:id/release", 200, releaseBatchRes.status)) failures++;
 

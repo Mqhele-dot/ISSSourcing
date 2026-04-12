@@ -721,6 +721,10 @@ export const approvalPolicies = pgTable("approval_policies", {
 
 export const approvalHistory = pgTable("approval_history", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
   entityType: text("entity_type").notNull(), // requisition, purchase_order
   entityId: integer("entity_id").notNull(),
   level: integer("level").notNull().default(1),

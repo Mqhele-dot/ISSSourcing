@@ -496,7 +496,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   .select()
                   .from(approvalHistory)
                   .where(
-                    and(eq(approvalHistory.entityType, "requisition"), eq(approvalHistory.entityId, r.id)),
+                    and(
+                      eq(approvalHistory.organizationId, getActiveOrganizationId()),
+                      eq(approvalHistory.entityType, "requisition"),
+                      eq(approvalHistory.entityId, r.id),
+                    ),
                   )
                   .orderBy(asc(approvalHistory.performedAt));
                 const approvalHistoryForPdf = hist.map((row) => ({

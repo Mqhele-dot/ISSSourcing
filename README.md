@@ -53,6 +53,16 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 - [`docs/ENV-CONFIG.md`](docs/ENV-CONFIG.md) — environment variables
 - [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md) — API shapes
 
+## Accounts Payable (AP) Controls
+
+- **Status model:** invoice transitions are constrained (`DRAFT` -> `PENDING_APPROVAL` -> `APPROVED` -> payment states), and payment batches move through `DRAFT`/`PENDING_APPROVAL`/`APPROVED`/`RELEASED` with legal-transition checks.
+- **Approval flow:** AP approvals use org-scoped `approval_policies` by entity type (`invoice`, `payment_batch`) and amount band. Approval is rejected when no valid policy/approver is present.
+- **Segregation of duties:** creator self-approval and creator self-release are blocked unless explicit admin override + reason is provided; release also checks approver/releaser separation.
+- **Batch release safety:** release runs transactionally with row locking, idempotent re-entry handling, invoice payable revalidation, and due-amount overpayment checks.
+- **Receipt/match assumptions:** AP receipt lines must map to PO lines and cannot exceed remaining receivable quantity; matching writes structured mismatch outcomes and a recommended next workflow state instead of silently advancing approval state.
+
+Production rollout should use checked-in SQL migration files under [`migrations/`](migrations/) as the source of truth; startup AP DDL bootstrap remains as local/dev safety.
+
 ## License
 
 MIT

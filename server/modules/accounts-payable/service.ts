@@ -1,9 +1,17 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import { storage } from "../../storage";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { getApprovalSuggestions } from "../../approval-suggestions";
+import { enforceApprovalPolicy } from "./ap-approval-policy";
+import { writeApAuditLog } from "./ap-audit-log";
+import {
+  assertBatchReleaseApproverSeparation,
+  assertNotSelfBatchApproval,
+  assertNotSelfInvoiceApproval,
+} from "./ap-segregation-controls";
+import { assertInvoiceTransition, assertPaymentBatchTransition } from "./ap-state-machine";
 import {
   apInvoiceCaptures,
   apInvoiceMatchResults,
@@ -27,6 +35,12 @@ import {
   type InsertPayment,
   type Payment,
 } from "@shared/schema";
+
+type ApprovalActionContext = {
+  actorRole: string;
+  overrideExplicit?: boolean;
+  overrideReason?: string;
+};
 
 type InvoiceFilters = {
   customerId?: number;
@@ -74,7 +88,23 @@ function buildDuplicateCheckKey(input: {
   ].join("|");
 }
 
+function normalizeDateOnly(value: Date | null | undefined): string {
+  if (!value) return "unknown-date";
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+async function getLatestMatchResult(invoiceId: number, orgId: number) {
+  const rows = await db
+    .select()
+    .from(apInvoiceMatchResults)
+    .where(and(eq(apInvoiceMatchResults.organizationId, orgId), eq(apInvoiceMatchResults.invoiceId, invoiceId)))
+    .orderBy(desc(apInvoiceMatchResults.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 async function createApprovalHistoryEntry(input: {
+  organizationId: number;
   entityType: "invoice" | "payment_batch";
   entityId: number;
   action: string;
@@ -84,6 +114,7 @@ async function createApprovalHistoryEntry(input: {
   comment?: string | null;
 }) {
   await db.insert(approvalHistory).values({
+    organizationId: input.organizationId,
     entityType: input.entityType,
     entityId: input.entityId,
     action: input.action,
@@ -251,12 +282,15 @@ export async function updateInvoiceStatus(
   userId: number,
   comment?: string,
 ) {
+  const orgId = getActiveOrganizationId();
   const existing = await storage.getInvoice(invoiceId);
   if (!existing) return undefined;
+  assertInvoiceTransition(String(existing.status), String(status));
   const updated = await storage.updateInvoice(invoiceId, { status });
   if (!updated) return undefined;
 
   await createApprovalHistoryEntry({
+    organizationId: orgId,
     entityType: "invoice",
     entityId: invoiceId,
     action: String(status).toLowerCase(),
@@ -266,22 +300,53 @@ export async function updateInvoiceStatus(
     comment,
   }).catch(() => {});
 
+  await writeApAuditLog({
+    organizationId: orgId,
+    actorUserId: userId,
+    action: status === "APPROVED" ? "AP_INVOICE_APPROVED" : status === "DISPUTED" ? "AP_INVOICE_REJECTED" : "AP_INVOICE_SUBMITTED",
+    entityType: "invoice",
+    entityId: invoiceId,
+    priorState: existing.status,
+    nextState: status,
+    reason: comment,
+  }).catch(() => {});
+
   return updated;
 }
 
 export async function submitInvoiceForApproval(invoiceId: number, userId: number) {
+  const orgId = getActiveOrganizationId();
   const invoice = await storage.getInvoice(invoiceId);
   if (!invoice) return undefined;
+  assertInvoiceTransition(String(invoice.status), "PENDING_APPROVAL");
+  const latestMatch = await getLatestMatchResult(invoiceId, orgId);
+  if (!latestMatch) {
+    throw new Error("Invoice must be matched before submission for approval.");
+  }
+  if (latestMatch.status === "EXCEPTION") {
+    throw new Error("Invoice has unresolved matching exceptions and cannot be submitted.");
+  }
   const updated = await storage.updateInvoice(invoiceId, { status: "PENDING_APPROVAL" });
   if (!updated) return undefined;
 
   await createApprovalHistoryEntry({
+    organizationId: orgId,
     entityType: "invoice",
     entityId: invoiceId,
     action: "submitted",
     performedBy: userId,
     previousStatus: invoice.status,
     newStatus: "PENDING_APPROVAL",
+  }).catch(() => {});
+
+  await writeApAuditLog({
+    organizationId: orgId,
+    actorUserId: userId,
+    action: "AP_INVOICE_SUBMITTED",
+    entityType: "invoice",
+    entityId: invoiceId,
+    priorState: invoice.status,
+    nextState: "PENDING_APPROVAL",
   }).catch(() => {});
 
   await emitNotificationToRoles(["manager", "admin"], {
@@ -295,8 +360,33 @@ export async function submitInvoiceForApproval(invoiceId: number, userId: number
   return updated;
 }
 
-export async function approveInvoice(invoiceId: number, userId: number, comment?: string) {
-  const updated = await updateInvoiceStatus(invoiceId, "APPROVED", userId, comment);
+export async function approveInvoice(
+  invoiceId: number,
+  userId: number,
+  comment?: string,
+  context: ApprovalActionContext = { actorRole: "" },
+) {
+  const orgId = getActiveOrganizationId();
+  const existing = await storage.getInvoice(invoiceId);
+  if (!existing) return undefined;
+  if (String(existing.status) !== "PENDING_APPROVAL") {
+    throw new Error(`Invoice must be PENDING_APPROVAL before approval; current status is ${existing.status}.`);
+  }
+  assertNotSelfInvoiceApproval({
+    actorUserId: userId,
+    actorRole: context.actorRole,
+    invoiceCreatedBy: existing.createdBy,
+    overrideExplicit: context.overrideExplicit,
+    overrideReason: context.overrideReason,
+  });
+  await enforceApprovalPolicy({
+    organizationId: orgId,
+    entityType: "invoice",
+    amount: toNumber(existing.total ?? 0),
+    actorUserId: userId,
+    actorRole: context.actorRole,
+  });
+  const updated = await updateInvoiceStatus(invoiceId, "APPROVED", userId, comment ?? context.overrideReason);
   if (updated) {
     await emitNotificationToRoles(["manager", "admin"], {
       type: "ap_invoice_approved",
@@ -309,8 +399,26 @@ export async function approveInvoice(invoiceId: number, userId: number, comment?
   return updated;
 }
 
-export async function rejectInvoice(invoiceId: number, userId: number, comment?: string) {
-  return updateInvoiceStatus(invoiceId, "DISPUTED", userId, comment);
+export async function rejectInvoice(
+  invoiceId: number,
+  userId: number,
+  comment?: string,
+  context: ApprovalActionContext = { actorRole: "" },
+) {
+  const orgId = getActiveOrganizationId();
+  const existing = await storage.getInvoice(invoiceId);
+  if (!existing) return undefined;
+  if (String(existing.status) !== "PENDING_APPROVAL") {
+    throw new Error(`Invoice must be PENDING_APPROVAL before rejection; current status is ${existing.status}.`);
+  }
+  await enforceApprovalPolicy({
+    organizationId: orgId,
+    entityType: "invoice",
+    amount: toNumber(existing.total ?? 0),
+    actorUserId: userId,
+    actorRole: context.actorRole,
+  });
+  return updateInvoiceStatus(invoiceId, "DISPUTED", userId, comment ?? context.overrideReason);
 }
 
 export async function listApprovalQueue() {
@@ -413,14 +521,67 @@ export async function createCapture(input: InsertApInvoiceCapture, userId: numbe
           )
       : [];
 
+  const activeCaptureDupes =
+    input.supplierId && input.invoiceNumber
+      ? await db
+          .select({ id: apInvoiceCaptures.id })
+          .from(apInvoiceCaptures)
+          .where(
+            and(
+              eq(apInvoiceCaptures.organizationId, orgId),
+              eq(apInvoiceCaptures.supplierId, Number(input.supplierId)),
+              eq(apInvoiceCaptures.invoiceNumber, String(input.invoiceNumber)),
+              inArray(apInvoiceCaptures.status, ["STAGED", "REVIEW_REQUIRED", "READY_TO_PROMOTE"]),
+            ),
+          )
+      : [];
+
+  const nearDuplicateMatches =
+    input.supplierId && input.issueDate
+      ? await db
+          .select({
+            id: apInvoiceCaptures.id,
+            issueDate: apInvoiceCaptures.issueDate,
+            totalAmount: apInvoiceCaptures.totalAmount,
+          })
+          .from(apInvoiceCaptures)
+          .where(
+            and(
+              eq(apInvoiceCaptures.organizationId, orgId),
+              eq(apInvoiceCaptures.supplierId, Number(input.supplierId)),
+              inArray(apInvoiceCaptures.status, ["STAGED", "REVIEW_REQUIRED", "READY_TO_PROMOTE", "PROMOTED"]),
+            ),
+          )
+      : [];
+
   const warnings = [...(input.warnings ?? [])];
+  let duplicateRiskScore = 0;
   if (duplicateInvoice.length > 0) {
     warnings.push("Potential duplicate invoice found in AP ledger.");
+    duplicateRiskScore += 100;
+  }
+  if (activeCaptureDupes.length > 0) {
+    warnings.push("Potential duplicate capture already exists in active capture queue.");
+    duplicateRiskScore += 90;
+  }
+  for (const candidate of nearDuplicateMatches) {
+    const issueA = normalizeDateOnly(toDateOrUndefined(input.issueDate));
+    const issueB = normalizeDateOnly(toDateOrUndefined(candidate.issueDate));
+    const dayDelta =
+      Math.abs(new Date(`${issueA}T00:00:00.000Z`).getTime() - new Date(`${issueB}T00:00:00.000Z`).getTime()) /
+      (24 * 60 * 60 * 1000);
+    const amountDelta = Math.abs(toNumber(input.totalAmount, 0) - toNumber(candidate.totalAmount, 0));
+    if (dayDelta <= 7 && amountDelta <= 1) {
+      duplicateRiskScore = Math.max(duplicateRiskScore, 70);
+    }
+  }
+  if (duplicateRiskScore >= 70) {
+    warnings.push("Duplicate risk threshold exceeded; review required before promotion.");
   }
 
   const readyToPromote = Boolean(input.supplierId && input.invoiceNumber);
   const status =
-    duplicateInvoice.length > 0 || !readyToPromote ? "REVIEW_REQUIRED" : input.status ?? "READY_TO_PROMOTE";
+    duplicateRiskScore >= 70 || !readyToPromote ? "REVIEW_REQUIRED" : input.status ?? "READY_TO_PROMOTE";
 
   const [created] = await db
     .insert(apInvoiceCaptures)
@@ -449,10 +610,24 @@ export async function createCapture(input: InsertApInvoiceCapture, userId: numbe
     })
     .returning();
 
+  await writeApAuditLog({
+    organizationId: orgId,
+    actorUserId: userId,
+    action: "AP_CAPTURE_CREATED",
+    entityType: "capture",
+    entityId: created.id,
+    nextState: created.status,
+    extra: { duplicateRiskScore, warningCount: warnings.length },
+  }).catch(() => {});
+
   return created;
 }
 
-export async function promoteCapture(captureId: number, userId: number) {
+export async function promoteCapture(
+  captureId: number,
+  userId: number,
+  options?: { overrideReason?: string },
+) {
   const orgId = getActiveOrganizationId();
   const [capture] = await db
     .select()
@@ -465,6 +640,31 @@ export async function promoteCapture(captureId: number, userId: number) {
   }
   if (!capture.supplierId) {
     throw new Error("Capture must be linked to a supplier before promotion.");
+  }
+  const duplicateLedgerRows = await db
+    .select({ id: invoices.id })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.organizationId, orgId),
+        eq(invoices.supplierId, Number(capture.supplierId)),
+        eq(invoices.invoiceNumber, String(capture.invoiceNumber ?? "")),
+      ),
+    );
+  const activeCaptureRows = await db
+    .select({ id: apInvoiceCaptures.id })
+    .from(apInvoiceCaptures)
+    .where(
+      and(
+        eq(apInvoiceCaptures.organizationId, orgId),
+        eq(apInvoiceCaptures.supplierId, Number(capture.supplierId)),
+        eq(apInvoiceCaptures.invoiceNumber, String(capture.invoiceNumber ?? "")),
+        inArray(apInvoiceCaptures.status, ["STAGED", "REVIEW_REQUIRED", "READY_TO_PROMOTE", "PROMOTED"]),
+      ),
+    );
+  const duplicateRiskScore = duplicateLedgerRows.length > 0 || activeCaptureRows.length > 1 ? 100 : 0;
+  if (duplicateRiskScore >= 70 && !options?.overrideReason?.trim()) {
+    throw new Error("Capture promotion blocked due to duplicate risk. Provide an explicit override reason.");
   }
 
   const extractedLines = Array.isArray(capture.extractedLines)
@@ -516,6 +716,18 @@ export async function promoteCapture(captureId: number, userId: number) {
     })
     .where(and(eq(apInvoiceCaptures.id, captureId), eq(apInvoiceCaptures.organizationId, orgId)));
 
+  await writeApAuditLog({
+    organizationId: orgId,
+    actorUserId: userId,
+    action: "AP_CAPTURE_PROMOTED",
+    entityType: "capture",
+    entityId: captureId,
+    priorState: capture.status,
+    nextState: "PROMOTED",
+    reason: options?.overrideReason ?? null,
+    extra: { promotedInvoiceId: created.id, duplicateRiskScore },
+  }).catch(() => {});
+
   return created;
 }
 
@@ -533,7 +745,41 @@ export async function createReceiptRecord(
   userId: number,
 ) {
   const orgId = getActiveOrganizationId();
+  const po = await storage.getPurchaseOrder(Number(receipt.purchaseOrderId));
+  if (!po || Number(po.organizationId) !== orgId) {
+    throw new Error("Purchase order not found in active organization.");
+  }
+  if (receipt.supplierId != null && Number(receipt.supplierId) !== Number(po.supplierId)) {
+    throw new Error("Receipt supplier must match purchase order supplier.");
+  }
+  const poLines = await storage.getPurchaseOrderItems(po.id);
+  const poLineById = new Map(poLines.map((line) => [Number(line.id), line]));
+  const poLineByItem = new Map<number, (typeof poLines)[number]>();
+  for (const line of poLines) {
+    if (!poLineByItem.has(Number(line.itemId))) {
+      poLineByItem.set(Number(line.itemId), line);
+    }
+  }
   return db.transaction(async (tx) => {
+    const requestedByLineId = new Map<number, number>();
+    for (const item of items) {
+      const lineId = item.purchaseOrderItemId ? Number(item.purchaseOrderItemId) : null;
+      const poLine = lineId ? poLineById.get(lineId) : poLineByItem.get(Number(item.itemId));
+      if (!poLine) {
+        throw new Error(`Receipt line item ${item.itemId} is not part of the purchase order.`);
+      }
+      if (Number(poLine.itemId) !== Number(item.itemId)) {
+        throw new Error(`Receipt line item ${item.itemId} does not match purchase order line item.`);
+      }
+      const accepted = toNumber(item.acceptedQuantity, item.quantity);
+      const priorRequested = requestedByLineId.get(Number(poLine.id)) ?? 0;
+      const remaining = Math.max(toNumber(poLine.quantity, 0) - toNumber(poLine.receivedQuantity, 0) - priorRequested, 0);
+      if (accepted > remaining) {
+        throw new Error(`Receipt quantity exceeds remaining receivable quantity for PO line ${poLine.id}.`);
+      }
+      requestedByLineId.set(Number(poLine.id), priorRequested + accepted);
+    }
+
     const [created] = await tx
       .insert(apReceipts)
       .values({
@@ -550,15 +796,28 @@ export async function createReceiptRecord(
       .returning();
 
     for (const item of items) {
+      const poLine =
+        (item.purchaseOrderItemId ? poLineById.get(Number(item.purchaseOrderItemId)) : undefined) ??
+        poLineByItem.get(Number(item.itemId));
+      if (!poLine) {
+        throw new Error("Unable to resolve purchase order line for receipt item.");
+      }
+      const acceptedQty = toNumber(item.acceptedQuantity, item.quantity);
       await tx.insert(apReceiptItems).values({
         receiptId: created.id,
-        purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+        purchaseOrderItemId: Number(poLine.id),
         itemId: Number(item.itemId),
         quantity: toNumber(item.quantity, 0),
-        acceptedQuantity: toNumber(item.acceptedQuantity, item.quantity),
+        acceptedQuantity: acceptedQty,
         rejectedQuantity: toNumber(item.rejectedQuantity, 0),
         notes: item.notes ?? null,
       });
+      await tx
+        .update(purchaseOrderItems)
+        .set({
+          receivedQuantity: sql`${purchaseOrderItems.receivedQuantity} + ${acceptedQty}`,
+        })
+        .where(eq(purchaseOrderItems.id, Number(poLine.id)));
     }
 
     return created;
@@ -598,15 +857,14 @@ export async function evaluateInvoiceMatch(
   ]);
 
   const receiptItemsByItemId = new Map<number, number>();
-  for (const receipt of receiptRows) {
-    const receiptItems = await db
-      .select()
-      .from(apReceiptItems)
-      .where(eq(apReceiptItems.receiptId, receipt.id));
-    for (const line of receiptItems) {
-      const current = receiptItemsByItemId.get(line.itemId) ?? 0;
-      receiptItemsByItemId.set(line.itemId, current + toNumber(line.acceptedQuantity, line.quantity));
-    }
+  const receiptIds = receiptRows.map((row) => row.id);
+  const receiptLineRows =
+    receiptIds.length > 0
+      ? await db.select().from(apReceiptItems).where(inArray(apReceiptItems.receiptId, receiptIds))
+      : [];
+  for (const line of receiptLineRows) {
+    const current = receiptItemsByItemId.get(line.itemId) ?? 0;
+    receiptItemsByItemId.set(line.itemId, current + toNumber(line.acceptedQuantity, line.quantity));
   }
 
   const priceTolerancePct = clampPct(options.priceTolerancePct);
@@ -620,9 +878,10 @@ export async function evaluateInvoiceMatch(
     const poItem = poItems.find((candidate) => candidate.itemId === invItem.itemId);
     if (!poItem) {
       mismatches.push({
-        type: "MISSING_PO_LINE",
+        code: "MISSING_PO_LINE",
         itemId: invItem.itemId,
         message: "Item not found on purchase order",
+        severity: "high",
       });
       continue;
     }
@@ -633,10 +892,11 @@ export async function evaluateInvoiceMatch(
       poUnitPrice <= 0 ? 0 : (Math.abs(invoiceUnitPrice - poUnitPrice) / poUnitPrice) * 100;
     if (priceDeltaPct > priceTolerancePct) {
       mismatches.push({
-        type: "PRICE_MISMATCH",
+        code: "PRICE_MISMATCH",
         itemId: invItem.itemId,
         message: `Invoice unit price ${invoiceUnitPrice} differs from PO ${poUnitPrice}`,
         deltaPct: Number(priceDeltaPct.toFixed(2)),
+        severity: "high",
       });
     }
 
@@ -646,18 +906,21 @@ export async function evaluateInvoiceMatch(
     const maxQty = receivedQty * (1 + quantityTolerancePct / 100);
     if (invoicedQty > maxQty) {
       mismatches.push({
-        type: "QTY_MISMATCH",
+        code: "QTY_MISMATCH",
         itemId: invItem.itemId,
         message: `Invoice quantity ${invoicedQty} exceeds received quantity ${receivedQty}`,
+        expectedMax: maxQty,
+        severity: "high",
       });
     }
 
     const invoiceTaxRate = toNumber(invItem.taxRate, 0);
     if (invoiceTaxRate > taxTolerancePct && taxTolerancePct === 0 && toNumber(invItem.taxAmount, 0) > 0) {
       mismatches.push({
-        type: "TAX_REVIEW",
+        code: "TAX_REVIEW_REQUIRED",
         itemId: invItem.itemId,
         message: `Invoice line has tax amount ${toNumber(invItem.taxAmount, 0)} and requires AP review`,
+        severity: "medium",
       });
     }
 
@@ -676,7 +939,12 @@ export async function evaluateInvoiceMatch(
       ),
     );
 
-  const status = mismatches.length === 0 ? (priceTolerancePct > 0 || quantityTolerancePct > 0 ? "MATCHED_WITH_TOLERANCE" : "MATCHED") : "EXCEPTION";
+  const status =
+    mismatches.length === 0
+      ? priceTolerancePct > 0 || quantityTolerancePct > 0
+        ? "MATCHED_WITH_TOLERANCE"
+        : "MATCHED"
+      : "EXCEPTION";
   const [created] = await db
     .insert(apInvoiceMatchResults)
     .values({
@@ -684,7 +952,7 @@ export async function evaluateInvoiceMatch(
       invoiceId,
       purchaseOrderId: po.id,
       status,
-      matchType: receiptRows.length > 0 ? "3_way" : "2.5_way",
+      matchType: receiptRows.length > 0 ? "three_way" : "po_only",
       priceTolerancePct,
       quantityTolerancePct,
       taxTolerancePct,
@@ -696,9 +964,6 @@ export async function evaluateInvoiceMatch(
     })
     .returning();
 
-  const nextInvoiceStatus = mismatches.length === 0 ? "PENDING_APPROVAL" : "DISPUTED";
-  await storage.updateInvoice(invoiceId, { status: nextInvoiceStatus });
-
   await storage.createActivityLog({
     action: mismatches.length === 0 ? "AP_INVOICE_MATCH_PASSED" : "AP_INVOICE_MATCH_FAILED",
     description: `Invoice ${invoice.invoiceNumber} match status: ${status}`,
@@ -707,11 +972,27 @@ export async function evaluateInvoiceMatch(
     userId,
   }).catch(() => {});
 
+  await writeApAuditLog({
+    organizationId: orgId,
+    actorUserId: userId,
+    action: "AP_INVOICE_MATCHED",
+    entityType: "match_result",
+    entityId: created.id,
+    priorState: null,
+    nextState: created.status,
+    extra: {
+      invoiceId,
+      recommendedNextState: mismatches.length === 0 ? "PENDING_APPROVAL" : "DISPUTED",
+      mismatchCodes: mismatches.map((entry) => entry.code),
+    },
+  }).catch(() => {});
+
   return {
     invoiceId,
     purchaseOrderId: po.id,
     matched: mismatches.length === 0,
-    status: nextInvoiceStatus,
+    status: invoice.status,
+    recommendedNextState: mismatches.length === 0 ? "PENDING_APPROVAL" : "DISPUTED",
     matchResult: created,
     mismatches,
   };
@@ -792,9 +1073,26 @@ export async function createPaymentBatchRecord(
   userId: number,
 ) {
   const orgId = getActiveOrganizationId();
-  const invoiceIds = Array.isArray(input.invoiceIds) ? input.invoiceIds.map((id) => Number(id)).filter((id) => id > 0) : [];
+  const invoiceIds = Array.isArray(input.invoiceIds)
+    ? Array.from(new Set(input.invoiceIds.map((id) => Number(id)).filter((id) => id > 0)))
+    : [];
   if (invoiceIds.length === 0) {
     throw new Error("Select at least one approved invoice for the batch.");
+  }
+
+  const blockedInvoices = await db
+    .select({ invoiceId: apPaymentBatchItems.invoiceId })
+    .from(apPaymentBatchItems)
+    .innerJoin(apPaymentBatches, eq(apPaymentBatches.id, apPaymentBatchItems.batchId))
+    .where(
+      and(
+        eq(apPaymentBatches.organizationId, orgId),
+        inArray(apPaymentBatches.status, ["DRAFT", "PENDING_APPROVAL", "APPROVED"]),
+        inArray(apPaymentBatchItems.invoiceId, invoiceIds),
+      ),
+    );
+  if (blockedInvoices.length > 0) {
+    throw new Error("One or more invoices are already attached to an active unreleased payment batch.");
   }
 
   const invoiceRows = await Promise.all(invoiceIds.map((id) => storage.getInvoice(id)));
@@ -834,6 +1132,7 @@ export async function createPaymentBatchRecord(
         createdBy: userId,
       })
       .returning();
+    assertPaymentBatchTransition("DRAFT", batch.status);
 
     for (const invoice of eligibleInvoices) {
       await tx.insert(apPaymentBatchItems).values({
@@ -845,11 +1144,22 @@ export async function createPaymentBatchRecord(
     }
 
     await createApprovalHistoryEntry({
+      organizationId: orgId,
       entityType: "payment_batch",
       entityId: batch.id,
       action: "submitted",
       performedBy: userId,
       newStatus: batch.status,
+    }).catch(() => {});
+
+    await writeApAuditLog({
+      organizationId: orgId,
+      actorUserId: userId,
+      action: "AP_PAYMENT_BATCH_CREATED",
+      entityType: "payment_batch",
+      entityId: batch.id,
+      nextState: batch.status,
+      extra: { invoiceCount: eligibleInvoices.length, totalAmount },
     }).catch(() => {});
 
     return batch;
@@ -872,13 +1182,33 @@ export async function listPaymentBatches() {
   return result;
 }
 
-export async function approvePaymentBatch(batchId: number, userId: number, comment?: string) {
+export async function approvePaymentBatch(
+  batchId: number,
+  userId: number,
+  comment?: string,
+  context: ApprovalActionContext = { actorRole: "" },
+) {
   const orgId = getActiveOrganizationId();
   const [existing] = await db
     .select()
     .from(apPaymentBatches)
     .where(and(eq(apPaymentBatches.id, batchId), eq(apPaymentBatches.organizationId, orgId)));
   if (!existing) return undefined;
+  assertPaymentBatchTransition(String(existing.status), "APPROVED");
+  assertNotSelfBatchApproval({
+    actorUserId: userId,
+    actorRole: context.actorRole,
+    batchCreatedBy: existing.createdBy,
+    overrideExplicit: context.overrideExplicit,
+    overrideReason: context.overrideReason,
+  });
+  await enforceApprovalPolicy({
+    organizationId: orgId,
+    entityType: "payment_batch",
+    amount: toNumber(existing.totalAmount, 0),
+    actorUserId: userId,
+    actorRole: context.actorRole,
+  });
 
   const [updated] = await db
     .update(apPaymentBatches)
@@ -892,70 +1222,191 @@ export async function approvePaymentBatch(batchId: number, userId: number, comme
     .returning();
 
   await createApprovalHistoryEntry({
+    organizationId: orgId,
     entityType: "payment_batch",
     entityId: batchId,
     action: "approved",
     performedBy: userId,
     previousStatus: existing.status,
     newStatus: "APPROVED",
-    comment,
+    comment: comment ?? context.overrideReason,
+  }).catch(() => {});
+
+  await writeApAuditLog({
+    organizationId: orgId,
+    actorUserId: userId,
+    action: "AP_PAYMENT_BATCH_APPROVED",
+    entityType: "payment_batch",
+    entityId: batchId,
+    priorState: existing.status,
+    nextState: "APPROVED",
+    reason: comment ?? context.overrideReason,
   }).catch(() => {});
 
   return updated;
 }
 
-export async function releasePaymentBatch(batchId: number, userId: number) {
+export async function releasePaymentBatch(
+  batchId: number,
+  userId: number,
+  context: ApprovalActionContext = { actorRole: "" },
+) {
   const orgId = getActiveOrganizationId();
-  const [batch] = await db
-    .select()
-    .from(apPaymentBatches)
-    .where(and(eq(apPaymentBatches.id, batchId), eq(apPaymentBatches.organizationId, orgId)));
-  if (!batch) return undefined;
-  if (batch.status !== "APPROVED") {
-    throw new Error("Payment batch must be approved before release.");
-  }
-
-  const items = await db.select().from(apPaymentBatchItems).where(eq(apPaymentBatchItems.batchId, batchId));
-  for (const item of items) {
-    if (item.paymentId) continue;
-    const payment = await createPaymentRecord({
-      invoiceId: item.invoiceId,
-      amount: item.amount,
-      method: batch.paymentMethod as Payment["method"],
-      receivedBy: userId,
-      notes: `Released via AP payment batch ${batch.batchNumber}`,
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT id FROM ap_payment_batches WHERE id = ${batchId} AND organization_id = ${orgId} FOR UPDATE`,
+    );
+    const [batch] = await tx
+      .select()
+      .from(apPaymentBatches)
+      .where(and(eq(apPaymentBatches.id, batchId), eq(apPaymentBatches.organizationId, orgId)));
+    if (!batch) return undefined;
+    if (batch.status === "RELEASED") {
+      return batch;
+    }
+    assertPaymentBatchTransition(String(batch.status), "RELEASED");
+    assertNotSelfBatchApproval({
+      actorUserId: userId,
+      actorRole: context.actorRole,
+      batchCreatedBy: batch.createdBy,
+      overrideExplicit: context.overrideExplicit,
+      overrideReason: context.overrideReason,
     });
-    await db
-      .update(apPaymentBatchItems)
+
+    const items = await tx
+      .select()
+      .from(apPaymentBatchItems)
+      .where(eq(apPaymentBatchItems.batchId, batchId));
+    const unreleasedItems = items.filter((item) => !item.paymentId);
+    const invoiceRows =
+      unreleasedItems.length > 0
+        ? await tx
+            .select()
+            .from(invoices)
+            .where(
+              and(
+                eq(invoices.organizationId, orgId),
+                inArray(
+                  invoices.id,
+                  unreleasedItems.map((item) => Number(item.invoiceId)),
+                ),
+              ),
+            )
+        : [];
+    const invoiceById = new Map(invoiceRows.map((row) => [Number(row.id), row]));
+    const historyRows =
+      unreleasedItems.length > 0
+        ? await tx
+            .select()
+            .from(approvalHistory)
+            .where(
+              and(
+                eq(approvalHistory.organizationId, orgId),
+                eq(approvalHistory.entityType, "invoice"),
+                eq(approvalHistory.action, "approved"),
+                inArray(
+                  approvalHistory.entityId,
+                  unreleasedItems.map((item) => Number(item.invoiceId)),
+                ),
+              ),
+            )
+        : [];
+    assertBatchReleaseApproverSeparation({
+      actorUserId: userId,
+      actorRole: context.actorRole,
+      approvedByIds: historyRows.map((row) => Number(row.performedBy)),
+      overrideExplicit: context.overrideExplicit,
+      overrideReason: context.overrideReason,
+    });
+
+    for (const item of unreleasedItems) {
+      const invoice = invoiceById.get(Number(item.invoiceId));
+      if (!invoice) throw new Error(`Invoice ${item.invoiceId} no longer exists in active organization.`);
+      if (!["APPROVED", "PARTIALLY_PAID", "OVERDUE"].includes(String(invoice.status))) {
+        throw new Error(`Invoice ${invoice.invoiceNumber} is no longer payable.`);
+      }
+      const remainingDue = toNumber(invoice.dueAmount ?? invoice.total, 0);
+      const paymentAmount = toNumber(item.amount, 0);
+      if (remainingDue <= 0) {
+        throw new Error(`Invoice ${invoice.invoiceNumber} has no due balance remaining.`);
+      }
+      if (paymentAmount > remainingDue) {
+        throw new Error(`Payment amount for invoice ${invoice.invoiceNumber} exceeds remaining due.`);
+      }
+
+      const [payment] = await tx
+        .insert(payments)
+        .values({
+          invoiceId: Number(item.invoiceId),
+          amount: paymentAmount,
+          method: batch.paymentMethod as Payment["method"],
+          receivedBy: userId,
+          notes: `Released via AP payment batch ${batch.batchNumber}`,
+          transactionReference: null,
+          paymentDate: new Date(),
+        })
+        .returning();
+
+      const nextPaid = toNumber(invoice.paidAmount, 0) + paymentAmount;
+      const nextDue = Math.max(toNumber(invoice.total, 0) - nextPaid, 0);
+      const nextInvoiceStatus = nextDue <= 0 ? "PAID" : nextPaid > 0 ? "PARTIALLY_PAID" : invoice.status;
+      await tx
+        .update(invoices)
+        .set({
+          paidAmount: nextPaid,
+          dueAmount: nextDue,
+          status: nextInvoiceStatus as any,
+          paidDate: nextDue <= 0 ? new Date() : invoice.paidDate,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(invoices.id, Number(item.invoiceId)), eq(invoices.organizationId, orgId)));
+
+      await tx
+        .update(apPaymentBatchItems)
+        .set({
+          paymentId: payment.id,
+          status: "RELEASED",
+          updatedAt: new Date(),
+        })
+        .where(eq(apPaymentBatchItems.id, item.id));
+    }
+
+    const [updated] = await tx
+      .update(apPaymentBatches)
       .set({
-        paymentId: payment.id,
         status: "RELEASED",
+        releasedAt: new Date(),
+        releasedBy: userId,
         updatedAt: new Date(),
       })
-      .where(eq(apPaymentBatchItems.id, item.id));
-  }
+      .where(and(eq(apPaymentBatches.id, batchId), eq(apPaymentBatches.organizationId, orgId)))
+      .returning();
 
-  const [updated] = await db
-    .update(apPaymentBatches)
-    .set({
-      status: "RELEASED",
-      releasedAt: new Date(),
-      releasedBy: userId,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(apPaymentBatches.id, batchId), eq(apPaymentBatches.organizationId, orgId)))
-    .returning();
+    await createApprovalHistoryEntry({
+      organizationId: orgId,
+      entityType: "payment_batch",
+      entityId: batchId,
+      action: "released",
+      performedBy: userId,
+      previousStatus: batch.status,
+      newStatus: "RELEASED",
+      comment: context.overrideReason ?? null,
+    }).catch(() => {});
 
-  await createApprovalHistoryEntry({
-    entityType: "payment_batch",
-    entityId: batchId,
-    action: "released",
-    performedBy: userId,
-    previousStatus: batch.status,
-    newStatus: "RELEASED",
-  }).catch(() => {});
+    await writeApAuditLog({
+      organizationId: orgId,
+      actorUserId: userId,
+      action: "AP_PAYMENT_BATCH_RELEASED",
+      entityType: "payment_batch",
+      entityId: batchId,
+      priorState: batch.status,
+      nextState: "RELEASED",
+      reason: context.overrideReason ?? null,
+      extra: { releasedItemCount: unreleasedItems.length },
+    }).catch(() => {});
 
-  return updated;
+    return updated;
+  });
 }
 
 export async function previewInvoiceApprovers(invoiceId: number) {
