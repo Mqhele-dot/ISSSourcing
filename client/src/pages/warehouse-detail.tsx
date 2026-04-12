@@ -1,4 +1,5 @@
 import { Link, useRoute } from "wouter";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { requestJson } from "@/lib/queryClient";
@@ -25,7 +26,7 @@ export default function WarehouseDetailPage() {
       <div className="mx-auto max-w-3xl p-6">
         <p className="text-muted-foreground">Invalid warehouse.</p>
         <Button asChild variant="outline" className="mt-4">
-          <Link href="/warehouses">Back to warehouses</Link>
+          <Link href={APP_ROUTES.inventory.warehouses}>Back to warehouses</Link>
         </Button>
       </div>
     );
@@ -37,14 +38,14 @@ export default function WarehouseDetailPage() {
         title={isLoading ? "Warehouse" : data?.name ?? "Warehouse"}
         description="Read-only configuration — use the list to edit."
         breadcrumb={
-          <Link href="/warehouses" className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm">
+          <Link href={APP_ROUTES.inventory.warehouses} className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm">
             <ArrowLeft className="h-4 w-4" />
             Warehouses
           </Link>
         }
         actions={
           <Button asChild variant="outline" size="sm">
-            <Link href="/warehouses">Back to list</Link>
+            <Link href={APP_ROUTES.inventory.warehouses}>Back to list</Link>
           </Button>
         }
       />

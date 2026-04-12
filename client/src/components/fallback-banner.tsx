@@ -2,6 +2,7 @@ import React from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useFallbackState } from "@/hooks/use-fallback-state";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { Link } from "wouter";
 
 export function FallbackBanner() {
@@ -38,7 +39,7 @@ export function FallbackBanner() {
           Try again
         </Button>
         <Button variant="outline" size="sm" asChild>
-          <Link href="/settings">
+          <Link href={APP_ROUTES.admin.settings}>
             View status
           </Link>
         </Button>

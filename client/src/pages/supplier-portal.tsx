@@ -12,6 +12,7 @@ import { requestJson } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PageShell } from "@/components/page-shell";
 
 export default function SupplierPortalPage() {
   const { toast } = useToast();
@@ -26,6 +27,7 @@ export default function SupplierPortalPage() {
   const canChooseSupplier = role === "admin" || role === "manager";
   const supplierScopeId =
     canChooseSupplier && selectedSupplierId ? Number(selectedSupplierId) : undefined;
+  const supplierSelected = !canChooseSupplier || supplierScopeId != null;
 
   const { data: supplierOptions = [] } = useQuery({
     queryKey: ["/api/suppliers", "portal-options"],
@@ -124,13 +126,14 @@ export default function SupplierPortalPage() {
   }, [orders]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <PageShell variant="standard">
       <PageHeader
         title="Supplier Portal"
         subtitle="Review your assigned purchase orders and share acknowledgments/delivery dates."
+        breadcrumb={<span>Procurement / Supplier portal</span>}
       />
 
-      {(!canChooseSupplier || supplierScopeId != null) && !isLoading ? (
+      {supplierSelected && !isLoading ? (
         <div className="grid gap-3 sm:grid-cols-3">
           <Card>
             <CardHeader className="pb-2">
@@ -195,7 +198,7 @@ export default function SupplierPortalPage() {
         </Card>
       ) : null}
 
-      {canChooseSupplier && !supplierScopeId ? (
+      {!supplierSelected ? (
         <Alert>
           <AlertTitle>Select a supplier</AlertTitle>
           <AlertDescription>
@@ -204,12 +207,16 @@ export default function SupplierPortalPage() {
         </Alert>
       ) : null}
 
-      <Card>
+      <Card className={!supplierSelected ? "opacity-70" : undefined}>
         <CardHeader>
           <CardTitle>Assigned purchase orders</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {!supplierSelected ? (
+            <div className="text-sm text-muted-foreground">
+              Select a supplier account to load assigned purchase orders.
+            </div>
+          ) : isLoading ? (
             <div className="text-sm text-muted-foreground">Loading supplier orders...</div>
           ) : (
             <Table>
@@ -288,7 +295,7 @@ export default function SupplierPortalPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={!supplierSelected ? "opacity-70" : undefined}>
         <CardHeader>
           <CardTitle>Submit invoice</CardTitle>
         </CardHeader>
@@ -300,6 +307,7 @@ export default function SupplierPortalPage() {
               value={invoicePoId}
               onChange={(event) => setInvoicePoId(event.target.value)}
               placeholder="e.g. 123"
+              disabled={!supplierSelected}
             />
           </div>
           <div className="space-y-1">
@@ -309,6 +317,7 @@ export default function SupplierPortalPage() {
               value={invoiceNumber}
               onChange={(event) => setInvoiceNumber(event.target.value)}
               placeholder="Optional"
+              disabled={!supplierSelected}
             />
           </div>
           <div className="space-y-1">
@@ -317,18 +326,19 @@ export default function SupplierPortalPage() {
               id="supplier-invoice-file"
               type="file"
               onChange={(event) => setInvoiceFile(event.target.files?.[0] ?? null)}
+              disabled={!supplierSelected}
             />
           </div>
           <div className="flex items-end">
             <Button
               onClick={() => uploadInvoice.mutate()}
-              disabled={uploadInvoice.isPending || (canChooseSupplier && !supplierScopeId)}
+              disabled={uploadInvoice.isPending || !supplierSelected}
             >
               Submit invoice
             </Button>
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

@@ -20,6 +20,7 @@ import { Command as CommandPaletteIcon, LogOut, User, Settings, Bell, Moon, Pale
 import { requestOpenCommandPalette } from "@/components/command-menu";
 import { useTheme } from "@/components/theme-provider";
 import { useAccent } from "@/components/accent-provider";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { queryClient, requestJson } from "@/lib/queryClient";
 
 type Notification = {
@@ -236,7 +237,7 @@ export const Header: React.FC = () => {
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
-                <Link href="/profile">
+                <Link href={APP_ROUTES.admin.profile}>
                   <div className="flex items-center">
                     <User className="mr-2 h-4 w-4" />
                     <span>Profile</span>
@@ -244,7 +245,7 @@ export const Header: React.FC = () => {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <Link href="/settings">
+                <Link href={APP_ROUTES.admin.settings}>
                   <div className="flex items-center">
                     <Settings className="mr-2 h-4 w-4" />
                     <span>Settings</span>

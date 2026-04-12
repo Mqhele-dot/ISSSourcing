@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { fetchPurchaseOrdersEnvelope } from "@/api/client";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { FileText } from "lucide-react";
 
 export function RecentOrders() {
@@ -36,7 +37,7 @@ export function RecentOrders() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setLocation("/orders")}
+          onClick={() => setLocation(APP_ROUTES.procurement.orders)}
           className="text-primary"
         >
           View all
@@ -71,7 +72,7 @@ export function RecentOrders() {
                   <TableRow
                     key={order.poNumber}
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setLocation(`/purchase/${order.poNumber}`)}
+                    onClick={() => setLocation(APP_ROUTES.procurement.order(order.poNumber))}
                   >
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-1">
@@ -95,7 +96,7 @@ export function RecentOrders() {
                 variant="outline"
                 size="sm"
                 className="w-full"
-                onClick={() => setLocation("/orders")}
+                onClick={() => setLocation(APP_ROUTES.procurement.orders)}
               >
                 View and manage orders
               </Button>

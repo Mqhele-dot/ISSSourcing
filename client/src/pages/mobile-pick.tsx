@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Link } from "wouter";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { ChevronRight, MapPin } from "lucide-react";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useToast } from "@/hooks/use-toast";
@@ -52,7 +53,7 @@ export default function MobilePickPage() {
       />
 
       <p className="mb-4 text-xs text-muted-foreground md:text-sm">
-        For barcode-driven moves, use the main <Link href="/barcode-scanner">Barcode Scanner</Link> page.
+        For barcode-driven moves, use the main <Link href={APP_ROUTES.inventory.barcodeScanner}>Barcode Scanner</Link> page.
       </p>
 
       <DataState

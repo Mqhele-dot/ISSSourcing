@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -281,7 +282,7 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
         right={
           <>
             <Button asChild variant="default" size="sm">
-              <Link href="/reorder">Create reorder request</Link>
+              <Link href={APP_ROUTES.inventory.reorder}>Create reorder request</Link>
             </Button>
             <Button variant="outline" onClick={refetch}>
               Refresh
@@ -300,7 +301,7 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
         emptyAction={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="default" size="sm">
-              <Link href="/reorder">Create reorder request</Link>
+              <Link href={APP_ROUTES.inventory.reorder}>Create reorder request</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link href="/">Run demo / Overview</Link>

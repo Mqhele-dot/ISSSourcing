@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { Link } from "wouter";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { ChevronRight, Package } from "lucide-react";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { PageHeader } from "@/components/page-header";
@@ -56,7 +57,7 @@ export default function MobileReceivePage() {
         emptyDescription="Approve and send purchase orders first, or check operations data / demo seed."
         emptyAction={
           <Link
-            href="/purchase"
+            href={APP_ROUTES.procurement.orders}
             className="text-primary text-sm font-medium underline underline-offset-2"
           >
             Go to Purchase

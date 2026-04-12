@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -299,7 +300,7 @@ export default function WarehouseOperationsPage() {
         title="Warehouse operations"
         subtitle="Allocations, put-away, batch/serial registration, and trace-based issue (decrement batch/serial + master stock + ISSUE movement). PO receive with batch/serial remains on the PO screen."
         breadcrumb={
-          <Link href="/warehouses" className="text-sm text-muted-foreground hover:text-foreground">
+          <Link href={APP_ROUTES.inventory.warehouses} className="text-sm text-muted-foreground hover:text-foreground">
             ← Warehouses
           </Link>
         }

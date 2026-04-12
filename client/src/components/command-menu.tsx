@@ -92,7 +92,11 @@ const ICONS = {
 } as const;
 
 /** Hidden from command palette below `lg` (1024px), same as sidebar / route guards. */
-const DESKTOP_ONLY_PATHS = new Set(["/master-data", "/approval-policies", "/employee-profiles"]);
+const DESKTOP_ONLY_PATHS = new Set([
+  "/admin/master-data",
+  "/finance/approval-policies",
+  "/admin/employee-profiles",
+]);
 
 /** Warm cache for high-traffic lists when user opens the palette (enterprise “feel”). */
 function prefetchPrimaryData(): void {

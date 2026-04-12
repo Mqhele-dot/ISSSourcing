@@ -10,6 +10,7 @@ import {
   Truck,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { GasOpsCard } from "@/pages/control-tower/gas-ops-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,13 +36,13 @@ export default function ControlTowerPage() {
         actions={
           <div className="flex flex-wrap gap-2" data-tour="control-tower-shortcuts">
             <Button variant="outline" size="sm" asChild>
-              <Link href="/exceptions">Exceptions</Link>
+              <Link href={APP_ROUTES.operations.exceptions}>Exceptions</Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
-              <Link href="/logistics">Shipments</Link>
+              <Link href={APP_ROUTES.operations.logistics}>Shipments</Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
-              <Link href="/purchase">Purchase orders</Link>
+              <Link href={APP_ROUTES.procurement.orders}>Purchase orders</Link>
             </Button>
           </div>
         }

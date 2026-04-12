@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -474,7 +475,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
-      <Button variant="ghost" onClick={() => setLocation("/exceptions")} className="w-fit">
+      <Button variant="ghost" onClick={() => setLocation(APP_ROUTES.operations.exceptions)} className="w-fit">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to exceptions
       </Button>

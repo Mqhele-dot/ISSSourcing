@@ -44,6 +44,7 @@ import {
 import type { FallbackKind } from "@/components/ui/data-state";
 import { queryClient, requestJson } from "@/lib/queryClient";
 import { downloadFile } from "@/lib/utils";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 async function downloadShipmentDeliveryNote(shipmentId: number): Promise<void> {
   const res = await fetch(`/api/logistics/shipments/${shipmentId}/delivery-note.pdf`, {
@@ -440,7 +441,7 @@ function ShipmentListView() {
         emptyAction={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="default" size="sm">
-              <Link href="/purchase">View purchase orders</Link>
+              <Link href={APP_ROUTES.procurement.orders}>View purchase orders</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link href="/">Overview / Demo</Link>
@@ -472,7 +473,7 @@ function ShipmentListView() {
                 <TableRow
                   key={shipment.id}
                   className="cursor-pointer"
-                  onClick={() => setLocation(`/logistics/${shipment.id}`)}
+                  onClick={() => setLocation(`/operations/logistics/${shipment.id}`)}
                 >
                   <TableCell className="font-medium">{shipment.id}</TableCell>
                   <TableCell>{shipment.poNumber}</TableCell>
@@ -696,7 +697,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
 
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
-      <Button variant="ghost" onClick={() => setLocation("/logistics")} className="w-fit">
+      <Button variant="ghost" onClick={() => setLocation(APP_ROUTES.operations.logistics)} className="w-fit">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to logistics
       </Button>

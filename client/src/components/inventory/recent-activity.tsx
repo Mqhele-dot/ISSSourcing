@@ -4,6 +4,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { ExternalLink, ShoppingCart, User, Package } from "lucide-react";
 import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { formatRelativeDate } from "@/lib/utils";
 import type { ActivityLog } from "@shared/schema";
 
@@ -61,7 +62,7 @@ export default function RecentActivity() {
         </div>
       </CardContent>
       <CardFooter className="bg-neutral-50 dark:bg-neutral-700 px-5 py-3 rounded-b-lg">
-        <Link href="/reports?section=activity">
+        <Link href={APP_ROUTES.analytics.reports}>
           <a className="text-sm font-medium text-primary hover:text-primary/80 flex items-center">
             View all activity
             <ExternalLink className="ml-1 h-3 w-3" />

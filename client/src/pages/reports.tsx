@@ -1,17 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import {
-  BarChart2,
-  ClipboardList,
-  FileText,
-  FileSpreadsheet,
-  PackageSearch,
-  Receipt,
-  ShoppingCart,
-  Truck,
-  Users,
-} from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import type { DocumentType } from "@shared/schema";
 import { type ReportFilter } from "@shared/schema";
@@ -198,48 +187,6 @@ export default function Reports() {
           }}
           className="space-y-4"
         >
-          <TabsList
-            className="mb-0 inline-flex h-auto w-full max-w-full flex-nowrap justify-start gap-1 overflow-x-auto overflow-y-hidden rounded-md bg-muted/40 p-1"
-            data-tour="reports-tabs"
-          >
-            <TabsTrigger value="inventory" className="flex shrink-0 items-center whitespace-nowrap">
-              <FileText className="mr-2 h-4 w-4" />
-              Inventory Report
-            </TabsTrigger>
-            <TabsTrigger value="low-stock" className="flex shrink-0 items-center whitespace-nowrap">
-              <FileSpreadsheet className="mr-2 h-4 w-4" />
-              Low Stock Report
-            </TabsTrigger>
-            <TabsTrigger value="value" className="flex shrink-0 items-center whitespace-nowrap">
-              <BarChart2 className="mr-2 h-4 w-4" />
-              Value Report
-            </TabsTrigger>
-            <TabsTrigger value="purchase-orders" className="flex shrink-0 items-center whitespace-nowrap">
-              <ShoppingCart className="mr-2 h-4 w-4" />
-              Purchase Orders
-            </TabsTrigger>
-            <TabsTrigger value="purchase-requisitions" className="flex shrink-0 items-center whitespace-nowrap">
-              <ClipboardList className="mr-2 h-4 w-4" />
-              Requisitions
-            </TabsTrigger>
-            <TabsTrigger value="suppliers" className="flex shrink-0 items-center whitespace-nowrap">
-              <Users className="mr-2 h-4 w-4" />
-              Suppliers
-            </TabsTrigger>
-            <TabsTrigger value="reorder-requests" className="flex shrink-0 items-center whitespace-nowrap">
-              <PackageSearch className="mr-2 h-4 w-4" />
-              Reorder Requests
-            </TabsTrigger>
-            <TabsTrigger value="invoices" className="flex shrink-0 items-center whitespace-nowrap">
-              <Receipt className="mr-2 h-4 w-4" />
-              Invoices
-            </TabsTrigger>
-            <TabsTrigger value="shipments" className="flex shrink-0 items-center whitespace-nowrap">
-              <Truck className="mr-2 h-4 w-4" />
-              Shipments
-            </TabsTrigger>
-          </TabsList>
-
           <ReportsInventoryTabPanel {...tabPanelProps} />
           <ReportsLowStockTabPanel {...tabPanelProps} />
           <ReportsValueTabPanel {...tabPanelProps} />

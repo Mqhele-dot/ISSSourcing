@@ -24,6 +24,7 @@ import { TopItems } from "@/components/analytics/top-items";
 import { InventoryValue } from "@/components/analytics/inventory-value";
 import { StockUseChart } from "@/components/analytics/stock-use-chart";
 import { ValueByCategoryChart } from "@/components/analytics/value-by-category-chart";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { RealTimeInventory } from "@/components/inventory/real-time-inventory";
 import { RecentOrders } from "@/components/dashboard/recent-orders";
 import { CustomGraphBuilder } from "@/components/dashboard/custom-graph-builder";
@@ -359,56 +360,56 @@ export default function Dashboard() {
           <div className="rounded border p-3">
             <div className="text-sm text-muted-foreground">Open approvals</div>
             <div className="text-2xl font-semibold">{controlTower?.kpis?.posAwaitingAction ?? 0}</div>
-            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/purchase/requisitions")}>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation(APP_ROUTES.procurement.requisitions)}>
               View approvals
             </Button>
           </div>
           <div className="rounded border p-3">
             <div className="text-sm text-muted-foreground">Late shipments</div>
             <div className="text-2xl font-semibold">{controlTower?.kpis?.lateShipments ?? 0}</div>
-            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/logistics")}>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation(APP_ROUTES.operations.logistics)}>
               View logistics
             </Button>
           </div>
           <div className="rounded border p-3">
             <div className="text-sm text-muted-foreground">Low-stock SKUs</div>
             <div className="text-2xl font-semibold">{controlTower?.kpis?.lowStockSkus ?? 0}</div>
-            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/inventory?filter=low-stock")}>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation(`${APP_ROUTES.inventory.root}?filter=low-stock`)}>
               View inventory
             </Button>
           </div>
           <div className="rounded border p-3">
             <div className="text-sm text-muted-foreground">Open operational exceptions</div>
             <div className="text-2xl font-semibold">{openOperationalExceptions}</div>
-            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/exceptions")}>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation(APP_ROUTES.operations.exceptions)}>
               View exceptions
             </Button>
           </div>
           <div className="rounded border p-3">
             <div className="text-sm text-muted-foreground">Pending requisitions</div>
             <div className="text-2xl font-semibold">{controlTower?.kpis?.pendingRequisitions ?? 0}</div>
-            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/requisitions")}>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation(APP_ROUTES.procurement.requisitions)}>
               Requisitions
             </Button>
           </div>
           <div className="rounded border p-3">
             <div className="text-sm text-muted-foreground">In-transit shipments</div>
             <div className="text-2xl font-semibold">{controlTower?.kpis?.inTransitShipments ?? 0}</div>
-            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/logistics")}>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation(APP_ROUTES.operations.logistics)}>
               Logistics
             </Button>
           </div>
           <div className="rounded border p-3">
             <div className="text-sm text-muted-foreground">Overdue invoices</div>
             <div className="text-2xl font-semibold">{controlTower?.kpis?.overdueInvoices ?? 0}</div>
-            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/invoices")}>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation(APP_ROUTES.finance.invoices)}>
               Invoices
             </Button>
           </div>
           <div className="rounded border p-3">
             <div className="text-sm text-muted-foreground">Control tower</div>
             <div className="text-2xl font-semibold">→</div>
-            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation("/control-tower")}>
+            <Button variant="link" className="p-0 h-auto" onClick={() => setLocation(APP_ROUTES.operations.controlTower)}>
               Full overview
             </Button>
           </div>
@@ -552,7 +553,7 @@ export default function Dashboard() {
                 className="w-full justify-start"
                 data-help-title="View all orders"
                 data-help-description="Go to the Purchase Orders page to see and manage all orders."
-                onClick={() => setLocation("/orders")}
+                onClick={() => setLocation(APP_ROUTES.procurement.orders)}
               >
                 View all orders
               </Button>
@@ -561,7 +562,7 @@ export default function Dashboard() {
                 className="w-full justify-start"
                 data-help-title="Browse inventory"
                 data-help-description="Go to the full Inventory page to search and manage all items."
-                onClick={() => setLocation("/inventory")}
+                onClick={() => setLocation(APP_ROUTES.inventory.root)}
               >
                 Browse inventory
               </Button>

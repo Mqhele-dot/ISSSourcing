@@ -5,6 +5,7 @@ import { Link } from "wouter";
 import { AlertTriangle, ExternalLink, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type InventoryItem } from "@shared/schema";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { formatMutationError, normalizeApiList, requestJson } from "@/lib/queryClient";
@@ -142,13 +143,13 @@ export default function StockAlerts() {
       </CardContent>
       <CardFooter className="bg-neutral-50 dark:bg-neutral-700 px-5 py-3 rounded-b-lg flex justify-between">
         <div className="text-sm font-medium text-primary hover:text-primary/80 flex items-center">
-          <Link href="/inventory?filter=low-stock">
+          <Link href={`${APP_ROUTES.inventory.root}?filter=low-stock`}>
             View all alerts
             <ExternalLink className="ml-1 h-3 w-3" />
           </Link>
         </div>
         <div className="text-sm font-medium text-primary hover:text-primary/80 flex items-center">
-          <Link href="/reorder">
+          <Link href={APP_ROUTES.inventory.reorder}>
             Manage reorders
             <ExternalLink className="ml-1 h-3 w-3" />
           </Link>

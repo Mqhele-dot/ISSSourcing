@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import type { ApprovalPolicy } from "@shared/schema";
 
@@ -261,7 +262,7 @@ export default function ApprovalPoliciesPage() {
         title="Approval policies"
         subtitle="Configure amount bands, approval levels, and required roles or users. Requisition approve/reject routes enforce active policies."
         breadcrumb={
-          <Link href="/purchase/requisitions" className="text-sm text-muted-foreground hover:text-foreground">
+          <Link href={APP_ROUTES.procurement.requisitions} className="text-sm text-muted-foreground hover:text-foreground">
             ← Requisitions
           </Link>
         }

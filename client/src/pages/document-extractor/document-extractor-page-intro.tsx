@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 /** Page title + subtitle for the document extractor (split from main page for clarity). */
 export function DocumentExtractorPageIntro() {
@@ -11,7 +12,7 @@ export function DocumentExtractorPageIntro() {
       </p>
       <div>
         <Button asChild variant="outline" size="sm">
-          <Link href="/accounts-payable">Open AP workspace</Link>
+          <Link href={APP_ROUTES.finance.accountsPayable}>Open AP workspace</Link>
         </Button>
       </div>
     </div>

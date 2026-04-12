@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ShieldAlert, Info } from "lucide-react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { useToast } from "@/hooks/use-toast";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { useEffect } from "react";
 
 export default function UserRolesPage() {
@@ -35,11 +36,11 @@ export default function UserRolesPage() {
       <div className="mb-6">
         <Breadcrumb>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
+            <BreadcrumbLink href={APP_ROUTES.home}>Dashboard</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink href="/settings">Settings</BreadcrumbLink>
+            <BreadcrumbLink href={APP_ROUTES.admin.settings}>Settings</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>

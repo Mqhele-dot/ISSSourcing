@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Link } from "wouter";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 // Define schema for form validation
 const warehouseSettingsSchema = z.object({
@@ -124,7 +125,7 @@ export function WarehouseSettingsForm() {
                 <AlertDescription>
                   You need to create at least one warehouse before configuring warehouse settings.
                   <Button variant="link" asChild className="p-0 h-auto font-normal">
-                    <Link href="/warehouses">Go to Warehouses</Link>
+                    <Link href={APP_ROUTES.inventory.warehouses}>Go to Warehouses</Link>
                   </Button>
                 </AlertDescription>
               </Alert>
