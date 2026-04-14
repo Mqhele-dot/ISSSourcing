@@ -38,6 +38,34 @@ export async function initializeExportCenterData(): Promise<void> {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS export_jobs (
+      id SERIAL PRIMARY KEY,
+      organization_id INTEGER NOT NULL DEFAULT 1 REFERENCES organizations(id),
+      created_by INTEGER,
+      dataset TEXT NOT NULL,
+      format TEXT NOT NULL,
+      filters JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL DEFAULT 'queued',
+      source_page TEXT,
+      reason TEXT,
+      file_name TEXT,
+      file_path TEXT,
+      file_size INTEGER,
+      mime_type TEXT,
+      row_count INTEGER,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      download_token TEXT,
+      download_token_expires_at TIMESTAMP,
+      retention_expires_at TIMESTAMP,
+      started_at TIMESTAMP,
+      completed_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS export_history_org_created_idx
       ON export_history (organization_id, created_at DESC);
   `);
@@ -45,5 +73,15 @@ export async function initializeExportCenterData(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS saved_reports_org_created_idx
       ON saved_reports (organization_id, created_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS export_jobs_org_created_idx
+      ON export_jobs (organization_id, created_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS export_jobs_status_created_idx
+      ON export_jobs (status, created_at ASC);
   `);
 }

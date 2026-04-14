@@ -7,6 +7,9 @@ import { promisify } from "util";
 import { storage } from "./storage";
 import type { Request, Response, NextFunction } from "express";
 import {
+  applyStateChangingCsrfProtection,
+  clearLoginRateLimit,
+  csrfProtection,
   loginRateLimiter,
   registerRateLimiter,
   emailVerificationRateLimiter,
@@ -23,6 +26,8 @@ import {
 } from "./services/two-factor-service";
 import { sendError, sendOk } from "./api-response";
 import { organizationContextMiddleware } from "./middleware/organization-context";
+import { appEnv } from "./config/env";
+import { logger } from "./lib/logger";
 
 import type { User as SchemaUser } from "@shared/schema";
 declare global {
@@ -215,12 +220,7 @@ function ensureTwoFactorAuthenticated(req: Request, res: Response, next: NextFun
  * is on https://*.app.github.dev — cookies may not persist correctly and APIs return 401.
  */
 function shouldTrustProxy(): boolean {
-  if (process.env.NODE_ENV === "production") return true;
-  if (process.env.TRUST_PROXY === "1" || process.env.TRUST_PROXY === "true") return true;
-  if (process.env.CODESPACES === "true") return true;
-  if (Boolean(process.env.CODESPACE_NAME?.trim())) return true;
-  if (Boolean(process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN?.trim())) return true;
-  return false;
+  return appEnv.trustProxy;
 }
 
 // Set up authentication
@@ -231,7 +231,7 @@ export function setupAuth(app: Express) {
 
   // Configure session
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "inventory-management-system-secret-key",
+    secret: appEnv.sessionSecret,
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
@@ -251,15 +251,11 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
   app.use(organizationContextMiddleware);
-
-  // CSRF protection for all state-changing routes
-  // Temporarily disable CSRF protection for these routes
-  // app.use('/api/login', csrfProtection);
-  // app.use('/api/register', csrfProtection);
-  // app.use('/api/password-reset*', csrfProtection);
-  // app.use('/api/verify-email', csrfProtection);
-  // app.use('/api/2fa*', csrfProtection);
-  // app.use(handleCSRFError);
+  app.get("/api/csrf-token", csrfProtection, (req, res) => {
+    const token = req.csrfToken();
+    return sendOk(res, { csrfToken: token });
+  });
+  app.use(applyStateChangingCsrfProtection);
 
   // Configure local strategy with options to pass request object
   passport.use(new LocalStrategy({
@@ -653,6 +649,8 @@ export function setupAuth(app: Express) {
           if (rememberMe && req.session) {
             req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
           }
+
+          void clearLoginRateLimit(req).catch(() => undefined);
 
           if (user.twoFactorEnabled) {
             const twoFactorPayload = {

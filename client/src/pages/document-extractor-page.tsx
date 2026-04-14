@@ -4,7 +4,6 @@ import { useDropzone } from 'react-dropzone';
 import { useMutation } from '@tanstack/react-query';
 import type { File} from 'lucide-react';
 import { Loader2, FileText, Upload, Database, Check, ChevronDown, X, FilePlus, Link, Wrench } from 'lucide-react';
-import { requestJson } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -76,10 +75,13 @@ import {
 } from '@/components/ui/tooltip';
 import { DocumentExtractorPageIntro } from '@/pages/document-extractor/document-extractor-page-intro';
 import { APP_ROUTES, DOCUMENT_EXTRACTOR_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
+import { buildRequestHeaders, requestJson } from "@/lib/queryClient";
 
 async function postFormData(url: string, formData: FormData) {
+  const headers = await buildRequestHeaders("POST");
   const response = await fetch(url, {
     method: 'POST',
+    headers,
     body: formData,
     credentials: 'include',
   });
@@ -403,9 +405,12 @@ const DocumentExtractorPage: React.FC = () => {
       formData.append('data', blob);
       formData.append('format', 'csv');
       
+      const headers = await buildRequestHeaders("POST");
       const response = await fetch('/api/document-extractor/export', {
         method: 'POST',
+        headers,
         body: formData,
+        credentials: 'include',
       });
       
       if (!response.ok) throw new Error('Export failed');

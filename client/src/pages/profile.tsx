@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { userPasswordChangeSchema } from "@shared/schema";
-import { requestJson } from "@/lib/queryClient";
+import { buildRequestHeaders, requestJson } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -365,8 +365,10 @@ export default function ProfilePage() {
                                       formData.append('profilePicture', file);
                                       
                                       try {
+                                        const headers = await buildRequestHeaders("POST");
                                         const res = await fetch('/api/profile/picture', {
                                           method: 'POST',
+                                          headers,
                                           body: formData,
                                           credentials: 'include'
                                         });

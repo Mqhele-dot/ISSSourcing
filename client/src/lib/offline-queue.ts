@@ -2,6 +2,8 @@
  * Offline mutation queue — IndexedDB with in-memory fallback when IDB unavailable.
  */
 
+import { buildRequestHeaders } from "./queryClient";
+
 export type OfflineQueuedAction = {
   id: string;
   type: "scan" | "adjustment" | "receive_note" | "generic";
@@ -92,9 +94,12 @@ export async function flushOfflineQueueToServer(): Promise<{ ok: boolean; status
   if (items.length === 0) return { ok: true };
 
   try {
+    const headers = await buildRequestHeaders("POST", undefined, {
+      contentType: "application/json",
+    });
     const res = await fetch("/api/sync/batch", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       credentials: "include",
       body: JSON.stringify({
         actions: items.map((a) => ({

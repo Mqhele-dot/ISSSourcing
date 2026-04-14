@@ -1,3 +1,5 @@
+import { getBuildInfo } from "./lib/build-info";
+
 /**
  * Readiness state for /ready endpoint. Updated by background init in index.ts.
  * /health always returns 200; /ready reports db and schema readiness for debugging.
@@ -7,6 +9,7 @@ export const readiness = {
   schemaReady: false,
   sessionStoreReady: false,
   websocketReady: false,
+  build: getBuildInfo(),
 };
 
 export function setDbReady(value: boolean): void {

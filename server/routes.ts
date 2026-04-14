@@ -85,9 +85,25 @@ import {
   uploadsDir,
 } from "./http/upload-config";
 import { csvBufferForExcel, workbookToBuffer } from "./http/export-helpers";
+import { appEnv } from "./config/env";
+import { analyticsRateLimiter, exportRateLimiter, uploadRateLimiter } from "./services/security-service";
+
+function isInternalExportRequest(req: Request): boolean {
+  return req.get("x-internal-export-key") === appEnv.sessionSecret;
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   mountUploadsStatic(app);
+  app.use("/api/reports/analytics", analyticsRateLimiter);
+  app.use("/api/export", exportRateLimiter);
+  app.use("/api/export-jobs", exportRateLimiter);
+  app.use("/api/documents/upload", uploadRateLimiter);
+  app.use("/api/settings/pdf-template", uploadRateLimiter);
+  app.use("/api/document-extractor/upload", uploadRateLimiter);
+  app.use("/api/document-extractor/batch-upload", uploadRateLimiter);
+  app.use("/api/profile/picture", uploadRateLimiter);
+  app.use("/api/image-recognition/analyze", uploadRateLimiter);
+  app.use("/api/inventory/image-recognition/analyze", uploadRateLimiter);
   // Set up authentication routes and middleware
   const auth = setupAuth(app);
   registerOperationalRoutes(app, auth);
@@ -98,6 +114,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerAnalyticsRoutes(app, auth);
 
   const invWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const exportAccess = [auth.ensureAuthenticated, auth.ensurePermission("reports", "export")];
+  const analyticsAccess = [auth.ensureAuthenticated, auth.ensurePermission("analytics", "read")];
 
   // Bulk import inventory items
   app.post("/api/inventory/bulk-import", ...invWrite, async (req: Request, res: Response) => {
@@ -117,16 +135,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Custom PDF template upload (for report export with template=custom)
-  app.post("/api/settings/pdf-template", pdfTemplateUpload.single("template"), (req: Request, res: Response) => {
+  app.post(
+    "/api/settings/pdf-template",
+    ...exportAccess,
+    uploadRateLimiter,
+    pdfTemplateUpload.single("template"),
+    (req: Request, res: Response) => {
     if (!req.file) {
       return res.status(400).json({ message: "No PDF file uploaded. Please select a PDF file." });
     }
     return res.json({ ok: true, message: "Custom PDF template uploaded. Use template 'Custom' when exporting PDF reports." });
-  });
+    },
+  );
 
   // Document generation endpoints
-  app.get("/api/export/:reportType/:format", async (req: Request, res: Response) => {
+  app.get("/api/export/:reportType/:format", exportRateLimiter, async (req: Request, res: Response) => {
     try {
+      if (!isInternalExportRequest(req)) {
+        const guarded = exportAccess as unknown as Array<(req: Request, res: Response, next: (err?: unknown) => void) => void>;
+        let middlewareIndex = 0;
+        await new Promise<void>((resolve, reject) => {
+          const run = (err?: unknown) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            const middleware = guarded[middlewareIndex++];
+            if (!middleware) {
+              resolve();
+              return;
+            }
+            middleware(req, res, run);
+          };
+          run();
+        });
+      }
       const flags = await getFeatureFlagsForActiveOrg();
       if (!isOrgFeatureEnabled(flags, "exports")) {
         return sendOrgFeatureDisabled(res, "exports");
@@ -1185,7 +1228,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Analytics and forecasting endpoints
-  app.get("/api/analytics/demand-forecast/:itemId", async (req: Request, res: Response) => {
+  app.get("/api/analytics/demand-forecast/:itemId", ...analyticsAccess, async (req: Request, res: Response) => {
     try {
       const itemId = Number(req.params.itemId);
       if (isNaN(itemId)) {
@@ -1220,7 +1263,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/analytics/top-items", async (req: Request, res: Response) => {
+  app.get("/api/analytics/top-items", ...analyticsAccess, async (req: Request, res: Response) => {
     try {
       const limit = req.query.limit ? Number(req.query.limit) : 10;
       const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
@@ -1253,7 +1296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/analytics/inventory-value", async (req: Request, res: Response) => {
+  app.get("/api/analytics/inventory-value", ...analyticsAccess, async (req: Request, res: Response) => {
     try {
       const items = await storage.getAllInventoryItems();
       
@@ -1291,7 +1334,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/analytics/stock-usage", async (req: Request, res: Response) => {
+  app.get("/api/analytics/stock-usage", ...analyticsAccess, async (req: Request, res: Response) => {
     try {
       const limit = req.query.limit ? Math.min(Number(req.query.limit), 20) : 10;
       const items = await storage.getAllInventoryItems();
@@ -2115,6 +2158,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     status: "ok",
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
+    build: readiness.build,
+    runtimeProfile: appEnv.runtimeProfile,
     readiness: {
       dbReady: readiness.dbReady,
       schemaReady: readiness.schemaReady,
@@ -2136,6 +2181,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/ready", (_req, res) => {
     sendOk(res, {
+      runtimeProfile: appEnv.runtimeProfile,
+      build: readiness.build,
       dbReady: readiness.dbReady,
       schemaReady: readiness.schemaReady,
       sessionStoreReady: readiness.sessionStoreReady,
@@ -2146,6 +2193,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.get("/api/ready", (_req, res) => {
     sendOk(res, {
+      runtimeProfile: appEnv.runtimeProfile,
+      build: readiness.build,
       dbReady: readiness.dbReady,
       schemaReady: readiness.schemaReady,
       sessionStoreReady: readiness.sessionStoreReady,
@@ -2191,6 +2240,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       status: overallStatus as "ok" | "degraded",
       uptimeSeconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
+      runtimeProfile: appEnv.runtimeProfile,
+      build: readiness.build,
       responseTimeMs: Date.now() - startedAt,
       checks: {
         database: {
@@ -2247,6 +2298,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/admin/demo/reset", auth.ensureAuthenticated, auth.ensureAdmin, handleDemoReset);
   app.post("/api/admin/demo/reset", auth.ensureAuthenticated, auth.ensureAdmin, handleDemoReset);
+  app.use("/api/image-recognition", auth.ensureAuthenticated);
+  app.use("/api/inventory/image-recognition", auth.ensureAuthenticated);
+  app.use("/api/document-extractor", auth.ensureAuthenticated);
   
   // Initialize image recognition routes
   registerImageRecognitionRoutes(app);

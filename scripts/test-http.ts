@@ -14,6 +14,24 @@ const LOGIN_RETRY_DELAYS_MS = [1000, 3000, 7000, 15000, 30000] as const;
 
 let lastSetCookie: string | undefined;
 
+async function fetchCsrfToken(cookie?: string, baseUrl?: string): Promise<{ token?: string; cookie?: string }> {
+  const base = baseUrl ?? getTestBaseUrl();
+  const response = await fetch(`${base}/api/csrf-token`, {
+    method: "GET",
+    headers: {
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    credentials: "include",
+    signal: AbortSignal.timeout(TEST_HTTP_TIMEOUT_MS),
+  });
+  captureCookieFromResponse(response);
+  const payload = await response.json().catch(() => null) as { data?: { csrfToken?: string } } | null;
+  return {
+    token: payload?.data?.csrfToken,
+    cookie: peekSessionCookie() ?? cookie,
+  };
+}
+
 export function getTestBaseUrl(): string {
   return (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
 }
@@ -58,11 +76,20 @@ export async function apiJsonRequest(
   const api = `${base}/api`;
   const url = path.startsWith("http") ? path : `${api}${path.startsWith("/") ? path : `/${path}`}`;
   const signal = AbortSignal.timeout(TEST_HTTP_TIMEOUT_MS);
+  const method = options.method ?? "GET";
+  let csrfToken: string | undefined;
+  let cookie = options.cookie;
+  if (!["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())) {
+    const csrf = await fetchCsrfToken(cookie, base);
+    csrfToken = csrf.token;
+    cookie = csrf.cookie ?? cookie;
+  }
   const res = await fetch(url, {
-    method: options.method ?? "GET",
+    method,
     headers: {
       ...(options.body != null ? { "Content-Type": "application/json" } : {}),
-      ...(options.cookie ? { Cookie: options.cookie } : {}),
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
     },
     body: options.body != null ? JSON.stringify(options.body) : undefined,
     credentials: "include",
@@ -89,11 +116,20 @@ export async function apiRawRequest(
   const api = `${base}/api`;
   const url = path.startsWith("http") ? path : `${api}${path.startsWith("/") ? path : `/${path}`}`;
   const signal = AbortSignal.timeout(TEST_HTTP_TIMEOUT_MS);
+  const method = options.method ?? "GET";
+  let csrfToken: string | undefined;
+  let cookie = options.cookie;
+  if (!["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())) {
+    const csrf = await fetchCsrfToken(cookie, base);
+    csrfToken = csrf.token;
+    cookie = csrf.cookie ?? cookie;
+  }
   const res = await fetch(url, {
-    method: options.method ?? "GET",
+    method,
     headers: {
       ...(options.body != null ? { "Content-Type": "application/json" } : {}),
-      ...(options.cookie ? { Cookie: options.cookie } : {}),
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
     },
     body: options.body != null ? JSON.stringify(options.body) : undefined,
     credentials: "include",

@@ -86,11 +86,31 @@ async function main() {
       body?: unknown;
     },
   ): Promise<HttpResult> => {
+    const method = options?.method ?? "GET";
+    let csrfToken = "";
+    if (!["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())) {
+      const csrfResponse = await fetch(`${apiBase}/csrf-token`, {
+        method: "GET",
+        headers: {
+          ...(cookie ? { cookie } : {}),
+        },
+      });
+      const csrfSetCookie = csrfResponse.headers.get("set-cookie");
+      if (csrfSetCookie) {
+        cookie = csrfSetCookie.split(";")[0];
+      }
+      const csrfPayload = (await csrfResponse.json().catch(() => null)) as
+        | { data?: { csrfToken?: string } }
+        | null;
+      csrfToken = csrfPayload?.data?.csrfToken ?? "";
+    }
+
     const response = await fetch(url, {
-      method: options?.method ?? "GET",
+      method,
       headers: {
         ...(options?.body ? { "content-type": "application/json" } : {}),
         ...(cookie ? { cookie } : {}),
+        ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
       },
       body: options?.body ? JSON.stringify(options.body) : undefined,
     });

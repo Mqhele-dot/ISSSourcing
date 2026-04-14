@@ -1,176 +1,179 @@
-import type { Request, Response, NextFunction } from 'express';
-import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
-import csrf from 'csurf';
-import { storage } from '../storage';
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import csrf from "csurf";
+import { RateLimiterMemory, type RateLimiterRes } from "rate-limiter-flexible";
+import { sendError } from "../api-response";
+import { appEnv } from "../config/env";
+import { logger } from "../lib/logger";
+import { storage } from "../storage";
 
-// Create various rate limiters for different purposes
-const loginLimiter = new RateLimiterMemory({
-  points: 5, // 5 attempts
-  duration: 60 * 15, // per 15 minutes
-  blockDuration: 60 * 30, // Block for 30 minutes if exceeded
-});
-
-const registerLimiter = new RateLimiterMemory({
-  points: 3, // 3 attempts
-  duration: 60 * 60, // per hour
-  blockDuration: 60 * 60, // Block for 1 hour if exceeded
-});
-
-const emailVerificationLimiter = new RateLimiterMemory({
-  points: 5, // 5 attempts
-  duration: 60 * 60, // per hour
-  blockDuration: 60 * 60, // Block for 1 hour if exceeded
-});
-
-const passwordResetLimiter = new RateLimiterMemory({
-  points: 3, // 3 attempts
-  duration: 60 * 60, // per hour
-  blockDuration: 60 * 60, // Block for 1 hour if exceeded
-});
-
-const apiLimiter = new RateLimiterMemory({
-  points: 100, // 100 requests
-  duration: 60, // per minute
-});
-
-// Helper function to get a unique key for rate limiting based on IP and optional username
-function getRateLimiterKey(req: Request, includeUsername: boolean = false): string {
-  const ip = req.ip || req.connection.remoteAddress || '';
-  if (includeUsername && req.body && req.body.username) {
-    return `${ip}_${req.body.username}`;
+function getRateLimiterKey(req: Request, includeUsername = false): string {
+  const ip = req.ip || req.connection.remoteAddress || "unknown-ip";
+  if (includeUsername && typeof req.body?.username === "string") {
+    return `${ip}:${req.body.username.toLowerCase()}`;
   }
   return ip;
 }
 
-// Get CSRF protection middleware
-export const csrfProtection = csrf({ cookie: true });
+function setRetryHeaders(res: Response, error: RateLimiterRes): void {
+  const retryAfterSeconds = Math.max(1, Math.ceil((error.msBeforeNext ?? 1000) / 1000));
+  res.setHeader("Retry-After", String(retryAfterSeconds));
+}
 
-// Middleware to handle CSRF errors
-export function handleCSRFError(err: any, req: Request, res: Response, next: NextFunction) {
-  if (err.code !== 'EBADCSRFTOKEN') return next(err);
-  
-  // CSRF token validation failed
-  return res.status(403).json({
-    message: 'Invalid or expired form submission. Please refresh and try again.'
+function createLimiter(points: number, durationSeconds = appEnv.rateLimits.windowSeconds): RateLimiterMemory {
+  return new RateLimiterMemory({
+    points,
+    duration: durationSeconds,
+    blockDuration: durationSeconds,
   });
 }
 
-// Middleware for rate limiting login attempts
-export async function loginRateLimiter(req: Request, res: Response, next: NextFunction) {
-  if (process.env.DISABLE_LOGIN_RATE_LIMITER === "true") {
+const loginLimiter = createLimiter(appEnv.rateLimits.authPoints, 15 * 60);
+const registerLimiter = createLimiter(Math.max(3, Math.floor(appEnv.rateLimits.authPoints / 2)), 60 * 60);
+const emailVerificationLimiter = createLimiter(appEnv.rateLimits.authPoints, 60 * 60);
+const passwordResetLimiter = createLimiter(Math.max(3, Math.floor(appEnv.rateLimits.authPoints / 2)), 60 * 60);
+const apiLimiter = createLimiter(100);
+const exportLimiter = createLimiter(appEnv.rateLimits.exportPoints);
+const uploadLimiter = createLimiter(appEnv.rateLimits.uploadPoints);
+const analyticsLimiter = createLimiter(appEnv.rateLimits.analyticsPoints);
+
+async function runLimiter(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  limiter: RateLimiterMemory,
+  message: string,
+  options?: { includeUsername?: boolean; code?: string },
+) {
+  try {
+    const key = getRateLimiterKey(req, options?.includeUsername);
+    await limiter.consume(key);
+    next();
+  } catch (error) {
+    const rateError = error as RateLimiterRes;
+    if (typeof rateError?.msBeforeNext === "number") {
+      setRetryHeaders(res, rateError);
+      return sendError(res, 429, options?.code ?? "RATE_LIMITED", message);
+    }
+    next(error);
+  }
+}
+
+export const csrfProtection = csrf({
+  cookie: false,
+  ignoreMethods: ["GET", "HEAD", "OPTIONS"],
+  value: (req) => {
+    const candidate =
+      req.get("x-csrf-token") ??
+      req.get("csrf-token") ??
+      (typeof req.body?._csrf === "string" ? req.body._csrf : undefined);
+    return candidate ?? "";
+  },
+});
+
+export function csrfBypassForReadOnlyMethods(req: Request, res: Response, next: NextFunction) {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
     return next();
   }
-  try {
-    const key = getRateLimiterKey(req, true);
-    await loginLimiter.consume(key);
-    next();
-  } catch (error) {
-    if (error instanceof RateLimiterRes) {
-      return res.status(429).json({
-        message: 'Too many login attempts. Please try again later.'
-      });
-    }
-    next(error);
-  }
+  return csrfProtection(req, res, next);
 }
 
-// Middleware for rate limiting registration attempts
-export async function registerRateLimiter(req: Request, res: Response, next: NextFunction) {
-  try {
-    const key = getRateLimiterKey(req);
-    await registerLimiter.consume(key);
-    next();
-  } catch (error) {
-    if (error instanceof RateLimiterRes) {
-      return res.status(429).json({
-        message: 'Too many registration attempts. Please try again later.'
-      });
-    }
-    next(error);
+export function handleCSRFError(err: unknown, _req: Request, res: Response, next: NextFunction) {
+  if (!err || typeof err !== "object" || !("code" in err) || (err as { code?: string }).code !== "EBADCSRFTOKEN") {
+    return next(err);
   }
+
+  return sendError(res, 403, "CSRF_TOKEN_INVALID", "Invalid or expired form submission.", {
+    hint: "Refresh the page and try again.",
+  });
 }
 
-// Middleware for rate limiting email verification attempts
-export async function emailVerificationRateLimiter(req: Request, res: Response, next: NextFunction) {
-  try {
-    const key = getRateLimiterKey(req);
-    await emailVerificationLimiter.consume(key);
-    next();
-  } catch (error) {
-    if (error instanceof RateLimiterRes) {
-      return res.status(429).json({
-        message: 'Too many verification attempts. Please try again later.'
-      });
-    }
-    next(error);
-  }
+export function shouldProtectAgainstCsrf(pathname: string): boolean {
+  if (!pathname.startsWith("/api")) return false;
+  if (pathname.startsWith("/api/csrf-token")) return false;
+  if (pathname.startsWith("/api/export/download/")) return false;
+  return true;
 }
 
-// Middleware for rate limiting password reset attempts
-export async function passwordResetRateLimiter(req: Request, res: Response, next: NextFunction) {
-  try {
-    const key = getRateLimiterKey(req);
-    await passwordResetLimiter.consume(key);
-    next();
-  } catch (error) {
-    if (error instanceof RateLimiterRes) {
-      return res.status(429).json({
-        message: 'Too many password reset attempts. Please try again later.'
-      });
-    }
-    next(error);
-  }
+export const loginRateLimiter: RequestHandler = (req, res, next) => {
+  if (process.env.DISABLE_LOGIN_RATE_LIMITER === "true") return next();
+  return runLimiter(req, res, next, loginLimiter, "Too many login attempts. Please try again later.", {
+    includeUsername: true,
+    code: "AUTH_RATE_LIMITED",
+  });
+};
+
+export async function clearLoginRateLimit(req: Request): Promise<void> {
+  const key = getRateLimiterKey(req, true);
+  await loginLimiter.delete(key);
 }
 
-// Middleware for general API rate limiting
-export async function apiRateLimiter(req: Request, res: Response, next: NextFunction) {
-  try {
-    const key = getRateLimiterKey(req);
-    await apiLimiter.consume(key);
-    next();
-  } catch (error) {
-    if (error instanceof RateLimiterRes) {
-      return res.status(429).json({
-        message: 'Too many requests. Please try again later.'
-      });
-    }
-    next(error);
+export const registerRateLimiter: RequestHandler = (req, res, next) =>
+  runLimiter(req, res, next, registerLimiter, "Too many registration attempts. Please try again later.", {
+    code: "REGISTER_RATE_LIMITED",
+  });
+
+export const emailVerificationRateLimiter: RequestHandler = (req, res, next) =>
+  runLimiter(req, res, next, emailVerificationLimiter, "Too many verification attempts. Please try again later.", {
+    code: "EMAIL_VERIFICATION_RATE_LIMITED",
+  });
+
+export const passwordResetRateLimiter: RequestHandler = (req, res, next) =>
+  runLimiter(req, res, next, passwordResetLimiter, "Too many password reset attempts. Please try again later.", {
+    code: "PASSWORD_RESET_RATE_LIMITED",
+  });
+
+export const apiRateLimiter: RequestHandler = (req, res, next) =>
+  runLimiter(req, res, next, apiLimiter, "Too many requests. Please try again later.");
+
+export const exportRateLimiter: RequestHandler = (req, res, next) =>
+  runLimiter(req, res, next, exportLimiter, "Too many export requests. Please try again later.", {
+    code: "EXPORT_RATE_LIMITED",
+  });
+
+export const uploadRateLimiter: RequestHandler = (req, res, next) =>
+  runLimiter(req, res, next, uploadLimiter, "Too many upload requests. Please try again later.", {
+    code: "UPLOAD_RATE_LIMITED",
+  });
+
+export const analyticsRateLimiter: RequestHandler = (req, res, next) =>
+  runLimiter(req, res, next, analyticsLimiter, "Too many analytics requests. Please try again later.", {
+    code: "ANALYTICS_RATE_LIMITED",
+  });
+
+export function applyStateChangingCsrfProtection(req: Request, res: Response, next: NextFunction) {
+  if (!shouldProtectAgainstCsrf(req.path)) {
+    return next();
   }
+  return csrfBypassForReadOnlyMethods(req, res, next);
 }
 
-// Detect suspicious login activity based on IP, device, or other factors
 export async function detectSuspiciousActivity(
   userId: number,
   ipAddress: string,
-  userAgent: string
+  userAgent: string,
 ): Promise<boolean> {
   try {
-    // 1. Check if this IP has been used by this user before
     const hasUsedIpBefore = await storage.hasUserUsedIpBefore(userId, ipAddress);
-    
-    // 2. Check if this is a new device/browser for this user
     const hasUsedUserAgentBefore = await storage.hasUserUsedUserAgentBefore(userId, userAgent);
-    
-    // 3. Check for multiple failed attempts prior to this successful login
     const recentFailedAttempts = await storage.getFailedLoginAttempts(userId, 24);
     const hasMultipleFailedAttempts = recentFailedAttempts.length >= 3;
-    
-    // 4. Check for logins from different geographic locations in a short time
-    // This would typically involve an IP geolocation service
-    
-    // Log this access for future checks (timestamp omitted - schema uses defaultNow())
+
     await storage.logUserAccess({
       userId,
       ipAddress: ipAddress ?? null,
       userAgent: userAgent ?? null,
-      action: 'login',
-      details: { isSuspicious: !hasUsedIpBefore || !hasUsedUserAgentBefore || hasMultipleFailedAttempts }
+      action: "login",
+      details: {
+        isSuspicious: !hasUsedIpBefore || !hasUsedUserAgentBefore || hasMultipleFailedAttempts,
+      },
     });
-    
-    // Return true if activity seems suspicious
+
     return !hasUsedIpBefore || !hasUsedUserAgentBefore || hasMultipleFailedAttempts;
   } catch (error) {
-    console.error('Error detecting suspicious activity:', error);
-    return false; // Default to not suspicious if there's an error
+    logger.warn("Suspicious activity detection failed", {
+      error: error instanceof Error ? error.message : String(error),
+      userId,
+    });
+    return false;
   }
 }

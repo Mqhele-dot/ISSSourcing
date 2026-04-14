@@ -56,6 +56,8 @@ async function main() {
   }
 
   const { pool } = await import("../server/db");
+  const { initializeExportCenterData } = await import("../server/modules/exports/export-center-ddl");
+  await initializeExportCenterData();
 
   let orgId: number | null = null;
   let supplierId: number | null = null;
@@ -63,6 +65,8 @@ async function main() {
   let requisitionId: number | null = null;
   let purchaseOrderId: number | null = null;
   let documentId: number | null = null;
+  let exportJobId: number | null = null;
+  let invoiceId: number | null = null;
 
   try {
     await pool.query(
@@ -128,6 +132,24 @@ async function main() {
     );
     documentId = docRes.rows[0]?.id ?? null;
 
+    const exportRes = await pool.query<{ id: number }>(
+      `INSERT INTO export_jobs (organization_id, created_by, dataset, format, filters, status, created_at, updated_at)
+       VALUES ($1, 1, 'suppliers', 'csv', '{}'::jsonb, 'failed', NOW(), NOW()) RETURNING id`,
+      [orgId],
+    );
+    exportJobId = exportRes.rows[0]?.id ?? null;
+
+    const invoiceRes = await pool.query<{ id: number }>(
+      `INSERT INTO invoices (
+         organization_id, invoice_number, supplier_id, status, issue_date, due_date,
+         subtotal, total, created_by, created_at, updated_at
+       )
+       VALUES ($1, $2, $3, 'DRAFT', NOW(), NOW() + INTERVAL '14 days', 10, 10, 1, NOW(), NOW())
+       RETURNING id`,
+      [orgId, `ISO-INV-${Date.now()}`, supplierId],
+    );
+    invoiceId = invoiceRes.rows[0]?.id ?? null;
+
     const adminCookie = await loginForTests("admin", "Admin123!");
     if (!adminCookie) {
       console.log("  ⚠ Admin login failed (seed DB?). Skipping.");
@@ -191,6 +213,45 @@ async function main() {
       if (!leakedDoc) ok("GET /api/documents (other org entity) does not leak document id");
       else bad("GET /api/documents", "leaked other-org document id");
     }
+
+    if (exportJobId != null) {
+      const history = await apiJsonRequest("/export-center/history", {
+        method: "GET",
+        cookie: adminCookie,
+        baseUrl: BASE_URL,
+      });
+      const historyRows =
+        Array.isArray((history.json as { data?: unknown[] })?.data)
+          ? ((history.json as { data: Array<{ id?: number }> }).data ?? [])
+          : [];
+      const leakedJob = historyRows.some((row) => row?.id === exportJobId);
+      if (!leakedJob) ok("GET /api/export-center/history excludes other-org export jobs");
+      else bad("GET /api/export-center/history", "leaked other-org export job");
+    }
+
+    const analytics = await apiJsonRequest("/reports/analytics", {
+      method: "GET",
+      cookie: adminCookie,
+      baseUrl: BASE_URL,
+    });
+    const analyticsPayload = analytics.json as {
+      spendBySupplier?: Array<{ supplierName?: string }>;
+      data?: { spendBySupplier?: Array<{ supplierName?: string }> };
+    };
+    const spendRows = analyticsPayload.data?.spendBySupplier ?? analyticsPayload.spendBySupplier ?? [];
+    const leakedSupplierInAnalytics = spendRows.some((row) => row?.supplierName === "__org_isolation_supplier__");
+    if (!leakedSupplierInAnalytics) ok("GET /api/reports/analytics excludes other-org supplier aggregates");
+    else bad("GET /api/reports/analytics", "leaked other-org supplier aggregate");
+
+    if (invoiceId != null) {
+      const invoice = await apiJsonRequest(`/ap/invoices/${invoiceId}`, {
+        method: "GET",
+        cookie: adminCookie,
+        baseUrl: BASE_URL,
+      });
+      if (invoice.status === 404) ok(`GET /api/ap/invoices/${invoiceId} (other org) → 404`);
+      else bad(`GET /api/ap/invoices/${invoiceId}`, `expected 404, got ${invoice.status}`);
+    }
   } catch (err) {
     if (isConnectionRefused(err)) {
       console.log("  ⚠ Connection refused");
@@ -200,6 +261,12 @@ async function main() {
     console.error(err);
     failed++;
   } finally {
+    if (invoiceId != null) {
+      await pool.query(`DELETE FROM invoices WHERE id = $1`, [invoiceId]).catch(() => {});
+    }
+    if (exportJobId != null) {
+      await pool.query(`DELETE FROM export_jobs WHERE id = $1`, [exportJobId]).catch(() => {});
+    }
     if (documentId != null) {
       await pool.query(`DELETE FROM documents WHERE id = $1`, [documentId]).catch(() => {});
     }

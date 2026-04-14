@@ -1,4 +1,4 @@
-import { apiRequest, requestJson } from "@/lib/queryClient";
+import { apiRequest, buildRequestHeaders, requestJson } from "@/lib/queryClient";
 import { setFallbackState } from "@/lib/fallback-store";
 import { toastStore } from "@/lib/toast-store";
 import type {
@@ -132,9 +132,17 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
     init.signal.addEventListener("abort", () => controller.abort());
   }
   try {
+    const method = init?.method ?? "GET";
+    const headers = await buildRequestHeaders(method, init?.headers, {
+      contentType:
+        init?.body && !(init.body instanceof FormData) && !(init.body instanceof URLSearchParams)
+          ? "application/json"
+          : false,
+    });
     const response = await fetch(url, {
       credentials: "include",
       ...init,
+      headers,
       signal: controller.signal,
     });
     const headerFallback = response.headers.get("X-InvTrack-Fallback") ?? null;
@@ -608,8 +616,10 @@ export async function updateSupplierPortalDelivery(
 }
 
 export async function uploadDocumentFile(formData: FormData): Promise<Record<string, unknown>> {
+  const headers = await buildRequestHeaders("POST");
   const response = await fetch("/api/documents/upload", {
     method: "POST",
+    headers,
     body: formData,
     credentials: "include",
   });

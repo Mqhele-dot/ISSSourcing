@@ -11,6 +11,7 @@ import { useReportsPageData } from "@/pages/reports/use-reports-data";
 import { useReportsExport } from "@/pages/reports/use-reports-export";
 import { ReportsExportToolbar } from "@/pages/reports/reports-export-toolbar";
 import type { ReportTab } from "@/pages/reports/reports-types";
+import { buildRequestHeaders } from "@/lib/queryClient";
 import {
   ReportsInventoryTabPanel,
   ReportsInvoicesTabPanel,
@@ -79,8 +80,10 @@ export default function Reports() {
     try {
       const formData = new FormData();
       formData.append("template", file);
+      const headers = await buildRequestHeaders("POST");
       const res = await fetch("/api/settings/pdf-template", {
         method: "POST",
+        headers,
         body: formData,
         credentials: "include",
       });

@@ -38,6 +38,7 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 | `npm run build` | Production client + server bundle |
 | `npm run start` | Run built server (uses `cross-env` on Windows) |
 | `npm run check` | TypeScript (`tsc`) |
+| `npm run release:gate` | Full production-readiness validation gate |
 | `npm run db:push` | Apply Drizzle schema to Postgres |
 | `npm run db:seed` / `npm run demo:reset` | Seed data |
 
@@ -52,6 +53,14 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 - [`DATABASE_SETUP.md`](DATABASE_SETUP.md) — database & SSL
 - [`docs/ENV-CONFIG.md`](docs/ENV-CONFIG.md) — environment variables
 - [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md) — API shapes
+- [`docs/PERMISSION_MATRIX.md`](docs/PERMISSION_MATRIX.md) — route auth/RBAC overview
+- [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — deployment, security, runbook, rollback
+
+## Production Notes
+
+- Production startup now requires a real `DATABASE_URL` and strong `SESSION_SECRET`.
+- Runtime schema/bootstrap helpers are for local/dev only; production should be migration-first.
+- A production Docker example is provided in [`docker-compose.production.yml`](docker-compose.production.yml).
 
 ## Accounts Payable (AP) Controls
 

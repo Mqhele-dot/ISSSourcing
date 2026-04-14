@@ -7,8 +7,17 @@ import { storage } from "../../storage";
 /**
  * Barcode CRUD + find item by barcode (moved from routes.ts).
  */
-export function registerBarcodeRoutes(app: Express): void {
-  app.get("/api/barcodes", async (_req: Request, res: Response) => {
+export function registerBarcodeRoutes(
+  app: Express,
+  auth: {
+    ensureAuthenticated: import("express").RequestHandler;
+    ensurePermission: (resource: string, permissionType: string) => import("express").RequestHandler;
+  },
+): void {
+  const inventoryRead = [auth.ensureAuthenticated, auth.ensurePermission("inventory", "read")];
+  const inventoryWrite = [auth.ensureAuthenticated, auth.ensurePermission("inventory", "update")];
+
+  app.get("/api/barcodes", ...inventoryRead, async (_req: Request, res: Response) => {
     try {
       const barcodes = await storage.getAllBarcodes();
       res.json(barcodes);
@@ -18,7 +27,7 @@ export function registerBarcodeRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/barcodes/item/:itemId", async (req: Request, res: Response) => {
+  app.get("/api/barcodes/item/:itemId", ...inventoryRead, async (req: Request, res: Response) => {
     try {
       const itemId = Number(req.params.itemId);
       if (isNaN(itemId)) {
@@ -33,7 +42,7 @@ export function registerBarcodeRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/barcodes/value/:value", async (req: Request, res: Response) => {
+  app.get("/api/barcodes/value/:value", ...inventoryRead, async (req: Request, res: Response) => {
     try {
       const value = req.params.value;
       const barcode = await storage.getBarcodeByValue(value);
@@ -49,7 +58,7 @@ export function registerBarcodeRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/inventory/find-by-barcode/:value", async (req: Request, res: Response) => {
+  app.get("/api/inventory/find-by-barcode/:value", ...inventoryRead, async (req: Request, res: Response) => {
     try {
       const value = req.params.value;
       const item = await storage.findItemByBarcode(value);
@@ -65,7 +74,7 @@ export function registerBarcodeRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/barcodes", async (req: Request, res: Response) => {
+  app.post("/api/barcodes", ...inventoryWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertBarcodeSchema.parse(req.body);
 
@@ -87,7 +96,7 @@ export function registerBarcodeRoutes(app: Express): void {
     }
   });
 
-  app.put("/api/barcodes/:id", async (req: Request, res: Response) => {
+  app.put("/api/barcodes/:id", ...inventoryWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -121,7 +130,7 @@ export function registerBarcodeRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/barcodes/:id", async (req: Request, res: Response) => {
+  app.delete("/api/barcodes/:id", ...inventoryWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {

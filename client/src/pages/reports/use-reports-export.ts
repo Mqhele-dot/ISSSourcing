@@ -2,6 +2,25 @@ import { useCallback, useRef, useState } from "react";
 import { downloadFile } from "@/lib/utils";
 import type { ReportsExportDeps } from "./reports-types";
 import { getExportReportType, getReportTitle } from "./reports-types";
+import { requestJson } from "@/lib/queryClient";
+
+type ExportJob = {
+  id: number;
+  status: "queued" | "running" | "succeeded" | "failed";
+  lastError?: string | null;
+  downloadUrl?: string | null;
+};
+
+async function waitForExportJob(jobId: number): Promise<ExportJob> {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const job = await requestJson<ExportJob>("GET", `/api/export-jobs/${jobId}`);
+    if (job.status === "succeeded" || job.status === "failed") {
+      return job;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1500));
+  }
+  throw new Error("Export job timed out. Check Export Center for the latest status.");
+}
 
 export function useReportsExport({
   activeTab,
@@ -18,76 +37,62 @@ export function useReportsExport({
     exportLock.current = true;
     setExporting(true);
     try {
-      let url = `/api/export/${getExportReportType(activeTab)}/${exportFormat}`;
-      const queryParams = new URLSearchParams();
+      const filters: Record<string, string> = {};
 
       if (filter.startDate && filter.endDate) {
-        queryParams.append("startDate", filter.startDate.toISOString());
-        queryParams.append("endDate", filter.endDate.toISOString());
+        filters.startDate = filter.startDate.toISOString();
+        filters.endDate = filter.endDate.toISOString();
       }
       if (filter.categoryId) {
-        queryParams.append("categoryId", filter.categoryId.toString());
+        filters.categoryId = filter.categoryId.toString();
       }
       if (filter.warehouseId) {
-        queryParams.append("warehouseId", filter.warehouseId.toString());
+        filters.warehouseId = filter.warehouseId.toString();
       }
       if (filter.supplierId) {
-        queryParams.append("supplierId", filter.supplierId.toString());
+        filters.supplierId = filter.supplierId.toString();
       }
       if (filter.projectId) {
-        queryParams.append("projectId", filter.projectId.toString());
+        filters.projectId = filter.projectId.toString();
       }
       if (filter.status) {
-        queryParams.append("status", filter.status);
+        filters.status = filter.status;
       }
       if (activeTab === "shipments") {
         if (filter.shipmentPo?.trim()) {
-          queryParams.append("po", filter.shipmentPo.trim());
+          filters.po = filter.shipmentPo.trim();
         }
         if (filter.shipmentCarrier?.trim()) {
-          queryParams.append("carrier", filter.shipmentCarrier.trim());
+          filters.carrier = filter.shipmentCarrier.trim();
         }
         if (filter.shipmentRisk?.trim()) {
-          queryParams.append("risk", filter.shipmentRisk.trim());
+          filters.risk = filter.shipmentRisk.trim();
         }
       }
       if (activeTab === "low-stock") {
-        queryParams.set("status", "low_stock");
+        filters.status = "low_stock";
       }
       if (filter.tags && filter.tags.length > 0) {
-        queryParams.append("tags", filter.tags.join(","));
+        filters.tags = filter.tags.join(",");
       }
       if (exportFormat === "pdf") {
-        queryParams.set("template", pdfTemplate);
+        filters.template = pdfTemplate;
       }
-      queryParams.set("sourcePage", window.location.pathname);
-      if (queryParams.toString()) {
-        url += `?${queryParams.toString()}`;
+      const queued = await requestJson<ExportJob>("POST", "/api/export-jobs", {
+        dataset: getExportReportType(activeTab),
+        format: exportFormat,
+        filters,
+        sourcePage: window.location.pathname,
+      });
+
+      const job = await waitForExportJob(queued.id);
+      if (job.status !== "succeeded" || !job.downloadUrl) {
+        throw new Error(job.lastError || "Export job failed.");
       }
 
-      const response = await fetch(url, { credentials: "include" });
-      const contentType = response.headers.get("content-type") ?? "";
+      const response = await fetch(job.downloadUrl, { credentials: "include" });
       if (!response.ok) {
-        let detail = `Export failed (${response.status})`;
-        try {
-          const errBody = (await response.json()) as {
-            message?: string;
-            error?: { message?: string };
-          };
-          if (errBody?.error?.message) detail = errBody.error.message;
-          else if (errBody?.message) detail = errBody.message;
-        } catch {
-          /* not JSON */
-        }
-        if (response.status === 401) {
-          detail = "Not signed in or session expired — log in again, then retry the export.";
-        }
-        throw new Error(detail);
-      }
-      if (exportFormat === "pdf" && contentType.includes("application/json")) {
-        throw new Error(
-          "Server returned JSON instead of a PDF (usually a session/auth issue). Log in again and retry.",
-        );
+        throw new Error(`Download failed (${response.status}).`);
       }
       const blob = await response.blob();
       const fileExtension = exportFormat === "excel" ? "xlsx" : exportFormat;

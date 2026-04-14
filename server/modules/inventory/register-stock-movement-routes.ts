@@ -8,8 +8,18 @@ import { sendFunctionError } from "../../api-response";
 /**
  * Stock movement list/create/transfer/receipt/issue — extracted from legacy routes.ts.
  */
-export function registerStockMovementRoutes(app: Express): void {
-  app.get("/api/stock-movements", async (_req: Request, res: Response) => {
+export function registerStockMovementRoutes(
+  app: Express,
+  auth: {
+    ensureAuthenticated: import("express").RequestHandler;
+    ensurePermission: (resource: string, permissionType: string) => import("express").RequestHandler;
+  },
+): void {
+  const stockRead = [auth.ensureAuthenticated, auth.ensurePermission("stock_movements", "read")];
+  const stockWrite = [auth.ensureAuthenticated, auth.ensurePermission("stock_movements", "create")];
+  const stockExecute = [auth.ensureAuthenticated, auth.ensurePermission("stock_movements", "execute")];
+
+  app.get("/api/stock-movements", ...stockRead, async (_req: Request, res: Response) => {
     try {
       const movements = await storage.getAllStockMovements();
       res.json(movements);
@@ -19,7 +29,7 @@ export function registerStockMovementRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/stock-movements/item/:itemId", async (req: Request, res: Response) => {
+  app.get("/api/stock-movements/item/:itemId", ...stockRead, async (req: Request, res: Response) => {
     try {
       const itemId = Number(req.params.itemId);
       if (isNaN(itemId)) {
@@ -34,7 +44,7 @@ export function registerStockMovementRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/stock-movements/warehouse/:warehouseId", async (req: Request, res: Response) => {
+  app.get("/api/stock-movements/warehouse/:warehouseId", ...stockRead, async (req: Request, res: Response) => {
     try {
       const warehouseId = Number(req.params.warehouseId);
       if (isNaN(warehouseId)) {
@@ -49,7 +59,7 @@ export function registerStockMovementRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/stock-movements", async (req: Request, res: Response) => {
+  app.post("/api/stock-movements", ...stockWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertStockMovementSchema.parse(req.body);
       if (Number(validatedData.quantity) === 0) {
@@ -86,7 +96,7 @@ export function registerStockMovementRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/stock-movements/transfer", async (req: Request, res: Response) => {
+  app.post("/api/stock-movements/transfer", ...stockExecute, async (req: Request, res: Response) => {
     try {
       const { sourceWarehouseId, destinationWarehouseId, itemId, quantity, userId, reason } = req.body;
 
@@ -146,7 +156,7 @@ export function registerStockMovementRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/stock-movements/receipt", async (req: Request, res: Response) => {
+  app.post("/api/stock-movements/receipt", ...stockExecute, async (req: Request, res: Response) => {
     try {
       const { warehouseId, itemId, quantity, referenceId, referenceType, notes, userId, unitCost } = req.body;
 
@@ -202,7 +212,7 @@ export function registerStockMovementRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/stock-movements/issue", async (req: Request, res: Response) => {
+  app.post("/api/stock-movements/issue", ...stockExecute, async (req: Request, res: Response) => {
     try {
       const { warehouseId, itemId, quantity, referenceId, referenceType, notes, userId } = req.body;
 

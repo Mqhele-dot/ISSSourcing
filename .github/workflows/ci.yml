@@ -110,3 +110,62 @@ jobs:
 
       - name: API contract + procurement flow (live server)
         run: npm run test:contracts && npm run test:procurement-flow
+
+  release-gate:
+    runs-on: ubuntu-latest
+    needs: lint-and-check
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: invtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/invtest
+      SESSION_SECRET: ci-release-gate-secret
+      NODE_ENV: development
+      BASE_URL: http://127.0.0.1:5000
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Apply database schema
+        run: yes | npx drizzle-kit push
+
+      - name: Seed demo data
+        run: npm run db:seed
+
+      - name: Start API server
+        run: |
+          npm run dev &
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:5000/health >/dev/null; then
+              echo "Server ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server failed to become healthy"
+          exit 1
+
+      - name: Run release gate
+        run: npm run release:gate

@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, RotateCcw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
@@ -17,9 +17,11 @@ type ExportHistoryRow = {
   fileName: string | null;
   fileSize: number | null;
   sourcePage: string | null;
-  requestUrl: string | null;
   createdBy: string | null;
   createdAt: string;
+  downloadUrl: string | null;
+  canRetry: boolean;
+  lastError?: string | null;
 };
 
 const ANALYTICS_NAV = [
@@ -41,9 +43,14 @@ function formatBytes(value: number | null): string {
 }
 
 export default function ExportCenterPage() {
+  const queryClient = useQueryClient();
   const { data: history = [] } = useQuery({
     queryKey: ["/api/export-center/history"],
     queryFn: () => requestJson<ExportHistoryRow[]>("GET", "/api/export-center/history"),
+  });
+  const retryMutation = useMutation({
+    mutationFn: (id: number) => requestJson("POST", `/api/export-jobs/${id}/retry`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/export-center/history"] }),
   });
 
   return (
@@ -85,22 +92,28 @@ export default function ExportCenterPage() {
                     <div className="text-xs text-muted-foreground">
                       File: {row.fileName || "Generated on demand"}
                     </div>
+                    {row.lastError ? (
+                      <div className="text-xs text-destructive">Last error: {row.lastError}</div>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {row.requestUrl ? (
+                    {row.downloadUrl ? (
                       <Button asChild size="sm" variant="outline">
-                        <a href={row.requestUrl}>
+                        <a href={row.downloadUrl}>
                           <Download className="mr-2 h-4 w-4" />
                           Download
                         </a>
                       </Button>
                     ) : null}
-                    {row.requestUrl ? (
-                      <Button asChild size="sm" variant="outline">
-                        <a href={row.requestUrl}>
-                          <RotateCcw className="mr-2 h-4 w-4" />
-                          Retry
-                        </a>
+                    {row.canRetry ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => retryMutation.mutate(row.id)}
+                        disabled={retryMutation.isPending}
+                      >
+                        <RotateCcw className="mr-2 h-4 w-4" />
+                        Retry
                       </Button>
                     ) : null}
                   </div>

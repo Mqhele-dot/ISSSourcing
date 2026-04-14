@@ -132,6 +132,69 @@ function normalizeEndpointPath(url: string): string {
 
 /** Set after `queryClient` is created — clears stale cached user when APIs return 401 */
 let invalidateUserQueryOn401: (() => void) | null = null;
+let csrfTokenCache: string | null = null;
+let csrfTokenInFlight: Promise<string> | null = null;
+
+function isMutationMethod(method: string): boolean {
+  const upper = method.toUpperCase();
+  return upper === "POST" || upper === "PUT" || upper === "PATCH" || upper === "DELETE";
+}
+
+async function fetchCsrfToken(): Promise<string> {
+  const response = await fetch("/api/csrf-token", {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to refresh CSRF token.");
+  }
+
+  const payload = (await response.json()) as
+    | { csrfToken?: string }
+    | { data?: { csrfToken?: string } };
+  const token =
+    "data" in payload
+      ? payload.data?.csrfToken
+      : (payload as { csrfToken?: string }).csrfToken;
+  if (!token) {
+    throw new Error("Server did not return a CSRF token.");
+  }
+  csrfTokenCache = token;
+  return token;
+}
+
+export async function getCsrfToken(forceRefresh = false): Promise<string> {
+  if (!forceRefresh && csrfTokenCache) {
+    return csrfTokenCache;
+  }
+  if (!forceRefresh && csrfTokenInFlight) {
+    return csrfTokenInFlight;
+  }
+
+  csrfTokenInFlight = fetchCsrfToken().finally(() => {
+    csrfTokenInFlight = null;
+  });
+  return csrfTokenInFlight;
+}
+
+export async function buildRequestHeaders(
+  method: string,
+  headers?: HeadersInit,
+  options?: { contentType?: string | false },
+): Promise<Headers> {
+  const built = new Headers(headers ?? {});
+
+  if (options?.contentType !== false && options?.contentType && !built.has("Content-Type")) {
+    built.set("Content-Type", options.contentType);
+  }
+
+  if (isMutationMethod(method)) {
+    built.set("X-CSRF-Token", await getCsrfToken());
+  }
+
+  return built;
+}
 
 /**
  * When the server rejects a request as unauthenticated, force `/api/user` to refetch.
@@ -256,9 +319,12 @@ export async function invTrackFetch<T>(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
+    const headers = await buildRequestHeaders(method, undefined, {
+      contentType: data != null ? "application/json" : false,
+    });
     res = await fetch(url, {
       method,
-      headers: data != null ? { "Content-Type": "application/json" } : {},
+      headers,
       body: data != null ? JSON.stringify(data) : undefined,
       credentials: "include",
       signal: controller.signal,
@@ -357,9 +423,12 @@ export async function apiRequest(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
+    const headers = await buildRequestHeaders(method, undefined, {
+      contentType: data ? "application/json" : false,
+    });
     const res = await fetch(url, {
       method,
-      headers: data ? { "Content-Type": "application/json" } : {},
+      headers,
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
       signal: controller.signal,

@@ -20,6 +20,7 @@ import { registerExportCenterRoutes } from "./exports/register-export-center-rou
 type AuthBundle = {
   ensureAuthenticated: import("express").RequestHandler;
   ensureRole: (roles: string[]) => import("express").RequestHandler;
+  ensurePermission: (resource: string, permissionType: string) => import("express").RequestHandler;
 };
 
 /**
@@ -29,8 +30,8 @@ type AuthBundle = {
  */
 export function registerDomainModules(app: Express, auth: AuthBundle): void {
   registerInventoryCrudRoutes(app, auth);
-  registerStockMovementRoutes(app);
-  registerBarcodeRoutes(app);
+  registerStockMovementRoutes(app, auth);
+  registerBarcodeRoutes(app, auth);
   registerNotificationRoutes(app, auth);
   registerDocumentRoutes(app, auth);
   registerContractRoutes(app, auth);
