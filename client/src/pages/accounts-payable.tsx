@@ -370,7 +370,7 @@ export default function AccountsPayablePage() {
             </div>
 
             <Tabs defaultValue="intake" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
                 <TabsTrigger value="intake">Intake</TabsTrigger>
                 <TabsTrigger value="approvals">Approvals</TabsTrigger>
                 <TabsTrigger value="exceptions">Exceptions</TabsTrigger>
@@ -446,11 +446,11 @@ export default function AccountsPayablePage() {
                       Capture inbox
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="overflow-x-auto">
                     {captures.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No AP captures staged yet.</p>
                     ) : (
-                      <Table>
+                      <Table className="min-w-[52rem]">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Invoice</TableHead>
@@ -475,7 +475,7 @@ export default function AccountsPayablePage() {
                               </TableCell>
                               <TableCell>{Number(capture.confidenceScore ?? 0).toFixed(2)}</TableCell>
                               <TableCell>{money.format(Number(capture.totalAmount ?? 0))}</TableCell>
-                              <TableCell className="max-w-[20rem] text-xs text-muted-foreground">
+                              <TableCell className="max-w-[20rem] break-words text-xs text-muted-foreground">
                                 {capture.warnings?.length ? capture.warnings.join(" | ") : "No warnings"}
                               </TableCell>
                               <TableCell className="text-right">
@@ -505,11 +505,11 @@ export default function AccountsPayablePage() {
                       Invoice approval workbench
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="overflow-x-auto">
                     {invoices.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No invoices available in AP.</p>
                     ) : (
-                      <Table>
+                      <Table className="min-w-[44rem]">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Invoice</TableHead>

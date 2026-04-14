@@ -193,7 +193,7 @@ export default function InventoryPage() {
         icon={<Boxes className="h-6 w-6 text-primary" />}
         breadcrumb={<span>Operations / Inventory</span>}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               onClick={handleExportCsv}
@@ -215,7 +215,7 @@ export default function InventoryPage() {
         sticky
         left={
           <>
-            <div className="relative w-full min-w-[220px] max-w-sm" data-tour="inventory-search">
+            <div className="relative w-full min-w-0 sm:min-w-[220px] sm:max-w-sm" data-tour="inventory-search">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={searchInput}
@@ -233,7 +233,7 @@ export default function InventoryPage() {
               value={selectedLocation || "all"}
               onValueChange={(value) => setQueryState({ location: value === "all" ? "" : value })}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="All locations" />
               </SelectTrigger>
               <SelectContent>
@@ -251,7 +251,7 @@ export default function InventoryPage() {
               onValueChange={(value) => setQueryState({ category: value === "all" ? "" : value })}
               disabled={categoriesLoading}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="All categories" />
               </SelectTrigger>
               <SelectContent>
@@ -303,8 +303,8 @@ export default function InventoryPage() {
         onRetry={refetchInventory}
       >
         {(items) => (
-          <div data-tour="inventory-table">
-          <Table className="table-fixed w-full">
+          <div data-tour="inventory-table" className="overflow-x-auto">
+          <Table className="table-fixed w-full min-w-[48rem]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[10%]">SKU</TableHead>

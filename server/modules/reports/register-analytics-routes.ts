@@ -8,14 +8,15 @@ import { emitNotificationToRoles } from "../../services/notification-emitter";
 type AuthBundle = {
   ensureAuthenticated: import("express").RequestHandler;
   ensureRole: (roles: string[]) => import("express").RequestHandler;
+  ensurePermission: (resource: string, permissionType: string) => import("express").RequestHandler;
 };
 
 /**
  * Reports/analytics JSON endpoints (not `/api/export` file download — that stays in routes until split).
  */
 export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
-  const masterRead = [auth.ensureAuthenticated];
-  const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const masterRead = [auth.ensureAuthenticated, auth.ensurePermission("reports", "read")];
+  const masterWrite = [auth.ensureAuthenticated, auth.ensurePermission("reports", "update")];
 
   app.get("/api/reports/analytics", ...masterRead, async (req: Request, res: Response) => {
     try {

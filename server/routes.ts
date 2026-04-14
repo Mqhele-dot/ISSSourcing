@@ -113,7 +113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerMasterDataRoutes(app, auth);
   registerAnalyticsRoutes(app, auth);
 
-  const invWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const invWrite = [auth.ensureAuthenticated, auth.ensurePermission("inventory", "update")];
   const exportAccess = [auth.ensureAuthenticated, auth.ensurePermission("reports", "export")];
   const analyticsAccess = [auth.ensureAuthenticated, auth.ensurePermission("analytics", "read")];
 

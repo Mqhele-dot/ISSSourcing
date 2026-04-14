@@ -236,40 +236,40 @@ export default function SettingsPage() {
         onValueChange={(value) => setLocation(APP_ROUTES.admin.settingsSection(value as typeof activeSection))}
         className="space-y-6"
       >
-        <TabsList className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 h-auto">
-          <TabsTrigger value="general" className="flex items-center space-x-2 py-3">
+        <TabsList className="grid h-auto grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-9">
+          <TabsTrigger value="general" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <UserCircle className="h-4 w-4" />
             <span>General</span>
           </TabsTrigger>
-          <TabsTrigger value="inventory" className="flex items-center space-x-2 py-3">
+          <TabsTrigger value="inventory" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <Package className="h-4 w-4" />
             <span>Inventory</span>
           </TabsTrigger>
-          <TabsTrigger value="realtime" className="flex items-center space-x-2 py-3">
+          <TabsTrigger value="realtime" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <Activity className="h-4 w-4" />
             <span>Real-Time</span>
           </TabsTrigger>
-          <TabsTrigger value="database" className="flex items-center space-x-2 py-3">
+          <TabsTrigger value="database" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <Database className="h-4 w-4" />
             <span>Database</span>
           </TabsTrigger>
-          <TabsTrigger value="forecasting" className="flex items-center space-x-2 py-3">
+          <TabsTrigger value="forecasting" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <BarChart3 className="h-4 w-4" />
             <span>Forecasting</span>
           </TabsTrigger>
-          <TabsTrigger value="tax" className="flex items-center space-x-2 py-3">
+          <TabsTrigger value="tax" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <Receipt className="h-4 w-4" />
             <span>Tax</span>
           </TabsTrigger>
-          <TabsTrigger value="billing" className="flex items-center space-x-2 py-3">
+          <TabsTrigger value="billing" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <CreditCard className="h-4 w-4" />
             <span>Billing</span>
           </TabsTrigger>
-          <TabsTrigger value="warehouses" className="flex items-center space-x-2 py-3">
+          <TabsTrigger value="warehouses" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <Building className="h-4 w-4" />
             <span>Warehouses</span>
           </TabsTrigger>
-          <TabsTrigger value="security" className="flex items-center space-x-2 py-3">
+          <TabsTrigger value="security" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <Shield className="h-4 w-4" />
             <span>Security</span>
           </TabsTrigger>

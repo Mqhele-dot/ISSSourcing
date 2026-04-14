@@ -37,7 +37,7 @@
 ## Remaining Risks
 
 - Existing legacy DDL bootstrap modules still exist for local/dev convenience and should eventually be replaced with checked-in SQL migrations.
-- Some older route groups still rely on mixed role checks instead of a single normalized permission registry.
+- Core release-path route groups now use normalized permission middleware; a few auxiliary modules still use role-based guards until the permission registry is expanded further.
 - Metrics are currently in-memory and should move to Prometheus/OpenTelemetry before high-scale production use.
 
 ## Deployment Checklist

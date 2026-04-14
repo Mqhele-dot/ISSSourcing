@@ -263,19 +263,19 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
               value={String(queryState.q || "")}
               onChange={(event) => setQueryState({ q: event.target.value })}
               placeholder="Search PO number or supplier"
-              className="w-[260px]"
+              className="w-full sm:w-[260px]"
             />
             <Input
               value={String(queryState.supplier || "")}
               onChange={(event) => setQueryState({ supplier: event.target.value })}
               placeholder="Supplier id or name"
-              className="w-[220px]"
+              className="w-full sm:w-[220px]"
             />
             <Input
               value={String(queryState.status || "")}
               onChange={(event) => setQueryState({ status: event.target.value })}
               placeholder="Status (draft/open/approved/sent/received)"
-              className="w-[250px]"
+              className="w-full sm:w-[250px]"
             />
           </>
         }
@@ -335,7 +335,8 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
             return true;
           });
           return (
-          <Table>
+          <div className="overflow-x-auto">
+          <Table className="min-w-[56rem]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12 text-center">PDF</TableHead>
@@ -387,6 +388,7 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
               ))}
             </TableBody>
           </Table>
+          </div>
           );
         }}
       </DataState>
@@ -993,7 +995,7 @@ export default function OrdersPage() {
           breadcrumb={<span>Operations / Purchase</span>}
         />
         <Tabs defaultValue="orders" className="w-full">
-          <TabsList className="mb-4">
+          <TabsList className="mb-4 grid h-auto w-full grid-cols-1 sm:grid-cols-2">
             <TabsTrigger value="orders" className="gap-2">
               <ShoppingCart className="h-4 w-4" />
               Purchase Orders
@@ -1023,7 +1025,7 @@ export default function OrdersPage() {
         breadcrumb={<span>Operations / Purchase Orders</span>}
       />
       <Tabs defaultValue="orders" className="w-full">
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 grid h-auto w-full grid-cols-1 sm:grid-cols-2">
           <TabsTrigger value="orders" className="gap-2">
             <ShoppingCart className="h-4 w-4" />
             Purchase Orders

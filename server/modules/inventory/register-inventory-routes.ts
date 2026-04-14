@@ -7,6 +7,7 @@ import { insertInventoryItemSchema } from "@shared/schema";
 type AuthBundle = {
   ensureAuthenticated: import("express").RequestHandler;
   ensureRole: (roles: string[]) => import("express").RequestHandler;
+  ensurePermission: (resource: string, permissionType: string) => import("express").RequestHandler;
 };
 
 /**
@@ -15,7 +16,7 @@ type AuthBundle = {
  */
 export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): void {
   const invRead = [auth.ensureAuthenticated];
-  const invWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const invWrite = [auth.ensureAuthenticated, auth.ensurePermission("inventory", "update")];
 
   /** List/search GET `/api/inventory` stays in `operations-routes` when registered before this module. */
 

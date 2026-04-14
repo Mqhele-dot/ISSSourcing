@@ -218,7 +218,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search requisition number..."
-            className="w-[260px]"
+            className="w-full sm:w-[260px]"
           />
         }
         right={
@@ -258,7 +258,8 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
         onRetry={refetch}
       >
         {(data) => (
-          <Table className="requisitions-table">
+          <div className="overflow-x-auto">
+          <Table className="requisitions-table min-w-[52rem]">
             <TableHeader>
               <TableRow>
                 <TableHead>Req #</TableHead>
@@ -371,6 +372,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
       </DataState>
 

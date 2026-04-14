@@ -11,7 +11,7 @@ const warehouseRepo = createWarehouseRepository(storage);
 /** Warehouses CRUD, warehouse inventory, per-item warehouse breakdown. */
 export function registerWarehouseRoutes(app: Express, auth: AuthBundle): void {
   const warehouseRead = [auth.ensureAuthenticated];
-  const warehouseWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const warehouseWrite = [auth.ensureAuthenticated, auth.ensurePermission("warehouses", "update")];
 
   app.get("/api/warehouses", ...warehouseRead, async (_req: Request, res: Response) => {
     try {
