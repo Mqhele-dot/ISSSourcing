@@ -41,6 +41,7 @@ export function useSettings() {
     dateFormat: "YYYY-MM-DD",
     timeFormat: "HH:mm",
     currencySymbol: "$",
+    currencyCode: "USD",
     lowStockDefaultThreshold: 10,
     allowNegativeInventory: false,
     requireLocationForItems: true,
@@ -65,11 +66,7 @@ export function useSettings() {
 
   const updateSettings = useMutation({
     mutationFn: async (newSettings: Partial<AppSettings>) => {
-      const response = await apiRequest(
-        "PATCH",
-        "/api/settings",
-        newSettings
-      );
+      const response = await apiRequest("PUT", "/api/settings", newSettings);
       return await response.json();
     },
     onSuccess: () => {

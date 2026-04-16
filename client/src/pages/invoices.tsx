@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useSettings } from "@/hooks/use-settings";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -97,6 +98,7 @@ function isInvoiceLinesLocked(status: string) {
 }
 
 export default function InvoicesPage() {
+  const { settings } = useSettings();
   const { toast } = useToast();
   const [supplierId, setSupplierId] = useState<string>("none");
   const [purchaseOrderId, setPurchaseOrderId] = useState<string>("none");
@@ -258,7 +260,7 @@ export default function InvoicesPage() {
         totalTax,
         totalAmount,
         balanceDue: totalAmount,
-        currency: "USD",
+        currency: settings.currencyCode,
         items: lines,
       });
     },

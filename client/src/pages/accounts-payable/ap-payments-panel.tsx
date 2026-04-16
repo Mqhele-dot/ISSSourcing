@@ -1,0 +1,203 @@
+import { Landmark, Wallet } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { Invoice, PaymentBatch } from "./types";
+import type { ApPaymentBatchPayload } from "./use-ap-workspace-mutations";
+import type { UseMutationResult } from "@tanstack/react-query";
+
+type Props = {
+  readyForBatch: Invoice[];
+  selectedInvoiceIds: number[];
+  toggleInvoiceSelection: (invoiceId: number, checked: boolean) => void;
+  selectedBatchTotal: number;
+  paymentMethod: string;
+  setPaymentMethod: (v: string) => void;
+  scheduledDate: string;
+  setScheduledDate: (v: string) => void;
+  paymentBatchErrors: string[];
+  formatMoney: (n: number | null | undefined) => string;
+  paymentBatches: PaymentBatch[];
+  createBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchPayload>;
+  approveBatchMutation: UseMutationResult<unknown, Error, number>;
+  releaseBatchMutation: UseMutationResult<unknown, Error, number>;
+  onCreateBatch: () => void;
+};
+
+export function ApPaymentsPanel({
+  readyForBatch,
+  selectedInvoiceIds,
+  toggleInvoiceSelection,
+  selectedBatchTotal,
+  paymentMethod,
+  setPaymentMethod,
+  scheduledDate,
+  setScheduledDate,
+  paymentBatchErrors,
+  formatMoney,
+  paymentBatches,
+  createBatchMutation,
+  approveBatchMutation,
+  releaseBatchMutation,
+  onCreateBatch,
+}: Props) {
+  return (
+    <div className="space-y-4">
+      {paymentBatchErrors.length > 0 ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            <ul className="list-inside list-disc text-sm">
+              {paymentBatchErrors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Landmark className="h-4 w-4" />
+            Create payment batch
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Payment method</Label>
+              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BANK_TRANSFER">Bank transfer</SelectItem>
+                  <SelectItem value="CHECK">Check</SelectItem>
+                  <SelectItem value="PAYPAL">PayPal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Scheduled date</Label>
+              <Input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Selected total</Label>
+              <div className="rounded-md border px-3 py-2 text-sm">{formatMoney(selectedBatchTotal)}</div>
+            </div>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead />
+                <TableHead>Invoice</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Due date</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {readyForBatch.map((invoice) => {
+                const checked = selectedInvoiceIds.includes(invoice.id);
+                return (
+                  <TableRow key={invoice.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(state) => toggleInvoiceSelection(invoice.id, state === true)}
+                      />
+                    </TableCell>
+                    <TableCell>{invoice.invoiceNumber}</TableCell>
+                    <TableCell>
+                      <Badge variant={invoice.status === "APPROVED" ? "default" : "outline"}>{invoice.status}</Badge>
+                    </TableCell>
+                    <TableCell>{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell className="text-right">
+                      {formatMoney(Number(invoice.dueAmount ?? invoice.total ?? 0))}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+
+          <Button
+            type="button"
+            onClick={onCreateBatch}
+            disabled={selectedInvoiceIds.length === 0 || createBatchMutation.isPending}
+          >
+            {createBatchMutation.isPending ? "Creating batch..." : "Create AP payment batch"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Wallet className="h-4 w-4" />
+            Payment batch execution
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {paymentBatches.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No AP payment batches created yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Batch</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Scheduled</TableHead>
+                  <TableHead>Items</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paymentBatches.map((batch) => (
+                  <TableRow key={batch.id}>
+                    <TableCell>{batch.batchNumber}</TableCell>
+                    <TableCell>
+                      <Badge variant={batch.status === "RELEASED" ? "default" : "outline"}>{batch.status}</Badge>
+                    </TableCell>
+                    <TableCell>{batch.scheduledDate ? new Date(batch.scheduledDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell>{batch.items.length}</TableCell>
+                    <TableCell className="text-right">{formatMoney(Number(batch.totalAmount ?? 0))}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {batch.status === "PENDING_APPROVAL" ? (
+                          <Button size="sm" variant="outline" onClick={() => approveBatchMutation.mutate(batch.id)}>
+                            Approve
+                          </Button>
+                        ) : null}
+                        {batch.status === "APPROVED" ? (
+                          <Button size="sm" onClick={() => releaseBatchMutation.mutate(batch.id)}>
+                            Release
+                          </Button>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

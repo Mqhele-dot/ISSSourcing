@@ -59,7 +59,7 @@ export const KPI_REGISTRY: KpiRegistryEntry[] = [
     description: "Current unpaid accounts payable exposure.",
     sourceKey: "/api/ap/overview.outstandingAmount",
     allowedFilters: ["status", "supplierId", "dueDate"],
-    drilldownRoute: APP_ROUTES.finance.accountsPayable,
+    drilldownRoute: APP_ROUTES.finance.accountsPayablePayments,
     exportDatasetKey: "invoices",
   },
   {
@@ -69,7 +69,7 @@ export const KPI_REGISTRY: KpiRegistryEntry[] = [
     description: "Supplier invoices that have passed the due date.",
     sourceKey: "/api/control-tower/overview.kpis.overdueInvoices",
     allowedFilters: ["supplierId", "status"],
-    drilldownRoute: APP_ROUTES.finance.accountsPayable,
+    drilldownRoute: APP_ROUTES.finance.accountsPayableApprovals,
     exportDatasetKey: "invoices",
   },
   {

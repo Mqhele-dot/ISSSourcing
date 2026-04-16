@@ -1108,6 +1108,8 @@ export const appSettings = pgTable(
   dateFormat: text("date_format").default("YYYY-MM-DD"),
   timeFormat: text("time_format").default("HH:mm"),
   currencySymbol: text("currency_symbol").default("$"),
+  /** ISO 4217 code for Intl currency formatting and reporting (e.g. USD, EUR). */
+  currencyCode: text("currency_code").notNull().default("USD"),
   // Inventory settings
   lowStockDefaultThreshold: integer("low_stock_default_threshold").default(10),
   allowNegativeInventory: boolean("allow_negative_inventory").default(false),
@@ -1149,6 +1151,11 @@ export const appSettingsFormSchema = insertAppSettingsSchema.extend({
   companyName: z.string().min(2, "Company name must be at least 2 characters"),
   companyLogo: z.string().optional().nullable(),
   primaryColor: z.string().regex(/^#[0-9A-F]{6}$/i, "Must be a valid hex color"),
+  currencyCode: z
+    .string()
+    .length(3, "Use a 3-letter ISO 4217 code")
+    .regex(/^[A-Za-z]{3}$/, "Invalid currency code")
+    .transform((s) => s.toUpperCase()),
 });
 
 // Supplier Logo schema to store supplier logos

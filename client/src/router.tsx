@@ -47,6 +47,7 @@ const DocumentsPage = lazy(() => import("@/pages/documents"));
 const UploadsPathRedirect = lazy(() => import("@/pages/uploads-redirect"));
 const ControlTowerPage = lazy(() => import("@/pages/control-tower"));
 const AccountsPayablePage = lazy(() => import("@/pages/accounts-payable"));
+const AccountsPayableRedirectToIntake = lazy(() => import("@/pages/accounts-payable/accounts-payable-redirect-to-intake"));
 const AnalyticsWorkspacePage = lazy(() => import("@/pages/analytics-workspace"));
 const SavedReportsPage = lazy(() => import("@/pages/saved-reports"));
 const ExportCenterPage = lazy(() => import("@/pages/export-center"));
@@ -130,7 +131,8 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.procurement.supplierPortal} component={SupplierPortalPage} />
 
         <ProtectedRoute path={APP_ROUTES.finance.invoices} component={InvoicesPage} />
-        <ProtectedRoute path={APP_ROUTES.finance.accountsPayable} component={AccountsPayablePage} />
+        <ProtectedRoute path="/finance/accounts-payable/:section" component={AccountsPayablePage} />
+        <ProtectedRoute path={APP_ROUTES.finance.accountsPayable} component={AccountsPayableRedirectToIntake} />
         <ProtectedRoute path={APP_ROUTES.finance.approvalPolicies} component={ApprovalPoliciesPage} />
         <ProtectedRoute path={APP_ROUTES.finance.billing} component={BillingPage} />
 

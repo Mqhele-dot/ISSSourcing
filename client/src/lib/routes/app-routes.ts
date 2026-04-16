@@ -96,6 +96,10 @@ export const APP_ROUTES = {
   },
   finance: {
     accountsPayable: "/finance/accounts-payable",
+    accountsPayableIntake: "/finance/accounts-payable/intake",
+    accountsPayableApprovals: "/finance/accounts-payable/approvals",
+    accountsPayableExceptions: "/finance/accounts-payable/exceptions",
+    accountsPayablePayments: "/finance/accounts-payable/payments",
     invoices: "/finance/invoices",
     approvalPolicies: "/finance/approval-policies",
     billing: "/finance/billing",

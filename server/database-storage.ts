@@ -250,6 +250,7 @@ export class DatabaseStorage implements IStorage {
       dateFormat: "MM/DD/YYYY",
       timeFormat: "hh:mm A",
       currencySymbol: "$",
+      currencyCode: "USD",
       lowStockDefaultThreshold: 10,
       allowNegativeInventory: false,
       enableVat: false,

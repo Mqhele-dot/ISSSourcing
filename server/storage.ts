@@ -4339,6 +4339,7 @@ export class MemStorage implements IStorage {
         dateFormat: settings.dateFormat || "YYYY-MM-DD",
         timeFormat: settings.timeFormat || "HH:mm",
         currencySymbol: settings.currencySymbol || "$",
+        currencyCode: (settings as Partial<AppSettings>).currencyCode || "USD",
         lowStockDefaultThreshold: settings.lowStockDefaultThreshold || 10,
         allowNegativeInventory: settings.allowNegativeInventory || false,
         availableUnits: (settings as Partial<AppSettings>).availableUnits ?? ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"],

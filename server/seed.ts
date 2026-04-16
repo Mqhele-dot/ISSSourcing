@@ -274,6 +274,7 @@ async function ensureSettings(): Promise<void> {
     dateFormat: "YYYY-MM-DD",
     timeFormat: "HH:mm",
     currencySymbol: "$",
+    currencyCode: "USD",
     lowStockDefaultThreshold: 10,
     allowNegativeInventory: false,
     realTimeUpdatesEnabled: true,

@@ -15,7 +15,37 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
+
+/** Common ISO 4217 codes for reporting; users can extend via API if needed later. */
+const REPORTING_CURRENCY_CODES = [
+  "USD",
+  "EUR",
+  "GBP",
+  "JPY",
+  "CAD",
+  "AUD",
+  "CHF",
+  "CNY",
+  "INR",
+  "ZAR",
+  "MXN",
+  "BRL",
+  "SEK",
+  "NOK",
+  "DKK",
+  "PLN",
+  "SGD",
+  "HKD",
+  "NZD",
+] as const;
 
 // Define form schema
 const generalSettingsSchema = z.object({
@@ -25,6 +55,11 @@ const generalSettingsSchema = z.object({
   dateFormat: z.string().min(1, "Date format is required"),
   timeFormat: z.string().min(1, "Time format is required"),
   currencySymbol: z.string().min(1, "Currency symbol is required"),
+  currencyCode: z
+    .string()
+    .length(3, "Use a 3-letter ISO 4217 code")
+    .regex(/^[A-Za-z]{3}$/, "Invalid code")
+    .transform((s) => s.toUpperCase()),
 });
 
 export function GeneralSettingsForm() {
@@ -40,6 +75,7 @@ export function GeneralSettingsForm() {
       dateFormat: settings.dateFormat || 'YYYY-MM-DD',
       timeFormat: settings.timeFormat || 'HH:mm',
       currencySymbol: settings.currencySymbol || '$',
+      currencyCode: (settings.currencyCode || "USD").toUpperCase(),
     },
   });
 
@@ -54,6 +90,7 @@ export function GeneralSettingsForm() {
         dateFormat: data.dateFormat,
         timeFormat: data.timeFormat,
         currencySymbol: data.currencySymbol,
+        currencyCode: data.currencyCode,
       });
     }
   }
@@ -138,13 +175,41 @@ export function GeneralSettingsForm() {
                       <Input placeholder="$" {...field} />
                     </FormControl>
                     <FormDescription>
-                      Symbol used for monetary values
+                      Symbol used for monetary values and legacy PDFs
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
+
+            <FormField
+              control={form.control}
+              name="currencyCode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Reporting currency (ISO 4217)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger aria-label="Reporting currency code">
+                        <SelectValue placeholder="Select currency" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {REPORTING_CURRENCY_CODES.map((code) => (
+                        <SelectItem key={code} value={code}>
+                          {code}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Used for analytics, AP workspace, and number formatting across the app
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
