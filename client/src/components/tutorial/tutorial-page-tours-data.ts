@@ -1,4 +1,5 @@
 import type { TutorialStep } from "@/components/tutorial/tutorial-types";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 /** Cross-app guided tour from Control Tower — navigates and uses spotlight + row click. */
 export const FULL_APP_TOUR_STEPS: TutorialStep[] = [
@@ -387,9 +388,9 @@ export const PAGE_TOUR_DEFINITIONS: Record<string, TutorialStep[]> = {
   "page-dashboard": [
     {
       id: "pdb-stats",
-      title: "Classic dashboard",
-      text: "Legacy dashboard tiles still anchor quick stats — use Control Tower for operations.",
-      route: "/dashboard",
+      title: "Analytics overview",
+      text: "Quick stats and workspace entry live on the analytics overview — use Control Tower for day-to-day operations.",
+      route: APP_ROUTES.analytics.overview,
       routeExact: true,
       presentation: "spotlight",
       targetSelector: "#dashboard-stats",

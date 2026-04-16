@@ -93,3 +93,27 @@ export function getLegacyKebabRedirectEntries(): ReadonlyArray<{ path: string; t
 
   return out;
 }
+
+/** Single ordered list for the router (static → :id patterns → :po → kebab). Do not reorder. */
+export type LegacyRedirectRule =
+  | { kind: "static"; path: string; to: string }
+  | { kind: "idParam"; path: string; to: (params: { id: string }) => string }
+  | { kind: "poParam"; path: string; to: (params: { po: string }) => string };
+
+export function buildLegacyRedirectRules(): LegacyRedirectRule[] {
+  const kebab = getLegacyKebabRedirectEntries();
+  return [
+    ...LEGACY_STATIC_REDIRECTS.map((r) => ({ kind: "static" as const, path: r.path, to: r.to })),
+    ...LEGACY_PARAMETRIC_STATIC_REDIRECTS.map((r) => ({
+      kind: "idParam" as const,
+      path: r.path,
+      to: (params: { id: string }) => r.to(params),
+    })),
+    ...LEGACY_PO_PARAM_REDIRECTS.map((r) => ({
+      kind: "poParam" as const,
+      path: r.path,
+      to: (params: { po: string }) => r.to(params),
+    })),
+    ...kebab.map((r) => ({ kind: "static" as const, path: r.path, to: r.to })),
+  ];
+}

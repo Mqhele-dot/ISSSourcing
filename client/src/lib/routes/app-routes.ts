@@ -130,6 +130,8 @@ export const APP_ROUTES = {
     syncDashboard: "/admin/sync-dashboard",
     syncTest: "/admin/sync-test",
     realTimeUpdates: "/admin/real-time-updates",
+    /** First organization bootstrap (admin); shown when /api/ready reports needsFirstRunOnboarding */
+    onboarding: "/admin/onboarding",
   },
 } as const;
 

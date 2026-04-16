@@ -1,5 +1,8 @@
+import { Link } from "wouter";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 export type ReadinessStatus = {
   dbReady: boolean;
@@ -8,6 +11,11 @@ export type ReadinessStatus = {
   websocketReady: boolean;
   uploadPathReady: boolean;
   emailServiceReady: boolean;
+  /** Present when the API could query install state (packaged / first-run hints). */
+  productBootstrap?: {
+    organizationCount: number;
+    needsFirstRunOnboarding: boolean;
+  } | null;
 };
 
 export async function fetchReadinessStatus(): Promise<ReadinessStatus> {
@@ -64,16 +72,37 @@ export function ReadinessBanner() {
   if (!data.sessionStoreReady) unavailable.push("session store");
   if (!data.uploadPathReady) unavailable.push("uploads path");
 
-  if (unavailable.length === 0) return null;
+  if (unavailable.length > 0) {
+    return (
+      <div className="sticky top-0 z-40 shrink-0 p-3">
+        <Alert variant="destructive">
+          <AlertTitle>Limited mode: backend is not fully ready</AlertTitle>
+          <AlertDescription>
+            Unavailable: {unavailable.join(", ")}. Check database connectivity, run migrations, and seed demo data.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
 
-  return (
-    <div className="sticky top-0 z-40 shrink-0 p-3">
-      <Alert variant="destructive">
-        <AlertTitle>Limited mode: backend is not fully ready</AlertTitle>
-        <AlertDescription>
-          Unavailable: {unavailable.join(", ")}. Check database connectivity, run migrations, and seed demo data.
-        </AlertDescription>
-      </Alert>
-    </div>
-  );
+  if (data.productBootstrap?.needsFirstRunOnboarding) {
+    return (
+      <div className="sticky top-0 z-40 shrink-0 p-3">
+        <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
+          <AlertTitle>First-run setup</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              No organization record was found. Admins can create the first tenant below, or run migrations plus seed
+              data for a demo environment.
+            </span>
+            <Button asChild size="sm" variant="secondary" className="shrink-0">
+              <Link href={APP_ROUTES.admin.onboarding}>Open organization setup</Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  return null;
 }

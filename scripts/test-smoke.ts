@@ -50,6 +50,16 @@ async function main() {
     "Mobile workflow route",
     fetch(`${baseUrl}/m/tasks`, { headers: { Cookie: cookie } }).then((res) => res.ok),
   );
+  await check(
+    "Ready payload shape (productBootstrap when db ready)",
+    apiJsonRequest("/ready", { method: "GET", cookie, baseUrl }).then((res) => {
+      if (!res.ok) return false;
+      const body = res.json as { ok?: boolean; data?: Record<string, unknown> };
+      if (!body?.ok || !body.data) return false;
+      if (body.data.dbReady !== true) return true;
+      return Object.prototype.hasOwnProperty.call(body.data, "productBootstrap");
+    }),
+  );
 
   console.log("\nSmoke suite result: %d failure(s)", failures);
   exitTest(failures > 0 ? 1 : 0);

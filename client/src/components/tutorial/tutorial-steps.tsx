@@ -46,7 +46,7 @@ export function TutorialSteps() {
       }
     ]);
     
-    // Dashboard tutorial (targetSelectors must match IDs on dashboard: #dashboard-stats, #analytics, #dashboard-activity, #dashboard-actions) (targetSelector scrolls the page to the relevant section when user clicks Next)
+    // Dashboard tutorial: targets exist on Control Tower home (/) and Analytics overview (/analytics/overview) — use Help → Dashboard after navigating to the page you want to spotlight.
     registerTutorial("dashboard", [
       {
         id: "dashboard-intro",

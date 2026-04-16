@@ -6,8 +6,10 @@ import OrdersPage from "@/pages/orders";
 import RequisitionsPage from "@/pages/requisitions";
 
 /**
- * Tabbed procurement: Purchase Orders | Requisitions (canonical: /procurement/orders, /procurement/requisitions).
- * Legacy /purchase, /orders, and /requisitions URLs redirect here.
+ * Canonical procurement **index / tab shell** only (`/procurement/orders` | `/procurement/requisitions`).
+ * PO rows drill into `OrdersPage` (list + detail). Requisition list is `RequisitionsPage` (embedded);
+ * new/edit forms are `RequisitionFormPage` on `/procurement/requisitions/new` and `/procurement/requisitions/:id`.
+ * Legacy `/purchase` and `/orders` tab shells stay in `OrdersPage` (`ProcurementLegacyTabShell`).
  */
 export default function PurchasePage() {
   const [canonicalReqMatch] = useRoute(APP_ROUTES.procurement.requisitions);

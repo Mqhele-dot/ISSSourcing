@@ -5,7 +5,7 @@
 ### Critical
 
 - Added central environment validation in `server/config/env.ts` and made production fail fast when `DATABASE_URL` or a safe `SESSION_SECRET` is missing.
-- Removed production reliance on startup schema mutation by gating bootstrap behavior to non-production profiles in `server/index.ts`.
+- Removed production reliance on startup schema mutation by gating bootstrap behavior to non-production profiles in `server/bootstrap/runtime-init.ts` (wired from `server/index.ts`).
 - Re-enabled CSRF protection for state-changing API routes and added `/api/csrf-token` client/test integration.
 
 ### High
@@ -48,7 +48,7 @@ The **same JSON** also includes **`websocketReady`** and **`emailServiceReady`**
 
 **Production gate:** Treat **`npm run release:gate`**, the deployment checklist below, and **`/health` / `/ready` / `/health/deep`** probes as the **authoritative** installability checks. The UI banner is a **developer/operator hint**, not a substitute for monitoring or release automation.
 
-For first-run / packaged installs later, reuse the same `/api/ready` contract and extend the client only if you need to show optional warnings (e.g. websocket) or a dedicated onboarding flow.
+**Packaged / first-run:** `GET /api/ready` and `GET /ready` now include optional **`productBootstrap`**: `{ organizationCount, needsFirstRunOnboarding }` when the database is reachable. The UI shows an **amber “First-run setup”** banner when `needsFirstRunOnboarding` is true (no rows in `organizations`), without blocking other flows. **Admins** can complete setup at **`/admin/onboarding`**, which calls **`POST /api/onboarding/bootstrap`**. Users who are not admins must sign in as an admin or use seed/migrations that create an organization. **Unauthenticated** visitors still see the banner but must log in before the setup form works.
 
 ## Deployment Checklist
 

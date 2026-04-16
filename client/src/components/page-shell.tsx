@@ -43,14 +43,17 @@ export function PageSection({
   title,
   description,
   children,
+  id,
 }: {
   className?: string;
   title?: string;
   description?: string;
+  /** Optional DOM id for tutorials / e2e anchors. */
+  id?: string;
   children: ReactNode;
 }) {
   return (
-    <section className={cn("space-y-3", className)}>
+    <section id={id} className={cn("space-y-3", className)}>
       {title ? (
         <div>
           <h2 className="text-lg font-semibold tracking-tight">{title}</h2>

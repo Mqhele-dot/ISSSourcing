@@ -36,3 +36,12 @@
 ## App shell
 
 - **Bootstrap split:** [`client/src/app/`](../client/src/app/) — `app-error-boundary`, `app-readiness-banner`, `app-providers`, `app-shell-layout`; thin [`App.tsx`](../client/src/App.tsx).
+
+## Productization pass (router, procurement, server bootstrap)
+
+- **Router:** Legacy redirects are built from a single ordered rule list in [`legacy-redirects.ts`](../client/src/lib/routes/legacy-redirects.ts) (`buildLegacyRedirectRules`); `/analytics` root redirect is only the static legacy rule (no duplicate `Route` in [`router.tsx`](../client/src/router.tsx)).
+- **Procurement:** Legacy `/purchase` and `/orders` tab shells share [`ProcurementLegacyTabShell`](../client/src/pages/orders.tsx) inside `orders.tsx`; canonical shell remains [`purchase-page.tsx`](../client/src/pages/purchase-page.tsx).
+- **Tutorials:** Page tour “dashboard” step targets [`APP_ROUTES.analytics.overview`](../client/src/lib/routes/app-routes.ts) instead of `/dashboard`.
+- **Server:** [`server/index.ts`](../server/index.ts) delegates to [`server/bootstrap/`](../server/bootstrap/) (security, request context, runtime init, metrics route, background tasks, global error handler, startup banner).
+- **Installable hints:** [`/api/ready`](../server/routes.ts) adds `productBootstrap`; client banner in [`app-readiness-banner.tsx`](../client/src/app/app-readiness-banner.tsx) links to [`/admin/onboarding`](../client/src/pages/onboarding-page.tsx) (`APP_ROUTES.admin.onboarding`).
+- **Procurement modules:** PO list/detail/helpers live under [`client/src/pages/orders/`](../client/src/pages/orders/) (`purchase-orders-list`, `purchase-order-detail-view`, `purchase-order-shared`, `procurement-legacy-tab-shell`); [`orders.tsx`](../client/src/pages/orders.tsx) is the route shell only.

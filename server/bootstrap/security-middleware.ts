@@ -1,0 +1,32 @@
+import type { Express } from "express";
+import express from "express";
+import helmet from "helmet";
+import { appEnv } from "../config/env";
+
+export function registerSecurityMiddleware(app: Express): void {
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          "img-src": ["'self'", "data:", "blob:", "https:"],
+          "connect-src": ["'self'", "ws:", "wss:", "https:"],
+          "script-src": ["'self'", "'unsafe-inline'"],
+        },
+      },
+      referrerPolicy: { policy: "no-referrer" },
+      frameguard: { action: "sameorigin" },
+      hsts: appEnv.isProduction
+        ? {
+            maxAge: 31536000,
+            includeSubDomains: true,
+            preload: false,
+          }
+        : false,
+    }),
+  );
+  app.disable("x-powered-by");
+  app.use(express.json({ limit: appEnv.requestLimits.json }));
+  app.use(express.urlencoded({ extended: false, limit: appEnv.requestLimits.form }));
+  app.use(express.text({ type: "text/*", limit: appEnv.requestLimits.text }));
+}

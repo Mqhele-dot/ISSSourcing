@@ -86,6 +86,7 @@ import {
 } from "./http/upload-config";
 import { csvBufferForExcel, workbookToBuffer } from "./http/export-helpers";
 import { appEnv } from "./config/env";
+import { getProductBootstrapHints } from "./lib/product-bootstrap";
 import { analyticsRateLimiter, exportRateLimiter, uploadRateLimiter } from "./services/security-service";
 
 function isInternalExportRequest(req: Request): boolean {
@@ -2179,7 +2180,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     sendOk(res, getHealthPayload());
   });
 
-  app.get("/ready", (_req, res) => {
+  const sendReadyPayload = async (res: Response) => {
+    const productBootstrap =
+      readiness.dbReady ? await getProductBootstrapHints().catch(() => null) : null;
     sendOk(res, {
       runtimeProfile: appEnv.runtimeProfile,
       build: readiness.build,
@@ -2189,19 +2192,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       websocketReady: readiness.websocketReady,
       uploadPathReady: uploadPathReady(),
       emailServiceReady: emailServiceReady(),
+      productBootstrap,
     });
+  };
+
+  app.get("/ready", (_req, res) => {
+    void sendReadyPayload(res);
   });
   app.get("/api/ready", (_req, res) => {
-    sendOk(res, {
-      runtimeProfile: appEnv.runtimeProfile,
-      build: readiness.build,
-      dbReady: readiness.dbReady,
-      schemaReady: readiness.schemaReady,
-      sessionStoreReady: readiness.sessionStoreReady,
-      websocketReady: readiness.websocketReady,
-      uploadPathReady: uploadPathReady(),
-      emailServiceReady: emailServiceReady(),
-    });
+    void sendReadyPayload(res);
   });
 
   const getDeepHealthPayload = async () => {

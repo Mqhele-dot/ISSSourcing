@@ -3,12 +3,7 @@ import { Switch, Route, Redirect } from "wouter";
 import { Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
-import {
-  getLegacyKebabRedirectEntries,
-  LEGACY_PARAMETRIC_STATIC_REDIRECTS,
-  LEGACY_PO_PARAM_REDIRECTS,
-  LEGACY_STATIC_REDIRECTS,
-} from "@/lib/routes/legacy-redirects";
+import { buildLegacyRedirectRules, type LegacyRedirectRule } from "@/lib/routes/legacy-redirects";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -55,6 +50,7 @@ const AccountsPayablePage = lazy(() => import("@/pages/accounts-payable"));
 const AnalyticsWorkspacePage = lazy(() => import("@/pages/analytics-workspace"));
 const SavedReportsPage = lazy(() => import("@/pages/saved-reports"));
 const ExportCenterPage = lazy(() => import("@/pages/export-center"));
+const OnboardingPage = lazy(() => import("@/pages/onboarding-page"));
 const MobileReceivePage = lazy(() => import("@/pages/mobile-receive"));
 const MobilePickPage = lazy(() => import("@/pages/mobile-pick"));
 const MobileHubHome = lazy(() => import("@/pages/mobile-hub-home"));
@@ -82,7 +78,7 @@ function RouteFallback() {
   );
 }
 
-const LEGACY_KEBAB_REDIRECTS = getLegacyKebabRedirectEntries();
+const LEGACY_REDIRECT_RULES: LegacyRedirectRule[] = buildLegacyRedirectRules();
 
 export function AppRouter() {
   return (
@@ -98,9 +94,6 @@ export function AppRouter() {
 
         <ProtectedRoute path={APP_ROUTES.home} component={Home} />
 
-        <Route path={APP_ROUTES.analytics.root}>
-          <Redirect to={APP_ROUTES.analytics.overview} />
-        </Route>
         <ProtectedRoute path={APP_ROUTES.analytics.overview} component={AnalyticsWorkspacePage} />
         <ProtectedRoute path={APP_ROUTES.analytics.inventory} component={AnalyticsWorkspacePage} />
         <ProtectedRoute path={APP_ROUTES.analytics.procurement} component={AnalyticsWorkspacePage} />
@@ -152,6 +145,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.admin.syncTest} component={SyncTestPage} />
         <ProtectedRoute path={APP_ROUTES.admin.syncDashboard} component={SyncDashboard} />
         <ProtectedRoute path={APP_ROUTES.admin.downloads} component={DownloadPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.onboarding} component={OnboardingPage} />
         <ProtectedRoute path={APP_ROUTES.admin.settings} component={SettingsPage} />
         <ProtectedRoute path={APP_ROUTES.admin.settingsSection(":section")} component={SettingsPage} />
         <ProtectedRoute path={APP_ROUTES.admin.userRoles} component={UserRolesPage} />
@@ -161,26 +155,27 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.admin.documentExtractor} component={DocumentExtractorPage} />
         <ProtectedRoute path={APP_ROUTES.admin.documentExtractorMode(":mode")} component={DocumentExtractorPage} />
 
-        {LEGACY_STATIC_REDIRECTS.map(({ path, to }) => (
-          <Route key={path} path={path}>
-            <Redirect to={to} />
-          </Route>
-        ))}
-        {LEGACY_PARAMETRIC_STATIC_REDIRECTS.map(({ path, to }) => (
-          <Route key={path} path={path}>
-            {(params) => <Redirect to={to(params as { id: string })} />}
-          </Route>
-        ))}
-        {LEGACY_PO_PARAM_REDIRECTS.map(({ path, to }) => (
-          <Route key={path} path={path}>
-            {(params) => <Redirect to={to(params as { po: string })} />}
-          </Route>
-        ))}
-        {LEGACY_KEBAB_REDIRECTS.map(({ path, to }) => (
-          <Route key={path} path={path}>
-            <Redirect to={to} />
-          </Route>
-        ))}
+        {LEGACY_REDIRECT_RULES.map((rule) => {
+          if (rule.kind === "static") {
+            return (
+              <Route key={`s:${rule.path}`} path={rule.path}>
+                <Redirect to={rule.to} />
+              </Route>
+            );
+          }
+          if (rule.kind === "idParam") {
+            return (
+              <Route key={`i:${rule.path}`} path={rule.path}>
+                {(params) => <Redirect to={rule.to(params as { id: string })} />}
+              </Route>
+            );
+          }
+          return (
+            <Route key={`p:${rule.path}`} path={rule.path}>
+              {(params) => <Redirect to={rule.to(params as { po: string })} />}
+            </Route>
+          );
+        })}
         <Route path="/auth" component={AuthPage} />
         <Route component={NotFound} />
       </Switch>

@@ -218,7 +218,10 @@ export default function AnalyticsWorkspacePage() {
         subtitle="Business intelligence, saved reports, and export execution under one navigation model."
         breadcrumb={<span>Analytics</span>}
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div
+            className="flex flex-wrap gap-2"
+            id={section === "overview" ? "dashboard-actions" : undefined}
+          >
             <Button asChild size="sm" variant="outline">
               <Link href={APP_ROUTES.operations.controlTower}>Open control tower</Link>
             </Button>
@@ -241,7 +244,10 @@ export default function AnalyticsWorkspacePage() {
       >
         {() => (
           <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div
+              className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+              id={section === "overview" ? "dashboard-stats" : undefined}
+            >
               {cards.map((card) => (
                 <Card key={card.title}>
                   <CardHeader className="space-y-1">
@@ -262,6 +268,7 @@ export default function AnalyticsWorkspacePage() {
             </div>
 
             <PageSection
+              id={section === "overview" ? "dashboard-activity" : undefined}
               title="Boundary map"
               description="Control tower remains the operational monitor, analytics is BI, and reports stays the tabular output layer."
             >
@@ -288,6 +295,7 @@ export default function AnalyticsWorkspacePage() {
             </PageSection>
 
             <PageSection
+              id={section === "overview" ? "analytics" : undefined}
               title="KPI registry"
               description="Registry-backed KPI metadata keeps title, data source, drilldown, and export dataset mapping in one place."
             >

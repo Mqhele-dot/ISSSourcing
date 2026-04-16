@@ -8,6 +8,12 @@ test.describe("Analytics workspace", () => {
     await expect(page.getByRole("heading", { name: /analytics workspace/i })).toBeVisible({ timeout: 10000 });
   });
 
+  test("analytics overview exposes tutorial anchor dashboard-stats", async ({ page }) => {
+    await gotoAuthed(page, "/analytics/overview");
+    await expect(page.getByRole("heading", { name: /analytics workspace/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("#dashboard-stats")).toBeVisible();
+  });
+
   test("overview exposes canonical analytics sections", async ({ page }) => {
     await gotoAuthed(page, "/analytics/overview");
     const sectionNav = page.getByLabel(/section navigation/i);

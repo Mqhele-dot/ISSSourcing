@@ -213,7 +213,7 @@ export default function HomePage() {
         subtitle="Operational command center"
         breadcrumb={<span>Overview / Control Tower</span>}
         actions={
-          <div className="flex flex-wrap gap-2" data-tour="control-tower-actions">
+          <div className="flex flex-wrap gap-2" data-tour="control-tower-actions" id="dashboard-actions">
             <Button
               onClick={handleStartTutorial}
               disabled={startingTutorial}
@@ -288,7 +288,11 @@ export default function HomePage() {
       >
         {(overview) => (
           <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" data-tour="dashboard-summary">
+            <div
+              className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+              data-tour="dashboard-summary"
+              id="dashboard-stats"
+            >
               <KpiCard
                 title="Open exceptions"
                 value={openExceptions}
@@ -367,7 +371,7 @@ export default function HomePage() {
               </Card>
             ) : null}
 
-            <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+            <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]" id="dashboard-activity">
               <Card>
                 <CardHeader>
                   <CardTitle>Recent activity</CardTitle>
@@ -392,7 +396,7 @@ export default function HomePage() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card id="analytics">
                 <CardHeader>
                   <CardTitle>Exception severity mix</CardTitle>
                 </CardHeader>
