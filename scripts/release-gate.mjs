@@ -5,7 +5,7 @@ const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
 const requiredScripts = [
   "check",
   "lint",
-  "validate:migrations",
+  "migrate:check",
   "test:contracts",
   "test:rbac",
   "test:procurement-flow",

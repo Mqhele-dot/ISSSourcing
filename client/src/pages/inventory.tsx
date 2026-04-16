@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { requestJson } from "@/lib/queryClient";
 import { downloadCsv } from "@/lib/csv-download";
 import { fetchInventory, type InventoryListItem } from "@/api/client";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 type Category = {
   id: number;
@@ -287,12 +288,12 @@ export default function InventoryPage() {
         data={displayedItems}
         isEmpty={(items) => items.length === 0}
         emptyTitle="No inventory items found"
-        emptyDescription="Add items from the dashboard or run the demo to seed data."
+        emptyDescription="Add items from analytics or run the demo to seed data."
         emptyAction={
           <div className="flex flex-wrap gap-2">
             <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add inventory">
               <Button asChild variant="default" size="sm">
-                <Link href="/dashboard">Add items (Dashboard)</Link>
+                <Link href={APP_ROUTES.analytics.overview}>Add items (Analytics)</Link>
               </Button>
             </Can>
             <Button asChild variant="outline" size="sm">

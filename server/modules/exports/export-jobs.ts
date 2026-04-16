@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { pool } from "../../db";
 import { appEnv } from "../../config/env";
 import { getActiveOrganizationId } from "../../organization-context";
+import { incrementMetric } from "../../observability/metrics";
 
 export type ExportJobStatus = "queued" | "running" | "succeeded" | "failed";
 
@@ -94,6 +95,7 @@ export async function createExportJob(input: CreateExportJobInput): Promise<Expo
       input.reason ?? null,
     ],
   );
+  incrementMetric("exports.jobs.queued");
   return mapExportJobRow(result.rows[0]);
 }
 
@@ -213,6 +215,7 @@ export async function requeueExportJob(id: number): Promise<void> {
     `,
     [id, getActiveOrganizationId()],
   );
+  incrementMetric("exports.jobs.queued");
 }
 
 export async function listExpiredExportJobs(): Promise<Array<{ id: number; filePath: string | null }>> {

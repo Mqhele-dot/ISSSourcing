@@ -86,8 +86,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Apply database schema
-        run: yes | npx drizzle-kit push
+      - name: Check migrations
+        run: npm run migrate:check
 
       - name: Seed demo data
         run: npm run db:seed
@@ -148,8 +148,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Apply database schema
-        run: yes | npx drizzle-kit push
+      - name: Check migrations
+        run: npm run migrate:check
 
       - name: Seed demo data
         run: npm run db:seed

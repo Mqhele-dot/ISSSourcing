@@ -8,6 +8,7 @@ import {
   insertPaymentSchema,
 } from "@shared/schema";
 import { sendError, sendOk } from "../../api-response";
+import { incrementMetric } from "../../observability/metrics";
 import { storage } from "../../storage";
 import { resolveRequestActor } from "../../auth/request-user";
 import { parseApprovalContext, parseInvoiceFilters } from "./ap-route-adapters";
@@ -60,6 +61,14 @@ function parseId(raw: string, label: string) {
 
 function requestActor(req: Request) {
   return resolveRequestActor(req);
+}
+
+function recordApprovalFailure() {
+  incrementMetric("ap.approval.failures");
+}
+
+function recordReleaseFailure() {
+  incrementMetric("ap.release.failures");
 }
 
 export function registerApRoutes(app: Express, auth: AuthBundle): void {
@@ -270,6 +279,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, invoice);
     } catch (error) {
+      recordApprovalFailure();
       console.error("Error approving invoice:", error);
       return sendError(res, 500, "INVOICE_APPROVE_FAILED", "Failed to approve invoice");
     }
@@ -288,6 +298,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, invoice);
     } catch (error) {
+      recordApprovalFailure();
       console.error("Error rejecting invoice:", error);
       return sendError(res, 500, "INVOICE_REJECT_FAILED", "Failed to reject invoice");
     }
@@ -344,6 +355,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!batch) return sendError(res, 404, "PAYMENT_BATCH_NOT_FOUND", "Payment batch not found");
       return sendOk(res, batch);
     } catch (error) {
+      recordApprovalFailure();
       console.error("Error approving payment batch:", error);
       return sendError(res, 500, "PAYMENT_BATCH_APPROVE_FAILED", error instanceof Error ? error.message : "Failed to approve payment batch");
     }
@@ -357,6 +369,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!batch) return sendError(res, 404, "PAYMENT_BATCH_NOT_FOUND", "Payment batch not found");
       return sendOk(res, batch);
     } catch (error) {
+      recordReleaseFailure();
       console.error("Error releasing payment batch:", error);
       return sendError(res, 400, "PAYMENT_BATCH_RELEASE_FAILED", error instanceof Error ? error.message : "Failed to release payment batch");
     }

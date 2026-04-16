@@ -40,6 +40,16 @@
 - Core release-path route groups now use normalized permission middleware; a few auxiliary modules still use role-based guards until the permission registry is expanded further.
 - Metrics are currently in-memory and should move to Prometheus/OpenTelemetry before high-scale production use.
 
+## UI readiness banner vs `/api/ready`
+
+The **web app** polls **`GET /api/ready`** and shows a **red “Limited mode”** banner only when critical subsystems needed for most workflows are down: **`dbReady`**, **`schemaReady`**, **`sessionStoreReady`**, and **`uploadPathReady`**.
+
+The **same JSON** also includes **`websocketReady`** and **`emailServiceReady`**. Those are **not** surfaced as blocking errors in the banner today; some features may degrade (live updates, outbound mail) while the rest of the app works.
+
+**Production gate:** Treat **`npm run release:gate`**, the deployment checklist below, and **`/health` / `/ready` / `/health/deep`** probes as the **authoritative** installability checks. The UI banner is a **developer/operator hint**, not a substitute for monitoring or release automation.
+
+For first-run / packaged installs later, reuse the same `/api/ready` contract and extend the client only if you need to show optional warnings (e.g. websocket) or a dedicated onboarding flow.
+
 ## Deployment Checklist
 
 1. Set `NODE_ENV=production`, `DATABASE_URL`, and a strong `SESSION_SECRET`.

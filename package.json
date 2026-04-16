@@ -31,6 +31,7 @@
     "test:e2e": "playwright test",
     "verify:changes": "node scripts/verify-recent-changes.js",
     "validate:migrations": "node scripts/validate-migrations.mjs",
+    "migrate:check": "node scripts/migrate-check.mjs",
     "release:gate": "node scripts/release-gate.mjs",
     "test:endpoints": "node scripts/test-button-endpoints.js http://127.0.0.1:5000",
     "db:push": "drizzle-kit push",

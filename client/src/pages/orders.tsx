@@ -353,7 +353,7 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                 <TableRow
                   key={order.poNumber}
                   className="cursor-pointer"
-                  onClick={() => setLocation(`/purchase/${order.poNumber}`)}
+                  onClick={() => setLocation(APP_ROUTES.procurement.order(order.poNumber))}
                 >
                   <TableCell
                     className="text-center"
@@ -399,7 +399,11 @@ function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
 
 function PurchaseOrderDetailView({ po }: { po: string }) {
   const [pathname, setLocation] = useLocation();
-  const backToPoList = () => setLocation(pathname.startsWith("/orders") ? "/orders" : "/purchase");
+  const backToPoList = () => {
+    if (pathname.startsWith("/procurement")) setLocation(APP_ROUTES.procurement.orders);
+    else if (pathname.startsWith("/orders")) setLocation("/orders");
+    else setLocation("/purchase");
+  };
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -966,23 +970,41 @@ function PurchaseOrderDetailView({ po }: { po: string }) {
   );
 }
 
-export default function OrdersPage() {
+type OrdersPageProps = {
+  /**
+   * When true, rendered inside PurchasePage tabs: only list or PO detail, no inner tab shell.
+   */
+  embedded?: boolean;
+};
+
+export default function OrdersPage({ embedded = false }: OrdersPageProps) {
   const [ordersDetailMatch, ordersDetailParams] = useRoute<{ po: string }>("/orders/:po");
   const [purchaseDetailMatch, purchaseDetailParams] = useRoute<{ po: string }>("/purchase/:po");
+  const [procurementDetailMatch, procurementDetailParams] = useRoute<{ po: string }>(
+    `${APP_ROUTES.procurement.orders}/:po`,
+  );
   const [location] = useLocation();
   const isPurchaseRoute = location.startsWith("/purchase");
+  const isProcurementOrdersPath = location === APP_ROUTES.procurement.orders || location.startsWith(`${APP_ROUTES.procurement.orders}/`);
 
   const po = ordersDetailMatch
     ? ordersDetailParams?.po
     : purchaseDetailMatch
       ? purchaseDetailParams?.po
-      : undefined;
+      : procurementDetailMatch
+        ? procurementDetailParams?.po
+        : undefined;
 
   // "requisitions" is a reserved path - don't treat as PO number
   const isRequisitionsPath = po === "requisitions";
 
   if (po && !isRequisitionsPath) {
     return <PurchaseOrderDetailView po={po} />;
+  }
+
+  // Inside PurchasePage: single list only (parent owns tabs)
+  if (embedded) {
+    return <PurchaseOrdersList embedded />;
   }
 
   // On /purchase, show tabbed view: Purchase Orders | Requisitions
@@ -1014,6 +1036,12 @@ export default function OrdersPage() {
         </Tabs>
       </div>
     );
+  }
+
+  // Canonical /procurement/orders without PO: redirect to tab shell is handled by router (PurchasePage).
+  // If we ever hit /procurement/orders here without embedded, show list only (no duplicate tabs).
+  if (isProcurementOrdersPath) {
+    return <PurchaseOrdersList embedded />;
   }
 
   // On /orders show tabbed view: Purchase Orders | Requisitions (same as /purchase)

@@ -54,7 +54,8 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 - [`docs/ENV-CONFIG.md`](docs/ENV-CONFIG.md) — environment variables
 - [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md) — API shapes
 - [`docs/PERMISSION_MATRIX.md`](docs/PERMISSION_MATRIX.md) — route auth/RBAC overview
-- [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — deployment, security, runbook, rollback
+- [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — deployment, security, runbook, rollback, UI vs `/api/ready`
+- [`docs/CHANGELOG-ROUTING.md`](docs/CHANGELOG-ROUTING.md) — canonical routes, legacy redirects, procurement UI ownership
 
 ## Production Notes
 

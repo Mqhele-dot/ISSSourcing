@@ -6,9 +6,8 @@ import OrdersPage from "@/pages/orders";
 import RequisitionsPage from "@/pages/requisitions";
 
 /**
- * Tabbed Purchase page: Purchase Orders | Requisitions
- * - /purchase, /orders → Orders tab
- * - /purchase/requisitions, /orders/requisitions → Requisitions tab (create/edit/approve/share)
+ * Tabbed procurement: Purchase Orders | Requisitions (canonical: /procurement/orders, /procurement/requisitions).
+ * Legacy /purchase, /orders, and /requisitions URLs redirect here.
  */
 export default function PurchasePage() {
   const [canonicalReqMatch] = useRoute(APP_ROUTES.procurement.requisitions);
@@ -45,7 +44,7 @@ export default function PurchasePage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="orders" className="mt-0">
-          <OrdersPage />
+          <OrdersPage embedded />
         </TabsContent>
         <TabsContent value="requisitions" className="mt-0">
           <RequisitionsPage embedded basePath={requisitionsPath} />

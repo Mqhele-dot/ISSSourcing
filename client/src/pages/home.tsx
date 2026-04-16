@@ -30,13 +30,14 @@ import {
 } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
 import { useTutorial } from "@/contexts/tutorial-context";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 const LAST_WALKTHROUGH_KEY = "invtrack:lastWalkthrough";
 
 export const KPI_DEEP_LINKS = {
-  exceptions: "/exceptions?status=open&severity=high",
-  logistics: "/logistics?status=in_transit&risk=late",
-  purchase: "/purchase?status=approved",
+  exceptions: `${APP_ROUTES.operations.exceptions}?status=open&severity=high`,
+  logistics: `${APP_ROUTES.operations.logistics}?status=in_transit&risk=late`,
+  purchase: `${APP_ROUTES.procurement.orders}?status=approved`,
   inventory: "/inventory?low=1",
 } as const;
 
@@ -354,7 +355,7 @@ export default function HomePage() {
                       <Link href={walkthrough.links.logistics}>View logistics</Link>
                     </Button>
                     <Button asChild size="sm" variant="outline">
-                      <Link href="/dashboard">Custom graphs &amp; analytics</Link>
+                      <Link href={APP_ROUTES.analytics.overview}>Custom graphs &amp; analytics</Link>
                     </Button>
                     {walkthrough.links.exception ? (
                       <Button asChild size="sm">

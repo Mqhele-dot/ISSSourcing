@@ -1,3 +1,5 @@
+import { APP_ROUTES } from "@/lib/routes/app-routes";
+
 export type PageTourMeta = { tourId: string; label: string };
 
 /** First matching rule wins — order from most specific path to general. */
@@ -5,6 +7,15 @@ const RULES: { test: (path: string) => boolean; meta: PageTourMeta }[] = [
   {
     test: (p) => /^\/inventory\/[^/]+$/.test(p),
     meta: { tourId: "page-inventory-detail", label: "This SKU" },
+  },
+  {
+    test: (p) => {
+      const m = p.match(/^\/procurement\/orders\/([^/]+)$/);
+      if (!m) return false;
+      const seg = m[1];
+      return seg !== "requisitions" && seg !== "new";
+    },
+    meta: { tourId: "page-purchase-detail", label: "This PO" },
   },
   {
     test: (p) => {
@@ -28,8 +39,11 @@ const RULES: { test: (path: string) => boolean; meta: PageTourMeta }[] = [
   { test: (p) => p === "/logistics", meta: { tourId: "page-logistics", label: "Logistics" } },
   {
     test: (p) =>
+      p === APP_ROUTES.procurement.orders ||
+      p === APP_ROUTES.procurement.requisitions ||
       p === "/purchase" ||
       p === "/orders" ||
+      p.startsWith("/procurement/") ||
       p.startsWith("/purchase/") ||
       p.startsWith("/orders/"),
     meta: { tourId: "page-purchase", label: "Purchase" },
@@ -37,11 +51,23 @@ const RULES: { test: (path: string) => boolean; meta: PageTourMeta }[] = [
   { test: (p) => p === "/integrations", meta: { tourId: "page-integrations", label: "Integrations" } },
   { test: (p) => p === "/reports", meta: { tourId: "page-reports", label: "Reports" } },
   { test: (p) => p === "/documents", meta: { tourId: "page-documents", label: "Documents" } },
-  { test: (p) => p === "/supply-analytics", meta: { tourId: "page-supply-analytics", label: "Supply analytics" } },
+  {
+    test: (p) => p === APP_ROUTES.analytics.procurement || p === "/supply-analytics",
+    meta: { tourId: "page-supply-analytics", label: "Supply analytics" },
+  },
   { test: (p) => p === "/suppliers", meta: { tourId: "page-suppliers", label: "Suppliers" } },
   { test: (p) => p === "/warehouses", meta: { tourId: "page-warehouses", label: "Warehouses" } },
-  { test: (p) => p === "/analytics", meta: { tourId: "page-analytics", label: "Analytics" } },
-  { test: (p) => p === "/dashboard", meta: { tourId: "page-dashboard", label: "Dashboard" } },
+  {
+    test: (p) => p === APP_ROUTES.analytics.overview || p === "/dashboard",
+    meta: { tourId: "page-dashboard", label: "Dashboard" },
+  },
+  {
+    test: (p) =>
+      p === APP_ROUTES.analytics.root ||
+      p.startsWith(`${APP_ROUTES.analytics.root}/`) ||
+      p === "/analytics",
+    meta: { tourId: "page-analytics", label: "Analytics" },
+  },
   { test: (p) => p === "/settings", meta: { tourId: "page-settings", label: "Settings" } },
   { test: (p) => p === "/user-roles", meta: { tourId: "page-users", label: "User roles" } },
   { test: (p) => p === "/control-tower", meta: { tourId: "page-control-tower", label: "Control tower" } },
@@ -77,39 +103,39 @@ export function pageTourStorageKey(tourId: string) {
 /** First path segment to open before starting a tour from the help menu. */
 export const TOUR_START_ROUTES: Record<string, string> = {
   "full-app": "/",
-  main: "/dashboard",
-  dashboard: "/dashboard",
+  main: APP_ROUTES.analytics.overview,
+  dashboard: APP_ROUTES.analytics.overview,
   inventory: "/inventory",
   reports: "/reports",
-  analytics: "/analytics",
+  analytics: APP_ROUTES.analytics.overview,
   suppliers: "/suppliers",
   users: "/user-roles",
   settings: "/settings",
   database: "/settings",
   documents: "/documents",
-  purchase: "/purchase",
+  purchase: APP_ROUTES.procurement.orders,
   barcode: "/barcode-scanner",
   sync: "/sync-dashboard",
   billing: "/billing",
-  "setup-wizard": "/dashboard",
+  "setup-wizard": APP_ROUTES.analytics.overview,
   "page-home": "/",
   "page-control-tower": "/control-tower",
   "page-inventory": "/inventory",
   "page-inventory-detail": "/inventory",
   "page-exceptions": "/exceptions",
   "page-logistics": "/logistics",
-  "page-purchase": "/purchase",
+  "page-purchase": APP_ROUTES.procurement.orders,
   "page-integrations": "/integrations",
   "page-reports": "/reports",
   "page-documents": "/documents",
-  "page-supply-analytics": "/supply-analytics",
+  "page-supply-analytics": APP_ROUTES.analytics.procurement,
   "page-suppliers": "/suppliers",
   "page-warehouses": "/warehouses",
-  "page-analytics": "/analytics",
-  "page-dashboard": "/dashboard",
+  "page-analytics": APP_ROUTES.analytics.overview,
+  "page-dashboard": APP_ROUTES.analytics.overview,
   "page-settings": "/settings",
   "page-users": "/user-roles",
-  "page-purchase-detail": "/purchase",
+  "page-purchase-detail": APP_ROUTES.procurement.orders,
   "page-exception-detail": "/exceptions",
   "page-logistics-detail": "/logistics",
 };

@@ -3,18 +3,21 @@ import { Switch, Route, Redirect } from "wouter";
 import { Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import {
+  getLegacyKebabRedirectEntries,
+  LEGACY_PARAMETRIC_STATIC_REDIRECTS,
+  LEGACY_PO_PARAM_REDIRECTS,
+  LEGACY_STATIC_REDIRECTS,
+} from "@/lib/routes/legacy-redirects";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const NotFound = lazy(() => import("@/pages/not-found"));
 const AuthPage = lazy(() => import("@/pages/auth-page"));
 const Home = lazy(() => import("@/pages/home"));
-const Dashboard = lazy(() => import("@/pages/dashboard"));
-const Analytics = lazy(() => import("@/pages/analytics"));
 const Inventory = lazy(() => import("@/pages/inventory"));
 const InventoryItemDetail = lazy(() => import("@/pages/inventory-item"));
 const OrdersPage = lazy(() => import("@/pages/orders"));
 const PurchasePage = lazy(() => import("@/pages/purchase-page"));
-const RequisitionsPage = lazy(() => import("@/pages/requisitions"));
 const RequisitionFormPage = lazy(() => import("@/pages/requisition-form"));
 const SuppliersPage = lazy(() => import("@/pages/suppliers"));
 const SupplierDetailPage = lazy(() => import("@/pages/supplier-detail"));
@@ -47,7 +50,6 @@ const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
 const SupplierPortalPage = lazy(() => import("@/pages/supplier-portal"));
 const DocumentsPage = lazy(() => import("@/pages/documents"));
 const UploadsPathRedirect = lazy(() => import("@/pages/uploads-redirect"));
-const SupplyAnalyticsPage = lazy(() => import("@/pages/supply-analytics"));
 const ControlTowerPage = lazy(() => import("@/pages/control-tower"));
 const AccountsPayablePage = lazy(() => import("@/pages/accounts-payable"));
 const AnalyticsWorkspacePage = lazy(() => import("@/pages/analytics-workspace"));
@@ -80,6 +82,8 @@ function RouteFallback() {
   );
 }
 
+const LEGACY_KEBAB_REDIRECTS = getLegacyKebabRedirectEntries();
+
 export function AppRouter() {
   return (
     <Suspense fallback={<RouteFallback />}>
@@ -109,13 +113,13 @@ export function AppRouter() {
 
         <ProtectedRoute path={APP_ROUTES.operations.controlTower} component={ControlTowerPage} />
         <ProtectedRoute path={APP_ROUTES.operations.logistics} component={LogisticsPage} />
-        <ProtectedRoute path="/operations/logistics/:id" component={LogisticsPage} />
+        <ProtectedRoute path={`${APP_ROUTES.operations.logistics}/:id`} component={LogisticsPage} />
         <ProtectedRoute path={APP_ROUTES.operations.exceptions} component={ExceptionsPage} />
-        <ProtectedRoute path="/operations/exceptions/:id" component={ExceptionsPage} />
+        <ProtectedRoute path={`${APP_ROUTES.operations.exceptions}/:id`} component={ExceptionsPage} />
 
         <ProtectedRoute path={APP_ROUTES.inventory.root} component={Inventory} />
         <ProtectedRoute path={APP_ROUTES.inventory.warehouses} component={WarehousesPage} />
-        <ProtectedRoute path="/inventory/warehouses/:id" component={WarehouseDetailPage} />
+        <ProtectedRoute path={APP_ROUTES.inventory.warehouse(":id")} component={WarehouseDetailPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.cycleCounts} component={CycleCountsPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.reorder} component={ReorderPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.barcodeScanner} component={BarcodeScannerPage} />
@@ -139,7 +143,7 @@ export function AppRouter() {
 
         <ProtectedRoute path={APP_ROUTES.admin.integrations} component={IntegrationsPage} />
         <ProtectedRoute path={APP_ROUTES.admin.masterData} component={MasterDataPage} />
-        <ProtectedRoute path="/admin/master-data/:section" component={MasterDataPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.masterDataSection(":section")} component={MasterDataPage} />
         <ProtectedRoute path={APP_ROUTES.admin.auditLogs} component={AuditLogsPage} />
         <ProtectedRoute path={APP_ROUTES.admin.documents} component={DocumentsPage} />
         <ProtectedRoute path="/uploads/*" component={UploadsPathRedirect} />
@@ -149,170 +153,34 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.admin.syncDashboard} component={SyncDashboard} />
         <ProtectedRoute path={APP_ROUTES.admin.downloads} component={DownloadPage} />
         <ProtectedRoute path={APP_ROUTES.admin.settings} component={SettingsPage} />
-        <ProtectedRoute path="/admin/settings/:section" component={SettingsPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.settingsSection(":section")} component={SettingsPage} />
         <ProtectedRoute path={APP_ROUTES.admin.userRoles} component={UserRolesPage} />
         <ProtectedRoute path={APP_ROUTES.admin.profile} component={ProfilePage} />
         <ProtectedRoute path={APP_ROUTES.admin.employeeProfiles} component={EmployeeProfilesPage} />
         <ProtectedRoute path={APP_ROUTES.admin.imageRecognition} component={ImageRecognitionPage} />
         <ProtectedRoute path={APP_ROUTES.admin.documentExtractor} component={DocumentExtractorPage} />
-        <ProtectedRoute path="/admin/document-extractor/:mode" component={DocumentExtractorPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.documentExtractorMode(":mode")} component={DocumentExtractorPage} />
 
-        <Route path="/dashboard">
-          <Redirect to={APP_ROUTES.analytics.overview} />
-        </Route>
-        <Route path="/analytics">
-          <Redirect to={APP_ROUTES.analytics.overview} />
-        </Route>
-        <Route path="/supply-analytics">
-          <Redirect to={APP_ROUTES.analytics.procurement} />
-        </Route>
-        <Route path="/reports">
-          <Redirect to={APP_ROUTES.analytics.reports} />
-        </Route>
-        <Route path="/control-tower">
-          <Redirect to={APP_ROUTES.operations.controlTower} />
-        </Route>
-        <Route path="/logistics">
-          <Redirect to={APP_ROUTES.operations.logistics} />
-        </Route>
-        <Route path="/logistics/:id">
-          {(params) => <Redirect to={`/operations/logistics/${params.id}`} />}
-        </Route>
-        <Route path="/exceptions">
-          <Redirect to={APP_ROUTES.operations.exceptions} />
-        </Route>
-        <Route path="/exceptions/:id">
-          {(params) => <Redirect to={`/operations/exceptions/${params.id}`} />}
-        </Route>
-        <Route path="/purchase">
-          <Redirect to={APP_ROUTES.procurement.orders} />
-        </Route>
-        <Route path="/orders">
-          <Redirect to={APP_ROUTES.procurement.orders} />
-        </Route>
-        <Route path="/purchase/:po">
-          {(params) => <Redirect to={APP_ROUTES.procurement.order(params.po)} />}
-        </Route>
-        <Route path="/orders/:po">
-          {(params) => <Redirect to={APP_ROUTES.procurement.order(params.po)} />}
-        </Route>
-        <Route path="/purchase/requisitions">
-          <Redirect to={APP_ROUTES.procurement.requisitions} />
-        </Route>
-        <Route path="/orders/requisitions">
-          <Redirect to={APP_ROUTES.procurement.requisitions} />
-        </Route>
-        <Route path="/requisitions">
-          <Redirect to={APP_ROUTES.procurement.requisitions} />
-        </Route>
-        <Route path="/purchase/requisitions/new">
-          <Redirect to={APP_ROUTES.procurement.requisitionNew} />
-        </Route>
-        <Route path="/orders/requisitions/new">
-          <Redirect to={APP_ROUTES.procurement.requisitionNew} />
-        </Route>
-        <Route path="/requisitions/new">
-          <Redirect to={APP_ROUTES.procurement.requisitionNew} />
-        </Route>
-        <Route path="/purchase/requisitions/:id">
-          {(params) => <Redirect to={APP_ROUTES.procurement.requisition(params.id)} />}
-        </Route>
-        <Route path="/orders/requisitions/:id">
-          {(params) => <Redirect to={APP_ROUTES.procurement.requisition(params.id)} />}
-        </Route>
-        <Route path="/requisitions/:id">
-          {(params) => <Redirect to={APP_ROUTES.procurement.requisition(params.id)} />}
-        </Route>
-        <Route path="/suppliers">
-          <Redirect to={APP_ROUTES.procurement.suppliers} />
-        </Route>
-        <Route path="/suppliers/:id">
-          {(params) => <Redirect to={APP_ROUTES.procurement.supplier(params.id)} />}
-        </Route>
-        <Route path="/contracts">
-          <Redirect to={APP_ROUTES.procurement.contracts} />
-        </Route>
-        <Route path="/supplier-portal">
-          <Redirect to={APP_ROUTES.procurement.supplierPortal} />
-        </Route>
-        <Route path="/invoices">
-          <Redirect to={APP_ROUTES.finance.invoices} />
-        </Route>
-        <Route path="/accounts-payable">
-          <Redirect to={APP_ROUTES.finance.accountsPayable} />
-        </Route>
-        <Route path="/approval-policies">
-          <Redirect to={APP_ROUTES.finance.approvalPolicies} />
-        </Route>
-        <Route path="/billing">
-          <Redirect to={APP_ROUTES.finance.billing} />
-        </Route>
-        <Route path="/integrations">
-          <Redirect to={APP_ROUTES.admin.integrations} />
-        </Route>
-        <Route path="/master-data">
-          <Redirect to={APP_ROUTES.admin.masterData} />
-        </Route>
-        <Route path="/audit-logs">
-          <Redirect to={APP_ROUTES.admin.auditLogs} />
-        </Route>
-        <Route path="/documents">
-          <Redirect to={APP_ROUTES.admin.documents} />
-        </Route>
-        <Route path="/mobile/receive">
-          <Redirect to={APP_ROUTES.operations.mobileReceive} />
-        </Route>
-        <Route path="/mobile/pick">
-          <Redirect to={APP_ROUTES.operations.mobilePick} />
-        </Route>
-        <Route path="/reorder">
-          <Redirect to={APP_ROUTES.inventory.reorder} />
-        </Route>
-        <Route path="/barcode-scanner">
-          <Redirect to={APP_ROUTES.inventory.barcodeScanner} />
-        </Route>
-        <Route path="/warehouse-operations">
-          <Redirect to={APP_ROUTES.inventory.warehouseOperations} />
-        </Route>
-        <Route path="/warehouses">
-          <Redirect to={APP_ROUTES.inventory.warehouses} />
-        </Route>
-        <Route path="/warehouses/:id">
-          {(params) => <Redirect to={`/inventory/warehouses/${params.id}`} />}
-        </Route>
-        <Route path="/cycle-counts">
-          <Redirect to={APP_ROUTES.inventory.cycleCounts} />
-        </Route>
-        <Route path="/settings">
-          <Redirect to={APP_ROUTES.admin.settings} />
-        </Route>
-        <Route path="/user-roles">
-          <Redirect to={APP_ROUTES.admin.userRoles} />
-        </Route>
-        <Route path="/profile">
-          <Redirect to={APP_ROUTES.admin.profile} />
-        </Route>
-        <Route path="/employee-profiles">
-          <Redirect to={APP_ROUTES.admin.employeeProfiles} />
-        </Route>
-        <Route path="/image-recognition">
-          <Redirect to={APP_ROUTES.admin.imageRecognition} />
-        </Route>
-        <Route path="/document-extractor">
-          <Redirect to={APP_ROUTES.admin.documentExtractor} />
-        </Route>
-        <Route path="/download">
-          <Redirect to={APP_ROUTES.admin.downloads} />
-        </Route>
-        <Route path="/real-time-updates">
-          <Redirect to={APP_ROUTES.admin.realTimeUpdates} />
-        </Route>
-        <Route path="/sync-test">
-          <Redirect to={APP_ROUTES.admin.syncTest} />
-        </Route>
-        <Route path="/sync-dashboard">
-          <Redirect to={APP_ROUTES.admin.syncDashboard} />
-        </Route>
+        {LEGACY_STATIC_REDIRECTS.map(({ path, to }) => (
+          <Route key={path} path={path}>
+            <Redirect to={to} />
+          </Route>
+        ))}
+        {LEGACY_PARAMETRIC_STATIC_REDIRECTS.map(({ path, to }) => (
+          <Route key={path} path={path}>
+            {(params) => <Redirect to={to(params as { id: string })} />}
+          </Route>
+        ))}
+        {LEGACY_PO_PARAM_REDIRECTS.map(({ path, to }) => (
+          <Route key={path} path={path}>
+            {(params) => <Redirect to={to(params as { po: string })} />}
+          </Route>
+        ))}
+        {LEGACY_KEBAB_REDIRECTS.map(({ path, to }) => (
+          <Route key={path} path={path}>
+            <Redirect to={to} />
+          </Route>
+        ))}
         <Route path="/auth" component={AuthPage} />
         <Route component={NotFound} />
       </Switch>
