@@ -1,11 +1,11 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { organizationSettings, organizations } from "@shared/schema";
 import { getActiveOrganizationId } from "../../organization-context";
 
 type Auth = {
-  ensureAuthenticated: import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
 };
 
 /** GET branding / plan metadata for the active organization (Phase 4). */

@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { storage } from "../../storage";
@@ -8,7 +8,7 @@ import { barcodes, trackedAssets } from "@shared/schema";
 import { scanResolveBodySchema } from "./scan-validators";
 
 type Auth = {
-  ensureAuthenticated: import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
 };
 
 const DEFAULT_NEXT_ACTIONS = ["receive", "transfer", "issue", "count", "inspect"] as const;

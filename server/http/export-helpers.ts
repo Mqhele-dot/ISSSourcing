@@ -1,7 +1,7 @@
 import { Buffer } from "buffer";
-import Excel from "exceljs";
+import type { Workbook } from "exceljs";
 
-export async function workbookToBuffer(workbook: Excel.Workbook): Promise<Buffer> {
+export async function workbookToBuffer(workbook: Workbook): Promise<Buffer> {
   const excelBuffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(excelBuffer);
 }

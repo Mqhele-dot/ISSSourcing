@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { pool } from "../../db";
 import { storage } from "../../storage";
 import { sendError, sendOk } from "../../api-response";
@@ -6,9 +6,9 @@ import { buildSupplyInsights } from "../../supply-insights";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 
 type AuthBundle = {
-  ensureAuthenticated: import("express").RequestHandler;
-  ensureRole: (roles: string[]) => import("express").RequestHandler;
-  ensurePermission: (resource: string, permissionType: string) => import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
+  ensureRole: (roles: string[]) => RequestHandler;
+  ensurePermission: (resource: string, permissionType: string) => RequestHandler;
 };
 
 /**

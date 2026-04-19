@@ -1,9 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { approvalPolicies } from "@shared/schema";
-import { createProcurementRepository } from "./repository";
-
-type ProcurementRepo = ReturnType<typeof createProcurementRepository>;
+import type { ProcurementRepository } from "./repository";
 
 export function roleMatchesPolicy(policyRole: string | null | undefined, actorRole: string): boolean {
   if (!policyRole) return true;
@@ -32,9 +30,9 @@ export async function getApplicableRequisitionPolicy(requisitionTotal: number) {
 }
 
 export type ProcurementService = {
-  repo: ProcurementRepo;
+  repo: ProcurementRepository;
 };
 
-export function createProcurementService(repo: ProcurementRepo): ProcurementService {
+export function createProcurementService(repo: ProcurementRepository): ProcurementService {
   return { repo };
 }

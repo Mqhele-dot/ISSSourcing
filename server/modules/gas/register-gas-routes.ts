@@ -1,10 +1,10 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisabled } from "../../org-features";
 import { sendError, sendOk } from "../../api-response";
 import { getGasDashboardSummary, runGasComplianceAlerts } from "./gas-service";
 
 type Auth = {
-  ensureAuthenticated: import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
 };
 
 /** Gas vertical JSON APIs (schema: gas_* tables). Gated by `feature_flags.gas !== false`. */

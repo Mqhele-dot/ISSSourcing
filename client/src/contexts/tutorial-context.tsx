@@ -172,7 +172,7 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
       cancelled = true;
       window.clearTimeout(id);
     };
-  }, [isTutorialActive, step?.id, step?.route, step?.routeExact, step?.settleMs, locationPath, setLocation]);
+  }, [isTutorialActive, step, locationPath, setLocation]);
 
   const selector = useMemo(() => getStepTargetSelector(step), [step]);
   const useSpotlightShell = useMemo(() => shouldUseSpotlightShell(step), [step]);
@@ -230,7 +230,7 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
       window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
     };
-  }, [isTutorialActive, stepReady, step?.id, selector, useSpotlightShell]);
+  }, [isTutorialActive, stepReady, step, selector, useSpotlightShell]);
 
   // Scroll legacy targetSelector / attach target into view
   useEffect(() => {

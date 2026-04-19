@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, RequestHandler } from "express";
 import { registerInventoryCrudRoutes } from "./inventory/register-inventory-routes";
 import { registerStockMovementRoutes } from "./inventory/register-stock-movement-routes";
 import { registerBarcodeRoutes } from "./inventory/register-barcode-routes";
@@ -18,9 +18,9 @@ import { registerApRoutes } from "./accounts-payable/register-ap-routes";
 import { registerExportCenterRoutes } from "./exports/register-export-center-routes";
 
 type AuthBundle = {
-  ensureAuthenticated: import("express").RequestHandler;
-  ensureRole: (roles: string[]) => import("express").RequestHandler;
-  ensurePermission: (resource: string, permissionType: string) => import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
+  ensureRole: (roles: string[]) => RequestHandler;
+  ensurePermission: (resource: string, permissionType: string) => RequestHandler;
 };
 
 /**

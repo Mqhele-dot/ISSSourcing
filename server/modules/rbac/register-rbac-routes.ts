@@ -1,10 +1,10 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { storage } from "../../storage";
 import type { UserRole, Resource, PermissionType } from "@shared/schema";
 
 type AuthBundle = {
-  ensureAuthenticated: import("express").RequestHandler;
-  ensurePermission: (resource: string, permission: string) => import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
+  ensurePermission: (resource: string, permission: string) => RequestHandler;
 };
 
 /**

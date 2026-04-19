@@ -636,13 +636,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
         : "",
     );
     setMetaTracking(data.trackingNumber?.trim() ?? "");
-  }, [
-    data?.id,
-    data?.updatedAt,
-    data?.carrier,
-    data?.eta,
-    data?.trackingNumber,
-  ]);
+  }, [data]);
 
   const submitMeta = async () => {
     setMetaSaving(true);

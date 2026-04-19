@@ -35,14 +35,12 @@ export default function MobilePickPage() {
   }, []);
 
   const { loading, error, data: bundle, refetch } = useAsyncResource(fetcher);
-  const rows = bundle?.data ?? [];
   const fallback = bundle?.meta?.fallback as FallbackKind | undefined;
 
-  const sorted = useMemo(
-    () =>
-      [...rows].sort((a, b) => String(a.sku).localeCompare(String(b.sku))),
-    [rows],
-  );
+  const sorted = useMemo(() => {
+    const rows = bundle?.data ?? [];
+    return [...rows].sort((a, b) => String(a.sku).localeCompare(String(b.sku)));
+  }, [bundle?.data]);
 
   return (
     <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl">

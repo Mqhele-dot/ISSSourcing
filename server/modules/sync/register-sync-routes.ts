@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { db } from "../../db";
 import { activityLogs } from "@shared/schema";
 import { getActiveOrganizationId } from "../../organization-context";
@@ -8,7 +8,7 @@ import { syncBatchBodySchema } from "./validators";
 import { registerMobileScanRoutes } from "./register-mobile-scan-routes";
 
 type Auth = {
-  ensureAuthenticated: import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
 };
 
 const processedKeys = new Set<string>();

@@ -35,3 +35,5 @@ export function createProcurementRepository(storage: IStorage) {
     getUser: storage.getUser.bind(storage),
   };
 }
+
+export type ProcurementRepository = ReturnType<typeof createProcurementRepository>;

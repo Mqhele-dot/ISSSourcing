@@ -1,4 +1,4 @@
-import type { DocumentType } from "@shared/schema";
+import type { DocumentType, ReportFilter } from "@shared/schema";
 
 export type ReportTab =
   | "inventory"
@@ -65,7 +65,7 @@ export type ReportsExportDeps = {
   activeTab: ReportTab;
   exportFormat: DocumentType;
   pdfTemplate: PdfTemplateVariant;
-  filter: import("@shared/schema").ReportFilter;
+  filter: ReportFilter;
   toast: (props: {
     title: string;
     description?: string;

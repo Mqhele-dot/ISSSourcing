@@ -1,13 +1,13 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { storage } from "../../storage";
 import { insertInventoryItemSchema } from "@shared/schema";
 
 type AuthBundle = {
-  ensureAuthenticated: import("express").RequestHandler;
-  ensureRole: (roles: string[]) => import("express").RequestHandler;
-  ensurePermission: (resource: string, permissionType: string) => import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
+  ensureRole: (roles: string[]) => RequestHandler;
+  ensurePermission: (resource: string, permissionType: string) => RequestHandler;
 };
 
 /**

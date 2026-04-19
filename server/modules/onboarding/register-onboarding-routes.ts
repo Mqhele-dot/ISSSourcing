@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
@@ -11,8 +11,8 @@ const bootstrapBody = z.object({
 });
 
 type Auth = {
-  ensureAuthenticated: import("express").RequestHandler;
-  ensureRole: (roles: string[]) => import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
+  ensureRole: (roles: string[]) => RequestHandler;
 };
 
 /**

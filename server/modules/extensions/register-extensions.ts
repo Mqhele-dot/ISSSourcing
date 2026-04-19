@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { projects } from "@shared/schema";
@@ -11,7 +11,7 @@ import { INDUSTRY_EXTENSION_MODULES } from "./industry-registry";
 type ExtensionMeta = { id: string; name: string; routes: string[] };
 
 type Auth = {
-  ensureAuthenticated: import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
 };
 
 const REGISTERED_EXTENSIONS: ExtensionMeta[] = [

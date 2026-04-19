@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { insertStockMovementSchema } from "@shared/schema";
@@ -11,8 +11,8 @@ import { sendFunctionError } from "../../api-response";
 export function registerStockMovementRoutes(
   app: Express,
   auth: {
-    ensureAuthenticated: import("express").RequestHandler;
-    ensurePermission: (resource: string, permissionType: string) => import("express").RequestHandler;
+    ensureAuthenticated: RequestHandler;
+    ensurePermission: (resource: string, permissionType: string) => RequestHandler;
   },
 ): void {
   const stockRead = [auth.ensureAuthenticated, auth.ensurePermission("stock_movements", "read")];

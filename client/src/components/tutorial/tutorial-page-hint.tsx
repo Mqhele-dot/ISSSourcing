@@ -26,7 +26,7 @@ export function TutorialPageHint() {
     } catch {
       setDismissed(false);
     }
-  }, [meta?.tourId]);
+  }, [meta]);
 
   const dismiss = useCallback(() => {
     if (!meta) return;

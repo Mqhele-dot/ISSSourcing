@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { and, eq, isNull, lte } from "drizzle-orm";
@@ -43,8 +43,8 @@ import {
 } from "@shared/schema";
 
 type AuthBundle = {
-  ensureAuthenticated: import("express").RequestHandler;
-  ensureRole: (roles: string[]) => import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
+  ensureRole: (roles: string[]) => RequestHandler;
 };
 
 /**

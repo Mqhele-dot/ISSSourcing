@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, RequestHandler, Response } from "express";
 import { sendError, sendOk } from "../../api-response";
 import { getActiveOrganizationId } from "../../organization-context";
 import { requireExtensionsEnabled } from "../extensions/extension-guard";
@@ -10,7 +10,7 @@ import {
 } from "./validators";
 
 type Auth = {
-  ensureAuthenticated: import("express").RequestHandler;
+  ensureAuthenticated: RequestHandler;
 };
 
 /**
