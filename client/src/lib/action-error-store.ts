@@ -1,3 +1,5 @@
+export type ActionErrorSeverity = "mutation" | "blocking" | "background";
+
 export type ActionErrorRecord = {
   id: string;
   timestamp: string;
@@ -15,6 +17,11 @@ export type ActionErrorRecord = {
   stack?: string;
   lastGoodResponse?: unknown;
   raw?: unknown;
+  /** How loudly the UI should surface this error. */
+  severity: ActionErrorSeverity;
+  /** Merged duplicate count within the dedupe window. */
+  occurrenceCount?: number;
+  lastSeen?: string;
 };
 
 type Listener = (error: ActionErrorRecord) => void;
@@ -22,20 +29,84 @@ type Listener = (error: ActionErrorRecord) => void;
 const listeners = new Set<Listener>();
 const records: ActionErrorRecord[] = [];
 
+const DEDUPE_MS = 12_000;
+const MAX_RECORDS = 50;
+
 function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function normalizePath(url: string): string {
+  const withoutQuery = url.split("?")[0] ?? url;
+  if (withoutQuery.startsWith("/")) return withoutQuery;
+  try {
+    return new URL(withoutQuery).pathname;
+  } catch {
+    return withoutQuery;
+  }
+}
+
+function dedupeKeyFrom(input: {
+  method: string;
+  endpoint: string;
+  status?: number;
+  reason: string;
+  severity: ActionErrorSeverity;
+}): string {
+  const reasonHead = input.reason.slice(0, 96);
+  return `${input.method.toUpperCase()}|${normalizePath(input.endpoint)}|${input.status ?? "na"}|${input.severity}|${reasonHead}`;
+}
+
+export function inferActionErrorSeverity(method: string, status?: number): ActionErrorSeverity {
+  const m = method.toUpperCase();
+  if (m === "POST" || m === "PUT" || m === "PATCH" || m === "DELETE") {
+    return "mutation";
+  }
+  if (status != null && status >= 500) {
+    return "blocking";
+  }
+  return "background";
+}
+
+export function pickLatestForFab(list: readonly ActionErrorRecord[]): ActionErrorRecord | null {
+  return list.find((r) => r.severity === "mutation" || r.severity === "blocking") ?? null;
+}
+
 export const actionErrorStore = {
-  push(input: Omit<ActionErrorRecord, "id" | "timestamp">) {
+  push(input: Omit<ActionErrorRecord, "id" | "timestamp" | "severity"> & { severity?: ActionErrorSeverity }) {
+    const severity = input.severity ?? inferActionErrorSeverity(input.method, input.status);
+    const key = dedupeKeyFrom({
+      method: input.method,
+      endpoint: input.endpoint,
+      status: input.status,
+      reason: input.reason,
+      severity,
+    });
+    const now = Date.now();
+    const head = records[0];
+    if (head) {
+      const headTime = new Date(head.timestamp).getTime();
+      if (now - headTime < DEDUPE_MS && dedupeKeyFrom(head) === key) {
+        head.occurrenceCount = (head.occurrenceCount ?? 1) + 1;
+        head.lastSeen = new Date().toISOString();
+        if (severity === "background") {
+          return;
+        }
+        listeners.forEach((listener) => listener(head));
+        return;
+      }
+    }
+
     const record: ActionErrorRecord = {
       id: makeId(),
       timestamp: new Date().toISOString(),
+      severity,
+      occurrenceCount: 1,
       ...input,
     };
     records.unshift(record);
-    if (records.length > 50) {
-      records.length = 50;
+    if (records.length > MAX_RECORDS) {
+      records.length = MAX_RECORDS;
     }
     listeners.forEach((listener) => listener(record));
   },

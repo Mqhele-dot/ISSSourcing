@@ -116,9 +116,21 @@ function reportRequestError(params: {
 }
 
 function shouldSuppressGlobalError(method: string, status: number | undefined, url: string): boolean {
-  if (status !== 401) return false;
-  if (method.toUpperCase() !== "GET") return false;
   const path = normalizeEndpointPath(url);
+  const m = method.toUpperCase();
+
+  /** Background health / onboarding probes — failures surface in gate, banner, and diagnostics instead of the global error FAB. */
+  if (m === "GET" && (path === "/api/setup/status" || path === "/api/ready")) {
+    return true;
+  }
+
+  /** Single-flight client timeouts: list GETs can abort during navigation; avoid spamming the error center. */
+  if (m === "GET" && status === 408) {
+    return true;
+  }
+
+  if (status !== 401) return false;
+  if (m !== "GET") return false;
   // Anonymous bootstrap: session probe and auth/session discovery should not spam GlobalActionErrorCenter.
   if (path === "/api/user" || path === "/api/me") return true;
   if (path.startsWith("/api/auth/")) return true;
@@ -241,9 +253,13 @@ function reportNetworkFailure(params: {
         ? `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
         : params.error.message
       : String(params.error);
+  const aborted =
+    params.error instanceof Error &&
+    (params.error.name === "AbortError" || /timed out/i.test(params.error.message));
   reportRequestError({
     method: params.method,
     url: params.url,
+    status: aborted ? 408 : undefined,
     reason,
     payload:
       params.error instanceof Error

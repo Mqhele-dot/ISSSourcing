@@ -50,28 +50,52 @@ export default function CycleCountsPage() {
   const [systemQuantity, setSystemQuantity] = useState("0");
   const [countedQuantity, setCountedQuantity] = useState("0");
 
-  const { data: cycleCounts = [] } = useQuery({
+  const {
+    data: cycleCounts = [],
+    isError: cycleCountsError,
+    error: cycleCountsErr,
+    refetch: refetchCycleCounts,
+  } = useQuery({
     queryKey: ["/api/cycle-counts"],
     queryFn: () => requestJson<CycleCount[]>("GET", "/api/cycle-counts"),
+    throwOnError: false,
   });
-  const { data: cycleCountLines = [] } = useQuery({
+  const {
+    data: cycleCountLines = [],
+    isError: linesError,
+    error: linesErr,
+    refetch: refetchLines,
+  } = useQuery({
     queryKey: ["/api/cycle-count-lines", selectedCountId],
     queryFn: async () => {
       const all = await requestJson<CycleCountLine[]>("GET", "/api/cycle-count-lines");
       return selectedCountId ? all.filter((line) => line.cycleCountId === selectedCountId) : [];
     },
     enabled: selectedCountId != null,
+    throwOnError: false,
   });
-  const { data: warehouses = [] } = useQuery({
+  const {
+    data: warehouses = [],
+    isError: warehousesError,
+    error: warehousesErr,
+    refetch: refetchWarehouses,
+  } = useQuery({
     queryKey: ["/api/warehouses"],
     queryFn: () => requestJson<Array<{ id: number; name: string }>>("GET", "/api/warehouses"),
+    throwOnError: false,
   });
-  const { data: inventoryItems = [] } = useQuery({
+  const {
+    data: inventoryItems = [],
+    isError: inventoryError,
+    error: inventoryErr,
+    refetch: refetchInventory,
+  } = useQuery({
     queryKey: ["/api/inventory"],
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory");
       return normalizeApiList<{ id: number; sku: string; name: string }>(raw);
     },
+    throwOnError: false,
   });
 
   const createCycleCount = useMutation({
@@ -203,6 +227,31 @@ export default function CycleCountsPage() {
         subtitle="Workflow: create a count → Start (in progress) → add lines → Post adjustments. Planned counts can be opened and edited before posting."
       />
 
+      {warehousesError || inventoryError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Could not load supporting master data</AlertTitle>
+          <AlertDescription className="mt-2 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              {warehousesError && warehousesErr instanceof Error ? warehousesErr.message : null}
+              {warehousesError && inventoryError ? " · " : null}
+              {inventoryError && inventoryErr instanceof Error ? inventoryErr.message : null}
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {warehousesError ? (
+                <Button type="button" size="sm" variant="secondary" onClick={() => void refetchWarehouses()}>
+                  Retry warehouses
+                </Button>
+              ) : null}
+              {inventoryError ? (
+                <Button type="button" size="sm" variant="secondary" onClick={() => void refetchInventory()}>
+                  Retry inventory
+                </Button>
+              ) : null}
+            </div>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Create cycle count</CardTitle>
@@ -241,6 +290,17 @@ export default function CycleCountsPage() {
           <CardTitle>Cycle counts</CardTitle>
         </CardHeader>
         <CardContent>
+          {cycleCountsError ? (
+            <Alert variant="destructive" className="mb-4">
+              <AlertTitle>Cycle counts unavailable</AlertTitle>
+              <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span>{cycleCountsErr instanceof Error ? cycleCountsErr.message : String(cycleCountsErr)}</span>
+                <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchCycleCounts()}>
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <Table>
             <TableHeader>
               <TableRow>
@@ -297,6 +357,17 @@ export default function CycleCountsPage() {
             <CardTitle>Cycle count lines (#{selectedCountId})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {linesError ? (
+              <Alert variant="destructive">
+                <AlertTitle>Lines unavailable</AlertTitle>
+                <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <span>{linesErr instanceof Error ? linesErr.message : String(linesErr)}</span>
+                  <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchLines()}>
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {cycleCountLines.length > 0 ? (
               <div className="rounded-md border p-4 grid gap-2 sm:grid-cols-2 md:grid-cols-4 text-sm">
                 <div>

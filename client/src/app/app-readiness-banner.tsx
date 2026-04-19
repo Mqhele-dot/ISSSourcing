@@ -3,70 +3,39 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { readinessQueryOptions, type ReadinessStatus } from "@/lib/setup-readiness-queries";
 
-export type ReadinessStatus = {
-  dbReady: boolean;
-  schemaReady: boolean;
-  sessionStoreReady: boolean;
-  websocketReady: boolean;
-  uploadPathReady: boolean;
-  emailServiceReady: boolean;
-  deploymentMode?: string;
-  build?: {
-    version?: string;
-    runtimeProfile?: string;
-    deploymentMode?: string;
-    commitSha?: string | null;
-    buildId?: string | null;
-    builtAt?: string | null;
-  };
-  /** Present when the API could query install state (packaged / first-run hints). */
-  productBootstrap?: {
-    organizationCount: number;
-    needsFirstRunOnboarding: boolean;
-  } | null;
-};
-
-export async function fetchReadinessStatus(): Promise<ReadinessStatus> {
-  const res = await fetch("/api/ready", { credentials: "include" });
-  const text = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = text ? (JSON.parse(text) as unknown) : null;
-  } catch {
-    throw new Error("Invalid JSON from /api/ready");
-  }
-  if (!res.ok) {
-    throw new Error(`Readiness check failed (HTTP ${res.status})`);
-  }
-  if (
-    parsed &&
-    typeof parsed === "object" &&
-    parsed !== null &&
-    "ok" in parsed &&
-    (parsed as { ok?: unknown }).ok === true &&
-    "data" in parsed
-  ) {
-    return (parsed as { data: ReadinessStatus }).data;
-  }
-  return parsed as ReadinessStatus;
-}
+export type { ReadinessStatus };
+export { fetchReadinessStatus } from "@/lib/setup-readiness-queries";
 
 export function ReadinessBanner() {
-  const { data, error } = useQuery<ReadinessStatus>({
-    queryKey: ["/api/ready"],
-    queryFn: fetchReadinessStatus,
-    retry: false,
+  const { data, error, failureCount, refetch, isFetching } = useQuery({
+    ...readinessQueryOptions,
     refetchInterval: 30_000,
   });
 
-  if (error) {
+  if (error && !data) {
+    const repeated = failureCount >= 2;
     return (
       <div className="sticky top-0 z-40 shrink-0 p-3">
-        <Alert variant="destructive">
-          <AlertTitle>System readiness check failed</AlertTitle>
-          <AlertDescription>
-            Unable to verify backend health. If pages fail to load, confirm the API server and database are running.
+        <Alert variant={repeated ? "destructive" : "default"} className={repeated ? "" : "border-amber-500/50 bg-amber-500/10"}>
+          <AlertTitle>{repeated ? "Readiness check still failing" : "Could not reach readiness endpoint"}</AlertTitle>
+          <AlertDescription className="mt-2 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              {repeated
+                ? "After multiple attempts, /api/ready is still unavailable. Confirm the API and database are running."
+                : "This is often a brief network issue. Pages may still work; retry or continue once connectivity returns."}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="shrink-0"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
+              Retry
+            </Button>
           </AlertDescription>
         </Alert>
       </div>

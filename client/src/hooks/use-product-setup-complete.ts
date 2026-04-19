@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { requestJson } from "@/lib/queryClient";
-import type { SetupStatusPayload } from "@/components/setup/product-onboarding-gate";
+import { setupStatusQueryOptions } from "@/lib/setup-readiness-queries";
 
 /**
  * True when the product onboarding gate would allow normal app usage for this session
@@ -8,8 +7,7 @@ import type { SetupStatusPayload } from "@/components/setup/product-onboarding-g
  */
 export function useProductSetupComplete(): boolean {
   const { data: setup } = useQuery({
-    queryKey: ["/api/setup/status"],
-    queryFn: () => requestJson<SetupStatusPayload>("GET", "/api/setup/status"),
+    ...setupStatusQueryOptions,
     staleTime: 60_000,
   });
   if (!setup) return false;

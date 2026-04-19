@@ -3,17 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { fetchReadinessStatus } from "@/app/app-readiness-banner";
-import { requestJson } from "@/lib/queryClient";
-import type { SetupStatusPayload } from "@/components/setup/product-onboarding-gate";
+import {
+  readinessQueryOptions,
+  setupStatusQueryOptions,
+  type ReadinessStatus,
+  type SetupStatusPayload,
+} from "@/lib/setup-readiness-queries";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { ReadinessStatus } from "@/app/app-readiness-banner";
-
-async function fetchSetupStatus(): Promise<SetupStatusPayload> {
-  return requestJson<SetupStatusPayload>("GET", "/api/setup/status");
-}
 
 function JsonBlock({ value }: { value: unknown }) {
   return (
@@ -59,8 +57,7 @@ export default function SystemDiagnosticsPage() {
     refetch: refetchReady,
     isFetching: readyFetching,
   } = useQuery({
-    queryKey: ["/api/ready"],
-    queryFn: fetchReadinessStatus,
+    ...readinessQueryOptions,
     staleTime: 10_000,
   });
 
@@ -70,8 +67,7 @@ export default function SystemDiagnosticsPage() {
     refetch: refetchSetup,
     isFetching: setupFetching,
   } = useQuery({
-    queryKey: ["/api/setup/status"],
-    queryFn: fetchSetupStatus,
+    ...setupStatusQueryOptions,
     staleTime: 10_000,
   });
 

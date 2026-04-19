@@ -88,44 +88,82 @@ export default function WarehouseOperationsPage() {
   const [issueBatchQty, setIssueBatchQty] = useState("1");
   const [issueSerialId, setIssueSerialId] = useState("none");
 
-  const { data: warehouses = [] } = useQuery({
+  const {
+    data: warehouses = [],
+    isError: warehousesError,
+    error: warehousesErr,
+    refetch: refetchWarehouses,
+  } = useQuery({
     queryKey: ["/api/warehouses"],
     queryFn: () => requestJson<Array<{ id: number; name: string }>>("GET", "/api/warehouses"),
+    throwOnError: false,
   });
 
-  const { data: inventoryItems = [] } = useQuery({
+  const {
+    data: inventoryItems = [],
+    isError: inventoryError,
+    error: inventoryErr,
+    refetch: refetchInventory,
+  } = useQuery({
     queryKey: ["/api/inventory", "warehouse-ops"],
     queryFn: () => fetchInventory(),
+    throwOnError: false,
   });
 
-  const { data: allocations = [], isLoading: allocLoading } = useQuery({
+  const {
+    data: allocations = [],
+    isLoading: allocLoading,
+    isError: allocError,
+    error: allocErr,
+    refetch: refetchAllocations,
+  } = useQuery({
     queryKey: ["/api/inventory-allocations"],
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory-allocations");
       return normalizeApiList<AllocationRow>(raw);
     },
+    throwOnError: false,
   });
 
-  const { data: whInventory = [], isLoading: whInvLoading } = useQuery({
+  const {
+    data: whInventory = [],
+    isLoading: whInvLoading,
+    isError: whInvError,
+    error: whInvErr,
+    refetch: refetchWhInventory,
+  } = useQuery({
     queryKey: ["/api/warehouse-inventory", putAwayWarehouse],
     queryFn: () => requestJson<WarehouseInvRow[]>("GET", `/api/warehouse-inventory/${putAwayWarehouse}`),
     enabled: putAwayWarehouse !== "none",
+    throwOnError: false,
   });
 
-  const { data: batchRows = [] } = useQuery({
+  const {
+    data: batchRows = [],
+    isError: batchError,
+    error: batchErr,
+    refetch: refetchBatches,
+  } = useQuery({
     queryKey: ["/api/inventory-batches", "warehouse-ops"],
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory-batches");
       return normalizeApiList<BatchRow>(raw);
     },
+    throwOnError: false,
   });
 
-  const { data: serialRows = [] } = useQuery({
+  const {
+    data: serialRows = [],
+    isError: serialError,
+    error: serialErr,
+    refetch: refetchSerials,
+  } = useQuery({
     queryKey: ["/api/inventory-serials", "warehouse-ops"],
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory-serials");
       return normalizeApiList<SerialRow>(raw);
     },
+    throwOnError: false,
   });
 
   const issuableBatches = useMemo(
@@ -309,6 +347,31 @@ export default function WarehouseOperationsPage() {
         }
       />
 
+      {warehousesError || inventoryError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Could not load core warehouse data</AlertTitle>
+          <AlertDescription className="mt-2 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              {warehousesError && warehousesErr instanceof Error ? warehousesErr.message : null}
+              {warehousesError && inventoryError ? " · " : null}
+              {inventoryError && inventoryErr instanceof Error ? inventoryErr.message : null}
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {warehousesError ? (
+                <Button type="button" size="sm" variant="secondary" onClick={() => void refetchWarehouses()}>
+                  Retry warehouses
+                </Button>
+              ) : null}
+              {inventoryError ? (
+                <Button type="button" size="sm" variant="secondary" onClick={() => void refetchInventory()}>
+                  Retry inventory
+                </Button>
+              ) : null}
+            </div>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       {warehouses.length === 0 ? (
         <Alert>
           <AlertTitle>No warehouses yet</AlertTitle>
@@ -335,6 +398,17 @@ export default function WarehouseOperationsPage() {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
+          {allocError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Allocations unavailable</AlertTitle>
+              <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span>{allocErr instanceof Error ? allocErr.message : String(allocErr)}</span>
+                <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchAllocations()}>
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <div className="grid gap-3 md:grid-cols-5">
             <div className="space-y-1">
               <Label>Item</Label>
@@ -449,6 +523,17 @@ export default function WarehouseOperationsPage() {
               </SelectContent>
             </Select>
           </div>
+          {putAwayWarehouse !== "none" && whInvError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not load warehouse stock rows</AlertTitle>
+              <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span>{whInvErr instanceof Error ? whInvErr.message : String(whInvErr)}</span>
+                <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchWhInventory()}>
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
           {putAwayWarehouse === "none" ? (
             <p className="text-sm text-muted-foreground">Choose a warehouse to edit locations.</p>
           ) : whInvLoading ? (
@@ -490,6 +575,17 @@ export default function WarehouseOperationsPage() {
             <p className="text-sm text-muted-foreground">Creates an inventory_batches row for traceability.</p>
           </CardHeader>
           <CardContent className="grid gap-3">
+            {batchError ? (
+              <Alert variant="destructive">
+                <AlertTitle>Batches list failed</AlertTitle>
+                <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <span>{batchErr instanceof Error ? batchErr.message : String(batchErr)}</span>
+                  <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchBatches()}>
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <Select value={batchItem} onValueChange={setBatchItem}>
               <SelectTrigger>
                 <SelectValue placeholder="Item" />
@@ -538,6 +634,17 @@ export default function WarehouseOperationsPage() {
             <p className="text-sm text-muted-foreground">Creates an inventory_serials row (unique serial).</p>
           </CardHeader>
           <CardContent className="grid gap-3">
+            {serialError ? (
+              <Alert variant="destructive">
+                <AlertTitle>Serials list failed</AlertTitle>
+                <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <span>{serialErr instanceof Error ? serialErr.message : String(serialErr)}</span>
+                  <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchSerials()}>
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <Select value={serialItem} onValueChange={setSerialItem}>
               <SelectTrigger>
                 <SelectValue placeholder="Item" />

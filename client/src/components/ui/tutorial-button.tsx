@@ -3,6 +3,7 @@ import { useTutorial } from "@/contexts/tutorial-context";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { HelpCircle } from "lucide-react";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 /** Per-page "Tutorial" button: starts the tour for the current page (e.g. dashboard, analytics). For the full help dialog with all tutorials, use components/tutorial/tutorial-button.tsx. */
 interface TutorialStepProps {
@@ -16,7 +17,7 @@ const PAGE_ROUTES: Record<string, string> = {
   inventory: "/inventory",
   reports: "/reports",
   analytics: "/analytics",
-  suppliers: "/suppliers",
+  suppliers: APP_ROUTES.procurement.suppliers,
   users: "/user-roles",
   settings: "/settings",
   purchase: "/purchase",

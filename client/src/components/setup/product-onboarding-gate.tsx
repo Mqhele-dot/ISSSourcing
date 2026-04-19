@@ -2,43 +2,18 @@ import type { ReactNode } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { fetchReadinessStatus } from "@/app/app-readiness-banner";
-import { requestJson } from "@/lib/queryClient";
+import {
+  readinessQueryOptions,
+  setupStatusQueryOptions,
+  type SetupStatusPayload,
+} from "@/lib/setup-readiness-queries";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import type { User } from "@shared/schema";
 
-export type SetupStatusPayload = {
-  deploymentMode: string;
-  runtimeProfile: string;
-  skipProductOnboarding: boolean;
-  allowSetupSkip?: boolean;
-  database?: { ok: boolean; error: string | null };
-  build?: {
-    version?: string;
-    commitSha?: string | null;
-    buildId?: string | null;
-    builtAt?: string | null;
-    runtimeProfile?: string;
-    deploymentMode?: string;
-  };
-  onboarding: {
-    completedAt: string | null;
-    required: boolean;
-    adminMayContinue: boolean;
-    checkpoint: unknown;
-  };
-  productBootstrap?: { organizationCount: number; needsFirstRunOnboarding: boolean } | null;
-  organization: { id: number; name: string; slug: string | null } | null;
-  uploads?: { pathReady: boolean; path?: string; writable?: boolean };
-  exports?: { pathReady: boolean; path?: string; writable?: boolean };
-  diagnostics?: {
-    drizzleMigrationCount: number | null;
-    lastExportFailure: { id: number; lastError: string; updatedAt: string } | null;
-  };
-};
+export type { SetupStatusPayload };
 
 function pathWithoutQuery(path: string): string {
   const i = path.indexOf("?");
@@ -59,10 +34,6 @@ function setupAllowedPath(path: string): boolean {
   return false;
 }
 
-async function fetchSetupStatus(): Promise<SetupStatusPayload> {
-  return requestJson<SetupStatusPayload>("GET", "/api/setup/status");
-}
-
 function SetupStatusErrorPanel({
   onRetry,
   variant,
@@ -81,8 +52,9 @@ function SetupStatusErrorPanel({
         <AlertTitle>Could not load product setup status</AlertTitle>
         <AlertDescription className="mt-2 flex flex-col gap-3 text-sm">
           <p>
-            The app cannot confirm whether first-run setup finished. For security, navigation stays limited until this
-            check succeeds.
+            The app cannot confirm whether first-run setup finished. This is often a short network blip or a stopped API
+            process; repeated failures usually mean the database or migrations need attention. For security, navigation
+            stays limited until this check succeeds.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="secondary" onClick={() => onRetry()}>
@@ -145,27 +117,25 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const { data: ready, isLoading: readyLoading } = useQuery({
-    queryKey: ["/api/ready"],
-    queryFn: fetchReadinessStatus,
-    staleTime: 15_000,
-    retry: false,
-  });
+  const readyQuery = useQuery(readinessQueryOptions);
+  const { data: ready, isPending: readyPending, isError: readyError, refetch: refetchReady } = readyQuery;
 
-  const { data: setup, isLoading: setupLoading, isError: setupError, isFetched: setupFetched } = useQuery({
-    queryKey: ["/api/setup/status"],
-    queryFn: fetchSetupStatus,
-    staleTime: 10_000,
-    retry: 1,
-  });
+  const setupQuery = useQuery(setupStatusQueryOptions);
+  const {
+    data: setup,
+    isPending: setupPending,
+    isError: setupError,
+    isFetched: setupFetched,
+  } = setupQuery;
 
   const retrySetupStatus = () => void queryClient.invalidateQueries({ queryKey: ["/api/setup/status"] });
+  const retryReady = () => void refetchReady();
 
   if (isAuthPath(pathBase)) {
     return <>{children}</>;
   }
 
-  if (readyLoading || (setupLoading && !setupError)) {
+  if ((readyPending && !readyError) || (setupPending && !setupError)) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
@@ -179,27 +149,57 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     return <Redirect to={APP_ROUTES.admin.onboarding} />;
   }
 
+  const readinessWarning = readyError ? (
+    <div className="mx-4 mt-3 max-w-4xl">
+      <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
+        <AlertTitle>Could not verify public readiness</AlertTitle>
+        <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <span>
+            The lightweight <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/ready</code> check failed
+            (often offline or a slow network). You can retry; the app will still enforce setup using{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/setup/status</code> when available.
+          </span>
+          <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={retryReady}>
+            Retry readiness
+          </Button>
+        </AlertDescription>
+      </Alert>
+    </div>
+  ) : null;
+
   const setupStatusFailed = setupFetched && (setupError || setup == null);
   if (setupStatusFailed) {
     if (setupAllowedPath(pathBase)) {
       return (
         <>
+          {readinessWarning}
           <SetupStatusErrorPanel variant="inline" onRetry={retrySetupStatus} />
           {children}
         </>
       );
     }
-    return <SetupStatusErrorPanel variant="full" onRetry={retrySetupStatus} />;
+    return (
+      <>
+        {readinessWarning}
+        <SetupStatusErrorPanel variant="full" onRetry={retrySetupStatus} />
+      </>
+    );
   }
 
   if (!setup) {
-    return <SetupStatusErrorPanel variant="full" onRetry={retrySetupStatus} />;
+    return (
+      <>
+        {readinessWarning}
+        <SetupStatusErrorPanel variant="full" onRetry={retrySetupStatus} />
+      </>
+    );
   }
 
   if (setup.skipProductOnboarding || !setup.onboarding.required) {
     if (setup.skipProductOnboarding && !setup.onboarding.completedAt) {
       return (
         <WithNonAdminSetupBanner setup={setup} path={pathBase} user={user}>
+          {readinessWarning}
           <Alert className="mx-4 mt-4 max-w-4xl border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
             <AlertTitle>Product onboarding bypassed</AlertTitle>
             <AlertDescription className="text-sm">
@@ -219,6 +219,7 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     }
     return (
       <WithNonAdminSetupBanner setup={setup} path={pathBase} user={user}>
+        {readinessWarning}
         {children}
       </WithNonAdminSetupBanner>
     );
@@ -230,6 +231,7 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
 
   return (
     <WithNonAdminSetupBanner setup={setup} path={pathBase} user={user}>
+      {readinessWarning}
       {children}
     </WithNonAdminSetupBanner>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Bug, Copy, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,11 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { actionErrorStore, type ActionErrorRecord } from "@/lib/action-error-store";
+import {
+  actionErrorStore,
+  pickLatestForFab,
+  type ActionErrorRecord,
+} from "@/lib/action-error-store";
 import { requestJson } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -28,29 +32,42 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 export function GlobalActionErrorCenter() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const [latest, setLatest] = useState<ActionErrorRecord | null>(null);
   const [open, setOpen] = useState(false);
+  const [activeRecord, setActiveRecord] = useState<ActionErrorRecord | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [history, setHistory] = useState<ActionErrorRecord[]>(() => actionErrorStore.list());
   const [retrying, setRetrying] = useState(false);
+  const lastBgToastAt = useRef(0);
+
+  const fabRecord = useMemo(() => pickLatestForFab(history), [history]);
 
   useEffect(() => {
     return actionErrorStore.subscribe((record) => {
-      setLatest(record);
-      setHistory(actionErrorStore.list());
-      setOpen(true);
+      const list = actionErrorStore.list();
+      setHistory(list);
+      if (record.severity === "background") {
+        const now = Date.now();
+        if (now - lastBgToastAt.current > 2800) {
+          lastBgToastAt.current = now;
+          toast({
+            title: "Request issue",
+            description: record.reason.slice(0, 200),
+            variant: "destructive",
+          });
+        }
+      }
     });
-  }, []);
+  }, [toast]);
 
   const canSeeDiagnostics = user?.role === "admin";
   const prettyRaw = useMemo(
-    () => (latest?.raw != null ? JSON.stringify(latest.raw, null, 2) : "No payload captured"),
-    [latest?.raw],
+    () => (activeRecord?.raw != null ? JSON.stringify(activeRecord.raw, null, 2) : "No payload captured"),
+    [activeRecord?.raw],
   );
 
   const copyDiagnostics = async () => {
-    if (!latest) return;
-    const text = JSON.stringify(latest, null, 2);
+    if (!activeRecord) return;
+    const text = JSON.stringify(activeRecord, null, 2);
     await navigator.clipboard.writeText(text);
     toast({ title: "Diagnostics copied", description: "Failure details copied to clipboard." });
   };
@@ -60,17 +77,17 @@ export function GlobalActionErrorCenter() {
   };
 
   const retryLatest = async () => {
-    if (!latest?.retryMethod || !latest?.retryEndpoint || retrying) return;
+    if (!activeRecord?.retryMethod || !activeRecord?.retryEndpoint || retrying) return;
     setRetrying(true);
     try {
-      await requestJson(latest.retryMethod, latest.retryEndpoint, latest.retryPayload);
+      await requestJson(activeRecord.retryMethod, activeRecord.retryEndpoint, activeRecord.retryPayload);
       toast({
         title: "Retry successful",
-        description: `${latest.retryMethod} ${latest.retryEndpoint}`,
+        description: `${activeRecord.retryMethod} ${activeRecord.retryEndpoint}`,
       });
-      actionErrorStore.clearById(latest.id);
+      actionErrorStore.clearById(activeRecord.id);
       setHistory(actionErrorStore.list());
-      setLatest(actionErrorStore.list()[0] ?? null);
+      setActiveRecord(null);
       setOpen(false);
     } catch (error) {
       toast({
@@ -83,16 +100,43 @@ export function GlobalActionErrorCenter() {
     }
   };
 
-  const statusLabel = latest?.status != null ? String(latest.status) : "n/a";
-  const isClientError = latest?.status != null && latest.status >= 400 && latest.status < 500;
+  const statusLabel = activeRecord?.status != null ? String(activeRecord.status) : "n/a";
+  const isClientError =
+    activeRecord?.status != null && activeRecord.status >= 400 && activeRecord.status < 500;
+
+  const openDetails = () => {
+    const r = pickLatestForFab(actionErrorStore.list());
+    if (r) {
+      setActiveRecord(r);
+      setOpen(true);
+    }
+  };
+
+  const dismissFab = () => {
+    if (!fabRecord) return;
+    actionErrorStore.clearById(fabRecord.id);
+    setHistory(actionErrorStore.list());
+    if (activeRecord?.id === fabRecord.id) {
+      setActiveRecord(null);
+      setOpen(false);
+    }
+  };
+
+  const fabLabel =
+    fabRecord?.severity === "blocking"
+      ? "Server error — tap for details"
+      : "Action failed — tap for details";
 
   return (
     <>
-      {latest ? (
-        <div className="fixed bottom-4 right-4 z-50">
-          <Button variant="destructive" className="max-w-[min(100vw-2rem,20rem)] gap-2" onClick={() => setOpen(true)}>
+      {fabRecord ? (
+        <div className="fixed bottom-4 right-4 z-50 flex max-w-[min(100vw-2rem,22rem)] flex-col items-end gap-2">
+          <Button type="button" variant="outline" size="sm" className="text-xs" onClick={dismissFab}>
+            Dismiss
+          </Button>
+          <Button variant="destructive" className="w-full gap-2" onClick={openDetails}>
             <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span className="truncate">Action failed — tap for details</span>
+            <span className="truncate">{fabLabel}</span>
           </Button>
         </div>
       ) : null}
@@ -100,11 +144,10 @@ export function GlobalActionErrorCenter() {
       <Dialog
         open={open}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen && latest) {
-            actionErrorStore.clearById(latest.id);
-            const nextHistory = actionErrorStore.list();
-            setHistory(nextHistory);
-            setLatest(nextHistory[0] ?? null);
+          if (!nextOpen && activeRecord) {
+            actionErrorStore.clearById(activeRecord.id);
+            setHistory(actionErrorStore.list());
+            setActiveRecord(null);
           }
           setOpen(nextOpen);
         }}
@@ -113,36 +156,42 @@ export function GlobalActionErrorCenter() {
           <DialogHeader className="space-y-1 border-b border-border pb-4 text-left">
             <DialogTitle className="text-xl">Something went wrong</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
-              {latest?.reason ?? "The request did not complete. Review the details below or retry from the page."}
+              {activeRecord?.reason ??
+                "The request did not complete. Review the details below or retry from the page."}
             </DialogDescription>
           </DialogHeader>
 
-          {latest ? (
+          {activeRecord ? (
             <div className="space-y-4 py-4">
+              {activeRecord.occurrenceCount != null && activeRecord.occurrenceCount > 1 ? (
+                <p className="text-xs text-muted-foreground">
+                  Repeated {activeRecord.occurrenceCount}× (similar errors were grouped).
+                </p>
+              ) : null}
               <Alert variant={isClientError ? "default" : "destructive"} className="border">
                 <AlertTitle className="text-sm font-semibold">
-                  {latest.method} {latest.endpoint}
+                  {activeRecord.method} {activeRecord.endpoint}
                 </AlertTitle>
                 <AlertDescription className="mt-1 space-y-1 text-sm">
                   <span className="font-medium">HTTP {statusLabel}</span>
-                  {latest.reason ? (
-                    <span className="block text-foreground/90">{latest.reason}</span>
+                  {activeRecord.reason ? (
+                    <span className="block text-foreground/90">{activeRecord.reason}</span>
                   ) : null}
                 </AlertDescription>
               </Alert>
 
               <dl className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
-                <DetailRow label="Module">{latest.module ?? "—"}</DetailRow>
-                <DetailRow label="Action">{latest.action ?? "—"}</DetailRow>
+                <DetailRow label="Module">{activeRecord.module ?? "—"}</DetailRow>
+                <DetailRow label="Action">{activeRecord.action ?? "—"}</DetailRow>
                 <DetailRow label="Request ID">
-                  {latest.requestId ? (
-                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{latest.requestId}</code>
+                  {activeRecord.requestId ? (
+                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{activeRecord.requestId}</code>
                   ) : (
                     "—"
                   )}
                 </DetailRow>
-                <DetailRow label="Payload">{latest.payloadSummary ?? "—"}</DetailRow>
-                <DetailRow label="Time">{new Date(latest.timestamp).toLocaleString()}</DetailRow>
+                <DetailRow label="Payload">{activeRecord.payloadSummary ?? "—"}</DetailRow>
+                <DetailRow label="Time">{new Date(activeRecord.timestamp).toLocaleString()}</DetailRow>
               </dl>
 
               <div className="space-y-2">
@@ -157,17 +206,17 @@ export function GlobalActionErrorCenter() {
           ) : null}
 
           <DialogFooter className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:flex-wrap sm:justify-end">
-            <Button variant="outline" onClick={copyDiagnostics} className="gap-2">
+            <Button variant="outline" onClick={copyDiagnostics} className="gap-2" disabled={!activeRecord}>
               <Copy className="h-4 w-4" />
               Copy full report
             </Button>
-            {latest ? (
-              <Button variant="outline" onClick={() => copyEndpoint(latest.endpoint)} className="gap-2">
+            {activeRecord ? (
+              <Button variant="outline" onClick={() => copyEndpoint(activeRecord.endpoint)} className="gap-2">
                 <Copy className="h-4 w-4" />
                 Copy endpoint
               </Button>
             ) : null}
-            {latest?.retryMethod && latest?.retryEndpoint ? (
+            {activeRecord?.retryMethod && activeRecord?.retryEndpoint ? (
               <Button variant="outline" onClick={retryLatest} className="gap-2" disabled={retrying}>
                 <RotateCcw className="h-4 w-4" />
                 {retrying ? "Retrying…" : "Retry"}
@@ -181,11 +230,10 @@ export function GlobalActionErrorCenter() {
             ) : null}
             <Button
               onClick={() => {
-                if (latest) {
-                  actionErrorStore.clearById(latest.id);
-                  const nextHistory = actionErrorStore.list();
-                  setHistory(nextHistory);
-                  setLatest(nextHistory[0] ?? null);
+                if (activeRecord) {
+                  actionErrorStore.clearById(activeRecord.id);
+                  setHistory(actionErrorStore.list());
+                  setActiveRecord(null);
                 }
                 setOpen(false);
               }}
@@ -207,7 +255,8 @@ export function GlobalActionErrorCenter() {
               {history.map((entry) => (
                 <div key={entry.id} className="rounded border border-border bg-card p-3 text-xs">
                   <div className="font-medium">
-                    {entry.method} {entry.endpoint}
+                    {entry.method} {entry.endpoint}{" "}
+                    <span className="text-muted-foreground">({entry.severity})</span>
                   </div>
                   <div>Module: {entry.module ?? "n/a"} | Action: {entry.action ?? "n/a"}</div>
                   <div>Status: {entry.status ?? "n/a"} | Request ID: {entry.requestId ?? "n/a"}</div>

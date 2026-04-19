@@ -113,7 +113,7 @@ export function SuppliersListCard({
                         )}
                       </div>
                       <div>
-                        <Link href={`/suppliers/${supplier.id}`}>
+                        <Link href={APP_ROUTES.procurement.supplier(supplier.id)}>
                           <h3 className="font-medium hover:underline inline-flex items-center gap-1">
                             {supplier.name}
                             <ExternalLink className="h-3 w-3 opacity-50" aria-hidden />

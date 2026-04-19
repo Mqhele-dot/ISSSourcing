@@ -20,8 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatMutationError, queryClient, requestJson } from "@/lib/queryClient";
 import type { AppSettings } from "@shared/schema";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
-import { fetchReadinessStatus } from "@/app/app-readiness-banner";
-import type { SetupStatusPayload } from "@/components/setup/product-onboarding-gate";
+import { readinessQueryOptions, setupStatusQueryOptions } from "@/lib/setup-readiness-queries";
 import { Link } from "wouter";
 
 const STEPS = ["welcome", "business", "warehouse", "starter", "review"] as const;
@@ -30,26 +29,15 @@ type StepId = (typeof STEPS)[number];
 const DATE_FORMAT_PRESETS = ["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY"] as const;
 const TIME_FORMAT_PRESETS = ["HH:mm", "hh:mm A"] as const;
 
-async function fetchSetupStatus(): Promise<SetupStatusPayload> {
-  return requestJson<SetupStatusPayload>("GET", "/api/setup/status");
-}
-
 export default function ProductSetupPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const { settings } = useSettings();
 
-  const { data: ready } = useQuery({
-    queryKey: ["/api/ready"],
-    queryFn: fetchReadinessStatus,
-    staleTime: 15_000,
-  });
+  const { data: ready } = useQuery(readinessQueryOptions);
 
-  const { data: setup } = useQuery({
-    queryKey: ["/api/setup/status"],
-    queryFn: fetchSetupStatus,
-  });
+  const { data: setup } = useQuery(setupStatusQueryOptions);
 
   const [step, setStep] = useState<StepId>("welcome");
   const [companyName, setCompanyName] = useState(settings.companyName);

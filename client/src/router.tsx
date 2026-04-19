@@ -1,10 +1,9 @@
-import React, { lazy, Suspense } from "react";
+import React, { lazy } from "react";
 import { Switch, Route, Redirect } from "wouter";
-import { Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { buildLegacyRedirectRules, type LegacyRedirectRule } from "@/lib/routes/legacy-redirects";
-import { Skeleton } from "@/components/ui/skeleton";
+import { RouteLoadingBoundary } from "@/app/route-loading-boundary";
 
 const NotFound = lazy(() => import("@/pages/not-found"));
 const AuthPage = lazy(() => import("@/pages/auth-page"));
@@ -60,32 +59,11 @@ const MobileHubHome = lazy(() => import("@/pages/mobile-hub-home"));
 const MobileHubTasks = lazy(() => import("@/pages/mobile-hub-tasks"));
 const MobileHubMore = lazy(() => import("@/pages/mobile-hub-more"));
 
-function RouteFallback() {
-  return (
-    <div className="flex min-h-[40vh] flex-col gap-4 p-4 md:p-6" aria-busy="true" aria-label="Loading page">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-        <span>Loading workspace…</span>
-      </div>
-      <div className="grid gap-3 max-w-3xl">
-        <Skeleton className="h-8 w-2/3" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-5/6" />
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 pt-2">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const LEGACY_REDIRECT_RULES: LegacyRedirectRule[] = buildLegacyRedirectRules();
 
 export function AppRouter() {
   return (
-    <Suspense fallback={<RouteFallback />}>
+    <RouteLoadingBoundary>
       <Switch>
         <ProtectedRoute path={APP_ROUTES.operations.mobileHub} component={MobileHubHome} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileTasks} component={MobileHubTasks} />
@@ -186,6 +164,6 @@ export function AppRouter() {
         <Route path="/auth" component={AuthPage} />
         <Route component={NotFound} />
       </Switch>
-    </Suspense>
+    </RouteLoadingBoundary>
   );
 }

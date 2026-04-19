@@ -107,6 +107,10 @@ $env:BASE_URL="http://127.0.0.1:5000"; npm run test:procurement-flow
 
 **Performance:** route modules are **lazy-loaded** so initial load stays smaller; list data uses tuned React Query defaults (`staleTime`, `gcTime`, refetch on reconnect).
 
+**Slow or stuck page load (lazy chunks):** If a route never leaves “Loading workspace…”, wait ~12s — you should see a **“taking longer than expected”** message with **Reload**. Chunk or render errors show **Try again** / **Reload app** (no infinite spinner). Prefer **Ports → 5000 → Public** if the tab shows 502.
+
+**Procurement suppliers:** In-app links use **`/procurement/suppliers`** and **`/procurement/suppliers/:id`** (legacy `/suppliers/:id` may still redirect, but bookmarks should use the canonical paths).
+
 Reliability contract checks (request IDs + readiness):
 
 ```bash

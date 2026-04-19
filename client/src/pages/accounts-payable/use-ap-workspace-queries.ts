@@ -13,51 +13,70 @@ import type {
 } from "./types";
 
 export function useApWorkspaceQueries() {
-  const {
-    data: overview,
-    isLoading,
-    isError,
-    error,
-    refetch,
-  } = useQuery({
+  const overviewQuery = useQuery({
     queryKey: apQueryKeys.overview,
     queryFn: () => requestJson<Overview>("GET", "/api/ap/overview"),
+    throwOnError: false,
   });
 
-  const { data: suppliers = [] } = useQuery({
+  const secondaryEnabled = overviewQuery.isFetched;
+
+  const suppliersQuery = useQuery({
     queryKey: ["/api/suppliers", "ap"],
     queryFn: () => requestJson<Supplier[]>("GET", "/api/suppliers"),
+    enabled: secondaryEnabled,
+    throwOnError: false,
   });
 
-  const { data: captures = [] } = useQuery({
+  const capturesQuery = useQuery({
     queryKey: apQueryKeys.captures,
     queryFn: () => requestJson<Capture[]>("GET", "/api/ap/captures"),
+    enabled: secondaryEnabled,
+    throwOnError: false,
   });
 
-  const { data: approvalQueue = { invoices: [], paymentBatches: [] } } = useQuery({
+  const approvalQueueQuery = useQuery({
     queryKey: apQueryKeys.approvalQueue,
     queryFn: () => requestJson<ApprovalQueue>("GET", "/api/ap/approval-queue"),
+    enabled: secondaryEnabled,
+    throwOnError: false,
   });
 
-  const { data: exceptions = { captureExceptions: [], matchExceptions: [], disputedInvoices: [] } } = useQuery({
+  const exceptionsQuery = useQuery({
     queryKey: apQueryKeys.exceptions,
     queryFn: () => requestJson<Exceptions>("GET", "/api/ap/exceptions"),
+    enabled: secondaryEnabled,
+    throwOnError: false,
   });
 
-  const { data: paymentBatches = [] } = useQuery({
+  const paymentBatchesQuery = useQuery({
     queryKey: apQueryKeys.paymentBatches,
     queryFn: () => requestJson<PaymentBatch[]>("GET", "/api/ap/payment-batches"),
+    enabled: secondaryEnabled,
+    throwOnError: false,
   });
 
-  const { data: invoices = [] } = useQuery({
+  const invoicesQuery = useQuery({
     queryKey: apQueryKeys.invoices,
     queryFn: () => requestJson<Invoice[]>("GET", "/api/ap/invoices"),
+    enabled: secondaryEnabled,
+    throwOnError: false,
   });
 
-  const readyForBatch = useMemo(
-    () => invoices.filter((invoice) => ["APPROVED", "PARTIALLY_PAID", "OVERDUE"].includes(String(invoice.status))),
-    [invoices],
-  );
+  const overview = overviewQuery.data;
+  const suppliers = suppliersQuery.data ?? [];
+  const captures = capturesQuery.data ?? [];
+  const approvalQueue = approvalQueueQuery.data ?? { invoices: [], paymentBatches: [] };
+  const exceptions = exceptionsQuery.data ?? { captureExceptions: [], matchExceptions: [], disputedInvoices: [] };
+  const paymentBatches = paymentBatchesQuery.data ?? [];
+  const invoices = invoicesQuery.data ?? [];
+
+  const readyForBatch = useMemo(() => {
+    const list = invoicesQuery.data ?? [];
+    return list.filter((invoice) =>
+      ["APPROVED", "PARTIALLY_PAID", "OVERDUE"].includes(String(invoice.status)),
+    );
+  }, [invoicesQuery.data]);
 
   return {
     overview,
@@ -68,9 +87,12 @@ export function useApWorkspaceQueries() {
     paymentBatches,
     invoices,
     readyForBatch,
-    isLoading,
-    isError,
-    error,
-    refetch,
+    overviewQuery,
+    suppliersQuery,
+    capturesQuery,
+    approvalQueueQuery,
+    exceptionsQuery,
+    paymentBatchesQuery,
+    invoicesQuery,
   };
 }

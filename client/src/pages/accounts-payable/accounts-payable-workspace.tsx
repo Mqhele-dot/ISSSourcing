@@ -4,8 +4,9 @@ import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DataState } from "@/components/ui/data-state";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
@@ -68,11 +69,17 @@ export default function AccountsPayableWorkspace() {
     paymentBatches,
     invoices,
     readyForBatch,
-    isLoading,
-    isError,
-    error,
-    refetch,
+    overviewQuery,
+    suppliersQuery,
+    capturesQuery,
+    approvalQueueQuery,
+    exceptionsQuery,
+    paymentBatchesQuery,
+    invoicesQuery,
   } = queries;
+
+  const overviewLoading = overviewQuery.isPending && !overviewQuery.data;
+  const overviewErr = overviewQuery.isError ? overviewQuery.error : null;
 
   const section = params?.section;
   const activeTab = isApWorkspaceTab(section) ? section : null;
@@ -184,37 +191,66 @@ export default function AccountsPayableWorkspace() {
         }
       />
 
-      <DataState
-        loading={isLoading}
-        error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
-        data={overview ?? null}
-        isEmpty={() => false}
-        emptyTitle="No AP overview"
-        onRetry={() => void refetch()}
+      {overviewLoading ? (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+          Loading AP overview…
+        </div>
+      ) : null}
+
+      {overviewErr ? (
+        <Alert variant="destructive">
+          <AlertTitle>AP overview unavailable</AlertTitle>
+          <AlertDescription className="mt-2 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span>{overviewErr instanceof Error ? overviewErr.message : String(overviewErr)}</span>
+            <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void overviewQuery.refetch()}>
+              Retry overview
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {overview ? <ApOverviewHeader stats={overview} formatMoney={formatMoney} /> : null}
+
+      {!overviewQuery.isFetched && !overviewErr ? (
+        <p className="text-sm text-muted-foreground">Preparing workspace requests…</p>
+      ) : null}
+
+      <Tabs
+        value={activeTab}
+        onValueChange={(next) => {
+          const tab = next as ApWorkspaceTab;
+          if (isApWorkspaceTab(tab)) {
+            setLocation(TAB_TO_ROUTE[tab]);
+          }
+        }}
+        className="space-y-4"
       >
-        {(stats) => (
-          <>
-            <ApOverviewHeader stats={stats} formatMoney={formatMoney} />
+        <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
+          <TabsTrigger value="intake">Intake</TabsTrigger>
+          <TabsTrigger value="approvals">Approvals</TabsTrigger>
+          <TabsTrigger value="exceptions">Exceptions</TabsTrigger>
+          <TabsTrigger value="payments">Payments</TabsTrigger>
+        </TabsList>
 
-            <Tabs
-              value={activeTab}
-              onValueChange={(next) => {
-                const tab = next as ApWorkspaceTab;
-                if (isApWorkspaceTab(tab)) {
-                  setLocation(TAB_TO_ROUTE[tab]);
-                }
-              }}
-              className="space-y-4"
-            >
-              <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
-                <TabsTrigger value="intake">Intake</TabsTrigger>
-                <TabsTrigger value="approvals">Approvals</TabsTrigger>
-                <TabsTrigger value="exceptions">Exceptions</TabsTrigger>
-                <TabsTrigger value="payments">Payments</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="intake" className="space-y-4">
-                {captures.length === 0 ? (
+        <TabsContent value="intake" className="space-y-4">
+          {suppliersQuery.isError || capturesQuery.isError ? (
+            <Alert>
+              <AlertTitle>Some intake lists failed to load</AlertTitle>
+              <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span>You can retry suppliers or captures independently of the overview.</span>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="outline" onClick={() => void suppliersQuery.refetch()}>
+                    Retry suppliers
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => void capturesQuery.refetch()}>
+                    Retry captures
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {captures.length === 0 ? (
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base">No invoice captures yet</CardTitle>
@@ -263,10 +299,23 @@ export default function AccountsPayableWorkspace() {
                   promoteCaptureMutation={mutations.promoteCaptureMutation}
                   onSubmitCapture={onSubmitCapture}
                 />
-              </TabsContent>
+        </TabsContent>
 
-              <TabsContent value="approvals" className="space-y-4">
-                <ApApprovalsPanel
+        <TabsContent value="approvals" className="space-y-4">
+          {invoicesQuery.isError || approvalQueueQuery.isError ? (
+            <Alert>
+              <AlertTitle>Some approvals data failed to load</AlertTitle>
+              <AlertDescription className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => void invoicesQuery.refetch()}>
+                  Retry invoices
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => void approvalQueueQuery.refetch()}>
+                  Retry queue
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <ApApprovalsPanel
                   invoices={invoices}
                   approvalQueue={approvalQueue}
                   formatMoney={formatMoney}
@@ -276,14 +325,37 @@ export default function AccountsPayableWorkspace() {
                   approveInvoiceMutation={mutations.approveInvoiceMutation}
                   rejectInvoiceMutation={mutations.rejectInvoiceMutation}
                 />
-              </TabsContent>
+        </TabsContent>
 
-              <TabsContent value="exceptions" className="space-y-4">
-                <ApExceptionsPanel exceptions={exceptions} formatMoney={formatMoney} />
-              </TabsContent>
+        <TabsContent value="exceptions" className="space-y-4">
+          {exceptionsQuery.isError ? (
+            <Alert>
+              <AlertTitle>Exceptions could not be loaded</AlertTitle>
+              <AlertDescription className="mt-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => void exceptionsQuery.refetch()}>
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <ApExceptionsPanel exceptions={exceptions} formatMoney={formatMoney} />
+        </TabsContent>
 
-              <TabsContent value="payments" className="space-y-4">
-                <ApPaymentsPanel
+        <TabsContent value="payments" className="space-y-4">
+          {paymentBatchesQuery.isError || invoicesQuery.isError ? (
+            <Alert>
+              <AlertTitle>Some payments data failed to load</AlertTitle>
+              <AlertDescription className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => void paymentBatchesQuery.refetch()}>
+                  Retry batches
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => void invoicesQuery.refetch()}>
+                  Retry invoices
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <ApPaymentsPanel
                   readyForBatch={readyForBatch}
                   selectedInvoiceIds={selectedInvoiceIds}
                   toggleInvoiceSelection={toggleInvoiceSelection}
@@ -300,11 +372,8 @@ export default function AccountsPayableWorkspace() {
                   releaseBatchMutation={mutations.releaseBatchMutation}
                   onCreateBatch={onCreateBatch}
                 />
-              </TabsContent>
-            </Tabs>
-          </>
-        )}
-      </DataState>
+        </TabsContent>
+      </Tabs>
     </PageShell>
   );
 }

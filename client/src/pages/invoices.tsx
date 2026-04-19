@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -99,6 +100,7 @@ function isInvoiceLinesLocked(status: string) {
 
 export default function InvoicesPage() {
   const { settings } = useSettings();
+  const { formatMoney, currencyCode } = useReportingMoney();
   const { toast } = useToast();
   const [supplierId, setSupplierId] = useState<string>("none");
   const [purchaseOrderId, setPurchaseOrderId] = useState<string>("none");
@@ -568,7 +570,7 @@ export default function InvoicesPage() {
                         <TableCell>{invoice.invoiceNumber}</TableCell>
                         <TableCell>{poLabel}</TableCell>
                         <TableCell>{match?.status ?? invoice.status}</TableCell>
-                        <TableCell>${Number(invoice.totalAmount ?? 0).toFixed(2)}</TableCell>
+                        <TableCell>{formatMoney(Number(invoice.totalAmount ?? 0))}</TableCell>
                         <TableCell>{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "-"}</TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -750,7 +752,7 @@ export default function InvoicesPage() {
                     <TableRow>
                       <TableHead>Item</TableHead>
                       <TableHead className="w-24">Qty</TableHead>
-                      <TableHead className="w-28">Unit $</TableHead>
+                      <TableHead className="w-28">Unit ({currencyCode})</TableHead>
                       <TableHead className="w-24">Tax %</TableHead>
                       <TableHead className="text-right w-28">Line total</TableHead>
                       <TableHead className="text-right w-36">Actions</TableHead>
@@ -821,7 +823,7 @@ export default function InvoicesPage() {
                               }
                             />
                           </TableCell>
-                          <TableCell className="text-right text-sm">${totalPrice.toFixed(2)}</TableCell>
+                          <TableCell className="text-right text-sm">{formatMoney(totalPrice)}</TableCell>
                           <TableCell className="text-right space-x-1">
                             <Button
                               type="button"
@@ -905,7 +907,7 @@ export default function InvoicesPage() {
                     <Input value={newLineQty} onChange={(e) => setNewLineQty(e.target.value)} />
                   </div>
                   <div className="space-y-1 w-28">
-                    <Label>Unit $</Label>
+                    <Label>Unit ({currencyCode})</Label>
                     <Input value={newLineUnitPrice} onChange={(e) => setNewLineUnitPrice(e.target.value)} />
                   </div>
                   <div className="space-y-1 w-24">

@@ -7,9 +7,13 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
+
+/** Canonical procurement detail path (must match router). */
+const SUPPLIER_DETAIL_PATTERN = "/procurement/suppliers/:id";
 
 export default function SupplierDetailPage() {
-  const [, params] = useRoute<{ id: string }>("/suppliers/:id");
+  const [, params] = useRoute<{ id: string }>(SUPPLIER_DETAIL_PATTERN);
   const id = params?.id ? parseInt(params.id, 10) : NaN;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -23,7 +27,7 @@ export default function SupplierDetailPage() {
       <div className="mx-auto max-w-3xl p-6">
         <p className="text-muted-foreground">Invalid supplier.</p>
         <Button asChild variant="outline" className="mt-4">
-          <Link href="/suppliers">Back to suppliers</Link>
+          <Link href={APP_ROUTES.procurement.suppliers}>Back to suppliers</Link>
         </Button>
       </div>
     );
@@ -35,14 +39,14 @@ export default function SupplierDetailPage() {
         title={isLoading ? "Supplier" : data?.name ?? "Supplier"}
         description="Read-only profile — use the list to edit."
         breadcrumb={
-          <Link href="/suppliers" className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm">
+          <Link href={APP_ROUTES.procurement.suppliers} className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm">
             <ArrowLeft className="h-4 w-4" />
             Suppliers
           </Link>
         }
         actions={
           <Button asChild variant="outline" size="sm">
-            <Link href="/suppliers">Back to list</Link>
+            <Link href={APP_ROUTES.procurement.suppliers}>Back to list</Link>
           </Button>
         }
       />

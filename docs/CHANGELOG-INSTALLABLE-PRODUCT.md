@@ -62,3 +62,14 @@ After `drizzle-kit push` (or your migration process), existing rows will have **
 - **Procurement:** Approve/reject routes resolve the applicable requisition policy through a single **org-scoped** helper so policy selection cannot drift.
 - **Home checklist:** **First procurement cycle** adds **Approve requisition** (deep link to pending requisitions) and points vendor-bill work at **Accounts payable** instead of legacy Invoices.
 - **Client reporting currency:** A single **`REPORTING_CURRENCY_FALLBACK_CODE`** constant aligns client defaults with the server-side reporting helper conceptually.
+
+## Production stabilization (noise + resilience)
+
+- **Supplier routing:** Procurement supplier detail and list links use canonical `/procurement/suppliers/:id` so in-app navigation matches the router.
+- **Global action errors:** The diagnostics error center dedupes rapid repeats, infers severity, and avoids auto-opening the dialog for every background failure; blocking/mutation issues still surface prominently.
+- **Setup / readiness queries:** Shared `setup-readiness-queries` options align `/api/setup/status` and `/api/ready` behavior across the onboarding gate, diagnostics, product setup, hooks, and readiness banner.
+- **Calmer health UX:** The gate distinguishes readiness fetch failures from setup-status failures; the top readiness banner uses softer first-failure copy with retry before escalating.
+- **Route loading:** Lazy routes are wrapped with suspense, a chunk error boundary (retry + reload), and a timeout message when loading stalls (e.g. slow chunk download).
+- **Isolated panel errors:** Warehouse operations, cycle counts, and the AP workspace show per-section retry instead of implying the whole page failed; AP defers secondary fetches until the overview request has settled.
+- **Finance invoices:** Legacy invoices UI formats money with org reporting currency instead of a hardcoded `$`.
+- **Query client:** Background `GET` failures on `/api/setup/status` and `/api/ready`, plus client `GET` timeouts (`408`), no longer flood the global error center (local UI still reports them).
