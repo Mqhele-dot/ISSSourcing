@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useSettings } from "@/hooks/use-settings";
 import { ToastAction } from "@/components/ui/toast";
 import { queryClient, apiRequest, requestJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -60,12 +61,14 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { supplierContractFormSchema } from "@shared/schema";
 import { format } from "date-fns";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
+import { formatCurrency } from "@/lib/utils";
 
 const CONTRACT_TYPES = ["master", "framework", "one-off", "renewal"] as const;
 const STATUSES = ["draft", "active", "expired", "terminated"] as const;
 
 export default function ContractsPage() {
   const { toast } = useToast();
+  const { settings } = useSettings();
   const [supplierFilter, setSupplierFilter] = useState<string>("all");
   const [formOpen, setFormOpen] = useState(false);
   const [viewContract, setViewContract] = useState<SupplierContract | null>(null);
@@ -83,6 +86,24 @@ export default function ContractsPage() {
   const { data: suppliers = [] } = useQuery<Supplier[]>({
     queryKey: ["/api/suppliers"],
   });
+
+  const defaultFormValues = useMemo((): Partial<SupplierContractForm> => {
+    const code = settings.currencyCode?.trim() || "USD";
+    return {
+      supplierId: undefined,
+      title: "",
+      contractType: "master",
+      referenceNumber: "",
+      startDate: new Date(),
+      endDate: undefined,
+      value: undefined,
+      currency: code,
+      summary: "",
+      status: "active",
+      notes: "",
+      attachments: [],
+    };
+  }, [settings.currencyCode]);
 
   const createContract = useMutation({
     mutationFn: (data: SupplierContractForm) => requestJson<SupplierContract>("POST", "/api/contracts", data),
@@ -153,21 +174,6 @@ export default function ContractsPage() {
     },
   });
 
-  const defaultFormValues: Partial<SupplierContractForm> = {
-    supplierId: undefined,
-    title: "",
-    contractType: "master",
-    referenceNumber: "",
-    startDate: new Date(),
-    endDate: undefined,
-    value: undefined,
-    currency: "USD",
-    summary: "",
-    status: "active",
-    notes: "",
-    attachments: [],
-  };
-
   const form = useForm<SupplierContractForm>({
     resolver: zodResolver(supplierContractFormSchema),
     defaultValues: defaultFormValues,
@@ -189,7 +195,7 @@ export default function ContractsPage() {
       startDate: c.startDate,
       endDate: c.endDate ?? undefined,
       value: c.value ?? undefined,
-      currency: c.currency ?? "USD",
+      currency: c.currency ?? (settings.currencyCode?.trim() || "USD"),
       summary: c.summary ?? "",
       status: (c.status as SupplierContractForm["status"]) || "active",
       notes: c.notes ?? "",
@@ -371,7 +377,10 @@ export default function ContractsPage() {
                 {viewContract.value != null && (
                   <span className="flex items-center gap-1">
                     <DollarSign className="h-4 w-4" />
-                    {viewContract.currency ?? "USD"} {Number(viewContract.value).toLocaleString()}
+                    {formatCurrency(
+                      Number(viewContract.value),
+                      viewContract.currency?.trim() || settings.currencyCode?.trim() || "USD",
+                    )}
                   </span>
                 )}
               </div>
@@ -633,7 +642,11 @@ export default function ContractsPage() {
                     <FormItem>
                       <FormLabel>Currency</FormLabel>
                       <FormControl>
-                        <Input placeholder="USD" {...field} value={field.value ?? ""} />
+                        <Input
+                          placeholder={settings.currencyCode?.trim() || "USD"}
+                          {...field}
+                          value={field.value ?? ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

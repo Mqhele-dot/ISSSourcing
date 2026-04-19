@@ -750,6 +750,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (format === "pdf" && organizationLogoUrl) {
         organizationLogoPng = await loadLogoBytesForPdf(organizationLogoUrl);
       }
+      let reportingCurrencyCode: string | undefined;
+      try {
+        const appSettings = await storage.getAppSettings();
+        const c = appSettings?.currencyCode?.trim();
+        reportingCurrencyCode = c && c.length > 0 ? c : undefined;
+      } catch {
+        reportingCurrencyCode = undefined;
+      }
       const buffer = await generateDocument(
         normalizedReportType as ReportType,
         format as ReportFormat,
@@ -762,6 +770,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           organizationFooter,
           organizationDisplayName,
           ...(organizationLogoPng?.length ? { organizationLogoPng } : {}),
+          ...(reportingCurrencyCode ? { reportingCurrencyCode } : {}),
         },
       );
 

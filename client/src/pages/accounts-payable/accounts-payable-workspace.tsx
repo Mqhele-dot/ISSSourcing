@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Redirect, useLocation, useRoute } from "wouter";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Files,
-  ShieldCheck,
-  Wallet,
-} from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
@@ -15,13 +8,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
-import { KpiCard } from "./ap-shared";
 import { ApIntakePanel } from "./ap-intake-panel";
 import { ApApprovalsPanel } from "./ap-approvals-panel";
 import { ApExceptionsPanel } from "./ap-exceptions-panel";
 import { ApPaymentsPanel } from "./ap-payments-panel";
+import { ApOverviewHeader } from "./ap-overview-header";
 import { useApWorkspaceQueries } from "./use-ap-workspace-queries";
 import { useApWorkspaceMutations } from "./use-ap-workspace-mutations";
+import { useApIntakeFormState } from "./use-ap-intake-form-state";
 import { parseApIntakeForSubmit, parsePaymentBatchForSubmit } from "./validation";
 import type { ApWorkspaceTab } from "./types";
 import { isApWorkspaceTab } from "./types";
@@ -48,8 +42,16 @@ export default function AccountsPayableWorkspace() {
   const [paymentMethod, setPaymentMethod] = useState("BANK_TRANSFER");
   const [scheduledDate, setScheduledDate] = useState("");
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<number[]>([]);
-  const [intakeErrors, setIntakeErrors] = useState<string[]>([]);
   const [paymentBatchErrors, setPaymentBatchErrors] = useState<string[]>([]);
+
+  const { intakeErrors, validateForSubmit } = useApIntakeFormState({
+    supplierId: captureSupplierId,
+    source: captureSource,
+    invoiceNumber: captureInvoiceNumber,
+    totalAmountRaw: captureTotalAmount,
+    confidenceRaw: captureConfidence,
+    notes: captureNotes,
+  });
 
   const queries = useApWorkspaceQueries();
   const mutations = useApWorkspaceMutations({ toast });
@@ -87,10 +89,6 @@ export default function AccountsPayableWorkspace() {
   );
 
   useEffect(() => {
-    setIntakeErrors([]);
-  }, [captureSupplierId, captureSource, captureInvoiceNumber, captureTotalAmount, captureConfidence, captureNotes]);
-
-  useEffect(() => {
     setPaymentBatchErrors([]);
   }, [selectedInvoiceIds, paymentMethod, scheduledDate]);
 
@@ -101,16 +99,13 @@ export default function AccountsPayableWorkspace() {
   };
 
   const onSubmitCapture = () => {
+    if (!validateForSubmit()) return;
     const parsed = parseApIntakeForSubmit({
       supplierId: captureSupplierId,
       totalAmountRaw: captureTotalAmount,
       confidenceRaw: captureConfidence,
     });
-    if (!parsed.ok) {
-      setIntakeErrors(parsed.errors);
-      return;
-    }
-    setIntakeErrors([]);
+    if (!parsed.ok) return;
     mutations.createCaptureMutation.mutate(
       {
         supplierId: Number(parsed.data.supplierId),
@@ -196,38 +191,7 @@ export default function AccountsPayableWorkspace() {
       >
         {(stats) => (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              <KpiCard
-                title="Capture review"
-                value={stats.captureReviewCount}
-                hint="Staged invoices needing AP review"
-                icon={<Files className="h-4 w-4 text-muted-foreground" />}
-              />
-              <KpiCard
-                title="Pending approvals"
-                value={stats.pendingApprovalCount}
-                hint="Invoices waiting for approvers"
-                icon={<ShieldCheck className="h-4 w-4 text-muted-foreground" />}
-              />
-              <KpiCard
-                title="Exceptions"
-                value={stats.exceptionCount + stats.disputedCount}
-                hint="Match failures and disputed invoices"
-                icon={<AlertTriangle className="h-4 w-4 text-muted-foreground" />}
-              />
-              <KpiCard
-                title="Approved for pay"
-                value={stats.approvedCount}
-                hint="Invoices ready for batching"
-                icon={<CheckCircle2 className="h-4 w-4 text-muted-foreground" />}
-              />
-              <KpiCard
-                title="Outstanding"
-                value={formatMoney(stats.outstandingAmount ?? 0)}
-                hint="Current unpaid AP exposure"
-                icon={<Wallet className="h-4 w-4 text-muted-foreground" />}
-              />
-            </div>
+            <ApOverviewHeader stats={stats} formatMoney={formatMoney} />
 
             <Tabs
               value={activeTab}

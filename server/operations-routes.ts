@@ -394,10 +394,13 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
               ? req.user.email.trim()
               : "user";
         const metadataLines = [`Exported by: ${actor}`];
+        const appSettings = await storage.getAppSettings();
+        const reportingCurrencyCode = appSettings?.currencyCode?.trim() || "USD";
         const buffer = await generatePurchaseOrdersDocumentPdf(
           [full],
           `Purchase order - ${full.orderNumber}`,
           metadataLines,
+          { reportingCurrencyCode },
         );
         const safeName = String(full.orderNumber).replace(/[^\w.-]+/g, "_");
         res.setHeader("Content-Type", "application/pdf");

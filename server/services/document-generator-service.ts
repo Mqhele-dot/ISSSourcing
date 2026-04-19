@@ -69,6 +69,9 @@ let activePdfBrandName: string = APP_NAME;
 /** Raw PNG/JPEG bytes from `organization_settings.logo_url` for the PDF header (set per `generateDocument`). */
 let activePdfLogoBytes: Uint8Array | undefined;
 
+/** ISO 4217 code for PDF/CSV monetary formatting (set per `generateDocument` or dedicated PDF entrypoints). */
+let activeReportingCurrencyCode = "USD";
+
 /** Embedded once per PDF document after `embedPdfLogoIfNeeded`. */
 let activePdfLogoImage: PDFImage | null = null;
 
@@ -109,6 +112,48 @@ function sanitizePdfText(input: string): string {
     .replace(/[^\x20-\x7E]/g, "?");
 }
 
+function normalizeReportingCurrencyCode(raw?: string | null): string {
+  const s = String(raw ?? "").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(s)) return "USD";
+  try {
+    new Intl.NumberFormat("en-US", { style: "currency", currency: s }).format(0);
+    return s;
+  } catch {
+    return "USD";
+  }
+}
+
+/**
+ * PDF-safe monetary string (currency code + amount via Intl, then sanitized for WinAnsi fonts).
+ */
+function formatReportingAmountPdf(n: number, currencyCode?: string): string {
+  const code = normalizeReportingCurrencyCode(currencyCode ?? activeReportingCurrencyCode);
+  try {
+    const formatted = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+      currencyDisplay: "code",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(n);
+    return sanitizePdfText(formatted);
+  } catch {
+    return sanitizePdfText(
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        currencyDisplay: "code",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(n),
+    );
+  }
+}
+
+function formatPdfMoney(n: number): string {
+  return formatReportingAmountPdf(n, activeReportingCurrencyCode);
+}
+
 function applyPdfMetadata(pdfDoc: PDFDocument, title: string): void {
   const safe = sanitizePdfText(title).slice(0, 240);
   pdfDoc.setTitle(safe || "InvTrack report");
@@ -126,7 +171,7 @@ function formatPdfCell(value: unknown, opts?: { currency?: boolean; date?: boole
   else if (opts?.currency) {
     const n = Number(value);
     if (Number.isNaN(n)) out = '—';
-    else out = `$${n.toFixed(2)}`;
+    else out = formatPdfMoney(n);
   } else if (opts?.date) {
     if (value instanceof Date) out = format(value, 'MMM d, yyyy');
     else {
@@ -151,7 +196,7 @@ function toTitleCase(value: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function formatExportValue(value: unknown, key?: string): string {
+function formatExportValue(value: unknown, key?: string, forHumanReadableExport = false): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "boolean") return value ? "Yes" : "No";
 
@@ -165,6 +210,9 @@ function formatExportValue(value: unknown, key?: string): string {
   if (valueFormat === "currency") {
     const n = Number(value);
     if (!Number.isNaN(n)) {
+      if (forHumanReadableExport) {
+        return `${n.toFixed(2)} ${normalizeReportingCurrencyCode(activeReportingCurrencyCode)}`;
+      }
       return n.toFixed(2);
     }
   }
@@ -188,7 +236,7 @@ function buildGenericSummaryMetrics(data: any[], columns: { header: string; key:
     { label: "Records", value: String(data.length) },
     { label: "Columns", value: String(columns.length) },
     { label: "Updated", value: format(new Date(), "yyyy-MM-dd") },
-    { label: "Monetary Sum", value: `$${currencyTotal.toFixed(2)}` },
+    { label: "Monetary Sum", value: formatPdfMoney(currencyTotal) },
   ];
 }
 
@@ -850,7 +898,9 @@ export async function generateInventoryPdf(
       { label: "Low stock", value: String(lowStockCount) },
       {
         label: "Inventory value",
-        value: `$${items.reduce((sum, item) => sum + Number(item.price ?? 0) * Number(item.quantity ?? 0), 0).toFixed(2)}`,
+        value: formatPdfMoney(
+          items.reduce((sum, item) => sum + Number(item.price ?? 0) * Number(item.quantity ?? 0), 0),
+        ),
       },
     ],
     font,
@@ -880,6 +930,7 @@ export async function generateInventoryCsv(items: InventoryItem[], title: string
     CSV_BOM + 'sep=,',
     `"${title.replace(/"/g, '""')}"`,
     `"Generated","${format(new Date(), "yyyy-MM-dd HH:mm")}"`,
+    `"Reporting currency (ISO 4217)","${normalizeReportingCurrencyCode(activeReportingCurrencyCode)}"`,
     "",
     ['SKU', 'Name', 'Description', 'Category', 'Quantity', 'Price', 'Cost', 'Status', 'Low Stock Threshold'].join(','),
   ];
@@ -893,8 +944,8 @@ export async function generateInventoryCsv(items: InventoryItem[], title: string
       item.description || '',
       item.categoryId || '',
       item.quantity,
-      formatExportValue(item.price, "price"),
-      formatExportValue(item.cost, "cost"),
+      formatExportValue(item.price, "price", true),
+      formatExportValue(item.cost, "cost", true),
       status,
       item.lowStockThreshold || ''
     ].map(value => `"${String(value).replace(/"/g, '""')}"`).join(','));
@@ -931,7 +982,11 @@ export async function generateInventoryExcel(items: InventoryItem[], title: stri
   worksheet.insertRow(2, [`Generated: ${format(new Date(), "yyyy-MM-dd HH:mm")}`]);
   worksheet.mergeCells("A2:J2");
   worksheet.getCell("A2").font = { italic: true, color: { argb: "FF64748B" } };
-  worksheet.insertRow(3, []);
+  worksheet.insertRow(3, [
+    `Reporting currency (ISO 4217): ${normalizeReportingCurrencyCode(activeReportingCurrencyCode)}`,
+  ]);
+  worksheet.mergeCells("A3:J3");
+  worksheet.getCell("A3").font = { italic: true, color: { argb: "FF64748B" } };
 
   // Header styling
   const headerRow = worksheet.getRow(4);
@@ -1115,7 +1170,13 @@ export async function generatePurchaseOrdersDocumentPdf(
   orders: any[],
   title: string,
   metadataLines: string[] = [],
+  pdfOptions?: { reportingCurrencyCode?: string },
 ): Promise<Buffer> {
+  const prevReporting = activeReportingCurrencyCode;
+  activeReportingCurrencyCode = normalizeReportingCurrencyCode(
+    pdfOptions?.reportingCurrencyCode ?? prevReporting,
+  );
+  try {
   const pdfDoc = await PDFDocument.create();
   await embedPdfLogoIfNeeded(pdfDoc);
   applyPdfMetadata(pdfDoc, title);
@@ -1245,6 +1306,9 @@ export async function generatePurchaseOrdersDocumentPdf(
   const totalPages = allPages.length;
   allPages.forEach((p, i) => drawPdfReportFooter(p, i + 1, font, totalPages));
   return Buffer.from(await pdfDoc.save());
+  } finally {
+    activeReportingCurrencyCode = prevReporting;
+  }
 }
 
 export type ShipmentDeliveryNoteInput = {
@@ -1779,12 +1843,13 @@ export async function generateGenericCsv(data: any[], title: string, columns: {h
     CSV_BOM + 'sep=,',
     `"${title.replace(/"/g, '""')}"`,
     `"Generated","${format(new Date(), "yyyy-MM-dd HH:mm")}"`,
+    `"Reporting currency (ISO 4217)","${normalizeReportingCurrencyCode(activeReportingCurrencyCode)}"`,
     "",
     columns.map(col => `"${String(col.header).replace(/"/g, '""')}"`).join(','),
   ];
   data.forEach(item => {
     lines.push(columns.map(col => {
-      const value = formatExportValue(item[col.key], col.key);
+      const value = formatExportValue(item[col.key], col.key, true);
       return `"${String(value).replace(/"/g, '""')}"`;
     }).join(','));
   });
@@ -1808,7 +1873,11 @@ export async function generateGenericExcel(data: any[], title: string, columns: 
   worksheet.insertRow(2, [`Generated: ${format(new Date(), "yyyy-MM-dd HH:mm")}`]);
   worksheet.mergeCells(`A2:${lastColumnLetter}2`);
   worksheet.getCell("A2").font = { italic: true, color: { argb: "FF64748B" } };
-  worksheet.insertRow(3, []);
+  worksheet.insertRow(3, [
+    `Reporting currency (ISO 4217): ${normalizeReportingCurrencyCode(activeReportingCurrencyCode)}`,
+  ]);
+  worksheet.mergeCells(`A3:${lastColumnLetter}3`);
+  worksheet.getCell("A3").font = { italic: true, color: { argb: "FF64748B" } };
   worksheet.views = [{ state: "frozen", ySplit: 4, activeCell: "A5" }];
   const headerRow = worksheet.getRow(4);
   headerRow.font = { bold: true, color: { argb: "FF0F172A" } };
@@ -1879,7 +1948,8 @@ async function generateGenericExcelMulti(
   summary.getCell("A2").value = `Generated (UTC): ${format(new Date(), "yyyy-MM-dd HH:mm:ss")}`;
   summary.getCell("A2").font = { italic: true, color: { argb: "FF64748B" } };
   summary.getCell("A3").value = `Row count: ${data.length}`;
-  let rowNum = 4;
+  summary.getCell("A4").value = `Reporting currency (ISO 4217): ${normalizeReportingCurrencyCode(activeReportingCurrencyCode)}`;
+  let rowNum = 5;
   for (const line of metadataLines) {
     summary.getCell(`A${rowNum}`).value = line;
     rowNum++;
@@ -2005,7 +2075,7 @@ export async function generateGenericDocx(
         children: columns.map((col) => {
           const value =
             data.length > 0
-              ? formatExportValue(item[col.key], col.key)
+              ? formatExportValue(item[col.key], col.key, true)
               : col === columns[0]
                 ? "No records available for selected filters."
                 : "";
@@ -2175,6 +2245,8 @@ export interface GenerateDocumentOptions {
   organizationDisplayName?: string;
   /** PNG or JPEG bytes from org logo URL (embedded in PDF header when valid). */
   organizationLogoPng?: Uint8Array;
+  /** ISO 4217 reporting currency for monetary amounts (from app_settings.currency_code). */
+  reportingCurrencyCode?: string;
 }
 
 /**
@@ -2220,12 +2292,16 @@ export async function generateDocument(
   const prevFooter = activePdfOrganizationFooter;
   const prevBrand = activePdfBrandName;
   const prevLogoBytes = activePdfLogoBytes;
+  const prevReporting = activeReportingCurrencyCode;
   activePdfOrganizationFooter = options?.organizationFooter?.trim() || undefined;
   activePdfBrandName = sanitizePdfText(options?.organizationDisplayName?.trim() || "") || APP_NAME;
   activePdfLogoBytes =
     options?.organizationLogoPng && options.organizationLogoPng.length > 0
       ? options.organizationLogoPng
       : undefined;
+  if (options?.reportingCurrencyCode != null && String(options.reportingCurrencyCode).trim() !== "") {
+    activeReportingCurrencyCode = normalizeReportingCurrencyCode(options.reportingCurrencyCode);
+  }
   try {
     if (format === "pdf") {
       let reportBuffer: Buffer;
@@ -2271,6 +2347,7 @@ export async function generateDocument(
     activePdfOrganizationFooter = prevFooter;
     activePdfBrandName = prevBrand;
     activePdfLogoBytes = prevLogoBytes;
+    activeReportingCurrencyCode = prevReporting;
     activePdfLogoImage = null;
   }
 }

@@ -26,6 +26,10 @@ async function run() {
   assert(genericStr.includes("sep=,"), "Generic CSV must contain sep=, line");
   assert(genericStr.includes("\r\n"), "Generic CSV must use CRLF line endings for Excel");
   assert(genericStr.includes("ID") && genericStr.includes("Name"), "Generic CSV must contain headers");
+  assert(
+    genericStr.includes("Reporting currency (ISO 4217)"),
+    "Generic CSV must label reporting currency for monetary clarity",
+  );
   const genericLines = genericStr.split(/\r?\n/);
   const headerLineIndex = genericLines.findIndex((line) => line.includes('"ID"') && line.includes('"Name"'));
   assert(headerLineIndex >= 0, "Generic CSV must have a header row containing ID and Name");
@@ -69,6 +73,10 @@ async function run() {
   assert(
     inventoryStr.includes("SKU") && inventoryStr.includes("Name"),
     "Inventory CSV must contain expected headers",
+  );
+  assert(
+    inventoryStr.includes("Reporting currency (ISO 4217)"),
+    "Inventory CSV must label reporting currency",
   );
   const invLines = inventoryStr.split(/\r?\n/);
   const invHeaderIdx = invLines.findIndex((line) => line.includes("SKU") && line.includes("Name"));

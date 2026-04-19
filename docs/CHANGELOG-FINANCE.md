@@ -18,6 +18,10 @@
 
 - Split under `client/src/pages/analytics-workspace/` with a thin `analytics-workspace.tsx` re-export; finance deep links target AP subsection URLs where appropriate.
 
+## Export parity (server)
+
+- **`document-generator-service`:** PDF currency cells use org reporting code via `Intl` (`currencyDisplay: "code"`) and `GenerateDocumentOptions.reportingCurrencyCode` (set from `getAppSettings()` on `/api/export/...`). Generic and inventory CSV include a **Reporting currency (ISO 4217)** row; currency columns in CSV/DOCX use `amount CODE`. Excel exports add a merged **Reporting currency** metadata row (and Summary sheet line for multi-sheet). Operations PO PDF passes `reportingCurrencyCode` from app settings.
+
 ## Deferred / follow-up
 
-- **Server PDFs** (`document-generator-service` and related): still may use legacy `$` or symbol-only paths; align exports with `currency_code` for full parity.
+- **Legacy ad-hoc PDFs** in `server/routes.ts` (e.g. unused `generateInventoryPdfReport`) may still use hardcoded `$` if re-enabled; prefer `generateDocument` / shared formatters.

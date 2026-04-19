@@ -1,11 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
-import { requestJson } from "@/lib/queryClient";
+import { queryClient, requestJson } from "@/lib/queryClient";
+import { apQueryKeys } from "./ap-query-keys";
 import {
   invalidateAfterCaptureWorkflow,
   invalidateAfterInvoiceLifecycle,
   invalidateAfterPaymentBatch,
 } from "./ap-invalidate";
-import type { ApprovalPreview } from "./types";
+import type { ApprovalPreview, Capture } from "./types";
 
 export type ApPaymentBatchPayload = {
   paymentMethod: string;
@@ -46,7 +47,14 @@ export function useApWorkspaceMutations(toast: {
 
   const promoteCaptureMutation = useMutation({
     mutationFn: (captureId: number) => requestJson("POST", `/api/ap/captures/${captureId}/promote`),
-    onSuccess: async () => {
+    onSuccess: async (data, captureId) => {
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        const row = data as Partial<Capture>;
+        queryClient.setQueryData<Capture[]>(apQueryKeys.captures, (old) => {
+          if (!old) return old;
+          return old.map((c) => (c.id === captureId ? { ...c, ...row } : c));
+        });
+      }
       await invalidateAfterCaptureWorkflow();
       showToast({
         title: "Capture promoted",
