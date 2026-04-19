@@ -33,6 +33,7 @@ import {
   generatePurchaseOrdersDocumentPdf,
   generateShipmentDeliveryNotePdf,
 } from "./services/document-generator-service";
+import { getReportingCurrencyCode } from "./lib/org-reporting-money";
 
 type AuthGuards = {
   ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => void;
@@ -394,8 +395,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
               ? req.user.email.trim()
               : "user";
         const metadataLines = [`Exported by: ${actor}`];
-        const appSettings = await storage.getAppSettings();
-        const reportingCurrencyCode = appSettings?.currencyCode?.trim() || "USD";
+        const reportingCurrencyCode = await getReportingCurrencyCode(storage);
         const buffer = await generatePurchaseOrdersDocumentPdf(
           [full],
           `Purchase order - ${full.orderNumber}`,

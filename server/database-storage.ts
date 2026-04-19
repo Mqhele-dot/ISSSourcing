@@ -255,7 +255,11 @@ export class DatabaseStorage implements IStorage {
       allowNegativeInventory: false,
       enableVat: false,
       defaultVatCountry: "US",
-      showPricesWithVat: true
+      showPricesWithVat: true,
+      businessCountryCode: "US",
+      taxMode: "none",
+      productOnboardingCompletedAt: null,
+      productOnboardingState: null,
     };
 
     const [newSettings] = await db.insert(appSettings).values(defaultSettings).returning();

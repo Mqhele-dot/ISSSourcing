@@ -277,6 +277,61 @@ export default function HomePage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <Card className="border-primary/15 bg-primary/5">
+        <CardHeader>
+          <CardTitle className="text-base">First procurement cycle</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>
+            Run the core business path from sourcing to payment — each link opens the right workspace in order.
+          </p>
+          <ol className="list-decimal space-y-2 pl-5">
+            <li>
+              <Link className="font-medium text-primary" href={APP_ROUTES.procurement.suppliers}>
+                Suppliers
+              </Link>{" "}
+              — add or verify vendors
+            </li>
+            <li>
+              <Link className="font-medium text-primary" href={APP_ROUTES.procurement.requisitionNew}>
+                New requisition
+              </Link>{" "}
+              — request what you need
+            </li>
+            <li>
+              <Link className="font-medium text-primary" href={APP_ROUTES.procurement.orders}>
+                Purchase orders
+              </Link>{" "}
+              — approve and issue the PO
+            </li>
+            <li>
+              <Link className="font-medium text-primary" href={APP_ROUTES.inventory.warehouseOperations}>
+                Warehouse operations
+              </Link>{" "}
+              — receive into stock
+            </li>
+            <li>
+              <Link className="font-medium text-primary" href={APP_ROUTES.finance.invoices}>
+                Invoices
+              </Link>{" "}
+              — match vendor bills
+            </li>
+            <li>
+              <Link className="font-medium text-primary" href={APP_ROUTES.finance.accountsPayablePayments}>
+                AP payments
+              </Link>{" "}
+              — schedule and record payment
+            </li>
+            <li>
+              <Link className="font-medium text-primary" href={APP_ROUTES.analytics.exportCenter}>
+                Export center
+              </Link>{" "}
+              — download CSV/Excel for finance
+            </li>
+          </ol>
+        </CardContent>
+      </Card>
+
       <DataState
         loading={loading}
         error={error}

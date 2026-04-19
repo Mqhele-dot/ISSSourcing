@@ -7,5 +7,6 @@ export function getBuildInfo() {
     buildId: appEnv.build.buildId ?? null,
     builtAt: appEnv.build.builtAt ?? null,
     runtimeProfile: appEnv.runtimeProfile,
+    deploymentMode: appEnv.deploymentMode,
   };
 }

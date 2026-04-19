@@ -4,10 +4,11 @@ import fs from "fs";
 import path from "path";
 import multer from "multer";
 import { appEnv } from "../config/env";
+import { exportsDirResolution, uploadsDirResolution } from "../lib/deployment-behavior";
 
-export const uploadsDir = path.join(process.cwd(), "uploads");
+export const uploadsDir = uploadsDirResolution();
 export const documentsDir = path.join(uploadsDir, "documents");
-export const exportsDir = path.join(uploadsDir, "exports");
+export const exportsDir = exportsDirResolution();
 
 const DOCUMENT_MIME_ALLOWLIST = new Set([
   "application/pdf",

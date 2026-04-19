@@ -34,6 +34,7 @@ import {
   type ReportPdfLayout,
 } from "./export-config";
 import { format } from 'date-fns';
+import { REPORTING_CURRENCY_FALLBACK_CODE } from "../lib/org-reporting-money";
 
 // ——— Shared PDF layout (matches app style: InvTrack, accent blue, clean table) ———
 const PDF_LAYOUT = {
@@ -70,7 +71,7 @@ let activePdfBrandName: string = APP_NAME;
 let activePdfLogoBytes: Uint8Array | undefined;
 
 /** ISO 4217 code for PDF/CSV monetary formatting (set per `generateDocument` or dedicated PDF entrypoints). */
-let activeReportingCurrencyCode = "USD";
+let activeReportingCurrencyCode = REPORTING_CURRENCY_FALLBACK_CODE;
 
 /** Embedded once per PDF document after `embedPdfLogoIfNeeded`. */
 let activePdfLogoImage: PDFImage | null = null;
@@ -114,12 +115,12 @@ function sanitizePdfText(input: string): string {
 
 function normalizeReportingCurrencyCode(raw?: string | null): string {
   const s = String(raw ?? "").trim().toUpperCase();
-  if (!/^[A-Z]{3}$/.test(s)) return "USD";
+  if (!/^[A-Z]{3}$/.test(s)) return REPORTING_CURRENCY_FALLBACK_CODE;
   try {
     new Intl.NumberFormat("en-US", { style: "currency", currency: s }).format(0);
     return s;
   } catch {
-    return "USD";
+    return REPORTING_CURRENCY_FALLBACK_CODE;
   }
 }
 
@@ -141,7 +142,7 @@ function formatReportingAmountPdf(n: number, currencyCode?: string): string {
     return sanitizePdfText(
       new Intl.NumberFormat("en-US", {
         style: "currency",
-        currency: "USD",
+        currency: REPORTING_CURRENCY_FALLBACK_CODE,
         currencyDisplay: "code",
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,

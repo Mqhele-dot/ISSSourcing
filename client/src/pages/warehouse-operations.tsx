@@ -25,6 +25,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { fetchInventory } from "@/api/client";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 
 type WarehouseInvRow = {
   id: number;
@@ -63,6 +65,7 @@ type SerialRow = {
 };
 
 export default function WarehouseOperationsPage() {
+  const productSetupComplete = useProductSetupComplete();
   const { toast } = useToast();
   const [putAwayWarehouse, setPutAwayWarehouse] = useState("none");
 
@@ -305,6 +308,24 @@ export default function WarehouseOperationsPage() {
           </Link>
         }
       />
+
+      {warehouses.length === 0 ? (
+        <Alert>
+          <AlertTitle>No warehouses yet</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              {productSetupComplete
+                ? "Configure at least one warehouse before allocations and put-away are meaningful."
+                : "Finish product setup to create your first warehouse."}
+            </span>
+            <Button asChild size="sm" variant="secondary" className="shrink-0">
+              <Link href={productSetupComplete ? APP_ROUTES.inventory.warehouses : APP_ROUTES.setup.product}>
+                {productSetupComplete ? "Manage warehouses" : "Continue product setup"}
+              </Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <Card>
         <CardHeader>

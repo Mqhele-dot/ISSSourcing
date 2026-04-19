@@ -35,6 +35,8 @@ import { apiRequest, requestJson } from "@/lib/queryClient";
 import type { PurchaseRequisition, PurchaseRequisitionItem, User, Supplier, InventoryItem } from "@shared/schema";
 import { Can } from "@/components/auth/can";
 import { fetchApprovalSuggestions } from "@/api/client";
+import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 interface RequisitionsPageProps {
   embedded?: boolean;
@@ -43,6 +45,7 @@ interface RequisitionsPageProps {
 }
 
 export default function RequisitionsPage({ embedded, basePath = "/requisitions" }: RequisitionsPageProps = {}) {
+  const productSetupComplete = useProductSetupComplete();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -244,16 +247,26 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
         data={filtered}
         isEmpty={(d) => (Array.isArray(d) ? d : []).length === 0}
         emptyTitle="No requisitions found"
-        emptyDescription="Create a new requisition to get started."
+        emptyDescription={
+          productSetupComplete
+            ? "Create a new requisition to get started."
+            : "Finish product setup first, then create your first requisition."
+        }
         emptyAction={
-          <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to create requisitions">
+          productSetupComplete ? (
+            <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to create requisitions">
+              <Button asChild variant="default" size="sm">
+                <Link href={basePath + "/new"}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Requisition
+                </Link>
+              </Button>
+            </Can>
+          ) : (
             <Button asChild variant="default" size="sm">
-              <Link href={basePath + "/new"}>
-                <Plus className="mr-2 h-4 w-4" />
-                New Requisition
-              </Link>
+              <Link href={APP_ROUTES.setup.product}>Continue product setup</Link>
             </Button>
-          </Can>
+          )
         }
         onRetry={refetch}
       >

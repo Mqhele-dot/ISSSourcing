@@ -4358,6 +4358,11 @@ export class MemStorage implements IStorage {
         enableVat: settings.enableVat || false,
         defaultVatCountry: settings.defaultVatCountry || "US",
         showPricesWithVat: settings.showPricesWithVat ?? true,
+        businessCountryCode: (settings as Partial<AppSettings>).businessCountryCode ?? "US",
+        taxMode: (settings as Partial<AppSettings>).taxMode ?? "none",
+        productOnboardingCompletedAt:
+          (settings as Partial<AppSettings>).productOnboardingCompletedAt ?? null,
+        productOnboardingState: (settings as Partial<AppSettings>).productOnboardingState ?? null,
         databaseSettings: (settings as Partial<AppSettings>).databaseSettings ?? null,
         updatedAt: now
       };

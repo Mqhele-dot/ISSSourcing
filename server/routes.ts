@@ -37,6 +37,7 @@ import { registerRbacRoutes } from "./modules/rbac/register-rbac-routes";
 import { registerCatalogRoutes } from "./modules/catalog/register-catalog-routes";
 import { registerMasterDataRoutes } from "./modules/master-data/register-master-data-routes";
 import { registerAnalyticsRoutes } from "./modules/reports/register-analytics-routes";
+import { registerSetupRoutes } from "./modules/setup/register-setup-routes";
 import { getActiveOrganizationId } from "./organization-context";
 import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisabled } from "./org-features";
 import { readiness } from "./readiness";
@@ -87,6 +88,9 @@ import {
 import { csvBufferForExcel, workbookToBuffer } from "./http/export-helpers";
 import { appEnv } from "./config/env";
 import { getProductBootstrapHints } from "./lib/product-bootstrap";
+import { getBuildInfo } from "./lib/build-info";
+import { getReportingCurrencyCode } from "./lib/org-reporting-money";
+import { allowDevOnlyRoutes } from "./lib/deployment-behavior";
 import { analyticsRateLimiter, exportRateLimiter, uploadRateLimiter } from "./services/security-service";
 
 function isInternalExportRequest(req: Request): boolean {
@@ -113,6 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerCatalogRoutes(app, auth);
   registerMasterDataRoutes(app, auth);
   registerAnalyticsRoutes(app, auth);
+  registerSetupRoutes(app, auth);
 
   const invWrite = [auth.ensureAuthenticated, auth.ensurePermission("inventory", "update")];
   const exportAccess = [auth.ensureAuthenticated, auth.ensurePermission("reports", "export")];
@@ -750,14 +755,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (format === "pdf" && organizationLogoUrl) {
         organizationLogoPng = await loadLogoBytesForPdf(organizationLogoUrl);
       }
-      let reportingCurrencyCode: string | undefined;
-      try {
-        const appSettings = await storage.getAppSettings();
-        const c = appSettings?.currencyCode?.trim();
-        reportingCurrencyCode = c && c.length > 0 ? c : undefined;
-      } catch {
-        reportingCurrencyCode = undefined;
-      }
+      const reportingCurrencyCode = await getReportingCurrencyCode(storage);
       const buffer = await generateDocument(
         normalizedReportType as ReportType,
         format as ReportFormat,
@@ -770,7 +768,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           organizationFooter,
           organizationDisplayName,
           ...(organizationLogoPng?.length ? { organizationLogoPng } : {}),
-          ...(reportingCurrencyCode ? { reportingCurrencyCode } : {}),
+          reportingCurrencyCode,
         },
       );
 
@@ -2168,7 +2166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     status: "ok",
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
-    build: readiness.build,
+    build: getBuildInfo(),
     runtimeProfile: appEnv.runtimeProfile,
     readiness: {
       dbReady: readiness.dbReady,
@@ -2181,20 +2179,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Health checks for app monitors and CI smoke tests. /health must never fail (no DB).
-  app.get("/health", (_req, res) => {
-    res.json(getHealthPayload());
-  });
-
-  app.get("/api/health", (_req, res) => {
-    sendOk(res, getHealthPayload());
-  });
+  // Legacy bare paths + /api/* aliases share one implementation (response envelope differs).
+  const sendShallowHealth = (req: Request, res: Response): void => {
+    const payload = getHealthPayload();
+    if (req.path.startsWith("/api")) {
+      sendOk(res, payload);
+      return;
+    }
+    res.json(payload);
+  };
+  app.get("/health", sendShallowHealth);
+  app.get("/api/health", sendShallowHealth);
 
   const sendReadyPayload = async (res: Response) => {
     const productBootstrap =
       readiness.dbReady ? await getProductBootstrapHints().catch(() => null) : null;
     sendOk(res, {
       runtimeProfile: appEnv.runtimeProfile,
-      build: readiness.build,
+      deploymentMode: appEnv.deploymentMode,
+      build: getBuildInfo(),
       dbReady: readiness.dbReady,
       schemaReady: readiness.schemaReady,
       sessionStoreReady: readiness.sessionStoreReady,
@@ -2205,12 +2208,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   };
 
-  app.get("/ready", (_req, res) => {
+  const sendReadyHandler = (_req: Request, res: Response): void => {
     void sendReadyPayload(res);
-  });
-  app.get("/api/ready", (_req, res) => {
-    void sendReadyPayload(res);
-  });
+  };
+  app.get("/ready", sendReadyHandler);
+  app.get("/api/ready", sendReadyHandler);
 
   const getDeepHealthPayload = async () => {
     const startedAt = Date.now();
@@ -2249,7 +2251,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       uptimeSeconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
       runtimeProfile: appEnv.runtimeProfile,
-      build: readiness.build,
+      deploymentMode: appEnv.deploymentMode,
+      build: getBuildInfo(),
       responseTimeMs: Date.now() - startedAt,
       checks: {
         database: {
@@ -2277,18 +2280,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   // Deep health: reports DB status; returns 503 when degraded.
-  app.get("/health/deep", async (_req, res) => {
+  const sendDeepHealth = async (req: Request, res: Response): Promise<void> => {
     const payload = await getDeepHealthPayload();
-    res.status(payload.status === "ok" ? 200 : 503).json(payload);
-  });
-
-  app.get("/api/health/deep", async (_req, res) => {
-    const payload = await getDeepHealthPayload();
-    sendOk(res, payload, payload.status === "ok" ? 200 : 503);
-  });
+    const code = payload.status === "ok" ? 200 : 503;
+    if (req.path.startsWith("/api")) {
+      sendOk(res, payload, code);
+      return;
+    }
+    res.status(code).json(payload);
+  };
+  app.get("/health/deep", (req, res) => void sendDeepHealth(req, res));
+  app.get("/api/health/deep", (req, res) => void sendDeepHealth(req, res));
 
   const handleDemoReset = async (_req: Request, res: Response) => {
-    if (process.env.NODE_ENV === "production") {
+    if (!allowDevOnlyRoutes()) {
       return sendError(res, 404, "NOT_FOUND", "Not found");
     }
 
@@ -2304,8 +2309,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
 
-  app.post("/admin/demo/reset", auth.ensureAuthenticated, auth.ensureAdmin, handleDemoReset);
-  app.post("/api/admin/demo/reset", auth.ensureAuthenticated, auth.ensureAdmin, handleDemoReset);
+  for (const demoResetPath of ["/admin/demo/reset", "/api/admin/demo/reset"] as const) {
+    app.post(demoResetPath, auth.ensureAuthenticated, auth.ensureAdmin, handleDemoReset);
+  }
   app.use("/api/image-recognition", auth.ensureAuthenticated);
   app.use("/api/inventory/image-recognition", auth.ensureAuthenticated);
   app.use("/api/document-extractor", auth.ensureAuthenticated);

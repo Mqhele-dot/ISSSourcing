@@ -11,6 +11,15 @@ export type ReadinessStatus = {
   websocketReady: boolean;
   uploadPathReady: boolean;
   emailServiceReady: boolean;
+  deploymentMode?: string;
+  build?: {
+    version?: string;
+    runtimeProfile?: string;
+    deploymentMode?: string;
+    commitSha?: string | null;
+    buildId?: string | null;
+    builtAt?: string | null;
+  };
   /** Present when the API could query install state (packaged / first-run hints). */
   productBootstrap?: {
     organizationCount: number;

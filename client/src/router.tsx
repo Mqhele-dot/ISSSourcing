@@ -52,6 +52,8 @@ const AnalyticsWorkspacePage = lazy(() => import("@/pages/analytics-workspace"))
 const SavedReportsPage = lazy(() => import("@/pages/saved-reports"));
 const ExportCenterPage = lazy(() => import("@/pages/export-center"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding-page"));
+const ProductSetupPage = lazy(() => import("@/pages/product-setup-page"));
+const SystemDiagnosticsPage = lazy(() => import("@/pages/system-diagnostics-page"));
 const MobileReceivePage = lazy(() => import("@/pages/mobile-receive"));
 const MobilePickPage = lazy(() => import("@/pages/mobile-pick"));
 const MobileHubHome = lazy(() => import("@/pages/mobile-hub-home"));
@@ -92,6 +94,9 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.operations.mobileMore} component={MobileHubMore} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileReceive} component={MobileReceivePage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobilePick} component={MobilePickPage} />
+
+        <ProtectedRoute path={APP_ROUTES.setup.product} component={ProductSetupPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.systemDiagnostics} component={SystemDiagnosticsPage} />
 
         <ProtectedRoute path={APP_ROUTES.home} component={Home} />
 

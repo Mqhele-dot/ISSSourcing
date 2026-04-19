@@ -411,11 +411,6 @@ export function setupAuth(app: Express) {
     });
   });
 
-  // Get CSRF token (disabled for now)
-  // app.get('/api/csrf-token', csrfProtection, (req, res) => {
-  //   res.json({ csrfToken: req.csrfToken() });
-  // });
-
   // Route to register new user with rate limiting
   app.post("/api/register", registerRateLimiter, async (req, res) => {
     try {

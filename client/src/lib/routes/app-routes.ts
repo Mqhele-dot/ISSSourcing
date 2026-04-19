@@ -61,6 +61,10 @@ export type DocumentExtractorSectionSlug = (typeof DOCUMENT_EXTRACTOR_SECTION_SL
 export const APP_ROUTES = {
   home: "/",
   auth: "/auth",
+  /** First-run product wizard (currency, warehouse, tax, starter master data). */
+  setup: {
+    product: "/setup",
+  },
   operations: {
     controlTower: "/operations/control-tower",
     logistics: "/operations/logistics",
@@ -136,6 +140,8 @@ export const APP_ROUTES = {
     realTimeUpdates: "/admin/real-time-updates",
     /** First organization bootstrap (admin); shown when /api/ready reports needsFirstRunOnboarding */
     onboarding: "/admin/onboarding",
+    /** Local install / packaged diagnostics: DB, onboarding, exports path, build info */
+    systemDiagnostics: "/admin/system-diagnostics",
   },
 } as const;
 

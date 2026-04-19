@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { ToastAction } from "@/components/ui/toast";
 import { queryClient, apiRequest, requestJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,7 @@ const STATUSES = ["draft", "active", "expired", "terminated"] as const;
 export default function ContractsPage() {
   const { toast } = useToast();
   const { settings } = useSettings();
+  const { currencyCode: reportingCurrency } = useReportingMoney();
   const [supplierFilter, setSupplierFilter] = useState<string>("all");
   const [formOpen, setFormOpen] = useState(false);
   const [viewContract, setViewContract] = useState<SupplierContract | null>(null);
@@ -88,7 +90,7 @@ export default function ContractsPage() {
   });
 
   const defaultFormValues = useMemo((): Partial<SupplierContractForm> => {
-    const code = settings.currencyCode?.trim() || "USD";
+    const code = reportingCurrency;
     return {
       supplierId: undefined,
       title: "",
@@ -103,7 +105,7 @@ export default function ContractsPage() {
       notes: "",
       attachments: [],
     };
-  }, [settings.currencyCode]);
+  }, [reportingCurrency]);
 
   const createContract = useMutation({
     mutationFn: (data: SupplierContractForm) => requestJson<SupplierContract>("POST", "/api/contracts", data),
@@ -195,7 +197,7 @@ export default function ContractsPage() {
       startDate: c.startDate,
       endDate: c.endDate ?? undefined,
       value: c.value ?? undefined,
-      currency: c.currency ?? (settings.currencyCode?.trim() || "USD"),
+      currency: c.currency ?? reportingCurrency,
       summary: c.summary ?? "",
       status: (c.status as SupplierContractForm["status"]) || "active",
       notes: c.notes ?? "",
@@ -379,7 +381,7 @@ export default function ContractsPage() {
                     <DollarSign className="h-4 w-4" />
                     {formatCurrency(
                       Number(viewContract.value),
-                      viewContract.currency?.trim() || settings.currencyCode?.trim() || "USD",
+                      viewContract.currency?.trim() || reportingCurrency,
                     )}
                   </span>
                 )}
@@ -643,7 +645,7 @@ export default function ContractsPage() {
                       <FormLabel>Currency</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder={settings.currencyCode?.trim() || "USD"}
+                          placeholder={reportingCurrency}
                           {...field}
                           value={field.value ?? ""}
                         />

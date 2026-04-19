@@ -3,6 +3,7 @@ import { Link, Redirect, useLocation, useRoute } from "wouter";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +20,7 @@ import { useApIntakeFormState } from "./use-ap-intake-form-state";
 import { parseApIntakeForSubmit, parsePaymentBatchForSubmit } from "./validation";
 import type { ApWorkspaceTab } from "./types";
 import { isApWorkspaceTab } from "./types";
+import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 
 const TAB_TO_ROUTE: Record<ApWorkspaceTab, string> = {
   intake: APP_ROUTES.finance.accountsPayableIntake,
@@ -28,6 +30,7 @@ const TAB_TO_ROUTE: Record<ApWorkspaceTab, string> = {
 };
 
 export default function AccountsPayableWorkspace() {
+  const productSetupComplete = useProductSetupComplete();
   const { toast } = useToast();
   const { formatMoney } = useReportingMoney();
   const [, setLocation] = useLocation();
@@ -211,6 +214,34 @@ export default function AccountsPayableWorkspace() {
               </TabsList>
 
               <TabsContent value="intake" className="space-y-4">
+                {captures.length === 0 ? (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">No invoice captures yet</CardTitle>
+                      <CardDescription>
+                        {productSetupComplete
+                          ? "Stage a capture below or run documents through the extractor."
+                          : "Finish product setup so suppliers, currency, and defaults align with intake."}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-wrap gap-2">
+                      {productSetupComplete ? (
+                        <>
+                          <Button asChild size="sm">
+                            <Link href={APP_ROUTES.admin.documentExtractor}>Document extractor</Link>
+                          </Button>
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={APP_ROUTES.procurement.suppliers}>Suppliers</Link>
+                          </Button>
+                        </>
+                      ) : (
+                        <Button asChild size="sm">
+                          <Link href={APP_ROUTES.setup.product}>Continue product setup</Link>
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                ) : null}
                 <ApIntakePanel
                   suppliers={suppliers}
                   captures={captures}

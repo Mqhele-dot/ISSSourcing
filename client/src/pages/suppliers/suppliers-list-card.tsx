@@ -8,6 +8,7 @@ import { PageDataState } from "@/components/page-shell";
 import { Edit, Phone, Mail, MapPin, Trash2, Plus, User, ExternalLink } from "lucide-react";
 import type { Supplier } from "@shared/schema";
 import type { SupplierPerformanceRow } from "@/pages/suppliers/use-suppliers-core-queries";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 export type SuppliersListCardProps = {
   isLoading: boolean;
@@ -19,6 +20,8 @@ export type SuppliersListCardProps = {
   selectedLogo: { logoUrl: string } | null | undefined;
   paymentTermsById: Map<number, string>;
   performanceBySupplier: Map<number, SupplierPerformanceRow>;
+  /** When false, empty list prompts to finish product setup instead of add-supplier CTA. */
+  productSetupComplete?: boolean;
   onAddSupplier: () => void;
   onEditSupplier: (supplier: Supplier) => void;
   onDeleteSupplier: (supplier: Supplier) => void;
@@ -35,6 +38,7 @@ export function SuppliersListCard({
   selectedLogo,
   paymentTermsById,
   performanceBySupplier,
+  productSetupComplete = true,
   onAddSupplier,
   onEditSupplier,
   onDeleteSupplier,
@@ -70,13 +74,25 @@ export function SuppliersListCard({
           emptyView={
             <div className="text-center py-8">
               <p className="text-muted-foreground">No suppliers found</p>
-              <p className="text-sm text-muted-foreground mt-1">Get started by adding a supplier</p>
-              <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add suppliers">
-                <Button type="button" className="mt-4" onClick={onAddSupplier}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add supplier
-                </Button>
-              </Can>
+              {productSetupComplete ? (
+                <>
+                  <p className="mt-1 text-sm text-muted-foreground">Get started by adding a supplier</p>
+                  <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add suppliers">
+                    <Button type="button" className="mt-4" onClick={onAddSupplier}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add supplier
+                    </Button>
+                  </Can>
+                </>
+              ) : (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Finish{" "}
+                  <Link href={APP_ROUTES.setup.product} className="font-medium text-primary underline">
+                    product setup
+                  </Link>{" "}
+                  first, then add your first supplier.
+                </p>
+              )}
             </div>
           }
         >

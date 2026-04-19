@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,16 @@ export default function OnboardingPage() {
         subtitle="First-run setup for packaged installs (no organizations in the database yet)."
         breadcrumb={<span>Admin / Onboarding</span>}
       />
+      <Alert>
+        <AlertTitle>Then: product setup wizard</AlertTitle>
+        <AlertDescription className="text-sm">
+          After the organization exists, an administrator should complete{" "}
+          <Link href={APP_ROUTES.setup.product} className="font-medium text-primary underline">
+            business defaults ({APP_ROUTES.setup.product})
+          </Link>{" "}
+          (currency, tax, warehouse, starter data) before day-to-day procurement.
+        </AlertDescription>
+      </Alert>
       <form
         className="space-y-4"
         onSubmit={(e) => {

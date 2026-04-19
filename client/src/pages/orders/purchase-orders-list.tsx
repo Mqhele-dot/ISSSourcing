@@ -22,8 +22,10 @@ import { useAsyncResource } from "@/hooks/use-async-resource";
 import { downloadPurchaseOrderSignedPdf, fetchPurchaseOrdersEnvelope } from "@/api/client";
 import { downloadFile } from "@/lib/utils";
 import { formatDate } from "./purchase-order-shared";
+import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 
 export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
+  const productSetupComplete = useProductSetupComplete();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [exportingPo, setExportingPo] = useState<string | null>(null);
@@ -120,16 +122,26 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
           data={data}
           isEmpty={(orders) => (Array.isArray(orders) ? orders : []).length === 0}
           emptyTitle="No purchase orders found"
-          emptyDescription="Create a reorder request from low stock, or run the demo to seed data."
+          emptyDescription={
+            productSetupComplete
+              ? "Start procurement with a requisition, or create a reorder from low stock."
+              : "Finish product setup first, then create requisitions and purchase orders."
+          }
           emptyAction={
-            <div className="flex flex-wrap gap-2">
+            productSetupComplete ? (
+              <div className="flex flex-wrap gap-2">
+                <Button asChild variant="default" size="sm">
+                  <Link href={APP_ROUTES.procurement.requisitionNew}>Create requisition</Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={APP_ROUTES.inventory.reorder}>Create reorder request</Link>
+                </Button>
+              </div>
+            ) : (
               <Button asChild variant="default" size="sm">
-                <Link href={APP_ROUTES.inventory.reorder}>Create reorder request</Link>
+                <Link href={APP_ROUTES.setup.product}>Continue product setup</Link>
               </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/">Run demo / Overview</Link>
-              </Button>
-            </div>
+            )
           }
           fallback={fallback}
           onRetry={refetch}

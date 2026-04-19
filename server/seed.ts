@@ -283,6 +283,10 @@ async function ensureSettings(): Promise<void> {
     enableVat: false,
     defaultVatCountry: "US",
     showPricesWithVat: true,
+    businessCountryCode: "US",
+    taxMode: "none",
+    productOnboardingCompletedAt: new Date(),
+    productOnboardingState: null,
   };
 
   await db.insert(appSettings).values(defaultSettings);

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { requestJson } from "@/lib/queryClient";
+import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 
 type ExportHistoryRow = {
   id: number;
@@ -43,6 +44,7 @@ function formatBytes(value: number | null): string {
 }
 
 export default function ExportCenterPage() {
+  const productSetupComplete = useProductSetupComplete();
   const queryClient = useQueryClient();
   const { data: history = [] } = useQuery({
     queryKey: ["/api/export-center/history"],
@@ -74,7 +76,18 @@ export default function ExportCenterPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {history.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No exports have been generated yet.</p>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">No exports have been generated yet.</p>
+              {productSetupComplete ? (
+                <Button asChild size="sm" variant="default">
+                  <Link href={APP_ROUTES.analytics.savedReports}>Open saved reports</Link>
+                </Button>
+              ) : (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={APP_ROUTES.setup.product}>Continue product setup</Link>
+                </Button>
+              )}
+            </div>
           ) : (
             history.map((row) => (
               <div key={row.id} className="rounded-lg border p-4">

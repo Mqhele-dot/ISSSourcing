@@ -247,3 +247,30 @@ export async function clearExpiredExportJobFile(id: number): Promise<void> {
     [id],
   );
 }
+
+export async function getLatestFailedExportJobForOrg(organizationId: number): Promise<{
+  id: number;
+  lastError: string;
+  updatedAt: string;
+} | null> {
+  const result = await pool.query(
+    `
+      SELECT id, last_error, updated_at
+      FROM export_jobs
+      WHERE organization_id = $1
+        AND status = 'failed'
+        AND last_error IS NOT NULL
+        AND last_error <> ''
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [organizationId],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    lastError: String(row.last_error),
+    updatedAt: row.updated_at?.toISOString?.() ?? String(row.updated_at),
+  };
+}

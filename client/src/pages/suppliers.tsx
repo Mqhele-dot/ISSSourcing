@@ -30,6 +30,7 @@ import {
   type SupplierFormValues,
   emptySupplierFormValues,
 } from "@/pages/suppliers/supplier-form-types";
+import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 
 export default function SuppliersPage() {
   const { toast } = useToast();
@@ -39,6 +40,7 @@ export default function SuppliersPage() {
   const [removeLogoConfirm, setRemoveLogoConfirm] = useState(false);
   const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
 
+  const productSetupComplete = useProductSetupComplete();
   const { suppliersQuery, paymentTermsQuery, currenciesQuery, performanceQuery } = useSuppliersCoreQueries();
   const { data: suppliers, isLoading, isError, error, refetch } = suppliersQuery;
   const { data: paymentTerms = [] } = paymentTermsQuery;
@@ -360,6 +362,7 @@ export default function SuppliersPage() {
           selectedLogo={selectedLogo ?? null}
           paymentTermsById={paymentTermsById}
           performanceBySupplier={performanceBySupplier}
+          productSetupComplete={productSetupComplete}
           onAddSupplier={openCreateSupplierSheet}
           onEditSupplier={handleEditSupplier}
           onDeleteSupplier={handleDeleteSupplier}

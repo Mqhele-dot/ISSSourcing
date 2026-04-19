@@ -4,6 +4,7 @@ import { resolveShell } from "@/lib/layout/resolve-shell";
 import { DesktopLayout } from "@/components/layout/desktop-layout";
 import { MobileLayout } from "@/components/layout/mobile-layout";
 import { UpdateNotification } from "@/components/electron";
+import { ProductOnboardingGate } from "@/components/setup/product-onboarding-gate";
 
 export function AppShellLayout({ children }: { children: ReactNode }) {
   const [loc] = useLocation();
@@ -12,14 +13,14 @@ export function AppShellLayout({ children }: { children: ReactNode }) {
     return (
       <MobileLayout>
         <UpdateNotification />
-        {children}
+        <ProductOnboardingGate>{children}</ProductOnboardingGate>
       </MobileLayout>
     );
   }
   return (
     <DesktopLayout>
       <UpdateNotification />
-      {children}
+      <ProductOnboardingGate>{children}</ProductOnboardingGate>
     </DesktopLayout>
   );
 }

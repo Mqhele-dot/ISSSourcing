@@ -298,6 +298,13 @@ export const COMMAND_MENU_SECONDARY_ITEMS: AppNavItem[] = [
     keywords: "downloads files",
   },
   {
+    label: "System diagnostics",
+    path: APP_ROUTES.admin.systemDiagnostics,
+    icon: "radar",
+    description: "Install health, database, onboarding state, and build information.",
+    keywords: "diagnostics setup health install",
+  },
+  {
     label: "Profile",
     path: APP_ROUTES.admin.profile,
     icon: "user-round",

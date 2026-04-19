@@ -8,6 +8,7 @@ import { createSupplierRepository } from "../../repositories";
 import { createSupplierService } from "../../services/supplier-service";
 import { insertSupplierSchema, insertSupplierLogoSchema, PurchaseOrderStatus } from "@shared/schema";
 import type { AuthBundle } from "../procurement/types";
+import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
 
 const supplierRepo = createSupplierRepository(storage);
 const supplierService = createSupplierService(supplierRepo, storage);
@@ -306,6 +307,7 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       if (!Number.isFinite(total) || total <= 0) {
         return sendFunctionError(res, 400, "createSupplierPortalInvoice", "Invoice total must be a positive number");
       }
+      const orgCurrency = await getReportingCurrencyCode(storage);
       const invoice = await storage.createInvoice(
         {
           invoiceNumber: payload?.invoiceNumber || `INV-SUP-${Date.now().toString().slice(-8)}`,
@@ -320,7 +322,7 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
           total,
           paidAmount: 0,
           dueAmount: total,
-          currency: payload?.currency ?? "USD",
+          currency: payload?.currency ?? orgCurrency,
           status: "DRAFT",
           notes: payload?.notes ?? null,
           createdBy: Number((req as Request & { user?: { id?: number } }).user?.id ?? 1),

@@ -9,8 +9,11 @@ export function useReportingMoney() {
   const { settings } = useSettings();
   const currencyCode = settings.currencyCode?.trim() || "USD";
 
-  return useMemo(
-    () => createReportingMoneyFormatter(currencyCode),
-    [currencyCode],
-  );
+  return useMemo(() => {
+    const formatter = createReportingMoneyFormatter(currencyCode);
+    return {
+      formatMoney: formatter.formatMoney,
+      currencyCode: formatter.currencyCode,
+    };
+  }, [currencyCode]);
 }

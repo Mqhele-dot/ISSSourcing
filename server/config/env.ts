@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import type { DeploymentMode } from "./runtime-profile";
 import { config as loadDotEnv } from "dotenv";
 import { z } from "zod";
 import { isProductionProfile, runtimeProfile } from "./runtime-profile";
@@ -53,6 +54,12 @@ const rawEnvSchema = z.object({
   BUILD_COMMIT_SHA: z.string().trim().optional(),
   BUILD_ID: z.string().trim().optional(),
   BUILD_TIMESTAMP: z.string().trim().optional(),
+  /** Explicit deployment surface: development | test | hosted | packaged */
+  RUNTIME_DEPLOYMENT: z.enum(["development", "test", "hosted", "packaged"]).optional(),
+  /** When true, first-run product onboarding gate is disabled (local/dev escape hatch). */
+  SKIP_PRODUCT_ONBOARDING: z.string().trim().optional(),
+  /** When true, admins may POST /api/setup/product/skip to mark onboarding complete (support / controlled installs only). */
+  ALLOW_SETUP_SKIP: z.string().trim().optional(),
 });
 
 function buildConnectionStringFromEnv(env: z.infer<typeof rawEnvSchema>): string | undefined {
@@ -112,6 +119,18 @@ function readPackageVersion(): string {
 const rawEnv = rawEnvSchema.parse(process.env);
 const databaseUrl = resolveDatabaseUrl(rawEnv);
 const sessionSecret = resolveSessionSecret(rawEnv);
+
+function resolveDeploymentMode(): DeploymentMode {
+  const explicit = rawEnv.RUNTIME_DEPLOYMENT;
+  if (explicit) return explicit;
+  const isElectron = Boolean(process.versions.electron);
+  if (isElectron) {
+    return runtimeProfile === "production" ? "packaged" : "development";
+  }
+  if (runtimeProfile === "production") return "hosted";
+  if (runtimeProfile === "test") return "test";
+  return "development";
+}
 const sslMode = rawEnv.PGSSLMODE ?? databaseUrl.match(/[?&]sslmode=(\w+)/)?.[1];
 const useDatabaseSsl = (databaseUrl.includes("neon.tech") && sslMode !== "disable") || sslMode === "require";
 const trustProxy =
@@ -121,8 +140,13 @@ const trustProxy =
   Boolean(rawEnv.CODESPACE_NAME) ||
   Boolean(rawEnv.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN);
 
+const resolvedDeploymentMode = resolveDeploymentMode();
+
 export const appEnv = {
   runtimeProfile,
+  deploymentMode: resolvedDeploymentMode,
+  skipProductOnboarding: rawEnv.SKIP_PRODUCT_ONBOARDING === "true",
+  allowSetupSkip: rawEnv.ALLOW_SETUP_SKIP === "true",
   isProduction: isProductionProfile(),
   isDevelopment: runtimeProfile === "development",
   isTest: runtimeProfile === "test",
@@ -149,10 +173,12 @@ export const appEnv = {
   operationalExceptionScanIntervalMinutes: rawEnv.OPERATIONAL_EXCEPTION_SCAN_INTERVAL_MINUTES,
   allowStartupBootstrap:
     runtimeProfile !== "production" &&
+    resolvedDeploymentMode !== "packaged" &&
     (rawEnv.ALLOW_DEV_BOOTSTRAP === "false" ? false : true),
   autoSeedOnEmptyDb:
-    rawEnv.AUTO_SEED_ON_EMPTY_DB === "true" ||
-    (runtimeProfile !== "production" && rawEnv.AUTO_SEED_ON_EMPTY_DB !== "false"),
+    resolvedDeploymentMode !== "packaged" &&
+    (rawEnv.AUTO_SEED_ON_EMPTY_DB === "true" ||
+      (runtimeProfile !== "production" && rawEnv.AUTO_SEED_ON_EMPTY_DB !== "false")),
   build: {
     version: readPackageVersion(),
     commitSha: rawEnv.BUILD_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? undefined,

@@ -1135,6 +1135,17 @@ export const appSettings = pgTable(
   enableVat: boolean("enable_vat").default(false),
   defaultVatCountry: text("default_vat_country").default("US"),
   showPricesWithVat: boolean("show_prices_with_vat").default(true),
+  /** ISO 3166-1 alpha-2 country for business locale (reporting, tax hints). */
+  businessCountryCode: text("business_country_code").default("US"),
+  /**
+   * Product tax posture: `none` (no VAT), `vat` (enableVat true), `us_sales_tax` (US-style, VAT off).
+   * Kept in sync with enableVat/defaultVatCountry when possible.
+   */
+  taxMode: text("tax_mode").notNull().default("none"),
+  /** First-run product onboarding: null until an admin completes the setup wizard. */
+  productOnboardingCompletedAt: timestamp("product_onboarding_completed_at"),
+  /** Wizard checkpoint JSON for interrupted onboarding (step id + draft fields). */
+  productOnboardingState: jsonb("product_onboarding_state"),
   // Database settings (for Electron app)
     databaseSettings: jsonb("database_settings"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
