@@ -36,6 +36,7 @@ const rawEnvSchema = z.object({
   TRUST_PROXY: z.string().trim().optional(),
   CODESPACES: z.string().trim().optional(),
   CODESPACE_NAME: z.string().trim().optional(),
+  /** GitHub sets this in Codespaces; used with trust proxy + session cookies. */
   GITHUB_CODESPACES: z.string().trim().optional(),
   GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: z.string().trim().optional(),
   AUTO_SEED_ON_EMPTY_DB: z.string().trim().optional(),
@@ -137,6 +138,7 @@ const trustProxy =
   rawEnv.TRUST_PROXY === "1" ||
   rawEnv.TRUST_PROXY === "true" ||
   rawEnv.CODESPACES === "true" ||
+  rawEnv.GITHUB_CODESPACES === "true" ||
   Boolean(rawEnv.CODESPACE_NAME) ||
   Boolean(rawEnv.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN);
 

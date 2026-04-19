@@ -23,10 +23,35 @@ if [[ ! -f .env && -f .env.example ]]; then
   echo "Created .env from .env.example"
 fi
 
+# Load `.env` without `source`: arbitrary lines (e.g. a stray `EOF`, heredoc paste, or
+# `<<KEY` syntax) would otherwise run as shell commands and fail with "command not found".
+load_dotenv_exports() {
+  local file="$1"
+  [[ -f "${file}" ]] || return 0
+  local line trimmed key val
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    trimmed="${line#"${line%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    [[ -z "${trimmed}" ]] && continue
+    [[ "${trimmed}" =~ ^# ]] && continue
+    [[ "${trimmed}" != *"="* ]] && continue
+    key="${trimmed%%=*}"
+    val="${trimmed#*=}"
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+    [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    if [[ "${val}" =~ ^\"(.*)\"$ ]]; then
+      val="${BASH_REMATCH[1]}"
+    elif [[ "${val}" =~ ^\'(.*)\'$ ]]; then
+      val="${BASH_REMATCH[1]}"
+    fi
+    export "${key}=${val}"
+  done < "${file}"
+}
+
 if [[ -f .env ]]; then
-  # shellcheck source=/dev/null
   set -a
-  source .env
+  load_dotenv_exports ".env"
   set +a
 fi
 

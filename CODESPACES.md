@@ -133,10 +133,28 @@ Expected:
 | Client | 5000 | Same URL as server in development |
 | PostgreSQL | 5432 | `db` service in devcontainer |
 
+### Ports tab (next to Terminal)
+
+1. In the Codespace, open the **bottom panel** (same area as **Terminal**).
+2. Click the **PORTS** tab (if you do not see it: **View → Open View… → Ports**, or use the Command Palette and run **“Ports: Focus on Ports View”**).
+3. Confirm **5000** appears while `npm run dev` (or `npm run codespaces:up`) is running. If it is missing, click **Forward a Port**, enter `5000`, and press Enter.
+4. For the **5000** row, open the **visibility** (lock/globe) menu and choose **Public** if you open the app in a normal browser tab (required to avoid **502** on `*.app.github.dev`).
+5. Use **Open in Browser** on that row to launch the forwarded URL, or copy the **Local Address** / forwarded link.
+
 If you open the forwarded URL in an external browser session, set port **5000** visibility to **Public** in the Codespaces **Ports** tab.
 `codespaces:up` will also attempt to make port 5000 public automatically (best-effort). Disable this with `CODESPACES_AUTO_PUBLIC_PORT=false`.
 
+### CSRF / “Invalid or expired form submission” on setup
+
+The app uses **sessions** and **CSRF** on mutating API calls. Behind GitHub’s HTTPS proxy, the server must trust **`X-Forwarded-Proto`** so `express-session` can set cookies consistently with your browser URL.
+
+- Ensure the devcontainer passes **`CODESPACES`**, **`CODESPACE_NAME`**, **`GITHUB_CODESPACES`**, and **`GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN`** into the app container (see `.devcontainer/docker-compose.yml`).
+- Or set **`TRUST_PROXY=1`** in `.env` when running the server behind a reverse proxy.
+- After pulling fixes, **restart the dev server** and do a **hard refresh** (or log out and back in). The client also **retries once** after refreshing the CSRF token on `CSRF_TOKEN_INVALID`.
+
 ## Troubleshooting (502 / app not reachable)
+
+**`.env: line N: EOF: command not found` when running `npm run codespaces:up`:** Older versions of `codespaces-up.sh` used `source .env`, so any non–`KEY=value` line (for example a stray `EOF` from a bad paste or a heredoc) was executed as a shell command. The script now only loads lines that look like `KEY=value`. You should still remove junk lines from `.env` or recreate it from `.env.example`.
 
 **Most common fix:** If you see **HTTP 502** when opening the `*.app.github.dev` URL in your browser, the port is likely not Public. In VS Code, open the **PORTS** tab (beside the Terminal), find **5000**, set visibility to **Public**, then reload the page.
 

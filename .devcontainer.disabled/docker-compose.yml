@@ -23,6 +23,7 @@ services:
       # Pass through from the Codespaces host so Express trusts X-Forwarded-Proto and sets Secure cookies.
       CODESPACES: ${CODESPACES:-}
       CODESPACE_NAME: ${CODESPACE_NAME:-}
+      GITHUB_CODESPACES: ${GITHUB_CODESPACES:-}
       GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: ${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}
 
   db:

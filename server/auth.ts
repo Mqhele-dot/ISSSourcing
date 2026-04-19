@@ -216,8 +216,8 @@ function ensureTwoFactorAuthenticated(req: Request, res: Response, next: NextFun
 
 /**
  * GitHub Codespaces (and similar) terminate TLS at the edge; Node sees HTTP unless we trust
- * X-Forwarded-Proto. Without this, express-session's `secure: "auto"` stays false while the browser
- * is on https://*.app.github.dev — cookies may not persist correctly and APIs return 401.
+ * X-Forwarded-Proto. Set both `app.set("trust proxy")` and express-session's `proxy` option so
+ * `secure: "auto"` and Set-Cookie logic agree with the browser URL (session + CSRF share the session).
  */
 function shouldTrustProxy(): boolean {
   return appEnv.trustProxy;
@@ -235,6 +235,8 @@ export function setupAuth(app: Express) {
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
+    // Read X-Forwarded-Proto directly (not only req.secure) so HTTPS Codespaces URLs match cookie Secure flags.
+    proxy: shouldTrustProxy(),
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       // Match connection security; requires trust proxy when behind HTTPS reverse proxy (Codespaces).

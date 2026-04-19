@@ -76,6 +76,13 @@ function getRequestIdFromPayload(payload: unknown): string | undefined {
   return undefined;
 }
 
+function extractApiErrorCode(payload: unknown): string | undefined {
+  if (isApiEnvelope(payload) && !payload.ok) {
+    return payload.error.code;
+  }
+  return undefined;
+}
+
 function reportRequestError(params: {
   method: string;
   url: string;
@@ -315,103 +322,118 @@ export async function invTrackFetch<T>(
   url: string,
   data?: unknown,
 ): Promise<{ data: T; meta: InvTrackMeta }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  let res: Response;
-  try {
-    const headers = await buildRequestHeaders(method, undefined, {
-      contentType: data != null ? "application/json" : false,
-    });
-    res = await fetch(url, {
-      method,
-      headers,
-      body: data != null ? JSON.stringify(data) : undefined,
-      credentials: "include",
-      signal: controller.signal,
-    });
-  } catch (err) {
+  let csrfRetried = false;
+
+  for (;;) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let res: Response;
+    try {
+      const headers = await buildRequestHeaders(method, undefined, {
+        contentType: data != null ? "application/json" : false,
+      });
+      res = await fetch(url, {
+        method,
+        headers,
+        body: data != null ? JSON.stringify(data) : undefined,
+        credentials: "include",
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (isLikelyTransportError(err)) {
+        reportNetworkFailure({ method, url, error: err, requestPayload: data });
+      }
+      if (err instanceof Error && err.name === "AbortError") {
+        const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & { status?: number };
+        timeoutError.status = 408;
+        throw timeoutError;
+      }
+      throw err instanceof Error ? err : new Error(String(err));
+    }
     clearTimeout(timeoutId);
-    if (isLikelyTransportError(err)) {
-      reportNetworkFailure({ method, url, error: err, requestPayload: data });
-    }
-    if (err instanceof Error && err.name === "AbortError") {
-      const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & { status?: number };
-      timeoutError.status = 408;
-      throw timeoutError;
-    }
-    throw err instanceof Error ? err : new Error(String(err));
-  }
-  clearTimeout(timeoutId);
 
-  const headerFallback = res.headers.get("X-InvTrack-Fallback") ?? undefined;
-  const headerEndpoint = res.headers.get("X-InvTrack-Endpoint") ?? undefined;
+    const headerFallback = res.headers.get("X-InvTrack-Fallback") ?? undefined;
+    const headerEndpoint = res.headers.get("X-InvTrack-Endpoint") ?? undefined;
 
-  if (!res.ok) {
+    if (!res.ok) {
+      const payload = await parseJsonOrText(res);
+      if (
+        !csrfRetried &&
+        res.status === 403 &&
+        isMutationMethod(method) &&
+        extractApiErrorCode(payload) === "CSRF_TOKEN_INVALID"
+      ) {
+        csrfTokenCache = null;
+        await getCsrfToken(true);
+        csrfRetried = true;
+        continue;
+      }
+      const msg = formatServerErrorPayload(payload) ?? res.statusText;
+      scheduleAuthInvalidateOn401(res.status, method, url);
+      reportRequestError({
+        method,
+        url,
+        status: res.status,
+        reason: msg,
+        payload,
+        requestPayload: data,
+        requestId: res.headers.get("X-Request-Id") ?? undefined,
+        payloadSummary: summarizeRequestPayload(data),
+        stack: isDevRuntime ? new Error().stack : undefined,
+      });
+      const err = new Error(`${res.status}: ${msg}`) as Error & { status?: number };
+      err.status = res.status;
+      throw err;
+    }
+
+    if (res.status === 204 || res.headers.get("content-length") === "0") {
+      setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
+      lastGoodByEndpoint.set(url, { status: 204 });
+      return { data: undefined as T, meta: { fallback: headerFallback, endpoint: headerEndpoint } };
+    }
+
     const payload = await parseJsonOrText(res);
-    const msg = formatServerErrorPayload(payload) ?? res.statusText;
-    scheduleAuthInvalidateOn401(res.status, method, url);
-    reportRequestError({
-      method,
-      url,
-      status: res.status,
-      reason: msg,
-      payload,
-      requestPayload: data,
-      requestId: res.headers.get("X-Request-Id") ?? undefined,
-      payloadSummary: summarizeRequestPayload(data),
-      stack: isDevRuntime ? new Error().stack : undefined,
-    });
-    const err = new Error(`${res.status}: ${msg}`) as Error & { status?: number };
-    err.status = res.status;
-    throw err;
-  }
+    const fallbackRaw = headerFallback ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { fallback?: string } }).meta?.fallback);
+    const endpointRaw = headerEndpoint ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { endpoint?: string } }).meta?.endpoint);
+    setFallbackState(typeof fallbackRaw === "string" ? fallbackRaw : null, typeof endpointRaw === "string" ? endpointRaw : null);
 
-  if (res.status === 204 || res.headers.get("content-length") === "0") {
-    setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
-    lastGoodByEndpoint.set(url, { status: 204 });
-    return { data: undefined as T, meta: { fallback: headerFallback, endpoint: headerEndpoint } };
-  }
-
-  const payload = await parseJsonOrText(res);
-  const fallbackRaw = headerFallback ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { fallback?: string } }).meta?.fallback);
-  const endpointRaw = headerEndpoint ?? (payload && typeof payload === "object" && "meta" in payload && (payload as { meta?: { endpoint?: string } }).meta?.endpoint);
-  setFallbackState(typeof fallbackRaw === "string" ? fallbackRaw : null, typeof endpointRaw === "string" ? endpointRaw : null);
-
-  if (isApiEnvelope<T>(payload)) {
-    if (payload.ok) {
-      const success = payload as ApiSuccessEnvelope<T>;
-      lastGoodByEndpoint.set(url, success.data);
-      return {
-        data: success.data as T,
-        meta: {
-          fallback: success.meta?.fallback ?? headerFallback,
-          endpoint: headerEndpoint,
-        },
-      };
+    if (isApiEnvelope<T>(payload)) {
+      if (payload.ok) {
+        const success = payload as ApiSuccessEnvelope<T>;
+        lastGoodByEndpoint.set(url, success.data);
+        return {
+          data: success.data as T,
+          meta: {
+            fallback: success.meta?.fallback ?? headerFallback,
+            endpoint: headerEndpoint,
+          },
+        };
+      }
+      const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
+      scheduleAuthInvalidateOn401(res.status, method, url);
+      reportRequestError({
+        method,
+        url,
+        status: res.status,
+        reason: `${codePrefix}${payload.error.message}`,
+        payload,
+        requestPayload: data,
+        requestId: res.headers.get("X-Request-Id") ?? payload.error.requestId,
+        payloadSummary: summarizeRequestPayload(data),
+        stack: isDevRuntime ? new Error().stack : undefined,
+      });
+      const err = new Error(`${codePrefix}${payload.error.message}`) as Error & { status?: number };
+      err.status = res.status;
+      throw err;
     }
-    const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
-    scheduleAuthInvalidateOn401(res.status, method, url);
-    reportRequestError({
-      method,
-      url,
-      status: res.status,
-      reason: `${codePrefix}${payload.error.message}`,
-      payload,
-      requestPayload: data,
-      requestId: res.headers.get("X-Request-Id") ?? payload.error.requestId,
-      payloadSummary: summarizeRequestPayload(data),
-      stack: isDevRuntime ? new Error().stack : undefined,
-    });
-    const err = new Error(`${codePrefix}${payload.error.message}`) as Error & { status?: number };
-    err.status = res.status;
-    throw err;
-  }
 
-  lastGoodByEndpoint.set(url, payload as T);
-  return {
-    data: payload as T,
-    meta: { fallback: headerFallback, endpoint: headerEndpoint },
-  };
+    lastGoodByEndpoint.set(url, payload as T);
+    return {
+      data: payload as T,
+      meta: { fallback: headerFallback, endpoint: headerEndpoint },
+    };
+  }
 }
 
 /** Legacy: returns Response. Still uses timeout + credentials; sets fallback from X-InvTrack-* headers only. */
