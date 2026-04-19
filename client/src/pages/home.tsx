@@ -299,6 +299,15 @@ export default function HomePage() {
               — request what you need
             </li>
             <li>
+              <Link
+                className="font-medium text-primary"
+                href={`${APP_ROUTES.procurement.requisitions}?status=PENDING`}
+              >
+                Approve requisition
+              </Link>{" "}
+              — manager or admin approval before PO
+            </li>
+            <li>
               <Link className="font-medium text-primary" href={APP_ROUTES.procurement.orders}>
                 Purchase orders
               </Link>{" "}
@@ -311,10 +320,10 @@ export default function HomePage() {
               — receive into stock
             </li>
             <li>
-              <Link className="font-medium text-primary" href={APP_ROUTES.finance.invoices}>
-                Invoices
+              <Link className="font-medium text-primary" href={APP_ROUTES.finance.accountsPayable}>
+                Accounts payable
               </Link>{" "}
-              — match vendor bills
+              — vendor bills and matching
             </li>
             <li>
               <Link className="font-medium text-primary" href={APP_ROUTES.finance.accountsPayablePayments}>

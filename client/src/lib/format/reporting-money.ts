@@ -1,13 +1,14 @@
 import { formatCurrency } from "@/lib/utils";
+import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallback";
 
 const DEFAULT_LOCALE = "en-US";
 
 function normalizeCurrencyCode(raw: string | null | undefined): string {
-  const c = String(raw ?? "USD")
+  const c = String(raw ?? REPORTING_CURRENCY_FALLBACK_CODE)
     .trim()
     .toUpperCase();
   if (/^[A-Z]{3}$/.test(c)) return c;
-  return "USD";
+  return REPORTING_CURRENCY_FALLBACK_CODE;
 }
 
 /**
@@ -19,8 +20,9 @@ export function createReportingMoneyFormatter(currencyCode: string, locale: stri
     new Intl.NumberFormat(locale, { style: "currency", currency: code });
   } catch {
     return {
-      formatMoney: (value: number | null | undefined) => formatCurrency(value, "USD", locale),
-      currencyCode: "USD" as const,
+      formatMoney: (value: number | null | undefined) =>
+        formatCurrency(value, REPORTING_CURRENCY_FALLBACK_CODE, locale),
+      currencyCode: REPORTING_CURRENCY_FALLBACK_CODE as typeof REPORTING_CURRENCY_FALLBACK_CODE,
     };
   }
   return {

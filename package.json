@@ -22,6 +22,9 @@
     "test:supplier-portal": "tsx scripts/test-supplier-portal.ts",
     "test:exports": "tsx scripts/test-exports.ts",
     "test:smoke": "tsx scripts/test-smoke.ts",
+    "test:setup-checkpoint": "tsx scripts/test-setup-product-checkpoint.ts",
+    "test:installable-complete": "tsx scripts/test-installable-setup-complete.ts",
+    "test:installable-org-bootstrap": "tsx scripts/test-installable-org-bootstrap.ts",
     "test:api": "npm run test:rbac && npm run test:requisitions && npm run test:procurement-flow && npm run test:supplier-portal && npm run test:exports && npm run test:org-api",
     "test:deeplinks": "tsx scripts/test-kpi-deeplinks.ts",
     "test:org-isolation": "tsx scripts/test-org-isolation.ts",
@@ -40,6 +43,8 @@
     "seed:operational": "tsx server/seed-operational.ts",
     "demo:reset": "tsx server/seed.ts --reset && tsx server/seed-operational.ts",
     "db:repair": "tsx scripts/db-repair.ts",
+    "db:ensure-installable-app-settings": "tsx scripts/ensure-app-settings-installable-columns.ts",
+    "e2e:prep": "tsx scripts/e2e-prep-product-onboarding.ts",
     "codespaces:up": "bash scripts/codespaces-up.sh",
     "doctor:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-doctor.ps1"
   },

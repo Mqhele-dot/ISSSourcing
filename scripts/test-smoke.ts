@@ -61,6 +61,23 @@ async function main() {
     }),
   );
 
+  await check(
+    "Setup status payload shape (onboarding + database + build)",
+    apiJsonRequest("/setup/status", { method: "GET", cookie, baseUrl }).then((res) => {
+      if (!res.ok || res.status !== 200) return false;
+      const envelope = res.json as { ok?: boolean; data?: Record<string, unknown> };
+      if (!envelope?.ok || !envelope.data || typeof envelope.data !== "object") return false;
+      const d = envelope.data;
+      if (!d.onboarding || typeof d.onboarding !== "object") return false;
+      const ob = d.onboarding as Record<string, unknown>;
+      if (typeof ob.required !== "boolean") return false;
+      if (!("checkpoint" in ob)) return false;
+      if (d.database != null && typeof d.database !== "object") return false;
+      if (d.build != null && typeof d.build !== "object") return false;
+      return true;
+    }),
+  );
+
   console.log("\nSmoke suite result: %d failure(s)", failures);
   exitTest(failures > 0 ? 1 : 0);
 }

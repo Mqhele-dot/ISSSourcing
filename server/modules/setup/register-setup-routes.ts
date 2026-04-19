@@ -102,6 +102,8 @@ const completeBodySchema = z.object({
   paymentTermCode: z.string().min(1).max(32).optional(),
   paymentTermName: z.string().min(1).max(120).optional(),
   paymentTermNetDays: z.coerce.number().int().min(0).max(365).optional(),
+  dateFormat: z.enum(["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY"]).optional(),
+  timeFormat: z.enum(["HH:mm", "hh:mm A"]).optional(),
 });
 
 export function registerSetupRoutes(app: Express, auth: Auth): void {
@@ -275,6 +277,8 @@ export function registerSetupRoutes(app: Express, auth: Auth): void {
         defaultVatCountry,
         showPricesWithVat: enableVat,
         defaultWarehouseId: wh.id,
+        ...(body.dateFormat ? { dateFormat: body.dateFormat } : {}),
+        ...(body.timeFormat ? { timeFormat: body.timeFormat } : {}),
         productOnboardingCompletedAt: new Date(),
         productOnboardingState: null,
       });

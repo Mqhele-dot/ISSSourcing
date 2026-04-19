@@ -36,6 +36,7 @@ import type { PurchaseRequisition, PurchaseRequisitionItem, User, Supplier, Inve
 import { Can } from "@/components/auth/can";
 import { fetchApprovalSuggestions } from "@/api/client";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
+import { useQueryState } from "@/hooks/use-query-state";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 interface RequisitionsPageProps {
@@ -53,6 +54,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const [selectedReq, setSelectedReq] = useState<PurchaseRequisition | null>(null);
   const [shareUserIds, setShareUserIds] = useState<number[]>([]);
   const [search, setSearch] = useState("");
+  const { queryState } = useQueryState({ status: "" });
   const [rejectDialogReq, setRejectDialogReq] = useState<PurchaseRequisition | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [historyDialogReq, setHistoryDialogReq] = useState<PurchaseRequisition | null>(null);
@@ -115,12 +117,15 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
       }),
   });
 
-  const filtered = requisitions.filter(
-    (r) =>
+  const statusFilter = String(queryState.status || "").trim().toUpperCase();
+  const filtered = requisitions.filter((r) => {
+    if (statusFilter && String(r.status || "").toUpperCase() !== statusFilter) return false;
+    return (
       !search ||
       r.requisitionNumber?.toLowerCase().includes(search.toLowerCase()) ||
       String(r.id).includes(search)
-  );
+    );
+  });
 
   const approveMutation = useMutation({
     mutationFn: (id: number) =>

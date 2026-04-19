@@ -2,6 +2,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { AppSettings, AppSettingsFormWithVat } from "@shared/schema";
+import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallback";
 
 // Define database settings type (includes form-only fields from database-settings-form)
 export type DatabaseSettings = {
@@ -41,7 +42,7 @@ export function useSettings() {
     dateFormat: "YYYY-MM-DD",
     timeFormat: "HH:mm",
     currencySymbol: "$",
-    currencyCode: "USD",
+    currencyCode: REPORTING_CURRENCY_FALLBACK_CODE,
     lowStockDefaultThreshold: 10,
     allowNegativeInventory: false,
     requireLocationForItems: true,

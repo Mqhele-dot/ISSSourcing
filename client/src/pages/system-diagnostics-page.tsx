@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,34 @@ function JsonBlock({ value }: { value: unknown }) {
     <pre className="max-h-[420px] overflow-auto rounded-md border bg-muted/40 p-3 text-xs leading-relaxed">
       {JSON.stringify(value, null, 2)}
     </pre>
+  );
+}
+
+function SummaryTile({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <div className="mt-1 break-words text-sm text-foreground">{children}</div>
+    </div>
+  );
+}
+
+function formatPathLine(
+  label: string,
+  row: { path?: string; pathReady?: boolean; writable?: boolean } | undefined,
+): ReactNode {
+  if (!row) return "—";
+  const p = row.path ?? "—";
+  const exists = row.pathReady === true ? "exists" : row.pathReady === false ? "missing" : "—";
+  const write = row.writable === true ? "writable" : row.writable === false ? "not writable" : "—";
+  return (
+    <span>
+      <span className="font-medium">{label}:</span> {p}
+      <span className="text-muted-foreground">
+        {" "}
+        · {exists} · {write}
+      </span>
+    </span>
   );
 }
 
@@ -68,6 +97,13 @@ export default function SystemDiagnosticsPage() {
   };
 
   const deploymentMode = setup?.deploymentMode ?? ready?.build?.deploymentMode ?? ready?.deploymentMode;
+  const build = setup?.build ?? ready?.build;
+  const checkpoint = setup?.onboarding?.checkpoint;
+  const hasCheckpoint =
+    checkpoint != null &&
+    typeof checkpoint === "object" &&
+    (Boolean((checkpoint as { step?: string }).step) ||
+      Boolean((checkpoint as { draft?: unknown }).draft));
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
@@ -107,6 +143,81 @@ export default function SystemDiagnosticsPage() {
         <Badge variant="outline">DB: {ready?.dbReady ? "ok" : "down"}</Badge>
         <Badge variant="outline">Uploads: {ready?.uploadPathReady ? "ok" : "missing"}</Badge>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Summary</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {setup ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SummaryTile label="Database (authenticated check)">
+                {setup.database?.ok === true ? (
+                  <span className="text-emerald-700 dark:text-emerald-400">Connected</span>
+                ) : setup.database?.ok === false ? (
+                  <span className="text-destructive">{setup.database.error ?? "Error"}</span>
+                ) : (
+                  <span className="text-muted-foreground">Not reported by this payload</span>
+                )}
+              </SummaryTile>
+              <SummaryTile label="Product onboarding">
+                <div className="space-y-1">
+                  <div>
+                    Status:{" "}
+                    {setup.onboarding.required ? (
+                      <span className="text-amber-800 dark:text-amber-200">Required</span>
+                    ) : (
+                      <span className="text-emerald-700 dark:text-emerald-400">Complete</span>
+                    )}
+                  </div>
+                  <div className="text-muted-foreground">
+                    Completed: {setup.onboarding.completedAt ? new Date(setup.onboarding.completedAt).toLocaleString() : "—"}
+                  </div>
+                  <div className="text-muted-foreground">Saved checkpoint: {hasCheckpoint ? "yes" : "no"}</div>
+                </div>
+              </SummaryTile>
+              <SummaryTile label="Paths">{formatPathLine("Uploads", setup.uploads)}</SummaryTile>
+              <SummaryTile label="Exports">{formatPathLine("Exports", setup.exports)}</SummaryTile>
+              <SummaryTile label="Last export failure">
+                {setup.diagnostics?.lastExportFailure ? (
+                  <span>
+                    Job #{setup.diagnostics.lastExportFailure.id}: {setup.diagnostics.lastExportFailure.lastError}
+                    <span className="block text-xs text-muted-foreground">
+                      {new Date(setup.diagnostics.lastExportFailure.updatedAt).toLocaleString()}
+                    </span>
+                  </span>
+                ) : (
+                  "None recorded"
+                )}
+              </SummaryTile>
+              <SummaryTile label="Migrations applied (Drizzle)">
+                {setup.diagnostics?.drizzleMigrationCount != null
+                  ? String(setup.diagnostics.drizzleMigrationCount)
+                  : "Unknown"}
+              </SummaryTile>
+              <SummaryTile label="Build">
+                <div className="space-y-1 text-muted-foreground">
+                  <div>
+                    <span className="text-foreground">Version:</span> {build?.version ?? "—"}
+                  </div>
+                  <div>
+                    <span className="text-foreground">Commit:</span> {build?.commitSha ?? "—"}
+                  </div>
+                  <div>
+                    <span className="text-foreground">Deployment:</span>{" "}
+                    {build?.deploymentMode ?? deploymentMode ?? "—"}
+                  </div>
+                  <div>
+                    <span className="text-foreground">Runtime profile:</span> {build?.runtimeProfile ?? "—"}
+                  </div>
+                </div>
+              </SummaryTile>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Load setup status to see the summary.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

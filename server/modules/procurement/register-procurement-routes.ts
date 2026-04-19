@@ -13,7 +13,6 @@ import {
   insertPurchaseOrderItemSchema,
   departments,
   projects,
-  approvalPolicies,
   approvalHistory,
   purchaseOrderRevisions,
   PurchaseRequisitionStatus,
@@ -21,7 +20,7 @@ import {
   PaymentStatus,
 } from "@shared/schema";
 import { getActiveOrganizationId } from "../../organization-context";
-import { roleMatchesPolicy } from "./service";
+import { getApplicableRequisitionPolicyForOrg, roleMatchesPolicy } from "./service";
 import type { AuthBundle } from "./types";
 
 async function validateProjectIdForOrg(
@@ -292,23 +291,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           `Requisition total exceeds your approver limit (${userCap.toFixed(2)}).`,
         );
       }
-      const policies = await db
-        .select()
-        .from(approvalPolicies)
-        .where(
-          and(
-            eq(approvalPolicies.organizationId, getActiveOrganizationId()),
-            eq(approvalPolicies.entityType, "requisition"),
-          ),
-        );
-      const applicable = policies
-        .filter((policy) => {
-          if (!policy.isActive) return false;
-          const min = Number(policy.amountMin ?? 0);
-          const max = policy.amountMax == null ? Number.POSITIVE_INFINITY : Number(policy.amountMax);
-          return requisitionTotal >= min && requisitionTotal <= max;
-        })
-        .sort((a, b) => Number(b.approvalLevel ?? 0) - Number(a.approvalLevel ?? 0))[0];
+      const applicable = await getApplicableRequisitionPolicyForOrg(getActiveOrganizationId(), requisitionTotal);
       if (applicable) {
         if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
           return sendFunctionError(res, 403, "approvePurchaseRequisition", "Only the configured approver can approve this requisition");
@@ -372,23 +355,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Requester cannot reject their own requisition");
       }
       const requisitionTotal = Number(existing.totalAmount ?? 0);
-      const policies = await db
-        .select()
-        .from(approvalPolicies)
-        .where(
-          and(
-            eq(approvalPolicies.organizationId, getActiveOrganizationId()),
-            eq(approvalPolicies.entityType, "requisition"),
-          ),
-        );
-      const applicable = policies
-        .filter((policy) => {
-          if (!policy.isActive) return false;
-          const min = Number(policy.amountMin ?? 0);
-          const max = policy.amountMax == null ? Number.POSITIVE_INFINITY : Number(policy.amountMax);
-          return requisitionTotal >= min && requisitionTotal <= max;
-        })
-        .sort((a, b) => Number(b.approvalLevel ?? 0) - Number(a.approvalLevel ?? 0))[0];
+      const applicable = await getApplicableRequisitionPolicyForOrg(getActiveOrganizationId(), requisitionTotal);
       if (applicable) {
         if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
           return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Only the configured approver can reject this requisition");

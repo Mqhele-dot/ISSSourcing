@@ -53,3 +53,12 @@ After `drizzle-kit push` (or your migration process), existing rows will have **
 - **Demo reset:** `/admin/demo/reset` and `/api/admin/demo/reset` are registered from one loop to avoid drift.
 - **Onboarding UX:** `/admin/onboarding` explicitly points admins to **`/setup`** after org bootstrap.
 - **Auth:** Removed stale commented CSRF route block.
+
+## E2E installable setup (wizard, gate, diagnostics, procurement)
+
+- **Setup wizard:** Review step explains starter **approval policies** (requisition $0–$5,000 → manager; PO above $5,000 → admin) with a link to edit them after completion; optional **date/time format** presets persist via `POST /api/setup/product/complete`; **resume** banner when a checkpoint exists.
+- **Onboarding gate:** If **`/api/setup/status` fails**, the app no longer falls through to full navigation—operators get **Retry** and **system diagnostics**, with **setup/diagnostics/onboarding** paths still reachable when appropriate; **non-admins** see a compact banner on allowed routes pointing admins to **`/setup`**.
+- **System diagnostics:** A **read-only summary grid** above the JSON highlights database status, onboarding completion, paths, last export failure, migration count, and build metadata.
+- **Procurement:** Approve/reject routes resolve the applicable requisition policy through a single **org-scoped** helper so policy selection cannot drift.
+- **Home checklist:** **First procurement cycle** adds **Approve requisition** (deep link to pending requisitions) and points vendor-bill work at **Accounts payable** instead of legacy Invoices.
+- **Client reporting currency:** A single **`REPORTING_CURRENCY_FALLBACK_CODE`** constant aligns client defaults with the server-side reporting helper conceptually.

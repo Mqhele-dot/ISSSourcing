@@ -9,10 +9,14 @@ const requiredScripts = [
   "test:contracts",
   "test:rbac",
   "test:procurement-flow",
+  "test:requisitions",
+  "test:org-api",
   "test:ap-workflow",
   "test:ap-controls",
   "test:exports",
   "test:smoke",
+  "test:setup-checkpoint",
+  "test:installable-complete",
   "test:e2e",
 ];
 

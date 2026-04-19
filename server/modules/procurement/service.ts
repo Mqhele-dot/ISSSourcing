@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { approvalPolicies } from "@shared/schema";
+import { approvalPolicies, type ApprovalPolicy } from "@shared/schema";
 import type { ProcurementRepository } from "./repository";
 
 export function roleMatchesPolicy(policyRole: string | null | undefined, actorRole: string): boolean {
@@ -16,9 +16,10 @@ export function roleMatchesPolicy(policyRole: string | null | undefined, actorRo
   return allowedRoles.includes(normalizedActor);
 }
 
-/** Resolve the single applicable approval policy row for a requisition total (highest level first). */
-export async function getApplicableRequisitionPolicy(requisitionTotal: number) {
-  const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
+function selectApplicableRequisitionPolicyFromRows(
+  policies: ApprovalPolicy[],
+  requisitionTotal: number,
+): ApprovalPolicy | undefined {
   return policies
     .filter((policy) => {
       if (!policy.isActive) return false;
@@ -27,6 +28,24 @@ export async function getApplicableRequisitionPolicy(requisitionTotal: number) {
       return requisitionTotal >= min && requisitionTotal <= max;
     })
     .sort((a, b) => Number(b.approvalLevel ?? 0) - Number(a.approvalLevel ?? 0))[0];
+}
+
+/** Org-scoped applicable requisition approval policy (highest approval level first). */
+export async function getApplicableRequisitionPolicyForOrg(
+  organizationId: number,
+  requisitionTotal: number,
+): Promise<ApprovalPolicy | undefined> {
+  const policies = await db
+    .select()
+    .from(approvalPolicies)
+    .where(and(eq(approvalPolicies.organizationId, organizationId), eq(approvalPolicies.entityType, "requisition")));
+  return selectApplicableRequisitionPolicyFromRows(policies, requisitionTotal);
+}
+
+/** @deprecated Prefer getApplicableRequisitionPolicyForOrg — this ignores organization. */
+export async function getApplicableRequisitionPolicy(requisitionTotal: number) {
+  const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.entityType, "requisition"));
+  return selectApplicableRequisitionPolicyFromRows(policies, requisitionTotal);
 }
 
 export type ProcurementService = {

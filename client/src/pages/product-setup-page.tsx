@@ -27,6 +27,9 @@ import { Link } from "wouter";
 const STEPS = ["welcome", "business", "warehouse", "starter", "review"] as const;
 type StepId = (typeof STEPS)[number];
 
+const DATE_FORMAT_PRESETS = ["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY"] as const;
+const TIME_FORMAT_PRESETS = ["HH:mm", "hh:mm A"] as const;
+
 async function fetchSetupStatus(): Promise<SetupStatusPayload> {
   return requestJson<SetupStatusPayload>("GET", "/api/setup/status");
 }
@@ -60,6 +63,14 @@ export default function ProductSetupPage() {
   const [paymentTermCode, setPaymentTermCode] = useState("NET30");
   const [paymentTermName, setPaymentTermName] = useState("Net 30");
   const [paymentTermNetDays, setPaymentTermNetDays] = useState("30");
+  const [dateFormat, setDateFormat] = useState<(typeof DATE_FORMAT_PRESETS)[number]>(
+    (settings.dateFormat as (typeof DATE_FORMAT_PRESETS)[number]) || "YYYY-MM-DD",
+  );
+  const [timeFormat, setTimeFormat] = useState<(typeof TIME_FORMAT_PRESETS)[number]>(
+    (settings.timeFormat as (typeof TIME_FORMAT_PRESETS)[number]) || "HH:mm",
+  );
+
+  const hasSavedCheckpoint = Boolean(setup?.onboarding?.checkpoint);
 
   useEffect(() => {
     const cp = setup?.onboarding?.checkpoint as { step?: string; draft?: Record<string, unknown> } | null | undefined;
@@ -74,6 +85,12 @@ export default function ProductSetupPage() {
       if (typeof d.paymentTermCode === "string") setPaymentTermCode(d.paymentTermCode);
       if (typeof d.paymentTermName === "string") setPaymentTermName(d.paymentTermName);
       if (typeof d.paymentTermNetDays === "string") setPaymentTermNetDays(d.paymentTermNetDays);
+      if (typeof d.dateFormat === "string" && (DATE_FORMAT_PRESETS as readonly string[]).includes(d.dateFormat)) {
+        setDateFormat(d.dateFormat as (typeof DATE_FORMAT_PRESETS)[number]);
+      }
+      if (typeof d.timeFormat === "string" && (TIME_FORMAT_PRESETS as readonly string[]).includes(d.timeFormat)) {
+        setTimeFormat(d.timeFormat as (typeof TIME_FORMAT_PRESETS)[number]);
+      }
     }
     if (cp?.step && STEPS.includes(cp.step as StepId)) {
       setStep(cp.step as StepId);
@@ -81,12 +98,29 @@ export default function ProductSetupPage() {
   }, [setup?.onboarding?.checkpoint]);
 
   useEffect(() => {
+    if (hasSavedCheckpoint) return;
     setCompanyName(settings.companyName);
     setCurrencyCode(settings.currencyCode);
     setBusinessCountryCode(settings.businessCountryCode ?? "US");
     const tm = settings.taxMode;
     if (tm === "none" || tm === "vat" || tm === "us_sales_tax") setTaxMode(tm);
-  }, [settings.companyName, settings.currencyCode, settings.businessCountryCode, settings.taxMode]);
+    const df = settings.dateFormat;
+    if (df && (DATE_FORMAT_PRESETS as readonly string[]).includes(df)) {
+      setDateFormat(df as (typeof DATE_FORMAT_PRESETS)[number]);
+    }
+    const tf = settings.timeFormat;
+    if (tf && (TIME_FORMAT_PRESETS as readonly string[]).includes(tf)) {
+      setTimeFormat(tf as (typeof TIME_FORMAT_PRESETS)[number]);
+    }
+  }, [
+    settings.companyName,
+    settings.currencyCode,
+    settings.businessCountryCode,
+    settings.taxMode,
+    settings.dateFormat,
+    settings.timeFormat,
+    hasSavedCheckpoint,
+  ]);
 
   const checkpointMutation = useMutation({
     mutationFn: async (payload: { step: StepId; draft?: Record<string, unknown> }) => {
@@ -113,6 +147,8 @@ export default function ProductSetupPage() {
         paymentTermCode: paymentTermCode.trim() || undefined,
         paymentTermName: paymentTermName.trim() || undefined,
         paymentTermNetDays: paymentTermNetDays ? Number(paymentTermNetDays) : undefined,
+        dateFormat,
+        timeFormat,
       });
     },
     onSuccess: async () => {
@@ -145,6 +181,8 @@ export default function ProductSetupPage() {
           paymentTermCode,
           paymentTermName,
           paymentTermNetDays,
+          dateFormat,
+          timeFormat,
           ...draft,
         },
       });
@@ -200,6 +238,10 @@ export default function ProductSetupPage() {
   }
 
   const stepIndex = STEPS.indexOf(step);
+  const checkpoint = setup?.onboarding?.checkpoint as
+    | { step?: string; savedAt?: string; draft?: Record<string, unknown> }
+    | null
+    | undefined;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-4 md:p-6">
@@ -208,6 +250,31 @@ export default function ProductSetupPage() {
         subtitle="Company defaults, tax posture, warehouse, and starter reference data"
         breadcrumb={<span>Setup / Product</span>}
       />
+
+      {setup?.onboarding?.required &&
+      checkpoint != null &&
+      typeof checkpoint === "object" &&
+      (Boolean(checkpoint.step) || Boolean(checkpoint.draft)) ? (
+        <Alert>
+          <AlertTitle>Resume setup</AlertTitle>
+          <AlertDescription className="text-sm">
+            {checkpoint.step ? (
+              <>
+                You have saved progress at step <strong className="text-foreground">{checkpoint.step}</strong>
+              </>
+            ) : (
+              <>You have saved wizard progress</>
+            )}
+            {checkpoint.savedAt ? (
+              <>
+                {" "}
+                (last saved {new Date(checkpoint.savedAt).toLocaleString()})
+              </>
+            ) : null}
+            . Use Next/Back to continue; each step saves automatically for admins.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
         {STEPS.map((s, i) => (
@@ -284,6 +351,38 @@ export default function ProductSetupPage() {
                   <SelectItem value="us_sales_tax">US sales tax style (VAT off)</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Date format</Label>
+                <Select value={dateFormat} onValueChange={(v) => setDateFormat(v as (typeof DATE_FORMAT_PRESETS)[number])}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DATE_FORMAT_PRESETS.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Time format</Label>
+                <Select value={timeFormat} onValueChange={(v) => setTimeFormat(v as (typeof TIME_FORMAT_PRESETS)[number])}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIME_FORMAT_PRESETS.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="flex justify-between gap-2">
               <Button type="button" variant="outline" onClick={() => persistStep("welcome")}>
@@ -371,12 +470,20 @@ export default function ProductSetupPage() {
             <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
               <li>
                 <span className="text-foreground">{companyName}</span> · {currencyCode} · {businessCountryCode} ·{" "}
-                {taxMode}
+                {taxMode} · dates {dateFormat} · times {timeFormat}
               </li>
               <li>Warehouse: {warehouseName}</li>
               <li>Departments: {departmentCodes || "(defaults)"}</li>
               <li>
                 Payment term: {paymentTermCode} — {paymentTermName} ({paymentTermNetDays} days)
+              </li>
+              <li className="text-foreground">
+                <strong>Starter approval rules</strong> (you can edit later under{" "}
+                <Link href={APP_ROUTES.finance.approvalPolicies} className="text-primary underline">
+                  Approval policies
+                </Link>
+                ): requisitions from $0–$5,000 require <span className="font-medium">manager</span> (or admin); purchase
+                orders above $5,000 require <span className="font-medium">admin</span>.
               </li>
             </ul>
             <div className="flex justify-between gap-2">

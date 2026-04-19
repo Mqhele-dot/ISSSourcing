@@ -23,10 +23,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
+import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallback";
 
 /** Common ISO 4217 codes for reporting; users can extend via API if needed later. */
 const REPORTING_CURRENCY_CODES = [
-  "USD",
+  REPORTING_CURRENCY_FALLBACK_CODE,
   "EUR",
   "GBP",
   "JPY",
@@ -75,7 +76,7 @@ export function GeneralSettingsForm() {
       dateFormat: settings.dateFormat || 'YYYY-MM-DD',
       timeFormat: settings.timeFormat || 'HH:mm',
       currencySymbol: settings.currencySymbol || '$',
-      currencyCode: (settings.currencyCode || "USD").toUpperCase(),
+      currencyCode: (settings.currencyCode || REPORTING_CURRENCY_FALLBACK_CODE).toUpperCase(),
     },
   });
 
