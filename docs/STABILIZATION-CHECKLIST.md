@@ -17,6 +17,8 @@ npm run test:smoke
 
 `test:smoke` asserts `GET /api/setup/status` returns **200** with `setupStatusHealth` (`ok` | `degraded`), consistent `issues` (when degraded, non-empty `{ code, message }[]`), and the existing onboarding/database/build shape.
 
+For a **full route matrix** (operations, inventory, procurement, finance, admin), use [MANUAL-STABILIZATION-MATRIX.md](./MANUAL-STABILIZATION-MATRIX.md). For **setup status failures**, see [SETUP-STATUS-TRIAGE.md](./SETUP-STATUS-TRIAGE.md).
+
 ## Manual browser (core shell)
 
 1. Log in; confirm **no** “Could not load product setup status” during normal boot after session is established.

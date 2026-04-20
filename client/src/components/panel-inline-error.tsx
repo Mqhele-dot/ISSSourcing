@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 
 type Props = {
   title: string;
-  description: string;
+  /** Optional detail shown under the title (omit for compact panels). */
+  description?: string;
   onRetry?: () => void;
   retryLabel?: string;
   className?: string;
@@ -15,7 +16,7 @@ export function PanelInlineError({ title, description, onRetry, retryLabel = "Re
     <Alert variant="destructive" className={className}>
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-        <span>{description}</span>
+        {description ? <span>{description}</span> : null}
         {onRetry ? (
           <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void onRetry()}>
             {retryLabel}

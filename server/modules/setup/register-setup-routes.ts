@@ -19,6 +19,44 @@ import { getLatestFailedExportJobForOrg } from "../exports/export-jobs";
 
 type Auth = { ensureAuthenticated: RequestHandler };
 
+type SetupStatusIssueLevel = "critical" | "warning";
+
+type SetupStatusIssueEntry = { code: string; message: string; level: SetupStatusIssueLevel };
+
+function resolveRequestIdForLog(res: Response): string {
+  const fromLocals =
+    res.locals && typeof (res.locals as { requestId?: unknown }).requestId === "string"
+      ? (res.locals as { requestId: string }).requestId
+      : "";
+  const fromHeader = res.getHeader("X-Request-Id");
+  const headerStr = typeof fromHeader === "string" ? fromHeader : Array.isArray(fromHeader) ? fromHeader[0] : "";
+  return fromLocals || headerStr || "-";
+}
+
+function resolveUserIdForLog(req: Request): string | number | undefined {
+  const u = req.user as { id?: unknown } | undefined;
+  if (u && typeof u === "object" && "id" in u && (typeof u.id === "string" || typeof u.id === "number")) {
+    return u.id;
+  }
+  return undefined;
+}
+
+function safeGetBuildInfo() {
+  try {
+    return getBuildInfo();
+  } catch (e) {
+    console.error("[SETUP_STATUS] SETUP_STATUS_BUILD_INFO_FAILED", e instanceof Error ? e.message : e);
+    return {
+      version: "unknown",
+      commitSha: null as string | null,
+      buildId: null as string | null,
+      builtAt: null as string | null,
+      runtimeProfile: appEnv.runtimeProfile,
+      deploymentMode: appEnv.deploymentMode,
+    };
+  }
+}
+
 function currencySymbolFromCode(code: string, locale = "en"): string {
   try {
     const parts = new Intl.NumberFormat(locale, { style: "currency", currency: code }).formatToParts(0);
@@ -108,112 +146,165 @@ const completeBodySchema = z.object({
 
 export function registerSetupRoutes(app: Express, auth: Auth): void {
   app.get("/api/setup/status", auth.ensureAuthenticated, async (req: Request, res: Response) => {
-    const issues: { code: string; message: string }[] = [];
-    const role = req.user && typeof req.user === "object" && "role" in req.user ? String((req.user as { role?: string }).role) : null;
+    const requestId = resolveRequestIdForLog(res);
+    const userId = resolveUserIdForLog(req);
     const orgId = getActiveOrganizationId();
 
-    let org: { id: number; name: string; slug: string | null } | null = null;
     try {
-      const rows = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
-      org = rows[0] ?? null;
-      if (!org) {
-        issues.push({
-          code: "SETUP_STATUS_ORG_NOT_FOUND",
-          message: `No organization row for active org id ${orgId}.`,
-        });
-        console.error("[SETUP_STATUS] SETUP_STATUS_ORG_NOT_FOUND", orgId);
+      const issues: SetupStatusIssueEntry[] = [];
+      const role = req.user && typeof req.user === "object" && "role" in req.user ? String((req.user as { role?: string }).role) : null;
+
+      let org: { id: number; name: string; slug: string | null } | null = null;
+      try {
+        const rows = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
+        org = rows[0] ?? null;
+        if (!org) {
+          issues.push({
+            code: "SETUP_STATUS_ORG_NOT_FOUND",
+            message: `No organization row for active org id ${orgId}.`,
+            level: "critical",
+          });
+          console.error("[SETUP_STATUS] SETUP_STATUS_ORG_NOT_FOUND", orgId);
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        issues.push({ code: "SETUP_STATUS_ORG_QUERY_FAILED", message: msg, level: "critical" });
+        console.error("[SETUP_STATUS] SETUP_STATUS_ORG_QUERY_FAILED", msg);
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      issues.push({ code: "SETUP_STATUS_ORG_QUERY_FAILED", message: msg });
-      console.error("[SETUP_STATUS] SETUP_STATUS_ORG_QUERY_FAILED", msg);
-    }
 
-    let settings: Awaited<ReturnType<typeof storage.getAppSettings>> | undefined;
-    try {
-      settings = await storage.getAppSettings();
-      if (!settings) {
-        issues.push({
-          code: "SETUP_STATUS_SETTINGS_MISSING",
-          message: "App settings are not initialized for this organization.",
-        });
+      let settings: Awaited<ReturnType<typeof storage.getAppSettings>> | undefined;
+      try {
+        settings = await storage.getAppSettings();
+        if (!settings) {
+          issues.push({
+            code: "SETUP_STATUS_SETTINGS_MISSING",
+            message: "App settings are not initialized for this organization.",
+            level: "critical",
+          });
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        issues.push({ code: "SETUP_STATUS_SETTINGS_FAILED", message: msg, level: "critical" });
+        console.error("[SETUP_STATUS] SETUP_STATUS_SETTINGS_FAILED", msg);
       }
+
+      const hints = await getProductBootstrapHints().catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        issues.push({ code: "SETUP_STATUS_BOOTSTRAP_HINTS_FAILED", message: msg, level: "warning" });
+        console.error("[SETUP_STATUS] SETUP_STATUS_BOOTSTRAP_HINTS_FAILED", msg);
+        return null;
+      });
+
+      const completedAt = settings?.productOnboardingCompletedAt ?? null;
+      const onboardingRequired = !appEnv.skipProductOnboarding && !completedAt;
+
+      let databaseOk = true;
+      let databaseError: string | null = null;
+      try {
+        await pool.query("SELECT 1");
+      } catch (e) {
+        databaseOk = false;
+        databaseError = e instanceof Error ? e.message : "Unknown database error";
+        issues.push({ code: "SETUP_STATUS_DB_PING_FAILED", message: databaseError, level: "critical" });
+        console.error("[SETUP_STATUS] SETUP_STATUS_DB_PING_FAILED", databaseError);
+      }
+
+      let drizzleMigrationCount: number | null = null;
+      try {
+        const mig = await pool.query(`SELECT COUNT(*)::int AS c FROM __drizzle_migrations`);
+        drizzleMigrationCount = mig.rows[0]?.c != null ? Number(mig.rows[0].c) : null;
+      } catch (e) {
+        drizzleMigrationCount = null;
+        const msg = e instanceof Error ? e.message : String(e);
+        issues.push({ code: "SETUP_STATUS_MIGRATIONS_QUERY_FAILED", message: msg, level: "warning" });
+        console.error("[SETUP_STATUS] SETUP_STATUS_MIGRATIONS_QUERY_FAILED", msg);
+      }
+
+      let lastExportFailure: { id: number; lastError: string; updatedAt: string } | null = null;
+      try {
+        lastExportFailure = await getLatestFailedExportJobForOrg(orgId);
+      } catch (e) {
+        lastExportFailure = null;
+        const msg = e instanceof Error ? e.message : String(e);
+        issues.push({ code: "SETUP_STATUS_EXPORT_DIAG_FAILED", message: msg, level: "warning" });
+        console.error("[SETUP_STATUS] SETUP_STATUS_EXPORT_DIAG_FAILED", msg);
+      }
+
+      const criticalIssues = issues.filter((i) => i.level === "critical");
+      const setupStatusHealth: "ok" | "degraded" = !databaseOk || criticalIssues.length > 0 ? "degraded" : "ok";
+
+      const firstCode =
+        criticalIssues[0]?.code ?? issues[0]?.code ?? (setupStatusHealth === "ok" ? "OK" : "UNKNOWN");
+      console.error(
+        `[SETUP_STATUS] summary requestId=${requestId} userId=${userId ?? "-"} orgId=${orgId} health=${setupStatusHealth} firstCode=${firstCode} criticalCount=${criticalIssues.length} warningCount=${issues.length - criticalIssues.length}`,
+      );
+
+      let uploadsPathReady = false;
+      let exportsPathReady = false;
+      let uploadsWritable = false;
+      let exportsWritable = false;
+      try {
+        uploadsPathReady = fs.existsSync(uploadsDir);
+        exportsPathReady = fs.existsSync(exportsDir);
+        uploadsWritable = directoryWritableProbe(uploadsDir);
+        exportsWritable = directoryWritableProbe(exportsDir);
+      } catch (probeErr) {
+        console.error("[SETUP_STATUS] SETUP_STATUS_PATH_PROBE_FAILED", probeErr instanceof Error ? probeErr.message : probeErr);
+      }
+
+      return sendOk(res, {
+        setupStatusHealth,
+        issues: issues.length > 0 ? issues : undefined,
+        deploymentMode: appEnv.deploymentMode,
+        runtimeProfile: appEnv.runtimeProfile,
+        build: safeGetBuildInfo(),
+        skipProductOnboarding: appEnv.skipProductOnboarding,
+        allowSetupSkip: appEnv.allowSetupSkip,
+        database: { ok: databaseOk, error: databaseError },
+        productBootstrap: hints,
+        organization: org ? { id: org.id, name: org.name, slug: org.slug } : null,
+        onboarding: {
+          completedAt: completedAt ? completedAt.toISOString() : null,
+          required: onboardingRequired,
+          adminMayContinue: role === "admin",
+          checkpoint: settings?.productOnboardingState ?? null,
+        },
+        uploads: { pathReady: uploadsPathReady, path: uploadsDir, writable: uploadsWritable },
+        exports: { pathReady: exportsPathReady, path: exportsDir, writable: exportsWritable },
+        diagnostics: {
+          drizzleMigrationCount,
+          lastExportFailure,
+        },
+        realtime: { websocketReady: readiness.websocketReady },
+        sessionStoreReady: readiness.sessionStoreReady,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      issues.push({ code: "SETUP_STATUS_SETTINGS_FAILED", message: msg });
-      console.error("[SETUP_STATUS] SETUP_STATUS_SETTINGS_FAILED", msg);
+      console.error("[SETUP_STATUS] SETUP_STATUS_UNHANDLED", { requestId, userId, orgId, message: msg });
+      return sendOk(res, {
+        setupStatusHealth: "degraded",
+        issues: [{ code: "SETUP_STATUS_UNHANDLED", message: msg, level: "critical" }],
+        deploymentMode: appEnv.deploymentMode,
+        runtimeProfile: appEnv.runtimeProfile,
+        build: safeGetBuildInfo(),
+        skipProductOnboarding: appEnv.skipProductOnboarding,
+        allowSetupSkip: appEnv.allowSetupSkip,
+        database: { ok: false, error: msg },
+        productBootstrap: null,
+        organization: null,
+        onboarding: {
+          completedAt: null,
+          required: true,
+          adminMayContinue: false,
+          checkpoint: null,
+        },
+        uploads: { pathReady: false, path: uploadsDir, writable: false },
+        exports: { pathReady: false, path: exportsDir, writable: false },
+        diagnostics: { drizzleMigrationCount: null, lastExportFailure: null },
+        realtime: { websocketReady: readiness.websocketReady },
+        sessionStoreReady: readiness.sessionStoreReady,
+      });
     }
-
-    const hints = await getProductBootstrapHints().catch((e) => {
-      const msg = e instanceof Error ? e.message : String(e);
-      issues.push({ code: "SETUP_STATUS_BOOTSTRAP_HINTS_FAILED", message: msg });
-      console.error("[SETUP_STATUS] SETUP_STATUS_BOOTSTRAP_HINTS_FAILED", msg);
-      return null;
-    });
-
-    const completedAt = settings?.productOnboardingCompletedAt ?? null;
-    const onboardingRequired = !appEnv.skipProductOnboarding && !completedAt;
-
-    let databaseOk = true;
-    let databaseError: string | null = null;
-    try {
-      await pool.query("SELECT 1");
-    } catch (e) {
-      databaseOk = false;
-      databaseError = e instanceof Error ? e.message : "Unknown database error";
-      issues.push({ code: "SETUP_STATUS_DB_PING_FAILED", message: databaseError });
-      console.error("[SETUP_STATUS] SETUP_STATUS_DB_PING_FAILED", databaseError);
-    }
-
-    let drizzleMigrationCount: number | null = null;
-    try {
-      const mig = await pool.query(`SELECT COUNT(*)::int AS c FROM __drizzle_migrations`);
-      drizzleMigrationCount = mig.rows[0]?.c != null ? Number(mig.rows[0].c) : null;
-    } catch (e) {
-      drizzleMigrationCount = null;
-      const msg = e instanceof Error ? e.message : String(e);
-      issues.push({ code: "SETUP_STATUS_MIGRATIONS_QUERY_FAILED", message: msg });
-      console.error("[SETUP_STATUS] SETUP_STATUS_MIGRATIONS_QUERY_FAILED", msg);
-    }
-
-    let lastExportFailure: { id: number; lastError: string; updatedAt: string } | null = null;
-    try {
-      lastExportFailure = await getLatestFailedExportJobForOrg(orgId);
-    } catch (e) {
-      lastExportFailure = null;
-      const msg = e instanceof Error ? e.message : String(e);
-      issues.push({ code: "SETUP_STATUS_EXPORT_DIAG_FAILED", message: msg });
-      console.error("[SETUP_STATUS] SETUP_STATUS_EXPORT_DIAG_FAILED", msg);
-    }
-
-    const setupStatusHealth: "ok" | "degraded" = issues.length > 0 || !databaseOk ? "degraded" : "ok";
-
-    return sendOk(res, {
-      setupStatusHealth,
-      issues: issues.length > 0 ? issues : undefined,
-      deploymentMode: appEnv.deploymentMode,
-      runtimeProfile: appEnv.runtimeProfile,
-      build: getBuildInfo(),
-      skipProductOnboarding: appEnv.skipProductOnboarding,
-      allowSetupSkip: appEnv.allowSetupSkip,
-      database: { ok: databaseOk, error: databaseError },
-      productBootstrap: hints,
-      organization: org ? { id: org.id, name: org.name, slug: org.slug } : null,
-      onboarding: {
-        completedAt: completedAt ? completedAt.toISOString() : null,
-        required: onboardingRequired,
-        adminMayContinue: role === "admin",
-        checkpoint: settings?.productOnboardingState ?? null,
-      },
-      uploads: { pathReady: fs.existsSync(uploadsDir), path: uploadsDir, writable: directoryWritableProbe(uploadsDir) },
-      exports: { pathReady: fs.existsSync(exportsDir), path: exportsDir, writable: directoryWritableProbe(exportsDir) },
-      diagnostics: {
-        drizzleMigrationCount,
-        lastExportFailure,
-      },
-      realtime: { websocketReady: readiness.websocketReady },
-      sessionStoreReady: readiness.sessionStoreReady,
-    });
   });
 
   app.put("/api/setup/product/checkpoint", auth.ensureAuthenticated, async (req: Request, res: Response) => {

@@ -110,10 +110,11 @@ function WithNonAdminSetupBanner({
 export function ProductOnboardingGate({ children }: { children: ReactNode }) {
   const [path] = useLocation();
   const pathBase = pathWithoutQuery(path);
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
 
   const {
     phase,
+    setupQueryActive,
     readinessProbeFailed,
     ready,
     setup,
@@ -121,6 +122,7 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     readyError,
     setupPending,
     setupError,
+    setupFetched,
     refetchReadiness,
     retrySetupStatus,
   } = useAppReadinessState();
@@ -129,7 +131,10 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  if ((readyPending && !readyError) || (setupPending && !setupError)) {
+  const setupProbeWaiting =
+    setupQueryActive && ((setupPending && !setupError) || (!setupFetched && !setupError));
+
+  if (authLoading || (readyPending && !readyError) || setupProbeWaiting) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
@@ -176,11 +181,21 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!setup) {
+  /** Only treat missing setup as failure after an authenticated fetch completed (avoids false errors while query is disabled). */
+  if (setupQueryActive && setupFetched && !setup) {
     return (
       <>
         {readinessWarning}
         <SetupStatusErrorPanel variant="inline" onRetry={retrySetupStatus} />
+        {children}
+      </>
+    );
+  }
+
+  if (!setup) {
+    return (
+      <>
+        {readinessWarning}
         {children}
       </>
     );

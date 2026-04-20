@@ -3,7 +3,6 @@ import { BarChart2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabsContent } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { formatCurrency } from "@/lib/utils";
 import type {
   InventoryStats,
   ReportFilter,
@@ -108,6 +107,8 @@ export type ReportsTabPanelsProps = {
   stats: InventoryStats | undefined;
   getCategoryName: (categoryId: number | null | undefined) => string;
   calculateTotalValue: (items: unknown) => number;
+  /** Org reporting currency (from app settings). */
+  formatMoney: (amount: number) => string;
 };
 
 export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
@@ -120,6 +121,7 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
     itemsLoading,
     getCategoryName,
     calculateTotalValue,
+    formatMoney,
   } = props;
 
   return (
@@ -147,7 +149,7 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                 </p>
               </div>
               <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                {`${safeInventoryItems.length} items • Total Value: ${formatCurrency(calculateTotalValue(safeInventoryItems))}`}
+                {`${safeInventoryItems.length} items • Total Value: ${formatMoney(calculateTotalValue(safeInventoryItems))}`}
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -197,10 +199,10 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                           {item.quantity}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                          {formatCurrency(Number(item.price) || 0)}
+                          {formatMoney(Number(item.price) || 0)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                          {formatCurrency((Number(item.price) || 0) * (Number(item.quantity) || 0))}
+                          {formatMoney((Number(item.price) || 0) * (Number(item.quantity) || 0))}
                         </td>
                       </tr>
                     ))
@@ -229,7 +231,7 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400" />
                     <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                      {formatCurrency(calculateTotalValue(safeInventoryItems))}
+                      {formatMoney(calculateTotalValue(safeInventoryItems))}
                     </th>
                   </tr>
                 </tfoot>
@@ -373,7 +375,7 @@ export function ReportsLowStockTabPanel(props: ReportsTabPanelsProps) {
 }
 
 export function ReportsValueTabPanel(props: ReportsTabPanelsProps) {
-  const { filter, onFilterChange, safeCategories, stats } = props;
+  const { filter, onFilterChange, safeCategories, stats, formatMoney } = props;
 
   return (
     <TabsContent value="value" className="mt-0">
@@ -394,7 +396,7 @@ export function ReportsValueTabPanel(props: ReportsTabPanelsProps) {
                 </p>
               </div>
               <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                Total Value: {formatCurrency(stats?.inventoryValue || 0)}
+                Total Value: {formatMoney(stats?.inventoryValue || 0)}
               </div>
             </div>
             <div className="p-6">
@@ -421,7 +423,7 @@ export function ReportsValueTabPanel(props: ReportsTabPanelsProps) {
                   <Card>
                     <CardContent className="p-4 flex flex-col items-center justify-center">
                       <span className="text-xs text-neutral-500 dark:text-neutral-400">Total Value</span>
-                      <span className="text-2xl font-semibold mt-1">{formatCurrency(stats?.inventoryValue || 0)}</span>
+                      <span className="text-2xl font-semibold mt-1">{formatMoney(stats?.inventoryValue || 0)}</span>
                     </CardContent>
                   </Card>
                   <Card>
@@ -429,8 +431,8 @@ export function ReportsValueTabPanel(props: ReportsTabPanelsProps) {
                       <span className="text-xs text-neutral-500 dark:text-neutral-400">Avg. Item Value</span>
                       <span className="text-2xl font-semibold mt-1">
                         {stats?.totalItems && stats.totalItems > 0
-                          ? formatCurrency((stats?.inventoryValue || 0) / stats.totalItems)
-                          : formatCurrency(0)}
+                          ? formatMoney((stats?.inventoryValue || 0) / stats.totalItems)
+                          : formatMoney(0)}
                       </span>
                     </CardContent>
                   </Card>
@@ -458,6 +460,7 @@ export function ReportsPurchaseOrdersTabPanel(props: ReportsTabPanelsProps) {
     safeProjects,
     safePurchaseOrders,
     poLoading,
+    formatMoney,
   } = props;
   const previewRows = filterPurchaseOrdersForPreview(safePurchaseOrders, filter);
 
@@ -515,7 +518,7 @@ export function ReportsPurchaseOrdersTabPanel(props: ReportsTabPanelsProps) {
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{supplierName(safeSuppliers, o.supplierId)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{o.status}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{projectLabel(safeProjects, o.projectId)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right">{formatCurrency(Number(o.totalAmount) || 0)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right">{formatMoney(Number(o.totalAmount) || 0)}</td>
                       </tr>
                     ))
                   ) : (
@@ -556,6 +559,7 @@ export function ReportsPurchaseRequisitionsTabPanel(props: ReportsTabPanelsProps
     safeProjects,
     safePurchaseRequisitions,
     requisitionsLoading,
+    formatMoney,
   } = props;
   const previewRows = filterRequisitionsForPreview(safePurchaseRequisitions, filter);
 
@@ -609,7 +613,7 @@ export function ReportsPurchaseRequisitionsTabPanel(props: ReportsTabPanelsProps
                         <td className="px-6 py-4 text-sm">{supplierName(safeSuppliers, r.supplierId)}</td>
                         <td className="px-6 py-4 text-sm">{r.status}</td>
                         <td className="px-6 py-4 text-sm">{projectLabel(safeProjects, r.projectId)}</td>
-                        <td className="px-6 py-4 text-sm text-right">{formatCurrency(Number(r.totalAmount) || 0)}</td>
+                        <td className="px-6 py-4 text-sm text-right">{formatMoney(Number(r.totalAmount) || 0)}</td>
                       </tr>
                     ))
                   ) : (

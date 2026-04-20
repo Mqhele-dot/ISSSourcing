@@ -49,7 +49,7 @@ export async function fetchReadinessStatus(): Promise<ReadinessStatus> {
   return parsed as ReadinessStatus;
 }
 
-export type SetupStatusIssue = { code: string; message: string };
+export type SetupStatusIssue = { code: string; message: string; level?: "critical" | "warning" };
 
 export type SetupStatusPayload = {
   /** Present when server built a partial payload instead of failing the request. */
@@ -103,5 +103,6 @@ export const setupStatusQueryOptions = {
   queryFn: fetchSetupStatus,
   staleTime: 10_000,
   retry: 1,
+  refetchOnWindowFocus: false,
   meta: { globalError: "off" as const },
 } satisfies UseQueryOptions<SetupStatusPayload>;

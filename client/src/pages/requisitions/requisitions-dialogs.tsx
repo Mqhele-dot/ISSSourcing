@@ -64,6 +64,8 @@ type RequisitionsDialogsProps = {
   setHistoryDialogReq: (r: PurchaseRequisition | null) => void;
   approvalHistory: ApprovalHistoryEntry[];
   historyLoading: boolean;
+  historyError: boolean;
+  onRetryHistory: () => void;
 };
 
 export function RequisitionsDialogs(p: RequisitionsDialogsProps) {
@@ -254,7 +256,14 @@ export function RequisitionsDialogs(p: RequisitionsDialogsProps) {
               {p.historyDialogReq ? `History for ${p.historyDialogReq.requisitionNumber}` : "Approval history"}
             </DialogDescription>
           </DialogHeader>
-          {p.historyLoading ? (
+          {p.historyError ? (
+            <div className="space-y-2 text-sm">
+              <p className="text-destructive">Could not load approval history.</p>
+              <Button type="button" size="sm" variant="secondary" onClick={() => p.onRetryHistory()}>
+                Retry
+              </Button>
+            </div>
+          ) : p.historyLoading ? (
             <div className="text-sm text-muted-foreground">Loading history...</div>
           ) : p.approvalHistory.length === 0 ? (
             <div className="text-sm text-muted-foreground">No approval history found for this requisition.</div>

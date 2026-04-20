@@ -63,7 +63,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { supplierContractFormSchema } from "@shared/schema";
 import { format } from "date-fns";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
-import { formatCurrency } from "@/lib/utils";
+import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
 
 const CONTRACT_TYPES = ["master", "framework", "one-off", "renewal"] as const;
 const STATUSES = ["draft", "active", "expired", "terminated"] as const;
@@ -398,10 +398,9 @@ export default function ContractsPage() {
                 {viewContract.value != null && (
                   <span className="flex items-center gap-1">
                     <DollarSign className="h-4 w-4" />
-                    {formatCurrency(
-                      Number(viewContract.value),
+                    {createReportingMoneyFormatter(
                       viewContract.currency?.trim() || reportingCurrency,
-                    )}
+                    ).formatMoney(Number(viewContract.value))}
                   </span>
                 )}
               </div>

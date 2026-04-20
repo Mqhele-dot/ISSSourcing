@@ -36,6 +36,7 @@ export function useReportsPageData() {
       const raw = await requestJson<unknown>("GET", "/api/inventory/low-stock");
       return normalizeApiList<InventoryItem>(raw);
     },
+    throwOnError: false,
   });
 
   const { data: categories } = useQuery({
@@ -44,6 +45,7 @@ export function useReportsPageData() {
       const raw = await requestJson<unknown>("GET", "/api/categories");
       return normalizeApiList<Category>(raw);
     },
+    throwOnError: false,
   });
 
   const { data: stats } = useQuery({
@@ -57,6 +59,7 @@ export function useReportsPageData() {
         inventoryValue: Number(rawStats?.inventoryValue ?? 0),
       } as InventoryStats;
     },
+    throwOnError: false,
   });
 
   const { data: warehouses } = useQuery({
@@ -65,6 +68,7 @@ export function useReportsPageData() {
       const raw = await requestJson<unknown>("GET", "/api/warehouses");
       return normalizeApiList<Warehouse>(raw);
     },
+    throwOnError: false,
   });
 
   const { data: suppliers } = useQuery({
@@ -73,6 +77,7 @@ export function useReportsPageData() {
       const raw = await requestJson<unknown>("GET", "/api/suppliers");
       return normalizeApiList<Supplier>(raw);
     },
+    throwOnError: false,
   });
 
   const { data: purchaseOrders, isLoading: poLoading } = useQuery({
@@ -81,6 +86,7 @@ export function useReportsPageData() {
       const raw = await requestJson<unknown>("GET", "/api/purchase-orders");
       return normalizeApiList<PurchaseOrder>(raw);
     },
+    throwOnError: false,
   });
 
   const { data: purchaseRequisitions, isLoading: requisitionsLoading } = useQuery({
@@ -89,6 +95,7 @@ export function useReportsPageData() {
       const raw = await requestJson<unknown>("GET", "/api/purchase-requisitions");
       return normalizeApiList<PurchaseRequisition>(raw);
     },
+    throwOnError: false,
   });
 
   const { data: reorderRequests, isLoading: reorderLoading } = useQuery({
@@ -97,6 +104,7 @@ export function useReportsPageData() {
       const raw = await requestJson<unknown>("GET", "/api/reorder-requests");
       return normalizeApiList<ReorderRequest>(raw);
     },
+    throwOnError: false,
   });
 
   const { data: extensionProjects } = useQuery({
@@ -109,6 +117,7 @@ export function useReportsPageData() {
         return [] as Project[];
       }
     },
+    throwOnError: false,
   });
 
   const safeInventoryItems = Array.isArray(inventoryItems) ? inventoryItems : [];

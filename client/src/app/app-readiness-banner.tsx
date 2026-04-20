@@ -17,15 +17,20 @@ export function ReadinessBanner() {
 
   const {
     phase,
+    setupQueryActive,
     readinessProbeFailed,
     setupProbeFailed,
     ready,
     refetchReadiness,
     readinessFetching,
+    setupFetching,
     retrySetupStatus,
   } = useAppReadinessState();
 
-  if (phase === "setup_check_temporarily_failed" || setupProbeFailed) {
+  const setupStatusBanner =
+    setupQueryActive && (phase === "setup_check_temporarily_failed" || setupProbeFailed);
+
+  if (setupStatusBanner) {
     return (
       <div className="sticky top-0 z-40 shrink-0 p-3">
         <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
@@ -40,7 +45,7 @@ export function ReadinessBanner() {
               size="sm"
               variant="secondary"
               className="shrink-0"
-              disabled={readinessFetching}
+              disabled={setupFetching}
               onClick={() => void retrySetupStatus()}
             >
               Retry setup check

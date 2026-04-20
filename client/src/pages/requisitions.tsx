@@ -62,9 +62,15 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const [historyDialogReq, setHistoryDialogReq] = useState<PurchaseRequisition | null>(null);
   const [approverHelpAmount, setApproverHelpAmount] = useState<number | null>(null);
 
-  const { data: approvalHistory = [], isLoading: historyLoading } = useQuery({
+  const {
+    data: approvalHistory = [],
+    isLoading: historyLoading,
+    isError: historyError,
+    refetch: refetchApprovalHistory,
+  } = useQuery({
     queryKey: ["/api/approval-history", historyDialogReq?.id],
     enabled: !!historyDialogReq,
+    throwOnError: false,
     queryFn: () =>
       requestJson<
         Array<{
@@ -417,6 +423,8 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
         setHistoryDialogReq={setHistoryDialogReq}
         approvalHistory={approvalHistory}
         historyLoading={historyLoading}
+        historyError={historyError}
+        onRetryHistory={() => void refetchApprovalHistory()}
       />
     </div>
   );

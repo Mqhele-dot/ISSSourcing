@@ -185,12 +185,16 @@ export default function SystemDiagnosticsPage() {
           </CardHeader>
           <CardContent>
             <p className="mb-2 text-xs text-muted-foreground">
-              Non-fatal problems collected while building <code className="rounded bg-muted px-1">/api/setup/status</code>{" "}
-              (HTTP 200 with <code className="rounded bg-muted px-1">setupStatusHealth: degraded</code> when applicable).
+              <code className="rounded bg-muted px-1">critical</code> issues drive{" "}
+              <code className="rounded bg-muted px-1">setupStatusHealth: degraded</code>;{" "}
+              <code className="rounded bg-muted px-1">warning</code> entries are optional diagnostics only.
             </p>
             <ul className="list-disc space-y-1 pl-5 text-sm">
               {setup.issues.map((issue) => (
                 <li key={issue.code}>
+                  <span className="mr-2 font-medium text-muted-foreground">
+                    [{issue.level ?? "warning"}]
+                  </span>
                   <code className="rounded bg-muted px-1 text-xs">{issue.code}</code> — {issue.message}
                 </li>
               ))}

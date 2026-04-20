@@ -26,16 +26,19 @@ export function useSuppliersCoreQueries() {
   const paymentTermsQuery = useQuery<{ id: number; code: string; name: string }[]>({
     queryKey: ["/api/payment-terms"],
     queryFn: () => requestJson("GET", "/api/payment-terms"),
+    throwOnError: false,
   });
 
   const currenciesQuery = useQuery<{ id: number; code: string; name: string }[]>({
     queryKey: ["/api/currencies"],
     queryFn: () => requestJson("GET", "/api/currencies"),
+    throwOnError: false,
   });
 
   const performanceQuery = useQuery<SupplierPerformanceRow[]>({
     queryKey: ["/api/suppliers/performance"],
     queryFn: () => requestJson("GET", "/api/suppliers/performance"),
+    throwOnError: false,
   });
 
   return { suppliersQuery, paymentTermsQuery, currenciesQuery, performanceQuery };

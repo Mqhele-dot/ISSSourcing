@@ -137,6 +137,46 @@ After `drizzle-kit push` (or your migration process), existing rows will have **
 - Diagnostics shows **server-reported setup issues** when `issues` is non-empty.
 - **`docs/STABILIZATION-CHECKLIST.md`** documents repeatable passes; **`test-stabilization-client`** covers extra derive + **GBP** formatter smoke; **`test:smoke`** asserts **`setupStatusHealth`** / **`issues`** consistency on **`GET /api/setup/status`**.
 
+### Follow-up stabilization (setup critical vs warning, readiness hardening, pages)
+
+#### Backend readiness / setup
+
+- **`GET /api/setup/status`**: each issue includes **`level: "critical" | "warning"`**; **`setupStatusHealth: degraded`** only when the **database ping fails** or there is at least one **critical** issue (optional diagnostics such as migrations / export job lookup are **warnings** only).
+- **Top-level handler guard**: uncaught errors log **`[SETUP_STATUS] SETUP_STATUS_UNHANDLED`** and still return **200** with a minimal **`sendOk`** payload for triage (authenticated callers).
+- **Per-request summary log**: **`[SETUP_STATUS] summary`** with **requestId**, **userId**, **orgId**, **health**, **firstCode**, critical/warning counts.
+- **Path probes** (`uploads` / `exports`) wrapped so probe exceptions cannot take down the handler; **`getBuildInfo`** failures use a safe fallback.
+- **`GET /api/ready`**: **`getBuildInfo`**, **`uploadPathReady`**, and **`emailServiceReady`** are each **try/catch**-wrapped so synchronous probes cannot abort the payload.
+
+#### Frontend readiness UX
+
+- **`setupStatusQueryOptions`**: **`refetchOnWindowFocus: false`** to reduce probe churn.
+- **`useAppReadinessState`** exposes **`setupQueryActive`**; **`isDegraded`** still tracks **`setupStatusHealth === "degraded"`** (now aligned with **critical-only** server health).
+- **`ProductOnboardingGate`**: waits on **`authLoading`**; only runs the setup **pending** spinner when **`setupQueryActive`**; **“Could not load product setup status”** only after an **authenticated** fetch completes without usable data (avoids false errors while the query is disabled).
+
+#### Page hardening
+
+- **Requisitions**: approval **history** query uses **`throwOnError: false`**; dialog shows **Retry** on failure.
+- **Invoices**: **suppliers / POs / tax codes / inventory / PO lines** use **`throwOnError: false`** with **`PanelInlineError`** for reference data and line editor auxiliaries; primary invoice list unchanged.
+
+#### Finance formatting
+
+- **Contracts** detail view: contract **value** uses **`createReportingMoneyFormatter`** with the contract’s **currency** (or org reporting currency), not **`formatCurrency`** defaults.
+
+#### Diagnostics / tests
+
+- Diagnostics lists issue **level** (`critical` / `warning`).
+- **`test:smoke`**: asserts **`GET /api/setup/status` → 401** without a session; validates **critical vs health** rules on authenticated responses.
+- **`docs/MANUAL-STABILIZATION-MATRIX.md`**: printable route matrix for live passes.
+
+#### Stabilization remainder (gap pass)
+
+- **Readiness banner**: setup-unavailable alert only when **`setupQueryActive`**; **Retry** disables on **`setupFetching`** (not readiness fetch).
+- **`useProductSetupComplete`**: returns **false** when **`setupStatusHealth === "degraded"`** or any **`critical`** issue (stricter than onboarding flags alone).
+- **Suppliers**: **`payment-terms` / `currencies` / `performance`** queries **`throwOnError: false`** + **`PanelInlineError`** for aux failures.
+- **Purchase orders list**: fetcher **catches** envelope failures so **`useAsyncResource`** does not lose the error message; **Retry** still works.
+- **Reports**: **`useReportsPageData`** aux queries **`throwOnError: false`**; report preview tabs use **`useReportingMoney`** (**`formatMoney`**) instead of **`formatCurrency`**.
+- **Routing spot-check**: procurement/finance/analytics pages rely on **`APP_ROUTES`** / section nav; no stray hardcoded **`href`** paths found in that pass.
+
 ### Manual re-test checklist (post-stabilization)
 
 Suggested order after `npm run demo:reset` (or seeded DB): **Login → Control tower**; **Suppliers list → supplier detail** (`/procurement/suppliers/:id`); **Inventory**; **Warehouses**; **Warehouse operations**; **Cycle counts**; **Reorder requests**; **Purchase orders**; **Requisitions**; **Accounts payable** (each tab); **Invoices** (legacy) and **Billing** UI if used; **Product setup / diagnostics** when simulating failures. Confirm: no persistent global red FAB from throttled `/api/ready` or `/api/setup/status`; supplier detail loads; stuck lazy routes recover; finance amounts match org currency.

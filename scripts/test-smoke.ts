@@ -1,6 +1,7 @@
 import { exitTest } from "./test-exit.ts";
 import {
   apiJsonRequest,
+  clearSessionCookie,
   getTestBaseUrl,
   isConnectionRefused,
   loginForTests,
@@ -9,13 +10,6 @@ import {
 async function main() {
   const baseUrl = getTestBaseUrl();
   console.log("Smoke suite (BASE_URL=%s)\n", baseUrl);
-
-  const cookie = await loginForTests("admin", "Admin123!", baseUrl);
-  if (!cookie) {
-    console.log("  ⚠ Admin login failed. Ensure demo users exist (npm run db:seed).");
-    exitTest(0);
-    return;
-  }
 
   let failures = 0;
   const check = async (label: string, promise: Promise<boolean>) => {
@@ -31,6 +25,19 @@ async function main() {
       console.log("  ✗ %s — %s", label, error instanceof Error ? error.message : String(error));
     }
   };
+
+  clearSessionCookie();
+  await check(
+    "Setup status without session returns 401",
+    apiJsonRequest("/setup/status", { method: "GET", baseUrl }).then((res) => res.status === 401),
+  );
+
+  const cookie = await loginForTests("admin", "Admin123!", baseUrl);
+  if (!cookie) {
+    console.log("  ⚠ Admin login failed. Ensure demo users exist (npm run db:seed).");
+    exitTest(0);
+    return;
+  }
 
   await check("Login session", apiJsonRequest("/user", { method: "GET", cookie, baseUrl }).then((res) => res.ok));
   await check(
@@ -69,15 +76,24 @@ async function main() {
       if (!envelope?.ok || !envelope.data || typeof envelope.data !== "object") return false;
       const d = envelope.data;
       if (d.setupStatusHealth !== "ok" && d.setupStatusHealth !== "degraded") return false;
-      const issues = d.issues;
+      const issues = d.issues as Array<Record<string, unknown>> | undefined;
+      const dbBad =
+        d.database != null &&
+        typeof d.database === "object" &&
+        (d.database as { ok?: boolean }).ok === false;
+      const hasCritical = Array.isArray(issues) && issues.some((issue) => issue?.level === "critical");
       if (d.setupStatusHealth === "degraded") {
+        if (!dbBad && !hasCritical) return false;
         if (!Array.isArray(issues) || issues.length === 0) return false;
-      } else if (issues != null && (!Array.isArray(issues) || issues.length !== 0)) return false;
+      } else {
+        if (dbBad || hasCritical) return false;
+      }
       if (Array.isArray(issues)) {
         for (const item of issues) {
           if (!item || typeof item !== "object") return false;
           const issue = item as Record<string, unknown>;
           if (typeof issue.code !== "string" || typeof issue.message !== "string") return false;
+          if (issue.level != null && issue.level !== "critical" && issue.level !== "warning") return false;
         }
       }
       if (!d.onboarding || typeof d.onboarding !== "object") return false;

@@ -16,6 +16,8 @@ import { useAuth } from "@/hooks/use-auth";
 
 export type UseAppReadinessStateResult = {
   phase: AppReadinessPhase;
+  /** True when session is ready for an authenticated setup probe (`/api/setup/status`). */
+  setupQueryActive: boolean;
   /** True when /api/ready failed and we never got a JSON body (network, 5xx, etc.). */
   readinessProbeFailed: boolean;
   /** True when /api/setup/status failed or returned unusable data after fetch. */
@@ -120,6 +122,7 @@ export function useAppReadinessState(): UseAppReadinessStateResult {
 
   return {
     phase,
+    setupQueryActive,
     readinessProbeFailed: probeFailed,
     setupProbeFailed,
     isDegraded,

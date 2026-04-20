@@ -2192,16 +2192,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/health", sendShallowHealth);
 
   const sendReadyPayload = async (res: Response) => {
+    let buildPayload: ReturnType<typeof getBuildInfo>;
+    let uploadOk = false;
+    let emailOk = false;
+    try {
+      buildPayload = getBuildInfo();
+    } catch (e) {
+      console.error("[READY] BUILD_INFO_FAILED", e instanceof Error ? e.message : e);
+      buildPayload = {
+        version: "unknown",
+        commitSha: null,
+        buildId: null,
+        builtAt: null,
+        runtimeProfile: appEnv.runtimeProfile,
+        deploymentMode: appEnv.deploymentMode,
+      };
+    }
+    try {
+      uploadOk = uploadPathReady();
+    } catch (e) {
+      console.error("[READY] UPLOAD_PATH_PROBE_FAILED", e instanceof Error ? e.message : e);
+      uploadOk = false;
+    }
+    try {
+      emailOk = emailServiceReady();
+    } catch (e) {
+      console.error("[READY] EMAIL_READY_PROBE_FAILED", e instanceof Error ? e.message : e);
+      emailOk = false;
+    }
+
     const basePayload = {
       runtimeProfile: appEnv.runtimeProfile,
       deploymentMode: appEnv.deploymentMode,
-      build: getBuildInfo(),
+      build: buildPayload,
       dbReady: readiness.dbReady,
       schemaReady: readiness.schemaReady,
       sessionStoreReady: readiness.sessionStoreReady,
       websocketReady: readiness.websocketReady,
-      uploadPathReady: uploadPathReady(),
-      emailServiceReady: emailServiceReady(),
+      uploadPathReady: uploadOk,
+      emailServiceReady: emailOk,
       productBootstrap: null as Awaited<ReturnType<typeof getProductBootstrapHints>> | null,
     };
     try {

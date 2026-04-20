@@ -25,9 +25,11 @@ import {
   type ReportsTabPanelsProps,
 } from "@/pages/reports/reports-tab-panels";
 import { APP_ROUTES, REPORT_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { SectionNav } from "@/components/section-nav";
 
 export default function Reports() {
+  const { formatMoney } = useReportingMoney();
   const { toast } = useToast();
   const [location, navigate] = useLocation();
   const routeTab = asSectionSlug(location.split("/")[3], REPORT_SECTION_SLUGS, "inventory") as ReportTab;
@@ -140,6 +142,7 @@ export default function Reports() {
     stats,
     getCategoryName,
     calculateTotalValue,
+    formatMoney,
   };
 
   return (

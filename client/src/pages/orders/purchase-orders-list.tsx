@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { downloadPurchaseOrderSignedPdf, fetchPurchaseOrdersEnvelope } from "@/api/client";
+import type { PurchaseOrderListItem } from "@/api/types";
 import { downloadFile } from "@/lib/utils";
 import { formatDate } from "./purchase-order-shared";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
@@ -29,21 +30,27 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [exportingPo, setExportingPo] = useState<string | null>(null);
+  const [poListError, setPoListError] = useState<Error | null>(null);
   const { queryState, setQueryState } = useQueryState({
     status: "",
     supplier: "",
     q: "",
   });
 
-  const fetcher = useCallback(
-    () =>
-      fetchPurchaseOrdersEnvelope({
+  const fetcher = useCallback(async () => {
+    setPoListError(null);
+    try {
+      return await fetchPurchaseOrdersEnvelope({
         status: String(queryState.status || ""),
         supplier: String(queryState.supplier || ""),
         q: String(queryState.q || ""),
-      }),
-    [queryState.status, queryState.supplier, queryState.q],
-  );
+      });
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      setPoListError(err);
+      return { data: [] as PurchaseOrderListItem[] };
+    }
+  }, [queryState.status, queryState.supplier, queryState.q]);
 
   const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
   const data = envelope?.data ?? null;
@@ -118,7 +125,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
 
         <DataState
           loading={loading}
-          error={error}
+          error={error ?? poListError}
           data={data}
           isEmpty={(orders) => (Array.isArray(orders) ? orders : []).length === 0}
           emptyTitle="No purchase orders found"

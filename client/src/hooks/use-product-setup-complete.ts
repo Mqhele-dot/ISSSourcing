@@ -9,5 +9,7 @@ export function useProductSetupComplete(): boolean {
   const { phase, setup } = useAppReadinessState();
   if (phase === "pending" || phase === "setup_check_temporarily_failed") return false;
   if (!setup) return false;
+  if (setup.setupStatusHealth === "degraded") return false;
+  if (setup.issues?.some((i) => i.level === "critical")) return false;
   return !setup.onboarding.required;
 }

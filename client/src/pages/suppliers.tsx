@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/page-header";
+import { PanelInlineError } from "@/components/panel-inline-error";
 import { useSuppliersCoreQueries } from "@/pages/suppliers/use-suppliers-core-queries";
 import { SuppliersListCard } from "@/pages/suppliers/suppliers-list-card";
 import { SupplierLogoDialogs, type SupplierLogoForm } from "@/pages/suppliers/supplier-logo-dialogs";
@@ -43,9 +44,28 @@ export default function SuppliersPage() {
   const productSetupComplete = useProductSetupComplete();
   const { suppliersQuery, paymentTermsQuery, currenciesQuery, performanceQuery } = useSuppliersCoreQueries();
   const { data: suppliers, isLoading, isError, error, refetch } = suppliersQuery;
-  const { data: paymentTerms = [] } = paymentTermsQuery;
-  const { data: currencies = [] } = currenciesQuery;
-  const { data: performance = [] } = performanceQuery;
+  const {
+    data: paymentTerms = [],
+    isError: paymentTermsError,
+    refetch: refetchPaymentTerms,
+  } = paymentTermsQuery;
+  const {
+    data: currencies = [],
+    isError: currenciesError,
+    refetch: refetchCurrencies,
+  } = currenciesQuery;
+  const {
+    data: performance = [],
+    isError: performanceError,
+    refetch: refetchPerformance,
+  } = performanceQuery;
+
+  const suppliersAuxError = paymentTermsError || currenciesError || performanceError;
+  const refetchSuppliersAux = () => {
+    void refetchPaymentTerms();
+    void refetchCurrencies();
+    void refetchPerformance();
+  };
 
   // Get logo for selected supplier
   const { data: selectedLogo, isLoading: isLogoLoading } = useQuery<SupplierLogo | null>({
@@ -350,6 +370,16 @@ export default function SuppliersPage() {
           </div>
         }
       />
+
+      {suppliersAuxError ? (
+        <div className="mb-4 px-4 md:px-6">
+          <PanelInlineError
+            title="Some supplier reference data failed to load"
+            description="Payment terms, currencies, or performance metrics may be missing. The supplier list below should still work."
+            onRetry={refetchSuppliersAux}
+          />
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-6">
         <SuppliersListCard

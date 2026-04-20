@@ -46,6 +46,7 @@ import {
 import { Download } from "lucide-react";
 import type { InventoryItem } from "@shared/schema";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
+import { PanelInlineError } from "@/components/panel-inline-error";
 
 type Invoice = {
   id: number;
@@ -170,31 +171,50 @@ export default function InvoicesPage() {
     queryKey: ["/api/invoices"],
     queryFn: () => requestJson<Invoice[]>("GET", "/api/invoices"),
   });
-  const { data: suppliers = [] } = useQuery({
+  const suppliersQuery = useQuery({
     queryKey: ["/api/suppliers"],
     queryFn: () => requestJson<Supplier[]>("GET", "/api/suppliers"),
+    throwOnError: false,
   });
-  const { data: purchaseOrders = [] } = useQuery({
+  const purchaseOrdersQuery = useQuery({
     queryKey: ["/api/purchase-orders"],
     queryFn: () => requestJson<PurchaseOrder[]>("GET", "/api/purchase-orders"),
+    throwOnError: false,
   });
-  const { data: taxCodes = [] } = useQuery({
+  const taxCodesQuery = useQuery({
     queryKey: ["/api/tax-codes"],
     queryFn: () => requestJson<TaxCode[]>("GET", "/api/tax-codes"),
+    throwOnError: false,
   });
-  const { data: inventoryForLines = [] } = useQuery({
+  const inventoryLinesQuery = useQuery({
     queryKey: ["/api/inventory", "invoice-lines"],
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory");
       return normalizeApiList<InventoryItem>(raw);
     },
     enabled: !!linesEditInvoice,
+    throwOnError: false,
   });
-  const { data: selectedPoItems = [] } = useQuery({
+  const poItemsQuery = useQuery({
     queryKey: ["/api/purchase-orders/items", purchaseOrderId],
     enabled: purchaseOrderId !== "none",
     queryFn: () => requestJson<PurchaseOrderItem[]>("GET", `/api/purchase-orders/${purchaseOrderId}/items`),
+    throwOnError: false,
   });
+
+  const suppliers = suppliersQuery.data ?? [];
+  const purchaseOrders = purchaseOrdersQuery.data ?? [];
+  const taxCodes = taxCodesQuery.data ?? [];
+  const inventoryForLines = inventoryLinesQuery.data ?? [];
+  const selectedPoItems = poItemsQuery.data ?? [];
+
+  const invoiceFormReferenceError =
+    suppliersQuery.isError || purchaseOrdersQuery.isError || taxCodesQuery.isError;
+  const refetchInvoiceFormReference = () => {
+    void suppliersQuery.refetch();
+    void purchaseOrdersQuery.refetch();
+    void taxCodesQuery.refetch();
+  };
 
   const selectedSupplierId = supplierId === "none" ? null : Number(supplierId);
   const filteredPurchaseOrders = useMemo(
@@ -463,11 +483,28 @@ export default function InvoicesPage() {
         }
       />
 
+      {invoiceFormReferenceError ? (
+        <PanelInlineError
+          title="Some form reference data failed to load"
+          description="Supplier, purchase order, or tax code lists may be incomplete. You can still use the invoice list below."
+          onRetry={refetchInvoiceFormReference}
+        />
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Create invoice</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-3">
+          {purchaseOrderId !== "none" && poItemsQuery.isError ? (
+            <div className="md:col-span-3">
+              <PanelInlineError
+                title="Could not load purchase order lines"
+                description="Choose another PO or retry."
+                onRetry={() => void poItemsQuery.refetch()}
+              />
+            </div>
+          ) : null}
           <div className="space-y-1">
             <Label htmlFor="invoice-supplier">Supplier</Label>
             <Select value={supplierId} onValueChange={setSupplierId}>
@@ -737,6 +774,12 @@ export default function InvoicesPage() {
           <DialogHeader>
             <DialogTitle>Invoice lines — {linesEditInvoice?.invoiceNumber}</DialogTitle>
           </DialogHeader>
+          {inventoryLinesQuery.isError ? (
+            <PanelInlineError
+              title="Could not load inventory catalog"
+              onRetry={() => void inventoryLinesQuery.refetch()}
+            />
+          ) : null}
           {linesEditInvoice && isInvoiceLinesLocked(linesEditInvoice.status) ? (
             <p className="text-sm text-muted-foreground">
               This invoice cannot be edited in its current status ({linesEditInvoice.status}).
