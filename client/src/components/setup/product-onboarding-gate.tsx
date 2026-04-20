@@ -1,12 +1,8 @@
 import type { ReactNode } from "react";
 import { Link, Redirect, useLocation } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import {
-  readinessQueryOptions,
-  setupStatusQueryOptions,
-  type SetupStatusPayload,
-} from "@/lib/setup-readiness-queries";
+import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
+import type { SetupStatusPayload } from "@/lib/setup-readiness-queries";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -43,7 +39,7 @@ function SetupStatusErrorPanel({
 }) {
   const wrap =
     variant === "full"
-      ? "mx-auto flex min-h-[50vh] max-w-lg flex-col justify-center gap-4 p-6"
+      ? "mx-auto flex min-h-[40vh] max-w-lg flex-col justify-center gap-4 p-6"
       : "mx-4 mt-4 max-w-4xl";
 
   return (
@@ -53,8 +49,8 @@ function SetupStatusErrorPanel({
         <AlertDescription className="mt-2 flex flex-col gap-3 text-sm">
           <p>
             The app cannot confirm whether first-run setup finished. This is often a short network blip or a stopped API
-            process; repeated failures usually mean the database or migrations need attention. For security, navigation
-            stays limited until this check succeeds.
+            process; repeated failures usually mean the database or migrations need attention. You can keep using the app
+            in a limited mode—retry below or open diagnostics. Some actions may fail until the check succeeds.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="secondary" onClick={() => onRetry()}>
@@ -115,21 +111,19 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
   const [path] = useLocation();
   const pathBase = pathWithoutQuery(path);
   const { user } = useAuth();
-  const queryClient = useQueryClient();
 
-  const readyQuery = useQuery(readinessQueryOptions);
-  const { data: ready, isPending: readyPending, isError: readyError, refetch: refetchReady } = readyQuery;
-
-  const setupQuery = useQuery(setupStatusQueryOptions);
   const {
-    data: setup,
-    isPending: setupPending,
-    isError: setupError,
-    isFetched: setupFetched,
-  } = setupQuery;
-
-  const retrySetupStatus = () => void queryClient.invalidateQueries({ queryKey: ["/api/setup/status"] });
-  const retryReady = () => void refetchReady();
+    phase,
+    readinessProbeFailed,
+    ready,
+    setup,
+    readyPending,
+    readyError,
+    setupPending,
+    setupError,
+    refetchReadiness,
+    retrySetupStatus,
+  } = useAppReadinessState();
 
   if (isAuthPath(pathBase)) {
     return <>{children}</>;
@@ -149,7 +143,7 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     return <Redirect to={APP_ROUTES.admin.onboarding} />;
   }
 
-  const readinessWarning = readyError ? (
+  const readinessWarning = readinessProbeFailed ? (
     <div className="mx-4 mt-3 max-w-4xl">
       <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
         <AlertTitle>Could not verify public readiness</AlertTitle>
@@ -159,7 +153,7 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
             (often offline or a slow network). You can retry; the app will still enforce setup using{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/setup/status</code> when available.
           </span>
-          <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={retryReady}>
+          <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchReadiness()}>
             Retry readiness
           </Button>
         </AlertDescription>
@@ -167,21 +161,17 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     </div>
   ) : null;
 
-  const setupStatusFailed = setupFetched && (setupError || setup == null);
+  const setupStatusFailed = phase === "setup_check_temporarily_failed";
+  const setupFailureUi = setupStatusFailed ? (
+    <SetupStatusErrorPanel variant="inline" onRetry={retrySetupStatus} />
+  ) : null;
+
   if (setupStatusFailed) {
-    if (setupAllowedPath(pathBase)) {
-      return (
-        <>
-          {readinessWarning}
-          <SetupStatusErrorPanel variant="inline" onRetry={retrySetupStatus} />
-          {children}
-        </>
-      );
-    }
     return (
       <>
         {readinessWarning}
-        <SetupStatusErrorPanel variant="full" onRetry={retrySetupStatus} />
+        {setupFailureUi}
+        {children}
       </>
     );
   }
@@ -190,7 +180,8 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     return (
       <>
         {readinessWarning}
-        <SetupStatusErrorPanel variant="full" onRetry={retrySetupStatus} />
+        <SetupStatusErrorPanel variant="inline" onRetry={retrySetupStatus} />
+        {children}
       </>
     );
   }

@@ -8,13 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
-
-/** Canonical procurement detail path (must match router). */
-const SUPPLIER_DETAIL_PATTERN = "/procurement/suppliers/:id";
+import { parseSupplierRouteId, SUPPLIER_DETAIL_ROUTE_PATTERN } from "@/lib/supplier-detail-route";
 
 export default function SupplierDetailPage() {
-  const [, params] = useRoute<{ id: string }>(SUPPLIER_DETAIL_PATTERN);
-  const id = params?.id ? parseInt(params.id, 10) : NaN;
+  const [, params] = useRoute<{ id: string }>(SUPPLIER_DETAIL_ROUTE_PATTERN);
+  const parsed = parseSupplierRouteId(params?.id);
+  const id = parsed.ok ? parsed.id : NaN;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/suppliers", id],
@@ -22,11 +21,18 @@ export default function SupplierDetailPage() {
     enabled: Number.isFinite(id) && id > 0,
   });
 
-  if (!Number.isFinite(id) || id <= 0) {
+  if (!parsed.ok) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
-        <p className="text-muted-foreground">Invalid supplier.</p>
-        <Button asChild variant="outline" className="mt-4">
+      <div className="mx-auto max-w-3xl space-y-3 p-6">
+        <h1 className="text-lg font-semibold text-foreground">Supplier not found or invalid route</h1>
+        <p className="text-sm text-muted-foreground">
+          The link may be wrong, or the supplier id in the URL is missing or not a positive number. Use the procurement
+          suppliers list to open a valid profile.
+        </p>
+        <p className="font-mono text-xs text-muted-foreground">
+          Expected path: {SUPPLIER_DETAIL_ROUTE_PATTERN.replace(":id", "<id>")}
+        </p>
+        <Button asChild variant="outline" className="mt-2">
           <Link href={APP_ROUTES.procurement.suppliers}>Back to suppliers</Link>
         </Button>
       </div>

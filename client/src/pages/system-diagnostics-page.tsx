@@ -1,14 +1,10 @@
 import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  readinessQueryOptions,
-  setupStatusQueryOptions,
-  type ReadinessStatus,
-  type SetupStatusPayload,
-} from "@/lib/setup-readiness-queries";
+import type { ReadinessStatus, SetupStatusPayload } from "@/lib/setup-readiness-queries";
+import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
+import { getReadinessClientSnapshot } from "@/lib/readiness-client-snapshot";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -52,30 +48,28 @@ function formatPathLine(
 export default function SystemDiagnosticsPage() {
   const { toast } = useToast();
   const {
-    data: ready,
-    isLoading: readyLoading,
-    refetch: refetchReady,
-    isFetching: readyFetching,
-  } = useQuery({
-    ...readinessQueryOptions,
-    staleTime: 10_000,
-  });
+    phase,
+    readinessProbeFailed,
+    setupProbeFailed,
+    isDegraded,
+    ready,
+    setup,
+    readyPending,
+    setupPending,
+    refetchReadiness,
+    retrySetupStatus,
+    readinessFetching,
+    setupFetching,
+  } = useAppReadinessState();
 
-  const {
-    data: setup,
-    isLoading: setupLoading,
-    refetch: refetchSetup,
-    isFetching: setupFetching,
-  } = useQuery({
-    ...setupStatusQueryOptions,
-    staleTime: 10_000,
-  });
-
-  const busy = readyLoading || setupLoading || readyFetching || setupFetching;
+  const busy = readyPending || setupPending || readinessFetching || setupFetching;
+  const refetchReady = refetchReadiness;
+  const refetchSetup = () => void retrySetupStatus();
 
   const copyDiagnosticsBundle = async () => {
     const bundle = {
       generatedAt: new Date().toISOString(),
+      clientReadiness: getReadinessClientSnapshot(),
       ready: ready as ReadinessStatus | undefined,
       setup: setup ?? undefined,
     };
@@ -101,6 +95,8 @@ export default function SystemDiagnosticsPage() {
     (Boolean((checkpoint as { step?: string }).step) ||
       Boolean((checkpoint as { draft?: unknown }).draft));
 
+  const clientSnap = getReadinessClientSnapshot();
+
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
       <PageHeader
@@ -109,7 +105,13 @@ export default function SystemDiagnosticsPage() {
         breadcrumb={<span>Admin / Diagnostics</span>}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="default" size="sm" disabled={busy || !ready || !setup} onClick={() => void copyDiagnosticsBundle()}>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              disabled={busy || (!ready && !setup)}
+              onClick={() => void copyDiagnosticsBundle()}
+            >
               <Copy className="mr-2 h-4 w-4" />
               Copy diagnostics JSON
             </Button>
@@ -131,6 +133,12 @@ export default function SystemDiagnosticsPage() {
       />
 
       <div className="flex flex-wrap gap-2">
+        <Badge variant="secondary">Client phase: {phase}</Badge>
+        {isDegraded ? (
+          <Badge variant="outline" className="border-amber-500/60 text-amber-900 dark:text-amber-100">
+            Degraded UI (banner / limited checks)
+          </Badge>
+        ) : null}
         <Badge variant="outline">Runtime: {ready?.build?.runtimeProfile ?? "—"}</Badge>
         <Badge variant="outline">Deployment: {deploymentMode ?? "—"}</Badge>
         <Badge variant={setup?.onboarding?.required ? "destructive" : "secondary"}>
@@ -139,6 +147,88 @@ export default function SystemDiagnosticsPage() {
         <Badge variant="outline">DB: {ready?.dbReady ? "ok" : "down"}</Badge>
         <Badge variant="outline">Uploads: {ready?.uploadPathReady ? "ok" : "missing"}</Badge>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">This browser — readiness probes</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <SummaryTile label="Derived phase">{phase}</SummaryTile>
+            <SummaryTile label="Updated (client)">{clientSnap?.updatedAt ?? "—"}</SummaryTile>
+            <SummaryTile label="/api/ready observer">
+              {readinessProbeFailed ? "Failed (no successful body yet)" : "Ok or not queried"}
+            </SummaryTile>
+            <SummaryTile label="/api/setup/status observer">
+              {setupProbeFailed ? "Failed or empty after fetch" : "Ok or loading"}
+            </SummaryTile>
+          </div>
+          {clientSnap?.lastReadyFailureMessage ? (
+            <p className="rounded-md border border-border bg-muted/30 p-2 text-xs">
+              <span className="font-medium text-foreground">Last /api/ready error: </span>
+              {clientSnap.lastReadyFailureMessage}
+            </p>
+          ) : null}
+          {clientSnap?.lastSetupFailureMessage ? (
+            <p className="rounded-md border border-border bg-muted/30 p-2 text-xs">
+              <span className="font-medium text-foreground">Last /api/setup/status error: </span>
+              {clientSnap.lastSetupFailureMessage}
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {setup?.issues && setup.issues.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Server-reported setup issues</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Non-fatal problems collected while building <code className="rounded bg-muted px-1">/api/setup/status</code>{" "}
+              (HTTP 200 with <code className="rounded bg-muted px-1">setupStatusHealth: degraded</code> when applicable).
+            </p>
+            <ul className="list-disc space-y-1 pl-5 text-sm">
+              {setup.issues.map((issue) => (
+                <li key={issue.code}>
+                  <code className="rounded bg-muted px-1 text-xs">{issue.code}</code> — {issue.message}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Operator recovery guide</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <ul className="list-disc space-y-2 pl-5">
+            <li>
+              <span className="text-foreground font-medium">Setup status fails but pages load:</span> confirm the API
+              process is running, <code className="rounded bg-muted px-1 text-xs">DATABASE_URL</code> points at a live
+              Postgres instance, and migrations have been applied (
+              <span className="text-foreground">Drizzle count</span> in the summary below should be non-zero after a
+              fresh install).
+            </li>
+            <li>
+              <span className="text-foreground font-medium">/api/ready shows database or schema down:</span> fix
+              connectivity first; without DB, authenticated setup cannot succeed.
+            </li>
+            <li>
+              <span className="text-foreground font-medium">Onboarding stuck on required:</span> finish the product
+              wizard or use the documented SQL / skip flags only after you understand the install mode (
+              <span className="text-foreground">packaged vs hosted</span>).
+            </li>
+            <li>
+              <span className="text-foreground font-medium">Navigation remains safe when probes fail:</span> the shell
+              stays usable for triage; expect some data APIs to fail until the backend is healthy—use this page and the
+              JSON export for support handoff.
+            </li>
+          </ul>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -57,7 +57,7 @@ After `drizzle-kit push` (or your migration process), existing rows will have **
 ## E2E installable setup (wizard, gate, diagnostics, procurement)
 
 - **Setup wizard:** Review step explains starter **approval policies** (requisition $0–$5,000 → manager; PO above $5,000 → admin) with a link to edit them after completion; optional **date/time format** presets persist via `POST /api/setup/product/complete`; **resume** banner when a checkpoint exists.
-- **Onboarding gate:** If **`/api/setup/status` fails**, the app no longer falls through to full navigation—operators get **Retry** and **system diagnostics**, with **setup/diagnostics/onboarding** paths still reachable when appropriate; **non-admins** see a compact banner on allowed routes pointing admins to **`/setup`**.
+- **Onboarding gate:** If **`/api/setup/status` fails** transiently, operators get **Retry** and **system diagnostics** while the **shell stays navigable** (limited assurance until the check succeeds). When onboarding is **known required** from a successful payload, users outside the allowed escape routes still redirect to **`/setup`** as before; **non-admins** see a compact banner pointing admins to **`/setup`** when appropriate.
 - **System diagnostics:** A **read-only summary grid** above the JSON highlights database status, onboarding completion, paths, last export failure, migration count, and build metadata.
 - **Procurement:** Approve/reject routes resolve the applicable requisition policy through a single **org-scoped** helper so policy selection cannot drift.
 - **Home checklist:** **First procurement cycle** adds **Approve requisition** (deep link to pending requisitions) and points vendor-bill work at **Accounts payable** instead of legacy Invoices.
@@ -76,6 +76,66 @@ After `drizzle-kit push` (or your migration process), existing rows will have **
 - **Reorder requests:** List fetch uses isolated error UI with retry so a failed `/api/reorder-requests` does not masquerade as an empty list.
 - **Finance / procurement currency:** Billing invoices and payments lists/dialogs, requisition totals, suggested-approver copy, and PO detail order total use org reporting money (`useReportingMoney`) instead of hardcoded `$` / USD formatting.
 - **Regression script:** `npm run test:stabilization-client` checks canonical supplier paths, error severity/suppression, money formatting, and action-error dedupe (no Playwright).
+
+### Stabilization pass — grouped notes (readiness, errors, routing, loading, finance, diagnostics)
+
+#### Readiness / setup
+
+- **`useAppReadinessState`** + **`deriveAppReadinessPhase`** centralize derived phases (`pending`, `first_run_required`, `setup_incomplete`, `setup_check_temporarily_failed`, `backend_unreachable`, `ready`) from the same React Query cache as **`setup-readiness-queries`**.
+- **Product onboarding gate:** Transient **`/api/setup/status`** failures show an inline alert but **do not block** the rest of the app; blocking redirects apply only when setup is **known** (e.g. onboarding required).
+- **Readiness banner** surfaces setup-status and readiness probe issues with retry; **diagnostics** copy bundle includes **`clientReadiness`** snapshot.
+
+#### Global error handling
+
+- **Severity:** `mutation` (user writes), **`important_warning`** (e.g. GET 5xx), **`background`** (other GET noise). **`pickLatestForFab`** only considers **mutations** for the red FAB.
+- **Toasts:** `important_warning` uses a **non-destructive** throttled toast; **background** no longer spams destructive toasts.
+- **Deduping** window widened slightly; probe `GET`s remain suppressed in **`shouldSuppressGlobalError`**.
+
+#### Routing
+
+- **`parseSupplierRouteId`** / **`SUPPLIER_DETAIL_ROUTE_PATTERN`** in **`supplier-detail-route.ts`**; supplier detail **invalid-id** copy points to canonical path; tests in **`test-stabilization-client`**.
+
+#### Loading resilience
+
+- **Inventory:** Category filter fetch failures show an **inline** retry panel; the main table still loads from its own fetch.
+- *(Existing)* **Route loading boundary:** lazy chunk retry, load timeout messaging.
+
+#### Finance formatting
+
+- **Value by category** chart uses **`useReportingMoney`** for tooltips and **Y-axis** compact currency (no hardcoded `$`).
+
+#### Diagnostics
+
+- **Client probe card:** last **`/api/ready`** / **`/api/setup/status`** error strings, phase, degraded badge, **operator recovery** bullet list; JSON export includes **`clientReadiness`**.
+
+### Stabilization phases 10–17 (setup loop, backend payload, isolation, finance, checklist)
+
+#### Readiness / backend
+
+- **`GET /api/setup/status`** builds a **200 OK** payload even when optional pieces fail; adds **`setupStatusHealth`**, **`issues[]`** with **reason codes** (logged as `[SETUP_STATUS] …`), and avoids a single opaque **500** for non-fatal errors.
+- **`GET /api/ready`**: `sendReadyPayload` wrapped in **try/catch** so unexpected failures still return a minimal **`sendOk`** body.
+
+#### Frontend readiness UX
+
+- **`/api/setup/status`** React Query runs only when **`useAuth`** reports a **loaded user** (`setupQueryActive`), avoiding **401-before-session** false “setup failed” loops.
+- **`deriveAppReadinessPhase`** takes **`setupQueryActive`**; treats **skipped** setup query as **`pending`**, not **`setup_check_temporarily_failed`**.
+
+#### Page-level isolation
+
+- **`PanelInlineError`** shared component; **Gas operations** card on control tower no longer throws the whole query away on failure; **Contracts** (suppliers filter), **Export center** (history) use **throwOnError: false** + local retry.
+
+#### Finance formatting
+
+- **Inventory value** analytics widget uses **`useReportingMoney`** instead of **`formatCurrency`** defaults.
+
+#### Routing
+
+- **Mobile hub** tiles use **`APP_ROUTES`** (operations + mobile paths) instead of legacy `/exceptions`, `/logistics`, etc.
+
+#### Diagnostics / tests
+
+- Diagnostics shows **server-reported setup issues** when `issues` is non-empty.
+- **`docs/STABILIZATION-CHECKLIST.md`** documents repeatable passes; **`test-stabilization-client`** covers extra derive + **GBP** formatter smoke; **`test:smoke`** asserts **`setupStatusHealth`** / **`issues`** consistency on **`GET /api/setup/status`**.
 
 ### Manual re-test checklist (post-stabilization)
 

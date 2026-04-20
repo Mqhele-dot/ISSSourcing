@@ -1,4 +1,27 @@
-export type ActionErrorSeverity = "mutation" | "blocking" | "background";
+/**
+ * Internal severity drives deduplication and UI policy.
+ * Maps to product language: blocking_user_action / important_warning / background_fetch_failure / expected_auth_or_setup_probe.
+ */
+export type ActionErrorSeverity = "mutation" | "important_warning" | "background";
+
+export type ActionErrorUxLevel =
+  | "blocking_user_action"
+  | "important_warning"
+  | "background_fetch_failure"
+  | "expected_auth_or_setup_probe";
+
+export function severityToUxLevel(severity: ActionErrorSeverity): ActionErrorUxLevel {
+  switch (severity) {
+    case "mutation":
+      return "blocking_user_action";
+    case "important_warning":
+      return "important_warning";
+    case "background":
+      return "background_fetch_failure";
+    default:
+      return "background_fetch_failure";
+  }
+}
 
 export type ActionErrorRecord = {
   id: string;
@@ -29,7 +52,7 @@ type Listener = (error: ActionErrorRecord) => void;
 const listeners = new Set<Listener>();
 const records: ActionErrorRecord[] = [];
 
-const DEDUPE_MS = 12_000;
+const DEDUPE_MS = 16_000;
 const MAX_RECORDS = 50;
 
 function makeId() {
@@ -63,13 +86,14 @@ export function inferActionErrorSeverity(method: string, status?: number): Actio
     return "mutation";
   }
   if (status != null && status >= 500) {
-    return "blocking";
+    return "important_warning";
   }
   return "background";
 }
 
+/** FAB + high-visibility dialog: user-initiated writes only (not background GET failures). */
 export function pickLatestForFab(list: readonly ActionErrorRecord[]): ActionErrorRecord | null {
-  return list.find((r) => r.severity === "mutation" || r.severity === "blocking") ?? null;
+  return list.find((r) => r.severity === "mutation") ?? null;
 }
 
 export const actionErrorStore = {
@@ -89,7 +113,7 @@ export const actionErrorStore = {
       if (now - headTime < DEDUPE_MS && dedupeKeyFrom(head) === key) {
         head.occurrenceCount = (head.occurrenceCount ?? 1) + 1;
         head.lastSeen = new Date().toISOString();
-        if (severity === "background") {
+        if (severity === "background" || severity === "important_warning") {
           return;
         }
         listeners.forEach((listener) => listener(head));

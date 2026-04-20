@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { requestJson } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 import {
   BarChart,
   Bar,
@@ -12,12 +13,23 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { formatCurrency } from "@/lib/utils";
 import { aggregateValueByCategory } from "@/lib/inventory-metrics";
 import type { InventoryItem } from "@shared/schema";
 import type { Category } from "@shared/schema";
 
 export function ValueByCategoryChart() {
+  const { formatMoney, currencyCode } = useReportingMoney();
+  const axisTickFormatter = useMemo(
+    () => (v: number) =>
+      new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: currencyCode,
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }).format(v),
+    [currencyCode],
+  );
+
   const { data: itemsData, isLoading: itemsLoading } = useQuery({
     queryKey: ["/api/inventory"],
     queryFn: async () => {
@@ -63,7 +75,7 @@ export function ValueByCategoryChart() {
               >
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="name" tickLine={false} tick={{ fontSize: 11 }} />
-                <YAxis tickLine={false} tickFormatter={(v) => `$${v}`} />
+                <YAxis tickLine={false} tickFormatter={(v) => axisTickFormatter(Number(v))} />
                 <Tooltip
                   content={({ active, payload }) => {
                     if (active && payload?.[0]) {
@@ -71,7 +83,7 @@ export function ValueByCategoryChart() {
                       return (
                         <div className="bg-background border border-border rounded-md shadow-md p-2">
                           <p className="font-medium">{d.fullName}</p>
-                          <p className="text-primary">{formatCurrency(d.value)}</p>
+                          <p className="text-primary">{formatMoney(d.value)}</p>
                         </div>
                       );
                     }

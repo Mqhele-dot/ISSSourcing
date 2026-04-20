@@ -4,12 +4,13 @@ import { AlertTriangle, PackageCheck, QrCode, Truck } from "lucide-react";
 import { flushOfflineQueueToServer } from "@/lib/offline-queue";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 const tiles = [
-  { href: "/exceptions", title: "Exceptions", desc: "Open issues", icon: AlertTriangle },
-  { href: "/mobile/receive", title: "Receive", desc: "Goods receipt", icon: PackageCheck },
-  { href: "/m/scan", title: "Scan", desc: "Barcode / QR", icon: QrCode },
-  { href: "/logistics", title: "Shipments", desc: "In transit", icon: Truck },
+  { href: APP_ROUTES.operations.exceptions, title: "Exceptions", desc: "Open issues", icon: AlertTriangle },
+  { href: APP_ROUTES.operations.mobileReceive, title: "Receive", desc: "Goods receipt", icon: PackageCheck },
+  { href: APP_ROUTES.operations.mobileScan, title: "Scan", desc: "Barcode / QR", icon: QrCode },
+  { href: APP_ROUTES.operations.logistics, title: "Shipments", desc: "In transit", icon: Truck },
 ] as const;
 
 /** Mobile-first task hub (paired with bottom nav in `MobileLayout`). */

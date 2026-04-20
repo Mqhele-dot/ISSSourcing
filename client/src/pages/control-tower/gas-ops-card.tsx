@@ -5,10 +5,17 @@ import {
   fetchGasDashboardSummaryEnvelope,
   runGasComplianceAlerts,
 } from "@/api/client";
+import type { GasDashboardSummary } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { PanelInlineError } from "@/components/panel-inline-error";
+
+type GasQueryResult =
+  | { status: "disabled" }
+  | { status: "ok"; summary: GasDashboardSummary }
+  | { status: "error"; message: string };
 
 /**
  * Shown when org has `gas` feature enabled; hidden when FEATURE_DISABLED.
@@ -17,23 +24,26 @@ export function GasOpsCard() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const { toast } = useToast();
-  const canRunAlerts =
-    user?.role === "admin" || user?.role === "manager";
+  const canRunAlerts = user?.role === "admin" || user?.role === "manager";
 
   const gasState = useQuery({
     queryKey: ["/api/gas/dashboard-summary"],
-    queryFn: async () => {
+    queryFn: async (): Promise<GasQueryResult> => {
       try {
         const { data } = await fetchGasDashboardSummaryEnvelope();
-        return { enabled: true as const, summary: data };
+        return { status: "ok", summary: data };
       } catch (e) {
         if (e instanceof ApiError && e.code === "FEATURE_DISABLED") {
-          return { enabled: false as const };
+          return { status: "disabled" };
         }
-        throw e;
+        return {
+          status: "error",
+          message: e instanceof Error ? e.message : String(e),
+        };
       }
     },
     retry: false,
+    throwOnError: false,
   });
 
   const alertMutation = useMutation({
@@ -70,7 +80,21 @@ export function GasOpsCard() {
     );
   }
 
-  if (!gasState.data?.enabled) {
+  if (gasState.data?.status === "error") {
+    return (
+      <PanelInlineError
+        title="Gas operations unavailable"
+        description={gasState.data.message}
+        onRetry={() => void gasState.refetch()}
+      />
+    );
+  }
+
+  if (gasState.data?.status === "disabled") {
+    return null;
+  }
+
+  if (gasState.data?.status !== "ok") {
     return null;
   }
 

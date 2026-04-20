@@ -62,12 +62,24 @@ async function main() {
   );
 
   await check(
-    "Setup status payload shape (onboarding + database + build)",
+    "Setup status payload shape (onboarding + database + build + health)",
     apiJsonRequest("/setup/status", { method: "GET", cookie, baseUrl }).then((res) => {
       if (!res.ok || res.status !== 200) return false;
       const envelope = res.json as { ok?: boolean; data?: Record<string, unknown> };
       if (!envelope?.ok || !envelope.data || typeof envelope.data !== "object") return false;
       const d = envelope.data;
+      if (d.setupStatusHealth !== "ok" && d.setupStatusHealth !== "degraded") return false;
+      const issues = d.issues;
+      if (d.setupStatusHealth === "degraded") {
+        if (!Array.isArray(issues) || issues.length === 0) return false;
+      } else if (issues != null && (!Array.isArray(issues) || issues.length !== 0)) return false;
+      if (Array.isArray(issues)) {
+        for (const item of issues) {
+          if (!item || typeof item !== "object") return false;
+          const issue = item as Record<string, unknown>;
+          if (typeof issue.code !== "string" || typeof issue.message !== "string") return false;
+        }
+      }
       if (!d.onboarding || typeof d.onboarding !== "object") return false;
       const ob = d.onboarding as Record<string, unknown>;
       if (typeof ob.required !== "boolean") return false;

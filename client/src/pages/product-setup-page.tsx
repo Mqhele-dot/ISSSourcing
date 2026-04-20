@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatMutationError, queryClient, requestJson } from "@/lib/queryClient";
 import type { AppSettings } from "@shared/schema";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
-import { readinessQueryOptions, setupStatusQueryOptions } from "@/lib/setup-readiness-queries";
+import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
 import { Link } from "wouter";
 
 const STEPS = ["welcome", "business", "warehouse", "starter", "review"] as const;
@@ -35,9 +35,7 @@ export default function ProductSetupPage() {
   const [, setLocation] = useLocation();
   const { settings } = useSettings();
 
-  const { data: ready } = useQuery(readinessQueryOptions);
-
-  const { data: setup } = useQuery(setupStatusQueryOptions);
+  const { ready, setup } = useAppReadinessState();
 
   const [step, setStep] = useState<StepId>("welcome");
   const [companyName, setCompanyName] = useState(settings.companyName);

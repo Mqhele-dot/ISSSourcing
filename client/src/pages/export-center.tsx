@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { requestJson } from "@/lib/queryClient";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
+import { PanelInlineError } from "@/components/panel-inline-error";
 
 type ExportHistoryRow = {
   id: number;
@@ -46,10 +47,12 @@ function formatBytes(value: number | null): string {
 export default function ExportCenterPage() {
   const productSetupComplete = useProductSetupComplete();
   const queryClient = useQueryClient();
-  const { data: history = [] } = useQuery({
+  const historyQuery = useQuery({
     queryKey: ["/api/export-center/history"],
     queryFn: () => requestJson<ExportHistoryRow[]>("GET", "/api/export-center/history"),
+    throwOnError: false,
   });
+  const history = historyQuery.data ?? [];
   const retryMutation = useMutation({
     mutationFn: (id: number) => requestJson("POST", `/api/export-jobs/${id}/retry`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/export-center/history"] }),
@@ -69,6 +72,18 @@ export default function ExportCenterPage() {
       />
 
       <SectionNav items={[...ANALYTICS_NAV]} />
+
+      {historyQuery.isError ? (
+        <PanelInlineError
+          title="Could not load export history"
+          description={
+            historyQuery.error instanceof Error
+              ? historyQuery.error.message
+              : "The export center API did not respond. Retry or check diagnostics."
+          }
+          onRetry={() => void historyQuery.refetch()}
+        />
+      ) : null}
 
       <Card>
         <CardHeader>

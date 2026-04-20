@@ -2192,9 +2192,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/health", sendShallowHealth);
 
   const sendReadyPayload = async (res: Response) => {
-    const productBootstrap =
-      readiness.dbReady ? await getProductBootstrapHints().catch(() => null) : null;
-    sendOk(res, {
+    const basePayload = {
       runtimeProfile: appEnv.runtimeProfile,
       deploymentMode: appEnv.deploymentMode,
       build: getBuildInfo(),
@@ -2204,8 +2202,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       websocketReady: readiness.websocketReady,
       uploadPathReady: uploadPathReady(),
       emailServiceReady: emailServiceReady(),
-      productBootstrap,
-    });
+      productBootstrap: null as Awaited<ReturnType<typeof getProductBootstrapHints>> | null,
+    };
+    try {
+      basePayload.productBootstrap =
+        readiness.dbReady ? await getProductBootstrapHints().catch(() => null) : null;
+      sendOk(res, basePayload);
+    } catch (e) {
+      console.error("[READY] SETUP_STATUS_READY_PAYLOAD_FAILED", e instanceof Error ? e.message : e);
+      sendOk(res, {
+        ...basePayload,
+        productBootstrap: null,
+        uploadPathReady: false,
+        emailServiceReady: false,
+      });
+    }
   };
 
   const sendReadyHandler = (_req: Request, res: Response): void => {

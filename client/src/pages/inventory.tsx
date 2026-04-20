@@ -22,6 +22,7 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
@@ -87,6 +88,8 @@ export default function InventoryPage() {
   const {
     loading: categoriesLoading,
     data: categoriesData,
+    error: categoriesError,
+    refetch: refetchCategories,
   } = useAsyncResource(categoriesFetcher);
 
   const categories = categoriesData ?? EMPTY_CATEGORIES;
@@ -211,6 +214,21 @@ export default function InventoryPage() {
           </div>
         }
       />
+
+      {categoriesError ? (
+        <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
+          <AlertTitle>Category filter unavailable</AlertTitle>
+          <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              The inventory table still loads; only the category dropdown failed (
+              {categoriesError.message || "unknown error"}).
+            </span>
+            <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchCategories()}>
+              Retry categories
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <Toolbar
         sticky

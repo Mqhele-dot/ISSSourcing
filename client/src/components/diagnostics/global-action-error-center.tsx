@@ -37,7 +37,7 @@ export function GlobalActionErrorCenter() {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [history, setHistory] = useState<ActionErrorRecord[]>(() => actionErrorStore.list());
   const [retrying, setRetrying] = useState(false);
-  const lastBgToastAt = useRef(0);
+  const lastSoftToastAt = useRef(0);
 
   const fabRecord = useMemo(() => pickLatestForFab(history), [history]);
 
@@ -45,14 +45,13 @@ export function GlobalActionErrorCenter() {
     return actionErrorStore.subscribe((record) => {
       const list = actionErrorStore.list();
       setHistory(list);
-      if (record.severity === "background") {
+      if (record.severity === "important_warning") {
         const now = Date.now();
-        if (now - lastBgToastAt.current > 2800) {
-          lastBgToastAt.current = now;
+        if (now - lastSoftToastAt.current > 8000) {
+          lastSoftToastAt.current = now;
           toast({
-            title: "Request issue",
+            title: "Some data could not be refreshed",
             description: record.reason.slice(0, 200),
-            variant: "destructive",
           });
         }
       }
@@ -122,10 +121,7 @@ export function GlobalActionErrorCenter() {
     }
   };
 
-  const fabLabel =
-    fabRecord?.severity === "blocking"
-      ? "Server error — tap for details"
-      : "Action failed — tap for details";
+  const fabLabel = "Action failed — tap for details";
 
   return (
     <>

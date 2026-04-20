@@ -49,7 +49,12 @@ export async function fetchReadinessStatus(): Promise<ReadinessStatus> {
   return parsed as ReadinessStatus;
 }
 
+export type SetupStatusIssue = { code: string; message: string };
+
 export type SetupStatusPayload = {
+  /** Present when server built a partial payload instead of failing the request. */
+  setupStatusHealth?: "ok" | "degraded";
+  issues?: SetupStatusIssue[];
   deploymentMode: string;
   runtimeProfile: string;
   skipProductOnboarding: boolean;

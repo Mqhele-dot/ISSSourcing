@@ -5,6 +5,7 @@ import { useSettings } from "@/hooks/use-settings";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { ToastAction } from "@/components/ui/toast";
 import { queryClient, apiRequest, requestJson } from "@/lib/queryClient";
+import { PanelInlineError } from "@/components/panel-inline-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -85,8 +86,14 @@ export default function ContractsPage() {
     },
   });
 
-  const { data: suppliers = [] } = useQuery<Supplier[]>({
+  const {
+    data: suppliers = [],
+    isError: suppliersIsError,
+    error: suppliersQueryError,
+    refetch: refetchSuppliers,
+  } = useQuery<Supplier[]>({
     queryKey: ["/api/suppliers"],
+    throwOnError: false,
   });
 
   const defaultFormValues = useMemo((): Partial<SupplierContractForm> => {
@@ -261,6 +268,18 @@ export default function ContractsPage() {
           </div>
         </CardHeader>
         <CardContent>
+          {suppliersIsError ? (
+            <PanelInlineError
+              className="mb-4"
+              title="Supplier list unavailable"
+              description={
+                suppliersQueryError instanceof Error
+                  ? suppliersQueryError.message
+                  : "Could not load suppliers for the filter. The contract list below still loads."
+              }
+              onRetry={() => void refetchSuppliers()}
+            />
+          ) : null}
           {isLoading ? (
             <div className="py-8 text-center text-muted-foreground">Loading contracts…</div>
           ) : contracts.length === 0 ? (

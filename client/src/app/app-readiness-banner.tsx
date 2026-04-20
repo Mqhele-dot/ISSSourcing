@@ -1,38 +1,72 @@
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { readinessQueryOptions, type ReadinessStatus } from "@/lib/setup-readiness-queries";
+import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
 
 export type { ReadinessStatus };
 export { fetchReadinessStatus } from "@/lib/setup-readiness-queries";
 
 export function ReadinessBanner() {
-  const { data, error, failureCount, refetch, isFetching } = useQuery({
+  useQuery({
     ...readinessQueryOptions,
     refetchInterval: 30_000,
   });
 
-  if (error && !data) {
-    const repeated = failureCount >= 2;
+  const {
+    phase,
+    readinessProbeFailed,
+    setupProbeFailed,
+    ready,
+    refetchReadiness,
+    readinessFetching,
+    retrySetupStatus,
+  } = useAppReadinessState();
+
+  if (phase === "setup_check_temporarily_failed" || setupProbeFailed) {
     return (
       <div className="sticky top-0 z-40 shrink-0 p-3">
-        <Alert variant={repeated ? "destructive" : "default"} className={repeated ? "" : "border-amber-500/50 bg-amber-500/10"}>
-          <AlertTitle>{repeated ? "Readiness check still failing" : "Could not reach readiness endpoint"}</AlertTitle>
+        <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
+          <AlertTitle>Product setup status unavailable</AlertTitle>
           <AlertDescription className="mt-2 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
             <span>
-              {repeated
-                ? "After multiple attempts, /api/ready is still unavailable. Confirm the API and database are running."
-                : "This is often a brief network issue. Pages may still work; retry or continue once connectivity returns."}
+              The app could not load <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/setup/status</code>.
+              You can continue with limited assurance—retry or open diagnostics if this persists.
             </span>
             <Button
               type="button"
               size="sm"
               variant="secondary"
               className="shrink-0"
-              disabled={isFetching}
-              onClick={() => void refetch()}
+              disabled={readinessFetching}
+              onClick={() => void retrySetupStatus()}
+            >
+              Retry setup check
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (readinessProbeFailed && !ready) {
+    return (
+      <div className="sticky top-0 z-40 shrink-0 p-3">
+        <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
+          <AlertTitle>Could not reach readiness endpoint</AlertTitle>
+          <AlertDescription className="mt-2 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              This is often a brief network issue. Pages may still work; retry or continue once connectivity returns.
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="shrink-0"
+              disabled={readinessFetching}
+              onClick={() => void refetchReadiness()}
             >
               Retry
             </Button>
@@ -42,13 +76,13 @@ export function ReadinessBanner() {
     );
   }
 
-  if (!data) return null;
+  if (!ready) return null;
 
   const unavailable: string[] = [];
-  if (!data.dbReady) unavailable.push("database");
-  if (!data.schemaReady) unavailable.push("schema");
-  if (!data.sessionStoreReady) unavailable.push("session store");
-  if (!data.uploadPathReady) unavailable.push("uploads path");
+  if (!ready.dbReady) unavailable.push("database");
+  if (!ready.schemaReady) unavailable.push("schema");
+  if (!ready.sessionStoreReady) unavailable.push("session store");
+  if (!ready.uploadPathReady) unavailable.push("uploads path");
 
   if (unavailable.length > 0) {
     return (
@@ -63,7 +97,7 @@ export function ReadinessBanner() {
     );
   }
 
-  if (data.productBootstrap?.needsFirstRunOnboarding) {
+  if (ready.productBootstrap?.needsFirstRunOnboarding) {
     return (
       <div className="sticky top-0 z-40 shrink-0 p-3">
         <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">

@@ -1,10 +1,10 @@
-import React, { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { formatCurrency } from '@/lib/utils';
-import { requestJson } from '@/lib/queryClient';
+import React, { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { requestJson } from "@/lib/queryClient";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 
 interface InventoryValueItem {
   id: number;
@@ -21,14 +21,19 @@ interface InventoryValueData {
 }
 
 export function InventoryValue() {
+  const { formatMoney } = useReportingMoney();
+
   // Fetch inventory value data
   const { data, isLoading, error } = useQuery({
-    queryKey: ['/api/analytics/inventory-value'],
+    queryKey: ["/api/analytics/inventory-value"],
     queryFn: async () => {
       try {
-        const raw = await requestJson<InventoryValueData | { data?: InventoryValueData }>("GET", "/api/analytics/inventory-value");
+        const raw = await requestJson<InventoryValueData | { data?: InventoryValueData }>(
+          "GET",
+          "/api/analytics/inventory-value",
+        );
         const unwrapped = (raw as { data?: InventoryValueData })?.data ?? raw;
-        if (unwrapped && typeof unwrapped === 'object' && 'items' in unwrapped) {
+        if (unwrapped && typeof unwrapped === "object" && "items" in unwrapped) {
           return unwrapped as InventoryValueData;
         }
         return { totalValue: 0, totalItems: 0, items: [] };
@@ -45,36 +50,40 @@ export function InventoryValue() {
     // Group smaller items into "Other" category
     const topItems = data.items.slice(0, 6); // Take top 6 items
     const otherItems = data.items.slice(6); // The rest become "Other"
-    
-    const result = topItems.map(item => ({
+
+    const result = topItems.map((item) => ({
       name: item.name,
       value: item.value,
     }));
-    
+
     // Add "Other" category if we have more than 6 items
     if (otherItems.length > 0) {
       const otherValue = otherItems.reduce((sum, item) => sum + item.value, 0);
       result.push({
-        name: 'Other',
+        name: "Other",
         value: otherValue,
       });
     }
-    
+
     return result;
   }, [data]);
 
   // Color scale for the chart
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#bbb'];
+  const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8", "#82ca9d", "#bbb"];
 
   // Custom tooltip for the chart
-  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number; color?: string }> }) => {
+  const CustomTooltip = ({
+    active,
+    payload,
+  }: {
+    active?: boolean;
+    payload?: Array<{ name: string; value: number; color?: string }>;
+  }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-background border border-border p-2 rounded-md shadow">
           <p className="font-medium">{payload[0].name}</p>
-          <p style={{ color: payload[0].color }}>
-            Value: {formatCurrency(payload[0].value)}
-          </p>
+          <p style={{ color: payload[0].color }}>Value: {formatMoney(payload[0].value)}</p>
           {data && data.totalValue > 0 && (
             <p className="text-xs text-muted-foreground">
               ({((payload[0].value / data.totalValue) * 100).toFixed(1)}% of total)
@@ -120,14 +129,14 @@ export function InventoryValue() {
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-secondary/30 p-4 rounded-lg">
                 <p className="text-sm text-muted-foreground">Total Value</p>
-                <h3 className="text-2xl font-bold">{formatCurrency(data.totalValue)}</h3>
+                <h3 className="text-2xl font-bold">{formatMoney(data.totalValue)}</h3>
               </div>
               <div className="bg-secondary/30 p-4 rounded-lg">
                 <p className="text-sm text-muted-foreground">Total Items</p>
                 <h3 className="text-2xl font-bold">{data.totalItems.toLocaleString()}</h3>
               </div>
             </div>
-            
+
             {chartData.length > 0 ? (
               <div className="h-[300px] mt-6">
                 <ResponsiveContainer width="100%" height="100%">
@@ -140,46 +149,36 @@ export function InventoryValue() {
                       innerRadius={40}
                       dataKey="value"
                       labelLine={false}
-                      label={false} // Remove inline labels to prevent overlapping
+                      label={false}
                     >
                       {chartData.map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={COLORS[index % COLORS.length]}
-                        />
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip content={<CustomTooltip />} />
-                    <Legend 
-                      layout="horizontal" 
-                      align="center" 
+                    <Legend
+                      layout="horizontal"
+                      align="center"
                       verticalAlign="bottom"
-                      formatter={(value, _entry) => {
-                        // Truncate long names and show tooltip on hover
-                        return value.length > 10 ? `${value.substring(0, 10)}...` : value;
-                      }}
-                      wrapperStyle={{ 
-                        paddingTop: '10px', 
-                        width: '100%', 
-                        display: 'flex', 
-                        flexWrap: 'wrap', 
-                        justifyContent: 'center', 
-                        gap: '10px'
+                      formatter={(value) => (value.length > 10 ? `${value.substring(0, 10)}...` : value)}
+                      wrapperStyle={{
+                        paddingTop: "10px",
+                        width: "100%",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        justifyContent: "center",
+                        gap: "10px",
                       }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="text-center py-6 text-muted-foreground">
-                No inventory value data available.
-              </div>
+              <div className="text-center py-6 text-muted-foreground">No inventory value data available.</div>
             )}
           </>
         ) : (
-          <div className="text-center py-6 text-muted-foreground">
-            No inventory value data available.
-          </div>
+          <div className="text-center py-6 text-muted-foreground">No inventory value data available.</div>
         )}
       </CardContent>
     </Card>
