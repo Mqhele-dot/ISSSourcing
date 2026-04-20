@@ -1,8 +1,8 @@
 import { config } from "dotenv";
 import { defineConfig } from "drizzle-kit";
 
-// Prefer `.env` over inherited shell PG* vars (default dotenv does not override).
-config({ path: ".env", override: true });
+// Same rule as server/config/env.ts: never override Compose/Codespaces-injected DB vars.
+config({ path: ".env", override: false });
 
 /** Match `server/db.ts`: allow PG* vars when DATABASE_URL is unset. */
 function resolveDatabaseUrl(): string {

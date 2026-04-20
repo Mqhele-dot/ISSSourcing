@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+cd /workspace
+
 if [ ! -f .env ]; then
   cp .env.example .env
 fi

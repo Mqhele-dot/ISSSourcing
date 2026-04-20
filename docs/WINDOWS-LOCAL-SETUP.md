@@ -144,7 +144,7 @@ Common causes on a dev PC:
 | Source | What happens | What to do |
 |--------|----------------|-------------|
 | **Docker Desktop** | First-time setup enables **WSL 2** and a **Linux kernel** (Microsoft’s VM stack). | If you don’t need Docker, uninstall Docker Desktop from *Settings → Apps*. Use a local PostgreSQL installer instead of `docker run` for the DB. |
-| **Cursor / VS Code Dev Containers** | The repo had **`.devcontainer/`**, so the editor offers **“Reopen in Container”** → Linux image via Docker → often WSL on Windows. | This repo may ship **`.devcontainer.disabled`** instead (same files, renamed). That **stops** Dev Container detection. See **`.devcontainer.disabled/WHY-DISABLED.md`**. |
+| **Cursor / VS Code Dev Containers** | The repo ships **`.devcontainer/`** for **GitHub Codespaces** (Postgres in Docker). Locally, the editor may offer **“Reopen in Container”** → Linux image via Docker → often WSL on Windows. | Choose **Reopen locally** and follow this doc for a normal Windows Postgres install, or use GitHub Codespaces in the browser. See **`.devcontainer.disabled/README.md`** for context. |
 | **Running `bash` from PowerShell** | Some `npm` scripts call `bash`; Windows may suggest **WSL** or **Ubuntu** if Git Bash isn’t installed. | Prefer **`npm run doctor:win`** and **`npm run dev`**. Install [Git for Windows](https://git-scm.com/download/win) if you need `bash scripts/*.sh`. |
 | **Optional Windows features** | “Windows Subsystem for Linux” can be turned on manually or by an installer. | *Settings → Apps → Optional features* — remove **Windows Subsystem for Linux** if you don’t use it (only after you know nothing you need depends on it). |
 

@@ -2,9 +2,11 @@
 
 > **Running on your own Windows PC instead?** Use **[`docs/WINDOWS-LOCAL-SETUP.md`](docs/WINDOWS-LOCAL-SETUP.md)** and the root **[`README.md`](README.md)** — no devcontainer required.
 
-> **Dev container folder name:** If this clone has **`.devcontainer.disabled`** instead of **`.devcontainer`**, Dev Containers were turned off to avoid **Docker / WSL** prompts on Windows. **GitHub Codespaces** still needs **`.devcontainer`** at the repo root. Rename the folder back (see **`.devcontainer.disabled/WHY-DISABLED.md`**) before relying on Codespaces, or restore that name on `main` in your team repo.
+> **GitHub Codespaces:** the repo includes **`.devcontainer/`** (Docker Compose: app + Postgres on host **`db`**). Create or **rebuild** the Codespace so that configuration is applied; otherwise the workspace has no `db` DNS name and database commands fail with `ENOTFOUND db` or `ECONNREFUSED` to localhost.
+>
+> **Windows desktop without Docker:** use **`docs/WINDOWS-LOCAL-SETUP.md`**. If the editor prompts **Reopen in Container**, choose **Reopen locally**. See **`.devcontainer.disabled/README.md`** for context.
 
-This repository includes a devcontainer configuration (under **`.devcontainer`** when present) so it can boot in GitHub Codespaces with the required services:
+This repository includes a devcontainer configuration under **`.devcontainer/`** so it can boot in GitHub Codespaces with the required services:
 
 - Node.js 20
 - PostgreSQL 16
@@ -12,7 +14,7 @@ This repository includes a devcontainer configuration (under **`.devcontainer`**
 
 ## Quick start
 
-1. Open the repository in GitHub Codespaces.
+1. Open the repository in GitHub Codespaces **with the devcontainer** (`.devcontainer/`). If you opened a “plain” Codespace earlier, use **Command Palette → Codespaces: Rebuild Container** so Docker Compose starts the **`db`** Postgres service.
 2. Wait for the container to finish building.
 3. The post-create script will:
    - install dependencies with `npm ci`

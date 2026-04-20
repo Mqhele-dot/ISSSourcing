@@ -6,7 +6,9 @@ import { config as loadDotEnv } from "dotenv";
 import { z } from "zod";
 import { isProductionProfile, runtimeProfile } from "./runtime-profile";
 
-loadDotEnv({ path: ".env", override: true });
+// Do not override process.env: Docker Compose / GitHub Codespaces inject DATABASE_URL and PG*.
+// A developer `.env` copied from a laptop (localhost / forwarded ports) must not stomp those values.
+loadDotEnv({ path: ".env", override: false });
 
 const DEFAULT_DEV_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/inventory_dev";
 const DEFAULT_CODESPACES_DATABASE_URL = "postgresql://postgres:postgres@db:5432/inventory_dev";
