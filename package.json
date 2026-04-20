@@ -22,6 +22,7 @@
     "test:supplier-portal": "tsx scripts/test-supplier-portal.ts",
     "test:exports": "tsx scripts/test-exports.ts",
     "test:smoke": "tsx scripts/test-smoke.ts",
+    "test:stabilization-client": "tsx scripts/test-stabilization-client.ts",
     "test:setup-checkpoint": "tsx scripts/test-setup-product-checkpoint.ts",
     "test:installable-complete": "tsx scripts/test-installable-setup-complete.ts",
     "test:installable-org-bootstrap": "tsx scripts/test-installable-org-bootstrap.ts",

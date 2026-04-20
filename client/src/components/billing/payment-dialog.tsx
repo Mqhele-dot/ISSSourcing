@@ -31,6 +31,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
+import { useSettings } from "@/hooks/use-settings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -84,6 +86,9 @@ type PaymentDialogProps = {
 
 export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
   const { toast } = useToast();
+  const { formatMoney } = useReportingMoney();
+  const { settings } = useSettings();
+  const currencyPrefix = settings.currencySymbol?.trim().slice(0, 4) || "¤";
   const [_selectedInvoice, setSelectedInvoice] = useState<PaymentInvoiceOption | null>(null);
   
   // Default form values
@@ -161,11 +166,6 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
         {statusText}
       </Badge>
     );
-  };
-  
-  // Format currency
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
   };
   
   // Create payment mutation
@@ -289,7 +289,7 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
                             {getStatusBadge(option.status)}
                           </div>
                           <div className="text-xs text-muted-foreground mt-1">
-                            {option.customerName} - Due: {formatCurrency(option.dueAmount)}
+                            {option.customerName} - Due: {formatMoney(option.dueAmount)}
                           </div>
                         </SelectItem>
                       ))}
@@ -311,7 +311,7 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
                     <FormLabel>Amount</FormLabel>
                     <FormControl>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2">$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{currencyPrefix}</span>
                         <Input
                           type="number"
                           min="0.01"

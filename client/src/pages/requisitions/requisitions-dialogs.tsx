@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { PurchaseRequisition, User } from "@shared/schema";
 import type { UseMutationResult } from "@tanstack/react-query";
 import { formatRequisitionDate } from "@/pages/requisitions/requisitions-helpers";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 
 export type ApprovalHistoryEntry = {
   id: number;
@@ -66,6 +67,7 @@ type RequisitionsDialogsProps = {
 };
 
 export function RequisitionsDialogs(p: RequisitionsDialogsProps) {
+  const { formatMoney } = useReportingMoney();
   return (
     <>
       <Dialog open={p.shareOpen} onOpenChange={p.setShareOpen}>
@@ -207,7 +209,7 @@ export function RequisitionsDialogs(p: RequisitionsDialogsProps) {
           <DialogHeader>
             <DialogTitle>Suggested approvers</DialogTitle>
             <DialogDescription>
-              From active requisition approval policies for total amount ${p.approverHelpAmount?.toFixed(2) ?? "0.00"}.
+              From active requisition approval policies for total amount {formatMoney(p.approverHelpAmount ?? 0)}.
               Approval still runs as the signed-in user; policies may require a specific role or user.
             </DialogDescription>
           </DialogHeader>

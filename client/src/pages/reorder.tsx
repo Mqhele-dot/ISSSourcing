@@ -56,10 +56,16 @@ export default function ReorderRequestsPage() {
   const [conversionDialogOpen, setConversionDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  // Fetch all reorder requests
-  const { data: reorderRequests, isLoading: requestsLoading } = useQuery({
+  const {
+    data: reorderRequests,
+    isLoading: requestsLoading,
+    isError: requestsError,
+    error: requestsErr,
+    refetch: refetchRequests,
+  } = useQuery({
     queryKey: ["/api/reorder-requests"],
     queryFn: () => requestJson<ReorderRequest[]>("GET", "/api/reorder-requests"),
+    throwOnError: false,
   });
   
   // Approve request mutation
@@ -288,6 +294,17 @@ export default function ReorderRequestsPage() {
             </TabsList>
             
             <TabsContent value={selectedTab} className="m-0">
+              {requestsError ? (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertTitle>Could not load reorder requests</AlertTitle>
+                  <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <span>{requestsErr instanceof Error ? requestsErr.message : String(requestsErr)}</span>
+                    <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchRequests()}>
+                      Retry
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               {requestsLoading ? (
                 <div className="flex justify-center items-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />

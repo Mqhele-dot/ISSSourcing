@@ -30,6 +30,7 @@ import {
   Printer,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { format } from "date-fns";
 import type { Invoice } from "@shared/schema";
 import {
@@ -59,6 +60,7 @@ export function InvoicesList({
   onRefresh,
 }: InvoicesListProps) {
   const { toast } = useToast();
+  const { formatMoney } = useReportingMoney();
   const [sortField, setSortField] = useState("dueDate");
   const [sortDirection, setSortDirection] = useState("desc");
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -100,11 +102,6 @@ export function InvoicesList({
     }
   };
 
-  // Format currency
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
-  };
-  
   // Get status badge
   const getStatusBadge = (status: string) => {
     let badgeVariant;
@@ -372,10 +369,10 @@ export function InvoicesList({
                   <TableCell>{format(new Date(invoice.createdAt), "MMM d, yyyy")}</TableCell>
                   <TableCell>{format(new Date(invoice.dueDate), "MMM d, yyyy")}</TableCell>
                   <TableCell>{getStatusBadge(invoice.status)}</TableCell>
-                  <TableCell className="font-medium">{formatCurrency(invoice.total)}</TableCell>
-                  <TableCell>{formatCurrency(invoice.paidAmount ?? 0)}</TableCell>
+                  <TableCell className="font-medium">{formatMoney(invoice.total)}</TableCell>
+                  <TableCell>{formatMoney(invoice.paidAmount ?? 0)}</TableCell>
                   <TableCell className={(invoice.dueAmount ?? 0) > 0 ? "text-red-600 dark:text-red-400 font-medium" : ""}>
-                    {formatCurrency(invoice.dueAmount ?? 0)}
+                    {formatMoney(invoice.dueAmount ?? 0)}
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>

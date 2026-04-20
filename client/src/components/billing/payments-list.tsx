@@ -29,6 +29,7 @@ import {
   Download,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { format } from "date-fns";
 import type { Payment } from "@shared/schema";
 import {
@@ -54,6 +55,7 @@ export function PaymentsList({
   onRefresh,
 }: PaymentsListProps) {
   const { toast } = useToast();
+  const { formatMoney } = useReportingMoney();
   const [sortField, setSortField] = useState("paymentDate");
   const [sortDirection, setSortDirection] = useState("desc");
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
@@ -93,11 +95,6 @@ export function PaymentsList({
       setSortField(field);
       setSortDirection("asc");
     }
-  };
-  
-  // Format currency
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
   };
   
   // Get payment method badge
@@ -309,7 +306,7 @@ export function PaymentsList({
                   </TableCell>
                   <TableCell>{format(new Date(payment.paymentDate), "MMM d, yyyy")}</TableCell>
                   <TableCell>{getPaymentMethodBadge(payment.method)}</TableCell>
-                  <TableCell className="font-medium">{formatCurrency(payment.amount)}</TableCell>
+                  <TableCell className="font-medium">{formatMoney(payment.amount)}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

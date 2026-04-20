@@ -73,3 +73,10 @@ After `drizzle-kit push` (or your migration process), existing rows will have **
 - **Isolated panel errors:** Warehouse operations, cycle counts, and the AP workspace show per-section retry instead of implying the whole page failed; AP defers secondary fetches until the overview request has settled.
 - **Finance invoices:** Legacy invoices UI formats money with org reporting currency instead of a hardcoded `$`.
 - **Query client:** Background `GET` failures on `/api/setup/status` and `/api/ready`, plus client `GET` timeouts (`408`), no longer flood the global error center (local UI still reports them).
+- **Reorder requests:** List fetch uses isolated error UI with retry so a failed `/api/reorder-requests` does not masquerade as an empty list.
+- **Finance / procurement currency:** Billing invoices and payments lists/dialogs, requisition totals, suggested-approver copy, and PO detail order total use org reporting money (`useReportingMoney`) instead of hardcoded `$` / USD formatting.
+- **Regression script:** `npm run test:stabilization-client` checks canonical supplier paths, error severity/suppression, money formatting, and action-error dedupe (no Playwright).
+
+### Manual re-test checklist (post-stabilization)
+
+Suggested order after `npm run demo:reset` (or seeded DB): **Login → Control tower**; **Suppliers list → supplier detail** (`/procurement/suppliers/:id`); **Inventory**; **Warehouses**; **Warehouse operations**; **Cycle counts**; **Reorder requests**; **Purchase orders**; **Requisitions**; **Accounts payable** (each tab); **Invoices** (legacy) and **Billing** UI if used; **Product setup / diagnostics** when simulating failures. Confirm: no persistent global red FAB from throttled `/api/ready` or `/api/setup/status`; supplier detail loads; stuck lazy routes recover; finance amounts match org currency.

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { ToastAction } from "@/components/ui/toast";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { downloadFile } from "@/lib/utils";
@@ -70,6 +71,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     else setLocation("/purchase");
   };
   const { toast } = useToast();
+  const { formatMoney } = useReportingMoney();
   const { user } = useAuth();
 
   const [receiving, setReceiving] = useState(false);
@@ -463,7 +465,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                         <CardHeader className="pb-2">
                           <CardTitle className="text-sm font-medium text-muted-foreground">Order total</CardTitle>
                         </CardHeader>
-                        <CardContent className="text-lg font-semibold">${detail.totalAmount.toFixed(2)}</CardContent>
+                        <CardContent className="text-lg font-semibold">{formatMoney(detail.totalAmount)}</CardContent>
                       </Card>
                     </div>
                   </section>

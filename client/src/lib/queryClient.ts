@@ -115,7 +115,8 @@ function reportRequestError(params: {
   });
 }
 
-function shouldSuppressGlobalError(method: string, status: number | undefined, url: string): boolean {
+/** Exported for regression checks (`npm run test:stabilization-client`). */
+export function shouldSuppressGlobalError(method: string, status: number | undefined, url: string): boolean {
   const path = normalizeEndpointPath(url);
   const m = method.toUpperCase();
 

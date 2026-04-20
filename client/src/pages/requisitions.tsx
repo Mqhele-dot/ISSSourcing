@@ -36,6 +36,7 @@ import type { PurchaseRequisition, PurchaseRequisitionItem, User, Supplier, Inve
 import { Can } from "@/components/auth/can";
 import { fetchApprovalSuggestions } from "@/api/client";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { useQueryState } from "@/hooks/use-query-state";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 
@@ -47,6 +48,7 @@ interface RequisitionsPageProps {
 
 export default function RequisitionsPage({ embedded, basePath = "/requisitions" }: RequisitionsPageProps = {}) {
   const productSetupComplete = useProductSetupComplete();
+  const { formatMoney } = useReportingMoney();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -299,7 +301,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                   <TableCell>
                     {suppliers.find((s) => s.id === req.supplierId)?.name ?? (req.supplierId ? "Supplier #" + req.supplierId : "-")}
                   </TableCell>
-                  <TableCell>${Number(req.totalAmount || 0).toFixed(2)}</TableCell>
+                  <TableCell>{formatMoney(Number(req.totalAmount || 0))}</TableCell>
                   <TableCell>{formatRequisitionDate(req.requiredDate)}</TableCell>
                   <TableCell>{formatRequisitionDate(req.createdAt)}</TableCell>
                   <TableCell className="text-right">

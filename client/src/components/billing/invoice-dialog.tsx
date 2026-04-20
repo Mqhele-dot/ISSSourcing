@@ -30,6 +30,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
+import { useSettings } from "@/hooks/use-settings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, addDays } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -140,6 +142,9 @@ type InvoiceDialogProps = {
 
 export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
   const { toast } = useToast();
+  const { formatMoney } = useReportingMoney();
+  const { settings } = useSettings();
+  const currencyPrefix = settings.currencySymbol?.trim().slice(0, 4) || "¤";
   const [items, setItems] = useState<InvoiceLineItem[]>([]);
   const [newItemDialogOpen, setNewItemDialogOpen] = useState(false);
   
@@ -374,11 +379,6 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
     invoiceMutation.mutate(data);
   };
   
-  // Format currency
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
-  };
-  
   // Get status badge
   const getStatusBadge = (status: string) => {
     let badgeVariant;
@@ -602,21 +602,21 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                       <div className="flex justify-between items-center text-sm pt-2 border-t">
                         <span className="text-muted-foreground">Subtotal:</span>
                         <span className="font-medium">
-                          {formatCurrency(calculateSubtotal(items))}
+                          {formatMoney(calculateSubtotal(items))}
                         </span>
                       </div>
                       
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Tax:</span>
                         <span className="font-medium">
-                          {formatCurrency(calculateTaxTotal(items))}
+                          {formatMoney(calculateTaxTotal(items))}
                         </span>
                       </div>
                       
                       <div className="flex justify-between items-center text-base font-medium pt-2 border-t">
                         <span>Total:</span>
                         <span>
-                          {formatCurrency(calculateSubtotal(items))}
+                          {formatMoney(calculateSubtotal(items))}
                         </span>
                       </div>
                       
@@ -625,14 +625,14 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                           <div className="flex justify-between items-center text-sm">
                             <span className="text-muted-foreground">Amount Paid:</span>
                             <span className="font-medium text-green-600 dark:text-green-500">
-                              {formatCurrency(invoice.amountPaid)}
+                              {formatMoney(invoice.amountPaid)}
                             </span>
                           </div>
                           
                           <div className="flex justify-between items-center text-base font-medium pt-2 border-t">
                             <span>Balance Due:</span>
                             <span className="text-red-600 dark:text-red-500">
-                              {formatCurrency(invoice.total - invoice.amountPaid)}
+                              {formatMoney(invoice.total - invoice.amountPaid)}
                             </span>
                           </div>
                         </>
@@ -702,10 +702,10 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                           {item.description}
                         </TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(item.unitPrice)}</TableCell>
+                        <TableCell className="text-right">{formatMoney(item.unitPrice)}</TableCell>
                         <TableCell className="text-right">{item.discount || 0}%</TableCell>
                         <TableCell className="text-right">{item.taxRate || 0}%</TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(item.totalPrice)}</TableCell>
+                        <TableCell className="text-right font-medium">{formatMoney(item.totalPrice)}</TableCell>
                         <TableCell>
                           <Button
                             type="button"
@@ -729,7 +729,7 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                         Subtotal
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        {formatCurrency(calculateSubtotal(items))}
+                        {formatMoney(calculateSubtotal(items))}
                       </TableCell>
                       <TableCell />
                     </TableRow>
@@ -738,7 +738,7 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                         Tax
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        {formatCurrency(calculateTaxTotal(items))}
+                        {formatMoney(calculateTaxTotal(items))}
                       </TableCell>
                       <TableCell />
                     </TableRow>
@@ -747,7 +747,7 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                         Total
                       </TableCell>
                       <TableCell className="text-right text-lg font-semibold">
-                        {formatCurrency(calculateSubtotal(items))}
+                        {formatMoney(calculateSubtotal(items))}
                       </TableCell>
                       <TableCell />
                     </TableRow>
@@ -822,7 +822,7 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                             key={item.id}
                             value={item.id.toString()}
                           >
-                            {item.name} - {formatCurrency(item.price)}
+                            {item.name} - {formatMoney(item.price)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -878,7 +878,7 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                       <FormLabel>Unit Price</FormLabel>
                       <FormControl>
                         <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2">$</span>
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{currencyPrefix}</span>
                           <Input
                             type="number"
                             min="0"
