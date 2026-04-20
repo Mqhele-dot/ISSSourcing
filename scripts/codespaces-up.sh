@@ -285,12 +285,46 @@ fi
 echo "✅ In-container app shell warm-up passed at http://127.0.0.1:${PORT}/"
 
 if [[ -n "${FORWARDED_HOST}" ]]; then
-  if command -v gh >/dev/null 2>&1 && [[ "${CODESPACES_AUTO_PUBLIC_PORT:-true}" == "true" ]]; then
-    if gh codespace ports visibility "${PORT}:public" -c "${CODESPACE_NAME}" 2>/dev/null; then
-      echo "Port ${PORT} set to Public via gh."
-    else
-      echo "Could not set port ${PORT} to Public automatically. If you see 502 in the browser, set it in the Ports tab."
+  ensure_codespaces_port_public() {
+    local source_port="$1"
+    local cs_name="$2"
+    local published="false"
+    if ! command -v gh >/dev/null 2>&1; then
+      return 0
     fi
+
+    # First attempt: set visibility directly if the port is already forwarded.
+    if gh codespace ports visibility "${source_port}:public" -c "${cs_name}" >/dev/null 2>&1; then
+      published="true"
+    fi
+
+    # Fallback: if the port is missing from the forwarded list, forward it first then set visibility.
+    if [[ "${published}" != "true" ]]; then
+      if ! gh codespace ports -c "${cs_name}" --json sourcePort >/tmp/codespaces-ports.json 2>/dev/null; then
+        return 0
+      fi
+      if ! grep -q "\"sourcePort\":${source_port}" /tmp/codespaces-ports.json; then
+        # Best-effort add forward mapping; command can fail if already forwarded by another session.
+        gh codespace ports forward "${source_port}:${source_port}" -c "${cs_name}" >/dev/null 2>&1 || true
+      fi
+      if gh codespace ports visibility "${source_port}:public" -c "${cs_name}" >/dev/null 2>&1; then
+        published="true"
+      fi
+    fi
+
+    if [[ "${published}" == "true" ]]; then
+      echo "Port ${source_port} set to Public via gh."
+    else
+      echo "Could not set port ${source_port} to Public automatically." >&2
+      echo "Run these commands in the Codespace terminal:" >&2
+      echo "  gh auth status" >&2
+      echo "  gh codespace ports forward ${source_port}:${source_port} -c ${cs_name}" >&2
+      echo "  gh codespace ports visibility ${source_port}:public -c ${cs_name}" >&2
+    fi
+  }
+
+  if command -v gh >/dev/null 2>&1 && [[ "${CODESPACES_AUTO_PUBLIC_PORT:-true}" == "true" ]]; then
+    ensure_codespaces_port_public "${PORT}" "${CODESPACE_NAME}"
   fi
 
   echo "Checking forwarded URL reachability..."
