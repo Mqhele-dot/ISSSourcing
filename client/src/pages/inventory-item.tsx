@@ -233,7 +233,7 @@ export default function InventoryDetailPage() {
             <PageHeader
               title={detail.name ?? detail.sku ?? "Item"}
               subtitle={`SKU ${detail.sku ?? "—"}`}
-              breadcrumb={<span>Operations / Inventory / {detail.sku}</span>}
+              breadcrumb={<span>Inventory / {detail.sku}</span>}
               actions={
                 <Button onClick={openAdjustModal} className="gap-2">
                   <ArrowUpDown className="h-4 w-4" />

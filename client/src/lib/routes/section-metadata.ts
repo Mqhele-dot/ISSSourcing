@@ -259,7 +259,16 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
   },
 ];
 
-/** Command palette-only groups (not duplicated in primary sidebar). */
+/**
+ * Paths hidden from compact navigation surfaces below `lg` (1024px); align with command palette filtering.
+ */
+export const NAV_DESKTOP_ONLY_PATHS = new Set<string>([
+  "/admin/master-data",
+  "/finance/approval-policies",
+  "/admin/employee-profiles",
+]);
+
+/** Command palette secondary groups (frontline + admin utilities). */
 export const COMMAND_MENU_SECONDARY_GROUPS: { heading: string; items: AppNavItem[] }[] = [
   {
     heading: "Frontline — mobile shell",
@@ -341,3 +350,12 @@ export const COMMAND_MENU_SECONDARY_GROUPS: { heading: string; items: AppNavItem
     ],
   },
 ];
+
+/** Admin subgroups shown under Admin in the sidebar (same items as palette, without frontline mobile). */
+export const SIDEBAR_ADMIN_SECONDARY_GROUPS = COMMAND_MENU_SECONDARY_GROUPS.filter((g) =>
+  g.heading.startsWith("Admin"),
+);
+
+export function sidebarAdminSubgroupLabel(fullHeading: string): string {
+  return fullHeading.replace(/^Admin — /u, "").trim();
+}

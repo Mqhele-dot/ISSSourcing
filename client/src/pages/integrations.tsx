@@ -78,7 +78,7 @@ export default function IntegrationsPage() {
       <PageHeader
         title="Integrations"
         subtitle="Connector runtime status and run logs"
-        breadcrumb={<span>Operations / Integrations</span>}
+        breadcrumb={<span>Admin / Integrations</span>}
         actions={
           <Button variant="outline" onClick={refetch}>
             Refresh

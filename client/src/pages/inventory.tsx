@@ -202,7 +202,7 @@ export default function InventoryPage() {
         subtitle="Operational inventory overview"
         description="Track on-hand, allocated, and available stock with location-aware filtering."
         icon={<Boxes className="h-6 w-6 text-primary" />}
-        breadcrumb={<span>Operations / Inventory</span>}
+        breadcrumb={<span>Inventory / Overview</span>}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button

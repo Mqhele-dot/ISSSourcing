@@ -18,7 +18,10 @@
 - `Procurement`: `Purchase orders`, `Requisitions`, `Suppliers`, `Contracts`, `Supplier portal`
 - `Finance`: `Accounts payable`, `Invoices`, `Approval policies`, `Billing`
 - `Analytics`: `Overview`, `Reports`, `Saved reports`, `Export center`
-- `Admin`: `Settings`, `Master data`, `Document extractor`, `Integrations`, `Audit logs`
+- `Admin`: `Settings`, `Master data`, `Document extractor`, `Integrations`, `Audit logs` (sidebar also lists **Files & recognition**, **People & access**, **System & profile** under Admin, matching the command palette)
+
+## Breadcrumbs
+- Prefer the **sidebar section** as the first segment where practical: e.g. `Admin / Integrations`, `Inventory / …`, `Procurement / Purchase orders`, `Operations / Control tower`.
 
 ## Legacy route migration
 - `/dashboard` -> `/analytics/overview`

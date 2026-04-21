@@ -1,13 +1,20 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { APP_NAV_SECTIONS } from "@/lib/routes/section-metadata";
+import {
+  APP_NAV_SECTIONS,
+  NAV_DESKTOP_ONLY_PATHS,
+  SIDEBAR_ADMIN_SECONDARY_GROUPS,
+  sidebarAdminSubgroupLabel,
+} from "@/lib/routes/section-metadata";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import {
   Activity,
   AlertTriangle,
   Archive,
   ArrowDownToLine,
+  BarChart2,
   Bookmark,
   Building,
   Camera,
@@ -56,12 +63,14 @@ interface SidebarProps {
 export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: SidebarProps) {
   const [location] = useLocation();
   const { theme, setTheme } = useTheme();
+  const isDesktopNav = useMediaQuery("(min-width: 1024px)");
 
   const iconMap = {
     activity: Activity,
     "alert-triangle": AlertTriangle,
     archive: Archive,
     "arrow-down-to-line": ArrowDownToLine,
+    "bar-chart-2": BarChart2,
     bookmark: Bookmark,
     building: Building,
     camera: Camera,
@@ -163,6 +172,20 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
     </p>
   );
 
+  const NavSubSectionTitle = ({ children }: { children: React.ReactNode }) => (
+    <p
+      className={cn(
+        "px-4 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/90",
+        collapsed && "md:hidden",
+      )}
+    >
+      {children}
+    </p>
+  );
+
+  const showNavPath = (path: string, desktopOnly?: boolean) =>
+    isDesktopNav || (!NAV_DESKTOP_ONLY_PATHS.has(path) && !desktopOnly);
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -229,22 +252,48 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
               <div key={section.key}>
                 <SectionTitle>{section.label}</SectionTitle>
                 {section.items
-                  .filter((item) => !item.hiddenFromPrimaryNav)
+                  .filter(
+                    (item) =>
+                      !item.hiddenFromPrimaryNav && showNavPath(item.path, item.desktopOnly),
+                  )
                   .map((item) => {
-                  const Icon = iconMap[item.icon as keyof typeof iconMap];
-                  if (!Icon) return null;
-                  return (
-                    <NavItem
-                      key={item.path}
-                      path={item.path}
-                      icon={<Icon className="h-5 w-5" />}
-                      helpTitle={item.label}
-                      helpDescription={item.description}
-                    >
-                      {item.label}
-                    </NavItem>
-                  );
-                })}
+                    const Icon = iconMap[item.icon as keyof typeof iconMap];
+                    if (!Icon) return null;
+                    return (
+                      <NavItem
+                        key={item.path}
+                        path={item.path}
+                        icon={<Icon className="h-5 w-5" />}
+                        helpTitle={item.label}
+                        helpDescription={item.description}
+                      >
+                        {item.label}
+                      </NavItem>
+                    );
+                  })}
+                {section.key === "admin" &&
+                  SIDEBAR_ADMIN_SECONDARY_GROUPS.map((group) => (
+                    <div key={group.heading} className="space-y-0">
+                      <NavSubSectionTitle>{sidebarAdminSubgroupLabel(group.heading)}</NavSubSectionTitle>
+                      {group.items
+                        .filter((item) => showNavPath(item.path, item.desktopOnly))
+                        .map((item) => {
+                          const Icon = iconMap[item.icon as keyof typeof iconMap];
+                          if (!Icon) return null;
+                          return (
+                            <NavItem
+                              key={item.path}
+                              path={item.path}
+                              icon={<Icon className="h-5 w-5" />}
+                              helpTitle={item.label}
+                              helpDescription={item.description}
+                            >
+                              {item.label}
+                            </NavItem>
+                          );
+                        })}
+                    </div>
+                  ))}
               </div>
             ))}
           </div>

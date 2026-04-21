@@ -13,11 +13,39 @@ import { createReportingMoneyFormatter } from "../client/src/lib/format/reportin
 import { deriveAppReadinessPhase } from "../client/src/lib/app-readiness-state.ts";
 import { APP_ROUTES } from "../client/src/lib/routes/app-routes.ts";
 import {
+  APP_NAV_SECTIONS,
+  COMMAND_MENU_SECONDARY_GROUPS,
+  SIDEBAR_ADMIN_SECONDARY_GROUPS,
+} from "../client/src/lib/routes/section-metadata.ts";
+import {
   parseSupplierRouteId,
   SUPPLIER_DETAIL_ROUTE_PATTERN,
 } from "../client/src/lib/supplier-detail-route.ts";
 
+const MOBILE_PATH = /^\/m(\/|$)/;
+
 function main() {
+  const operationsSection = APP_NAV_SECTIONS.find((s) => s.key === "operations");
+  assert.ok(operationsSection, "operations section exists");
+  for (const item of operationsSection!.items) {
+    assert.equal(
+      MOBILE_PATH.test(item.path),
+      false,
+      `operations primary nav must not point at mobile shell: ${item.label} -> ${item.path}`,
+    );
+    assert.notEqual(
+      item.label,
+      "Mobile hub",
+      "legacy Mobile hub label must not appear in primary operations nav",
+    );
+  }
+  const frontline = COMMAND_MENU_SECONDARY_GROUPS.find((g) => g.heading.includes("Frontline"));
+  assert.ok(frontline?.items.some((i) => i.label === "Mobile workflows launcher"));
+  assert.ok(SIDEBAR_ADMIN_SECONDARY_GROUPS.length >= 3);
+  for (const g of SIDEBAR_ADMIN_SECONDARY_GROUPS) {
+    assert.ok(g.heading.startsWith("Admin"));
+  }
+
   assert.equal(APP_ROUTES.procurement.supplier(42), "/procurement/suppliers/42");
   assert.equal(APP_ROUTES.procurement.supplier(":id"), SUPPLIER_DETAIL_ROUTE_PATTERN);
   assert.deepEqual(parseSupplierRouteId("42"), { ok: true, id: 42 });

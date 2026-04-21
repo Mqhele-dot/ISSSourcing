@@ -85,7 +85,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
         <PageHeader
           title="Purchase Orders"
           subtitle="Operational purchasing workflow"
-          breadcrumb={<span>Operations / Purchase Orders</span>}
+          breadcrumb={<span>Procurement / Purchase orders</span>}
         />
       )}
 

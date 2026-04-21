@@ -7,10 +7,12 @@ Run against the **same environment** where you validate production behavior (loc
 | Check | Result |
 |-------|--------|
 | `npm run check` | Pass |
-| `npm run test:stabilization-client` | Pass |
+| `npm run test:stabilization-client` | Pass (includes nav IA: operations primary paths not under `/m/*`, no “Mobile hub” label, mobile launcher + admin sidebar group metadata) |
 | `npm run test:smoke` | Not run in agent session — run locally with server + seeded DB when validating API contract |
 
 Human verification: inventory CSV (browser + server in dev), warehouse put-away/save, PO list error vs empty, requisition share/suggestions failures, supplier logo/delete — fill **Loads / Local OK** columns after a live pass.
+
+**Nav / shell (human):** confirm page breadcrumbs match sidebar sections where updated (e.g. **Admin / Integrations**, **Inventory / …**, **Procurement / Purchase orders**); confirm **Admin** sidebar shows secondary subheads (Files & recognition, People & access, System & profile) and that no primary **Operations** tab opens the mobile shell without visiting `/m/*`.
 
 Per-route cells below remain for **human** verification in your deployment.
 

@@ -46,7 +46,11 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
-import { COMMAND_MENU_SECONDARY_GROUPS, APP_NAV_SECTIONS } from "@/lib/routes/section-metadata";
+import {
+  COMMAND_MENU_SECONDARY_GROUPS,
+  APP_NAV_SECTIONS,
+  NAV_DESKTOP_ONLY_PATHS,
+} from "@/lib/routes/section-metadata";
 import { invTrackFetch, queryClient } from "@/lib/queryClient";
 import { useMediaQuery } from "@/hooks/use-media-query";
 
@@ -99,13 +103,6 @@ const ICONS = {
   users: <Users className="h-4 w-4" />,
 } as const;
 
-/** Hidden from command palette below `lg` (1024px), same as sidebar / route guards. */
-const DESKTOP_ONLY_PATHS = new Set([
-  "/admin/master-data",
-  "/finance/approval-policies",
-  "/admin/employee-profiles",
-]);
-
 /** Warm cache for high-traffic lists when user opens the palette (enterprise “feel”). */
 function prefetchPrimaryData(): void {
   const warm: { queryKey: string[] }[] = [
@@ -155,7 +152,7 @@ export function CommandMenu() {
     if (isDesktop) return merged;
     return merged.map((section) => ({
       ...section,
-      items: section.items.filter((item) => !DESKTOP_ONLY_PATHS.has(item.path) && !item.desktopOnly),
+      items: section.items.filter((item) => !NAV_DESKTOP_ONLY_PATHS.has(item.path) && !item.desktopOnly),
     }));
   }, [isDesktop]);
 
