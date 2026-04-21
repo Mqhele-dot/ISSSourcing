@@ -1,4 +1,9 @@
-/** Query key roots for AP workspace — keep in sync with requestJson paths. */
+/**
+ * Query key roots for AP workspace — keep in sync with `requestJson` paths.
+ *
+ * - `invoices`: canonical AP list (`/api/ap/invoices`). Mutations that affect invoice lifecycle should
+ *   invalidate both `invoices` and `legacyInvoices` when the legacy page (`/api/invoices`) must refresh.
+ */
 export const apQueryKeys = {
   overview: ["/api/ap/overview"] as const,
   captures: ["/api/ap/captures"] as const,

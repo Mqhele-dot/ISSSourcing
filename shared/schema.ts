@@ -1462,21 +1462,76 @@ export const cycleCountLines = pgTable("cycle_count_lines", {
   variance: integer("variance").notNull().default(0),
 });
 
-export const insertInventoryBatchSchema = createInsertSchema(inventoryBatches).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-export const insertInventorySerialSchema = createInsertSchema(inventorySerials).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-export const insertInventoryAllocationSchema = createInsertSchema(inventoryAllocations).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+export const insertInventoryBatchSchema = createInsertSchema(inventoryBatches)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .superRefine((val, ctx) => {
+    const recv = val.quantityReceived ?? 0;
+    const oh = val.quantityOnHand ?? 0;
+    if (recv < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "quantityReceived must be at least 1",
+        path: ["quantityReceived"],
+      });
+    }
+    if (oh < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "quantityOnHand must be at least 1",
+        path: ["quantityOnHand"],
+      });
+    }
+  });
+export const insertInventorySerialSchema = createInsertSchema(inventorySerials)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .superRefine((val, ctx) => {
+    if (typeof val.itemId !== "number" || !Number.isFinite(val.itemId) || val.itemId < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "itemId must be a positive integer",
+        path: ["itemId"],
+      });
+    }
+    const sn = String(val.serialNumber ?? "").trim();
+    if (!sn) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "serialNumber is required",
+        path: ["serialNumber"],
+      });
+    }
+  });
+export const insertInventoryAllocationSchema = createInsertSchema(inventoryAllocations)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .superRefine((val, ctx) => {
+    if (typeof val.itemId !== "number" || !Number.isFinite(val.itemId) || val.itemId < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "itemId must be a positive integer",
+        path: ["itemId"],
+      });
+    }
+    const q = val.quantity;
+    if (typeof q !== "number" || !Number.isFinite(q) || q < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "quantity must be at least 1",
+        path: ["quantity"],
+      });
+    }
+  });
 export const insertCycleCountSchema = createInsertSchema(cycleCounts).omit({
   id: true,
   createdAt: true,

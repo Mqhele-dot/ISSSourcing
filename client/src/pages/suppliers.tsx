@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -67,21 +67,35 @@ export default function SuppliersPage() {
     void refetchPerformance();
   };
 
-  // Get logo for selected supplier
-  const { data: selectedLogo, isLoading: isLogoLoading } = useQuery<SupplierLogo | null>({
-    queryKey: ['/api/suppliers', selectedSupplierId, 'logo'],
+  // Get logo for selected supplier (non-blocking: failures do not clear selection)
+  const {
+    data: selectedLogo,
+    isLoading: isLogoLoading,
+    isFetching: isLogoFetching,
+    isError: logoQueryError,
+    error: logoQueryErr,
+    refetch: refetchLogo,
+  } = useQuery<SupplierLogo | null>({
+    queryKey: ["/api/suppliers", selectedSupplierId, "logo"],
     queryFn: async () => {
-      if (!selectedSupplierId) {
-        return null;
+      if (!selectedSupplierId) return null;
+      const res = await fetch(`/api/suppliers/${selectedSupplierId}/logo`, { credentials: "include" });
+      if (res.status === 404) return null;
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try {
+          const j = (await res.json()) as { message?: string };
+          if (typeof j?.message === "string") msg = j.message;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
       }
-      try {
-        return await requestJson<SupplierLogo>("GET", `/api/suppliers/${selectedSupplierId}/logo`);
-      } catch {
-        return null;
-      }
+      return (await res.json()) as SupplierLogo;
     },
     enabled: !!selectedSupplierId,
     retry: 0,
+    throwOnError: false,
   });
 
   // Create supplier
@@ -141,18 +155,27 @@ export default function SuppliersPage() {
   const deleteSupplier = useMutation({
     mutationFn: (id: number) => 
       requestJson<{ success: boolean }>('DELETE', `/api/suppliers/${id}`),
-    onSuccess: () => {
+    onSuccess: (_, deletedId) => {
       toast({
         title: "Supplier deleted",
         description: "The supplier has been deleted successfully",
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/suppliers'] });
-      setSelectedSupplierId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      if (selectedSupplierId === deletedId) {
+        setSelectedSupplierId(null);
+        setLogoDialogOpen(false);
+        setRemoveLogoConfirm(false);
+      }
     },
     onError: (error, id) => {
+      const raw = error instanceof Error ? error.message : "An unexpected error occurred";
+      const description =
+        /foreign key|violates|referenced|23503|constraint/i.test(raw) || /linked|in use/i.test(raw)
+          ? "This supplier cannot be deleted while it is linked to purchase orders, requisitions, or other records. Remove or reassign those first."
+          : raw;
       toast({
         title: "Error deleting supplier",
-        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        description,
         variant: "destructive",
         action: id != null ? (
           <ToastAction altText="Retry" onClick={() => deleteSupplier.mutate(id)}>
@@ -322,7 +345,7 @@ export default function SuppliersPage() {
   const confirmDeleteSupplier = () => {
     if (!deleteConfirmSupplier) return;
     deleteSupplier.mutate(deleteConfirmSupplier.id, {
-      onSettled: () => setDeleteConfirmSupplier(null),
+      onSuccess: () => setDeleteConfirmSupplier(null),
     });
   };
 
@@ -337,18 +360,20 @@ export default function SuppliersPage() {
     }
   };
 
-  // Open logo dialog
+  // Open logo dialog — form values sync in useEffect when logo query settles for this supplier
   const handleOpenLogoDialog = (supplier: Supplier) => {
     setSelectedSupplierId(supplier.id);
+    logoForm.reset({ logoUrl: "" });
     setLogoDialogOpen(true);
-    
-    // Reset form with existing logo URL if available
-    if (selectedLogo) {
-      logoForm.reset({ logoUrl: selectedLogo.logoUrl });
-    } else {
-      logoForm.reset({ logoUrl: "" });
-    }
   };
+
+  useEffect(() => {
+    if (!logoDialogOpen || !selectedSupplierId) return;
+    if (isLogoLoading || isLogoFetching) {
+      return;
+    }
+    logoForm.reset({ logoUrl: selectedLogo?.logoUrl ?? "" });
+  }, [logoDialogOpen, selectedSupplierId, isLogoLoading, isLogoFetching, selectedLogo, logoForm]);
 
   const paymentTermsById = new Map(paymentTerms.map((term) => [term.id, `${term.code} - ${term.name}`]));
   const performanceBySupplier = new Map(performance.map((row) => [row.supplierId, row]));
@@ -422,6 +447,8 @@ export default function SuppliersPage() {
         setLogoDialogOpen={setLogoDialogOpen}
         logoDialogOpen={logoDialogOpen}
         selectedLogo={selectedLogo ?? undefined}
+        logoQueryError={logoQueryError}
+        onRetryLogo={() => void refetchLogo()}
         logoForm={logoForm}
         handleLogoSubmit={handleLogoSubmit}
       />

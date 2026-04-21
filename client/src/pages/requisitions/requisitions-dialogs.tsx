@@ -45,6 +45,8 @@ type RequisitionsDialogsProps = {
   setShareOpen: (v: boolean) => void;
   selectedReq: PurchaseRequisition | null;
   users: User[];
+  usersDirectoryError?: boolean;
+  onRetryUsers?: () => void;
   shareUserIds: number[];
   setShareUserIds: (ids: number[] | ((prev: number[]) => number[])) => void;
   shareMutation: UseMutationResult<unknown, Error, { id: number; userIds: number[] }, unknown>;
@@ -59,6 +61,8 @@ type RequisitionsDialogsProps = {
   setApproverHelpAmount: (n: number | null) => void;
   reqApproverHints: ApproverHints | undefined;
   approverHintsLoading: boolean;
+  approverHintsError?: boolean;
+  approverHintsErrorMessage?: string;
 
   historyDialogReq: PurchaseRequisition | null;
   setHistoryDialogReq: (r: PurchaseRequisition | null) => void;
@@ -82,6 +86,17 @@ export function RequisitionsDialogs(p: RequisitionsDialogsProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {p.usersDirectoryError ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <p className="font-medium">Could not load users</p>
+                <p className="text-xs opacity-90">Sharing needs the user directory. You can retry or try again later.</p>
+                {p.onRetryUsers ? (
+                  <Button type="button" className="mt-2" size="sm" variant="secondary" onClick={() => p.onRetryUsers?.()}>
+                    Retry users
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label>Share with users</Label>
               <Select
@@ -134,7 +149,9 @@ export function RequisitionsDialogs(p: RequisitionsDialogsProps) {
                 if (!p.selectedReq) return;
                 p.shareMutation.mutate({ id: p.selectedReq.id, userIds: p.shareUserIds });
               }}
-              disabled={p.shareMutation.isPending || p.shareUserIds.length === 0}
+              disabled={
+                p.shareMutation.isPending || p.shareUserIds.length === 0 || p.usersDirectoryError
+              }
             >
               {p.shareMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Share
@@ -188,7 +205,12 @@ export function RequisitionsDialogs(p: RequisitionsDialogsProps) {
                 if (p.rejectDialogReq) {
                   p.rejectMutation.mutate(
                     { id: p.rejectDialogReq.id, reason: p.rejectReason },
-                    { onSettled: () => { p.setRejectDialogReq(null); p.setRejectReason(""); } },
+                    {
+                      onSuccess: () => {
+                        p.setRejectDialogReq(null);
+                        p.setRejectReason("");
+                      },
+                    },
                   );
                 }
               }}
@@ -215,7 +237,16 @@ export function RequisitionsDialogs(p: RequisitionsDialogsProps) {
               Approval still runs as the signed-in user; policies may require a specific role or user.
             </DialogDescription>
           </DialogHeader>
-          {p.approverHintsLoading ? (
+          {p.approverHintsError ? (
+            <div className="space-y-2 text-sm">
+              <p className="text-destructive">
+                Suggestions unavailable{p.approverHintsErrorMessage ? `: ${p.approverHintsErrorMessage}` : ""}.
+              </p>
+              <p className="text-muted-foreground text-xs">
+                You can still approve or reject this requisition; only the helper list failed to load.
+              </p>
+            </div>
+          ) : p.approverHintsLoading ? (
             <div className="text-sm text-muted-foreground">Loading suggestions…</div>
           ) : (p.reqApproverHints?.suggestedApprovers?.length ?? 0) === 0 ? (
             <p className="text-sm text-muted-foreground">

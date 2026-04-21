@@ -198,6 +198,16 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       
       res.status(204).send();
     } catch (error) {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String((error as { code: unknown }).code)
+          : "";
+      if (code === "23503") {
+        return res.status(400).json({
+          message:
+            "This supplier cannot be deleted while it is linked to purchase orders, requisitions, or other records.",
+        });
+      }
       console.error("Error deleting supplier:", error);
       res.status(500).json({ message: "Failed to delete supplier" });
     }

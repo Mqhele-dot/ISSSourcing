@@ -5,6 +5,7 @@ import { flushOfflineQueueToServer } from "@/lib/offline-queue";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { Button } from "@/components/ui/button";
 
 const tiles = [
   { href: APP_ROUTES.operations.exceptions, title: "Exceptions", desc: "Open issues", icon: AlertTriangle },
@@ -41,6 +42,11 @@ export default function MobileHubHomePage() {
             </Card>
           </Link>
         ))}
+      </div>
+      <div className="pt-2">
+        <Button asChild variant="outline" size="sm" className="w-full">
+          <Link href={APP_ROUTES.operations.root}>Desktop operations overview</Link>
+        </Button>
       </div>
     </div>
   );

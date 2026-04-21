@@ -47,6 +47,14 @@ type AuthBundle = {
   ensureRole: (roles: string[]) => RequestHandler;
 };
 
+function pgErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === "object" && "code" in error) {
+    const c = (error as { code: unknown }).code;
+    return typeof c === "string" ? c : undefined;
+  }
+  return undefined;
+}
+
 /**
  * Reference data CRUD, cycle count post, approval policies, retention, supplier portal context.
  */
@@ -105,6 +113,15 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
             details: error.flatten(),
           });
         }
+        const pgCode = pgErrorCode(error);
+        if (pgCode === "23505") {
+          return sendError(
+            res,
+            400,
+            "DUPLICATE_RECORD",
+            "A record with this unique value already exists (for example duplicate batch number or serial).",
+          );
+        }
         console.error(`Error creating ${basePath}:`, error);
         return sendError(res, 500, "MASTER_DATA_CREATE_FAILED", "Failed to create record");
       }
@@ -153,6 +170,15 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         if (deleted.length === 0) return sendError(res, 404, "NOT_FOUND", "Record not found");
         return res.status(204).send();
       } catch (error) {
+        const pgCode = pgErrorCode(error);
+        if (pgCode === "23503") {
+          return sendError(
+            res,
+            400,
+            "REFERENCED_RECORD",
+            "Cannot delete: other records still reference this row.",
+          );
+        }
         console.error(`Error deleting ${basePath}:`, error);
         return sendError(res, 500, "MASTER_DATA_DELETE_FAILED", "Failed to delete record");
       }

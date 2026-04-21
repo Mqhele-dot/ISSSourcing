@@ -5,9 +5,20 @@ import { ExceptionCard } from "./ap-shared";
 type Props = {
   exceptions: Exceptions;
   formatMoney: (n: number | null | undefined) => string;
+  /** True when GET /api/ap/exceptions failed — do not show empty columns as “no exceptions”. */
+  loadFailed?: boolean;
 };
 
-export function ApExceptionsPanel({ exceptions, formatMoney }: Props) {
+export function ApExceptionsPanel({ exceptions, formatMoney, loadFailed }: Props) {
+  if (loadFailed) {
+    return (
+      <p className="text-sm text-destructive">
+        Exception data could not be loaded. Use Retry on the tab — the workspace cannot show capture, match, or
+        dispute breakdown until the request succeeds.
+      </p>
+    );
+  }
+
   return (
     <div className="grid gap-4 md:grid-cols-3">
       <ExceptionCard

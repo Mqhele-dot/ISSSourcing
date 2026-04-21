@@ -81,6 +81,17 @@ export default function AccountsPayableWorkspace() {
   const overviewLoading = overviewQuery.isPending && !overviewQuery.data;
   const overviewErr = overviewQuery.isError ? overviewQuery.error : null;
 
+  const partialWorkspaceDataError =
+    !overviewErr &&
+    Boolean(overview) &&
+    overviewQuery.isFetched &&
+    (suppliersQuery.isError ||
+      capturesQuery.isError ||
+      approvalQueueQuery.isError ||
+      exceptionsQuery.isError ||
+      paymentBatchesQuery.isError ||
+      invoicesQuery.isError);
+
   const section = params?.section;
   const activeTab = isApWorkspaceTab(section) ? section : null;
 
@@ -212,6 +223,16 @@ export default function AccountsPayableWorkspace() {
 
       {overview ? <ApOverviewHeader stats={overview} formatMoney={formatMoney} /> : null}
 
+      {partialWorkspaceDataError ? (
+        <Alert>
+          <AlertTitle>Partial workspace load</AlertTitle>
+          <AlertDescription className="text-sm">
+            The AP overview loaded, but at least one list (suppliers, captures, queue, invoices, exceptions, or batches)
+            failed. Open the affected tab and use its retry actions—each tab reflects its own data status.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       {!overviewQuery.isFetched && !overviewErr ? (
         <p className="text-sm text-muted-foreground">Preparing workspace requests…</p>
       ) : null}
@@ -250,7 +271,10 @@ export default function AccountsPayableWorkspace() {
               </AlertDescription>
             </Alert>
           ) : null}
-          {captures.length === 0 ? (
+          {!capturesQuery.isError &&
+          !capturesQuery.isPending &&
+          capturesQuery.isFetched &&
+          captures.length === 0 ? (
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base">No invoice captures yet</CardTitle>
@@ -318,6 +342,8 @@ export default function AccountsPayableWorkspace() {
           <ApApprovalsPanel
                   invoices={invoices}
                   approvalQueue={approvalQueue}
+                  invoicesLoadFailed={invoicesQuery.isError}
+                  queueLoadFailed={approvalQueueQuery.isError}
                   formatMoney={formatMoney}
                   previewApproversMutation={mutations.previewApproversMutation}
                   matchInvoiceMutation={mutations.matchInvoiceMutation}
@@ -338,7 +364,7 @@ export default function AccountsPayableWorkspace() {
               </AlertDescription>
             </Alert>
           ) : null}
-          <ApExceptionsPanel exceptions={exceptions} formatMoney={formatMoney} />
+          <ApExceptionsPanel exceptions={exceptions} formatMoney={formatMoney} loadFailed={exceptionsQuery.isError} />
         </TabsContent>
 
         <TabsContent value="payments" className="space-y-4">
@@ -357,6 +383,8 @@ export default function AccountsPayableWorkspace() {
           ) : null}
           <ApPaymentsPanel
                   readyForBatch={readyForBatch}
+                  invoicesLoadFailed={invoicesQuery.isError}
+                  batchesLoadFailed={paymentBatchesQuery.isError}
                   selectedInvoiceIds={selectedInvoiceIds}
                   toggleInvoiceSelection={toggleInvoiceSelection}
                   selectedBatchTotal={selectedBatchTotal}

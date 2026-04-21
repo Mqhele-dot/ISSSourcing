@@ -389,6 +389,37 @@ async function main() {
     assert(typeof first.quantityUsed === "number", "Stock usage item must have quantityUsed");
   }
 
+  // Finance / analytics workspace JSON contracts
+  const apOverview = await requestApi("/ap/overview");
+  assert(apOverview.ok, `AP overview failed with status ${apOverview.status}: ${extractErrorMessage(apOverview.json)}`);
+  const apOverviewData = unwrapData<Record<string, unknown>>(apOverview.json);
+  assert(typeof apOverviewData.invoiceCount === "number", "AP overview must include invoiceCount");
+  assert(typeof apOverviewData.outstandingAmount === "number", "AP overview must include outstandingAmount");
+
+  const invStats = await requestApi("/inventory/stats");
+  assert(invStats.ok, `Inventory stats failed with status ${invStats.status}`);
+  assert(
+    invStats.json && typeof invStats.json === "object" && typeof (invStats.json as { totalItems?: unknown }).totalItems === "number",
+    "Inventory stats must include numeric totalItems",
+  );
+
+  const controlTower = await requestApi("/control-tower/overview");
+  assert(
+    controlTower.ok,
+    `Control tower overview failed with status ${controlTower.status}: ${extractErrorMessage(controlTower.json)}`,
+  );
+  const ctData = unwrapData<{ kpis?: unknown; activity?: unknown }>(controlTower.json);
+  assert(ctData && typeof ctData === "object" && ctData.kpis && typeof ctData.kpis === "object", "Control tower must include kpis object");
+  assert(Array.isArray(ctData.activity), "Control tower must include activity array");
+
+  const spendReport = await requestApi("/reports/analytics");
+  assert(
+    spendReport.ok,
+    `Spend analytics failed with status ${spendReport.status}: ${extractErrorMessage(spendReport.json)}`,
+  );
+  const spendData = unwrapData<Record<string, unknown>>(spendReport.json);
+  assert(Array.isArray(spendData.spendBySupplier), "Spend analytics must include spendBySupplier array");
+
   // Dashboard: inventory value (used by Value by Category / Inventory Value)
   const inventoryValue = await requestApi("/analytics/inventory-value");
   assert(inventoryValue.ok, "Inventory value request failed");

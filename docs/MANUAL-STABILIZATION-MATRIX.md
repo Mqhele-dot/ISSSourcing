@@ -2,13 +2,15 @@
 
 Run against the **same environment** where you validate production behavior (local, Codespaces, or hosted). Fill in **Result** and **Notes** per row.
 
-## Automated checks (2026-04-20)
+## Automated checks (2026-04-21)
 
 | Check | Result |
 |-------|--------|
 | `npm run check` | Pass |
 | `npm run test:stabilization-client` | Pass |
-| `npm run test:smoke` | Run locally with server + seeded DB when validating API contract |
+| `npm run test:smoke` | Not run in agent session — run locally with server + seeded DB when validating API contract |
+
+Human verification: inventory CSV (browser + server in dev), warehouse put-away/save, PO list error vs empty, requisition share/suggestions failures, supplier logo/delete — fill **Loads / Local OK** columns after a live pass.
 
 Per-route cells below remain for **human** verification in your deployment.
 
@@ -28,10 +30,12 @@ Columns: **Route** | **Loads** | **False setup banner** | **Global error FAB** |
 
 | Route | Loads | Setup banner OK | FAB OK | Local OK | Notes |
 |-------|-------|-----------------|--------|----------|-------|
+| Operations overview (`/operations`) | | | | | |
 | Control tower | | | | | |
 | Logistics | | | | | |
 | Exceptions | | | | | |
-| Mobile hub | | | | | |
+| Mobile workflows launcher (`/operations/mobile-workflows`) | | | | | |
+| Mobile shell home (`/m/home`) | | | | | |
 
 ## Inventory
 

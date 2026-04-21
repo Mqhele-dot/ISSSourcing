@@ -34,6 +34,7 @@ import { ToastAction } from "@/components/ui/toast";
 import { apiRequest, requestJson } from "@/lib/queryClient";
 import type { PurchaseRequisition, PurchaseRequisitionItem, User, Supplier, InventoryItem } from "@shared/schema";
 import { Can } from "@/components/auth/can";
+import { PanelInlineError } from "@/components/panel-inline-error";
 import { fetchApprovalSuggestions } from "@/api/client";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
@@ -105,17 +106,34 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   });
   const requisitions = Array.isArray(requisitionsRaw) ? requisitionsRaw : [];
 
-  const { data: users = [] } = useQuery({
+  const {
+    data: users = [],
+    isError: usersError,
+    error: usersErr,
+    refetch: refetchUsers,
+  } = useQuery({
     queryKey: ["/api/users"],
     queryFn: () => requestJson<User[]>("GET", "/api/users"),
+    throwOnError: false,
   });
 
-  const { data: suppliers = [] } = useQuery({
+  const {
+    data: suppliers = [],
+    isError: suppliersError,
+    error: suppliersErr,
+    refetch: refetchSuppliers,
+  } = useQuery({
     queryKey: ["/api/suppliers"],
     queryFn: () => requestJson<Supplier[]>("GET", "/api/suppliers"),
+    throwOnError: false,
   });
 
-  const { data: reqApproverHints, isLoading: approverHintsLoading } = useQuery({
+  const {
+    data: reqApproverHints,
+    isLoading: approverHintsLoading,
+    isError: approverHintsError,
+    error: approverHintsErr,
+  } = useQuery({
     queryKey: ["/api/approval-suggestions", "requisition", approverHelpAmount],
     enabled: approverHelpAmount !== null,
     queryFn: () =>
@@ -123,6 +141,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
         entityType: "requisition",
         amount: Number(approverHelpAmount),
       }),
+    throwOnError: false,
   });
 
   const statusFilter = String(queryState.status || "").trim().toUpperCase();
@@ -253,6 +272,27 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
           </>
         }
       />
+
+      {usersError || suppliersError ? (
+        <PanelInlineError
+          title="Directory data partially unavailable"
+          description={
+            usersError && suppliersError
+              ? `Users: ${usersErr instanceof Error ? usersErr.message : String(usersErr)} · Suppliers: ${suppliersErr instanceof Error ? suppliersErr.message : String(suppliersErr)}`
+              : usersError
+                ? usersErr instanceof Error
+                  ? usersErr.message
+                  : String(usersErr)
+                : suppliersErr instanceof Error
+                  ? suppliersErr.message
+                  : String(suppliersErr)
+          }
+          onRetry={() => {
+            if (usersError) void refetchUsers();
+            if (suppliersError) void refetchSuppliers();
+          }}
+        />
+      ) : null}
 
       <DataState
         loading={isLoading}
@@ -407,6 +447,8 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
         setShareOpen={setShareOpen}
         selectedReq={selectedReq}
         users={users}
+        usersDirectoryError={usersError}
+        onRetryUsers={() => void refetchUsers()}
         shareUserIds={shareUserIds}
         setShareUserIds={setShareUserIds}
         shareMutation={shareMutation}
@@ -419,6 +461,10 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
         setApproverHelpAmount={setApproverHelpAmount}
         reqApproverHints={reqApproverHints}
         approverHintsLoading={approverHintsLoading}
+        approverHintsError={approverHintsError}
+        approverHintsErrorMessage={
+          approverHintsErr instanceof Error ? approverHintsErr.message : approverHintsErr ? String(approverHintsErr) : ""
+        }
         historyDialogReq={historyDialogReq}
         setHistoryDialogReq={setHistoryDialogReq}
         approvalHistory={approvalHistory}

@@ -4,7 +4,7 @@ import { fromZodError } from "zod-validation-error";
 import { and, eq } from "drizzle-orm";
 import { storage } from "../../storage";
 import { db, pool } from "../../db";
-import { sendFunctionError } from "../../api-response";
+import { sendError, sendFunctionError, sendOk } from "../../api-response";
 import { emitNotification } from "../../services/notification-emitter";
 import {
   insertPurchaseRequisitionSchema,
@@ -411,17 +411,17 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       }
       
       const purchaseOrder = await storage.createPurchaseOrderFromRequisition(id);
-      
+
       if (!purchaseOrder) {
-        return sendFunctionError(
+        return sendError(
           res,
           404,
-          "convertPurchaseRequisitionToPO",
-          "Failed to convert requisition to purchase order. Make sure the requisition exists and is approved.",
+          "CONVERT_REQUISITION_FAILED",
+          "Could not convert: the requisition must exist, be approved, and have valid lines and supplier.",
         );
       }
-      
-      res.status(201).json(purchaseOrder);
+
+      return sendOk(res, purchaseOrder, 201);
     } catch (error) {
       console.error("Error converting requisition to purchase order:", error);
       return sendFunctionError(
@@ -437,21 +437,27 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
   app.post("/api/purchase-requisitions/:id/share", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+      if (!Number.isFinite(id) || id < 1) {
+        return sendError(res, 400, "INVALID_ID", "Invalid purchase requisition ID");
       }
       const { userIds } = req.body as { userIds?: number[] };
       if (!Array.isArray(userIds)) {
-        return res.status(400).json({ message: "userIds must be an array of user IDs" });
+        return sendError(res, 400, "INVALID_BODY", "userIds must be an array of user IDs");
       }
-      const updated = await storage.updatePurchaseRequisition(id, { sharedWithUserIds: userIds });
+      const normalized = userIds
+        .map((u) => Number(u))
+        .filter((u) => Number.isFinite(u) && u >= 1);
+      if (normalized.length !== userIds.length) {
+        return sendError(res, 400, "INVALID_USER_IDS", "userIds must contain only positive integer user IDs");
+      }
+      const updated = await storage.updatePurchaseRequisition(id, { sharedWithUserIds: normalized });
       if (!updated) {
-        return res.status(404).json({ message: "Purchase requisition not found" });
+        return sendError(res, 404, "NOT_FOUND", "Purchase requisition not found");
       }
-      res.json(updated);
+      return sendOk(res, updated);
     } catch (error) {
       console.error("Error sharing requisition:", error);
-      res.status(500).json({ message: "Failed to share requisition" });
+      return sendError(res, 500, "SHARE_REQUISITION_FAILED", "Failed to share requisition");
     }
   });
 

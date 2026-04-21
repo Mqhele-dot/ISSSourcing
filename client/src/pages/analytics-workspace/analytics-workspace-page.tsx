@@ -19,11 +19,9 @@ export default function AnalyticsWorkspacePage() {
     controlTower,
     apOverview,
     spendAnalytics,
-    isLoading,
-    isError,
-    error,
-    refetch,
-  } = useAnalyticsWorkspaceQueries();
+    health,
+    shell,
+  } = useAnalyticsWorkspaceQueries(section);
 
   const cards = useMemo(
     () =>
@@ -31,24 +29,26 @@ export default function AnalyticsWorkspacePage() {
         section,
         { inventoryStats, controlTower, apOverview, spendAnalytics },
         formatMoney,
+        health,
       ),
-    [
-      section,
-      inventoryStats,
-      controlTower,
-      apOverview,
-      spendAnalytics,
-      formatMoney,
-    ],
+    [section, inventoryStats, controlTower, apOverview, spendAnalytics, formatMoney, health],
   );
 
   return (
     <AnalyticsWorkspaceShell
       section={section}
       cards={cards}
-      loading={isLoading}
-      error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
-      onRetry={() => void refetch()}
+      loading={shell.loading}
+      error={shell.error}
+      partialFailure={
+        shell.someFailed
+          ? {
+              labels: shell.failedLabels,
+              onRetry: () => void shell.refetch(),
+            }
+          : undefined
+      }
+      onRetry={() => void shell.refetch()}
     >
       <>
         <AnalyticsKpiGrid cards={cards} section={section} />

@@ -35,7 +35,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { errorMessageWithRequestId, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import {
+  parseExportFailureMessage,
+  isLikelyCsvResponse,
+  sniffBlobExportKind,
+  messageIfBlobLooksLikeJsonError,
+  invoiceExportMagicMatchesFormat,
+} from "@/lib/export-download";
 import { downloadFile } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -74,6 +81,32 @@ type MatchResult = {
   status: string;
   mismatches: Array<{ type: string; itemId: number; message: string }>;
 };
+
+function normalizeInvoiceMatchResult(raw: unknown): MatchResult | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const matched = Boolean(r.matched);
+  const matchResult =
+    r.matchResult && typeof r.matchResult === "object"
+      ? (r.matchResult as Record<string, unknown>)
+      : null;
+  const status =
+    (typeof matchResult?.status === "string" ? matchResult.status : null) ??
+    (matched ? "MATCHED" : "EXCEPTION");
+  const mismatchesRaw = Array.isArray(r.mismatches) ? r.mismatches : [];
+  const mismatches = mismatchesRaw.map((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return { type: "UNKNOWN", itemId: 0, message: "Invalid mismatch entry" };
+    }
+    const o = entry as Record<string, unknown>;
+    const type =
+      typeof o.type === "string" ? o.type : typeof o.code === "string" ? o.code : "MISMATCH";
+    const itemId = typeof o.itemId === "number" ? o.itemId : Number(o.itemId) || 0;
+    const message = typeof o.message === "string" ? o.message : "Mismatch";
+    return { type, itemId, message };
+  });
+  return { matched, status, mismatches };
+}
 
 type InvoiceLineRow = {
   id: number;
@@ -134,16 +167,51 @@ export default function InvoicesPage() {
       const url = `/api/export/invoices/${format}${q ? `?${q}` : ""}`;
       const response = await fetch(url, { credentials: "include" });
       if (!response.ok) {
-        let detail = `Export failed (${response.status})`;
-        try {
-          const errBody = (await response.json()) as { message?: string };
-          if (errBody?.message) detail = errBody.message;
-        } catch {
-          /* not JSON */
-        }
+        const detail =
+          response.status === 403
+            ? "Exports are disabled for this organization or you do not have access."
+            : await parseExportFailureMessage(response);
         throw new Error(detail);
       }
+      const ct = (response.headers.get("content-type") || "").toLowerCase();
+      if (ct.includes("application/json")) {
+        const detail = await parseExportFailureMessage(response);
+        throw new Error(detail || "Export failed: server returned JSON instead of a file.");
+      }
+      const declaredFormat = response.headers.get("X-Export-Format");
+      if (declaredFormat && declaredFormat !== format) {
+        throw new Error(
+          `Export format mismatch (requested ${format}, server declared ${declaredFormat}). Try again or contact support.`,
+        );
+      }
+      const ctOk =
+        format === "pdf"
+          ? ct.includes("application/pdf")
+          : format === "csv"
+            ? isLikelyCsvResponse(response)
+            : format === "excel"
+              ? ct.includes("spreadsheetml") || ct.includes("application/vnd.ms-excel")
+              : ct.includes("wordprocessingml") || ct.includes("application/msword");
       const blob = await response.blob();
+      const jsonErr = await messageIfBlobLooksLikeJsonError(blob);
+      if (jsonErr) {
+        throw new Error(jsonErr);
+      }
+      const sniff = await sniffBlobExportKind(blob);
+      if (!ctOk) {
+        const magicOk = invoiceExportMagicMatchesFormat(format, sniff);
+        const dev = Boolean(import.meta.env?.DEV);
+        if (!magicOk && dev) {
+          throw new Error(
+            `Invoice export (${format}) returned an unexpected content type (${ct || "none"}); blob signature: ${sniff}.`,
+          );
+        }
+        if (!magicOk && !dev && (format === "pdf" || format === "excel" || format === "docx")) {
+          throw new Error(
+            `Invoice export (${format}) did not return a valid file. Try again or contact support.`,
+          );
+        }
+      }
       const ext = format === "excel" ? "xlsx" : format;
       downloadFile(blob, `invoices-report.${ext}`);
       toast({
@@ -152,7 +220,7 @@ export default function InvoicesPage() {
       });
     } catch (e) {
       toast({
-        title: "Export failed",
+        title: "Invoice export failed",
         description: e instanceof Error ? e.message : String(e),
         variant: "destructive",
       });
@@ -282,7 +350,7 @@ export default function InvoicesPage() {
         totalTax,
         totalAmount,
         balanceDue: totalAmount,
-        currency: settings.currencyCode,
+        currency: currencyCode || settings.currencyCode,
         items: lines,
       });
     },
@@ -294,7 +362,7 @@ export default function InvoicesPage() {
     onError: (e) => {
       toast({
         title: "Failed to create invoice",
-        description: e instanceof Error ? e.message : String(e),
+        description: errorMessageWithRequestId(e),
         variant: "destructive",
       });
     },
@@ -311,7 +379,7 @@ export default function InvoicesPage() {
     onError: (e) => {
       toast({
         title: "Update failed",
-        description: e instanceof Error ? e.message : String(e),
+        description: errorMessageWithRequestId(e),
         variant: "destructive",
       });
     },
@@ -325,31 +393,44 @@ export default function InvoicesPage() {
       toast({ title: "Invoice removed" });
     },
     onError: (e) => {
+      const msg = errorMessageWithRequestId(e);
+      const lower = msg.toLowerCase();
+      const constrained =
+        lower.includes("foreign") ||
+        lower.includes("constraint") ||
+        lower.includes("reference") ||
+        lower.includes("violat");
       toast({
         title: "Delete failed",
-        description: e instanceof Error ? e.message : String(e),
+        description: constrained
+          ? `${errorMessageWithRequestId(e)} Remove related payments or other records that reference this invoice, then try again.`
+          : errorMessageWithRequestId(e),
         variant: "destructive",
       });
     },
   });
 
-  const {
-    data: invoiceLineRows = [],
-    refetch: refetchInvoiceLines,
-    isLoading: invoiceLinesLoading,
-  } = useQuery({
+  const invoiceLinesQuery = useQuery({
     queryKey: ["/api/invoices", linesEditInvoice?.id, "items"],
     enabled: !!linesEditInvoice,
     queryFn: () => requestJson<InvoiceLineRow[]>("GET", `/api/invoices/${linesEditInvoice!.id}/items`),
+    throwOnError: false,
   });
+  const invoiceLineRows = invoiceLinesQuery.data ?? [];
+  const refetchInvoiceLines = invoiceLinesQuery.refetch;
+  const invoiceLinesLoading = invoiceLinesQuery.isPending;
+  const invoiceLinesFailed = invoiceLinesQuery.isError;
 
   useEffect(() => {
     if (!linesEditInvoice) {
       setLineDrafts({});
       return;
     }
+    if (invoiceLinesQuery.isError || !invoiceLinesQuery.data) {
+      return;
+    }
     const next: Record<number, { quantity: string; unitPrice: string; taxRate: string }> = {};
-    for (const row of invoiceLineRows) {
+    for (const row of invoiceLinesQuery.data) {
       next[row.id] = {
         quantity: String(row.quantity),
         unitPrice: String(row.unitPrice),
@@ -357,7 +438,7 @@ export default function InvoicesPage() {
       };
     }
     setLineDrafts(next);
-  }, [linesEditInvoice, invoiceLineRows]);
+  }, [linesEditInvoice, invoiceLinesQuery.isError, invoiceLinesQuery.data]);
 
   const saveInvoiceLine = useMutation({
     mutationFn: async ({
@@ -377,7 +458,7 @@ export default function InvoicesPage() {
     onError: (e) => {
       toast({
         title: "Line save failed",
-        description: e instanceof Error ? e.message : String(e),
+        description: errorMessageWithRequestId(e),
         variant: "destructive",
       });
     },
@@ -415,7 +496,7 @@ export default function InvoicesPage() {
     onError: (e) => {
       toast({
         title: "Add line failed",
-        description: e instanceof Error ? e.message : String(e),
+        description: errorMessageWithRequestId(e),
         variant: "destructive",
       });
     },
@@ -432,16 +513,25 @@ export default function InvoicesPage() {
     onError: (e) => {
       toast({
         title: "Delete line failed",
-        description: e instanceof Error ? e.message : String(e),
+        description: errorMessageWithRequestId(e),
         variant: "destructive",
       });
     },
   });
 
   const runMatch = useMutation({
-    mutationFn: (invoiceId: number) => requestJson<MatchResult>("POST", `/api/invoices/${invoiceId}/match`),
-    onSuccess: (result, invoiceId) => {
+    mutationFn: (invoiceId: number) => requestJson<unknown>("POST", `/api/invoices/${invoiceId}/match`),
+    onSuccess: (raw, invoiceId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      const result = normalizeInvoiceMatchResult(raw);
+      if (!result) {
+        toast({
+          title: "3-way match incomplete",
+          description: "The server returned an unexpected response. Try again or check invoice and PO links.",
+          variant: "destructive",
+        });
+        return;
+      }
       setMatchResults((current) => ({ ...current, [invoiceId]: result }));
       toast({
         title: result.matched ? "3-way match passed" : "3-way match found mismatches",
@@ -454,7 +544,7 @@ export default function InvoicesPage() {
     onError: (e) => {
       toast({
         title: "3-way match failed",
-        description: e instanceof Error ? e.message : String(e),
+        description: errorMessageWithRequestId(e),
         variant: "destructive",
       });
     },
@@ -780,6 +870,13 @@ export default function InvoicesPage() {
               onRetry={() => void inventoryLinesQuery.refetch()}
             />
           ) : null}
+          {invoiceLinesFailed ? (
+            <PanelInlineError
+              title="Could not load invoice lines"
+              description="Line totals and edits need the latest rows from the server."
+              onRetry={() => void refetchInvoiceLines()}
+            />
+          ) : null}
           {linesEditInvoice && isInvoiceLinesLocked(linesEditInvoice.status) ? (
             <p className="text-sm text-muted-foreground">
               This invoice cannot be edited in its current status ({linesEditInvoice.status}).
@@ -787,9 +884,10 @@ export default function InvoicesPage() {
           ) : null}
           {linesEditInvoice && !isInvoiceLinesLocked(linesEditInvoice.status) ? (
             <div className="space-y-4">
-              {invoiceLinesLoading ? (
+              {invoiceLinesLoading && !invoiceLinesFailed ? (
                 <p className="text-sm text-muted-foreground">Loading lines…</p>
-              ) : (
+              ) : null}
+              {!invoiceLinesLoading && !invoiceLinesFailed ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -924,10 +1022,15 @@ export default function InvoicesPage() {
                     })}
                   </TableBody>
                 </Table>
-              )}
+              ) : null}
 
-              <div className="rounded-md border p-3 space-y-2">
+              <div
+                className={`rounded-md border p-3 space-y-2 ${invoiceLinesFailed || invoiceLinesLoading ? "opacity-60 pointer-events-none" : ""}`}
+              >
                 <div className="text-sm font-medium">Add line</div>
+                {invoiceLinesFailed || invoiceLinesLoading ? (
+                  <p className="text-xs text-muted-foreground">Load invoice lines above before adding new ones.</p>
+                ) : null}
                 <div className="flex flex-wrap gap-2 items-end">
                   <div className="space-y-1 min-w-[200px]">
                     <Label>Inventory item</Label>
@@ -960,7 +1063,9 @@ export default function InvoicesPage() {
                   <Button
                     type="button"
                     variant="default"
-                    disabled={addInvoiceLine.isPending || newLineItemId === "none"}
+                    disabled={
+                      addInvoiceLine.isPending || newLineItemId === "none" || invoiceLinesFailed || invoiceLinesLoading
+                    }
                     onClick={() => {
                       if (!linesEditInvoice) return;
                       const itemId = Number(newLineItemId);

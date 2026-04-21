@@ -30,31 +30,27 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [exportingPo, setExportingPo] = useState<string | null>(null);
-  const [poListError, setPoListError] = useState<Error | null>(null);
   const { queryState, setQueryState } = useQueryState({
     status: "",
     supplier: "",
     q: "",
   });
 
-  const fetcher = useCallback(async () => {
-    setPoListError(null);
-    try {
-      return await fetchPurchaseOrdersEnvelope({
+  const fetcher = useCallback(
+    () =>
+      fetchPurchaseOrdersEnvelope({
         status: String(queryState.status || ""),
         supplier: String(queryState.supplier || ""),
         q: String(queryState.q || ""),
-      });
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error(String(e));
-      setPoListError(err);
-      return { data: [] as PurchaseOrderListItem[] };
-    }
-  }, [queryState.status, queryState.supplier, queryState.q]);
+      }),
+    [queryState.status, queryState.supplier, queryState.q],
+  );
 
   const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
   const data = envelope?.data ?? null;
-  const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
+  const fallbackRaw = envelope?.meta?.fallback as FallbackKind | undefined;
+  /** Do not show degraded/timeout empty copy when the list request itself failed. */
+  const fallback = error ? undefined : fallbackRaw;
 
   const exportSignedPdfForRow = async (poNumber: string) => {
     setExportingPo(poNumber);
@@ -66,9 +62,16 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
         description: `PO ${poNumber} — includes terms and signature page.`,
       });
     } catch (err) {
+      const raw = err instanceof Error ? err.message : "Request failed";
+      let description = raw;
+      if (/not\s*found|po_not_found/i.test(raw)) {
+        description = "This purchase order was not found or is no longer available.";
+      } else if (/unavailable|503|db_unavailable|timeout/i.test(raw)) {
+        description = "The operations database is unavailable. Try again in a moment.";
+      }
       toast({
         title: "Could not export PDF",
-        description: err instanceof Error ? err.message : "Request failed",
+        description,
         variant: "destructive",
       });
     } finally {
@@ -125,7 +128,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
 
         <DataState
           loading={loading}
-          error={error ?? poListError}
+          error={error}
           data={data}
           isEmpty={(orders) => (Array.isArray(orders) ? orders : []).length === 0}
           emptyTitle="No purchase orders found"

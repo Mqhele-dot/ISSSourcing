@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { ExternalLink } from 'lucide-react';
 import { requestJson } from '@/lib/queryClient';
+import { APP_ROUTES } from '@/lib/routes/app-routes';
 import { type InventoryItem } from '@shared/schema';
 
 export function TopItems() {
@@ -115,7 +116,7 @@ export function TopItems() {
                     variant="ghost"
                     size="icon"
                     className="ml-auto"
-                    onClick={() => setLocation(`/inventory/${item.sku}`)}
+                    onClick={() => setLocation(APP_ROUTES.inventory.item(item.sku))}
                   >
                     <ExternalLink className="h-4 w-4" />
                   </Button>

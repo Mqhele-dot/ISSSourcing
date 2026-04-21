@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import {
   Activity,
+  AlertTriangle,
   Archive,
   ArrowDownToLine,
   Bookmark,
@@ -17,11 +18,14 @@ import {
   Home,
   IdCard,
   Landmark,
+  LayoutDashboard,
   PackageSearch,
+  Plug,
   QrCode,
   Radar,
   RefreshCw,
   Receipt,
+  ScanSearch,
   Search,
   Settings,
   ShieldCheck,
@@ -42,7 +46,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
-import { COMMAND_MENU_SECONDARY_ITEMS, APP_NAV_SECTIONS } from "@/lib/routes/section-metadata";
+import { COMMAND_MENU_SECONDARY_GROUPS, APP_NAV_SECTIONS } from "@/lib/routes/section-metadata";
 import { invTrackFetch, queryClient } from "@/lib/queryClient";
 import { useMediaQuery } from "@/hooks/use-media-query";
 
@@ -62,6 +66,7 @@ type NavEntry = {
 
 const ICONS = {
   activity: <Activity className="h-4 w-4" />,
+  "alert-triangle": <AlertTriangle className="h-4 w-4" />,
   archive: <Archive className="h-4 w-4" />,
   "arrow-down-to-line": <ArrowDownToLine className="h-4 w-4" />,
   bookmark: <Bookmark className="h-4 w-4" />,
@@ -76,11 +81,14 @@ const ICONS = {
   home: <Home className="h-4 w-4" />,
   "id-card": <IdCard className="h-4 w-4" />,
   landmark: <Landmark className="h-4 w-4" />,
+  "layout-dashboard": <LayoutDashboard className="h-4 w-4" />,
   "package-search": <PackageSearch className="h-4 w-4" />,
+  plug: <Plug className="h-4 w-4" />,
   "qr-code": <QrCode className="h-4 w-4" />,
   radar: <Radar className="h-4 w-4" />,
   receipt: <Receipt className="h-4 w-4" />,
   "refresh-cw": <RefreshCw className="h-4 w-4" />,
+  "scan-search": <ScanSearch className="h-4 w-4" />,
   settings: <Settings className="h-4 w-4" />,
   "shield-check": <ShieldCheck className="h-4 w-4" />,
   "shopping-cart": <ShoppingCart className="h-4 w-4" />,
@@ -128,31 +136,24 @@ export function CommandMenu() {
   /** Match master-data and other wide-layout admin pages (lg+). */
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const sections = useMemo(() => {
+    const mapItem = (item: (typeof APP_NAV_SECTIONS)[number]["items"][number]) => ({
+      label: item.label,
+      path: item.path,
+      keywords: item.keywords,
+      icon: ICONS[item.icon as keyof typeof ICONS] ?? <FileUp className="h-4 w-4" />,
+      desktopOnly: item.desktopOnly,
+    });
     const primary = APP_NAV_SECTIONS.map((section) => ({
       heading: section.label,
-      items: section.items.map((item) => ({
-        label: item.label,
-        path: item.path,
-        keywords: item.keywords,
-        icon: ICONS[item.icon as keyof typeof ICONS] ?? <FileUp className="h-4 w-4" />,
-        desktopOnly: item.desktopOnly,
-      })),
+      items: section.items.filter((item) => !item.hiddenFromPrimaryNav).map(mapItem),
     }));
-    const withSecondary = [
-      ...primary,
-      {
-        heading: "Additional",
-        items: COMMAND_MENU_SECONDARY_ITEMS.map((item) => ({
-          label: item.label,
-          path: item.path,
-          keywords: item.keywords,
-          icon: ICONS[item.icon as keyof typeof ICONS] ?? <FileUp className="h-4 w-4" />,
-          desktopOnly: item.desktopOnly,
-        })),
-      },
-    ];
-    if (isDesktop) return withSecondary;
-    return withSecondary.map((section) => ({
+    const secondary = COMMAND_MENU_SECONDARY_GROUPS.map((group) => ({
+      heading: group.heading,
+      items: group.items.map(mapItem),
+    }));
+    const merged = [...primary, ...secondary];
+    if (isDesktop) return merged;
+    return merged.map((section) => ({
       ...section,
       items: section.items.filter((item) => !DESKTOP_ONLY_PATHS.has(item.path) && !item.desktopOnly),
     }));

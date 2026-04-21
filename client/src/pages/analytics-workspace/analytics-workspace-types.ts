@@ -30,6 +30,8 @@ export type AnalyticsKpiCard = {
   value: string;
   description: string;
   href: string;
+  /** When set, KPI grid shows a non-blocking data-quality note (e.g. source query failed). */
+  sourceWarning?: string;
 };
 
 export type AnalyticsWorkspaceQueryBundle = {
@@ -37,4 +39,12 @@ export type AnalyticsWorkspaceQueryBundle = {
   controlTower: ControlTowerOverview | undefined;
   apOverview: ApOverview | undefined;
   spendAnalytics: SpendAnalytics | undefined;
+};
+
+/** When false, numeric KPIs from that source should not be presented as real zeros. */
+export type AnalyticsWorkspaceSourceHealth = {
+  inventoryStats: boolean;
+  controlTower: boolean;
+  apOverview: boolean;
+  spendAnalytics: boolean;
 };

@@ -130,7 +130,7 @@ After `drizzle-kit push` (or your migration process), existing rows will have **
 
 #### Routing
 
-- **Mobile hub** tiles use **`APP_ROUTES`** (operations + mobile paths) instead of legacy `/exceptions`, `/logistics`, etc.
+- **Mobile workflow home** (`/m/home`) tiles use **`APP_ROUTES`** (operations + `/m/*` paths) instead of legacy `/exceptions`, `/logistics`, etc. Desktop entry is **`/operations`** and **`/operations/mobile-workflows`** (launcher), not a primary Operations sidebar tab into the mobile shell.
 
 #### Diagnostics / tests
 
@@ -173,9 +173,66 @@ After `drizzle-kit push` (or your migration process), existing rows will have **
 - **Readiness banner**: setup-unavailable alert only when **`setupQueryActive`**; **Retry** disables on **`setupFetching`** (not readiness fetch).
 - **`useProductSetupComplete`**: returns **false** when **`setupStatusHealth === "degraded"`** or any **`critical`** issue (stricter than onboarding flags alone).
 - **Suppliers**: **`payment-terms` / `currencies` / `performance`** queries **`throwOnError: false`** + **`PanelInlineError`** for aux failures.
-- **Purchase orders list**: fetcher **catches** envelope failures so **`useAsyncResource`** does not lose the error message; **Retry** still works.
+- **Purchase orders list**: (superseded by InvTrack hardening) failures **propagate** to **`useAsyncResource`**; **`fallback`** hidden when the fetch errors.
 - **Reports**: **`useReportsPageData`** aux queries **`throwOnError: false`**; report preview tabs use **`useReportingMoney`** (**`formatMoney`**) instead of **`formatCurrency`**.
 - **Routing spot-check**: procurement/finance/analytics pages rely on **`APP_ROUTES`** / section nav; no stray hardcoded **`href`** paths found in that pass.
+
+### InvTrack inventory & procurement hardening (runtime reliability)
+
+#### Inventory
+
+- **List filters**: Server is the single source of truth for **q / location / category / low**; redundant client-side re-filter removed.
+- **CSV export (prod)**: Validates **Content-Type** before download; parses **JSON error** bodies; **403** mapped to explicit copy about **reports export** permission; dev keeps **browser CSV** plus optional **Server CSV** button.
+- **Row links**: **`APP_ROUTES.inventory.item`** encodes SKU (also **analytics top-items**, **exceptions** deep links, **inventory detail adjust** URL).
+
+#### Warehouse operations
+
+- **Put-away**: **Per-row** pending state; **PutAwayRow** syncs inputs when server row fields change.
+- **Allocations**: Validates optional **PO / requisition** ids; **invalidates** **`/api/inventory`** after create; **batch/serial issue** also invalidates **`/api/inventory-allocations`**.
+- **Batch register**: Client requires **positive integer** qty; schema requires **`quantityReceived` / `quantityOnHand` ≥ 1**.
+
+#### Purchase orders
+
+- **List fetch**: Failures **throw** into **`useAsyncResource`** (no disguised empty list); **`fallback`** from envelope suppressed when the request **errored**.
+- **Signed PDF**: Toasts map **not found** vs **DB unavailable** style errors.
+- **`APP_ROUTES.procurement.order`** encodes PO number in the path.
+
+#### Requisitions
+
+- **`/api/users`** and **`/api/suppliers`**: **`throwOnError: false`** + **`PanelInlineError`** on the page; **share** dialog shows directory failure + **Retry users**.
+- **Approval suggestions**: **`throwOnError: false`**; dialog shows **suggestions unavailable** without blocking approve/reject.
+- **Reject**: Dialog closes only on **success** (failure leaves dialog open for correction/retry).
+- **Helpers**: **`getRequisitionErrorMessage`** maps convert/share/not-found copy.
+
+#### Suppliers
+
+- **Logo**: **404** treated as **no logo** (no spurious error); real failures show **inline retry** in the logo dialog; form resets when the **logo query** settles for the selected supplier; **remove logo** closes dialogs on **success** only.
+- **Delete**: **FK / constraint** errors get dependency copy; confirm dialog closes on **success** only; deleting clears **selection** and logo UI when the deleted row was selected.
+
+#### Backend routes
+
+- **Master data POST**: **Postgres 23505** → **400 DUPLICATE_RECORD**; **DELETE 23503** → **400 REFERENCED_RECORD**.
+- **Batch / allocation / serial** inserts: stricter **Zod** (positive **itemId**, **quantity**, **serialNumber**, batch quantities).
+- **Requisition share**: **`sendOk`** envelope, validated **`userIds`**, **`sendError`** for bad input / not found.
+- **Requisition convert**: **404** uses **`sendError`** with **`CONVERT_REQUISITION_FAILED`**; **201** returns **`sendOk`**.
+- **Supplier delete**: **23503** → **400** with dependency message.
+- **Warehouse inventory PUT/DELETE**: **ID** validation uses **`Number.isFinite`** and **≥ 1**.
+
+#### Error handling
+
+- Shared **`export-download`** helpers for CSV export failure parsing.
+- **`client/src/lib/export-download.ts`** added for inventory server export.
+
+#### Verification (this change)
+
+- **`npm run check`** and **`npm run test:stabilization-client`**: pass.
+- **`npm run test:smoke`**: not run in this session (needs live API + DB).
+- **Full manual matrix** (inventory/procurement actions per plan): **not executed** here; use **`docs/MANUAL-STABILIZATION-MATRIX.md`**.
+
+#### Known limitations
+
+- **Inventory CSV (production)** still requires **auth** + **`reports:export`** and org feature **exports**; degraded ops DB may still return empty inventory with **fallback** headers (unchanged).
+- **Batch quantity ≥ 1** rejects **zero-on-hand** batch rows via API; use a minimum of **1** when registering traceable batches.
 
 ### Manual re-test checklist (post-stabilization)
 

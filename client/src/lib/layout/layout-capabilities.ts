@@ -18,6 +18,10 @@ type CapabilityRule = {
   capabilities: RouteLayoutCapabilities;
 };
 
+/**
+ * First matching rule wins. `/m/*` uses the mobile shell; `/operations/*` (including
+ * `/operations/mobile-workflows`) stays on the desktop shell—only navigating to `/m/…` swaps layout.
+ */
 const CAPABILITY_RULES: CapabilityRule[] = [
   {
     pattern: /^\/(m|mobile)(\/|$)/,

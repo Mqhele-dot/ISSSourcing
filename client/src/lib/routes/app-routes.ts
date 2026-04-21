@@ -66,6 +66,10 @@ export const APP_ROUTES = {
     product: "/setup",
   },
   operations: {
+    /** Desktop operations hub (cards + links; stays in desktop shell). */
+    root: "/operations",
+    /** Desktop page that explains and links into the `/m/*` mobile workflow shell. */
+    mobileWorkflows: "/operations/mobile-workflows",
     controlTower: "/operations/control-tower",
     logistics: "/operations/logistics",
     exceptions: "/operations/exceptions",
@@ -79,7 +83,8 @@ export const APP_ROUTES = {
   },
   inventory: {
     root: "/inventory",
-    item: (sku: string) => `/inventory/${sku}`,
+    /** Path segment is encoded so SKUs with reserved URL characters still resolve. */
+    item: (sku: string) => `/inventory/${encodeURIComponent(sku)}`,
     reorder: "/inventory/reorder",
     barcodeScanner: "/inventory/barcodes",
     warehouses: "/inventory/warehouses",
@@ -89,7 +94,8 @@ export const APP_ROUTES = {
   },
   procurement: {
     orders: "/procurement/orders",
-    order: (po: string | number) => `/procurement/orders/${po}`,
+    order: (po: string | number) =>
+      `/procurement/orders/${encodeURIComponent(String(po))}`,
     requisitions: "/procurement/requisitions",
     requisitionNew: "/procurement/requisitions/new",
     requisition: (id: string | number) => `/procurement/requisitions/${id}`,

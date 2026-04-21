@@ -451,7 +451,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
       links.push({ label: `Shipment ${refs.shipment_id}`, href: `/logistics/${refs.shipment_id}` });
     }
     if (typeof refs.sku === "string") {
-      links.push({ label: `SKU ${refs.sku}`, href: `/inventory/${refs.sku}` });
+      links.push({ label: `SKU ${refs.sku}`, href: APP_ROUTES.inventory.item(refs.sku) });
     }
     return links;
   }, [data]);

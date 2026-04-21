@@ -58,6 +58,8 @@ const MobilePickPage = lazy(() => import("@/pages/mobile-pick"));
 const MobileHubHome = lazy(() => import("@/pages/mobile-hub-home"));
 const MobileHubTasks = lazy(() => import("@/pages/mobile-hub-tasks"));
 const MobileHubMore = lazy(() => import("@/pages/mobile-hub-more"));
+const OperationsOverviewPage = lazy(() => import("@/pages/operations-overview-page"));
+const MobileWorkflowsLauncherPage = lazy(() => import("@/pages/mobile-workflows-launcher-page"));
 
 const LEGACY_REDIRECT_RULES: LegacyRedirectRule[] = buildLegacyRedirectRules();
 
@@ -88,6 +90,8 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.analytics.savedReports} component={SavedReportsPage} />
         <ProtectedRoute path={APP_ROUTES.analytics.exportCenter} component={ExportCenterPage} />
 
+        <ProtectedRoute path={APP_ROUTES.operations.mobileWorkflows} component={MobileWorkflowsLauncherPage} />
+        <ProtectedRoute path={APP_ROUTES.operations.root} component={OperationsOverviewPage} />
         <ProtectedRoute path={APP_ROUTES.operations.controlTower} component={ControlTowerPage} />
         <ProtectedRoute path={APP_ROUTES.operations.logistics} component={LogisticsPage} />
         <ProtectedRoute path={`${APP_ROUTES.operations.logistics}/:id`} component={LogisticsPage} />

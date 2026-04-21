@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -78,7 +78,7 @@ export default function WarehouseOperationsPage() {
   const [batchItem, setBatchItem] = useState("none");
   const [batchWh, setBatchWh] = useState("none");
   const [batchNumber, setBatchNumber] = useState("");
-  const [batchQty, setBatchQty] = useState("0");
+  const [batchQty, setBatchQty] = useState("1");
 
   const [serialItem, setSerialItem] = useState("none");
   const [serialWh, setSerialWh] = useState("none");
@@ -200,17 +200,30 @@ export default function WarehouseOperationsPage() {
       if (allocItem === "none") throw new Error("Item is required");
       const qty = Number(allocQty);
       if (!Number.isFinite(qty) || qty < 1) throw new Error("Quantity must be ≥ 1");
+      let orderId: number | null = null;
+      if (allocOrder.trim()) {
+        const n = Number(allocOrder);
+        if (!Number.isFinite(n) || n < 1) throw new Error("PO id must be a positive integer");
+        orderId = Math.trunc(n);
+      }
+      let requisitionId: number | null = null;
+      if (allocReq.trim()) {
+        const n = Number(allocReq);
+        if (!Number.isFinite(n) || n < 1) throw new Error("Requisition id must be a positive integer");
+        requisitionId = Math.trunc(n);
+      }
       return requestJson("POST", "/api/inventory-allocations", {
         itemId: Number(allocItem),
         warehouseId: allocWh === "none" ? null : Number(allocWh),
         quantity: qty,
-        orderId: allocOrder.trim() ? Number(allocOrder) : null,
-        requisitionId: allocReq.trim() ? Number(allocReq) : null,
+        orderId,
+        requisitionId,
         status: "reserved",
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory-allocations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
       toast({ title: "Allocation created" });
     },
     onError: (e) => {
@@ -231,6 +244,7 @@ export default function WarehouseOperationsPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/warehouse-inventory", putAwayWarehouse] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
       toast({ title: "Put-away saved" });
     },
     onError: (e) => {
@@ -246,7 +260,9 @@ export default function WarehouseOperationsPage() {
     mutationFn: () => {
       if (batchItem === "none" || !batchNumber.trim()) throw new Error("Item and batch number required");
       const q = Number(batchQty);
-      if (!Number.isFinite(q) || q < 0) throw new Error("Quantity must be valid");
+      if (!Number.isFinite(q) || q < 1 || !Number.isInteger(q)) {
+        throw new Error("Quantity must be a positive whole number");
+      }
       return requestJson("POST", "/api/inventory-batches", {
         itemId: Number(batchItem),
         warehouseId: batchWh === "none" ? null : Number(batchWh),
@@ -303,6 +319,7 @@ export default function WarehouseOperationsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory-batches"] });
       queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory-allocations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] });
       toast({ title: "Issued from batch", description: "Stock and trace records were updated." });
     },
@@ -323,6 +340,7 @@ export default function WarehouseOperationsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory-serials"] });
       queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory-allocations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] });
       toast({ title: "Serial issued", description: "Unit marked issued and stock decremented." });
     },
@@ -559,7 +577,7 @@ export default function WarehouseOperationsPage() {
                     row={row}
                     itemLabel={itemLabel.get(row.itemId) ?? String(row.itemId)}
                     onSave={(patch) => savePutAway.mutate({ ...row, ...patch })}
-                    busy={savePutAway.isPending}
+                    busy={savePutAway.isPending && savePutAway.variables?.id === row.id}
                   />
                 ))}
               </TableBody>
@@ -764,6 +782,12 @@ function PutAwayRow({
   const [location, setLocation] = useState(row.location ?? "");
   const [aisle, setAisle] = useState(row.aisle ?? "");
   const [bin, setBin] = useState(row.bin ?? "");
+
+  useEffect(() => {
+    setLocation(row.location ?? "");
+    setAisle(row.aisle ?? "");
+    setBin(row.bin ?? "");
+  }, [row.id, row.location, row.aisle, row.bin]);
 
   return (
     <TableRow>

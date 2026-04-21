@@ -29,6 +29,7 @@ import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useToast } from "@/hooks/use-toast";
 import { requestJson } from "@/lib/queryClient";
 import { downloadCsv } from "@/lib/csv-download";
+import { isLikelyCsvResponse, parseExportFailureMessage } from "@/lib/export-download";
 import { fetchInventory, type InventoryListItem } from "@/api/client";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 
@@ -101,42 +102,55 @@ export default function InventoryPage() {
     setSearchInput(String(queryState.q ?? ""));
   }, [queryState.q]);
 
-  const handleExportCsv = () => {
-    const runClientCsv = () => {
-      const items = displayedItems;
-      const rows: string[][] = [
-        ["sku", "name", "location", "on_hand", "allocated", "available", "updated_at"],
-        ...items.map((item) => [
-          item.sku,
-          item.name,
-          item.location || "",
-          String(item.onHand),
-          String(item.allocated),
-          String(item.available),
-          item.updatedAt ? (typeof item.updatedAt === "string" ? item.updatedAt : new Date(item.updatedAt).toISOString()) : "",
-        ]),
-      ];
-      downloadCsv("inventory-export.csv", rows);
-      toast({ title: "Export complete", description: "inventory-export.csv downloaded." });
-    };
+  const runClientCsv = useCallback(() => {
+    const items = inventoryData ?? [];
+    const rows: string[][] = [
+      ["sku", "name", "location", "on_hand", "allocated", "available", "updated_at"],
+      ...items.map((item) => [
+        item.sku,
+        item.name,
+        item.location || "",
+        String(item.onHand),
+        String(item.allocated),
+        String(item.available),
+        item.updatedAt ? (typeof item.updatedAt === "string" ? item.updatedAt : new Date(item.updatedAt).toISOString()) : "",
+      ]),
+    ];
+    downloadCsv("inventory-export.csv", rows);
+    toast({ title: "Export complete", description: "inventory-export.csv downloaded." });
+  }, [inventoryData, toast]);
 
-    const runServerCsv = async () => {
-      const res = await fetch("/api/export/inventory/csv", { credentials: "include" });
-      if (!res.ok) {
-        throw new Error(`Server export failed (${res.status})`);
+  const runServerCsv = useCallback(async () => {
+    const res = await fetch("/api/export/inventory/csv", { credentials: "include" });
+    if (!res.ok) {
+      const detail = await parseExportFailureMessage(res);
+      if (res.status === 403) {
+        throw new Error(
+          "You do not have permission to export reports. Ask an admin for the reports export permission.",
+        );
       }
-      const blob = await res.blob();
-      const href = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = href;
-      link.download = "inventory-report.csv";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(href);
-      toast({ title: "Export complete", description: "Downloaded server inventory CSV." });
-    };
+      if (res.status === 400 && /invalid|feature|disabled/i.test(detail)) {
+        throw new Error(detail);
+      }
+      throw new Error(detail || `Server export failed (${res.status})`);
+    }
+    if (!isLikelyCsvResponse(res)) {
+      const detail = await parseExportFailureMessage(res);
+      throw new Error(detail || "Server did not return a CSV file. Exports may be disabled for this organization.");
+    }
+    const blob = await res.blob();
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = "inventory-report.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(href);
+    toast({ title: "Export complete", description: "Downloaded server inventory CSV." });
+  }, [toast]);
 
+  const handleExportCsv = () => {
     void (async () => {
       try {
         if (import.meta.env.DEV) {
@@ -144,6 +158,20 @@ export default function InventoryPage() {
         } else {
           await runServerCsv();
         }
+      } catch (err) {
+        toast({
+          title: "Export failed",
+          description: err instanceof Error ? err.message : "Failed to export CSV",
+          variant: "destructive",
+        });
+      }
+    })();
+  };
+
+  const handleExportServerCsvDev = () => {
+    void (async () => {
+      try {
+        await runServerCsv();
       } catch (err) {
         toast({
           title: "Export failed",
@@ -164,29 +192,8 @@ export default function InventoryPage() {
     return Array.from(locationSet).sort((a, b) => a.localeCompare(b));
   }, [inventoryData]);
 
-  const displayedItems = useMemo(() => {
-    const base = inventoryData ?? [];
-    const q = String(queryState.q || "").trim().toLowerCase();
-    const location = String(queryState.location || "").trim().toLowerCase();
-    const category = String(queryState.category || "").trim();
-    const lowOnly = isLowFilterEnabled(String(queryState.low || ""));
-    return base.filter((item) => {
-      if (q) {
-        const haystack = `${item.sku} ${item.name}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
-      if (location && (item.location || "").toLowerCase() !== location) {
-        return false;
-      }
-      if (category && String(item.categoryId ?? "") !== category) {
-        return false;
-      }
-      if (lowOnly && item.available > item.lowStockThreshold) {
-        return false;
-      }
-      return true;
-    });
-  }, [inventoryData, queryState.category, queryState.location, queryState.low, queryState.q]);
+  /** Server applies q, location, category, low; list is single source of truth. */
+  const displayedItems = inventoryData ?? [];
 
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
@@ -205,8 +212,13 @@ export default function InventoryPage() {
               className="gap-2"
             >
               <Download className="h-4 w-4" />
-              Export CSV
+              {import.meta.env.DEV ? "Export CSV (browser)" : "Export CSV"}
             </Button>
+            {import.meta.env.DEV ? (
+              <Button variant="outline" size="sm" onClick={handleExportServerCsvDev} className="gap-2">
+                Server CSV
+              </Button>
+            ) : null}
             <Button variant="outline" onClick={refetchInventory} className="gap-2">
               <RefreshCw className="h-4 w-4" />
               Refresh
@@ -346,7 +358,7 @@ export default function InventoryPage() {
                 <TableRow
                   key={item.sku}
                   className="cursor-pointer"
-                  onClick={() => setLocation(`/inventory/${item.sku}`)}
+                  onClick={() => setLocation(APP_ROUTES.inventory.item(item.sku))}
                 >
                   <TableCell className="font-medium align-top">{item.sku}</TableCell>
                   <TableCell className="align-top">{item.name}</TableCell>

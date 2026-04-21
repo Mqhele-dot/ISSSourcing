@@ -19,6 +19,7 @@ import {
   Home,
   IdCard,
   Landmark,
+  LayoutDashboard,
   ListOrdered,
   Moon,
   PackagePlus,
@@ -73,6 +74,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
     home: Home,
     "id-card": IdCard,
     landmark: Landmark,
+    "layout-dashboard": LayoutDashboard,
     "list-ordered": ListOrdered,
     "package-search": PackageSearch,
     plug: Plug,
@@ -226,7 +228,9 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
             {APP_NAV_SECTIONS.map((section) => (
               <div key={section.key}>
                 <SectionTitle>{section.label}</SectionTitle>
-                {section.items.map((item) => {
+                {section.items
+                  .filter((item) => !item.hiddenFromPrimaryNav)
+                  .map((item) => {
                   const Icon = iconMap[item.icon as keyof typeof iconMap];
                   if (!Icon) return null;
                   return (

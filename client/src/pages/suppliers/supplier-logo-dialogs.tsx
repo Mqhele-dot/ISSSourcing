@@ -35,6 +35,8 @@ type SupplierLogoDialogsProps = {
   setLogoDialogOpen: (open: boolean) => void;
   logoDialogOpen: boolean;
   selectedLogo: SupplierLogo | null | undefined;
+  logoQueryError?: boolean;
+  onRetryLogo?: () => void;
   logoForm: UseFormReturn<SupplierLogoForm>;
   handleLogoSubmit: (data: SupplierLogoForm) => void;
 };
@@ -48,6 +50,8 @@ export function SupplierLogoDialogs({
   setLogoDialogOpen,
   logoDialogOpen,
   selectedLogo,
+  logoQueryError,
+  onRetryLogo,
   logoForm,
   handleLogoSubmit,
 }: SupplierLogoDialogsProps) {
@@ -73,7 +77,7 @@ export function SupplierLogoDialogs({
               onClick={() => {
                 if (selectedSupplierId) {
                   deleteLogo.mutate(selectedSupplierId, {
-                    onSettled: () => {
+                    onSuccess: () => {
                       setRemoveLogoConfirm(false);
                       setLogoDialogOpen(false);
                     },
@@ -92,9 +96,22 @@ export function SupplierLogoDialogs({
           <DialogHeader>
             <DialogTitle>Manage Supplier Logo</DialogTitle>
             <DialogDescription>
-              {selectedLogo ? "Update the logo for this supplier" : "Add a logo URL for this supplier"}
+              {selectedSupplierId != null
+                ? `Supplier #${selectedSupplierId} — ${selectedLogo ? "update logo URL" : "add a logo URL"}.`
+                : "Add a logo URL for this supplier."}
             </DialogDescription>
           </DialogHeader>
+
+          {logoQueryError ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              Could not load current logo. You can still enter a URL to add one.
+              {onRetryLogo ? (
+                <Button type="button" className="mt-2" size="sm" variant="secondary" onClick={() => onRetryLogo()}>
+                  Retry
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
 
           <form onSubmit={logoForm.handleSubmit(handleLogoSubmit)}>
             {selectedLogo && (

@@ -1,5 +1,5 @@
 import type { Express, Request, RequestHandler, Response } from "express";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import {
   insertApInvoiceCaptureSchema,
@@ -8,6 +8,7 @@ import {
   insertPaymentSchema,
 } from "@shared/schema";
 import { sendError, sendOk } from "../../api-response";
+import { getActiveOrganizationId } from "../../organization-context";
 import { incrementMetric } from "../../observability/metrics";
 import { storage } from "../../storage";
 import { resolveRequestActor } from "../../auth/request-user";
@@ -45,19 +46,20 @@ import {
   updateInvoiceStatus,
   updatePaymentRecord,
 } from "./service";
+import { trySendDbConstraintError } from "./ap-db-errors";
+import {
+  apInvoiceMatchBodySchema,
+  apPaymentBatchCreateSchema,
+  apPromoteCaptureBodySchema,
+  legacyInvoiceItemCreateSchema,
+  legacyInvoiceItemPatchSchema,
+  parseRouteId,
+} from "./ap-route-validation";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
   ensureRole: (roles: string[]) => RequestHandler;
 };
-
-function parseId(raw: string, label: string) {
-  const id = Number(raw);
-  if (!Number.isFinite(id) || id <= 0) {
-    throw new Error(`Invalid ${label}`);
-  }
-  return id;
-}
 
 function requestActor(req: Request) {
   return resolveRequestActor(req);
@@ -69,6 +71,10 @@ function recordApprovalFailure() {
 
 function recordReleaseFailure() {
   incrementMetric("ap.release.failures");
+}
+
+function logApFinanceEvent(event: string, payload: Record<string, unknown>) {
+  console.info(JSON.stringify({ event, organizationId: getActiveOrganizationId(), ...payload }));
 }
 
 export function registerApRoutes(app: Express, auth: AuthBundle): void {
@@ -128,12 +134,26 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
+  /**
+   * Promote a staged capture to a ledger invoice.
+   * Response `data` is a full invoice (ledger) row or the existing promoted invoice — not an AP capture row.
+   */
   app.post("/api/ap/captures/:id/promote", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const id = parseId(req.params.id, "capture ID");
+      const id = parseRouteId(res, req.params.id, "capture ID");
+      if (id === null) return;
+      let body: z.infer<typeof apPromoteCaptureBodySchema>;
+      try {
+        body = apPromoteCaptureBodySchema.parse(req.body ?? {});
+      } catch (err) {
+        if (err instanceof ZodError) {
+          return sendError(res, 400, "VALIDATION_ERROR", fromZodError(err).message, { details: err.flatten() });
+        }
+        throw err;
+      }
       const promoted = await promoteCapture(id, actor.userId, {
-        overrideReason: typeof req.body?.overrideReason === "string" ? req.body.overrideReason : undefined,
+        overrideReason: body.overrideReason,
       });
       if (!promoted) return sendError(res, 404, "AP_CAPTURE_NOT_FOUND", "AP capture not found");
       return sendOk(res, promoted);
@@ -183,7 +203,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.get("/api/ap/invoices/:id", ...apRead, async (req: Request, res: Response) => {
     try {
-      const id = parseId(req.params.id, "invoice ID");
+      const id = parseRouteId(res, req.params.id, "invoice ID");
+      if (id === null) return;
       const invoice = await getInvoiceDetail(id);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, invoice);
@@ -206,7 +227,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.patch("/api/ap/invoices/:id", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const id = parseId(req.params.id, "invoice ID");
+      const id = parseRouteId(res, req.params.id, "invoice ID");
+      if (id === null) return;
       const invoice = await updateInvoiceRecord(id, req.body, actor.userId);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, invoice);
@@ -218,11 +240,13 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.delete("/api/ap/invoices/:id", ...apWrite, async (req: Request, res: Response) => {
     try {
-      const id = parseId(req.params.id, "invoice ID");
+      const id = parseRouteId(res, req.params.id, "invoice ID");
+      if (id === null) return;
       const deleted = await deleteInvoiceRecord(id);
       if (!deleted) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, { success: true });
     } catch (error) {
+      if (trySendDbConstraintError(res, error)) return;
       console.error("Error deleting AP invoice:", error);
       return sendError(res, 400, "DELETE_INVOICE_FAILED", error instanceof Error ? error.message : "Failed to delete invoice");
     }
@@ -231,8 +255,18 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/ap/invoices/:id/match", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const id = parseId(req.params.id, "invoice ID");
-      const result = await evaluateInvoiceMatch(id, req.body ?? {}, actor.userId);
+      const id = parseRouteId(res, req.params.id, "invoice ID");
+      if (id === null) return;
+      let matchOpts: z.infer<typeof apInvoiceMatchBodySchema>;
+      try {
+        matchOpts = apInvoiceMatchBodySchema.parse(req.body ?? {});
+      } catch (err) {
+        if (err instanceof ZodError) {
+          return sendError(res, 400, "VALIDATION_ERROR", fromZodError(err).message, { details: err.flatten() });
+        }
+        throw err;
+      }
+      const result = await evaluateInvoiceMatch(id, matchOpts, actor.userId);
       if (!result) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, result);
     } catch (error) {
@@ -243,7 +277,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.get("/api/ap/invoices/:id/approval-preview", ...apRead, async (req: Request, res: Response) => {
     try {
-      const id = parseId(req.params.id, "invoice ID");
+      const id = parseRouteId(res, req.params.id, "invoice ID");
+      if (id === null) return;
       const preview = await previewInvoiceApprovers(id);
       if (!preview) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, preview);
@@ -256,7 +291,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/ap/invoices/:id/submit-approval", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const id = parseId(req.params.id, "invoice ID");
+      const id = parseRouteId(res, req.params.id, "invoice ID");
+      if (id === null) return;
       const invoice = await submitInvoiceForApproval(id, actor.userId);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, invoice);
@@ -269,7 +305,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/ap/invoices/:id/approve", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const id = parseId(req.params.id, "invoice ID");
+      const id = parseRouteId(res, req.params.id, "invoice ID");
+      if (id === null) return;
       const invoice = await approveInvoice(
         id,
         actor.userId,
@@ -288,7 +325,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/ap/invoices/:id/reject", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const id = parseId(req.params.id, "invoice ID");
+      const id = parseRouteId(res, req.params.id, "invoice ID");
+      if (id === null) return;
       const invoice = await rejectInvoice(
         id,
         actor.userId,
@@ -316,25 +354,44 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/ap/payment-batches", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const raw = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+      let validated: z.infer<typeof apPaymentBatchCreateSchema>;
+      try {
+        validated = apPaymentBatchCreateSchema.parse(req.body ?? {});
+      } catch (err) {
+        if (err instanceof ZodError) {
+          return sendError(res, 400, "VALIDATION_ERROR", fromZodError(err).message, { details: err.flatten() });
+        }
+        throw err;
+      }
+      let scheduledDate: Date | undefined;
+      if (validated.scheduledDate) {
+        const d = new Date(validated.scheduledDate);
+        if (Number.isNaN(d.getTime())) {
+          return sendError(res, 400, "VALIDATION_ERROR", "scheduledDate must be a valid date or ISO string.");
+        }
+        scheduledDate = d;
+      }
+      const exportMetadata =
+        validated.exportMetadata != null && typeof validated.exportMetadata === "object" && !Array.isArray(validated.exportMetadata)
+          ? (validated.exportMetadata as Record<string, unknown>)
+          : undefined;
       const batch = await createPaymentBatchRecord(
         {
-          batchNumber: typeof raw.batchNumber === "string" ? raw.batchNumber : undefined,
-          status: typeof raw.status === "string" ? (raw.status as any) : undefined,
-          scheduledDate:
-            typeof raw.scheduledDate === "string" && raw.scheduledDate
-              ? new Date(raw.scheduledDate)
-              : undefined,
-          paymentMethod: typeof raw.paymentMethod === "string" ? (raw.paymentMethod as any) : undefined,
-          exportMetadata:
-            raw.exportMetadata && typeof raw.exportMetadata === "object"
-              ? (raw.exportMetadata as Record<string, unknown>)
-              : undefined,
-          notes: typeof raw.notes === "string" ? raw.notes : undefined,
-          invoiceIds: Array.isArray(raw.invoiceIds) ? raw.invoiceIds : [],
+          batchNumber: validated.batchNumber,
+          status: validated.status as never,
+          scheduledDate,
+          paymentMethod: validated.paymentMethod,
+          exportMetadata,
+          notes: validated.notes,
+          invoiceIds: validated.invoiceIds,
         },
         actor.userId,
       );
+      logApFinanceEvent("ap.payment_batch.created", {
+        batchId: batch.id,
+        userId: actor.userId,
+        invoiceCount: validated.invoiceIds.length,
+      });
       return sendOk(res, batch, 201);
     } catch (error) {
       console.error("Error creating payment batch:", error);
@@ -345,7 +402,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/ap/payment-batches/:id/approve", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const id = parseId(req.params.id, "batch ID");
+      const id = parseRouteId(res, req.params.id, "batch ID");
+      if (id === null) return;
       const batch = await approvePaymentBatch(
         id,
         actor.userId,
@@ -353,6 +411,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
         parseApprovalContext(req, actor.role),
       );
       if (!batch) return sendError(res, 404, "PAYMENT_BATCH_NOT_FOUND", "Payment batch not found");
+      logApFinanceEvent("ap.payment_batch.approved", { batchId: batch.id, userId: actor.userId });
       return sendOk(res, batch);
     } catch (error) {
       recordApprovalFailure();
@@ -364,9 +423,11 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/ap/payment-batches/:id/release", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const id = parseId(req.params.id, "batch ID");
+      const id = parseRouteId(res, req.params.id, "batch ID");
+      if (id === null) return;
       const batch = await releasePaymentBatch(id, actor.userId, parseApprovalContext(req, actor.role));
       if (!batch) return sendError(res, 404, "PAYMENT_BATCH_NOT_FOUND", "Payment batch not found");
+      logApFinanceEvent("ap.payment_batch.released", { batchId: batch.id, userId: actor.userId });
       return sendOk(res, batch);
     } catch (error) {
       recordReleaseFailure();
@@ -383,7 +444,9 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.get("/api/invoices/:id", ...apRead, async (req: Request, res: Response) => {
     try {
-      const invoice = await getInvoiceDetail(parseId(req.params.id, "invoice ID"));
+      const invoiceId = parseRouteId(res, req.params.id, "invoice ID");
+      if (invoiceId === null) return;
+      const invoice = await getInvoiceDetail(invoiceId);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, invoice);
     } catch (error) {
@@ -403,7 +466,9 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.patch("/api/invoices/:id", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const updated = await updateInvoiceRecord(parseId(req.params.id, "invoice ID"), req.body, actor.userId);
+      const invoiceId = parseRouteId(res, req.params.id, "invoice ID");
+      if (invoiceId === null) return;
+      const updated = await updateInvoiceRecord(invoiceId, req.body, actor.userId);
       if (!updated) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, updated);
     } catch (error) {
@@ -413,18 +478,37 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.delete("/api/invoices/:id", ...apWrite, async (req: Request, res: Response) => {
     try {
-      const deleted = await deleteInvoiceRecord(parseId(req.params.id, "invoice ID"));
+      const invoiceId = parseRouteId(res, req.params.id, "invoice ID");
+      if (invoiceId === null) return;
+      const deleted = await deleteInvoiceRecord(invoiceId);
       if (!deleted) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, { success: true });
     } catch (error) {
-      return sendError(res, 400, "DELETE_INVOICE_FAILED", error instanceof Error ? error.message : "Failed to delete invoice");
+      if (trySendDbConstraintError(res, error)) return;
+      return sendError(
+        res,
+        400,
+        "DELETE_INVOICE_FAILED",
+        error instanceof Error ? error.message : "Failed to delete invoice",
+      );
     }
   });
 
   app.post("/api/invoices/:id/match", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const result = await evaluateInvoiceMatch(parseId(req.params.id, "invoice ID"), req.body ?? {}, actor.userId);
+      const invoiceId = parseRouteId(res, req.params.id, "invoice ID");
+      if (invoiceId === null) return;
+      let matchOpts: z.infer<typeof apInvoiceMatchBodySchema>;
+      try {
+        matchOpts = apInvoiceMatchBodySchema.parse(req.body ?? {});
+      } catch (err) {
+        if (err instanceof ZodError) {
+          return sendError(res, 400, "VALIDATION_ERROR", fromZodError(err).message, { details: err.flatten() });
+        }
+        throw err;
+      }
+      const result = await evaluateInvoiceMatch(invoiceId, matchOpts, actor.userId);
       if (!result) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, result);
     } catch (error) {
@@ -435,7 +519,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/invoices/:id/send", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const invoiceId = parseId(req.params.id, "invoice ID");
+      const invoiceId = parseRouteId(res, req.params.id, "invoice ID");
+      if (invoiceId === null) return;
       const existing = await storage.getInvoice(invoiceId);
       if (!existing) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       if (existing.status !== "DRAFT") {
@@ -451,7 +536,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/invoices/:id/cancel", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const invoiceId = parseId(req.params.id, "invoice ID");
+      const invoiceId = parseRouteId(res, req.params.id, "invoice ID");
+      if (invoiceId === null) return;
       const existing = await storage.getInvoice(invoiceId);
       if (!existing) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       if (["PAID", "CANCELLED", "VOID"].includes(existing.status)) {
@@ -466,7 +552,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/invoices/:id/void", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const invoiceId = parseId(req.params.id, "invoice ID");
+      const invoiceId = parseRouteId(res, req.params.id, "invoice ID");
+      if (invoiceId === null) return;
       const existing = await storage.getInvoice(invoiceId);
       if (!existing) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       if (existing.status === "VOID") {
@@ -480,7 +567,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.get("/api/invoices/:invoiceId/items", ...apRead, async (req: Request, res: Response) => {
     try {
-      const invoiceId = parseId(req.params.invoiceId, "invoice ID");
+      const invoiceId = parseRouteId(res, req.params.invoiceId, "invoice ID");
+      if (invoiceId === null) return;
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, await listInvoiceItems(invoiceId));
@@ -491,22 +579,35 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.post("/api/invoices/:invoiceId/items", ...apWrite, async (req: Request, res: Response) => {
     try {
-      const invoiceId = parseId(req.params.invoiceId, "invoice ID");
+      const invoiceId = parseRouteId(res, req.params.invoiceId, "invoice ID");
+      if (invoiceId === null) return;
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       if (["PAID", "CANCELLED", "VOID"].includes(invoice.status)) {
         return sendError(res, 400, "INVOICE_MODIFY_NOT_ALLOWED", "Cannot modify a paid, cancelled, or void invoice");
       }
-      return sendOk(res, await addInvoiceItemRecord({ ...req.body, invoiceId }), 201);
+      let line: z.infer<typeof legacyInvoiceItemCreateSchema>;
+      try {
+        line = legacyInvoiceItemCreateSchema.parse(req.body ?? {});
+      } catch (err) {
+        if (err instanceof ZodError) {
+          return sendError(res, 400, "VALIDATION_ERROR", fromZodError(err).message, { details: err.flatten() });
+        }
+        throw err;
+      }
+      return sendOk(res, await addInvoiceItemRecord({ ...line, invoiceId }), 201);
     } catch (error) {
+      if (trySendDbConstraintError(res, error)) return;
       return sendError(res, 500, "CREATE_INVOICE_ITEM_FAILED", error instanceof Error ? error.message : "Failed to create invoice item");
     }
   });
 
   app.patch("/api/invoices/:invoiceId/items/:itemId", ...apWrite, async (req: Request, res: Response) => {
     try {
-      const invoiceId = parseId(req.params.invoiceId, "invoice ID");
-      const itemId = parseId(req.params.itemId, "invoice item ID");
+      const invoiceId = parseRouteId(res, req.params.invoiceId, "invoice ID");
+      if (invoiceId === null) return;
+      const itemId = parseRouteId(res, req.params.itemId, "invoice item ID");
+      if (itemId === null) return;
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       if (["PAID", "CANCELLED", "VOID"].includes(invoice.status)) {
@@ -516,7 +617,16 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!item || item.invoiceId !== invoiceId) {
         return sendError(res, 404, "INVOICE_ITEM_NOT_FOUND", "Invoice item not found");
       }
-      return sendOk(res, await updateInvoiceItemRecord(itemId, req.body));
+      let patch: z.infer<typeof legacyInvoiceItemPatchSchema>;
+      try {
+        patch = legacyInvoiceItemPatchSchema.parse(req.body ?? {});
+      } catch (err) {
+        if (err instanceof ZodError) {
+          return sendError(res, 400, "VALIDATION_ERROR", fromZodError(err).message, { details: err.flatten() });
+        }
+        throw err;
+      }
+      return sendOk(res, await updateInvoiceItemRecord(itemId, patch));
     } catch (error) {
       return sendError(res, 500, "UPDATE_INVOICE_ITEM_FAILED", "Failed to update invoice item");
     }
@@ -524,8 +634,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.delete("/api/invoices/:invoiceId/items/:itemId", ...apWrite, async (req: Request, res: Response) => {
     try {
-      const invoiceId = parseId(req.params.invoiceId, "invoice ID");
-      const itemId = parseId(req.params.itemId, "invoice item ID");
+      const invoiceId = parseRouteId(res, req.params.invoiceId, "invoice ID");
+      if (invoiceId === null) return;
+      const itemId = parseRouteId(res, req.params.itemId, "invoice item ID");
+      if (itemId === null) return;
       const item = await storage.getInvoiceItem(itemId);
       if (!item || item.invoiceId !== invoiceId) {
         return sendError(res, 404, "INVOICE_ITEM_NOT_FOUND", "Invoice item not found");
@@ -533,6 +645,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       await deleteInvoiceItemRecord(itemId);
       return sendOk(res, { success: true });
     } catch (error) {
+      if (trySendDbConstraintError(res, error)) return;
       return sendError(res, 500, "DELETE_INVOICE_ITEM_FAILED", "Failed to delete invoice item");
     }
   });
@@ -547,7 +660,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.get("/api/invoices/:invoiceId/payments", ...apRead, async (req: Request, res: Response) => {
     try {
-      const invoiceId = parseId(req.params.invoiceId, "invoice ID");
+      const invoiceId = parseRouteId(res, req.params.invoiceId, "invoice ID");
+      if (invoiceId === null) return;
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, await listPayments(invoiceId));
@@ -559,7 +673,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/invoices/:invoiceId/payments", ...apWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
-      const invoiceId = parseId(req.params.invoiceId, "invoice ID");
+      const invoiceId = parseRouteId(res, req.params.invoiceId, "invoice ID");
+      if (invoiceId === null) return;
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       if (["CANCELLED", "VOID"].includes(invoice.status)) {
@@ -583,7 +698,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.patch("/api/payments/:id", ...apWrite, async (req: Request, res: Response) => {
     try {
-      const id = parseId(req.params.id, "payment ID");
+      const id = parseRouteId(res, req.params.id, "payment ID");
+      if (id === null) return;
       const payment = await updatePaymentRecord(id, req.body);
       if (!payment) return sendError(res, 404, "PAYMENT_NOT_FOUND", "Payment not found");
       return sendOk(res, payment);
@@ -594,7 +710,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
 
   app.delete("/api/payments/:id", ...apWrite, async (req: Request, res: Response) => {
     try {
-      const id = parseId(req.params.id, "payment ID");
+      const id = parseRouteId(res, req.params.id, "payment ID");
+      if (id === null) return;
       const deleted = await deletePaymentRecord(id);
       if (!deleted) return sendError(res, 404, "PAYMENT_NOT_FOUND", "Payment not found");
       return sendOk(res, { success: true });

@@ -24,6 +24,9 @@ export function AnalyticsKpiGrid({
             <CardTitle className="text-2xl">{card.value}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {card.sourceWarning ? (
+              <p className="text-xs text-amber-700 dark:text-amber-300">{card.sourceWarning}</p>
+            ) : null}
             <p className="text-sm text-muted-foreground">{card.description}</p>
             <Button asChild size="sm" variant="outline">
               <Link href={card.href}>

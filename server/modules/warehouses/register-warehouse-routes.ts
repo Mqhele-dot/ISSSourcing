@@ -219,8 +219,8 @@ export function registerWarehouseRoutes(app: Express, auth: AuthBundle): void {
   app.put("/api/warehouse-inventory/:id", async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid inventory item ID" });
+      if (!Number.isFinite(id) || id < 1) {
+        return res.status(400).json({ message: "Invalid warehouse inventory row ID" });
       }
 
       const validatedData = insertWarehouseInventorySchema.partial().parse(req.body);
@@ -266,8 +266,8 @@ export function registerWarehouseRoutes(app: Express, auth: AuthBundle): void {
   app.delete("/api/warehouse-inventory/:id", async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid inventory item ID" });
+      if (!Number.isFinite(id) || id < 1) {
+        return res.status(400).json({ message: "Invalid warehouse inventory row ID" });
       }
 
       const success = await storage.deleteWarehouseInventory(id);

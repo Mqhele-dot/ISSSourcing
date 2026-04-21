@@ -21,6 +21,10 @@ import type { UseMutationResult } from "@tanstack/react-query";
 
 type Props = {
   readyForBatch: Invoice[];
+  /** When true, invoice list failed — selection UI may be empty without meaning “no payable invoices”. */
+  invoicesLoadFailed: boolean;
+  /** When true, batch list failed — do not show “no batches” as success state. */
+  batchesLoadFailed: boolean;
   selectedInvoiceIds: number[];
   toggleInvoiceSelection: (invoiceId: number, checked: boolean) => void;
   selectedBatchTotal: number;
@@ -39,6 +43,8 @@ type Props = {
 
 export function ApPaymentsPanel({
   readyForBatch,
+  invoicesLoadFailed,
+  batchesLoadFailed,
   selectedInvoiceIds,
   toggleInvoiceSelection,
   selectedBatchTotal,
@@ -76,6 +82,12 @@ export function ApPaymentsPanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {invoicesLoadFailed ? (
+            <p className="text-sm text-destructive">
+              Payable invoice list did not load. Retry invoices above before creating a batch — an empty table may not
+              mean there are no invoices.
+            </p>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Payment method</Label>
@@ -118,6 +130,7 @@ export function ApPaymentsPanel({
                     <TableCell>
                       <Checkbox
                         checked={checked}
+                        disabled={invoicesLoadFailed}
                         onCheckedChange={(state) => toggleInvoiceSelection(invoice.id, state === true)}
                       />
                     </TableCell>
@@ -138,7 +151,9 @@ export function ApPaymentsPanel({
           <Button
             type="button"
             onClick={onCreateBatch}
-            disabled={selectedInvoiceIds.length === 0 || createBatchMutation.isPending}
+            disabled={
+              invoicesLoadFailed || selectedInvoiceIds.length === 0 || createBatchMutation.isPending
+            }
           >
             {createBatchMutation.isPending ? "Creating batch..." : "Create AP payment batch"}
           </Button>
@@ -153,7 +168,11 @@ export function ApPaymentsPanel({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {paymentBatches.length === 0 ? (
+          {batchesLoadFailed ? (
+            <p className="text-sm text-destructive">
+              Payment batches could not be loaded. Use Retry batches above.
+            </p>
+          ) : paymentBatches.length === 0 ? (
             <p className="text-sm text-muted-foreground">No AP payment batches created yet.</p>
           ) : (
             <Table>

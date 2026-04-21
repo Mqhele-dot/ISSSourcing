@@ -399,7 +399,9 @@ export async function invTrackFetch<T>(
         payloadSummary: summarizeRequestPayload(data),
         stack: isDevRuntime ? new Error().stack : undefined,
       });
-      const err = new Error(`${res.status}: ${msg}`) as Error & { status?: number };
+      const err = attachRequestId(new Error(`${res.status}: ${msg}`), res.headers.get("X-Request-Id")) as Error & {
+        status?: number;
+      };
       err.status = res.status;
       throw err;
     }
@@ -440,7 +442,10 @@ export async function invTrackFetch<T>(
         payloadSummary: summarizeRequestPayload(data),
         stack: isDevRuntime ? new Error().stack : undefined,
       });
-      const err = new Error(`${codePrefix}${payload.error.message}`) as Error & { status?: number };
+      const err = attachRequestId(
+        new Error(`${codePrefix}${payload.error.message}`),
+        res.headers.get("X-Request-Id") ?? payload.error.requestId,
+      ) as Error & { status?: number };
       err.status = res.status;
       throw err;
     }
@@ -490,6 +495,24 @@ export async function apiRequest(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+/** Append correlation id for support when the server set `X-Request-Id` (see `invTrackFetch` error throws). */
+export function errorMessageWithRequestId(error: unknown): string {
+  const base = error instanceof Error ? error.message : String(error);
+  const ridRaw =
+    error && typeof error === "object" && "requestId" in error
+      ? (error as { requestId?: unknown }).requestId
+      : undefined;
+  const rid = typeof ridRaw === "string" ? ridRaw.trim() : "";
+  if (rid && !base.includes(rid)) return `${base} (Request ID: ${rid})`;
+  return base;
+}
+
+function attachRequestId(err: Error, requestId: string | null | undefined): Error {
+  const rid = requestId?.trim();
+  if (rid) (err as Error & { requestId?: string }).requestId = rid;
+  return err;
 }
 
 /** Preferred: single wrapper with envelope unwrap and meta. Use for all new code. */

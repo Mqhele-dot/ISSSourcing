@@ -1,12 +1,11 @@
 import { useMutation } from "@tanstack/react-query";
-import { queryClient, requestJson } from "@/lib/queryClient";
-import { apQueryKeys } from "./ap-query-keys";
+import { errorMessageWithRequestId, requestJson } from "@/lib/queryClient";
 import {
   invalidateAfterCaptureWorkflow,
   invalidateAfterInvoiceLifecycle,
   invalidateAfterPaymentBatch,
 } from "./ap-invalidate";
-import type { ApprovalPreview, Capture } from "./types";
+import type { ApprovalPreview } from "./types";
 
 export type ApPaymentBatchPayload = {
   paymentMethod: string;
@@ -40,21 +39,14 @@ export function useApWorkspaceMutations(toast: {
     onError: (mutationError) =>
       showToast({
         title: "Capture failed",
-        description: mutationError instanceof Error ? mutationError.message : String(mutationError),
+        description: errorMessageWithRequestId(mutationError),
         variant: "destructive",
       }),
   });
 
   const promoteCaptureMutation = useMutation({
-    mutationFn: (captureId: number) => requestJson("POST", `/api/ap/captures/${captureId}/promote`),
-    onSuccess: async (data, captureId) => {
-      if (data && typeof data === "object" && !Array.isArray(data)) {
-        const row = data as Partial<Capture>;
-        queryClient.setQueryData<Capture[]>(apQueryKeys.captures, (old) => {
-          if (!old) return old;
-          return old.map((c) => (c.id === captureId ? { ...c, ...row } : c));
-        });
-      }
+    mutationFn: (captureId: number) => requestJson("POST", `/api/ap/captures/${captureId}/promote`, {}),
+    onSuccess: async () => {
       await invalidateAfterCaptureWorkflow();
       showToast({
         title: "Capture promoted",
@@ -64,7 +56,7 @@ export function useApWorkspaceMutations(toast: {
     onError: (e) =>
       showToast({
         title: "Promote failed",
-        description: e instanceof Error ? e.message : String(e),
+        description: errorMessageWithRequestId(e),
         variant: "destructive",
       }),
   });
@@ -81,8 +73,8 @@ export function useApWorkspaceMutations(toast: {
     },
     onError: (mutationError) =>
       showToast({
-        title: "Preview failed",
-        description: mutationError instanceof Error ? mutationError.message : String(mutationError),
+        title: "Approver preview failed",
+        description: errorMessageWithRequestId(mutationError),
         variant: "destructive",
       }),
   });
@@ -93,6 +85,12 @@ export function useApWorkspaceMutations(toast: {
       await invalidateAfterInvoiceLifecycle();
       showToast({ title: "Invoice queued", description: "The invoice is now awaiting approval." });
     },
+    onError: (e) =>
+      showToast({
+        title: "Submit for approval failed",
+        description: errorMessageWithRequestId(e),
+        variant: "destructive",
+      }),
   });
 
   const matchInvoiceMutation = useMutation({
@@ -106,6 +104,12 @@ export function useApWorkspaceMutations(toast: {
       await invalidateAfterInvoiceLifecycle();
       showToast({ title: "Match complete", description: "The invoice match result has been refreshed." });
     },
+    onError: (e) =>
+      showToast({
+        title: "Match failed",
+        description: errorMessageWithRequestId(e),
+        variant: "destructive",
+      }),
   });
 
   const approveInvoiceMutation = useMutation({
@@ -117,6 +121,12 @@ export function useApWorkspaceMutations(toast: {
         description: "The invoice is now ready for payment batching.",
       });
     },
+    onError: (e) =>
+      showToast({
+        title: "Approve failed",
+        description: errorMessageWithRequestId(e),
+        variant: "destructive",
+      }),
   });
 
   const rejectInvoiceMutation = useMutation({
@@ -131,6 +141,12 @@ export function useApWorkspaceMutations(toast: {
         description: "The invoice has been sent to exception handling.",
       });
     },
+    onError: (e) =>
+      showToast({
+        title: "Reject failed",
+        description: errorMessageWithRequestId(e),
+        variant: "destructive",
+      }),
   });
 
   const createBatchMutation = useMutation({
@@ -152,7 +168,7 @@ export function useApWorkspaceMutations(toast: {
     onError: (mutationError) =>
       showToast({
         title: "Batch failed",
-        description: mutationError instanceof Error ? mutationError.message : String(mutationError),
+        description: errorMessageWithRequestId(mutationError),
         variant: "destructive",
       }),
   });
@@ -163,6 +179,12 @@ export function useApWorkspaceMutations(toast: {
       await invalidateAfterPaymentBatch();
       showToast({ title: "Batch approved", description: "The payment batch can now be released." });
     },
+    onError: (e) =>
+      showToast({
+        title: "Approve batch failed",
+        description: errorMessageWithRequestId(e),
+        variant: "destructive",
+      }),
   });
 
   const releaseBatchMutation = useMutation({
@@ -171,6 +193,12 @@ export function useApWorkspaceMutations(toast: {
       await invalidateAfterPaymentBatch();
       showToast({ title: "Batch released", description: "Payments were posted for the batch items." });
     },
+    onError: (e) =>
+      showToast({
+        title: "Release batch failed",
+        description: errorMessageWithRequestId(e),
+        variant: "destructive",
+      }),
   });
 
   return {

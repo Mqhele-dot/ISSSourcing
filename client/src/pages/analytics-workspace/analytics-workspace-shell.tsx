@@ -5,6 +5,7 @@ import { PageShell } from "@/components/page-shell";
 import { SectionNav } from "@/components/section-nav";
 import { Button } from "@/components/ui/button";
 import { DataState } from "@/components/ui/data-state";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { APP_ROUTES, type AnalyticsSectionSlug } from "@/lib/routes/app-routes";
 import { ANALYTICS_NAV } from "./analytics-nav";
 import type { AnalyticsKpiCard } from "./analytics-workspace-types";
@@ -14,11 +15,21 @@ type Props = {
   cards: AnalyticsKpiCard[];
   loading: boolean;
   error: Error | null;
+  /** Some analytics sources failed while others succeeded — show inline retry for this section. */
+  partialFailure?: { labels: string[]; onRetry: () => void };
   onRetry: () => void;
   children: ReactNode;
 };
 
-export function AnalyticsWorkspaceShell({ section, cards, loading, error, onRetry, children }: Props) {
+export function AnalyticsWorkspaceShell({
+  section,
+  cards,
+  loading,
+  error,
+  partialFailure,
+  onRetry,
+  children,
+}: Props) {
   return (
     <PageShell variant="analytics-mode">
       <PageHeader
@@ -41,6 +52,20 @@ export function AnalyticsWorkspaceShell({ section, cards, loading, error, onRetr
       />
 
       <SectionNav items={[...ANALYTICS_NAV]} />
+
+      {partialFailure && partialFailure.labels.length > 0 ? (
+        <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
+          <AlertTitle>Partial analytics load</AlertTitle>
+          <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              These sources did not load: {partialFailure.labels.join(", ")}. Other KPIs below may still be usable.
+            </span>
+            <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={partialFailure.onRetry}>
+              Retry section data
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <DataState
         loading={loading}

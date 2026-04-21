@@ -164,7 +164,7 @@ export default function InventoryDetailPage() {
 
     setAdjusting(true);
     try {
-      const response = await apiRequest("POST", `/api/inventory/${sku}/adjust`, {
+      const response = await apiRequest("POST", `/api/inventory/${encodeURIComponent(sku)}/adjust`, {
         location: adjustLocation,
         delta: numericDelta,
         reason: adjustReason,

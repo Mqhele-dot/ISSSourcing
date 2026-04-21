@@ -796,8 +796,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const requestUrl = req.originalUrl || req.url;
       const userId = Number((req as Request & { user?: { id?: number } }).user?.id);
       res.setHeader("Content-Type", meta.contentType);
+      res.setHeader("X-Export-Format", String(format));
       res.setHeader("X-Export-Row-Count", String(normalizedData.length));
       res.setHeader("Content-Disposition", `attachment; filename="${normalizedTitle}.${meta.extension}"`);
+
+      console.info(
+        JSON.stringify({
+          event: "export.document_generated",
+          organizationId: getActiveOrganizationId(),
+          dataset: normalizedReportType,
+          format,
+          rowCount: normalizedData.length,
+          userId: Number.isFinite(userId) && userId > 0 ? userId : null,
+        }),
+      );
 
       await recordExportHistory({
         userId: Number.isFinite(userId) && userId > 0 ? userId : null,
