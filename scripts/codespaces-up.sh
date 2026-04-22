@@ -355,12 +355,14 @@ if [[ -n "${FORWARDED_HOST}" ]]; then
     echo "  → If you see 502: In VS Code, open the PORTS tab → find port ${PORT} → set visibility to Public → reload the page."
     echo ""
   else
-    echo "Port ${PORT} not reachable from proxy. Ensure PORTS tab forwards ${PORT} and visibility is Public." >&2
+    echo "⚠️  Forwarded URL check did not succeed (HTTP ${LAST_STATUS} on ${APP_URL}/health)." >&2
+    echo "   The dev server is still running inside the container at http://127.0.0.1:${PORT}." >&2
+    echo "   Fix: Ports tab → forward ${PORT} → visibility Public → open ${APP_URL}" >&2
+    echo "   Or: gh codespace ports visibility ${PORT}:public -c \"${CODESPACE_NAME}\"" >&2
     if command -v gh >/dev/null 2>&1; then
       echo "Current forwarded ports:" >&2
       gh codespace ports -c "${CODESPACE_NAME}" --json sourcePort,visibility,browseUrl 2>/dev/null || true
     fi
-    exit 1
   fi
 fi
 

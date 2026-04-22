@@ -1,5 +1,6 @@
 {
-  "remote.autoForwardPorts": false,
+  "remote.autoForwardPorts": true,
+  "tailwindCSS.experimental.configFile": "./tailwind.config.ts",
   "portsAttributes": {
     "5000": {
       "label": "ISS Sourcing (web)",

@@ -160,6 +160,12 @@ The app uses **sessions** and **CSRF** on mutating API calls. Behind GitHub’s 
 
 ## Troubleshooting (502 / app not reachable)
 
+**Tailwind CSS IntelliSense / Output: `Can't resolve 'tailwindcss-animate'`:** The config uses ESM plugin imports and `.vscode/settings.json` sets `tailwindCSS.experimental.configFile` so the extension resolves from the repo root. After `npm ci`, run **Developer: Reload Window**. Open the **single-folder** workspace **`…/ISSSourcing`** (not a parent directory-only root) so `node_modules` is found. Verify with `test -d node_modules/tailwindcss-animate && echo ok`.
+
+**`codespaces:up` prints “Port 5000 not reachable from proxy”:** The dev server **stays running**; only the public URL probe failed. Open **Ports** → forward **5000** if missing → set visibility to **Public** → reload `https://<codespace>-5000.*.app.github.dev`. The repo sets **`remote.autoForwardPorts`: true** in `.vscode/settings.json` so forwarding is not suppressed by editor settings.
+
+**Git LFS hook warnings:** Install in the container if you use LFS assets: `sudo apt-get update && sudo apt-get install -y git-lfs && git lfs install`.
+
 **`.env: line N: EOF: command not found` when running `npm run codespaces:up`:** Older versions of `codespaces-up.sh` used `source .env`, so any non–`KEY=value` line (for example a stray `EOF` from a bad paste or a heredoc) was executed as a shell command. The script now only loads lines that look like `KEY=value`. You should still remove junk lines from `.env` or recreate it from `.env.example`.
 
 **Most common fix:** If you see **HTTP 502** when opening the `*.app.github.dev` URL in your browser, the port is likely not Public. In VS Code, open the **PORTS** tab (beside the Terminal), find **5000**, set visibility to **Public**, then reload the page.
