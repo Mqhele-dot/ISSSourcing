@@ -96,7 +96,7 @@ if [[ -n "${DATABASE_URL:-}" ]]; then
 fi
 
 echo "Installing dependencies..."
-npm ci
+bash "${SCRIPT_DIR}/npm-ci-robust.sh"
 
 HAS_PG_ISREADY="false"
 if command -v pg_isready >/dev/null 2>&1; then

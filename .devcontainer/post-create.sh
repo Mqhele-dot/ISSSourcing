@@ -7,7 +7,7 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
-npm ci
+bash scripts/npm-ci-robust.sh
 
 echo "Waiting for PostgreSQL to become ready..."
 for attempt in {1..30}; do

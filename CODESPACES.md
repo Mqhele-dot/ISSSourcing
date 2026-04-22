@@ -165,6 +165,15 @@ The app uses **sessions** and **CSRF** on mutating API calls. Behind GitHub’s 
 
 **`codespaces:up` prints “Port 5000 not reachable from proxy”:** The dev server **stays running**; only the public URL probe failed. Open **Ports** → forward **5000** if missing → set visibility to **Public** → reload `https://<codespace>-5000.*.app.github.dev`. The repo sets **`remote.autoForwardPorts`: true** in `.vscode/settings.json` so forwarding is not suppressed by editor settings.
 
+**`npm ci` fails with `ENOTEMPTY` / `rmdir ... node_modules/...`:** Usually a **partial or inconsistent `node_modules`** (interrupted install, overlay FS). From the repo root run:
+
+```bash
+rm -rf node_modules
+npm ci
+```
+
+The repo’s **`scripts/npm-ci-robust.sh`** (used by **`npm run codespaces:up`** and **`.devcontainer/post-create.sh`**) retries **`npm ci`** once after removing **`node_modules`**. To only clean manually, set **`SKIP_NPM_CI_RETRY=1`** before `codespaces:up`. Avoid editing **`package-lock.json`** on the side while running **`npm ci`**—discard lockfile changes or commit them before install.
+
 **Git LFS hook warnings:** Install in the container if you use LFS assets: `sudo apt-get update && sudo apt-get install -y git-lfs && git lfs install`.
 
 **`.env: line N: EOF: command not found` when running `npm run codespaces:up`:** Older versions of `codespaces-up.sh` used `source .env`, so any non–`KEY=value` line (for example a stray `EOF` from a bad paste or a heredoc) was executed as a shell command. The script now only loads lines that look like `KEY=value`. You should still remove junk lines from `.env` or recreate it from `.env.example`.
