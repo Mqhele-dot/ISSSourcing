@@ -71,9 +71,13 @@ export async function setupVite(app: Express, server: Server) {
     configFile: false,
     customLogger: {
       ...viteLogger,
+      /**
+       * Do not exit the Node process on Vite log errors. The previous `process.exit(1)` tore down the
+       * whole Express dev server on transient PostCSS/Tailwind issues and dropped HMR — the browser then
+       * reconnects in a loop (looks like endless full reloads), especially in remote/Codespaces setups.
+       */
       error: (msg, options) => {
         viteLogger.error(msg, options);
-        process.exit(1);
       },
     },
     server: serverOptions,
