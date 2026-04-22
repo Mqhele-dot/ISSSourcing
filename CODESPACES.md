@@ -165,7 +165,7 @@ The app uses **sessions** and **CSRF** on mutating API calls. Behind GitHub’s 
 
 1. **`npm run codespaces:doctor`** — if localhost `/health` is **200** but the browser is **502**, the problem is **forwarding**, not Node.
 2. **Ports** (bottom panel) → row **5000** → **Visibility → Public** → click **Open in Browser** on that same row (don’t type the URL manually in a random Chrome window first).
-3. **`npm run codespaces:ports-public`** — runs `gh codespace ports forward` + `visibility …:public` (run **`gh auth login`** once in the Codespace if it fails).
+3. **`npm run codespaces:ports-public`** — runs `gh codespace ports forward` + `visibility …:public`. Requires **`gh`** in the container (**Rebuild Container** after pulling `.devcontainer/Dockerfile` changes) and usually **`gh auth login`** once. If `gh` is missing, use the **Ports** tab only until you rebuild.
 4. **Rebuild Container** after pulling `.devcontainer` changes so **5000** defaults to Public.
 5. Keep **`npm run codespaces:up`** (or **`npm run dev`**) **running** — stopping it causes **502** everywhere.
 

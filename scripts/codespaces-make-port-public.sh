@@ -11,7 +11,10 @@ if [[ -z "${CS}" ]]; then
 fi
 
 if ! command -v gh >/dev/null 2>&1; then
-  echo "GitHub CLI (gh) is not installed. Use the VS Code Ports tab: port ${PORT} → Visibility → Public." >&2
+  echo "GitHub CLI (gh) is not installed in this container." >&2
+  echo "  • Fastest: VS Code → Ports → port ${PORT} → Visibility → Public → Open in Browser." >&2
+  echo "  • Or rebuild the devcontainer (Dockerfile includes gh): Command Palette → Codespaces: Rebuild Container." >&2
+  echo "  • Or install gh now (Debian/Ubuntu): https://github.com/cli/cli#linux-and-bsd" >&2
   exit 1
 fi
 
