@@ -47,6 +47,7 @@
     "db:ensure-installable-app-settings": "tsx scripts/ensure-app-settings-installable-columns.ts",
     "e2e:prep": "tsx scripts/e2e-prep-product-onboarding.ts",
     "codespaces:up": "bash scripts/codespaces-up.sh",
+    "codespaces:doctor": "bash scripts/codespaces-doctor.sh",
     "doctor:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-doctor.ps1"
   },
   "engines": {

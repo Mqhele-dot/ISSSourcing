@@ -98,6 +98,22 @@ fi
 echo "Installing dependencies..."
 bash "${SCRIPT_DIR}/npm-ci-robust.sh"
 
+verify_node_toolchain() {
+  local missing="false"
+  for bin in tsx drizzle-kit; do
+    if [[ ! -x "node_modules/.bin/${bin}" ]]; then
+      echo "node_modules/.bin/${bin} is missing — npm ci did not install dev tools." >&2
+      missing="true"
+    fi
+  done
+  if [[ "${missing}" == "true" ]]; then
+    echo "Fix: rm -rf node_modules && npm ci" >&2
+    echo "Or run: npm run codespaces:doctor" >&2
+    exit 1
+  fi
+}
+verify_node_toolchain
+
 HAS_PG_ISREADY="false"
 if command -v pg_isready >/dev/null 2>&1; then
   HAS_PG_ISREADY="true"

@@ -161,6 +161,13 @@ The app uses **sessions** and **CSRF** on mutating API calls. Behind GitHub’s 
 
 ## Troubleshooting (502 / app not reachable)
 
+**HTTP 502 on `https://<codespace>-5000.app.github.dev`:** GitHub’s edge could not get a valid response from your app container. Work through:
+
+1. **`npm run codespaces:doctor`** — confirms `node_modules`, `tsx` / `drizzle-kit`, and whether something listens on **5000**. If **`/health` is not 200** on `127.0.0.1:5000`, the dev server is not running or **`npm ci` never succeeded** (fix install first).
+2. **Keep one terminal** running **`npm run dev`** or **`npm run codespaces:up`** — closing it stops the server → **502** in the browser.
+3. **Ports** → port **5000** → **Public** (502 can also appear when visibility or forwarding is wrong).
+4. **Hard reload** the app tab after the server shows “serving on 0.0.0.0:5000”.
+
 **Tailwind CSS IntelliSense / Output: `Can't resolve 'tailwindcss-animate'`:** The config uses ESM plugin imports and `.vscode/settings.json` sets `tailwindCSS.experimental.configFile` so the extension resolves from the repo root. After `npm ci`, run **Developer: Reload Window**. Open the **single-folder** workspace **`…/ISSSourcing`** (not a parent directory-only root) so `node_modules` is found. Verify with `test -d node_modules/tailwindcss-animate && echo ok`.
 
 **`codespaces:up` prints “Port 5000 not reachable from proxy”:** The dev server **stays running**; only the public URL probe failed. Open **Ports** → forward **5000** if missing → set visibility to **Public** → reload `https://<codespace>-5000.*.app.github.dev`. The repo sets **`remote.autoForwardPorts`: true** in `.vscode/settings.json` so forwarding is not suppressed by editor settings.
