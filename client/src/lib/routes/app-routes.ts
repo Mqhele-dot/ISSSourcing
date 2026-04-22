@@ -151,6 +151,25 @@ export const APP_ROUTES = {
   },
 } as const;
 
+/** Collect every static string path from `APP_ROUTES` (excludes helper functions). Used by stabilization tests. */
+export function collectAppRouteStaticPaths(value: unknown = APP_ROUTES): string[] {
+  const out: string[] = [];
+  const walk = (v: unknown) => {
+    if (typeof v === "string") {
+      out.push(v);
+      return;
+    }
+    if (typeof v === "function") return;
+    if (v && typeof v === "object") {
+      for (const x of Object.values(v as Record<string, unknown>)) {
+        walk(x);
+      }
+    }
+  };
+  walk(value);
+  return out;
+}
+
 export const LEGACY_ROUTE_REDIRECTS = {
   dashboard: APP_ROUTES.analytics.overview,
   analytics: APP_ROUTES.analytics.overview,

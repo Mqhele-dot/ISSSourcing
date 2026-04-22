@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import {
   deriveAppReadinessPhase,
@@ -51,6 +51,7 @@ export function useAppReadinessState(): UseAppReadinessStateResult {
   const readyQuery = useQuery(readinessQueryOptions);
   const setupQuery = useQuery({
     ...setupStatusQueryOptions,
+    placeholderData: keepPreviousData,
     enabled: setupQueryActive,
     retry: (failureCount, err) => {
       const status = err && typeof err === "object" && "status" in err ? (err as { status?: number }).status : undefined;

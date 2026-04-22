@@ -73,7 +73,10 @@ class RouteChunkErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error("Route chunk error:", error, info);
+    const hint =
+      "Lazy route failed to load or run. This is a localized error (not necessarily a full app reload). " +
+      "Use Try again or Reload app; check the Network tab for failed chunk requests (often 401/502 on forwarded dev ports).";
+    console.error("[RouteChunkErrorBoundary]", hint, error.message, info.componentStack);
   }
 
   render() {

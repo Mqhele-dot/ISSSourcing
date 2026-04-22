@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
 import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
@@ -123,9 +124,17 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     setupPending,
     setupError,
     setupFetched,
+    setupFetching,
     refetchReadiness,
     retrySetupStatus,
   } = useAppReadinessState();
+
+  const needsFirstRunLatchRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!readyPending && !readyError && ready != null) {
+      needsFirstRunLatchRef.current = Boolean(ready.productBootstrap?.needsFirstRunOnboarding);
+    }
+  }, [readyPending, readyError, ready]);
 
   if (isAuthPath(pathBase)) {
     return <>{children}</>;
@@ -143,7 +152,9 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     );
   }
 
-  const needsOrg = Boolean(ready?.productBootstrap?.needsFirstRunOnboarding);
+  const needsOrgLive =
+    !readyPending && !readyError && Boolean(ready?.productBootstrap?.needsFirstRunOnboarding);
+  const needsOrg = needsFirstRunLatchRef.current === true || needsOrgLive;
   if (needsOrg && pathBase !== APP_ROUTES.admin.onboarding) {
     return <Redirect to={APP_ROUTES.admin.onboarding} />;
   }
@@ -232,6 +243,15 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
   }
 
   if (!setupAllowedPath(pathBase)) {
+    /** Avoid redirecting while a setup refetch is in flight — reduces flicker if `onboarding.required` momentarily disagrees. */
+    if (setupFetching) {
+      return (
+        <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
+          <span>Confirming product setup…</span>
+        </div>
+      );
+    }
     return <Redirect to={APP_ROUTES.setup.product} />;
   }
 

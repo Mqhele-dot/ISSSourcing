@@ -11,7 +11,10 @@ import {
 import { shouldSuppressGlobalError } from "../client/src/lib/queryClient.ts";
 import { createReportingMoneyFormatter } from "../client/src/lib/format/reporting-money.ts";
 import { deriveAppReadinessPhase } from "../client/src/lib/app-readiness-state.ts";
-import { APP_ROUTES } from "../client/src/lib/routes/app-routes.ts";
+import {
+  APP_ROUTES,
+  collectAppRouteStaticPaths,
+} from "../client/src/lib/routes/app-routes.ts";
 import {
   APP_NAV_SECTIONS,
   COMMAND_MENU_SECONDARY_GROUPS,
@@ -45,6 +48,80 @@ function main() {
   for (const g of SIDEBAR_ADMIN_SECONDARY_GROUPS) {
     assert.ok(g.heading.startsWith("Admin"));
   }
+
+  const registryPaths = new Set(collectAppRouteStaticPaths());
+  const routerDeclaredStaticPaths: string[] = [
+    APP_ROUTES.operations.mobileHub,
+    APP_ROUTES.operations.mobileTasks,
+    APP_ROUTES.operations.mobileScan,
+    APP_ROUTES.operations.mobileApprovals,
+    APP_ROUTES.operations.mobileMore,
+    APP_ROUTES.operations.mobileReceive,
+    APP_ROUTES.operations.mobilePick,
+    APP_ROUTES.setup.product,
+    APP_ROUTES.admin.systemDiagnostics,
+    APP_ROUTES.home,
+    APP_ROUTES.analytics.overview,
+    APP_ROUTES.analytics.inventory,
+    APP_ROUTES.analytics.procurement,
+    APP_ROUTES.analytics.finance,
+    APP_ROUTES.analytics.logistics,
+    APP_ROUTES.analytics.reports,
+    APP_ROUTES.analytics.savedReports,
+    APP_ROUTES.analytics.exportCenter,
+    APP_ROUTES.operations.mobileWorkflows,
+    APP_ROUTES.operations.root,
+    APP_ROUTES.operations.controlTower,
+    APP_ROUTES.operations.logistics,
+    APP_ROUTES.operations.exceptions,
+    APP_ROUTES.inventory.root,
+    APP_ROUTES.inventory.warehouses,
+    APP_ROUTES.inventory.cycleCounts,
+    APP_ROUTES.inventory.reorder,
+    APP_ROUTES.inventory.barcodeScanner,
+    APP_ROUTES.inventory.warehouseOperations,
+    APP_ROUTES.procurement.orders,
+    APP_ROUTES.procurement.requisitions,
+    APP_ROUTES.procurement.requisitionNew,
+    APP_ROUTES.procurement.suppliers,
+    APP_ROUTES.procurement.contracts,
+    APP_ROUTES.procurement.supplierPortal,
+    APP_ROUTES.finance.invoices,
+    APP_ROUTES.finance.accountsPayable,
+    APP_ROUTES.finance.approvalPolicies,
+    APP_ROUTES.finance.billing,
+    APP_ROUTES.admin.integrations,
+    APP_ROUTES.admin.masterData,
+    APP_ROUTES.admin.auditLogs,
+    APP_ROUTES.admin.documents,
+    APP_ROUTES.admin.realTimeUpdates,
+    APP_ROUTES.admin.syncTest,
+    APP_ROUTES.admin.syncDashboard,
+    APP_ROUTES.admin.downloads,
+    APP_ROUTES.admin.onboarding,
+    APP_ROUTES.admin.settings,
+    APP_ROUTES.admin.userRoles,
+    APP_ROUTES.admin.profile,
+    APP_ROUTES.admin.employeeProfiles,
+    APP_ROUTES.admin.imageRecognition,
+    APP_ROUTES.admin.documentExtractor,
+  ];
+  for (const p of routerDeclaredStaticPaths) {
+    assert.ok(registryPaths.has(p), `router static path must exist in APP_ROUTES registry: ${p}`);
+  }
+
+  assert.equal(APP_ROUTES.inventory.warehouse(":id"), "/inventory/warehouses/:id");
+  assert.equal(APP_ROUTES.inventory.item(":sku"), "/inventory/%3Asku");
+  assert.equal(APP_ROUTES.procurement.order(":po"), "/procurement/orders/%3Apo");
+  assert.equal(APP_ROUTES.procurement.requisition(":id"), "/procurement/requisitions/:id");
+  assert.equal(APP_ROUTES.admin.masterDataSection(":section"), "/admin/master-data/:section");
+  assert.equal(APP_ROUTES.admin.settingsSection(":section"), "/admin/settings/:section");
+  assert.equal(APP_ROUTES.admin.documentExtractorMode(":mode"), "/admin/document-extractor/:mode");
+  assert.equal(`${APP_ROUTES.operations.logistics}/:id`, "/operations/logistics/:id");
+  assert.equal(`${APP_ROUTES.operations.exceptions}/:id`, "/operations/exceptions/:id");
+
+  assert.equal(APP_ROUTES.operations.root, "/operations");
+  assert.equal(APP_ROUTES.operations.mobileWorkflows, "/operations/mobile-workflows");
 
   assert.equal(APP_ROUTES.procurement.supplier(42), "/procurement/suppliers/42");
   assert.equal(APP_ROUTES.procurement.supplier(":id"), SUPPLIER_DETAIL_ROUTE_PATTERN);

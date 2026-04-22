@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { Route } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TutorialSteps } from "@/components/tutorial/tutorial-steps";
 import { isElectronEnvironment } from "./lib/electron-bridge";
@@ -28,20 +27,13 @@ function App() {
       <AppProviders>
         <div className="app-shell relative flex h-svh min-h-0 flex-col overflow-hidden">
           <ReadinessBanner />
-          <Route path="/auth">
+          {/**
+           * Single `AppRouter` mount: avoids unmount/remount when switching between `/auth` and the main app
+           * (previously two sibling `<Route>` trees each created their own router instance).
+           */}
+          <AppShellLayout>
             <AppRouter />
-          </Route>
-          <Route path="*">
-            {(params) => {
-              const pathname = params["*"] || "";
-              if (pathname === "auth") return null;
-              return (
-                <AppShellLayout>
-                  <AppRouter />
-                </AppShellLayout>
-              );
-            }}
-          </Route>
+          </AppShellLayout>
         </div>
         <TutorialSteps />
         <GlobalActionErrorCenter />

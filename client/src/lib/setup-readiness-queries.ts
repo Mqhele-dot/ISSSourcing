@@ -94,6 +94,8 @@ export const readinessQueryOptions = {
   queryFn: fetchReadinessStatus,
   staleTime: 15_000,
   retry: false,
+  /** Matches setup status: avoid focus-driven refetch loops that flip `needsFirstRunOnboarding` and churn redirects. */
+  refetchOnWindowFocus: false,
   meta: { globalError: "off" as const },
 } satisfies UseQueryOptions<ReadinessStatus>;
 
