@@ -161,12 +161,13 @@ The app uses **sessions** and **CSRF** on mutating API calls. Behind GitHub’s 
 
 ## Troubleshooting (502 / app not reachable)
 
-**HTTP 502 on `https://<codespace>-5000.app.github.dev`:** GitHub’s edge could not get a valid response from your app container. Work through:
+**HTTP 502 on `https://<codespace>-5000.app.github.dev`:** Often the app **is** healthy (`curl http://127.0.0.1:5000/health` → **200** inside the Codespace) but GitHub’s **port proxy** is wrong (visibility **Private**, stale forward, or `gh` never set Public).
 
-1. **`npm run codespaces:doctor`** — confirms `node_modules`, `tsx` / `drizzle-kit`, and whether something listens on **5000**. If **`/health` is not 200** on `127.0.0.1:5000`, the dev server is not running or **`npm ci` never succeeded** (fix install first).
-2. **Keep one terminal** running **`npm run dev`** or **`npm run codespaces:up`** — closing it stops the server → **502** in the browser.
-3. **Ports** → port **5000** → **Public** (502 can also appear when visibility or forwarding is wrong).
-4. **Hard reload** the app tab after the server shows “serving on 0.0.0.0:5000”.
+1. **`npm run codespaces:doctor`** — if localhost `/health` is **200** but the browser is **502**, the problem is **forwarding**, not Node.
+2. **Ports** (bottom panel) → row **5000** → **Visibility → Public** → click **Open in Browser** on that same row (don’t type the URL manually in a random Chrome window first).
+3. **`npm run codespaces:ports-public`** — runs `gh codespace ports forward` + `visibility …:public` (run **`gh auth login`** once in the Codespace if it fails).
+4. **Rebuild Container** after pulling `.devcontainer` changes so **5000** defaults to Public.
+5. Keep **`npm run codespaces:up`** (or **`npm run dev`**) **running** — stopping it causes **502** everywhere.
 
 **Tailwind CSS IntelliSense / Output: `Can't resolve 'tailwindcss-animate'`:** The config uses ESM plugin imports and `.vscode/settings.json` sets `tailwindCSS.experimental.configFile` so the extension resolves from the repo root. After `npm ci`, run **Developer: Reload Window**. Open the **single-folder** workspace **`…/ISSSourcing`** (not a parent directory-only root) so `node_modules` is found. Verify with `test -d node_modules/tailwindcss-animate && echo ok`.
 

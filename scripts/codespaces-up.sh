@@ -376,6 +376,12 @@ if [[ -n "${FORWARDED_HOST}" ]]; then
       echo "   HTTP 401 here is usually GitHub blocking a **Private** forwarded port (not your app—/health is public)." >&2
       echo "   Without Public visibility, the browser also fails to load Vite chunks (dynamic import errors)." >&2
     fi
+    if [[ "${LAST_STATUS}" == "502" ]]; then
+      echo "   HTTP 502: GitHub’s proxy could not reach your app on port ${PORT}, or the port is still **Private**." >&2
+      echo "   Your app is fine if http://127.0.0.1:${PORT}/health returns 200 **inside** this terminal (curl)." >&2
+      echo "   Fix forwarding: Ports panel → port ${PORT} → **Public** → use **Open in Browser** on that row." >&2
+      echo "   Or run: npm run codespaces:ports-public   (requires: gh auth login)" >&2
+    fi
     echo "   The dev server is still running inside the container at http://127.0.0.1:${PORT}." >&2
     echo "   Fix: Ports tab → port ${PORT} → visibility **Public** → open ${APP_URL}" >&2
     echo "   Or: gh codespace ports visibility ${PORT}:public -c \"${CODESPACE_NAME}\"" >&2
