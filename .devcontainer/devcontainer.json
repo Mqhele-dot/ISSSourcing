@@ -9,7 +9,9 @@
   "portsAttributes": {
     "5000": {
       "label": "Inventory Manager",
-      "onAutoForward": "openBrowserOnce"
+      "onAutoForward": "openBrowserOnce",
+      "protocol": "http",
+      "visibility": "public"
     }
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",

@@ -26,7 +26,8 @@ This repository includes a devcontainer configuration under **`.devcontainer/`**
 npm run codespaces:up
 ```
 
-5. **If the browser shows HTTP 502:** In VS Code, open the **PORTS** tab (next to Terminal), find port **5000**, click the visibility dropdown, set it to **Public**, then reload the page. The app is only reachable from your browser when the port is Public.
+5. **If the browser shows HTTP 502, 401, or “Failed to fetch dynamically imported module”:** The forwarded port is almost certainly **Private**. Open **PORTS** → port **5000** → set visibility to **Public** → hard-reload. HTTP **401** on `https://<codespace>-5000.app.github.dev/health` is GitHub’s proxy, not the Express `/health` handler (which always returns JSON 200). Private ports also break **Vite** lazy-loaded routes because `.tsx` chunk requests are blocked the same way.
+6. **Rebuild the devcontainer** after pulling the latest `.devcontainer/devcontainer.json` so **5000** defaults to **Public** (`portsAttributes.visibility`).
 
 The command will:
 - verify you are in the repository root

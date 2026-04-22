@@ -356,9 +356,14 @@ if [[ -n "${FORWARDED_HOST}" ]]; then
     echo ""
   else
     echo "⚠️  Forwarded URL check did not succeed (HTTP ${LAST_STATUS} on ${APP_URL}/health)." >&2
+    if [[ "${LAST_STATUS}" == "401" ]]; then
+      echo "   HTTP 401 here is usually GitHub blocking a **Private** forwarded port (not your app—/health is public)." >&2
+      echo "   Without Public visibility, the browser also fails to load Vite chunks (dynamic import errors)." >&2
+    fi
     echo "   The dev server is still running inside the container at http://127.0.0.1:${PORT}." >&2
-    echo "   Fix: Ports tab → forward ${PORT} → visibility Public → open ${APP_URL}" >&2
+    echo "   Fix: Ports tab → port ${PORT} → visibility **Public** → open ${APP_URL}" >&2
     echo "   Or: gh codespace ports visibility ${PORT}:public -c \"${CODESPACE_NAME}\"" >&2
+    echo "   After pulling latest .devcontainer, **Rebuild Container** so port 5000 defaults to Public." >&2
     if command -v gh >/dev/null 2>&1; then
       echo "Current forwarded ports:" >&2
       gh codespace ports -c "${CODESPACE_NAME}" --json sourcePort,visibility,browseUrl 2>/dev/null || true

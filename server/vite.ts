@@ -26,12 +26,45 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+function codespacePublicWebOrigin(): string | null {
+  const name = process.env.CODESPACE_NAME;
+  const domain = process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN;
+  const port = process.env.PORT ?? "5000";
+  if (!name || !domain) return null;
+  return `https://${name}-${port}.${domain}`;
+}
+
 export async function setupVite(app: Express, server: Server) {
+  const publicOrigin = codespacePublicWebOrigin();
+  const hmrHost =
+    publicOrigin != null
+      ? (() => {
+          try {
+            return new URL(publicOrigin).hostname;
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+
   const serverOptions: ViteServerOptions = {
     middlewareMode: true,
-    hmr: { server },
+    hmr:
+      hmrHost != null
+        ? {
+            server,
+            host: hmrHost,
+            protocol: "wss",
+            clientPort: 443,
+          }
+        : { server },
     allowedHosts: true as const,
+    ...(publicOrigin != null ? { origin: publicOrigin } : {}),
   };
+
+  if (publicOrigin != null) {
+    log(`Vite Codespaces origin: ${publicOrigin} (HMR wss @ ${hmrHost})`, "vite");
+  }
 
   const vite = await createViteServer({
     ...viteConfig,
