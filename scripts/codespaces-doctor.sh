@@ -44,7 +44,11 @@ fi
 echo
 
 echo "== HTTP ${PORT} localhost =="
-code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:${PORT}/health" 2>/dev/null || echo "000")"
+# curl still writes http_code to stdout when the connection fails; do not append a second "000".
+code="$(
+  curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 2 --max-time 3 "http://127.0.0.1:${PORT}/health" 2>/dev/null || true
+)"
+[[ -z "${code}" ]] && code="000"
 if [[ "${code}" == "200" ]]; then
   echo "  OK  GET /health -> ${code} (dev server is up)"
 elif [[ "${code}" == "000" ]]; then
