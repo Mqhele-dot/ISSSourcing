@@ -15,7 +15,7 @@ The **exact** root cause in production depends on the failing request. Use this 
 1. **`ensureAuthenticated`** → 401 if not logged in.
 2. **Active org** → `getActiveOrganizationId()` (defaults to org **1** if ALS unset).
 3. **Critical path**: org row, **`storage.getAppSettings()`**, DB **`SELECT 1`**.
-4. **Warnings only**: **`getProductBootstrapHints`**, **`__drizzle_migrations`** count, **export job** diagnostic.
+4. **Warnings only**: **`getProductBootstrapHints`**, **`__drizzle_migrations`** count (omitted when the table does not exist—normal for **`drizzle-kit push`** without **`migrate`**), **export job** diagnostic.
 
 ## What to attach for support
 

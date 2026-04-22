@@ -211,8 +211,17 @@ export function registerSetupRoutes(app: Express, auth: Auth): void {
 
       let drizzleMigrationCount: number | null = null;
       try {
-        const mig = await pool.query(`SELECT COUNT(*)::int AS c FROM __drizzle_migrations`);
-        drizzleMigrationCount = mig.rows[0]?.c != null ? Number(mig.rows[0].c) : null;
+        const existsRow = await pool.query<{ exists: boolean }>(
+          `SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = '__drizzle_migrations'
+          ) AS exists`,
+        );
+        if (existsRow.rows[0]?.exists) {
+          const mig = await pool.query<{ c: number }>(`SELECT COUNT(*)::int AS c FROM __drizzle_migrations`);
+          drizzleMigrationCount = mig.rows[0]?.c != null ? Number(mig.rows[0].c) : null;
+        }
+        // No table: normal for `drizzle-kit push`–only workflows (migrate never ran).
       } catch (e) {
         drizzleMigrationCount = null;
         const msg = e instanceof Error ? e.message : String(e);
@@ -235,9 +244,12 @@ export function registerSetupRoutes(app: Express, auth: Auth): void {
 
       const firstCode =
         criticalIssues[0]?.code ?? issues[0]?.code ?? (setupStatusHealth === "ok" ? "OK" : "UNKNOWN");
-      console.error(
-        `[SETUP_STATUS] summary requestId=${requestId} userId=${userId ?? "-"} orgId=${orgId} health=${setupStatusHealth} firstCode=${firstCode} criticalCount=${criticalIssues.length} warningCount=${issues.length - criticalIssues.length}`,
-      );
+      const summaryLine = `[SETUP_STATUS] summary requestId=${requestId} userId=${userId ?? "-"} orgId=${orgId} health=${setupStatusHealth} firstCode=${firstCode} criticalCount=${criticalIssues.length} warningCount=${issues.length - criticalIssues.length}`;
+      if (setupStatusHealth === "degraded" || criticalIssues.length > 0) {
+        console.error(summaryLine);
+      } else {
+        console.info(summaryLine);
+      }
 
       let uploadsPathReady = false;
       let exportsPathReady = false;
