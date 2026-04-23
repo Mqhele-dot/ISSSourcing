@@ -12,6 +12,16 @@ const __dirname = dirname(__filename);
 const isReplit = process.env.REPL_ID !== undefined;
 
 export default defineConfig({
+  /**
+   * Cloud-synced worktrees (OneDrive, Dropbox, iCloud) often emit rapid write events; without debouncing,
+   * Vite can rebuild/HMR continuously — the browser looks like it is “refreshing” forever.
+   */
+  server: {
+    watch: {
+      ignored: ["**/node_modules/**", "**/.git/objects/**"],
+      awaitWriteFinish: { stabilityThreshold: 450, pollInterval: 100 },
+    },
+  },
   plugins: [
     react(),
     ...(isReplit ? [runtimeErrorOverlay()] : []),

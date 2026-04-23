@@ -617,7 +617,8 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: true,
+      /** Alt-tab in dev triggers focus refetches; with many queries + remote ports this amplifies flicker and 401 churn. */
+      refetchOnWindowFocus: typeof import.meta !== "undefined" && import.meta.env?.PROD === true,
       refetchOnReconnect: true,
       /** Keep list views snappy while avoiding stale dashboards forever */
       staleTime: 60_000,

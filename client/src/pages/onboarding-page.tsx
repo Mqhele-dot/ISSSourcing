@@ -40,6 +40,7 @@ export default function OnboardingPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/ready"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/setup/status"] });
       toast({
         title: "Organization created",
         description: "Your workspace is ready. Continuing to the app…",

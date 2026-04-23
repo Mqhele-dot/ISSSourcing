@@ -80,7 +80,12 @@ export async function setupVite(app: Express, server: Server) {
         viteLogger.error(msg, options);
       },
     },
-    server: serverOptions,
+    /** Preserve `server.watch` (and other dev-server tweaks) from vite.config — do not replace the whole block. */
+    server: {
+      ...(viteConfig.server ?? {}),
+      ...serverOptions,
+      ...(process.env.VITE_DISABLE_HMR === "1" ? { hmr: false as const } : {}),
+    },
     appType: "custom",
   });
 

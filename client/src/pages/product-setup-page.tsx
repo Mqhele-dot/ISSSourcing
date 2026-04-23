@@ -139,6 +139,7 @@ export default function ProductSetupPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/setup/status"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/ready"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
       toast({ title: "Setup complete", description: "Your workspace is ready." });
       setLocation(APP_ROUTES.home);
