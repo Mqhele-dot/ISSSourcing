@@ -152,6 +152,7 @@ function normalizeEndpointPath(url: string): string {
 
 /** Set after `queryClient` is created — clears stale cached user when APIs return 401 */
 let invalidateUserQueryOn401: (() => void) | null = null;
+let auth401InvalidateTimer: ReturnType<typeof setTimeout> | null = null;
 let csrfTokenCache: string | null = null;
 let csrfTokenInFlight: Promise<string> | null = null;
 
@@ -630,5 +631,15 @@ export const queryClient = new QueryClient({
 });
 
 invalidateUserQueryOn401 = () => {
-  void queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+  /** Many parallel 401s (e.g. burst of GETs) should not each trigger a `/api/user` refetch storm. */
+  if (auth401InvalidateTimer != null) {
+    clearTimeout(auth401InvalidateTimer);
+  }
+  auth401InvalidateTimer = setTimeout(() => {
+    auth401InvalidateTimer = null;
+    void queryClient.invalidateQueries({
+      queryKey: ["/api/user"],
+      refetchType: "active",
+    });
+  }, 75);
 };

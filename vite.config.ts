@@ -8,10 +8,13 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+/** Replit-only: the runtime error modal can trigger full page reloads in other hosts (e.g. Codespaces). */
+const isReplit = process.env.REPL_ID !== undefined;
+
 export default defineConfig({
   plugins: [
     react(),
-    runtimeErrorOverlay(),
+    ...(isReplit ? [runtimeErrorOverlay()] : []),
     themePlugin(),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
