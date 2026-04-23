@@ -24,10 +24,17 @@ import {
   parseSupplierRouteId,
   SUPPLIER_DETAIL_ROUTE_PATTERN,
 } from "../client/src/lib/supplier-detail-route.ts";
+import { shouldInvalidateCachedQueriesOnUserIdTransition } from "../client/src/lib/auth-invalidate-policy.ts";
 
 const MOBILE_PATH = /^\/m(\/|$)/;
 
 function main() {
+  assert.equal(shouldInvalidateCachedQueriesOnUserIdTransition(null, 1), false);
+  assert.equal(shouldInvalidateCachedQueriesOnUserIdTransition(null, null), false);
+  assert.equal(shouldInvalidateCachedQueriesOnUserIdTransition(1, 1), false);
+  assert.equal(shouldInvalidateCachedQueriesOnUserIdTransition(1, null), false);
+  assert.equal(shouldInvalidateCachedQueriesOnUserIdTransition(1, 2), true);
+
   const operationsSection = APP_NAV_SECTIONS.find((s) => s.key === "operations");
   assert.ok(operationsSection, "operations section exists");
   for (const item of operationsSection!.items) {

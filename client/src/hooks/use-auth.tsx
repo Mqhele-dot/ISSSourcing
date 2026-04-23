@@ -11,6 +11,7 @@ import { type UserLogin, type UserRegistration } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { routeDebug } from "@/lib/route-debug";
+import { shouldInvalidateCachedQueriesOnUserIdTransition } from "@/lib/auth-invalidate-policy";
 
 type VerificationResponse = {
   success: boolean;
@@ -66,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Clear stale 401-cached page queries after successful login.
       queryClient.invalidateQueries({
         predicate: (q) => String(q.queryKey?.[0] ?? "") !== "/api/user",
+        refetchType: "active",
       });
       toast({
         title: "Login successful",
@@ -103,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         queryClient.setQueryData(["/api/user"], response.user);
         queryClient.invalidateQueries({
           predicate: (q) => String(q.queryKey?.[0] ?? "") !== "/api/user",
+          refetchType: "active",
         });
         toast({
           title: "Registration successful",
@@ -179,14 +182,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      * The old condition invalidated every mounted logged-in session and triggered a query storm + auth flicker.
      * Only invalidate when switching from one authenticated user to another (rare outside login mutation).
      */
-    if (
-      prev !== null &&
-      currentUserId !== null &&
-      currentUserId !== prev
-    ) {
+    if (shouldInvalidateCachedQueriesOnUserIdTransition(prev, currentUserId)) {
       routeDebug("auth.invalidate-on-user-switch", { from: prev, to: currentUserId });
       queryClient.invalidateQueries({
         predicate: (q) => String(q.queryKey?.[0] ?? "") !== "/api/user",
+        refetchType: "active",
       });
     }
     previousUserIdRef.current = currentUserId;

@@ -1,4 +1,4 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,13 @@ import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
 export type { ReadinessStatus };
 export { fetchReadinessStatus } from "@/lib/setup-readiness-queries";
 
-export function ReadinessBanner() {
+function pathWithoutQuery(path: string): string {
+  const i = path.indexOf("?");
+  return i === -1 ? path : path.slice(0, i);
+}
+
+/** Readiness + setup polling and banners (not needed on `/auth`; skipping avoids extra queries during login churn). */
+function ReadinessBannerBody() {
   useQuery({
     ...readinessQueryOptions,
     refetchInterval: 30_000,
@@ -122,4 +128,12 @@ export function ReadinessBanner() {
   }
 
   return null;
+}
+
+export function ReadinessBanner() {
+  const [loc] = useLocation();
+  if (pathWithoutQuery(loc) === APP_ROUTES.auth) {
+    return null;
+  }
+  return <ReadinessBannerBody />;
 }

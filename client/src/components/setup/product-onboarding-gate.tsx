@@ -109,7 +109,7 @@ function WithNonAdminSetupBanner({
   );
 }
 
-export function ProductOnboardingGate({ children }: { children: ReactNode }) {
+function ProductOnboardingGateAfterAuth({ children }: { children: ReactNode }) {
   const [path] = useLocation();
   const pathBase = pathWithoutQuery(path);
   const { user, isLoading: authLoading } = useAuth();
@@ -136,10 +136,6 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
       needsFirstRunLatchRef.current = Boolean(ready.productBootstrap?.needsFirstRunOnboarding);
     }
   }, [readyPending, readyError, ready]);
-
-  if (isAuthPath(pathBase)) {
-    return <>{children}</>;
-  }
 
   const setupProbeWaiting =
     setupQueryActive && ((setupPending && !setupError) || (!setupFetched && !setupError));
@@ -264,4 +260,12 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
       {children}
     </WithNonAdminSetupBanner>
   );
+}
+
+export function ProductOnboardingGate({ children }: { children: ReactNode }) {
+  const [path] = useLocation();
+  if (isAuthPath(pathWithoutQuery(path))) {
+    return <>{children}</>;
+  }
+  return <ProductOnboardingGateAfterAuth>{children}</ProductOnboardingGateAfterAuth>;
 }
