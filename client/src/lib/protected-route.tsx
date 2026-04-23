@@ -2,6 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 import { Redirect, Route } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
+import { routeDebug } from "@/lib/route-debug";
 
 interface ProtectedRouteProps {
   path: string;
@@ -9,9 +10,11 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ path, component: Component }: ProtectedRouteProps) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isFetching } = useAuth();
 
-  if (isLoading) {
+  /** Avoid treating in-flight session revalidation as “logged out” (reduces `/auth` flash). */
+  if (isLoading || (!user && isFetching)) {
+    routeDebug("protected.session-pending", { path, isLoading, isFetching, hasUser: Boolean(user) });
     return (
       <Route path={path}>
         <div
@@ -32,6 +35,7 @@ export function ProtectedRoute({ path, component: Component }: ProtectedRoutePro
   }
 
   if (!user) {
+    routeDebug("protected.redirect-auth", { path });
     return (
       <Route path={path}>
         <Redirect to="/auth" />

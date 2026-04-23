@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { userLoginSchema, userRegistrationSchema } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { routeDebug } from "@/lib/route-debug";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -49,7 +50,7 @@ export default function AuthPage() {
   const [emailVerified, setEmailVerified] = useState(false);
   const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   const [twoFactorData, setTwoFactorData] = useState<any>(null);
-  const { user, loginMutation, registerMutation } = useAuth();
+  const { user, isLoading: authLoading, isFetching: authFetching, loginMutation, registerMutation } = useAuth();
   const { toast } = useToast();
   const [location] = useLocation();
 
@@ -85,8 +86,22 @@ export default function AuthPage() {
     }
   }, [toast]);
 
-  // Redirect if user is already logged in
-  if (user) {
+  /**
+   * Don’t redirect while `/api/user` is still revalidating — stale cached user + 401 on refetch caused auth ↔ `/` churn.
+   * Show a minimal spinner instead of bouncing through a blank lazy shell.
+   */
+  if (!authLoading && user && authFetching) {
+    routeDebug("auth.page.session-revalidate", { path: location });
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
+        <span className="text-sm">Verifying session…</span>
+      </div>
+    );
+  }
+
+  if (!authLoading && user && !authFetching) {
+    routeDebug("auth.page.redirect-home", { userId: user.id });
     return <Redirect to="/" />;
   }
 

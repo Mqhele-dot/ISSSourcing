@@ -3,6 +3,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { routeDebug } from "@/lib/route-debug";
 
 const ROUTE_LOAD_TIMEOUT_MS = 12_000;
 
@@ -77,6 +78,7 @@ class RouteChunkErrorBoundary extends React.Component<
       "Lazy route failed to load or run. This is a localized error (not necessarily a full app reload). " +
       "Use Try again or Reload app; check the Network tab for failed chunk requests (often 401/502 on forwarded dev ports).";
     console.error("[RouteChunkErrorBoundary]", hint, error.message, info.componentStack);
+    routeDebug("route.chunk-error", { message: error.message, stack: info.componentStack?.slice(0, 500) });
   }
 
   render() {

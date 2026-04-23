@@ -9,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import type { User } from "@shared/schema";
+import { routeDebug } from "@/lib/route-debug";
 
 export type { SetupStatusPayload };
 
@@ -156,6 +157,7 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
     !readyPending && !readyError && Boolean(ready?.productBootstrap?.needsFirstRunOnboarding);
   const needsOrg = needsFirstRunLatchRef.current === true || needsOrgLive;
   if (needsOrg && pathBase !== APP_ROUTES.admin.onboarding) {
+    routeDebug("gate.redirect-onboarding", { path: pathBase, phase, needsOrgLive });
     return <Redirect to={APP_ROUTES.admin.onboarding} />;
   }
 
@@ -252,6 +254,7 @@ export function ProductOnboardingGate({ children }: { children: ReactNode }) {
         </div>
       );
     }
+    routeDebug("gate.redirect-setup", { path: pathBase, phase, setupFetching });
     return <Redirect to={APP_ROUTES.setup.product} />;
   }
 

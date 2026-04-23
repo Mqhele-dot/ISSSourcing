@@ -10,6 +10,7 @@ import type { User} from "@shared/schema";
 import { type UserLogin, type UserRegistration } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { routeDebug } from "@/lib/route-debug";
 
 type VerificationResponse = {
   success: boolean;
@@ -25,6 +26,8 @@ type RegistrationResponse = {
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
+  /** True while `/api/user` is refetching (including revalidation). */
+  isFetching: boolean;
   error: Error | null;
   loginMutation: UseMutationResult<User, Error, UserLogin>;
   logoutMutation: UseMutationResult<void, Error, void>;
@@ -40,11 +43,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     data: user,
     error,
     isLoading,
+    isFetching,
   } = useQuery<User | null, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
-    /** Session can be cleared server-side (reset DB, new cookie); avoid treating cached user as valid for 60s */
-    staleTime: 0,
+    /**
+     * Avoid treating a session as valid forever, but don’t force constant revalidation (staleTime: 0 + focus refetch
+     * caused auth ↔ app redirect churn in remote dev). Login/logout still updates cache immediately.
+     */
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   const loginMutation = useMutation({
@@ -165,7 +173,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const previousUserIdRef = useRef<number | null>(null);
   useEffect(() => {
     const currentUserId = user?.id ?? null;
-    if (currentUserId && currentUserId !== previousUserIdRef.current) {
+    const prev = previousUserIdRef.current;
+    /**
+     * IMPORTANT: On first session restore, `prev` is null and `currentUserId` is set — do NOT invalidate here.
+     * The old condition invalidated every mounted logged-in session and triggered a query storm + auth flicker.
+     * Only invalidate when switching from one authenticated user to another (rare outside login mutation).
+     */
+    if (
+      prev !== null &&
+      currentUserId !== null &&
+      currentUserId !== prev
+    ) {
+      routeDebug("auth.invalidate-on-user-switch", { from: prev, to: currentUserId });
       queryClient.invalidateQueries({
         predicate: (q) => String(q.queryKey?.[0] ?? "") !== "/api/user",
       });
@@ -178,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user: user || null,
         isLoading,
+        isFetching,
         error,
         loginMutation,
         logoutMutation,
