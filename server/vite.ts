@@ -34,6 +34,23 @@ function codespacePublicWebOrigin(): string | null {
   return `https://${name}-${port}.${domain}`;
 }
 
+/**
+ * HMR over forwarded HTTPS in GitHub Codespaces often falls back to full page reloads (WS flake / client
+ * reconnect). That remounts the SPA and refetches `/api/user`, `/api/ready`, etc. every few seconds.
+ * Opt in with `VITE_ENABLE_HMR=1` when you need hot reload there.
+ */
+function viteHmrDisabled(): boolean {
+  if (process.env.VITE_DISABLE_HMR === "1") return true;
+  if (
+    process.env.CODESPACE_NAME &&
+    process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN &&
+    process.env.VITE_ENABLE_HMR !== "1"
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export async function setupVite(app: Express, server: Server) {
   const publicOrigin = codespacePublicWebOrigin();
   const hmrHost =
@@ -47,10 +64,13 @@ export async function setupVite(app: Express, server: Server) {
         })()
       : null;
 
+  const hmrOff = viteHmrDisabled();
+
   const serverOptions: ViteServerOptions = {
     middlewareMode: true,
-    hmr:
-      hmrHost != null
+    hmr: hmrOff
+      ? false
+      : hmrHost != null
         ? {
             server,
             host: hmrHost,
@@ -63,7 +83,14 @@ export async function setupVite(app: Express, server: Server) {
   };
 
   if (publicOrigin != null) {
-    log(`Vite Codespaces origin: ${publicOrigin} (HMR wss @ ${hmrHost})`, "vite");
+    log(
+      `Vite Codespaces origin: ${publicOrigin}${
+        hmrOff
+          ? " (HMR off by default — set VITE_ENABLE_HMR=1 to enable hot reload)"
+          : ` (HMR wss @ ${hmrHost})`
+      }`,
+      "vite",
+    );
   }
 
   const vite = await createViteServer({
@@ -84,7 +111,6 @@ export async function setupVite(app: Express, server: Server) {
     server: {
       ...(viteConfig.server ?? {}),
       ...serverOptions,
-      ...(process.env.VITE_DISABLE_HMR === "1" ? { hmr: false as const } : {}),
     },
     appType: "custom",
   });
