@@ -148,7 +148,7 @@ npm run test:e2e
 
 Optional: `PLAYWRIGHT_BASE_URL=https://<your-codespace>-5000.app.github.dev npm run test:e2e` if the server is only reachable on the forwarded URL (port **5000** must be **Public**).
 
-**Missing shared libraries** (`libgtk-3`, `libcups.so.2`, `libXcursor`, etc.): the devcontainer Dockerfile installs Playwright’s common Debian deps. **Rebuild the container** after pulling. On a plain Linux VM without that image, run:
+**Missing shared libraries** (`libgtk-3`, `libcups.so.2`, `libXcursor`, etc.): the devcontainer Dockerfile installs Playwright’s common Debian deps (including **`libxshmfence1`** for Chromium/GBM). **Rebuild the container** after pulling. On a plain Linux VM without that image, or after upgrading `@playwright/test`, run:
 
 ```bash
 sudo npx playwright install-deps

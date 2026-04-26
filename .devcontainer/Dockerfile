@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     libxkbcommon0 \
     libgbm1 \
+    libxshmfence1 \
     libasound2 \
     libdrm2 \
     libdbus-1-3 \

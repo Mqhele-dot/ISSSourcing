@@ -12,6 +12,10 @@ export default defineConfig({
     /* Prefer 127.0.0.1 — dev server binds there; localhost can differ on some Windows setups. */
     baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5000",
     trace: "on-first-retry",
+    headless: true,
+    launchOptions: {
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    },
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
