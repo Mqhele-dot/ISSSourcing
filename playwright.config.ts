@@ -1,5 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
+/**
+ * When `scripts/run-playwright-e2e.mjs` starts (or reuses) the dev server, it sets this so we do not
+ * spawn a second `npm run dev` from Playwright (avoids flaky ERR_CONNECTION_REFUSED in some environments).
+ * Direct `npx playwright test -c playwright.config.ts` still uses `webServer` below.
+ */
+const externalDevServer = process.env.PLAYWRIGHT_EXTERNAL_DEV_SERVER === "1";
+
 export default defineConfig({
   testDir: "./e2e",
   globalSetup: "./e2e/global-setup.ts",
@@ -20,23 +27,22 @@ export default defineConfig({
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
-  /**
-   * Start the API + Vite dev server when it is not already listening (e.g. lone `npm run test:e2e`).
-   * CI / release-gate that pre-starts `npm run dev` reuses the existing process (`reuseExistingServer`).
-   */
-  webServer: {
-    command: "npm run dev",
-    /** Wait for API + DB readiness; root `/` can answer before Vite is warm enough for first `/auth` navigation. */
-    url: "http://127.0.0.1:5000/api/ready",
-    /**
-     * Default false: always start `npm run dev` for `npm run test:e2e` so port 5000 is not empty (avoids ERR_CONNECTION_REFUSED).
-     * Set PLAYWRIGHT_REUSE_EXISTING_SERVER=1 when a dev server is already running (e.g. CI release-gate, or terminal A: npm run dev).
-     */
-    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1",
-    timeout: 120_000,
-    stdout: "pipe",
-    stderr: "pipe",
-  },
+  ...(!externalDevServer
+    ? {
+        /**
+         * Used when invoking Playwright directly (without the npm `test:e2e` wrapper).
+         * `npm run test:e2e` uses `run-playwright-e2e.mjs` + PLAYWRIGHT_EXTERNAL_DEV_SERVER=1 instead.
+         */
+        webServer: {
+          command: "npm run dev",
+          url: "http://127.0.0.1:5000/api/ready",
+          reuseExistingServer: process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1",
+          timeout: 120_000,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      }
+    : {}),
   /** Cold Vite compile on first SPA navigation can exceed 15s on slower disks / Windows. */
   timeout: 30_000,
   expect: { timeout: 5000 },

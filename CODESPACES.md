@@ -134,7 +134,7 @@ Expected:
 
 ### Playwright (browser E2E)
 
-This repo is **already** set up for Playwright: root [`playwright.config.ts`](playwright.config.ts) uses **`testDir: ./e2e`**, [`e2e/global-setup.ts`](e2e/global-setup.ts), **`webServer`** (`npm run dev`, readiness poll on **`http://127.0.0.1:5000/api/ready`**, 120s timeout; **`PLAYWRIGHT_REUSE_EXISTING_SERVER=1`** to reuse a server you already started), **`use.baseURL`** default **`http://127.0.0.1:5000`**, and **`npm run test:e2e`**. **Do not run `npm init playwright@latest`** unless you plan to merge its output by hand — it overwrites `playwright.config.ts` and adds a second `tests/` layout.
+This repo is **already** set up for Playwright: **`npm run test:e2e`** runs [`scripts/run-playwright-e2e.mjs`](scripts/run-playwright-e2e.mjs), which starts **`npm run dev`** when needed, waits for **`http://127.0.0.1:5000/api/ready`**, then runs Playwright with **`PLAYWRIGHT_EXTERNAL_DEV_SERVER=1`** (so the config does not spawn a second server). Root [`playwright.config.ts`](playwright.config.ts) uses **`testDir: ./e2e`**, [`e2e/global-setup.ts`](e2e/global-setup.ts), optional **`webServer`** only when you invoke **`npx playwright test`** directly, and **`use.baseURL`** default **`http://127.0.0.1:5000`**. **Do not run `npm init playwright@latest`** unless you plan to merge its output by hand — it overwrites `playwright.config.ts` and adds a second `tests/` layout.
 
 **Playwright / Linux libraries:** do not hand-pick individual `lib*` packages. The devcontainer Dockerfile runs **`npx playwright@… install-deps`** (Chromium, Firefox, WebKit) at image build, and **post-create** runs **`sudo npx playwright install-deps`** then **`npx playwright install`** so OS deps and browser builds match your **`@playwright/test`** version. **Rebuild the container** after pulling. If anything still fails to launch, run manually from `/workspace`: **`sudo npx playwright install-deps`** and **`npx playwright install`**.
 
@@ -147,16 +147,9 @@ This repo is **already** set up for Playwright: root [`playwright.config.ts`](pl
 npm run test:e2e
 ```
 
-By default, **`npm run test:e2e`** starts its own **`npm run dev`** and waits until **`http://127.0.0.1:5000/api/ready`** succeeds (API + DB up). **`[WebServer]`** lines in the log come from that process.
+The wrapper detects an existing healthy **`/api/ready`** (e.g. you already ran **`npm run dev`** in another terminal, or CI pre-started the app) and skips starting a second server. It only tears down a dev process **it** started.
 
-**Two terminals (reuse an already-running dev server):** in terminal A run `npm run dev`, then in terminal B:
-
-```bash
-export PLAYWRIGHT_REUSE_EXISTING_SERVER=1   # Windows PowerShell: $env:PLAYWRIGHT_REUSE_EXISTING_SERVER="1"
-npm run test:e2e
-```
-
-Without that variable, Playwright tries to bind port **5000** again and the run can fail if the port is already taken.
+**Direct Playwright (advanced):** `npx playwright test -c playwright.config.ts` still uses the config’s **`webServer`** block; set **`PLAYWRIGHT_REUSE_EXISTING_SERVER=1`** if port **5000** is already in use.
 
 **`net::ERR_CONNECTION_REFUSED` at `http://127.0.0.1:5000`:** nothing was listening ( **`webServer` did not stay up**, DB/env prevented `npm run dev` from listening, or port **5000** blocked). Confirm Postgres and **`DATABASE_URL` / `PG*`** in the Codespace, run **`curl -sf http://127.0.0.1:5000/api/ready`**, then retry **`npm run test:e2e`**. If you use **`sudo npx playwright install …`**, run tests as the normal Codespace user (**`node`**) so **`npm run dev`** and Playwright share the same environment and caches.
 
