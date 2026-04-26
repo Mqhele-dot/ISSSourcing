@@ -16,13 +16,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 \
     libatk1.0-0 \
     libatk-bridge2.0-0 \
+    libatspi2.0-0 \
     libx11-xcb1 \
     libxcomposite1 \
     libxdamage1 \
+    libxfixes3 \
+    libxcursor1 \
     libxrandr2 \
     libxkbcommon0 \
     libgbm1 \
     libasound2 \
+    libdrm2 \
+    libdbus-1-3 \
+    libcups2 \
+    libgtk-3-0 \
   && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI: `npm run codespaces:ports-public` and codespaces-up port visibility automation.

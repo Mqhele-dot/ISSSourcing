@@ -132,6 +132,31 @@ Expected:
 - end-to-end procurement flow smoke test
 - export smoke tests for `pdf`, `csv`, `excel`, and `docx`
 
+### Playwright (browser E2E)
+
+This repo is **already** set up for Playwright: root [`playwright.config.ts`](playwright.config.ts) uses **`testDir: ./e2e`**, [`e2e/global-setup.ts`](e2e/global-setup.ts), and **`npm run test:e2e`**. **Do not run `npm init playwright@latest`** unless you plan to merge its output by hand — it overwrites `playwright.config.ts` and adds a second `tests/` layout.
+
+**Run tests (headless, recommended in Codespaces):**
+
+```bash
+# Terminal A
+npm run dev
+
+# Terminal B (after DB is up; global setup runs e2e:prep)
+npm run test:e2e
+```
+
+Optional: `PLAYWRIGHT_BASE_URL=https://<your-codespace>-5000.app.github.dev npm run test:e2e` if the server is only reachable on the forwarded URL (port **5000** must be **Public**).
+
+**Missing shared libraries** (`libgtk-3`, `libcups.so.2`, `libXcursor`, etc.): the devcontainer Dockerfile installs Playwright’s common Debian deps. **Rebuild the container** after pulling. On a plain Linux VM without that image, run:
+
+```bash
+sudo npx playwright install-deps
+# or: npm run playwright:install-deps  (with sudo if required)
+```
+
+**`npx playwright test --ui` / trace viewer** can crash with `Protocol error` when Chromium cannot start — use headless `npm run test:e2e` first; install OS deps above if launch still fails.
+
 ## Ports and URLs
 
 | Service | Port | Notes |
