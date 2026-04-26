@@ -39,16 +39,9 @@ function codespacePublicWebOrigin(): string | null {
  * reconnect). That remounts the SPA and refetches `/api/user`, `/api/ready`, etc. every few seconds.
  * Opt in with `VITE_ENABLE_HMR=1` when you need hot reload there.
  */
-function viteHmrDisabled(): boolean {
+function viteHmrDisabled(codespacesPublicOrigin: string | null): boolean {
   if (process.env.VITE_DISABLE_HMR === "1") return true;
-  if (
-    process.env.CODESPACE_NAME &&
-    process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN &&
-    process.env.VITE_ENABLE_HMR !== "1"
-  ) {
-    return true;
-  }
-  return false;
+  return codespacesPublicOrigin != null && process.env.VITE_ENABLE_HMR !== "1";
 }
 
 export async function setupVite(app: Express, server: Server) {
@@ -64,7 +57,7 @@ export async function setupVite(app: Express, server: Server) {
         })()
       : null;
 
-  const hmrOff = viteHmrDisabled();
+  const hmrOff = viteHmrDisabled(publicOrigin);
 
   const serverOptions: ViteServerOptions = {
     middlewareMode: true,

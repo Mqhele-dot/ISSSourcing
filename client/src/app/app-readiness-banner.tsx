@@ -5,14 +5,10 @@ import { Button } from "@/components/ui/button";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { readinessQueryOptions, type ReadinessStatus } from "@/lib/setup-readiness-queries";
 import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
+import { pathWithoutQuery } from "@/lib/path-utils";
 
 export type { ReadinessStatus };
 export { fetchReadinessStatus } from "@/lib/setup-readiness-queries";
-
-function pathWithoutQuery(path: string): string {
-  const i = path.indexOf("?");
-  return i === -1 ? path : path.slice(0, i);
-}
 
 /** Readiness + setup polling and banners (not needed on `/auth`; skipping avoids extra queries during login churn). */
 function ReadinessBannerBody() {

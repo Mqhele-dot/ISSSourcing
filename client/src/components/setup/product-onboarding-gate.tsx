@@ -10,22 +10,13 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import type { User } from "@shared/schema";
 import { routeDebug } from "@/lib/route-debug";
+import { pathWithoutQuery } from "@/lib/path-utils";
 
 export type { SetupStatusPayload };
 
-function pathWithoutQuery(path: string): string {
-  const i = path.indexOf("?");
-  return i === -1 ? path : path.slice(0, i);
-}
-
-function isAuthPath(path: string): boolean {
-  const base = pathWithoutQuery(path);
-  return base === APP_ROUTES.auth;
-}
-
 function setupAllowedPath(path: string): boolean {
   const base = pathWithoutQuery(path);
-  if (isAuthPath(path)) return true;
+  if (base === APP_ROUTES.auth) return true;
   if (base === APP_ROUTES.setup.product) return true;
   if (base === APP_ROUTES.admin.systemDiagnostics) return true;
   if (base === APP_ROUTES.admin.onboarding) return true;
@@ -83,7 +74,7 @@ function WithNonAdminSetupBanner({
     setup.onboarding.required &&
     user &&
     user.role !== "admin" &&
-    !isAuthPath(path) &&
+    pathWithoutQuery(path) !== APP_ROUTES.auth &&
     path !== APP_ROUTES.setup.product;
 
   if (!show) return <>{children}</>;
@@ -264,7 +255,7 @@ function ProductOnboardingGateAfterAuth({ children }: { children: ReactNode }) {
 
 export function ProductOnboardingGate({ children }: { children: ReactNode }) {
   const [path] = useLocation();
-  if (isAuthPath(pathWithoutQuery(path))) {
+  if (pathWithoutQuery(path) === APP_ROUTES.auth) {
     return <>{children}</>;
   }
   return <ProductOnboardingGateAfterAuth>{children}</ProductOnboardingGateAfterAuth>;

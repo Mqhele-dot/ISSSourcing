@@ -6,11 +6,7 @@ import { MobileLayout } from "@/components/layout/mobile-layout";
 import { UpdateNotification } from "@/components/electron";
 import { ProductOnboardingGate } from "@/components/setup/product-onboarding-gate";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
-
-function pathWithoutQuery(path: string): string {
-  const i = path.indexOf("?");
-  return i === -1 ? path : path.slice(0, i);
-}
+import { pathWithoutQuery } from "@/lib/path-utils";
 
 export function AppShellLayout({ children }: { children: ReactNode }) {
   const [loc] = useLocation();
