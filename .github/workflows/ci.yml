@@ -133,6 +133,7 @@ jobs:
       SESSION_SECRET: ci-release-gate-secret
       NODE_ENV: development
       BASE_URL: http://127.0.0.1:5000
+      PLAYWRIGHT_REUSE_EXISTING_SERVER: "1"
     steps:
       - uses: actions/checkout@v4
 

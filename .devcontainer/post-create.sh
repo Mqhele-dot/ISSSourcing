@@ -24,3 +24,14 @@ for attempt in {1..30}; do
 done
 
 npm run db:push
+
+# System libraries for Chromium, Firefox, and WebKit (matches upstream Playwright; avoid hand-picked apt lib lists).
+echo "Installing Playwright OS dependencies (all browsers)..."
+if command -v sudo >/dev/null 2>&1; then
+  sudo npx playwright install-deps
+else
+  npx playwright install-deps
+fi
+
+echo "Installing Playwright browser binaries..."
+npx playwright install

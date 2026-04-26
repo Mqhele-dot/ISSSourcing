@@ -134,25 +134,40 @@ Expected:
 
 ### Playwright (browser E2E)
 
-This repo is **already** set up for Playwright: root [`playwright.config.ts`](playwright.config.ts) uses **`testDir: ./e2e`**, [`e2e/global-setup.ts`](e2e/global-setup.ts), and **`npm run test:e2e`**. **Do not run `npm init playwright@latest`** unless you plan to merge its output by hand — it overwrites `playwright.config.ts` and adds a second `tests/` layout.
+This repo is **already** set up for Playwright: root [`playwright.config.ts`](playwright.config.ts) uses **`testDir: ./e2e`**, [`e2e/global-setup.ts`](e2e/global-setup.ts), **`webServer`** (`npm run dev`, readiness poll on **`http://127.0.0.1:5000/api/ready`**, 120s timeout; **`PLAYWRIGHT_REUSE_EXISTING_SERVER=1`** to reuse a server you already started), **`use.baseURL`** default **`http://127.0.0.1:5000`**, and **`npm run test:e2e`**. **Do not run `npm init playwright@latest`** unless you plan to merge its output by hand — it overwrites `playwright.config.ts` and adds a second `tests/` layout.
+
+**Playwright / Linux libraries:** do not hand-pick individual `lib*` packages. The devcontainer Dockerfile runs **`npx playwright@… install-deps`** (Chromium, Firefox, WebKit) at image build, and **post-create** runs **`sudo npx playwright install-deps`** then **`npx playwright install`** so OS deps and browser builds match your **`@playwright/test`** version. **Rebuild the container** after pulling. If anything still fails to launch, run manually from `/workspace`: **`sudo npx playwright install-deps`** and **`npx playwright install`**.
+
+**Wrong tests (6 failures, `tests/example.spec.ts`, chromium + firefox + webkit):** that layout comes from **`npm init playwright@latest`**, which overwrites root **`playwright.config.ts`**. Restore the repo config and remove the scaffold, for example: `git checkout -- playwright.config.ts` and delete the generated **`tests/example.spec.ts`** (and extra projects) so **`npm run test:e2e`** uses **`e2e/`** and **Chromium only** again.
 
 **Run tests (headless, recommended in Codespaces):**
 
 ```bash
-# Terminal A
-npm run dev
-
-# Terminal B (after DB is up; global setup runs e2e:prep)
+# One terminal (PostgreSQL must be reachable; global setup runs e2e:prep first):
 npm run test:e2e
 ```
 
-Optional: `PLAYWRIGHT_BASE_URL=https://<your-codespace>-5000.app.github.dev npm run test:e2e` if the server is only reachable on the forwarded URL (port **5000** must be **Public**).
+By default, **`npm run test:e2e`** starts its own **`npm run dev`** and waits until **`http://127.0.0.1:5000/api/ready`** succeeds (API + DB up). **`[WebServer]`** lines in the log come from that process.
 
-**Missing shared libraries** (`libgtk-3`, `libcups.so.2`, `libXcursor`, etc.): the devcontainer Dockerfile installs Playwright’s common Debian deps (including **`libxshmfence1`** for Chromium/GBM). **Rebuild the container** after pulling. On a plain Linux VM without that image, or after upgrading `@playwright/test`, run:
+**Two terminals (reuse an already-running dev server):** in terminal A run `npm run dev`, then in terminal B:
+
+```bash
+export PLAYWRIGHT_REUSE_EXISTING_SERVER=1   # Windows PowerShell: $env:PLAYWRIGHT_REUSE_EXISTING_SERVER="1"
+npm run test:e2e
+```
+
+Without that variable, Playwright tries to bind port **5000** again and the run can fail if the port is already taken.
+
+**`net::ERR_CONNECTION_REFUSED` at `http://127.0.0.1:5000`:** nothing was listening ( **`webServer` did not stay up**, DB/env prevented `npm run dev` from listening, or port **5000** blocked). Confirm Postgres and **`DATABASE_URL` / `PG*`** in the Codespace, run **`curl -sf http://127.0.0.1:5000/api/ready`**, then retry **`npm run test:e2e`**. If you use **`sudo npx playwright install …`**, run tests as the normal Codespace user (**`node`**) so **`npm run dev`** and Playwright share the same environment and caches.
+
+Optional: `PLAYWRIGHT_BASE_URL=https://<your-codespace>-5000.app.github.dev npm run test:e2e` only if you intentionally test via the forwarded URL (port **5000** must be **Public**); the default **`http://127.0.0.1:5000`** matches `webServer` and typical in-container runs.
+
+**Missing shared libraries** (e.g. `libXfixes`, `libXcursor`, GTK/GDK, WebKit GStreamer): use Playwright’s installer, not one-off apt lines:
 
 ```bash
 sudo npx playwright install-deps
-# or: npm run playwright:install-deps  (with sudo if required)
+npx playwright install
+# or: npm run playwright:install-deps   (often needs sudo on Linux for apt)
 ```
 
 **`npx playwright test --ui` / trace viewer** can crash with `Protocol error` when Chromium cannot start — use headless `npm run test:e2e` first; install OS deps above if launch still fails.
