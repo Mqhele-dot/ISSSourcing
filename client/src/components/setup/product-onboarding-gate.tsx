@@ -17,6 +17,7 @@ export type { SetupStatusPayload };
 function setupAllowedPath(path: string): boolean {
   const base = pathWithoutQuery(path);
   if (base === APP_ROUTES.auth) return true;
+  if (base === "/dev-test") return true;
   if (base === APP_ROUTES.setup.product) return true;
   if (base === APP_ROUTES.admin.systemDiagnostics) return true;
   if (base === APP_ROUTES.admin.onboarding) return true;
@@ -255,7 +256,8 @@ function ProductOnboardingGateAfterAuth({ children }: { children: ReactNode }) {
 
 export function ProductOnboardingGate({ children }: { children: ReactNode }) {
   const [path] = useLocation();
-  if (pathWithoutQuery(path) === APP_ROUTES.auth) {
+  const pathBase = pathWithoutQuery(path);
+  if (pathBase === APP_ROUTES.auth || pathBase === "/dev-test") {
     return <>{children}</>;
   }
   return <ProductOnboardingGateAfterAuth>{children}</ProductOnboardingGateAfterAuth>;

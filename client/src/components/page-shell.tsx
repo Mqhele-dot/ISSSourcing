@@ -17,12 +17,18 @@ export function PageShell({
   variant = "standard",
   className,
   children,
+  "data-testid": dataTestId,
 }: {
   variant?: PageShellVariant;
   className?: string;
   children: ReactNode;
+  "data-testid"?: string;
 }) {
-  return <div className={cn(PAGE_SHELL_VARIANTS[variant], className)}>{children}</div>;
+  return (
+    <div data-testid={dataTestId} className={cn(PAGE_SHELL_VARIANTS[variant], className)}>
+      {children}
+    </div>
+  );
 }
 
 /** Top toolbar row (filters, actions) — composes with PageHeader */

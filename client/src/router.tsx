@@ -60,6 +60,7 @@ const MobileHubTasks = lazy(() => import("@/pages/mobile-hub-tasks"));
 const MobileHubMore = lazy(() => import("@/pages/mobile-hub-more"));
 const OperationsOverviewPage = lazy(() => import("@/pages/operations-overview-page"));
 const MobileWorkflowsLauncherPage = lazy(() => import("@/pages/mobile-workflows-launcher-page"));
+const DevTestPage = lazy(() => import("@/pages/dev-test-page"));
 
 const LEGACY_REDIRECT_RULES: LegacyRedirectRule[] = buildLegacyRedirectRules();
 
@@ -165,6 +166,7 @@ export function AppRouter() {
             </Route>
           );
         })}
+        <Route path="/dev-test" component={DevTestPage} />
         <Route path="/auth" component={AuthPage} />
         <Route component={NotFound} />
       </Switch>

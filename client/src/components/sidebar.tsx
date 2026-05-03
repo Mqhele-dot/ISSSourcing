@@ -198,6 +198,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
 
       {/* Sidebar */}
       <aside
+        data-testid="sidebar"
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex h-full max-h-svh w-64 max-w-[85vw] flex-col overflow-hidden bg-card border-r border-border shadow-[var(--shadow-elev-1)] accent-glow transition-[transform,width] duration-200 ease-out transform md:translate-x-0 md:static md:z-0 md:h-svh md:max-h-svh md:max-w-none md:shrink-0",
           open ? "translate-x-0" : "-translate-x-full",

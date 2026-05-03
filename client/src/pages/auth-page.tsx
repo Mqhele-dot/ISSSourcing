@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { userLoginSchema, userRegistrationSchema } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { routeDebug } from "@/lib/route-debug";
+import { safeInternalNextParam } from "@/lib/safe-internal-path";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -53,6 +54,16 @@ export default function AuthPage() {
   const { user, isLoading: authLoading, isFetching: authFetching, loginMutation, registerMutation } = useAuth();
   const { toast } = useToast();
   const [location] = useLocation();
+  const [nextPath, setNextPath] = useState<string | null>(() =>
+    typeof window !== "undefined"
+      ? safeInternalNextParam(new URLSearchParams(window.location.search).get("next"))
+      : null,
+  );
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setNextPath(safeInternalNextParam(params.get("next")));
+  }, [location]);
 
   // Check for URL params on component load
   useEffect(() => {
@@ -102,7 +113,7 @@ export default function AuthPage() {
 
   if (!authLoading && user && !authFetching) {
     routeDebug("auth.page.redirect-home", { userId: user.id });
-    return <Redirect to="/" />;
+    return <Redirect to={nextPath ?? "/"} />;
   }
 
   return (

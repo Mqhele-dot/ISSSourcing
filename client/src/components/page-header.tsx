@@ -21,6 +21,8 @@ interface PageHeaderProps {
     onClick: () => void;
     disabled?: boolean;
   };
+  /** Optional stable selector for E2E / external testers (e.g. `"page-title"`). */
+  titleTestId?: string;
 }
 
 export function PageHeader({
@@ -32,6 +34,7 @@ export function PageHeader({
   actions,
   action,
   secondaryAction,
+  titleTestId,
 }: PageHeaderProps) {
   const hasLegacyActions = action || secondaryAction;
 
@@ -42,7 +45,9 @@ export function PageHeader({
         <div className="flex items-center gap-3">
           {icon && <div className="h-8 w-8">{icon}</div>}
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+            <h1 className="text-2xl font-bold tracking-tight" data-testid={titleTestId ?? undefined}>
+              {title}
+            </h1>
             {subtitle ? (
               <p className="text-sm text-muted-foreground">{subtitle}</p>
             ) : null}

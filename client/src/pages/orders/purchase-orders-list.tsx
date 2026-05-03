@@ -81,11 +81,16 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
 
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
-      {!embedded && (
+      {embedded ? (
+        <h1 className="sr-only" data-testid="page-title">
+          Purchase orders
+        </h1>
+      ) : (
         <PageHeader
           title="Purchase Orders"
           subtitle="Operational purchasing workflow"
           breadcrumb={<span>Procurement / Purchase orders</span>}
+          titleTestId="page-title"
         />
       )}
 

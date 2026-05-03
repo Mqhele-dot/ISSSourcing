@@ -98,9 +98,10 @@ export default function SystemDiagnosticsPage() {
   const clientSnap = getReadinessClientSnapshot();
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
+    <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6" data-testid="system-diagnostics-page">
       <PageHeader
         title="System diagnostics"
+        titleTestId="page-title"
         subtitle="Local install health, onboarding, exports path, and build metadata"
         breadcrumb={<span>Admin / Diagnostics</span>}
         actions={

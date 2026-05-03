@@ -11,7 +11,7 @@ import { pathWithoutQuery } from "@/lib/path-utils";
 export function AppShellLayout({ children }: { children: ReactNode }) {
   const [loc] = useLocation();
   /** Auth uses a full-screen page without desktop/mobile chrome; gate still wraps children for consistent providers. */
-  if (pathWithoutQuery(loc) === APP_ROUTES.auth) {
+  if (pathWithoutQuery(loc) === APP_ROUTES.auth || pathWithoutQuery(loc) === "/dev-test") {
     return (
       <>
         <UpdateNotification />

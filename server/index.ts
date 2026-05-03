@@ -9,6 +9,7 @@ import { registerMetricsRoute } from "./bootstrap/metrics-route";
 import { startBackgroundTasks } from "./bootstrap/background-tasks";
 import { registerGlobalErrorHandler } from "./bootstrap/global-error-handler";
 import { attachStartupBannerListener } from "./bootstrap/startup-banner";
+import { registerDevTestRoutes } from "./dev-test-routes";
 
 const app = express();
 
@@ -42,6 +43,8 @@ registerSecurityMiddleware(app);
   startBackgroundTasks(server);
 
   registerGlobalErrorHandler(app);
+
+  registerDevTestRoutes(app);
 
   if (appEnv.isDevelopment) {
     await setupVite(app, server);

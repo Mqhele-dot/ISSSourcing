@@ -28,9 +28,10 @@ export default function ControlTowerPage() {
   const activity = data?.activity ?? [];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6" data-testid="control-tower-page">
       <PageHeader
         title="Control tower"
+        titleTestId="page-title"
         subtitle="Operational KPIs, risk signals, and recent control-tower activity."
         breadcrumb={<span>Operations / Control tower</span>}
         actions={

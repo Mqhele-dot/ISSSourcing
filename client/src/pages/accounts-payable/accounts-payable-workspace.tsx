@@ -182,9 +182,10 @@ export default function AccountsPayableWorkspace() {
   }
 
   return (
-    <PageShell variant="wide-table">
+    <PageShell variant="wide-table" data-testid="accounts-payable-page">
       <PageHeader
         title="Accounts payable"
+        titleTestId="page-title"
         subtitle="Enterprise AP inbox, approvals, exception handling, and payment batching."
         breadcrumb={<span>Finance / Accounts payable</span>}
         actions={

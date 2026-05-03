@@ -94,11 +94,13 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="container py-10 max-w-6xl">
+    <div className="container py-10 max-w-6xl" data-testid="admin-settings-page">
       <div className="mb-8">
         <div className="flex items-center mb-4">
           <Settings className="h-6 w-6 mr-2 text-primary" />
-          <h1 className="text-3xl font-bold">Settings</h1>
+          <h1 className="text-3xl font-bold" data-testid="page-title">
+            Settings
+          </h1>
         </div>
         <p className="text-muted-foreground">
           Configure application settings to match your business needs

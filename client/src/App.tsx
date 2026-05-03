@@ -25,7 +25,7 @@ function App() {
   return (
     <AppErrorBoundary>
       <AppProviders>
-        <div className="app-shell relative flex h-svh min-h-0 flex-col overflow-hidden">
+        <div className="app-shell relative flex h-svh min-h-0 flex-col overflow-hidden" data-testid="app-shell">
           <ReadinessBanner />
           {/**
            * Single `AppRouter` mount: avoids unmount/remount when switching between `/auth` and the main app

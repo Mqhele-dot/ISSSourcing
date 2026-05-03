@@ -196,9 +196,10 @@ export default function InventoryPage() {
   const displayedItems = inventoryData ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4" data-testid="inventory-page">
       <PageHeader
         title="Inventory"
+        titleTestId="page-title"
         subtitle="Operational inventory overview"
         description="Track on-hand, allocated, and available stock with location-aware filtering."
         icon={<Boxes className="h-6 w-6 text-primary" />}

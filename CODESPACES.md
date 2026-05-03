@@ -176,6 +176,37 @@ npx playwright install
 
 **`npx playwright test --ui` / trace viewer** can crash with `Protocol error` when Chromium cannot start — use headless `npm run test:e2e` first; install OS deps above if launch still fails.
 
+### External browser-agent testing (live Codespaces URL)
+
+Use these **development-only** endpoints so remote testers and automated browser agents can confirm reachability and enter the SPA without guessing routes. They are **404 in production** and **off in packaged builds** (same rules as other dev-only HTTP helpers). They are registered **immediately before** the Vite / static middleware so `curl` and agents get real **302/JSON** responses (restart **`npm run dev`** after pulling so the server loads them).
+
+1. **Reachability + session snapshot (JSON):** `https://<codespace-url>/dev-test-status`  
+   - If this works but the agent still stalls, suspect **browser automation / tunnel / session cookies**, not the Node process.
+2. **Tester landing page (HTML):** `https://<codespace-url>/dev-test`  
+   - Shows auth state and links into major modules; build must be dev (`import.meta.env.DEV`).
+3. **Normal entry (no auth bypass):** `https://<codespace-url>/dev-test-entry`  
+   - If already signed in → redirect to `/operations/control-tower` (or `?redirect=`). If not → `/auth?next=…` for safe internal paths only.
+4. **Optional one-shot dev login:** `https://<codespace-url>/dev-test-login`  
+   - **404** unless the server has **`DEV_TEST_LOGIN_ENABLED=true`** (and non-production, non-packaged). Signs in as the existing seeded **`admin`** user only ( **`409`** if that user is missing). Does not create users or expose passwords.
+5. **Deep links via entry helper:**
+
+```text
+https://<codespace-url>/dev-test-entry?redirect=/operations/control-tower
+https://<codespace-url>/dev-test-entry?redirect=/inventory
+https://<codespace-url>/dev-test-entry?redirect=/procurement/purchase-orders
+https://<codespace-url>/dev-test-entry?redirect=/finance/accounts-payable
+https://<codespace-url>/dev-test-entry?redirect=/analytics/overview
+https://<codespace-url>/dev-test-entry?redirect=/admin/settings
+```
+
+**Interpreting failures**
+
+- **`/dev-test-status` OK in the browser but the agent times out:** Often **tunnel, DNS, or the automation browser profile** — not the app HTTP stack.
+- **`/dev-test-status` fails (502 / connection refused):** The Codespace port is not reachable or the dev server is down — fix **Ports → 5000 → Public** and keep **`npm run dev`** running.
+- **`/dev-test-entry` sends you to `/auth`:** You need to sign in, or enable **`DEV_TEST_LOGIN_ENABLED=true`** and use **`/dev-test-login`** for a seeded-dev session only.
+
+**Note:** The public `*.app.github.dev` URL working in your own browser does **not** guarantee an external agent shares the same cookie jar or network path; **`/dev-test-status`** is the fastest way to see what the app believes about **your** session on that origin.
+
 ## Ports and URLs
 
 | Service | Port | Notes |

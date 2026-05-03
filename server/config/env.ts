@@ -65,6 +65,11 @@ const rawEnvSchema = z.object({
   SKIP_PRODUCT_ONBOARDING: z.string().trim().optional(),
   /** When true, admins may POST /api/setup/product/skip to mark onboarding complete (support / controlled installs only). */
   ALLOW_SETUP_SKIP: z.string().trim().optional(),
+  /**
+   * When true (non-production, non-packaged only), GET /dev-test-login can establish a session as the seeded `admin` user.
+   * Never enable in production.
+   */
+  DEV_TEST_LOGIN_ENABLED: z.string().trim().optional(),
 });
 
 function buildConnectionStringFromEnv(env: z.infer<typeof rawEnvSchema>): string | undefined {
@@ -185,6 +190,10 @@ export const appEnv = {
     resolvedDeploymentMode !== "packaged" &&
     (rawEnv.AUTO_SEED_ON_EMPTY_DB === "true" ||
       (runtimeProfile !== "production" && rawEnv.AUTO_SEED_ON_EMPTY_DB !== "false")),
+  devTestLoginEnabled:
+    resolvedDeploymentMode !== "packaged" &&
+    runtimeProfile !== "production" &&
+    (rawEnv.DEV_TEST_LOGIN_ENABLED === "1" || rawEnv.DEV_TEST_LOGIN_ENABLED === "true"),
   build: {
     version: readPackageVersion(),
     commitSha: rawEnv.BUILD_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? undefined,

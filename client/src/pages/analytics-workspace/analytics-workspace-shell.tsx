@@ -31,9 +31,10 @@ export function AnalyticsWorkspaceShell({
   children,
 }: Props) {
   return (
-    <PageShell variant="analytics-mode">
+    <PageShell variant="analytics-mode" data-testid={section === "overview" ? "analytics-overview-page" : undefined}>
       <PageHeader
         title="Analytics workspace"
+        titleTestId={section === "overview" ? "page-title" : undefined}
         subtitle="Business intelligence, saved reports, and export execution under one navigation model."
         breadcrumb={<span>Analytics</span>}
         actions={
