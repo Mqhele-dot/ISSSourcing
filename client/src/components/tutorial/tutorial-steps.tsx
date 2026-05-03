@@ -21,29 +21,29 @@ export function TutorialSteps() {
     registerTutorial("main", [
       {
         id: "welcome",
-        title: "Welcome to Inventory Manager",
-        text: "This tutorial will guide you through the main features of the application. We'll cover the key components that help you manage your inventory efficiently."
+        title: "Welcome to InvTrack",
+        text: "What you are seeing: a short orientation to the shells you will use for inventory, buying, and payables.\n\nWhy it matters: supply-chain work spans many screens; knowing the layout speeds up handoffs between warehouse, procurement, and finance.\n\nRisk if skipped: new teammates hunt for the right tab, duplicate work, or miss approvals because they do not know where decisions are recorded.",
       },
       {
         id: "dashboard",
-        title: "Dashboard",
-        text: "The dashboard provides a quick overview of your inventory metrics, recent activities, and important alerts. Use it to monitor your business at a glance."
+        title: "Operational overview",
+        text: "What you are seeing: summary areas (control tower / analytics) meant to show health of stock, orders, and exceptions in one glance.\n\nWhy it matters: leaders and operators prioritize by exception instead of reading every list.\n\nRisk if skipped: problems surface late—short shipments, stockouts, or overdue invoices—because nobody is reviewing the overview.",
       },
       {
         id: "navigation",
         title: "Navigation",
-        text: "Use the sidebar to navigate between different sections of the application. You can access Inventory, Reports, Suppliers, and more from here."
+        text: "What you are seeing: the sidebar and routes grouped by operations, inventory, procurement, finance, analytics, and admin.\n\nWhy it matters: consistent navigation keeps inventory, POs, and AP in sync with how your process actually runs.\n\nRisk if skipped: people file data in the wrong place or work from outdated exports instead of the system.",
       },
       {
         id: "user-menu",
-        title: "User Menu",
-        text: "Access your profile, settings, and logout from the user menu in the top-right corner. You can also set your preferences from this menu."
+        title: "Your profile & sign-out",
+        text: "What you are seeing: account menu for profile, settings access, and secure sign-out.\n\nWhy it matters: especially on shared PCs, signing out protects vendor and payment data.\n\nRisk if skipped: sessions left open create audit and fraud exposure.",
       },
       {
         id: "tour-complete",
-        title: "Tour Complete",
-        text: "You've completed the basic tour! Explore other tutorials from the help menu or continue to explore the application on your own."
-      }
+        title: "Next steps",
+        text: "What you are seeing: the end of this short orientation.\n\nWhy it matters: structured learning (Get Educated) plus occasional spotlight tours builds confidence without guessing.\n\nRisk if skipped: teams rely on tribal knowledge; errors repeat when staff change.",
+      },
     ]);
     
     // Dashboard tutorial: targets exist on Control Tower home (/) and Analytics overview (/analytics/overview) — use Help → Dashboard after navigating to the page you want to spotlight.
@@ -51,31 +51,31 @@ export function TutorialSteps() {
       {
         id: "dashboard-intro",
         title: "Dashboard Overview",
-        text: "Your dashboard gives you a complete view of your inventory status at a glance.",
+        text: "What you are seeing: KPI-style cards and charts for stock, movement, and alerts.\n\nWhy it matters: decisions on replenishment and cash use start from a trustworthy snapshot.\n\nRisk if skipped: you chase symptoms in spreadsheets while the live picture in the app is ignored.",
         targetSelector: "#dashboard-stats"
       },
       {
         id: "dashboard-stats",
         title: "Key Metrics",
-        text: "The top cards show total items, low stock alerts, and out-of-stock items. Click any card to see detailed information.",
+        text: "What you are seeing: headline numbers such as low stock, value, or demand signals depending on your workspace.\n\nWhy it matters: they condense thousands of SKUs into what needs attention today.\n\nRisk if skipped: stockouts or slow-moving inventory go unnoticed until a customer or auditor complains.",
         targetSelector: "#dashboard-stats"
       },
       {
         id: "dashboard-charts",
-        title: "Analytics Charts",
-        text: "Visual charts display inventory value, stock trends, and movement patterns to help you understand your data.",
+        title: "Trends & breakdowns",
+        text: "What you are seeing: visual breakdowns of usage, value, or category mix.\n\nWhy it matters: trends show whether buying and stocking strategy matches reality.\n\nRisk if skipped: you reorder on gut feel and misread seasonality or category shifts.",
         targetSelector: "#analytics"
       },
       {
         id: "dashboard-activity",
         title: "Recent Activity",
-        text: "The activity feed shows recent inventory changes, alerts, and system events. Use it to stay updated on all inventory movements.",
+        text: "What you are seeing: a chronological feed of notable changes or events.\n\nWhy it matters: tells you what changed recently when investigating a discrepancy.\n\nRisk if skipped: investigations take longer because nobody knows what moved recently.",
         targetSelector: "#dashboard-activity"
       },
       {
         id: "dashboard-actions",
-        title: "Quick Actions",
-        text: "Use the action buttons to quickly add new items, scan barcodes, or generate reports without navigating to different pages.",
+        title: "Actions from here",
+        text: "What you are seeing: shortcuts into deeper workspaces (control tower links, exports, tutorials).\n\nWhy it matters: reduces clicks when you already know the next task.\n\nRisk if skipped: users duplicate effort navigating manually every time.",
         targetSelector: "#dashboard-actions"
       }
     ]);
@@ -85,27 +85,27 @@ export function TutorialSteps() {
       {
         id: "inventory-intro",
         title: "Inventory Management",
-        text: "The inventory section is where you manage all your products and stock levels. Let's explore its key features."
+        text: "What you are seeing: the operational list of SKUs with quantities and locations.\n\nWhy it matters: planning, promising customer dates, and buying all depend on believing this picture.\n\nRisk if skipped: you oversell, buy duplicates, or ship late because on-hand data is treated casually."
       },
       {
         id: "inventory-list",
         title: "Item List",
-        text: "This table shows all your inventory items with their SKU, quantity, and status. Use the filters to quickly find specific items."
+        text: "What you are seeing: rows of items with SKU, availability, and filters.\n\nWhy it matters: this is the fastest path to answer “what do we have, where?”.\n\nRisk if ignored: people work from emails instead of the list and book conflicting adjustments."
       },
       {
         id: "adding-items",
         title: "Adding New Items",
-        text: "Click the 'Add Item' button to create new inventory items. Fill in the required details including name, SKU, category, and initial stock level."
+        text: "What you are seeing: flows to create SKUs with identifiers, categories, and opening balances.\n\nWhy it matters: clean master data prevents wrong POs and wrong receipts.\n\nRisk if skipped: free-text item names and duplicate SKUs break reporting and matching."
       },
       {
         id: "stock-movements",
         title: "Stock Movements",
-        text: "Record stock ins and outs using the movement buttons. Each movement is logged with a timestamp and responsible user."
+        text: "What you are seeing: ways to receive, issue, or adjust stock with an audit trail.\n\nWhy it matters: every movement should explain why inventory changed.\n\nRisk if skipped: variances cannot be explained during audit or cycle count."
       },
       {
         id: "multi-warehouse",
         title: "Multi-Warehouse Support",
-        text: "Manage inventory across multiple locations by selecting the specific warehouse when viewing or updating stock levels."
+        text: "What you are seeing: warehouse or location context on balances.\n\nWhy it matters: the same SKU can exist in multiple sites with different availability.\n\nRisk if skipped: transfers and picks target the wrong site and shipments fail."
       }
     ]);
     
@@ -114,24 +114,24 @@ export function TutorialSteps() {
       {
         id: "analytics-intro",
         title: "Analytics Overview",
-        text: "This page shows inventory value, demand trends, and custom charts. Use the sections below to explore your data.",
+        text: "What you are seeing: charts and KPIs built from inventory and operational data.\n\nWhy it matters: bridges day-to-day transactions with management decisions on stock and spend.\n\nRisk if skipped: you optimize for anecdotes instead of measured demand and value.",
         targetSelector: "#analytics"
       },
       {
         id: "analytics-stock-value",
         title: "Stock Use & Value",
-        text: "The Stock Use chart shows items by quantity moved (sales, issues). Value by Category shows inventory value grouped by category.",
+        text: "What you are seeing: quantity and value views by usage, category, or item.\n\nWhy it matters: shows where capital sits and what is actually moving.\n\nRisk if skipped: dead stock accumulates while you reorder fast movers too late.",
         targetSelector: "#analytics"
       },
       {
         id: "analytics-custom",
         title: "Custom Graphs",
-        text: "Build your own chart: choose a data source (value by category, stock usage, etc.) and chart type (bar, line, pie)."
+        text: "What you are seeing: controls to choose measures and chart types for ad-hoc views.\n\nWhy it matters: different roles ask different questions from the same dataset.\n\nRisk if skipped: analytics team exports to Excel for every question, slowing decisions."
       },
       {
         id: "analytics-insights",
         title: "Top Items & Inventory Value",
-        text: "Top Items by Demand shows your best movers. Inventory Value Distribution shows total value and a breakdown by item."
+        text: "What you are seeing: ranked items and value concentration.\n\nWhy it matters: prioritizes attention to SKUs that drive service levels or cash.\n\nRisk if skipped: low-impact SKUs consume attention while critical items stock out."
       },
     ]);
 
@@ -140,27 +140,27 @@ export function TutorialSteps() {
       {
         id: "reports-intro",
         title: "Reports & Analytics",
-        text: "Generate insights from your inventory data with our reporting tools. Let's see what reports are available."
+        text: "What you are seeing: structured outputs (tables / exports) generated from live data.\n\nWhy it matters: finance, ops, and auditors need repeatable snapshots with filters.\n\nRisk if skipped: everyone keeps private spreadsheets that disagree with the system."
       },
       {
         id: "report-types",
         title: "Report Types",
-        text: "Choose from various report types including inventory valuation, stock movements, sales analysis, and reorder suggestions."
+        text: "What you are seeing: templates for inventory, orders, requisitions, shipments, etc.\n\nWhy it matters: each template answers a standard business question.\n\nRisk if skipped: leadership reads the wrong report and misinterprets performance."
       },
       {
         id: "date-filters",
         title: "Date Range Filters",
-        text: "Set specific date ranges to narrow down your reports to relevant time periods. Use presets like 'Last 30 days' or set custom ranges."
+        text: "What you are seeing: time windows that bound movements or balances.\n\nWhy it matters: period-close and trend views must compare apples to apples.\n\nRisk if skipped: month-end numbers conflict because ranges were inconsistent."
       },
       {
         id: "report-visualizations",
-        title: "Data Visualizations",
-        text: "Switch between table, chart, and card views to visualize your data in different ways depending on your analysis needs."
+        title: "Data Views",
+        text: "What you are seeing: table-first layouts tuned for scanning rows before export.\n\nWhy it matters: operations usually validate detail before sharing upward.\n\nRisk if skipped: pretty charts hide line-level exceptions until it is too late."
       },
       {
         id: "export-options",
         title: "Export Options",
-        text: "Export your reports in various formats including PDF, Excel, and CSV for further analysis or sharing with your team."
+        text: "What you are seeing: PDF, CSV, Excel (or similar) handoffs.\n\nWhy it matters: downstream tools and partners expect standard files.\n\nRisk if skipped: manual copy-paste introduces formula errors and stale attachments."
       }
     ]);
     
@@ -169,27 +169,27 @@ export function TutorialSteps() {
       {
         id: "suppliers-intro",
         title: "Supplier Management",
-        text: "Keep track of all your vendors in one place. Manage contact details, orders, and performance metrics."
+        text: "What you are seeing: vendor master data used on POs, contracts, and invoices.\n\nWhy it matters: buying and AP rely on one approved record per supplier.\n\nRisk if skipped: payments go to wrong entities, tax IDs mismatch, and duplicate vendor names cause false spend reporting."
       },
       {
         id: "supplier-details",
         title: "Supplier Information",
-        text: "Each supplier profile contains contact information, payment terms, lead times, and a complete order history."
+        text: "What you are seeing: contact, terms, currency, and identifiers for each supplier.\n\nWhy it matters: POs and invoices inherit these defaults and reduce back-and-forth.\n\nRisk if skipped: urgent orders stall on missing terms or banking details."
       },
       {
         id: "supplier-orders",
         title: "Purchase Orders",
-        text: "Create and manage purchase orders directly from the supplier page. Track order status from placement to delivery."
+        text: "What you are seeing: links from supplier context into open PO history and status.\n\nWhy it matters: tells you commitment vs. receipt vs. invoice by vendor.\n\nRisk if skipped: you cannot explain accruals or overdue receipts when finance asks."
       },
       {
         id: "supplier-performance",
         title: "Performance Metrics",
-        text: "Monitor delivery times, quality ratings, and price changes to evaluate supplier performance over time."
+        text: "What you are seeing: signals such as lead time, quality notes, or fill performance where tracked.\n\nWhy it matters: informs sourcing decisions and safety stock.\n\nRisk if skipped: poor performers stay on the roster without evidence."
       },
       {
         id: "supplier-import",
         title: "Bulk Import",
-        text: "Import supplier stock lists directly from Excel files to quickly update your inventory with new products and prices."
+        text: "What you are seeing: paths to load or refresh supplier catalogs from files.\n\nWhy it matters: accelerates onboarding of many SKUs or price lists.\n\nRisk if skipped: manual keying drifts from the supplier’s official data."
       }
     ]);
     
@@ -198,27 +198,27 @@ export function TutorialSteps() {
       {
         id: "users-intro",
         title: "User Management",
-        text: "Control who has access to your inventory system and what actions they can perform."
+        text: "What you are seeing: role and access definitions for who can approve, receive, or administer.\n\nWhy it matters: segregation of duties prevents fraud and accidental data loss.\n\nRisk if skipped: everyone is an admin, or sensitive tasks sit with one person arbitrarily."
       },
       {
         id: "user-roles",
         title: "Role-Based Access",
-        text: "Assign roles such as Admin, Manager, Warehouse Staff, or Sales to control permissions across the system."
+        text: "What you are seeing: roles that bundle permissions for common job types.\n\nWhy it matters: matches how real teams work without one-off toggles per user.\n\nRisk if skipped: people get too much access “to save time” and bypass controls."
       },
       {
         id: "user-permissions",
         title: "Granular Permissions",
-        text: "Fine-tune access rights for each user. Determine who can view, add, edit, or delete inventory items and other data."
+        text: "What you are seeing: finer limits on view vs. edit vs. approve where offered.\n\nWhy it matters: least privilege keeps contractors and junior staff in safe lanes.\n\nRisk if skipped: a mistaken click changes pricing, stock, or payment data."
       },
       {
         id: "activity-logs",
         title: "User Activity Logs",
-        text: "Track all user actions in the system for accountability and security. See who made changes and when."
+        text: "What you are seeing: traceability of who changed critical records.\n\nWhy it matters: audits and investigations require attribution.\n\nRisk if skipped: disputes with suppliers or auditors cannot be resolved factually."
       },
       {
         id: "user-settings",
         title: "User Preferences",
-        text: "Each user can customize their interface preferences, notification settings, and default views."
+        text: "What you are seeing: personal defaults such as density or notification choices.\n\nWhy it matters: reduces errors from cramped layouts or missed alerts.\n\nRisk if skipped: users blame the tool instead of adjusting to how they work."
       }
     ]);
     
@@ -227,27 +227,27 @@ export function TutorialSteps() {
       {
         id: "settings-intro",
         title: "System Settings",
-        text: "Configure your inventory system to match your business needs and workflow preferences."
+        text: "What you are seeing: organization-wide defaults for inventory, tax, security, and integrations.\n\nWhy it matters: wrong defaults silently skew every transaction downstream.\n\nRisk if skipped: you troubleshoot symptoms in POs and AP when the root cause is a setting."
       },
       {
         id: "company-settings",
         title: "Company Information",
-        text: "Update your company details, logo, and contact information which will appear on generated reports and documents."
+        text: "What you are seeing: legal name, identifiers, and branding used on documents.\n\nWhy it matters: POs, invoices, and contracts must name the right entity.\n\nRisk if skipped: suppliers or customs reject paperwork over mismatched names."
       },
       {
         id: "inventory-settings",
         title: "Inventory Configuration",
-        text: "Set default units of measure, low stock thresholds, and automatic reordering rules for your inventory items."
+        text: "What you are seeing: thresholds, units, and rules that drive replenishment signals.\n\nWhy it matters: alerts and reorders align to how your business defines “low”.\n\nRisk if skipped: chronic stockouts or excess because thresholds never matched reality."
       },
       {
         id: "notification-settings",
         title: "Notifications",
-        text: "Configure alerts for low stock, price changes, and other important events. Set up email or in-app notifications."
+        text: "What you are seeing: how the system alerts people about stock, approvals, or failures.\n\nWhy it matters: timely nudges prevent small issues becoming outages.\n\nRisk if skipped: teams find out about problems from customers first."
       },
       {
         id: "billing-settings",
         title: "Billing Settings",
-        text: "Manage your subscription, payment methods, and billing history. Update your plan as your business grows."
+        text: "What you are seeing: subscription or SaaS billing controls where applicable.\n\nWhy it matters: service continuity for the team using InvTrack.\n\nRisk if skipped: abrupt lockout interrupts receiving or paying during close."
       }
     ]);
     
@@ -256,27 +256,27 @@ export function TutorialSteps() {
       {
         id: "documents-intro",
         title: "Document Generation",
-        text: "Create professional reports and documents from your inventory data with just a few clicks."
+        text: "What you are seeing: tools to turn system data into shareable PDFs or spreadsheets.\n\nWhy it matters: stakeholders who do not log in still need evidence in a standard format.\n\nRisk if skipped: manual cut-and-paste documents drift from the truth."
       },
       {
         id: "document-types",
         title: "Available Documents",
-        text: "Generate inventory reports, purchase orders, stock transfer forms, and other essential business documents."
+        text: "What you are seeing: templates tied to operational objects—inventory, transfers, orders.\n\nWhy it matters: each template carries the fields that role expects to see.\n\nRisk if skipped: site sends an informal attachment that cannot be matched back to a PO line."
       },
       {
         id: "document-customization",
         title: "Customization Options",
-        text: "Apply your branding, select included fields, and customize layouts before generating your documents."
+        text: "What you are seeing: branding and field choices before output.\n\nWhy it matters: keeps customer-facing docs professional and compliant.\n\nRisk if skipped: wrong logo or missing terms voids a shipment or payment."
       },
       {
         id: "document-formats",
         title: "Output Formats",
-        text: "Export documents as PDF for sharing, Excel for further analysis, or CSV for importing into other systems."
+        text: "What you are seeing: PDF vs spreadsheet vs CSV choices.\n\nWhy it matters: legal, warehouse, and finance each consume data in different tools.\n\nRisk if skipped: finance imports CSV with wrong columns and posts incorrect journals."
       },
       {
         id: "document-automation",
         title: "Automated Reports",
-        text: "Schedule regular reports to be generated and emailed to key stakeholders on a daily, weekly, or monthly basis."
+        text: "What you are seeing: optional schedules to generate recurring packages.\n\nWhy it matters: leadership reviews a reliable rhythm instead of ad-hoc pulls.\n\nRisk if skipped: month-end surprises because nobody ran the report."
       }
     ]);
     
@@ -285,27 +285,27 @@ export function TutorialSteps() {
       {
         id: "purchase-intro",
         title: "Purchase Management",
-        text: "Create and manage purchase requisitions and orders to streamline your procurement process."
+        text: "What you are seeing: workspaces for internal requests (requisitions) and external commitments (purchase orders).\n\nWhy it matters: separates “we want to buy” from “supplier is bound to deliver at this price”. \n\nRisk if skipped: maverick spend, no audit trail, or paying against unapproved demand."
       },
       {
         id: "requisition-creation",
         title: "Requisition Process",
-        text: "Start with a purchase requisition to request approval for needed items before creating an official purchase order."
+        text: "What you are seeing: a structured request with quantity, need-by, and justification.\n\nWhy it matters: gives approvers facts before money is promised.\n\nRisk if skipped: buyers place POs without visibility of true priority or budget."
       },
       {
         id: "po-creation",
         title: "Purchase Order Creation",
-        text: "Generate detailed purchase orders with item specifications, quantities, prices, and delivery instructions."
+        text: "What you are seeing: line-level detail sent to the supplier—SKU, qty, price, terms.\n\nWhy it matters: becomes the legal and logistical reference for receipt and invoice.\n\nRisk if skipped: receipts and three-way match fail because the PO never reflected reality."
       },
       {
         id: "po-approval",
         title: "Approval Workflow",
-        text: "Follow the approval chain to ensure proper authorization before orders are sent to suppliers."
+        text: "What you are seeing: gates so only authorized roles release spend.\n\nWhy it matters: protects cash and enforces policy.\n\nRisk if skipped: fraud, duplicate buys, or budget overruns."
       },
       {
         id: "po-tracking",
         title: "Order Tracking",
-        text: "Monitor the status of all purchase orders from creation through delivery and invoice payment."
+        text: "What you are seeing: status from drafted → sent → partially received → closed.\n\nWhy it matters: warehouse and finance plan around firm dates and quantities.\n\nRisk if skipped: you pay invoices for goods never received or miss escalations on late lines."
       }
     ]);
     
@@ -314,27 +314,27 @@ export function TutorialSteps() {
       {
         id: "barcode-intro",
         title: "Barcode Functionality",
-        text: "Use barcodes and QR codes to quickly identify items and update inventory without manual data entry."
+        text: "What you are seeing: scan and lookup paths tied to item identities.\n\nWhy it matters: floor speed and accuracy beat typing SKU strings.\n\nRisk if skipped: wrong item picked or counted, especially under time pressure."
       },
       {
         id: "barcode-scanning",
         title: "Scanning Items",
-        text: "Use your device's camera to scan barcodes for instant item lookup, stock checks, or movement recording."
+        text: "What you are seeing: camera or scanner input resolving to an item record.\n\nWhy it matters: enforces “scan what you move” discipline.\n\nRisk if skipped: pallets get mis-labeled and later locations disagree with the system."
       },
       {
         id: "barcode-generation",
         title: "Generate Codes",
-        text: "Create new barcodes or QR codes for your items. Print labels directly from the system for application to products."
+        text: "What you are seeing: creation of new symbologies for labels.\n\nWhy it matters: every physical unit needs a stable bridge to the digital SKU.\n\nRisk if skipped: duplicate codes or unscannable prints break downstream automation."
       },
       {
         id: "bulk-scanning",
         title: "Bulk Operations",
-        text: "Perform continuous scanning for receiving shipments or conducting inventory counts. Data is logged in real-time."
+        text: "What you are seeing: rapid consecutive scans for receiving or cycle counts.\n\nWhy it matters: keeps large batches honest with fewer keystrokes.\n\nRisk if skipped: receivers shortcut counts and variances explode at audit."
       },
       {
         id: "offline-scanning",
         title: "Offline Mode",
-        text: "Continue scanning even without internet connection. Data will sync automatically when connection is restored."
+        text: "What you are seeing: queueing scans when the network drops.\n\nWhy it matters: warehouse work does not stop for Wi-Fi blips.\n\nRisk if skipped: people paper-log scans that never make it back into stock."
       }
     ]);
     
@@ -343,27 +343,27 @@ export function TutorialSteps() {
       {
         id: "sync-intro",
         title: "Real-time Synchronization",
-        text: "Keep your inventory data up-to-date across all devices and locations with real-time synchronization."
+        text: "What you are seeing: mechanisms that keep sessions and inventory views aligned across devices.\n\nWhy it matters: everyone plans from the same on-hand truth.\n\nRisk if skipped: two sites think different quantities exist and transshipments misfire."
       },
       {
         id: "sync-status",
         title: "Connection Status",
-        text: "Monitor your sync status with the indicator in the navigation bar. Green means fully synced, yellow is syncing, red indicates issues."
+        text: "What you are seeing: indicators that data is flowing or delayed.\n\nWhy it matters: tells you whether to trust the number on screen this second.\n\nRisk if skipped: users ship against stale stock and create negative balances."
       },
       {
         id: "offline-mode",
         title: "Offline Capabilities",
-        text: "Continue working when offline. All changes are stored locally and synchronized automatically when connection is restored."
+        text: "What you are seeing: local buffering of actions until the link returns.\n\nWhy it matters: keeps receiving lines moving in dead zones.\n\nRisk if skipped: queues grow until someone manually untangles conflicts."
       },
       {
         id: "sync-conflicts",
         title: "Conflict Resolution",
-        text: "Handle sync conflicts when multiple users update the same item. Review differences and choose which version to keep."
+        text: "What you are seeing: prompts when two edits collide.\n\nWhy it matters: forces an explicit choice instead of silent overwrites.\n\nRisk if skipped: one site’s correction silently erases another’s receipt."
       },
       {
         id: "sync-settings",
         title: "Synchronization Settings",
-        text: "Configure sync frequency, bandwidth usage, and data priorities to optimize performance for your network environment."
+        text: "What you are seeing: knobs for frequency or scope of updates.\n\nWhy it matters: balances freshness with bandwidth on poor links.\n\nRisk if skipped: either constant lag or battery drain—both frustrate floor staff."
       }
     ]);
     
@@ -372,27 +372,27 @@ export function TutorialSteps() {
       {
         id: "billing-intro",
         title: "Billing Management",
-        text: "Manage your subscription, invoices, and payment settings to keep your inventory system running smoothly."
+        text: "What you are seeing: subscription or tenant billing for the InvTrack product itself (not supplier invoices).\n\nWhy it matters: keeps the platform available for your team.\n\nRisk if skipped: accidental suspension during month-end close."
       },
       {
         id: "subscription-details",
         title: "Subscription Plan",
-        text: "View your current plan features, limitations, and renewal date. Upgrade or downgrade as your business needs change."
+        text: "What you are seeing: current tier, limits, and renewal timing.\n\nWhy it matters: capacity planning for users and integrations.\n\nRisk if skipped: hitting limits mid-quarter without noticing."
       },
       {
         id: "payment-methods",
         title: "Payment Methods",
-        text: "Manage your credit cards and other payment options. Set a default payment method for automatic billing."
+        text: "What you are seeing: cards or mandates used for SaaS charges.\n\nWhy it matters: failed payments are almost always expired methods.\n\nRisk if skipped: unnecessary downtime over a simple card update."
       },
       {
         id: "invoice-history",
         title: "Invoice History",
-        text: "Access and download past invoices for your records. View payment status and transaction details for each billing period."
+        text: "What you are seeing: past platform invoices and status.\n\nWhy it matters: finance needs a GAAP-friendly trail of software spend.\n\nRisk if skipped: variances between accrued software costs and actuals."
       },
       {
         id: "billing-notifications",
         title: "Billing Notifications",
-        text: "Configure email alerts for upcoming charges, payment confirmations, and subscription changes to avoid service interruptions."
+        text: "What you are seeing: alerts before charges fail or plans change.\n\nWhy it matters: time to fix issues before users feel impact.\n\nRisk if skipped: first notice of trouble is a locked-out buyer."
       }
     ]);
     
@@ -406,32 +406,32 @@ export function TutorialSteps() {
       {
         id: "setup-intro",
         title: "Setup Wizard",
-        text: "Let's configure your supply chain workspace in five steps: warehouse, inventory, suppliers, approval rules, and first purchase order.",
+        text: "What you are seeing: a sequenced checklist to stand up warehouses, SKUs, suppliers, approvals, and a first PO.\n\nWhy it matters: gives new teams a guided path instead of random clicks.\n\nRisk if skipped: demos look empty or first real transactions fail missing master data.",
       },
       {
         id: "setup-warehouse",
         title: "Step 1: Add your first warehouse",
-        text: "Open the Warehouses page and create a warehouse with aisles/bins so all inventory movements have a physical location.",
+        text: "What you are seeing: creation of a location graph (site → aisles/bins as your org defines).\n\nWhy it matters: every receipt and pick needs a valid “put” destination.\n\nRisk if skipped: inventory balances exist only in a spreadsheet column, not in a place.",
       },
       {
         id: "setup-inventory",
         title: "Step 2: Add inventory items",
-        text: "Create your core SKUs with reorder thresholds and default warehouse assignments. This enables low-stock alerts and reorder workflows.",
+        text: "What you are seeing: SKU records with units, thresholds, and default stocking points.\n\nWhy it matters: enables reorder signals and accurate promising.\n\nRisk if skipped: buyers guess quantities and service levels wobble.",
       },
       {
         id: "setup-supplier",
         title: "Step 3: Add suppliers",
-        text: "Create supplier profiles with contacts, payment terms, and compliance details so requisitions and POs can link to approved vendors.",
+        text: "What you are seeing: approved vendor records for use on POs and contracts.\n\nWhy it matters: reduces one-off emails and keeps terms consistent.\n\nRisk if skipped: POs reference ad-hoc names finance cannot pay.",
       },
       {
         id: "setup-approvals",
         title: "Step 4: Configure approval rules",
-        text: "Set approval policies by amount and role to enforce governance before requisitions and purchase orders are approved.",
+        text: "What you are seeing: policy on who can approve what spend band.\n\nWhy it matters: protects budget without freezing small buys.\n\nRisk if skipped: either everything waits on one VP or everything sails through unchecked.",
       },
       {
         id: "setup-po",
         title: "Step 5: Create your first PO",
-        text: "Create a requisition, approve it, convert to PO, and track it through shipment and invoice to validate your end-to-end flow.",
+        text: "What you are seeing: a dry run of requisition → PO → receive to prove connectors work.\n\nWhy it matters: validates that procurement touch AP and inventory together.\n\nRisk if skipped: go-live day is the first time anyone noticed a broken hand-off.",
       },
     ]);
 
@@ -440,27 +440,27 @@ export function TutorialSteps() {
       {
         id: "database-intro",
         title: "Database Management",
-        text: "Learn how to set up and manage your PostgreSQL database for optimal performance."
+        text: "What you are seeing: how InvTrack connects to PostgreSQL for durable storage.\n\nWhy it matters: transactions, audit, and reporting all assume a healthy DB.\n\nRisk if skipped: silent data loss or corrupt backups that surface only during recovery."
       },
       {
         id: "connection-string",
         title: "Connection String",
-        text: "The application connects to PostgreSQL using a connection string in the format: postgresql://username:password@host:port/database"
+        text: "What you are seeing: the DATABASE_URL style secret pointing at host, port, database, and credentials.\n\nWhy it matters: wrong host/user is the fastest way to “app won’t start.”\n\nRisk if skipped: teams thrash on firewall rules instead of validating the string."
       },
       {
         id: "db-setup",
         title: "Database Setup",
-        text: "Ensure your PostgreSQL server is running and you have created a database for the application. Set the DATABASE_URL environment variable to connect."
+        text: "What you are seeing: prerequisites—running Postgres cluster and empty database.\n\nWhy it matters: migrations expect a blank schema they own.\n\nRisk if skipped: mixing dev and prod schemas on one DB."
       },
       {
         id: "schema-management",
         title: "Schema Management",
-        text: "The database schema is defined in shared/schema.ts using Drizzle ORM. Use 'npm run db:push' to update your database after schema changes."
+        text: "What you are seeing: Drizzle / migration workflow after model changes.\n\nWhy it matters: keeps API code and columns aligned.\n\nRisk if skipped: deploy succeeds but runtime queries explode on missing columns."
       },
       {
         id: "data-backup",
         title: "Backup and Recovery",
-        text: "Regularly back up your database using the export features. For PostgreSQL, you can also use pg_dump for complete database backups."
+        text: "What you are seeing: reminders to snapshot before major changes.\n\nWhy it matters: supply-chain data is business-critical.\n\nRisk if skipped: ransom or fat-finger truncate with no restore story."
       }
     ]);
     

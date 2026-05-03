@@ -56,6 +56,13 @@ function main() {
     assert.ok(g.heading.startsWith("Admin"));
   }
 
+  const lastNavSection = APP_NAV_SECTIONS[APP_NAV_SECTIONS.length - 1];
+  assert.equal(lastNavSection?.key, "learning", "Learning (Get Educated) must be last sidebar section");
+  assert.ok(
+    lastNavSection?.items.some((i) => i.path === APP_ROUTES.training.getEducated),
+    "Last section must link to Get Educated",
+  );
+
   const registryPaths = new Set(collectAppRouteStaticPaths());
   const routerDeclaredStaticPaths: string[] = [
     APP_ROUTES.operations.mobileHub,

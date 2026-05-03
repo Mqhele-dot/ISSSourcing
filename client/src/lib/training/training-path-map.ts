@@ -52,3 +52,42 @@ export function pathToTrainingModuleId(pathname: string): string | null {
 
   return null;
 }
+
+/** Map spotlight / Help menu tour ids to static training modules (panel). Omit tours meant to stay modal-only (e.g. full-app, main). */
+export function tourIdToTrainingModuleId(tourId: string): string | null {
+  const map: Record<string, string> = {
+    dashboard: "analytics",
+    inventory: "inventory",
+    reports: "reports",
+    analytics: "analytics",
+    suppliers: "suppliers",
+    users: "admin-settings",
+    settings: "admin-settings",
+    documents: "reports",
+    purchase: "purchase-orders",
+    barcode: "barcode-scanner",
+    billing: "payments",
+    database: "system-diagnostics",
+    "page-home": "control-tower",
+    "page-control-tower": "control-tower",
+    "page-dashboard": "analytics",
+    "page-analytics": "analytics",
+    "page-inventory": "inventory",
+    "page-inventory-detail": "inventory",
+    "page-purchase": "purchase-orders",
+    "page-purchase-detail": "purchase-orders",
+    "page-suppliers": "suppliers",
+    "page-settings": "admin-settings",
+    "page-reports": "reports",
+    "page-warehouses": "warehouses",
+    "page-users": "admin-settings",
+    "page-exceptions": "control-tower",
+    "page-logistics": "control-tower",
+    "page-integrations": "admin-settings",
+    "page-supply-analytics": "analytics",
+    "page-documents": "reports",
+    "page-exception-detail": "control-tower",
+    "page-logistics-detail": "control-tower",
+  };
+  return map[tourId] ?? null;
+}

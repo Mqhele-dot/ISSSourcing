@@ -258,6 +258,7 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
       },
     ],
   },
+  /** Intentionally last in `APP_NAV_SECTIONS` so primary product areas stay grouped; learning is a capstone link. */
   {
     key: "learning",
     label: "Learning",

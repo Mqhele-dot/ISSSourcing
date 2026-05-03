@@ -13,12 +13,12 @@ import {
   type TrainingModule,
   searchTrainingModules,
 } from "@/lib/training/training-content";
-import { getTrainingProgress } from "@/lib/training/training-progress";
+import { useTrainingProgress } from "@/hooks/use-training-progress";
 
 export default function GetEducatedPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<TrainingCategory | "all">("all");
-  const progress = useMemo(() => getTrainingProgress(), [query, category]);
+  const { progress, isModuleUnderstood } = useTrainingProgress();
 
   const modules = useMemo(() => {
     let list: TrainingModule[] = query.trim() ? searchTrainingModules(query) : getAllTrainingModules();
@@ -79,7 +79,7 @@ export default function GetEducatedPage() {
 
       <div className="grid gap-4 md:grid-cols-2">
         {modules.map((m) => {
-          const done = progress.markedUnderstood.includes(m.id);
+          const done = isModuleUnderstood(m.id);
           return (
             <Card key={m.id} className="flex flex-col" data-testid="training-module-card">
               <CardHeader className="space-y-1 pb-2">

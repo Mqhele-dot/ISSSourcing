@@ -19,11 +19,14 @@ import {
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useTutorial } from "@/contexts/tutorial-context";
+import { useTrainingPanel } from "@/contexts/training-panel-context";
 import {
   getPageTourForPath,
   needsNavigateForTour,
+  normalizeAppPath,
   TOUR_START_ROUTES,
 } from "@/components/tutorial/tutorial-route-map";
+import { pathToTrainingModuleId, tourIdToTrainingModuleId } from "@/lib/training/training-path-map";
 import { useHelpExplain } from "@/contexts/help-explain-context";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
@@ -65,6 +68,7 @@ export function TutorialButton() {
   const [isFixing, setIsFixing] = useState<string | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   const [activeTab, setActiveTab] = useState("tutorials");
+  const { openTrainingPanel } = useTrainingPanel();
   const { data: suppliers = [] } = useQuery({
     queryKey: ["/api/suppliers", "tutorial-assistant"],
     queryFn: () => requestJson<Array<{ id: number }>>("GET", "/api/suppliers"),
@@ -188,7 +192,20 @@ export function TutorialButton() {
     const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
     const needsNavigation = targetRoute ? needsNavigateForTour(currentPath, targetRoute) : false;
 
+    const resolveModuleId = () =>
+      pathToTrainingModuleId(normalizeAppPath(window.location.pathname)) ?? tourIdToTrainingModuleId(tourId);
+
     const tryStart = (retryCount = 0) => {
+      const moduleId = resolveModuleId();
+      if (moduleId) {
+        openTrainingPanel(moduleId);
+        toast({
+          title: "Learning panel opened",
+          description:
+            "Expand the training card on this page for context on what you are seeing, why it matters at work, and mistakes to avoid. For highlights on specific controls, use Help → Tutorials → Tour this page.",
+        });
+        return;
+      }
       const started = startTutorial(tourId);
       if (started) {
         toast({

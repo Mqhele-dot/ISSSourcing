@@ -6,28 +6,24 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { getTrainingModuleById } from "@/lib/training/training-content";
-import {
-  recordLessonOpened,
-  recordQuizCompleted,
-  toggleModuleUnderstood,
-  isModuleUnderstood,
-} from "@/lib/training/training-progress";
+import { useTrainingProgress } from "@/hooks/use-training-progress";
 
 export default function GetEducatedModulePage() {
   const [, params] = useRoute<{ moduleId: string }>("/get-educated/:moduleId");
   const moduleId = params?.moduleId ? decodeURIComponent(params.moduleId) : "";
   const mod = moduleId ? getTrainingModuleById(moduleId) : undefined;
+  const { recordLessonOpened, recordQuizCompleted, toggleModuleUnderstood, progress, isModuleUnderstood } =
+    useTrainingProgress();
   const [quizSelections, setQuizSelections] = useState<Record<number, string>>({});
   const [showQuizResult, setShowQuizResult] = useState<Record<number, "correct" | "wrong" | null>>({});
-  const [understood, setUnderstood] = useState(false);
 
   useEffect(() => {
     if (!mod) return;
     recordLessonOpened(mod.id);
-    setUnderstood(isModuleUnderstood(mod.id));
-  }, [mod]);
+  }, [mod, recordLessonOpened]);
 
   const quizzes = mod?.quickQuiz ?? [];
+  const understood = mod ? isModuleUnderstood(mod.id) : false;
 
   if (!moduleId) {
     return <Redirect to={APP_ROUTES.training.getEducated} />;
@@ -43,11 +39,14 @@ export default function GetEducatedModulePage() {
     );
   }
 
-  const handleQuizPick = (index: number, value: string) => {
-    setQuizSelections((s) => ({ ...s, [index]: value }));
+  const handleQuizPick = (index: number, optionIndex: number) => {
     const q = quizzes[index];
     if (!q) return;
-    const ok = value === q.answer;
+    const chosen = q.options[optionIndex];
+    if (chosen === undefined) return;
+    const valueKey = String(optionIndex);
+    setQuizSelections((s) => ({ ...s, [index]: valueKey }));
+    const ok = chosen === q.answer;
     setShowQuizResult((r) => ({ ...r, [index]: ok ? "correct" : "wrong" }));
     if (ok) {
       recordQuizCompleted(mod.id, index);
@@ -77,8 +76,7 @@ export default function GetEducatedModulePage() {
             size="sm"
             variant={understood ? "default" : "secondary"}
             onClick={() => {
-              const on = toggleModuleUnderstood(mod.id);
-              setUnderstood(on);
+              toggleModuleUnderstood(mod.id);
             }}
           >
             {understood ? "Marked understood ✓" : "Mark as understood"}
@@ -179,17 +177,23 @@ export default function GetEducatedModulePage() {
               <CardContent className="space-y-3">
                 <RadioGroup
                   value={quizSelections[idx] ?? ""}
-                  onValueChange={(v) => handleQuizPick(idx, v)}
+                  onValueChange={(v) => {
+                    const n = Number.parseInt(v, 10);
+                    if (!Number.isNaN(n)) handleQuizPick(idx, n);
+                  }}
                   className="space-y-2"
                 >
-                  {q.options.map((opt) => (
-                    <div key={opt} className="flex items-center space-x-2">
-                      <RadioGroupItem value={opt} id={`${mod.id}-q${idx}-${opt}`} />
-                      <Label htmlFor={`${mod.id}-q${idx}-${opt}`} className="cursor-pointer font-normal">
-                        {opt}
-                      </Label>
-                    </div>
-                  ))}
+                  {q.options.map((opt, optIdx) => {
+                    const radioId = `quiz-${mod.id}-q${idx}-opt${optIdx}`;
+                    return (
+                      <div key={optIdx} className="flex items-center space-x-2">
+                        <RadioGroupItem value={String(optIdx)} id={radioId} />
+                        <Label htmlFor={radioId} className="cursor-pointer font-normal">
+                          {opt}
+                        </Label>
+                      </div>
+                    );
+                  })}
                 </RadioGroup>
                 {showQuizResult[idx] === "correct" ? (
                   <p className="text-sm text-green-700 dark:text-green-400">{q.explanation}</p>
@@ -202,6 +206,11 @@ export default function GetEducatedModulePage() {
           ))}
         </section>
       ) : null}
+
+      <p className="text-xs text-muted-foreground">
+        Local progress: {progress.lessonsOpened.length} lesson(s) opened · {progress.quizzesCompleted.length} quiz item(s) ·{" "}
+        {progress.markedUnderstood.length} understood.
+      </p>
 
       <div className="flex flex-wrap gap-2 border-t pt-6">
         <Button variant="outline" asChild>

@@ -251,6 +251,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
         
         <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-4">
           <div className="space-y-1">
+            {/* Order mirrors `APP_NAV_SECTIONS`; "Learning" / Get Educated is the final section. */}
             {APP_NAV_SECTIONS.map((section) => (
               <div key={section.key}>
                 <SectionTitle>{section.label}</SectionTitle>

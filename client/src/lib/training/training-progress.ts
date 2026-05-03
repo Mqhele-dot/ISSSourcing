@@ -1,4 +1,6 @@
-const STORAGE_KEY = "invtrack.training.progress";
+export const TRAINING_PROGRESS_STORAGE_KEY = "invtrack.training.progress";
+
+const STORAGE_KEY = TRAINING_PROGRESS_STORAGE_KEY;
 
 export type TrainingProgressState = {
   lessonsOpened: string[];
