@@ -126,6 +126,9 @@ function main() {
   }
 
   assert.equal(APP_ROUTES.inventory.warehouse(":id"), "/inventory/warehouses/:id");
+  /** Wouter route patterns must use literal `:param` segments — never `encodeURIComponent` (use `item()` only for hrefs). */
+  assert.equal(`${APP_ROUTES.inventory.root}/:sku`, "/inventory/:sku");
+  assert.equal(`${APP_ROUTES.procurement.orders}/:po`, "/procurement/orders/:po");
   assert.equal(APP_ROUTES.inventory.item(":sku"), "/inventory/%3Asku");
   assert.equal(APP_ROUTES.procurement.order(":po"), "/procurement/orders/%3Apo");
   assert.equal(APP_ROUTES.procurement.requisition(":id"), "/procurement/requisitions/:id");

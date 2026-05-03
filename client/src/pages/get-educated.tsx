@@ -38,6 +38,78 @@ export default function GetEducatedPage() {
         breadcrumb={<span>Learning / Overview</span>}
       />
 
+      <Card className="border-primary/25 bg-primary/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Suggested learning paths</CardTitle>
+          <CardDescription>
+            Paths follow a typical source-to-pay flow (plan → source → make → deliver → return), similar to SCOR /
+            APICS vocabulary—so onboarding matches how work actually hands off between teams.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 text-sm sm:grid-cols-3">
+          <div className="space-y-2">
+            <p className="font-medium text-foreground">Operations and stock integrity</p>
+            <ul className="list-disc space-y-1.5 pl-4 text-muted-foreground">
+              <li>
+                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("control-tower")}>
+                  Control Tower
+                </Link> — priorities and risk signals
+              </li>
+              <li>
+                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("inventory")}>
+                  Inventory
+                </Link> — on-hand truth
+              </li>
+              <li>
+                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("warehouse-operations")}>
+                  Warehouse operations
+                </Link> — floor execution
+              </li>
+            </ul>
+          </div>
+          <div className="space-y-2">
+            <p className="font-medium text-foreground">Procurement</p>
+            <ul className="list-disc space-y-1.5 pl-4 text-muted-foreground">
+              <li>
+                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("requisitions")}>
+                  Requisitions
+                </Link>
+              </li>
+              <li>
+                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("purchase-orders")}>
+                  Purchase orders
+                </Link>
+              </li>
+              <li>
+                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("suppliers")}>
+                  Suppliers
+                </Link>
+              </li>
+            </ul>
+          </div>
+          <div className="space-y-2">
+            <p className="font-medium text-foreground">Finance and insight</p>
+            <ul className="list-disc space-y-1.5 pl-4 text-muted-foreground">
+              <li>
+                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("accounts-payable")}>
+                  Accounts payable
+                </Link>
+              </li>
+              <li>
+                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("payments")}>
+                  Payments
+                </Link>
+              </li>
+              <li>
+                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("analytics")}>
+                  Analytics
+                </Link>
+              </li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Input

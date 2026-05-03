@@ -110,10 +110,10 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.inventory.reorder} component={ReorderPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.barcodeScanner} component={BarcodeScannerPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.warehouseOperations} component={WarehouseOperationsPage} />
-        <ProtectedRoute path={APP_ROUTES.inventory.item(":sku")} component={InventoryItemDetail} />
+        <ProtectedRoute path={`${APP_ROUTES.inventory.root}/:sku`} component={InventoryItemDetail} />
 
         <ProtectedRoute path={APP_ROUTES.procurement.orders} component={PurchasePage} />
-        <ProtectedRoute path={APP_ROUTES.procurement.order(":po")} component={OrdersPage} />
+        <ProtectedRoute path={`${APP_ROUTES.procurement.orders}/:po`} component={OrdersPage} />
         <ProtectedRoute path={APP_ROUTES.procurement.requisitions} component={PurchasePage} />
         <ProtectedRoute path={APP_ROUTES.procurement.requisitionNew} component={RequisitionFormPage} />
         <ProtectedRoute path={APP_ROUTES.procurement.requisition(":id")} component={RequisitionFormPage} />

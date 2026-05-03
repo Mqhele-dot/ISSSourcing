@@ -6,6 +6,7 @@ import {
   SIDEBAR_ADMIN_SECONDARY_GROUPS,
   sidebarAdminSubgroupLabel,
 } from "@/lib/routes/section-metadata";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -303,6 +304,31 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
           </div>
         </nav>
         
+        <div className="shrink-0 space-y-1 border-t border-border px-2 py-2">
+          <Link
+            href={APP_ROUTES.training.getEducated}
+            onClick={() => setOpen(false)}
+            data-testid="sidebar-get-educated"
+            data-help-title="Get Educated"
+            data-help-description="Beginner-friendly lessons for operations, inventory, procurement, finance, and analytics."
+          >
+            <div
+              className={cn(
+                "flex cursor-pointer items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium transition-all",
+                collapsed ? "md:justify-center md:px-2" : "",
+                isActive(APP_ROUTES.training.getEducated) || location.startsWith(`${APP_ROUTES.training.getEducated}/`)
+                  ? "accent-gradient-bg text-primary-foreground elev-2"
+                  : "text-foreground hover:bg-muted",
+              )}
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center [&>svg]:h-5 [&>svg]:w-5">
+                <GraduationCap className="h-5 w-5" />
+              </span>
+              <span className={cn("min-w-0 flex-1 truncate", collapsed && "md:sr-only")}>Get Educated</span>
+            </div>
+          </Link>
+        </div>
+
         <div className="p-3 md:p-4 border-t border-border">
           <Button
             variant="ghost"

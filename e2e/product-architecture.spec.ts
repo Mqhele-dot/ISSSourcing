@@ -22,6 +22,7 @@ test.describe("Product architecture", () => {
     await expect(sidebar.getByRole("link", { name: /^Accounts payable$/i })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: /^Reports$/ })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: /^Settings$/ })).toBeVisible();
+    await expect(page.getByTestId("sidebar-get-educated")).toBeVisible();
   });
 
   test("analytics workspace drilldown uses canonical subroutes", async ({ page }) => {

@@ -83,7 +83,7 @@ export const APP_ROUTES = {
   },
   inventory: {
     root: "/inventory",
-    /** Path segment is encoded so SKUs with reserved URL characters still resolve. */
+    /** Build a link to a SKU detail URL; encodes the segment for reserved URL characters. Do not use for Wouter `path` — use `` `/inventory/:sku` ``. */
     item: (sku: string) => `/inventory/${encodeURIComponent(sku)}`,
     reorder: "/inventory/reorder",
     barcodeScanner: "/inventory/barcodes",
@@ -94,6 +94,7 @@ export const APP_ROUTES = {
   },
   procurement: {
     orders: "/procurement/orders",
+    /** Build a link to a PO; encodes the segment for reserved URL characters. Do not use for Wouter `path` patterns — use `` `/procurement/orders/:po` ``. */
     order: (po: string | number) =>
       `/procurement/orders/${encodeURIComponent(String(po))}`,
     requisitions: "/procurement/requisitions",

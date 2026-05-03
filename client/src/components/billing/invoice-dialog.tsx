@@ -180,29 +180,43 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
   }), []);
   
   // Fetch inventory items query
-  const { data: inventoryItems = [] } = useQuery<InventoryOption[]>({
+  const { data: inventoryItems = [] } = useQuery({
     queryKey: ["/api/inventory"],
-    queryFn: async () => {
+    queryFn: async (): Promise<unknown> => {
       const response = await apiRequest("GET", "/api/inventory");
       if (!response.ok) {
         throw new Error("Failed to fetch inventory items");
       }
-      return (await response.json()) as InventoryOption[];
+      return response.json();
     },
     enabled: open,
+    select: (raw): InventoryOption[] => {
+      if (Array.isArray(raw)) return raw as InventoryOption[];
+      if (raw && typeof raw === "object" && Array.isArray((raw as { data?: unknown }).data)) {
+        return (raw as { data: InventoryOption[] }).data;
+      }
+      return [];
+    },
   });
   
   // Fetch customers query
-  const { data: customers = [] } = useQuery<CustomerOption[]>({
+  const { data: customers = [] } = useQuery({
     queryKey: ["/api/customers"],
-    queryFn: async () => {
+    queryFn: async (): Promise<unknown> => {
       const response = await apiRequest("GET", "/api/customers");
       if (!response.ok) {
         throw new Error("Failed to fetch customers");
       }
-      return (await response.json()) as CustomerOption[];
+      return response.json();
     },
     enabled: open,
+    select: (raw): CustomerOption[] => {
+      if (Array.isArray(raw)) return raw as CustomerOption[];
+      if (raw && typeof raw === "object" && Array.isArray((raw as { data?: unknown }).data)) {
+        return (raw as { data: CustomerOption[] }).data;
+      }
+      return [];
+    },
   });
   
   // Set up form
