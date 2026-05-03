@@ -134,7 +134,7 @@ Expected:
 
 ### Playwright (browser E2E)
 
-This repo is **already** set up for Playwright: **`npm run test:e2e`** runs [`scripts/run-playwright-e2e.mjs`](scripts/run-playwright-e2e.mjs), which starts **`npm run dev`** when needed, waits for **`http://127.0.0.1:5000/api/ready`**, then runs Playwright with **`PLAYWRIGHT_EXTERNAL_DEV_SERVER=1`** (so the config does not spawn a second server). Root [`playwright.config.ts`](playwright.config.ts) uses **`testDir: ./e2e`**, [`e2e/global-setup.ts`](e2e/global-setup.ts), optional **`webServer`** only when you invoke **`npx playwright test`** directly, and **`use.baseURL`** default **`http://127.0.0.1:5000`**. **Do not run `npm init playwright@latest`** unless you plan to merge its output by hand — it overwrites `playwright.config.ts` and adds a second `tests/` layout.
+This repo is **already** set up for Playwright: **`npm run test:e2e`** runs [`scripts/run-playwright-e2e.mjs`](scripts/run-playwright-e2e.mjs). That wrapper **probes both** **`http://127.0.0.1:5000/api/ready`** and **`http://127.0.0.1:5000/auth`** with Node `fetch` before starting Playwright; **`PLAYWRIGHT_EXTERNAL_DEV_SERVER=1`** is set **only** for the Playwright child after both succeed (so the config does not spawn a second server). If either URL stays connection-refused, the wrapper prints the last probe results and exits — Playwright is not started. Use **`npm run test:e2e:preflight`** (with **`npm run dev`** already running) to debug reachability. Root [`playwright.config.ts`](playwright.config.ts) uses **`testDir: ./e2e`**, [`e2e/global-setup.ts`](e2e/global-setup.ts), optional **`webServer`** only when you invoke **`npx playwright test`** directly, and **`use.baseURL`** default **`http://127.0.0.1:5000`**. **Do not run `npm init playwright@latest`** unless you plan to merge its output by hand — it overwrites `playwright.config.ts` and adds a second `tests/` layout.
 
 **Playwright / Linux libraries:** do not hand-pick individual `lib*` packages. The devcontainer Dockerfile runs **`npx playwright@… install-deps`** (Chromium, Firefox, WebKit) at image build, and **post-create** runs **`sudo npx playwright install-deps`** then **`npx playwright install`** so OS deps and browser builds match your **`@playwright/test`** version. **Rebuild the container** after pulling. If anything still fails to launch, run manually from `/workspace`: **`sudo npx playwright install-deps`** and **`npx playwright install`**.
 
@@ -147,11 +147,22 @@ This repo is **already** set up for Playwright: **`npm run test:e2e`** runs [`sc
 npm run test:e2e
 ```
 
-The wrapper detects an existing healthy **`/api/ready`** (e.g. you already ran **`npm run dev`** in another terminal, or CI pre-started the app) and skips starting a second server. It only tears down a dev process **it** started.
+**Manual two-terminal workflow:**
 
-**Direct Playwright (advanced):** `npx playwright test -c playwright.config.ts` still uses the config’s **`webServer`** block; set **`PLAYWRIGHT_REUSE_EXISTING_SERVER=1`** if port **5000** is already in use.
+```bash
+# Terminal 1
+npm run dev
 
-**`net::ERR_CONNECTION_REFUSED` at `http://127.0.0.1:5000`:** nothing was listening ( **`webServer` did not stay up**, DB/env prevented `npm run dev` from listening, or port **5000** blocked). Confirm Postgres and **`DATABASE_URL` / `PG*`** in the Codespace, run **`curl -sf http://127.0.0.1:5000/api/ready`**, then retry **`npm run test:e2e`**. If you use **`sudo npx playwright install …`**, run tests as the normal Codespace user (**`node`**) so **`npm run dev`** and Playwright share the same environment and caches.
+# Terminal 2
+curl -i http://127.0.0.1:5000/api/ready
+curl -i http://127.0.0.1:5000/auth
+npm run test:e2e:preflight   # optional sanity check
+npm run test:e2e
+```
+
+The forwarded Codespaces URL (**`https://<codespace>-5000.app.github.dev`**) can work in your browser while **Playwright still uses `http://127.0.0.1:5000`** — a working public URL does **not** prove the app is bound on loopback inside the container. Use the `curl` lines above **from the same environment** where you run tests.
+
+**`net::ERR_CONNECTION_REFUSED` at `http://127.0.0.1:5000/auth`:** the browser can start, but **nothing accepts TCP on 127.0.0.1:5000** when the test navigates. Fix Postgres / **`DATABASE_URL`**, ensure **`npm run dev`** stays running, free port **5000**, and check wrapper stderr (last `/api/ready` and `/auth` probes). If **`sudo npx playwright install …`** was used, run dev and tests as the same user (**`node`**) so caches and env match.
 
 Optional: `PLAYWRIGHT_BASE_URL=https://<your-codespace>-5000.app.github.dev npm run test:e2e` only if you intentionally test via the forwarded URL (port **5000** must be **Public**); the default **`http://127.0.0.1:5000`** matches `webServer` and typical in-container runs.
 

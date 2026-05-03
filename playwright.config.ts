@@ -1,9 +1,17 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * When `scripts/run-playwright-e2e.mjs` starts (or reuses) the dev server, it sets this so we do not
- * spawn a second `npm run dev` from Playwright (avoids flaky ERR_CONNECTION_REFUSED in some environments).
- * Direct `npx playwright test -c playwright.config.ts` still uses `webServer` below.
+ * Two ways to run browser E2E:
+ *
+ * 1) `npm run test:e2e` (recommended) — `scripts/run-playwright-e2e.mjs` starts or reuses `npm run dev`,
+ *    waits for BOTH `http://127.0.0.1:PORT/api/ready` and `/auth` with Node `fetch`, then runs Playwright
+ *    with PLAYWRIGHT_EXTERNAL_DEV_SERVER=1 so **no** `webServer` block is active (avoids connection-refused races).
+ *
+ * 2) Direct `npx playwright test -c playwright.config.ts` — uses the `webServer` option below to spawn `npm run dev`.
+ *    Set PLAYWRIGHT_REUSE_EXISTING_SERVER=1 if port 5000 is already in use.
+ *
+ * The wrapper never sets PLAYWRIGHT_EXTERNAL_DEV_SERVER until probes pass; do not set it manually unless
+ * you are sure the app is already listening on `use.baseURL`.
  */
 const externalDevServer = process.env.PLAYWRIGHT_EXTERNAL_DEV_SERVER === "1";
 
@@ -29,10 +37,6 @@ export default defineConfig({
   ],
   ...(!externalDevServer
     ? {
-        /**
-         * Used when invoking Playwright directly (without the npm `test:e2e` wrapper).
-         * `npm run test:e2e` uses `run-playwright-e2e.mjs` + PLAYWRIGHT_EXTERNAL_DEV_SERVER=1 instead.
-         */
         webServer: {
           command: "npm run dev",
           url: "http://127.0.0.1:5000/api/ready",

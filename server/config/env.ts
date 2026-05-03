@@ -25,7 +25,9 @@ const DISALLOWED_PRODUCTION_SESSION_SECRETS = new Set([
 
 const rawEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).optional(),
+  /** Listen address. Default 0.0.0.0 accepts IPv4 localhost (127.0.0.1) and LAN; use 127.0.0.1 in .env to bind loopback only. */
   HOST: z.string().trim().default("0.0.0.0"),
+  /** HTTP port; E2E and Playwright expect 5000 unless PLAYWRIGHT_BASE_URL / PORT override. */
   PORT: z.coerce.number().int().min(1).max(65535).default(5000),
   DATABASE_URL: z.string().trim().optional(),
   PGHOST: z.string().trim().optional(),

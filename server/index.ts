@@ -20,9 +20,19 @@ registerSecurityMiddleware(app);
     await initializeRuntime();
   } catch (err) {
     const { logger } = await import("./lib/logger");
+    const message = err instanceof Error ? err.message : String(err);
     logger.error("Startup validation failed", {
-      error: err instanceof Error ? err.message : String(err),
+      error: message,
     });
+    console.error("\n[FATAL] Server stopped during initializeRuntime() (DB bootstrap / env validation).");
+    console.error(`[FATAL] ${message}`);
+    if (err instanceof Error && err.stack) {
+      console.error("[FATAL] Stack:");
+      console.error(err.stack);
+    }
+    console.error(
+      "[FATAL] Check DATABASE_URL / PG* / migrations, then run again. E2E wrapper will fail fast if this exits.\n",
+    );
     process.exit(1);
   }
 

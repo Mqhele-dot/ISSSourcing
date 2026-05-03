@@ -41,7 +41,8 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 | `npm run release:gate` | Full production-readiness validation gate |
 | `npm run db:push` | Apply Drizzle schema to Postgres |
 | `npm run db:seed` / `npm run demo:reset` | Seed data |
-| `npm run test:e2e` | Playwright tests (`e2e/`); starts `npm run dev` via `webServer` if port 5000 is free (needs DB) |
+| `npm run test:e2e` | Playwright `e2e/` tests; wrapper ensures `/api/ready` + `/auth` on 127.0.0.1:5000 before Playwright (needs DB) |
+| `npm run test:e2e:preflight` | With `npm run dev` running: checks `/api/ready` and `/auth` reachability |
 | `npm run playwright:install-deps` | Linux: Playwright OS deps for Chromium, Firefox, WebKit (use `sudo` if apt fails) |
 
 ## Requirements

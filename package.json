@@ -33,6 +33,7 @@
     "test:inventory-port": "tsx scripts/test-inventory-port.ts",
     "test:csv": "tsx server/services/document-generator-service.test.ts",
     "test:e2e": "node scripts/run-playwright-e2e.mjs",
+    "test:e2e:preflight": "node scripts/e2e-preflight.mjs",
     "playwright:install-deps": "playwright install-deps",
     "verify:changes": "node scripts/verify-recent-changes.js",
     "validate:migrations": "node scripts/validate-migrations.mjs",
