@@ -43,6 +43,7 @@ import { formatMutationError, requestJson } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { type ReorderRequest, ReorderRequestStatus } from "@shared/schema";
 import { enqueueOfflineAction } from "@/lib/offline-queue";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 export default function ReorderRequestsPage() {
   const { toast } = useToast();
@@ -261,6 +262,8 @@ export default function ReorderRequestsPage() {
           </Button>
         </div>
       </div>
+
+      <ModuleTrainingPanel moduleId="reorder-requests" />
       
       <Card>
         <CardHeader className="pb-3">

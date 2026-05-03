@@ -32,6 +32,7 @@ import { downloadCsv } from "@/lib/csv-download";
 import { isLikelyCsvResponse, parseExportFailureMessage } from "@/lib/export-download";
 import { fetchInventory, type InventoryListItem } from "@/api/client";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 type Category = {
   id: number;
@@ -228,6 +229,8 @@ export default function InventoryPage() {
         }
       />
 
+      <ModuleTrainingPanel moduleId="inventory" />
+
       {categoriesError ? (
         <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
           <AlertTitle>Category filter unavailable</AlertTitle>
@@ -319,7 +322,7 @@ export default function InventoryPage() {
         data={displayedItems}
         isEmpty={(items) => items.length === 0}
         emptyTitle="No inventory items found"
-        emptyDescription="Add items from analytics or run the demo to seed data."
+        emptyDescription="No inventory items match your filters. Inventory records show what stock exists, where it sits, and when to reorder—without them, teams oversell, duplicate buys, or miss shortages."
         emptyAction={
           <div className="flex flex-wrap gap-2">
             <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add inventory">

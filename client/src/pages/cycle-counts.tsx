@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -226,6 +227,8 @@ export default function CycleCountsPage() {
         title="Cycle Counts"
         subtitle="Workflow: create a count → Start (in progress) → add lines → Post adjustments. Planned counts can be opened and edited before posting."
       />
+
+      <ModuleTrainingPanel moduleId="cycle-counts" />
 
       {warehousesError || inventoryError ? (
         <Alert variant="destructive">

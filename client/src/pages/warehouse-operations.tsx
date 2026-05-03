@@ -4,6 +4,7 @@ import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -364,6 +365,8 @@ export default function WarehouseOperationsPage() {
           </Link>
         }
       />
+
+      <ModuleTrainingPanel moduleId="warehouse-operations" />
 
       {warehousesError || inventoryError ? (
         <Alert variant="destructive">

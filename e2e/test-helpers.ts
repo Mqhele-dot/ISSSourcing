@@ -20,5 +20,6 @@ export async function loginAsAdmin(page: Page) {
 export async function gotoAuthed(page: Page, path: string) {
   await loginAsAdmin(page);
   await page.goto(path, { waitUntil: "domcontentloaded" });
+  await page.waitForLoadState("load");
   await expect(page).not.toHaveURL(/\/auth(?:\?|$)/);
 }

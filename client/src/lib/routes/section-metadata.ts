@@ -6,7 +6,8 @@ export type AppSectionKey =
   | "procurement"
   | "finance"
   | "analytics"
-  | "admin";
+  | "admin"
+  | "learning";
 
 export type AppNavItem = {
   label: string;
@@ -254,6 +255,19 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         icon: "activity",
         description: "Compliance and activity review workspace.",
         keywords: "audit logs compliance governance",
+      },
+    ],
+  },
+  {
+    key: "learning",
+    label: "Learning",
+    items: [
+      {
+        label: "Get Educated",
+        path: APP_ROUTES.training.getEducated,
+        icon: "graduation-cap",
+        description: "Beginner-friendly lessons for operations, inventory, procurement, finance, and analytics.",
+        keywords: "training course tutorial education learn",
       },
     ],
   },

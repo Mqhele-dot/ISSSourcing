@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { RealTimeUpdates } from '@/components/real-time-updates';
 import { enqueueOfflineAction } from '@/lib/offline-queue';
+import { ModuleTrainingPanel } from '@/components/training/module-training-panel';
 
 export default function BarcodeScannerPage() {
   const [tab, setTab] = useState('scan');
@@ -70,6 +71,8 @@ export default function BarcodeScannerPage() {
   return (
     <div className="container px-4 py-6 mx-auto max-w-7xl">
       <h1 className="text-3xl font-bold tracking-tight mb-6">Barcode & QR Scanner</h1>
+
+      <ModuleTrainingPanel moduleId="barcode-scanner" />
       
       {/* Main content area */}
       <div className="grid items-start gap-6 lg:grid-cols-3">

@@ -18,6 +18,7 @@ function setupAllowedPath(path: string): boolean {
   const base = pathWithoutQuery(path);
   if (base === APP_ROUTES.auth) return true;
   if (base === "/dev-test") return true;
+  if (base === APP_ROUTES.training.getEducated || base.startsWith(`${APP_ROUTES.training.getEducated}/`)) return true;
   if (base === APP_ROUTES.setup.product) return true;
   if (base === APP_ROUTES.admin.systemDiagnostics) return true;
   if (base === APP_ROUTES.admin.onboarding) return true;
@@ -257,7 +258,12 @@ function ProductOnboardingGateAfterAuth({ children }: { children: ReactNode }) {
 export function ProductOnboardingGate({ children }: { children: ReactNode }) {
   const [path] = useLocation();
   const pathBase = pathWithoutQuery(path);
-  if (pathBase === APP_ROUTES.auth || pathBase === "/dev-test") {
+  if (
+    pathBase === APP_ROUTES.auth ||
+    pathBase === "/dev-test" ||
+    pathBase === APP_ROUTES.training.getEducated ||
+    pathBase.startsWith(`${APP_ROUTES.training.getEducated}/`)
+  ) {
     return <>{children}</>;
   }
   return <ProductOnboardingGateAfterAuth>{children}</ProductOnboardingGateAfterAuth>;

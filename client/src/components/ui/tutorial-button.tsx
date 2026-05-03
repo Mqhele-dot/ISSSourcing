@@ -1,11 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { useTutorial } from "@/contexts/tutorial-context";
+import { useTrainingPanel } from "@/contexts/training-panel-context";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { HelpCircle } from "lucide-react";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { pathToTrainingModuleId } from "@/lib/training/training-path-map";
 
-/** Per-page "Tutorial" button: starts the tour for the current page (e.g. dashboard, analytics). For the full help dialog with all tutorials, use components/tutorial/tutorial-button.tsx. */
+/** Per-page "Tutorial" button: opens the on-page training panel when the route maps to a module; otherwise starts the spotlight tour. For the full help dialog, use components/tutorial/tutorial-button.tsx. */
 interface TutorialStepProps {
   page?: string;
   pageName?: string;
@@ -26,8 +28,9 @@ const PAGE_ROUTES: Record<string, string> = {
 
 export default function TutorialStep({ page, pageName, className = "" }: TutorialStepProps) {
   const { startTutorial } = useTutorial();
+  const { openTrainingPanel } = useTrainingPanel();
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
+  const [pathname, setLocation] = useLocation();
   const tutorialPage = page || pageName || "dashboard";
 
   const tryStartTutorial = (retryCount = 0) => {
@@ -50,6 +53,17 @@ export default function TutorialStep({ page, pageName, className = "" }: Tutoria
   };
 
   const handleClick = () => {
+    const pathOnly = pathname.split("?")[0] || "/";
+    const contextualModuleId = pathToTrainingModuleId(pathOnly);
+    if (contextualModuleId) {
+      openTrainingPanel(contextualModuleId);
+      toast({
+        title: "Learning for this tab",
+        description: "Expand the training card on this page for what each area does and why it matters.",
+      });
+      return;
+    }
+
     const route = PAGE_ROUTES[tutorialPage];
     const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
     const isOnCorrectPage = !route || currentPath.startsWith(route);

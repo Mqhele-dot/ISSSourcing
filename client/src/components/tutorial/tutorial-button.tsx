@@ -28,6 +28,7 @@ import { useHelpExplain } from "@/contexts/help-explain-context";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { requestJson } from "@/lib/queryClient";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import {
   Dialog,
   DialogContent,
@@ -384,6 +385,29 @@ export function TutorialButton() {
             </TabsContent>
 
             <TabsContent value="learning" className="mt-4 space-y-3">
+              <Card className="border-primary/25 bg-primary/5">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Get Educated</CardTitle>
+                  <CardDescription>
+                    Structured lessons: what each module is, why it matters at work, main functions, and short quizzes.
+                    The <strong className="text-foreground">Tutorials</strong> tab runs spotlight tours on real controls;
+                    use both together when onboarding.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      setShowDialog(false);
+                      setLocation(APP_ROUTES.training.getEducated);
+                    }}
+                  >
+                    <BookOpen className="mr-2 h-4 w-4" />
+                    Open Get Educated
+                  </Button>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm">Getting Started</CardTitle>

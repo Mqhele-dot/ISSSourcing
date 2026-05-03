@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Can } from "@/components/auth/can";
 import { useState } from "react";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 export default function WarehousesPage() {
   const crud = useWarehouseCrud();
@@ -36,6 +37,8 @@ export default function WarehousesPage() {
           </span>
         }
       />
+
+      <ModuleTrainingPanel moduleId="warehouses" />
 
       {crud.listFallback ? (
         <Alert variant="default" className="mb-4 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">

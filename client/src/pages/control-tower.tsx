@@ -15,6 +15,7 @@ import { GasOpsCard } from "@/pages/control-tower/gas-ops-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataState } from "@/components/ui/data-state";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { requestJson } from "@/lib/queryClient";
 import type { ControlTowerOverview } from "@/api/types";
 
@@ -48,6 +49,8 @@ export default function ControlTowerPage() {
           </div>
         }
       />
+
+      <ModuleTrainingPanel moduleId="control-tower" />
 
       <DataState
         loading={isLoading}

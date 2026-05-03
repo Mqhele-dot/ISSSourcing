@@ -4,6 +4,7 @@ import { ShoppingCart, FileText } from "lucide-react";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import OrdersPage from "@/pages/orders";
 import RequisitionsPage from "@/pages/requisitions";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 /**
  * Canonical procurement **index / tab shell** only (`/procurement/orders` | `/procurement/requisitions`).
@@ -24,6 +25,7 @@ export default function PurchasePage() {
 
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4" data-testid="purchase-orders-page">
+      <ModuleTrainingPanel moduleId={showRequisitionsTab ? "requisitions" : "purchase-orders"} />
       <Tabs
         value={showRequisitionsTab ? "requisitions" : "orders"}
         onValueChange={(v) => {

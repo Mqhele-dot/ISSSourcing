@@ -22,6 +22,7 @@ import { parseApIntakeForSubmit, parsePaymentBatchForSubmit } from "./validation
 import type { ApWorkspaceTab } from "./types";
 import { isApWorkspaceTab } from "./types";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 const TAB_TO_ROUTE: Record<ApWorkspaceTab, string> = {
   intake: APP_ROUTES.finance.accountsPayableIntake,
@@ -202,6 +203,8 @@ export default function AccountsPayableWorkspace() {
           </div>
         }
       />
+
+      <ModuleTrainingPanel moduleId={activeTab === "payments" ? "payments" : "accounts-payable"} />
 
       {overviewLoading ? (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">

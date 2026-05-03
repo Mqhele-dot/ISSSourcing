@@ -29,7 +29,8 @@ import {
   type DemoWalkthroughResult,
 } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
-import { useTutorial } from "@/contexts/tutorial-context";
+import { useTrainingPanel } from "@/contexts/training-panel-context";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 const LAST_WALKTHROUGH_KEY = "invtrack:lastWalkthrough";
@@ -113,7 +114,7 @@ export default function HomePage() {
   const [runningWalkthrough, setRunningWalkthrough] = useState(false);
   const [walkthroughConfirmOpen, setWalkthroughConfirmOpen] = useState(false);
   const [startingTutorial, setStartingTutorial] = useState(false);
-  const { startTutorial } = useTutorial();
+  const { openTrainingPanel } = useTrainingPanel();
 
   useEffect(() => {
     const raw = sessionStorage.getItem(LAST_WALKTHROUGH_KEY);
@@ -147,17 +148,15 @@ export default function HomePage() {
       toast({
         title: isOk ? "Demo ready" : "Demo mode",
         description: isOk
-          ? "DB connected. Starting the guided tour."
-          : "Running in demo mode (degraded). Tour uses demo storage and stubbed operations.",
+          ? "DB connected. Opening the learning panel for this tab."
+          : "Running in demo mode (degraded). Learning content still loads; some live data may be limited.",
       });
-      const started = startTutorial("full-app");
-      if (!started) {
-        toast({
-          title: "Tour loading",
-          description: "Guided tour will be ready in a moment. Click Start Tutorial again.",
-          variant: "destructive",
-        });
-      }
+      openTrainingPanel("control-tower");
+      toast({
+        title: "Learning for this tab",
+        description:
+          "Use the training card below for what you are looking at, why it matters, and how it supports daily decisions. Open Help for spotlight tours that highlight controls on screen.",
+      });
     } catch (err) {
       toast({
         title: "Tutorial could not start",
@@ -249,6 +248,8 @@ export default function HomePage() {
         }
       />
 
+      <ModuleTrainingPanel moduleId="control-tower" />
+
       <AlertDialog open={walkthroughConfirmOpen} onOpenChange={setWalkthroughConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -265,6 +266,11 @@ export default function HomePage() {
                   error popups from a stale session.
                 </p>
                 <p>Demo login after reset: <span className="font-mono text-foreground">admin</span> / <span className="font-mono text-foreground">Admin123!</span></p>
+                <p>
+                  After signing back in, use <strong className="text-foreground">Get Educated</strong> or the{" "}
+                  <strong className="text-foreground">Start Tutorial</strong> button on Control Tower to read how each
+                  area ties to procurement, inventory, and payables — not just where to click next.
+                </p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -9,6 +9,7 @@ import { HelpExplainProvider } from "@/contexts/help-explain-context";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ElectronProvider } from "@/contexts/electron-provider";
 import { OfflineSyncBridge } from "@/components/offline-sync-bridge";
+import { TrainingPanelProvider } from "@/contexts/training-panel-context";
 
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
@@ -19,9 +20,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
             <AuthProvider>
               <OfflineSyncBridge />
               <TutorialProvider>
-                <HelpExplainProvider>
-                  <ElectronProvider>{children}</ElectronProvider>
-                </HelpExplainProvider>
+                <TrainingPanelProvider>
+                  <HelpExplainProvider>
+                    <ElectronProvider>{children}</ElectronProvider>
+                  </HelpExplainProvider>
+                </TrainingPanelProvider>
               </TutorialProvider>
             </AuthProvider>
           </QueryClientProvider>

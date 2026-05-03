@@ -139,8 +139,8 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
           emptyTitle="No purchase orders found"
           emptyDescription={
             productSetupComplete
-              ? "Start procurement with a requisition, or create a reorder from low stock."
-              : "Finish product setup first, then create requisitions and purchase orders."
+              ? "No purchase orders match your filters. POs are formal commitments to suppliers (what, quantity, price, terms); without them, receiving and invoice matching become unclear and spend is harder to control. Start from a requisition or a reorder when stock is low."
+              : "Finish product setup first. Purchase orders are formal buying documents; once setup is complete you can create requisitions and approved POs with correct master data."
           }
           emptyAction={
             productSetupComplete ? (

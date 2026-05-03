@@ -61,6 +61,8 @@ const MobileHubMore = lazy(() => import("@/pages/mobile-hub-more"));
 const OperationsOverviewPage = lazy(() => import("@/pages/operations-overview-page"));
 const MobileWorkflowsLauncherPage = lazy(() => import("@/pages/mobile-workflows-launcher-page"));
 const DevTestPage = lazy(() => import("@/pages/dev-test-page"));
+const GetEducatedPage = lazy(() => import("@/pages/get-educated"));
+const GetEducatedModulePage = lazy(() => import("@/pages/get-educated-module"));
 
 const LEGACY_REDIRECT_RULES: LegacyRedirectRule[] = buildLegacyRedirectRules();
 
@@ -80,6 +82,8 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.admin.systemDiagnostics} component={SystemDiagnosticsPage} />
 
         <ProtectedRoute path={APP_ROUTES.home} component={Home} />
+        <ProtectedRoute path={APP_ROUTES.training.getEducated} component={GetEducatedPage} />
+        <ProtectedRoute path="/get-educated/:moduleId" component={GetEducatedModulePage} />
 
         <ProtectedRoute path={APP_ROUTES.analytics.overview} component={AnalyticsWorkspacePage} />
         <ProtectedRoute path={APP_ROUTES.analytics.inventory} component={AnalyticsWorkspacePage} />

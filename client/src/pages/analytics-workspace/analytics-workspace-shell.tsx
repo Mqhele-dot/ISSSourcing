@@ -9,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { APP_ROUTES, type AnalyticsSectionSlug } from "@/lib/routes/app-routes";
 import { ANALYTICS_NAV } from "./analytics-nav";
 import type { AnalyticsKpiCard } from "./analytics-workspace-types";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 type Props = {
   section: AnalyticsSectionSlug;
@@ -53,6 +54,8 @@ export function AnalyticsWorkspaceShell({
       />
 
       <SectionNav items={[...ANALYTICS_NAV]} />
+
+      {section === "overview" ? <ModuleTrainingPanel moduleId="analytics" /> : null}
 
       {partialFailure && partialFailure.labels.length > 0 ? (
         <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">

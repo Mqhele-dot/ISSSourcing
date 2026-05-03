@@ -32,6 +32,7 @@ import {
   emptySupplierFormValues,
 } from "@/pages/suppliers/supplier-form-types";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 export default function SuppliersPage() {
   const { toast } = useToast();
@@ -395,6 +396,10 @@ export default function SuppliersPage() {
           </div>
         }
       />
+
+      <div className="px-4 md:px-6">
+        <ModuleTrainingPanel moduleId="suppliers" />
+      </div>
 
       {suppliersAuxError ? (
         <div className="mb-4 px-4 md:px-6">

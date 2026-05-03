@@ -8,6 +8,7 @@ import { getReadinessClientSnapshot } from "@/lib/readiness-client-snapshot";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 function JsonBlock({ value }: { value: unknown }) {
   return (
@@ -132,6 +133,8 @@ export default function SystemDiagnosticsPage() {
           </div>
         }
       />
+
+      <ModuleTrainingPanel moduleId="system-diagnostics" />
 
       <div className="flex flex-wrap gap-2">
         <Badge variant="secondary">Client phase: {phase}</Badge>

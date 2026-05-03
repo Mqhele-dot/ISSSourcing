@@ -68,6 +68,7 @@ function main() {
     APP_ROUTES.setup.product,
     APP_ROUTES.admin.systemDiagnostics,
     APP_ROUTES.home,
+    APP_ROUTES.training.getEducated,
     APP_ROUTES.analytics.overview,
     APP_ROUTES.analytics.inventory,
     APP_ROUTES.analytics.procurement,

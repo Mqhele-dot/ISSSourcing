@@ -64,6 +64,7 @@ import { supplierContractFormSchema } from "@shared/schema";
 import { format } from "date-fns";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 const CONTRACT_TYPES = ["master", "framework", "one-off", "renewal"] as const;
 const STATUSES = ["draft", "active", "expired", "terminated"] as const;
@@ -246,6 +247,8 @@ export default function ContractsPage() {
           </Button>
         </Can>
       </div>
+
+      <ModuleTrainingPanel moduleId="contracts" />
 
       <Card>
         <CardHeader>

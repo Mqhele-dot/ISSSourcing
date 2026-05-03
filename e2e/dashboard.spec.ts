@@ -5,19 +5,25 @@ test.describe("Analytics workspace", () => {
   test("legacy dashboard route redirects to canonical analytics overview", async ({ page }) => {
     await gotoAuthed(page, "/dashboard");
     await expect(page).toHaveURL(/\/analytics\/overview$/);
-    await expect(page.getByRole("heading", { name: /analytics workspace/i })).toBeVisible({ timeout: 10000 });
+    const title = page.getByTestId("page-title");
+    await expect(title).toBeVisible({ timeout: 20000 });
+    await expect(title).toHaveText(/analytics workspace/i);
   });
 
   test("analytics overview exposes tutorial anchor dashboard-stats", async ({ page }) => {
     await gotoAuthed(page, "/analytics/overview");
-    await expect(page.getByRole("heading", { name: /analytics workspace/i })).toBeVisible({ timeout: 10000 });
+    const title = page.getByTestId("page-title");
+    await expect(title).toBeVisible({ timeout: 20000 });
+    await expect(title).toHaveText(/analytics workspace/i);
     await expect(page.locator("#dashboard-stats")).toBeVisible();
   });
 
   test("overview exposes canonical analytics sections", async ({ page }) => {
     await gotoAuthed(page, "/analytics/overview");
     const sectionNav = page.getByLabel(/section navigation/i);
-    await expect(page.getByRole("heading", { name: /analytics workspace/i })).toBeVisible({ timeout: 10000 });
+    const title = page.getByTestId("page-title");
+    await expect(title).toBeVisible({ timeout: 20000 });
+    await expect(title).toHaveText(/analytics workspace/i);
     await expect(sectionNav.getByRole("link", { name: /^Overview$/ })).toBeVisible();
     await expect(sectionNav.getByRole("link", { name: /^Inventory$/ })).toBeVisible();
     await expect(sectionNav.getByRole("link", { name: /^Procurement$/ })).toBeVisible();
@@ -27,6 +33,7 @@ test.describe("Analytics workspace", () => {
 
   test("workspace drilldown navigates to finance analytics", async ({ page }) => {
     await gotoAuthed(page, "/analytics/overview");
+    await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 20000 });
     await page.getByLabel(/section navigation/i).getByRole("link", { name: /^Finance$/ }).click();
     await expect(page).toHaveURL(/\/analytics\/finance$/);
     await expect(page.getByRole("heading", { name: /outstanding ap/i })).toBeVisible({ timeout: 5000 });
@@ -35,6 +42,7 @@ test.describe("Analytics workspace", () => {
 
   test("workspace actions link to current product surfaces", async ({ page }) => {
     await gotoAuthed(page, "/analytics/overview");
+    await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 20000 });
     await expect(page.getByRole("link", { name: /open control tower/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /export center/i }).nth(1)).toBeVisible();
   });

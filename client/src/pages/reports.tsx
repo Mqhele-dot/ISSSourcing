@@ -7,6 +7,7 @@ import { type ReportFilter } from "@shared/schema";
 import { QueryState } from "@/components/ui/query-state";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { useReportsPageData } from "@/pages/reports/use-reports-data";
 import { useReportsExport } from "@/pages/reports/use-reports-export";
 import { ReportsExportToolbar } from "@/pages/reports/reports-export-toolbar";
@@ -171,6 +172,8 @@ export default function Reports() {
             />
           </div>
         </div>
+
+        <ModuleTrainingPanel moduleId="reports" />
 
         <SectionNav
           items={[

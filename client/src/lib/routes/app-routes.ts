@@ -126,6 +126,10 @@ export const APP_ROUTES = {
     savedReports: "/analytics/saved-reports",
     exportCenter: "/analytics/export-center",
   },
+  training: {
+    getEducated: "/get-educated",
+    getEducatedModule: (moduleId: string) => `/get-educated/${encodeURIComponent(moduleId)}`,
+  },
   admin: {
     settings: "/admin/settings",
     settingsSection: (section: SettingsSectionSlug | string) => `/admin/settings/${section}`,

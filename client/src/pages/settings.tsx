@@ -45,6 +45,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { APP_ROUTES, SETTINGS_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
+import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -106,6 +107,8 @@ export default function SettingsPage() {
           Configure application settings to match your business needs
         </p>
       </div>
+
+      <ModuleTrainingPanel moduleId="admin-settings" />
 
       {isDevMode && (
         <Card className="mb-6 border-dashed border-amber-400/60">
