@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { FileDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,14 +36,23 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
     q: "",
   });
 
+  const [qInput, setQInput] = useState(String(queryState.q || ""));
+  useEffect(() => setQInput(String(queryState.q || "")), [queryState.q]);
+
+  const [supplierInput, setSupplierInput] = useState(String(queryState.supplier || ""));
+  useEffect(() => setSupplierInput(String(queryState.supplier || "")), [queryState.supplier]);
+
+  const [statusInput, setStatusInput] = useState(String(queryState.status || ""));
+  useEffect(() => setStatusInput(String(queryState.status || "")), [queryState.status]);
+
   const fetcher = useCallback(
     () =>
       fetchPurchaseOrdersEnvelope({
-        status: String(queryState.status || ""),
-        supplier: String(queryState.supplier || ""),
-        q: String(queryState.q || ""),
+        status: String(statusInput || ""),
+        supplier: String(supplierInput || ""),
+        q: String(qInput || ""),
       }),
-    [queryState.status, queryState.supplier, queryState.q],
+    [statusInput, supplierInput, qInput],
   );
 
   const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
@@ -100,20 +109,32 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
           left={
             <>
               <Input
-                value={String(queryState.q || "")}
-                onChange={(event) => setQueryState({ q: event.target.value })}
+                value={qInput}
+                onChange={(event) => {
+                  const v = event.target.value;
+                  setQInput(v);
+                  setQueryState({ q: v });
+                }}
                 placeholder="Search PO number or supplier"
                 className="w-full sm:w-[260px]"
               />
               <Input
-                value={String(queryState.supplier || "")}
-                onChange={(event) => setQueryState({ supplier: event.target.value })}
+                value={supplierInput}
+                onChange={(event) => {
+                  const v = event.target.value;
+                  setSupplierInput(v);
+                  setQueryState({ supplier: v });
+                }}
                 placeholder="Supplier id or name"
                 className="w-full sm:w-[220px]"
               />
               <Input
-                value={String(queryState.status || "")}
-                onChange={(event) => setQueryState({ status: event.target.value })}
+                value={statusInput}
+                onChange={(event) => {
+                  const v = event.target.value;
+                  setStatusInput(v);
+                  setQueryState({ status: v });
+                }}
                 placeholder="Status (draft/open/approved/sent/received)"
                 className="w-full sm:w-[250px]"
               />
@@ -163,9 +184,9 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
         >
           {(orders) => {
             const baseList = Array.isArray(orders) ? orders : [];
-            const q = String(queryState.q || "").trim().toLowerCase();
-            const supplierFilter = String(queryState.supplier || "").trim().toLowerCase();
-            const statusFilter = String(queryState.status || "").trim().toLowerCase();
+            const q = String(qInput || "").trim().toLowerCase();
+            const supplierFilter = String(supplierInput || "").trim().toLowerCase();
+            const statusFilter = String(statusInput || "").trim().toLowerCase();
             const list = baseList.filter((order) => {
               if (statusFilter && String(order.status || "").toLowerCase() !== statusFilter) {
                 return false;

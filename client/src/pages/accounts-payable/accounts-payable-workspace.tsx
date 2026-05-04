@@ -102,6 +102,11 @@ export default function AccountsPayableWorkspace() {
     [readyForBatch, selectedInvoiceIds],
   );
 
+  const selectedBatchTotalCentsStr = useMemo(
+    () => String(sumSelectedInvoicePayableCents(readyForBatch, selectedInvoiceIds)),
+    [readyForBatch, selectedInvoiceIds],
+  );
+
   useEffect(() => {
     setPaymentBatchErrors([]);
   }, [selectedInvoiceIds, paymentMethod, scheduledDate]);
@@ -395,6 +400,7 @@ export default function AccountsPayableWorkspace() {
                   selectedInvoiceIds={selectedInvoiceIds}
                   toggleInvoiceSelection={toggleInvoiceSelection}
                   selectedBatchTotal={selectedBatchTotal}
+                  selectedBatchTotalCents={selectedBatchTotalCentsStr}
                   paymentMethod={paymentMethod}
                   setPaymentMethod={setPaymentMethod}
                   scheduledDate={scheduledDate}

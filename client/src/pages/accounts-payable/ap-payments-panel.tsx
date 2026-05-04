@@ -28,6 +28,8 @@ type Props = {
   selectedInvoiceIds: number[];
   toggleInvoiceSelection: (invoiceId: number, checked: boolean) => void;
   selectedBatchTotal: number;
+  /** Integer cents for exact E2E / QA (same as sumSelectedInvoicePayableCents). */
+  selectedBatchTotalCents: string;
   paymentMethod: string;
   setPaymentMethod: (v: string) => void;
   scheduledDate: string;
@@ -41,6 +43,10 @@ type Props = {
   onCreateBatch: () => void;
 };
 
+function apInvoiceDomId(invoiceNumber: string): string {
+  return invoiceNumber.replace(/[^a-zA-Z0-9_-]+/g, "-");
+}
+
 export function ApPaymentsPanel({
   readyForBatch,
   invoicesLoadFailed,
@@ -48,6 +54,7 @@ export function ApPaymentsPanel({
   selectedInvoiceIds,
   toggleInvoiceSelection,
   selectedBatchTotal,
+  selectedBatchTotalCents,
   paymentMethod,
   setPaymentMethod,
   scheduledDate,
@@ -111,6 +118,7 @@ export function ApPaymentsPanel({
               <div
                 className="rounded-md border px-3 py-2 text-sm"
                 data-testid="ap-selected-batch-total"
+                data-batch-total-cents={selectedBatchTotalCents}
               >
                 {formatMoney(selectedBatchTotal)}
               </div>
@@ -130,11 +138,12 @@ export function ApPaymentsPanel({
             <TableBody>
               {readyForBatch.map((invoice) => {
                 const checked = selectedInvoiceIds.includes(invoice.id);
+                const idSuffix = apInvoiceDomId(invoice.invoiceNumber);
                 return (
-                  <TableRow key={invoice.id}>
+                  <TableRow key={invoice.id} data-testid={`ap-ready-invoice-row-${idSuffix}`}>
                     <TableCell>
                       <Checkbox
-                        data-testid="ap-ready-invoice-checkbox"
+                        data-testid={`ap-ready-invoice-checkbox-${idSuffix}`}
                         checked={checked}
                         disabled={invoicesLoadFailed}
                         onCheckedChange={(state) => toggleInvoiceSelection(invoice.id, state === true)}
@@ -158,9 +167,7 @@ export function ApPaymentsPanel({
             type="button"
             data-testid="ap-create-batch-button"
             onClick={onCreateBatch}
-            disabled={
-              invoicesLoadFailed || selectedInvoiceIds.length === 0 || createBatchMutation.isPending
-            }
+            disabled={invoicesLoadFailed || createBatchMutation.isPending}
           >
             {createBatchMutation.isPending ? "Creating batch..." : "Create AP payment batch"}
           </Button>

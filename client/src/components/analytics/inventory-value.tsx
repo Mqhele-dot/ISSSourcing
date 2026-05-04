@@ -9,6 +9,9 @@ import { useReportingMoney } from "@/hooks/use-reporting-money";
 interface InventoryValueItem {
   id: number;
   name: string;
+  sku?: string;
+  categoryId?: number | null;
+  categoryName?: string | null;
   quantity: number;
   cost: number;
   value: number;

@@ -38,10 +38,14 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 | `npm run build` | Production client + server bundle |
 | `npm run start` | Run built server (uses `cross-env` on Windows) |
 | `npm run check` | TypeScript (`tsc`) |
-| `npm run release:gate` | Full production-readiness validation gate |
+| `npm run verify:core` | `check` + client stabilization + **`test:functional-audit`** + Playwright E2E (local “core” bar; needs DB) |
+| `npm run release:gate` | Full production-readiness validation gate (includes stabilization + functional audit + E2E in CI) |
 | `npm run db:push` | Apply Drizzle schema to Postgres |
 | `npm run db:seed` / `npm run demo:reset` | Seed data |
-| `npm run test:e2e` | Playwright `e2e/` tests; wrapper ensures `/api/ready` + `/auth` on 127.0.0.1:5000 before Playwright (needs DB) |
+| `npm run seed:functional-qa` | Deterministic QA dataset (inventory/AP/PO/reports); used by **`test:functional-audit`** and E2E global setup |
+| `npm run test:functional-audit` | **FQA seed** + functional calculations/filters + inventory DB/API parity script (needs `DATABASE_URL`) |
+| `npm run test:functional-e2e` | **FQA seed** + **`test:e2e`** (explicit re-seed before Playwright) |
+| `npm run test:e2e` | Playwright `e2e/` tests; wrapper ensures `/api/ready` + `/auth` on 127.0.0.1:5000 before Playwright (needs DB). Global setup runs **`seed:functional-qa`** unless `SKIP_E2E_FUNCTIONAL_QA_SEED=1` |
 | `npm run test:e2e:preflight` | With `npm run dev` running: checks `/api/ready` and `/auth` reachability |
 | `npm run playwright:install-deps` | Linux: Playwright OS deps for Chromium, Firefox, WebKit (use `sudo` if apt fails) |
 

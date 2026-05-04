@@ -153,7 +153,7 @@ export default function Reports() {
       error={isInventoryReportTab && itemsErrorDetail instanceof Error ? itemsErrorDetail : null}
       refetch={refetchInventory}
     >
-      <PageShell variant="wide-table">
+      <PageShell variant="wide-table" data-testid="reports-page">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <PageHeader title="Reports" description="Structured tabular outputs backed by the shared export service." />

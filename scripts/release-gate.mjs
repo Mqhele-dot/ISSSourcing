@@ -17,6 +17,8 @@ const requiredScripts = [
   "test:smoke",
   "test:setup-checkpoint",
   "test:installable-complete",
+  "test:stabilization-client",
+  "test:functional-audit",
   "test:e2e",
 ];
 

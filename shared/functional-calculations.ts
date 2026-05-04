@@ -78,6 +78,13 @@ export function calculatePoTotalCentsFromLines(
   return lines.reduce((acc, l) => acc + calculatePoLineTotalCents(l.quantity, l.unitPrice, l.taxRatePct), 0n);
 }
 
+/** PO header total from lines (pre-freight); same cents rules as calculatePoTotalCentsFromLines. */
+export function calculatePoHeaderTotalFromLines(
+  lines: Array<{ quantity: number; unitPrice: number; taxRatePct?: number | null }>,
+): bigint {
+  return calculatePoTotalCentsFromLines(lines);
+}
+
 export type InventoryValuationRow = {
   quantity: number;
   cost?: number | null;

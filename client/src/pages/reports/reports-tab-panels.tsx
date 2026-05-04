@@ -124,6 +124,21 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
     formatMoney,
   } = props;
 
+  const filteredInventoryItems =
+    filter.categoryId != null || filter.search?.trim()
+      ? safeInventoryItems.filter((item) => {
+          if (filter.categoryId != null && Number(item.categoryId) !== Number(filter.categoryId)) {
+            return false;
+          }
+          const q = filter.search?.trim().toLowerCase();
+          if (q) {
+            const hay = `${item.sku ?? ""} ${item.name ?? ""}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        })
+      : safeInventoryItems;
+
   return (
     <TabsContent value="inventory" className="mt-0">
       <ReportFilters
@@ -149,11 +164,14 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                 </p>
               </div>
               <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                {`${safeInventoryItems.length} items • Total Value: ${formatMoney(calculateTotalValue(safeInventoryItems))}`}
+                {`${filteredInventoryItems.length} items • Total Value: ${formatMoney(calculateTotalValue(filteredInventoryItems))}`}
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-700">
+              <table
+                data-testid="reports-inventory-preview-table"
+                className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-700"
+              >
                 <thead className="bg-neutral-50 dark:bg-neutral-800">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
@@ -183,9 +201,9 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                         Loading inventory data...
                       </td>
                     </tr>
-                  ) : safeInventoryItems.length > 0 ? (
-                    safeInventoryItems.slice(0, 5).map((item) => (
-                      <tr key={item.id}>
+                  ) : filteredInventoryItems.length > 0 ? (
+                    filteredInventoryItems.slice(0, 25).map((item) => (
+                      <tr key={item.id} data-testid={`reports-inventory-preview-row-${item.sku}`}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-white">
                           {item.name}
                         </td>
@@ -213,10 +231,10 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                       </td>
                     </tr>
                   )}
-                  {safeInventoryItems.length > 5 && (
+                  {filteredInventoryItems.length > 25 && (
                     <tr>
                       <td colSpan={6} className="px-6 py-4 text-center text-sm text-neutral-500 dark:text-neutral-400 italic">
-                        ... and {safeInventoryItems.length - 5} more items
+                        ... and {filteredInventoryItems.length - 25} more items
                       </td>
                     </tr>
                   )}

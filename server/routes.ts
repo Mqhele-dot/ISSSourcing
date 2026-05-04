@@ -1361,7 +1361,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/analytics/inventory-value", ...analyticsAccess, async (req: Request, res: Response) => {
     try {
       const items = await storage.getAllInventoryItems();
-      
+      const categories = await storage.getAllCategories();
+      const categoryNameById = new Map<number, string>(
+        categories.map((c) => [c.id, c.name] as const),
+      );
+
       // Calculate total inventory value
       let totalValue = 0;
       let totalItems = 0;
@@ -1373,9 +1377,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalValue += itemValue;
         totalItems += 1; // Count unique SKUs, not total units
 
+        const catId = item.categoryId ?? null;
         itemValues.push({
           id: item.id,
+          sku: item.sku,
           name: item.name,
+          categoryId: catId,
+          categoryName: catId != null ? categoryNameById.get(catId) ?? null : null,
           quantity: item.quantity,
           cost: unit,
           value: itemValue,
@@ -1388,7 +1396,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         totalValue,
         totalItems,
-        items: itemValues
+        items: itemValues,
       });
     } catch (error) {
       console.error("Error calculating inventory value:", error);

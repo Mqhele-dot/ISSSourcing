@@ -1052,7 +1052,12 @@ export async function getOverview() {
     db.select().from(apPaymentBatches).where(eq(apPaymentBatches.organizationId, orgId)),
   ]);
 
-  const outstandingAmount = allInvoices.reduce((sum, invoice) => sum + toNumber(invoice.dueAmount, 0), 0);
+  const outstandingAmount = allInvoices.reduce((sum, invoice) => {
+    const dueRaw = invoice.dueAmount;
+    const useDue = dueRaw != null && Number.isFinite(Number(dueRaw));
+    const part = useDue ? toNumber(dueRaw, 0) : toNumber(invoice.total, 0);
+    return sum + part;
+  }, 0);
   return {
     invoiceCount: allInvoices.length,
     pendingApprovalCount: allInvoices.filter((row) => row.status === "PENDING_APPROVAL").length,

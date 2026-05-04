@@ -193,7 +193,7 @@ export function ReportFilters({
                 });
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger data-testid="reports-filter-category">
                 <SelectValue placeholder="All categories" />
               </SelectTrigger>
               <SelectContent>

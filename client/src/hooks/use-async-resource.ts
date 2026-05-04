@@ -48,9 +48,8 @@ export function useAsyncResource<T>(
     }
   }, []);
 
-  // Dev-only: detect refetch loops (e.g. inline fetcher causing effect to re-run every render)
+  // Dev-only: warn if fetcher identity changes too often (e.g. non-memoized fetcher).
   const callTimesRef = useRef<number[]>([]);
-  const throttleUntilRef = useRef(0);
   const warnedRef = useRef(false);
   const isDev = typeof import.meta !== "undefined" && import.meta.env?.DEV;
 
@@ -64,17 +63,15 @@ export function useAsyncResource<T>(
       callTimesRef.current = callTimesRef.current.filter((t) => now - t < 2000);
       callTimesRef.current.push(now);
       if (callTimesRef.current.length > 3) {
-        throttleUntilRef.current = now + 5000;
         if (!warnedRef.current) {
           warnedRef.current = true;
           console.warn(
-            "[useAsyncResource] Possible refetch loop: fetcher triggered too many times in 2s. Pass a memoized fetcher (useCallback) so the effect does not re-run every render.",
+            "[useAsyncResource] Fetcher changed many times in 2s — check useCallback deps. Filters still refetch; fix memoization to avoid extra requests.",
           );
         }
       }
-      if (now < throttleUntilRef.current) return;
     }
-    refetch();
+    void refetch();
   }, [options?.immediate, refetch, fetcher, isDev]);
 
   return { loading, error, data, refetch };

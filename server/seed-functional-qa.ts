@@ -1,7 +1,14 @@
 /**
- * Deterministic QA seed: SKU-A–D, PO-FQA-*, AP invoices INV-FQA-*.
- * Run after main seed: npx tsx server/seed-functional-qa.ts
+ * Deterministic QA seed: SKU-A–D, PO-FQA-* (+ lines), REQ-FQA-001, AP invoices INV-FQA-*.
+ * Run after main seed: npm run seed:functional-qa
+ * Idempotent: upserts headers, replaces FQA PO lines, upserts requisition.
  */
+import {
+  FQA_PO_001_HEADER_TOTAL,
+  FQA_PO_001_LINES,
+  FQA_REQUISITION_NUMBER,
+  FQA_REQUISITION_STATUS,
+} from "../shared/functional-qa-constants.ts";
 import { pool } from "./db";
 
 const ORG_ID = 1;
@@ -123,7 +130,7 @@ export async function seedFunctionalQA(): Promise<void> {
   const supplierId = sup.rows[0]?.id;
   if (supplierId) {
     for (const row of [
-      { num: "PO-FQA-001", status: "draft", total: 1000 },
+      { num: "PO-FQA-001", status: "draft", total: FQA_PO_001_HEADER_TOTAL },
       { num: "PO-FQA-002", status: "approved", total: 2500 },
       { num: "PO-FQA-003", status: "received", total: 500 },
     ] as const) {
@@ -137,6 +144,66 @@ export async function seedFunctionalQA(): Promise<void> {
         [ORG_ID, row.num, supplierId, row.status, row.total],
       );
     }
+
+    const itemA = await pool.query<{ id: number }>(
+      "SELECT id FROM inventory_items WHERE organization_id = $1 AND sku = 'SKU-A' LIMIT 1",
+      [ORG_ID],
+    );
+    const itemId = itemA.rows[0]?.id;
+    if (itemId) {
+      await pool.query(
+        `DELETE FROM purchase_order_items
+         WHERE order_id IN (
+           SELECT id FROM purchase_orders WHERE organization_id = $1 AND order_number LIKE 'PO-FQA%'
+         )`,
+        [ORG_ID],
+      );
+
+      const poRows = await pool.query<{ id: number; order_number: string }>(
+        `SELECT id, order_number FROM purchase_orders WHERE organization_id = $1 AND order_number LIKE 'PO-FQA%' ORDER BY order_number`,
+        [ORG_ID],
+      );
+      const byNum = new Map(poRows.rows.map((r) => [r.order_number, r.id]));
+
+      const insLine = async (orderNumber: string, qty: number, unit: number, received: number) => {
+        const oid = byNum.get(orderNumber);
+        if (!oid) return;
+        const total = qty * unit;
+        await pool.query(
+          `INSERT INTO purchase_order_items (order_id, item_id, quantity, unit_price, total_price, received_quantity)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [oid, itemId, qty, unit, total, received],
+        );
+      };
+
+      for (const line of FQA_PO_001_LINES) {
+        await insLine("PO-FQA-001", line.quantity, line.unitPrice, 0);
+      }
+      await insLine("PO-FQA-002", 15, 100, 0);
+      await insLine("PO-FQA-002", 10, 100, 0);
+      await insLine("PO-FQA-003", 5, 100, 5);
+    }
+  }
+
+  const adminForReq = await ensureAdminUserId();
+  const reqExisting = await pool.query<{ id: number }>(
+    "SELECT id FROM purchase_requisitions WHERE organization_id = $1 AND requisition_number = $2",
+    [ORG_ID, FQA_REQUISITION_NUMBER],
+  );
+  if (reqExisting.rows[0]?.id) {
+    await pool.query(
+      `UPDATE purchase_requisitions SET
+         status = $1, requestor_id = $2, notes = $3, updated_at = now()
+       WHERE id = $4`,
+      [FQA_REQUISITION_STATUS, adminForReq, "Functional QA seed", reqExisting.rows[0].id],
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO purchase_requisitions (
+         organization_id, requisition_number, requestor_id, status, total_amount, notes, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, now(), now())`,
+      [ORG_ID, FQA_REQUISITION_NUMBER, adminForReq, FQA_REQUISITION_STATUS, 0, "Functional QA seed"],
+    );
   }
 
   const adminId = await ensureAdminUserId();
@@ -147,18 +214,34 @@ export async function seedFunctionalQA(): Promise<void> {
     { num: "INV-FQA-002", total: 500, due: 250 as number | null },
     { num: "INV-FQA-003", total: 300, due: null as number | null },
   ]) {
-    await pool.query(
-      `INSERT INTO invoices (
-         organization_id, invoice_number, supplier_id, status, issue_date, due_date,
-         subtotal, total, paid_amount, due_amount, created_by, created_at, updated_at
-       ) VALUES ($1, $2, $3, 'APPROVED', now(), $4, $5, $5, 0, $6, $7, now(), now())
-       ON CONFLICT (organization_id, invoice_number) DO UPDATE SET
-         total = EXCLUDED.total,
-         due_amount = EXCLUDED.due_amount,
-         status = 'APPROVED',
-         updated_at = now()`,
-      [ORG_ID, inv.num, supplierId ?? null, due, inv.total, inv.due, adminId],
+    const existing = await pool.query<{ id: number }>(
+      "SELECT id FROM invoices WHERE organization_id = $1 AND invoice_number = $2",
+      [ORG_ID, inv.num],
     );
+    if (existing.rows[0]?.id) {
+      await pool.query(
+        `UPDATE invoices SET
+           supplier_id = COALESCE($1, supplier_id),
+           status = 'APPROVED',
+           issue_date = now(),
+           due_date = $2,
+           subtotal = $3,
+           total = $3,
+           paid_amount = 0,
+           due_amount = $4,
+           updated_at = now()
+         WHERE id = $5`,
+        [supplierId ?? null, due, inv.total, inv.due, existing.rows[0].id],
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO invoices (
+           organization_id, invoice_number, supplier_id, status, issue_date, due_date,
+           subtotal, total, paid_amount, due_amount, created_by, created_at, updated_at
+         ) VALUES ($1, $2, $3, 'APPROVED', now(), $4, $5, $5, 0, $6, $7, now(), now())`,
+        [ORG_ID, inv.num, supplierId ?? null, due, inv.total, inv.due, adminId],
+      );
+    }
   }
 }
 

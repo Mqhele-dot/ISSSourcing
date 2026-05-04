@@ -57,15 +57,35 @@ export default function InventoryPage() {
     low: "",
   });
 
+  const [searchInput, setSearchInput] = useState(String(queryState.q ?? ""));
+  useEffect(() => {
+    setSearchInput(String(queryState.q ?? ""));
+  }, [queryState.q]);
+
+  const [locationFilter, setLocationFilter] = useState(String(queryState.location || ""));
+  useEffect(() => {
+    setLocationFilter(String(queryState.location || ""));
+  }, [queryState.location]);
+
+  const [categoryFilter, setCategoryFilter] = useState(String(queryState.category || ""));
+  useEffect(() => {
+    setCategoryFilter(String(queryState.category || ""));
+  }, [queryState.category]);
+
+  const [lowFilter, setLowFilter] = useState(String(queryState.low || ""));
+  useEffect(() => {
+    setLowFilter(String(queryState.low || ""));
+  }, [queryState.low]);
+
   const inventoryFetcher = useCallback(async () => {
-    const lowEnabled = isLowFilterEnabled(String(queryState.low || ""));
+    const lowEnabled = isLowFilterEnabled(lowFilter);
     return fetchInventory({
-      q: String(queryState.q || ""),
-      location: String(queryState.location || ""),
-      category: String(queryState.category || ""),
+      q: String(searchInput ?? "").trim(),
+      location: String(locationFilter || "").trim(),
+      category: String(categoryFilter || "").trim(),
       lowStock: lowEnabled,
     });
-  }, [queryState.category, queryState.location, queryState.low, queryState.q]);
+  }, [searchInput, locationFilter, categoryFilter, lowFilter]);
 
   const {
     loading: inventoryLoading,
@@ -99,13 +119,6 @@ export default function InventoryPage() {
   } = useAsyncResource(categoriesFetcher);
 
   const categories = categoriesData ?? EMPTY_CATEGORIES;
-  const selectedLocation = String(queryState.location || "");
-  const selectedCategory = String(queryState.category || "");
-
-  const [searchInput, setSearchInput] = useState(String(queryState.q ?? ""));
-  useEffect(() => {
-    setSearchInput(String(queryState.q ?? ""));
-  }, [queryState.q]);
 
   const runClientCsv = useCallback(() => {
     const items = inventoryData ?? [];
@@ -126,11 +139,11 @@ export default function InventoryPage() {
   }, [inventoryData, toast]);
 
   const runServerCsv = useCallback(async () => {
-    const lowEnabled = isLowFilterEnabled(String(queryState.low || ""));
+    const lowEnabled = isLowFilterEnabled(lowFilter);
     const params = new URLSearchParams();
-    const q = String(queryState.q || "").trim();
-    const loc = String(queryState.location || "").trim();
-    const cat = String(queryState.category || "").trim();
+    const q = String(searchInput ?? "").trim();
+    const loc = String(locationFilter || "").trim();
+    const cat = String(categoryFilter || "").trim();
     if (q) params.set("q", q);
     if (loc) params.set("location", loc);
     if (cat) params.set("category", cat);
@@ -164,7 +177,7 @@ export default function InventoryPage() {
     link.remove();
     URL.revokeObjectURL(href);
     toast({ title: "Export complete", description: "Downloaded server inventory CSV (matches current filters)." });
-  }, [toast, queryState.q, queryState.location, queryState.category, queryState.low]);
+  }, [toast, searchInput, locationFilter, categoryFilter, lowFilter]);
 
   const handleExportCsv = () => {
     void (async () => {
@@ -213,6 +226,9 @@ export default function InventoryPage() {
 
   const clearFilters = () => {
     setSearchInput("");
+    setLocationFilter("");
+    setCategoryFilter("");
+    setLowFilter("");
     setQueryState({ q: "", location: "", category: "", low: "" });
   };
 
@@ -305,8 +321,12 @@ export default function InventoryPage() {
             </div>
 
             <Select
-              value={selectedLocation || "all"}
-              onValueChange={(value) => setQueryState({ location: value === "all" ? "" : value })}
+              value={locationFilter || "all"}
+              onValueChange={(value) => {
+                const v = value === "all" ? "" : value;
+                setLocationFilter(v);
+                setQueryState({ location: v });
+              }}
               disabled={warehousesLoading}
             >
               <SelectTrigger className="w-full sm:w-[180px]" data-testid="inventory-location-filter">
@@ -323,8 +343,12 @@ export default function InventoryPage() {
             </Select>
 
             <Select
-              value={selectedCategory || "all"}
-              onValueChange={(value) => setQueryState({ category: value === "all" ? "" : value })}
+              value={categoryFilter || "all"}
+              onValueChange={(value) => {
+                const v = value === "all" ? "" : value;
+                setCategoryFilter(v);
+                setQueryState({ category: v });
+              }}
               disabled={categoriesLoading}
             >
               <SelectTrigger className="w-full sm:w-[180px]" data-testid="inventory-category-filter">
@@ -349,12 +373,12 @@ export default function InventoryPage() {
             <span data-tour="inventory-low-toggle">
               <Button
                 data-testid="inventory-low-stock-filter"
-                variant={isLowFilterEnabled(String(queryState.low || "")) ? "default" : "outline"}
-                onClick={() =>
-                  setQueryState({
-                    low: isLowFilterEnabled(String(queryState.low || "")) ? "" : "1",
-                  })
-                }
+                variant={isLowFilterEnabled(lowFilter) ? "default" : "outline"}
+                onClick={() => {
+                  const next = isLowFilterEnabled(lowFilter) ? "" : "1";
+                  setLowFilter(next);
+                  setQueryState({ low: next });
+                }}
               >
                 Low stock only
               </Button>
@@ -408,13 +432,19 @@ export default function InventoryPage() {
               {items.map((item) => (
                 <TableRow
                   key={item.sku}
+                  data-testid={`inventory-row-${item.sku}`}
                   className="cursor-pointer"
                   onClick={() => setLocation(APP_ROUTES.inventory.item(item.sku))}
                 >
                   <TableCell className="font-medium align-top">{item.sku}</TableCell>
                   <TableCell className="align-top">{item.name}</TableCell>
                   <TableCell className="align-top text-sm">{item.location || "Unassigned"}</TableCell>
-                  <TableCell className="text-right align-top tabular-nums">
+                  <TableCell
+                    className="text-right align-top tabular-nums"
+                    data-on-hand={item.onHand}
+                    data-allocated={item.allocated}
+                    data-available={item.available}
+                  >
                     <span className="inline-flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5">
                       <span>{item.onHand}</span>
                       <span className="text-muted-foreground">/</span>
@@ -423,7 +453,7 @@ export default function InventoryPage() {
                       <span>{item.available}</span>
                     </span>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-testid={`inventory-status-${item.sku}`}>
                     <StatusBadge status={getInventoryAvailabilityStatus(item.available, item.lowStockThreshold)} />
                   </TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground">

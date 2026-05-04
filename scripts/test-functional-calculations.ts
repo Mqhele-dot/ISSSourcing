@@ -7,6 +7,7 @@ import {
   calculateApAgingBuckets,
   calculateAvailable,
   calculateInventoryValueCents,
+  calculatePoHeaderTotalFromLines,
   calculatePoLineTotalCents,
   calculatePoTotalCentsFromLines,
   fromMoneyCents,
@@ -17,6 +18,7 @@ import {
   toMoneyCents,
   groupInventoryValueCentsByCategory,
 } from "../shared/functional-calculations.ts";
+import { FQA_PO_001_LINES, fqaMasterValueCents } from "../shared/functional-qa-constants.ts";
 
 function main() {
   assert.equal(calculateAvailable(10, 3), 7);
@@ -36,6 +38,21 @@ function main() {
 
   const vat = calculatePoLineTotalCents(1, 10, 15);
   assert.equal(fromMoneyCents(vat), 11.5);
+
+  assert.equal(
+    fromMoneyCents(calculatePoHeaderTotalFromLines([...FQA_PO_001_LINES])),
+    FQA_PO_001_LINES[0].quantity * FQA_PO_001_LINES[0].unitPrice,
+  );
+
+  assert.equal(
+    fqaMasterValueCents(),
+    calculateInventoryValueCents([
+      { quantity: 10, cost: 5, categoryId: 1 },
+      { quantity: 4, cost: 5, categoryId: 1 },
+      { quantity: 20, cost: 5, categoryId: 2 },
+      { quantity: 0, cost: 5, categoryId: 2 },
+    ]),
+  );
 
   const po = calculatePoTotalCentsFromLines([
     { quantity: 2, unitPrice: 12.5, taxRatePct: 10 },

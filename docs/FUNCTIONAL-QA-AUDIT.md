@@ -1,313 +1,87 @@
 # InvTrack — Functional QA audit
 
 **Last updated:** 2026-04-20  
-**Scope:** Business correctness of filters, totals, exports, tabs, training, and alignment between list/analytics views—not only “page loads.”
+
+**Business correctness confidence (0–3)**  
+0 = shell visible only · 1 = one filter/action · 2 = several paths or API checks · 3 = **exact** FQA numbers, row sets, or CSV parity proven against **`seed:functional-qa`** (`SKU-A`–`D`, `PO-FQA-*`, `INV-FQA-*`, `REQ-FQA-001`).
+
+**Pass rule:** A module is **pass** in the matrix only where the **Pass criteria** column is satisfied by current automation. Otherwise **partial** or **not covered**.
+
+**Commands**
+
+- `npm run verify:core` — **`check`** + **`test:stabilization-client`** + **`test:functional-audit`** + **`test:e2e`** (local “core” verification; needs DB + Playwright where applicable).
+- `npm run test:functional-audit` — runs **`seed:functional-qa`**, `test:functional-calculations`, `test:functional-filters`, and **`test:functional-inventory-api`** (operational list vs seed, same path as GET `/api/inventory`). Requires **`DATABASE_URL`** (or configured dev DB).
+- E2E: `e2e/global-setup.ts` runs **`seed:functional-qa`** after `e2e:prep` unless **`SKIP_E2E_FUNCTIONAL_QA_SEED=1`**.
+- Local explicit: **`npm run test:functional-e2e`** = seed + Playwright.
 
 ---
 
-## How this document is maintained
+## Deliverables (this audit revision)
 
-| Column | Meaning |
-|--------|---------|
-| **Page loads** | Route renders primary shell without fatal error under normal demo/e2e data. |
-| **Filters / Search / Sort** | Controls exist and applied logic matches expectations (manual + `scripts/test-functional-filters.ts` where mirrored). |
-| **Totals** | Screen aggregates match row math or shared cent-based helpers (`shared/functional-calculations.ts`). |
-| **Export** | Export honors current filters or UI explicitly says “export all.” |
-| **Tab routing** | URL, browser history, and selected tab stay aligned. |
-| **Training** | `ModuleTrainingPanel` / Get Educated behavior for that area. |
-| **Status** | **pass** = verified; **partial** = spot-checked or env-dependent; **fail** = defect found (see Bugs). |
-
----
-
-## Module summary (quick matrix)
-
-| # | Module | Route(s) | Loads | Filters | Totals | Export | Tabs | Training | Status |
-|---|--------|----------|-------|---------|--------|--------|------|----------|--------|
-| 1 | Operations / Control Tower | `/operations`, `/operations/control-tower` | partial | partial | partial | — | partial | partial | **partial** |
-| 2 | Inventory | `/inventory` | pass | pass | partial | pass | — | partial | **pass** |
-| 3 | Warehouses | `/inventory/warehouses` | partial | partial | partial | — | — | partial | **partial** |
-| 4 | Warehouse Operations | `/inventory/warehouse-operations` | partial | partial | — | — | — | partial | **partial** |
-| 5 | Cycle Counts | `/inventory/cycle-counts` | partial | partial | — | — | — | partial | **partial** |
-| 6 | Reorder Requests | `/inventory/reorder` | partial | partial | — | — | — | partial | **partial** |
-| 7 | Barcode Scanner | `/inventory/barcodes`, `/m/scan` | partial | — | — | — | — | partial | **partial** |
-| 8 | Purchase Orders | `/procurement/orders` | pass | partial | partial | partial | pass | pass | **partial** |
-| 9 | Requisitions | `/procurement/requisitions` | pass | partial | — | — | pass | pass | **partial** |
-| 10 | Suppliers | `/procurement/suppliers` | partial | partial | — | — | — | partial | **partial** |
-| 11 | Contracts | `/procurement/contracts` | partial | partial | — | — | — | partial | **partial** |
-| 12 | Accounts Payable | `/finance/accounts-payable/...` | pass | partial | pass | — | pass | pass | **pass** / partial |
-| 13 | Payments | (AP tab + billing) | partial | — | partial | — | partial | partial | **partial** |
-| 14 | Invoices | `/finance/invoices` | partial | partial | — | — | — | partial | **partial** |
-| 15 | Analytics Overview | `/analytics/...` | pass | partial | partial | partial | partial | partial | **partial** |
-| 16 | Reports | `/analytics/reports` | partial | partial | partial | partial | partial | partial | **partial** |
-| 17 | Export Center | `/analytics/export-center` | partial | partial | — | partial | — | partial | **partial** |
-| 18 | Admin Settings | `/settings/...` | partial | partial | — | — | partial | partial | **partial** |
-| 19 | Master Data | `/admin/master-data/...` | partial | partial | — | — | partial | partial | **partial** |
-| 20 | System Diagnostics | `/admin/system-diagnostics` | partial | — | — | — | — | partial | **partial** |
-| 21 | Get Educated | `/get-educated`, `/get-educated/:moduleId` | pass | pass | — | — | pass | pass | **partial** |
-
-*Detail notes for each module follow in the sections below.*
+| Area | Finding |
+|------|---------|
+| **Broken filters found** | None in paths under test: inventory UI + **`listOperationalInventory`**, PO list client filter + API list, requisitions `PENDING` + `REQ-FQA-001`, reports inventory **category → preview** (fixed to respect `categoryId` + `search`). |
+| **Wrong calculations found** | **Documented product gap (not a failing test):** `/api/inventory/stats` / master **quantity** vs operational **available** for low-stock semantics. Analytics `/api/reports/analytics` spend uses **Number** sums on PO totals (cent drift risk) — date-window test asserts **zero spend** for a far-future window, not cent parity. |
+| **Pages that do not function** | None observed in **`verify:core`** for routes exercised; partial modules may still hide defects outside smoke/deep-smoke actions. |
+| **Fixes applied** | Reports **inventory preview** now filters by **`categoryId` + `search`** to align with export filters; preview shows up to **25** rows; **`data-testid`** on preview table, rows, category filter; merged **business E2E** into **`functional-audit.spec.ts`**; added **DB API parity** script for inventory; **`test:functional-audit`** chains **seed + inventory API** checks. |
+| **Tests added** | `scripts/test-functional-inventory-api.ts`; expanded **`e2e/functional-audit.spec.ts`** (serial, exact stock attrs, CSV FQA low-stock subset, AP cents split tests, PO sum 4000, analytics + date window, reports UI + CSV); **`e2e/module-deep-smoke.spec.ts`**. Removed **`e2e/functional-correctness.spec.ts`** and **`e2e/reports-parity.spec.ts`** (merged). |
+| **Remaining partial / unverified** | Operations / Control Tower, mobile scan UX, every **reports tab** export job → download → parse, **Export Center** job lifecycle, warehouse/project dimensions on inventory filter, multi-org isolation, full requisition approval → PO conversion. |
 
 ---
 
-## Module matrix
+## Module confidence (quick matrix)
 
-### 1. Operations / Control Tower
+| # | Module | Route(s) | Confidence | Pass criteria in automation |
+|---|--------|----------|------------|-----------------------------|
+| 1 | Operations / Control Tower | `/operations`, `/operations/control-tower` | 1 | `product-architecture` / load only |
+| 2 | Inventory | `/inventory` | 3 | `functional-audit`: exact **`FQA_INVENTORY_MASTER`** attrs on rows; FQA-visible filters; low-stock CSV **FQA subset** `{B,D}`; `test-functional-inventory-api` |
+| 3 | Warehouses | `/inventory/warehouses` | 1 | `module-deep-smoke` |
+| 4 | Warehouse Operations | `/inventory/warehouse-operations` | 1 | `module-deep-smoke` |
+| 5 | Cycle Counts | `/inventory/cycle-counts` | 1 | `module-deep-smoke` |
+| 6 | Reorder | `/inventory/reorder` | 1 | `module-deep-smoke` |
+| 7 | Barcodes | `/inventory/barcodes` | 1 | `module-deep-smoke` |
+| 8 | Purchase Orders | `/procurement/orders` | 3 | `functional-audit`: status filters; line sum = header; **sum(PO-FQA totals)=4000** |
+| 9 | Requisitions | `/procurement/requisitions` | 2 | `functional-audit`: `REQ-FQA-001`, tabs, back/forward, new/cancel |
+| 10 | Suppliers | `/procurement/suppliers` | 1 | `module-deep-smoke` |
+| 11 | Contracts | `/procurement/contracts` | 1 | `module-deep-smoke` |
+| 12 | Accounts Payable | `/finance/accounts-payable/...` | 3 | `functional-audit`: **125000 / 155000** cents; toggle; empty batch; `/api/ap/invoices` FQA sum **1550** |
+| 13 | Billing | `/finance/billing` | 1 | `module-deep-smoke` |
+| 14 | Invoices | `/finance/invoices` | 1 | `module-deep-smoke` |
+| 15 | Analytics | `/analytics/...` | 3 | `functional-audit`: `/api/analytics/inventory-value` FQA **4** rows, totals **70 / 100** by category, full value **170**; `/api/reports/analytics` far-future **maxSpend=0** |
+| 16 | Reports | `/analytics/reports` | 3 | Inventory tab: **category filter** updates preview; CSV `category=id` FQA subset **A+B** |
+| 17 | Export Center | `/analytics/export-center` | 1 | Shell visible (`functional-audit`); job pipeline not proven |
+| 18 | Admin Settings | `/admin/settings/...` | 1 | `module-deep-smoke` |
+| 19 | Master Data | `/admin/master-data` | 1 | `module-deep-smoke` |
+| 20 | System Diagnostics | `/admin/system-diagnostics` | 1 | `module-deep-smoke` + installable E2E |
+| 21 | Get Educated | `/get-educated` | 2 | `functional-audit` AP lesson |
 
-| Field | Result |
-|-------|--------|
-| Route | `/operations`, `/operations/control-tower` |
-| Page loads | partial |
-| Filters tested | partial (priority filters / cards) |
-| Search tested | partial |
-| Sort tested | n/a |
-| Totals tested | partial |
-| Export tested | n/a |
-| Create/edit | n/a |
-| Tab routing | pass |
-| Empty state | partial |
-| Error/retry | partial |
-| Training panel | partial (`control-tower` module where wired) |
-| Bugs found | — |
-| **Status** | **partial** |
+---
 
-### 2. Inventory
+## Known broken / product inconsistencies
 
-| Field | Result |
-|-------|--------|
-| Route | `/inventory` |
-| Page loads | pass |
-| Filters tested | pass (search, location, category, low stock — logic covered in `shared/functional-filters.ts` + client) |
-| Search tested | pass |
-| Sort tested | partial |
-| Totals tested | partial (row available = on hand − allocated; status via `getInventoryAvailabilityStatus`) |
-| Export tested | pass — server CSV path applies `q`, `location`, `category`/`categoryId`, `low`/`lowStock`; client prompts aligned |
-| Create/edit | not fully regression-tested here |
-| Tab routing | n/a |
-| Empty state | partial |
-| Error/retry | partial |
-| Training panel | partial |
-| Bugs found | Location list previously derived only from filtered rows — **fixed**: warehouses endpoint + row union + Clear filters |
-| **Status** | **pass** (with **partial** on create flows) |
+1. **Operational list vs stats KPIs:** Inventory **page** uses **available ≤ threshold** (operational). **`/api/inventory/stats`** low-stock / value uses **master** semantics. Tests target operational list + master-based **`inventory-value`** explicitly; do not assume they agree.
+2. **Reports async export:** Toolbar export uses **export jobs** + polling; **`functional-audit`** proves **direct** `/api/export/inventory/csv` parity for inventory with category — not the full job queue → download path for every format.
+3. **PO / procurement analytics:** `GET /api/reports/analytics` aggregates with **naive Number**; only coarse behavior (e.g. empty date window) is asserted.
+4. **Org 1 + demo data:** Full-table “only FQA rows” is not claimed where demo shares categories. Inventory **low-stock export** asserts **FQA SKU subset** exactly `{SKU-B, SKU-D}`.
 
-### 3. Warehouses
+---
 
-| Field | Result |
-|-------|--------|
-| Route | `/inventory/warehouses`, `/inventory/warehouses/:id` |
-| Page loads | partial |
-| Filters tested | partial |
-| Search tested | partial |
-| Totals tested | partial |
-| Export tested | n/a |
-| Tab routing | n/a |
-| Training panel | partial |
-| Bugs found | — |
-| **Status** | **partial** |
+## Not tested yet
 
-### 4. Warehouse Operations
-
-| Field | Result |
-|-------|--------|
-| Route | `/inventory/warehouse-operations` |
-| Page loads | partial |
-| Filters tested | partial |
-| Training panel | partial |
-| Bugs found | — |
-| **Status** | **partial** |
-
-### 5. Cycle Counts
-
-| Field | Result |
-|-------|--------|
-| Route | `/inventory/cycle-counts` |
-| Page loads | partial |
-| Filters tested | partial |
-| Training panel | partial |
-| Bugs found | — |
-| **Status** | **partial** |
-
-### 6. Reorder Requests
-
-| Field | Result |
-|-------|--------|
-| Route | `/inventory/reorder` |
-| Page loads | partial |
-| Filters tested | partial |
-| Training panel | partial |
-| Bugs found | — |
-| **Status** | **partial** |
-
-### 7. Barcode Scanner
-
-| Field | Result |
-|-------|--------|
-| Route | `/inventory/barcodes`, mobile `/m/scan` |
-| Page loads | partial |
-| Training panel | partial |
-| Bugs found | — |
-| **Status** | **partial** |
-
-### 8. Purchase Orders
-
-| Field | Result |
-|-------|--------|
-| Route | `/procurement/orders`, `/procurement/orders/:po` |
-| Page loads | pass |
-| Filters tested | partial (predicates in `shared/functional-filters.ts`) |
-| Totals tested | partial (PO line/total cents in `shared/functional-calculations.ts`) |
-| Export tested | partial |
-| Tab routing | pass — tab shell uses `Link` + path; `/procurement/orders` vs `/procurement/requisitions` |
-| Training panel | pass (`purchase-orders` on orders tab) |
-| Bugs found | — |
-| **Status** | **partial** |
-
-### 9. Requisitions
-
-| Field | Result |
-|-------|--------|
-| Route | `/procurement/requisitions`, `.../new`, `.../:id` |
-| Page loads | pass |
-| Filters tested | partial |
-| Tab routing | pass (with `PurchasePage` shell) |
-| Training panel | pass |
-| Bugs found | — |
-| **Status** | **partial** |
-
-### 10. Suppliers
-
-| Field | Result |
-|-------|--------|
-| Route | `/procurement/suppliers` |
-| Page loads | partial |
-| Search / filters | partial (search predicate in shared filters) |
-| Training panel | partial |
-| **Status** | **partial** |
-
-### 11. Contracts
-
-| Field | Result |
-|-------|--------|
-| Route | `/procurement/contracts` |
-| Page loads | partial |
-| Filters | partial (status predicate in shared) |
-| **Status** | **partial** |
-
-### 12. Accounts Payable
-
-| Field | Result |
-|-------|--------|
-| Route | `/finance/accounts-payable/:section` |
-| Page loads | pass |
-| Filters tested | partial (status predicate in shared; workspace lists are section-specific) |
-| Totals tested | pass — payment batch selected total uses `sumSelectedInvoicePayableCents` + `fromMoneyCents`; `due_amount` null falls back to `total` per `invoicePayableCents` |
-| Export tested | n/a |
-| Tab routing | pass — `Tabs` + `setLocation(TAB_TO_ROUTE[tab])` |
-| Training panel | pass (module `accounts-payable` / `payments` on payments tab) |
-| Bugs found | **Fixed:** naive `Number` sum for batch total; **fixed:** duplicate IDs in selection array; **fixed:** submit now dedupes IDs in zod |
-| **Status** | **pass** (workspace payments math); **partial** (full intake/approval flows) |
-
-### 13. Payments
-
-| Field | Result |
-|-------|--------|
-| Route | AP workspace **Payments** tab; dedicated billing routes |
-| Page loads | partial |
-| Totals | aligned with AP batch selection when on AP payments tab |
-| **Status** | **partial** |
-
-### 14. Invoices (legacy list)
-
-| Field | Result |
-|-------|--------|
-| Route | `/finance/invoices` |
-| Page loads | partial |
-| **Status** | **partial** |
-
-### 15. Analytics Overview
-
-| Field | Result |
-|-------|--------|
-| Route | `/analytics/overview`, section routes |
-| Page loads | pass |
-| Totals / charts | partial — inventory value and category grouping covered by pure helpers; full chart API parity not exhaustively asserted in UI |
-| Currency | partial — prefer `useReportingMoney` / org reporting currency; spot-check for hardcoded `$` in analytics components |
-| Training panel | partial |
-| Bugs found | — |
-| **Status** | **partial** |
-
-### 16. Reports
-
-| Field | Result |
-|-------|--------|
-| Route | `/analytics/reports`, `/analytics/reports/:tab` |
-| Page loads | partial |
-| Filters vs export | partial — **rule:** if export ignores screen filters, label must say “Export all” or URL must pass filters |
-| **Status** | **partial** |
-
-### 17. Export Center
-
-| Field | Result |
-|-------|--------|
-| Route | `/analytics/export-center` |
-| Page loads | partial |
-| Retry / history | partial |
-| **Status** | **partial** |
-
-### 18. Admin Settings
-
-| Field | Result |
-|-------|--------|
-| Route | `/settings/...` |
-| Page loads | partial |
-| **Status** | **partial** |
-
-### 19. Master Data
-
-| Field | Result |
-|-------|--------|
-| Route | `/admin/master-data/...` |
-| Page loads | partial |
-| **Status** | **partial** |
-
-### 20. System Diagnostics
-
-| Field | Result |
-|-------|--------|
-| Route | `/admin/system-diagnostics` |
-| Page loads | partial |
-| **Status** | **partial** |
-
-### 21. Get Educated
-
-| Field | Result |
-|-------|--------|
-| Route | `/get-educated`, `/get-educated/:moduleId` |
-| Page loads | pass |
-| Sidebar | pass — single **Get Educated** under **Learning**, last section in `APP_NAV_SECTIONS` |
-| Search “AP” / “PO” | pass — training search + module titles |
-| Module lessons | partial — spot-open modules; **e2e:** AP lesson |
-| Go to module links | partial (`training-go-to-module-button`) |
-| Progress | partial (local storage) |
-| Router order | pass — `/get-educated/:moduleId` registered before static `/get-educated` |
-| **Status** | **partial** (full quiz ID audit not repeated here) |
+- **Export Center:** job **queued → succeeded**, download, failure/retry.
+- **Reports:** PO / requisition / shipments tabs — **filter → preview → export job → file parse**.
+- **Every partial module:** business rules (only **h1 + one safe action** in `module-deep-smoke`).
+- **Multi-org** with FQA seed (seed assumes **org 1**).
 
 ---
 
 ## Deterministic QA seed
 
-Run after main seed / e2e prep when you need fixed SKUs and invoices:
-
 ```bash
 npm run seed:functional-qa
 ```
 
-Inserts **SKU-A–D** (locations Johannesburg / Cape Town / Durban; categories Electronics / Consumables), **PO-FQA-001..003**, **INV-FQA-001..003** (including `due_amount` null on **INV-FQA-003** to verify fallback to `total`).
-
-Expected checks are codified in:
-
-- `scripts/test-functional-calculations.ts`
-- `scripts/test-functional-filters.ts`
-- Optional manual/UI verification against seeded rows
+Idempotent for FQA prefixes. See **`shared/functional-qa-constants.ts`** and **`server/seed-functional-qa.ts`**.
 
 ---
 
@@ -315,9 +89,10 @@ Expected checks are codified in:
 
 | Script | Command |
 |--------|---------|
-| Pure math / money / aging | `npm run test:functional-calculations` |
-| Filter predicates | `npm run test:functional-filters` |
-| Both | `npm run test:functional-audit` |
+| Math / money | `npm run test:functional-calculations` |
+| Pure filter predicates | `npm run test:functional-filters` |
+| Operational inventory API parity (needs DB) | `tsx scripts/test-functional-inventory-api.ts` |
+| **Full audit chain** | `npm run test:functional-audit` |
 
 ---
 
@@ -325,63 +100,14 @@ Expected checks are codified in:
 
 | File | Role |
 |------|------|
-| `e2e/functional-audit.spec.ts` | Smoke: inventory controls + **search** (uses demo SKU prefix `PEN-BP`, not QA-seed `SKU-A`), procurement URLs, AP payments total change, analytics shell, Get Educated |
+| `e2e/functional-audit.spec.ts` | **Serial business audit:** inventory, AP, PO, requisitions, analytics, reports inventory preview + CSV, export center shell, Get Educated |
+| `e2e/module-deep-smoke.spec.ts` | Partial modules: shell + one interaction |
+| `e2e/module-smoke.spec.ts` | Fast route load list |
+| Other `e2e/*.spec.ts` | Product routing, installable setup, reports redirect, settings |
 
 ---
 
-## Fixes applied (this audit cycle)
-
-1. **Inventory:** Location filter options from **warehouses + distinct row locations**; **Clear filters**; server inventory CSV respects query filters; client export labeling; test IDs on inventory controls.
-2. **Accounts payable:** Payment batch **selected total** via **cent-safe** `sumSelectedInvoicePayableCents`; selection toggles use **Set** semantics; **`parsePaymentBatchForSubmit`** dedupes IDs; tab and payments **test IDs** for QA.
-3. **Shared:** `shared/functional-calculations.ts` and `shared/functional-filters.ts` for reuse and regression tests.
-4. **Tooling:** `test:functional-*`, `test:functional-audit`, `seed:functional-qa`, **`verify:core`** extended to run functional audit scripts before e2e.
-
----
-
-## Filters that failed
-
-None remaining in the **inventory / AP batch total** paths above after fixes. Other modules remain **partial** (not fully exercised in automation).
-
----
-
-## Calculations that failed
-
-None in **pure test** coverage after introducing cent-based helpers; legacy UI paths may still use raw `Number` in places outside AP batch totals—those are candidates for future alignment.
-
----
-
-## Exports that mismatched visible data
-
-**Inventory** server CSV previously ignored filters — **fixed** for the operational inventory CSV path with filter query params.
-
-Other report/export surfaces were not all re-audited end-to-end; see **Still-open limitations**.
-
----
-
-## Navigation / tab issues
-
-- **Procurement:** `PurchasePage` ties tab value to route (`Link` + `useRoute` for requisitions). No defect found in smoke routing.
-
----
-
-## Training / help issues
-
-- Duplicate **Get Educated** nav entry was **not** observed; **Learning** section is last with a single link.
-- **functional-audit** e2e covers search + open **Accounts Payable** lesson.
-
----
-
-## Still-open limitations
-
-1. **PO / requisition** end-to-end: conversion to PO, line-level vs header totals in UI—not fully covered by new scripts.
-2. **Analytics:** Cross-check every chart against list totals and reporting currency requires deeper pass (some widgets may still format with locale defaults).
-3. **Reports / Export Center:** Per-report filter→export parity not exhaustively verified.
-4. **Duplicate `data-testid`** on AP checkboxes (`ap-ready-invoice-checkbox`) — tests should use `.first()` or scope to row.
-5. **Functional seed** assumes `organization_id = 1`, existing supplier, and compatible schema; invalid if DB differs.
-
----
-
-## Verification command chain
+## Verification
 
 ```bash
 npm run check
@@ -393,4 +119,4 @@ npm run test:e2e
 npm run verify:core
 ```
 
-Any failure in `test:functional-calculations` or `test:functional-filters` fails **`test:functional-audit`** and therefore **`verify:core`**.
+`verify:core` runs **`check`**, **`test:stabilization-client`**, **`test:functional-audit`** (includes seed + inventory API script), and **`test:e2e`**.

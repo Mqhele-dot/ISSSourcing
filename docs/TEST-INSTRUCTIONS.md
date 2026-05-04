@@ -54,13 +54,30 @@ npm run test:login
 3. Use **admin** / **Admin123!** (or planner / viewer with same password).
 4. If login fails, the UI should show a **specific** message (e.g. database/session issue), not a generic “An error occurred during login”.
 
-## 7. Optional: full API and E2E
+## 7. Optional: API checks, functional audit, and E2E
 
 With the app still running:
 
 ```bash
 npm run test:contracts
+```
+
+**Functional QA (DB scripts, no browser)** — needs `DATABASE_URL` and schema (`db:push`):
+
+```bash
+npm run test:functional-audit
+```
+
+**Playwright** — wrapper starts a dev server if needed; E2E global setup runs **`seed:functional-qa`** unless you set `SKIP_E2E_FUNCTIONAL_QA_SEED=1` (only if you already seeded and want to skip the duplicate seed):
+
+```bash
 npm run test:e2e
+```
+
+**Single local bar** matching typecheck + stabilization + FQA audit + E2E:
+
+```bash
+npm run verify:core
 ```
 
 (Requires Playwright install: `npx playwright install chromium` once if needed.)
@@ -94,3 +111,5 @@ Scripts exit 0 if the server is unreachable (local dev convenience) unless they 
 | Run app | `npm run dev` | Start server (no pool error) |
 | Test login API | `npm run test:login` | Check login endpoint and error messages |
 | Manual login | Browser → login with admin / Admin123! | Confirm UI and clear errors |
+| Functional QA (optional) | `npm run test:functional-audit` | FQA seed + calculation/filter/inventory DB checks |
+| Core verify (optional) | `npm run verify:core` | `check` + stabilization + functional audit + E2E |

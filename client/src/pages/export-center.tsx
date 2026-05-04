@@ -59,7 +59,7 @@ export default function ExportCenterPage() {
   });
 
   return (
-    <PageShell variant="wide-table">
+    <PageShell variant="wide-table" data-testid="export-center-page">
       <PageHeader
         title="Export center"
         subtitle="Shared export history for recent files, retries, and download links."
