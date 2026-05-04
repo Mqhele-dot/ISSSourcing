@@ -107,7 +107,14 @@ function numOrNa(value: unknown): string | number {
 export default function InventoryDetailPage() {
   const [, setLocation] = useLocation();
   const [match, params] = useRoute<{ sku: string }>("/inventory/:sku");
-  const sku = params?.sku ?? "";
+  const sku = useMemo(() => {
+    const raw = params?.sku ?? "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }, [params?.sku]);
   const { toast } = useToast();
 
   const [adjustOpen, setAdjustOpen] = useState(false);

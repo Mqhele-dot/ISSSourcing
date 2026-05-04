@@ -103,7 +103,6 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.operations.exceptions} component={ExceptionsPage} />
         <ProtectedRoute path={`${APP_ROUTES.operations.exceptions}/:id`} component={ExceptionsPage} />
 
-        <ProtectedRoute path={APP_ROUTES.inventory.root} component={Inventory} />
         <ProtectedRoute path={APP_ROUTES.inventory.warehouses} component={WarehousesPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.warehouse(":id")} component={WarehouseDetailPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.cycleCounts} component={CycleCountsPage} />
@@ -111,6 +110,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.inventory.barcodeScanner} component={BarcodeScannerPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.warehouseOperations} component={WarehouseOperationsPage} />
         <ProtectedRoute path={`${APP_ROUTES.inventory.root}/:sku`} component={InventoryItemDetail} />
+        <ProtectedRoute path={APP_ROUTES.inventory.root} component={Inventory} />
 
         <ProtectedRoute path={APP_ROUTES.procurement.orders} component={PurchasePage} />
         <ProtectedRoute path={`${APP_ROUTES.procurement.orders}/:po`} component={OrdersPage} />

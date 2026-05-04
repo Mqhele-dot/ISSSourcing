@@ -478,7 +478,10 @@ export default function WarehouseOperationsPage() {
               <Input id="alloc-req" value={allocReq} onChange={(e) => setAllocReq(e.target.value)} placeholder="e.g. 5" />
             </div>
           </div>
-          <Button onClick={() => createAlloc.mutate()} disabled={createAlloc.isPending}>
+          <Button
+            onClick={() => createAlloc.mutate()}
+            disabled={createAlloc.isPending || allocItem === "none"}
+          >
             Reserve (create allocation)
           </Button>
 

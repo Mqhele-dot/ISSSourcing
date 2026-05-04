@@ -75,7 +75,8 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
     }
   });
 
-  app.get("/api/inventory/:id", ...invRead, async (req: Request, res: Response) => {
+  /** Numeric id only — avoids capturing SKU strings like `PEN-BP-12` (operational GET lives on the same path prefix). */
+  app.get("/api/inventory/:id(\\d+)", ...invRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -139,7 +140,7 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
     }
   });
 
-  app.put("/api/inventory/:id", ...invWrite, async (req: Request, res: Response) => {
+  app.put("/api/inventory/:id(\\d+)", ...invWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -165,7 +166,7 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
     }
   });
 
-  app.delete("/api/inventory/:id", ...invWrite, async (req: Request, res: Response) => {
+  app.delete("/api/inventory/:id(\\d+)", ...invWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {

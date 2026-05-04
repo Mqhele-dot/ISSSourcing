@@ -465,36 +465,76 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const headers = await buildRequestHeaders(method, undefined, {
-      contentType: data ? "application/json" : false,
-    });
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: data ? JSON.stringify(data) : undefined,
-      credentials: "include",
-      signal: controller.signal,
-    });
-    const headerFallback = res.headers.get("X-InvTrack-Fallback");
-    const headerEndpoint = res.headers.get("X-InvTrack-Endpoint");
-    setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
-    await throwIfResNotOk(res, { method, url });
-    return res;
-  } catch (err) {
-    if (isLikelyTransportError(err)) {
-      reportNetworkFailure({ method, url, error: err, requestPayload: data });
+  let csrfRetried = false;
+
+  for (;;) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const headers = await buildRequestHeaders(method, undefined, {
+        contentType: data ? "application/json" : false,
+      });
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: data ? JSON.stringify(data) : undefined,
+        credentials: "include",
+        signal: controller.signal,
+      });
+      const headerFallback = res.headers.get("X-InvTrack-Fallback");
+      const headerEndpoint = res.headers.get("X-InvTrack-Endpoint");
+      setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
+
+      if (!res.ok) {
+        const payload = await parseJsonOrText(res);
+        if (
+          !csrfRetried &&
+          res.status === 403 &&
+          isMutationMethod(method) &&
+          extractApiErrorCode(payload) === "CSRF_TOKEN_INVALID"
+        ) {
+          csrfTokenCache = null;
+          await getCsrfToken(true);
+          csrfRetried = true;
+          clearTimeout(timeoutId);
+          continue;
+        }
+        const message = formatServerErrorPayload(payload) ?? res.statusText;
+        scheduleAuthInvalidateOn401(res.status, method, url);
+        reportRequestError({
+          method,
+          url,
+          status: res.status,
+          reason: message,
+          payload,
+          requestPayload: undefined,
+          requestId: res.headers.get("X-Request-Id") ?? undefined,
+          stack: isDevRuntime ? new Error().stack : undefined,
+        });
+        const err = attachRequestId(new Error(`${res.status}: ${message}`), res.headers.get("X-Request-Id")) as Error & {
+          status?: number;
+        };
+        err.status = res.status;
+        clearTimeout(timeoutId);
+        throw err;
+      }
+
+      clearTimeout(timeoutId);
+      return res;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (isLikelyTransportError(err)) {
+        reportNetworkFailure({ method, url, error: err, requestPayload: data });
+      }
+      if (err instanceof Error && err.name === "AbortError") {
+        const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & {
+          status?: number;
+        };
+        timeoutError.status = 408;
+        throw timeoutError;
+      }
+      throw err instanceof Error ? err : new Error(String(err));
     }
-    if (err instanceof Error && err.name === "AbortError") {
-      const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & { status?: number };
-      timeoutError.status = 408;
-      throw timeoutError;
-    }
-    throw err instanceof Error ? err : new Error(String(err));
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
