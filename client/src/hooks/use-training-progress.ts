@@ -58,6 +58,7 @@ export function useTrainingProgress() {
     () => ({
       progress,
       refresh,
+      refreshProgress: refresh,
       recordLessonOpened,
       recordQuizCompleted,
       toggleModuleUnderstood,

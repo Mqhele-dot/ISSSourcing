@@ -184,11 +184,11 @@ export default function GetEducatedModulePage() {
                   className="space-y-2"
                 >
                   {q.options.map((opt, optIdx) => {
-                    const radioId = `quiz-${mod.id}-q${idx}-opt${optIdx}`;
+                    const optionId = `${mod.id}-q${idx}-option-${optIdx}`;
                     return (
                       <div key={optIdx} className="flex items-center space-x-2">
-                        <RadioGroupItem value={String(optIdx)} id={radioId} />
-                        <Label htmlFor={radioId} className="cursor-pointer font-normal">
+                        <RadioGroupItem value={String(optIdx)} id={optionId} />
+                        <Label htmlFor={optionId} className="cursor-pointer font-normal">
                           {opt}
                         </Label>
                       </div>

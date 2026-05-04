@@ -108,7 +108,12 @@ export function ApPaymentsPanel({
             </div>
             <div className="space-y-2">
               <Label>Selected total</Label>
-              <div className="rounded-md border px-3 py-2 text-sm">{formatMoney(selectedBatchTotal)}</div>
+              <div
+                className="rounded-md border px-3 py-2 text-sm"
+                data-testid="ap-selected-batch-total"
+              >
+                {formatMoney(selectedBatchTotal)}
+              </div>
             </div>
           </div>
 
@@ -129,6 +134,7 @@ export function ApPaymentsPanel({
                   <TableRow key={invoice.id}>
                     <TableCell>
                       <Checkbox
+                        data-testid="ap-ready-invoice-checkbox"
                         checked={checked}
                         disabled={invoicesLoadFailed}
                         onCheckedChange={(state) => toggleInvoiceSelection(invoice.id, state === true)}
@@ -150,6 +156,7 @@ export function ApPaymentsPanel({
 
           <Button
             type="button"
+            data-testid="ap-create-batch-button"
             onClick={onCreateBatch}
             disabled={
               invoicesLoadFailed || selectedInvoiceIds.length === 0 || createBatchMutation.isPending

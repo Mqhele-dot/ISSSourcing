@@ -23,6 +23,7 @@ import type { ApWorkspaceTab } from "./types";
 import { isApWorkspaceTab } from "./types";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
+import { fromMoneyCents, sumSelectedInvoicePayableCents } from "@shared/functional-calculations";
 
 const TAB_TO_ROUTE: Record<ApWorkspaceTab, string> = {
   intake: APP_ROUTES.finance.accountsPayableIntake,
@@ -96,18 +97,9 @@ export default function AccountsPayableWorkspace() {
   const section = params?.section;
   const activeTab = isApWorkspaceTab(section) ? section : null;
 
-  const selectedReadyInvoices = useMemo(
-    () => readyForBatch.filter((invoice) => selectedInvoiceIds.includes(invoice.id)),
-    [readyForBatch, selectedInvoiceIds],
-  );
-
   const selectedBatchTotal = useMemo(
-    () =>
-      selectedReadyInvoices.reduce(
-        (sum, invoice) => sum + Number(invoice.dueAmount ?? invoice.total ?? 0),
-        0,
-      ),
-    [selectedReadyInvoices],
+    () => fromMoneyCents(sumSelectedInvoicePayableCents(readyForBatch, selectedInvoiceIds)),
+    [readyForBatch, selectedInvoiceIds],
   );
 
   useEffect(() => {
@@ -115,9 +107,12 @@ export default function AccountsPayableWorkspace() {
   }, [selectedInvoiceIds, paymentMethod, scheduledDate]);
 
   const toggleInvoiceSelection = (invoiceId: number, checked: boolean) => {
-    setSelectedInvoiceIds((current) =>
-      checked ? [...current, invoiceId] : current.filter((candidate) => candidate !== invoiceId),
-    );
+    setSelectedInvoiceIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(invoiceId);
+      else next.delete(invoiceId);
+      return [...next];
+    });
   };
 
   const onSubmitCapture = () => {
@@ -252,10 +247,18 @@ export default function AccountsPayableWorkspace() {
         className="space-y-4"
       >
         <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
-          <TabsTrigger value="intake">Intake</TabsTrigger>
-          <TabsTrigger value="approvals">Approvals</TabsTrigger>
-          <TabsTrigger value="exceptions">Exceptions</TabsTrigger>
-          <TabsTrigger value="payments">Payments</TabsTrigger>
+          <TabsTrigger value="intake" data-testid="ap-tab-intake">
+            Intake
+          </TabsTrigger>
+          <TabsTrigger value="approvals" data-testid="ap-tab-approvals">
+            Approvals
+          </TabsTrigger>
+          <TabsTrigger value="exceptions" data-testid="ap-tab-exceptions">
+            Exceptions
+          </TabsTrigger>
+          <TabsTrigger value="payments" data-testid="ap-tab-payments">
+            Payments
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="intake" className="space-y-4">

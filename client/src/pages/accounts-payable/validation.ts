@@ -37,7 +37,10 @@ export function parseApIntakeForSubmit(input: {
 }
 
 export const apPaymentBatchSchema = z.object({
-  selectedInvoiceIds: z.array(z.number()).min(1, "Select at least one invoice"),
+  selectedInvoiceIds: z
+    .array(z.number())
+    .transform((ids) => [...new Set(ids)])
+    .pipe(z.array(z.number()).min(1, "Select at least one invoice")),
   paymentMethod: z.enum(PAYMENT_METHODS),
   scheduledDateRaw: z.string().optional(),
 });

@@ -139,6 +139,17 @@ export function useAnalyticsWorkspaceQueries(section: AnalyticsSectionSlug) {
     ]);
   }, [inventoryQuery, controlTowerQuery, apOverviewQuery, spendAnalyticsQuery]);
 
+  const sourceStatuses = useMemo(
+    () =>
+      (["inventoryStats", "controlTower", "apOverview", "spendAnalytics"] as const).map((id) => ({
+        id,
+        label: SOURCE_LABEL[id],
+        isLoading: bySource[id].isLoading,
+        isError: bySource[id].isError,
+      })),
+    [bySource],
+  );
+
   return {
     inventoryStats: inventoryQuery.data,
     controlTower: controlTowerQuery.data,
@@ -146,6 +157,7 @@ export function useAnalyticsWorkspaceQueries(section: AnalyticsSectionSlug) {
     spendAnalytics: spendAnalyticsQuery.data,
     health,
     queries: bySource,
+    sourceStatuses,
     shell: {
       loading: shellState.loading,
       error: shellState.blockingError,

@@ -219,7 +219,7 @@ export const TRAINING_MODULES: TrainingModule[] = [
         explanation: "Location hierarchy is how the system knows where stock belongs.",
       },
     ],
-    searchAliases: ["locations.depot", "sites"],
+    searchAliases: ["locations", "depot", "sites"],
   },
   {
     id: "warehouse-operations",

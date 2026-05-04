@@ -21,6 +21,7 @@ export default function AnalyticsWorkspacePage() {
     spendAnalytics,
     health,
     shell,
+    sourceStatuses,
   } = useAnalyticsWorkspaceQueries(section);
 
   const cards = useMemo(
@@ -49,6 +50,8 @@ export default function AnalyticsWorkspacePage() {
           : undefined
       }
       onRetry={() => void shell.refetch()}
+      sourceStatuses={sourceStatuses}
+      onRetryAllFeeds={() => void shell.refetchAll()}
     >
       <>
         <AnalyticsKpiGrid cards={cards} section={section} />

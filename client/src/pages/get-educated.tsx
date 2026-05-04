@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,11 @@ import { useTrainingProgress } from "@/hooks/use-training-progress";
 export default function GetEducatedPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<TrainingCategory | "all">("all");
-  const { progress, isModuleUnderstood } = useTrainingProgress();
+  const { progress, isModuleUnderstood, refreshProgress } = useTrainingProgress();
+
+  useEffect(() => {
+    refreshProgress();
+  }, [refreshProgress]);
 
   const modules = useMemo(() => {
     let list: TrainingModule[] = query.trim() ? searchTrainingModules(query) : getAllTrainingModules();

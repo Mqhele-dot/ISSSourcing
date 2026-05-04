@@ -27,6 +27,12 @@ export function AnalyticsKpiGrid({
             {card.sourceWarning ? (
               <p className="text-xs text-amber-700 dark:text-amber-300">{card.sourceWarning}</p>
             ) : null}
+            {card.valueState === "unavailable" ? (
+              <p className="text-xs font-medium text-destructive">Metric unavailable — check data feeds above.</p>
+            ) : null}
+            {card.valueState === "empty" ? (
+              <p className="text-xs text-muted-foreground">No rows in dataset (feed responded OK).</p>
+            ) : null}
             <p className="text-sm text-muted-foreground">{card.description}</p>
             <Button asChild size="sm" variant="outline">
               <Link href={card.href}>

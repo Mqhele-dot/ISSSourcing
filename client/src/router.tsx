@@ -82,8 +82,8 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.admin.systemDiagnostics} component={SystemDiagnosticsPage} />
 
         <ProtectedRoute path={APP_ROUTES.home} component={Home} />
-        <ProtectedRoute path={APP_ROUTES.training.getEducated} component={GetEducatedPage} />
         <ProtectedRoute path="/get-educated/:moduleId" component={GetEducatedModulePage} />
+        <ProtectedRoute path={APP_ROUTES.training.getEducated} component={GetEducatedPage} />
 
         <ProtectedRoute path={APP_ROUTES.analytics.overview} component={AnalyticsWorkspacePage} />
         <ProtectedRoute path={APP_ROUTES.analytics.inventory} component={AnalyticsWorkspacePage} />

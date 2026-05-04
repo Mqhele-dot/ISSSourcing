@@ -10,6 +10,7 @@ import { APP_ROUTES, type AnalyticsSectionSlug } from "@/lib/routes/app-routes";
 import { ANALYTICS_NAV } from "./analytics-nav";
 import type { AnalyticsKpiCard } from "./analytics-workspace-types";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
+import { AnalyticsDataStatusStrip, type AnalyticsSourceStatus } from "./analytics-data-status-strip";
 
 type Props = {
   section: AnalyticsSectionSlug;
@@ -19,6 +20,8 @@ type Props = {
   /** Some analytics sources failed while others succeeded — show inline retry for this section. */
   partialFailure?: { labels: string[]; onRetry: () => void };
   onRetry: () => void;
+  sourceStatuses: AnalyticsSourceStatus[];
+  onRetryAllFeeds: () => void;
   children: ReactNode;
 };
 
@@ -29,6 +32,8 @@ export function AnalyticsWorkspaceShell({
   error,
   partialFailure,
   onRetry,
+  sourceStatuses,
+  onRetryAllFeeds,
   children,
 }: Props) {
   return (
@@ -53,9 +58,11 @@ export function AnalyticsWorkspaceShell({
         }
       />
 
+      {section === "overview" ? <ModuleTrainingPanel moduleId="analytics" /> : null}
+
       <SectionNav items={[...ANALYTICS_NAV]} />
 
-      {section === "overview" ? <ModuleTrainingPanel moduleId="analytics" /> : null}
+      <AnalyticsDataStatusStrip sources={sourceStatuses} onRetryAll={onRetryAllFeeds} />
 
       {partialFailure && partialFailure.labels.length > 0 ? (
         <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">

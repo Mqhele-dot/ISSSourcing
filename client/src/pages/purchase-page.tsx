@@ -25,7 +25,6 @@ export default function PurchasePage() {
 
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4" data-testid="purchase-orders-page">
-      <ModuleTrainingPanel moduleId={showRequisitionsTab ? "requisitions" : "purchase-orders"} />
       <Tabs
         value={showRequisitionsTab ? "requisitions" : "orders"}
         onValueChange={(v) => {
@@ -47,6 +46,7 @@ export default function PurchasePage() {
             </Link>
           </TabsTrigger>
         </TabsList>
+        <ModuleTrainingPanel moduleId={showRequisitionsTab ? "requisitions" : "purchase-orders"} />
         <TabsContent value="orders" className="mt-0">
           <OrdersPage embedded />
         </TabsContent>

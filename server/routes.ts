@@ -26,7 +26,8 @@ import { registerImageRecognitionRoutes } from "./controllers/image-recognition-
 import { registerDocumentExtractorRoutes } from "./controllers/document-extractor-controller";
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
-import { generateDocument } from "./services/document-generator-service";
+import { generateDocument, generateOperationalInventoryCsvFromRows } from "./services/document-generator-service";
+import { listOperationalInventory } from "./operations-core";
 import { recordExportHistory } from "./modules/exports/export-history-service";
 import { loadLogoBytesForPdf } from "./services/pdf-logo-loader";
 import type { ReportFormat, ReportType} from "@shared/schema";
@@ -707,6 +708,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const normalizedData = Array.isArray(data) ? data : [];
+
+      const parseExportBool = (value: unknown): boolean => {
+        if (value === true) return true;
+        const s = typeof value === "string" ? value.trim().toLowerCase() : "";
+        return s === "true" || s === "1" || s === "yes" || s === "on";
+      };
       
       // For PDF with template=custom, load uploaded template from uploads/custom-pdf-template.pdf if present
       let customTemplateBuffer: Buffer | undefined;
@@ -724,53 +731,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.locals && typeof (res.locals as { requestId?: unknown }).requestId === "string"
           ? (res.locals as { requestId: string }).requestId
           : undefined;
-      const metadataLines = [
-        `Exported at (UTC): ${new Date().toISOString()}`,
-        `Rows: ${normalizedData.length}`,
-        ...(filterTexts.length ? [`Filters: ${filterTexts.join("; ")}`] : []),
-        ...(requestId ? [`Request ID: ${requestId}`] : []),
-      ];
-      let organizationFooter: string | undefined;
-      let organizationDisplayName: string | undefined;
-      let organizationLogoUrl: string | undefined;
-      try {
-        const [osRow] = await db
-          .select({
-            reportFooter: organizationSettings.reportFooter,
-            displayName: organizationSettings.displayName,
-            logoUrl: organizationSettings.logoUrl,
-          })
-          .from(organizationSettings)
-          .where(eq(organizationSettings.organizationId, getActiveOrganizationId()))
-          .limit(1);
-        organizationFooter = osRow?.reportFooter?.trim() || undefined;
-        organizationDisplayName = osRow?.displayName?.trim() || undefined;
-        organizationLogoUrl = osRow?.logoUrl?.trim() || undefined;
-      } catch {
-        organizationFooter = undefined;
-        organizationDisplayName = undefined;
-        organizationLogoUrl = undefined;
+
+      let exportRowCount = normalizedData.length;
+      let buffer: Buffer;
+
+      const invExportQ = typeof req.query.q === "string" ? req.query.q : "";
+      const invExportLocation = typeof req.query.location === "string" ? req.query.location : "";
+      const invExportCategory =
+        typeof req.query.category === "string"
+          ? req.query.category
+          : categoryIdParam
+            ? String(categoryIdParam)
+            : "";
+      const invExportLow = parseExportBool(req.query.low) || parseExportBool(req.query.lowStock);
+
+      if (normalizedReportType === "inventory" && format === "csv") {
+        const opsItems = await listOperationalInventory({
+          q: invExportQ,
+          location: invExportLocation,
+          category: invExportCategory,
+          low: invExportLow,
+        });
+        const opsMeta: string[] = [];
+        if (invExportQ.trim()) opsMeta.push(`q=${invExportQ.trim()}`);
+        if (invExportLocation.trim()) opsMeta.push(`location=${invExportLocation.trim()}`);
+        if (invExportCategory.trim()) opsMeta.push(`category=${invExportCategory.trim()}`);
+        if (invExportLow) opsMeta.push("lowStock=true");
+        const titleFiltered = opsMeta.length ? `${title} (${opsMeta.join("; ")})` : title;
+        buffer = generateOperationalInventoryCsvFromRows(opsItems, titleFiltered);
+        exportRowCount = opsItems.length;
+      } else {
+        const metadataLines = [
+          `Exported at (UTC): ${new Date().toISOString()}`,
+          `Rows: ${normalizedData.length}`,
+          ...(filterTexts.length ? [`Filters: ${filterTexts.join("; ")}`] : []),
+          ...(requestId ? [`Request ID: ${requestId}`] : []),
+        ];
+        let organizationFooter: string | undefined;
+        let organizationDisplayName: string | undefined;
+        let organizationLogoUrl: string | undefined;
+        try {
+          const [osRow] = await db
+            .select({
+              reportFooter: organizationSettings.reportFooter,
+              displayName: organizationSettings.displayName,
+              logoUrl: organizationSettings.logoUrl,
+            })
+            .from(organizationSettings)
+            .where(eq(organizationSettings.organizationId, getActiveOrganizationId()))
+            .limit(1);
+          organizationFooter = osRow?.reportFooter?.trim() || undefined;
+          organizationDisplayName = osRow?.displayName?.trim() || undefined;
+          organizationLogoUrl = osRow?.logoUrl?.trim() || undefined;
+        } catch {
+          organizationFooter = undefined;
+          organizationDisplayName = undefined;
+          organizationLogoUrl = undefined;
+        }
+        let organizationLogoPng: Uint8Array | undefined;
+        if (format === "pdf" && organizationLogoUrl) {
+          organizationLogoPng = await loadLogoBytesForPdf(organizationLogoUrl);
+        }
+        const reportingCurrencyCode = await getReportingCurrencyCode(storage);
+        buffer = await generateDocument(
+          normalizedReportType as ReportType,
+          format as ReportFormat,
+          normalizedData,
+          title,
+          {
+            pdfTemplate: templateParam as "standard" | "compact" | "custom",
+            customTemplateBuffer,
+            metadataLines,
+            organizationFooter,
+            organizationDisplayName,
+            ...(organizationLogoPng?.length ? { organizationLogoPng } : {}),
+            reportingCurrencyCode,
+          },
+        );
       }
-      let organizationLogoPng: Uint8Array | undefined;
-      if (format === "pdf" && organizationLogoUrl) {
-        organizationLogoPng = await loadLogoBytesForPdf(organizationLogoUrl);
-      }
-      const reportingCurrencyCode = await getReportingCurrencyCode(storage);
-      const buffer = await generateDocument(
-        normalizedReportType as ReportType,
-        format as ReportFormat,
-        normalizedData,
-        title,
-        {
-          pdfTemplate: templateParam as "standard" | "compact" | "custom",
-          customTemplateBuffer,
-          metadataLines,
-          organizationFooter,
-          organizationDisplayName,
-          ...(organizationLogoPng?.length ? { organizationLogoPng } : {}),
-          reportingCurrencyCode,
-        },
-      );
 
       const normalizedTitle = title.replace(/\s+/g, "-").toLowerCase();
       const formatMeta: Record<ReportFormat, { contentType: string; extension: string }> = {
@@ -797,7 +835,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = Number((req as Request & { user?: { id?: number } }).user?.id);
       res.setHeader("Content-Type", meta.contentType);
       res.setHeader("X-Export-Format", String(format));
-      res.setHeader("X-Export-Row-Count", String(normalizedData.length));
+      res.setHeader("X-Export-Row-Count", String(exportRowCount));
       res.setHeader("Content-Disposition", `attachment; filename="${normalizedTitle}.${meta.extension}"`);
 
       console.info(
@@ -806,7 +844,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           organizationId: getActiveOrganizationId(),
           dataset: normalizedReportType,
           format,
-          rowCount: normalizedData.length,
+          rowCount: exportRowCount,
           userId: Number.isFinite(userId) && userId > 0 ? userId : null,
         }),
       );
@@ -826,13 +864,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           po: poParam,
           carrier: carrierParam,
           risk: riskParam,
+          inventoryQ: invExportQ || undefined,
+          inventoryLocation: invExportLocation || undefined,
+          inventoryCategory: invExportCategory || undefined,
+          inventoryLowStock: invExportLow || undefined,
           template: templateParam,
         },
         status: "completed",
         fileName: `${normalizedTitle}.${meta.extension}`,
         fileSize: buffer.length,
         mimeType: meta.contentType,
-        rowCount: normalizedData.length,
+        rowCount: exportRowCount,
         sourcePage,
         requestUrl,
       });

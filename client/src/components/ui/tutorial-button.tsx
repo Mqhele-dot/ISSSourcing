@@ -33,6 +33,9 @@ export default function TutorialStep({ page, pageName, className = "" }: Tutoria
   const [pathname, setLocation] = useLocation();
   const tutorialPage = page || pageName || "dashboard";
 
+  const pathOnly = pathname.split("?")[0] || "/";
+  const contextualModuleId = pathToTrainingModuleId(pathOnly);
+
   const tryStartTutorial = (retryCount = 0) => {
     // Prefer page-specific tour, then fall back to main tour so the user always gets a dialog
     let started = startTutorial(tutorialPage);
@@ -53,13 +56,12 @@ export default function TutorialStep({ page, pageName, className = "" }: Tutoria
   };
 
   const handleClick = () => {
-    const pathOnly = pathname.split("?")[0] || "/";
-    const contextualModuleId = pathToTrainingModuleId(pathOnly);
     if (contextualModuleId) {
       openTrainingPanel(contextualModuleId);
       toast({
-        title: "Learning for this tab",
-        description: "Expand the training card on this page for what each area does and why it matters.",
+        title: "Learning for this page",
+        description:
+          "Use the training card on this screen for context, why it matters at work, and mistakes to avoid. You can still run the spotlight tour from the second button.",
       });
       return;
     }
@@ -76,17 +78,47 @@ export default function TutorialStep({ page, pageName, className = "" }: Tutoria
     }
   };
 
+  const handleSpotlightOnly = () => {
+    const route = PAGE_ROUTES[tutorialPage];
+    const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
+    const isOnCorrectPage = !route || currentPath.startsWith(route);
+    if (!isOnCorrectPage && route) {
+      setLocation(route);
+      setTimeout(() => tryStartTutorial(), 600);
+    } else {
+      tryStartTutorial();
+    }
+  };
+
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={handleClick}
-      className={`gap-1 ${className}`}
-      data-help-title="Page tutorial"
-      data-help-description="Start the step-by-step tutorial for this page (e.g. Dashboard)."
-    >
-      <HelpCircle className="h-4 w-4" />
-      <span>Tutorial</span>
-    </Button>
+    <div className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleClick}
+        className="gap-1"
+        data-help-title="Page tutorial"
+        data-help-description={
+          contextualModuleId
+            ? "Open the on-page lesson first; use Spotlight for control highlights."
+            : "Start the step-by-step spotlight tour for this page."
+        }
+      >
+        <HelpCircle className="h-4 w-4" />
+        <span>{contextualModuleId ? "Learning" : "Tutorial"}</span>
+      </Button>
+      {contextualModuleId ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleSpotlightOnly}
+          className="h-8 px-2 text-xs text-muted-foreground"
+          data-help-title="Spotlight tour"
+          data-help-description="Highlight specific controls on this page with the classic guided tour."
+        >
+          Spotlight
+        </Button>
+      ) : null}
+    </div>
   );
 }

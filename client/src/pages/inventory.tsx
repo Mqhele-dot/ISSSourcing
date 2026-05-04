@@ -30,9 +30,10 @@ import { useToast } from "@/hooks/use-toast";
 import { requestJson } from "@/lib/queryClient";
 import { downloadCsv } from "@/lib/csv-download";
 import { isLikelyCsvResponse, parseExportFailureMessage } from "@/lib/export-download";
-import { fetchInventory, type InventoryListItem } from "@/api/client";
+import { fetchInventory } from "@/api/client";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
+import { getInventoryAvailabilityStatus } from "@shared/functional-calculations";
 
 type Category = {
   id: number;
@@ -40,16 +41,6 @@ type Category = {
 };
 
 const EMPTY_CATEGORIES: Category[] = [];
-
-function getAvailabilityStatus(item: InventoryListItem): string {
-  if (item.available < 0) {
-    return "error";
-  }
-  if (item.available <= item.lowStockThreshold) {
-    return "low";
-  }
-  return "active";
-}
 
 function isLowFilterEnabled(value: string): boolean {
   const normalized = value.trim().toLowerCase();
@@ -82,6 +73,19 @@ export default function InventoryPage() {
     data: inventoryData,
     refetch: refetchInventory,
   } = useAsyncResource(inventoryFetcher);
+
+  const warehousesFetcher = useCallback((): Promise<Array<{ id: number; name: string }>> => {
+    return requestJson<Array<{ id: number; name: string }>>("GET", "/api/warehouses");
+  }, []);
+
+  const {
+    loading: warehousesLoading,
+    data: warehousesData,
+    error: warehousesError,
+    refetch: refetchWarehouses,
+  } = useAsyncResource(warehousesFetcher);
+
+  const warehouses = warehousesData ?? [];
 
   const categoriesFetcher = useCallback((): Promise<Category[]> => {
     return requestJson<Category[]>("GET", "/api/categories");
@@ -122,7 +126,18 @@ export default function InventoryPage() {
   }, [inventoryData, toast]);
 
   const runServerCsv = useCallback(async () => {
-    const res = await fetch("/api/export/inventory/csv", { credentials: "include" });
+    const lowEnabled = isLowFilterEnabled(String(queryState.low || ""));
+    const params = new URLSearchParams();
+    const q = String(queryState.q || "").trim();
+    const loc = String(queryState.location || "").trim();
+    const cat = String(queryState.category || "").trim();
+    if (q) params.set("q", q);
+    if (loc) params.set("location", loc);
+    if (cat) params.set("category", cat);
+    if (lowEnabled) params.set("lowStock", "true");
+    const qs = params.toString();
+    const url = `/api/export/inventory/csv${qs ? `?${qs}` : ""}`;
+    const res = await fetch(url, { credentials: "include" });
     if (!res.ok) {
       const detail = await parseExportFailureMessage(res);
       if (res.status === 403) {
@@ -148,8 +163,8 @@ export default function InventoryPage() {
     link.click();
     link.remove();
     URL.revokeObjectURL(href);
-    toast({ title: "Export complete", description: "Downloaded server inventory CSV." });
-  }, [toast]);
+    toast({ title: "Export complete", description: "Downloaded server inventory CSV (matches current filters)." });
+  }, [toast, queryState.q, queryState.location, queryState.category, queryState.low]);
 
   const handleExportCsv = () => {
     void (async () => {
@@ -185,13 +200,21 @@ export default function InventoryPage() {
 
   const knownLocations = useMemo(() => {
     const locationSet = new Set<string>();
+    for (const w of warehouses) {
+      if (w.name?.trim()) locationSet.add(w.name.trim());
+    }
     for (const item of inventoryData ?? []) {
       if (item.location) {
         locationSet.add(item.location);
       }
     }
     return Array.from(locationSet).sort((a, b) => a.localeCompare(b));
-  }, [inventoryData]);
+  }, [warehouses, inventoryData]);
+
+  const clearFilters = () => {
+    setSearchInput("");
+    setQueryState({ q: "", location: "", category: "", low: "" });
+  };
 
   /** Server applies q, location, category, low; list is single source of truth. */
   const displayedItems = inventoryData ?? [];
@@ -212,9 +235,10 @@ export default function InventoryPage() {
               onClick={handleExportCsv}
               disabled={import.meta.env.DEV && displayedItems.length === 0}
               className="gap-2"
+              data-testid="inventory-export-button"
             >
               <Download className="h-4 w-4" />
-              {import.meta.env.DEV ? "Export CSV (browser)" : "Export CSV"}
+              {import.meta.env.DEV ? "Export CSV (browser — visible rows)" : "Export CSV (matches filters)"}
             </Button>
             {import.meta.env.DEV ? (
               <Button variant="outline" size="sm" onClick={handleExportServerCsvDev} className="gap-2">
@@ -246,6 +270,21 @@ export default function InventoryPage() {
         </Alert>
       ) : null}
 
+      {warehousesError ? (
+        <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
+          <AlertTitle>Warehouse names unavailable for location filter</AlertTitle>
+          <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Location dropdown still includes values from the current result set. Warehouse list failed to load (
+              {warehousesError.message || "unknown error"}).
+            </span>
+            <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => void refetchWarehouses()}>
+              Retry warehouses
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <Toolbar
         sticky
         left={
@@ -253,6 +292,7 @@ export default function InventoryPage() {
             <div className="relative w-full min-w-0 sm:min-w-[220px] sm:max-w-sm" data-tour="inventory-search">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
+                data-testid="inventory-search-input"
                 value={searchInput}
                 onChange={(event) => {
                   const v = event.target.value;
@@ -267,8 +307,9 @@ export default function InventoryPage() {
             <Select
               value={selectedLocation || "all"}
               onValueChange={(value) => setQueryState({ location: value === "all" ? "" : value })}
+              disabled={warehousesLoading}
             >
-              <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]" data-testid="inventory-location-filter">
                 <SelectValue placeholder="All locations" />
               </SelectTrigger>
               <SelectContent>
@@ -286,7 +327,7 @@ export default function InventoryPage() {
               onValueChange={(value) => setQueryState({ category: value === "all" ? "" : value })}
               disabled={categoriesLoading}
             >
-              <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]" data-testid="inventory-category-filter">
                 <SelectValue placeholder="All categories" />
               </SelectTrigger>
               <SelectContent>
@@ -301,18 +342,24 @@ export default function InventoryPage() {
           </>
         }
         right={
-          <span data-tour="inventory-low-toggle">
-            <Button
-              variant={isLowFilterEnabled(String(queryState.low || "")) ? "default" : "outline"}
-              onClick={() =>
-                setQueryState({
-                  low: isLowFilterEnabled(String(queryState.low || "")) ? "" : "1",
-                })
-              }
-            >
-              Low stock only
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+              Clear filters
             </Button>
-          </span>
+            <span data-tour="inventory-low-toggle">
+              <Button
+                data-testid="inventory-low-stock-filter"
+                variant={isLowFilterEnabled(String(queryState.low || "")) ? "default" : "outline"}
+                onClick={() =>
+                  setQueryState({
+                    low: isLowFilterEnabled(String(queryState.low || "")) ? "" : "1",
+                  })
+                }
+              >
+                Low stock only
+              </Button>
+            </span>
+          </div>
         }
       />
 
@@ -338,7 +385,7 @@ export default function InventoryPage() {
         onRetry={refetchInventory}
       >
         {(items) => (
-          <div data-tour="inventory-table" className="overflow-x-auto">
+          <div data-testid="inventory-table" data-tour="inventory-table" className="overflow-x-auto">
           <Table className="table-fixed w-full min-w-[48rem]">
             <TableHeader>
               <TableRow>
@@ -377,7 +424,7 @@ export default function InventoryPage() {
                     </span>
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={getAvailabilityStatus(item)} />
+                    <StatusBadge status={getInventoryAvailabilityStatus(item.available, item.lowStockThreshold)} />
                   </TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground">
                     {item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "-"}

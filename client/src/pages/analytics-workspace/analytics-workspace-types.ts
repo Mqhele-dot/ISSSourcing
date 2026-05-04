@@ -32,6 +32,8 @@ export type AnalyticsKpiCard = {
   href: string;
   /** When set, KPI grid shows a non-blocking data-quality note (e.g. source query failed). */
   sourceWarning?: string;
+  /** Distinguishes a real zero/metric from missing backend data. */
+  valueState?: "ok" | "empty" | "unavailable";
 };
 
 export type AnalyticsWorkspaceQueryBundle = {

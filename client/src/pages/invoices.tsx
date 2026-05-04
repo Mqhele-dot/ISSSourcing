@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +55,8 @@ import { Download } from "lucide-react";
 import type { InventoryItem } from "@shared/schema";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 import { PanelInlineError } from "@/components/panel-inline-error";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { Separator } from "@/components/ui/separator";
 
 type Invoice = {
   id: number;
@@ -302,6 +305,11 @@ export default function InvoicesPage() {
     for (const o of purchaseOrders) m.set(o.id, o);
     return m;
   }, [purchaseOrders]);
+
+  const editSupplier = editInvoice ? suppliers.find((s) => s.id === editInvoice.supplierId) : undefined;
+  const editPo =
+    editInvoice?.purchaseOrderId != null ? poById.get(editInvoice.purchaseOrderId) ?? null : null;
+  const editMatch = editInvoice ? matchResults[editInvoice.id] : undefined;
 
   const createInvoice = useMutation({
     mutationFn: () => {
@@ -795,21 +803,100 @@ export default function InvoicesPage() {
       </Card>
 
       <Dialog open={!!editInvoice} onOpenChange={(o) => !o && setEditInvoice(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit invoice {editInvoice?.invoiceNumber}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3 py-2">
-            <div className="space-y-1">
-              <Label>Status</Label>
-              <Input value={editStatus} onChange={(e) => setEditStatus(e.target.value)} placeholder="DRAFT, SENT, PAID…" />
+
+          {editInvoice ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Summary</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Supplier</p>
+                    <p className="font-medium">
+                      {editSupplier?.name ??
+                        (editInvoice.supplierId != null ? `ID ${editInvoice.supplierId}` : "—")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Linked purchase order</p>
+                    <p className="font-medium">
+                      {editPo ? `${editPo.orderNumber} (${editPo.status})` : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Invoice total</p>
+                    <p className="font-medium">{formatMoney(Number(editInvoice.totalAmount ?? 0))}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">3-way match (last run)</p>
+                    <p className="font-medium">
+                      {editMatch
+                        ? `${editMatch.status}${editMatch.matched ? " · matched" : ""}`
+                        : "Not run on this session"}
+                    </p>
+                    {editMatch && editMatch.mismatches.length > 0 ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {editMatch.mismatches.length} mismatch(es) — open Lines to review.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {editInvoice.supplierId != null ? (
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={APP_ROUTES.procurement.supplier(editInvoice.supplierId)}>Open supplier</Link>
+                    </Button>
+                  ) : null}
+                  {editPo ? (
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={APP_ROUTES.procurement.order(editPo.orderNumber)}>Open PO</Link>
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      const inv = editInvoice;
+                      setEditInvoice(null);
+                      setLinesEditInvoice(inv);
+                    }}
+                  >
+                    View / edit lines
+                  </Button>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1 sm:col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground">Editable fields</p>
+                  <p className="text-xs text-muted-foreground">
+                    Only status and due date are updated here; use Lines for row-level detail and 3-way match from the
+                    table.
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <Label>Status</Label>
+                  <Input
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    placeholder="DRAFT, SENT, PAID…"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Due date</Label>
+                  <Input type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} />
+                </div>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Due date</Label>
-              <Input type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
+          ) : null}
+
+          <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setEditInvoice(null)}>
               Cancel
             </Button>

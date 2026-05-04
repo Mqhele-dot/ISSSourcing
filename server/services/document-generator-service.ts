@@ -954,6 +954,57 @@ export async function generateInventoryCsv(items: InventoryItem[], title: string
   return Buffer.from(lines.join(CSV_EOL), 'utf8');
 }
 
+export type OperationalInventoryCsvRow = {
+  sku: string;
+  name: string;
+  location: string | null;
+  onHand: number;
+  allocated: number;
+  available: number;
+  lowStockThreshold: number;
+  updatedAt?: Date | string | null;
+};
+
+/**
+ * CSV aligned with GET /api/inventory operational list (locations, allocations, filters).
+ */
+export function generateOperationalInventoryCsvFromRows(
+  items: OperationalInventoryCsvRow[],
+  title: string,
+): Buffer {
+  const lines = [
+    CSV_BOM + 'sep=,',
+    `"${title.replace(/"/g, '""')}"`,
+    `"Generated","${format(new Date(), "yyyy-MM-dd HH:mm")}"`,
+    `"Reporting currency (ISO 4217)","${normalizeReportingCurrencyCode(activeReportingCurrencyCode)}"`,
+    "",
+    ["SKU", "Name", "Location", "On hand", "Allocated", "Available", "Low stock threshold", "Updated at"].join(","),
+  ];
+  for (const item of items) {
+    const updated =
+      item.updatedAt == null
+        ? ""
+        : typeof item.updatedAt === "string"
+          ? item.updatedAt
+          : format(item.updatedAt, "yyyy-MM-dd HH:mm:ss");
+    lines.push(
+      [
+        item.sku,
+        item.name,
+        item.location ?? "",
+        item.onHand,
+        item.allocated,
+        item.available,
+        item.lowStockThreshold,
+        updated,
+      ]
+        .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+        .join(","),
+    );
+  }
+  return Buffer.from(lines.join(CSV_EOL), "utf8");
+}
+
 /**
  * Generate an Excel document from inventory data
  */

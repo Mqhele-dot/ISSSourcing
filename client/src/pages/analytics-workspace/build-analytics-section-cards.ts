@@ -43,6 +43,7 @@ export function buildAnalyticsSectionCards(
           description: "BI measure for on-hand stock value.",
           href: APP_ROUTES.analytics.reportSection("value"),
           sourceWarning: warn(health, "inventoryStats"),
+          valueState: health.inventoryStats ? "ok" : "unavailable",
         },
         {
           title: "Tracked SKUs",
@@ -50,6 +51,7 @@ export function buildAnalyticsSectionCards(
           description: "Active inventory master records.",
           href: APP_ROUTES.inventory.root,
           sourceWarning: warn(health, "inventoryStats"),
+          valueState: health.inventoryStats ? "ok" : "unavailable",
         },
         {
           title: "Low-stock items",
@@ -57,6 +59,7 @@ export function buildAnalyticsSectionCards(
           description: "Threshold breaches ready for replenishment.",
           href: APP_ROUTES.analytics.reportSection("low-stock"),
           sourceWarning: lowStockWarn ?? undefined,
+          valueState: lowStockVal === "—" ? "unavailable" : "ok",
         },
       ];
     }
@@ -68,6 +71,7 @@ export function buildAnalyticsSectionCards(
           description: "Orders still open, approved, or ready to send.",
           href: APP_ROUTES.procurement.orders,
           sourceWarning: warn(health, "controlTower"),
+          valueState: health.controlTower ? "ok" : "unavailable",
         },
         {
           title: "Pending requisitions",
@@ -75,6 +79,7 @@ export function buildAnalyticsSectionCards(
           description: "Demand requests waiting for procurement review.",
           href: APP_ROUTES.procurement.requisitions,
           sourceWarning: warn(health, "controlTower"),
+          valueState: health.controlTower ? "ok" : "unavailable",
         },
         {
           title: "Top supplier spend",
@@ -87,6 +92,7 @@ export function buildAnalyticsSectionCards(
           description: "Lead supplier by current spend in the BI model.",
           href: APP_ROUTES.analytics.reports,
           sourceWarning: warn(health, "spendAnalytics"),
+          valueState: !health.spendAnalytics ? "unavailable" : spendAnalytics?.spendBySupplier?.[0] ? "ok" : "empty",
         },
       ];
     case "finance":
@@ -97,6 +103,7 @@ export function buildAnalyticsSectionCards(
           description: "Current unpaid accounts payable exposure.",
           href: APP_ROUTES.finance.accountsPayableIntake,
           sourceWarning: warn(health, "apOverview"),
+          valueState: health.apOverview ? "ok" : "unavailable",
         },
         {
           title: "Pending AP approvals",
@@ -104,6 +111,7 @@ export function buildAnalyticsSectionCards(
           description: "Invoices still waiting for approval policy completion.",
           href: APP_ROUTES.finance.accountsPayableApprovals,
           sourceWarning: warn(health, "apOverview"),
+          valueState: health.apOverview ? "ok" : "unavailable",
         },
         {
           title: "Overdue invoices",
@@ -111,6 +119,7 @@ export function buildAnalyticsSectionCards(
           description: "Invoices currently past due date in AP.",
           href: APP_ROUTES.analytics.reportSection("invoices"),
           sourceWarning: warn(health, "controlTower"),
+          valueState: health.controlTower ? "ok" : "unavailable",
         },
       ];
     case "logistics":
@@ -121,6 +130,7 @@ export function buildAnalyticsSectionCards(
           description: "Late or at-risk shipments from control tower monitoring.",
           href: APP_ROUTES.operations.logistics,
           sourceWarning: warn(health, "controlTower"),
+          valueState: health.controlTower ? "ok" : "unavailable",
         },
         {
           title: "In transit",
@@ -128,6 +138,7 @@ export function buildAnalyticsSectionCards(
           description: "Shipments currently moving through the network.",
           href: APP_ROUTES.operations.logistics,
           sourceWarning: warn(health, "controlTower"),
+          valueState: health.controlTower ? "ok" : "unavailable",
         },
         {
           title: "Supplier performance lead",
@@ -140,6 +151,11 @@ export function buildAnalyticsSectionCards(
           description: "Top on-time supplier from procurement analytics.",
           href: APP_ROUTES.analytics.procurement,
           sourceWarning: warn(health, "spendAnalytics"),
+          valueState: !health.spendAnalytics
+            ? "unavailable"
+            : spendAnalytics?.supplierPerformance?.[0]
+              ? "ok"
+              : "empty",
         },
       ];
     case "overview":
@@ -151,6 +167,7 @@ export function buildAnalyticsSectionCards(
           description: "Unified inventory value KPI from the registry.",
           href: APP_ROUTES.analytics.inventory,
           sourceWarning: warn(health, "inventoryStats"),
+          valueState: health.inventoryStats ? "ok" : "unavailable",
         },
         {
           title: "Procurement flow",
@@ -158,6 +175,7 @@ export function buildAnalyticsSectionCards(
           description: "Orders awaiting procurement action.",
           href: APP_ROUTES.analytics.procurement,
           sourceWarning: warn(health, "controlTower"),
+          valueState: health.controlTower ? "ok" : "unavailable",
         },
         {
           title: "Finance exposure",
@@ -165,6 +183,7 @@ export function buildAnalyticsSectionCards(
           description: "Current AP exposure and approval backlog.",
           href: APP_ROUTES.analytics.finance,
           sourceWarning: warn(health, "apOverview"),
+          valueState: health.apOverview ? "ok" : "unavailable",
         },
         {
           title: "Network execution",
@@ -172,6 +191,7 @@ export function buildAnalyticsSectionCards(
           description: "Late or at-risk logistics signals.",
           href: APP_ROUTES.analytics.logistics,
           sourceWarning: warn(health, "controlTower"),
+          valueState: health.controlTower ? "ok" : "unavailable",
         },
       ];
   }
