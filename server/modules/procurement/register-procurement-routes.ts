@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { and, eq } from "drizzle-orm";
 import { storage } from "../../storage";
@@ -15,10 +15,15 @@ import {
   projects,
   approvalHistory,
   purchaseOrderRevisions,
+  supplierContracts,
+  paymentTerms,
+  incoterms,
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
+  type InsertPurchaseOrder,
 } from "@shared/schema";
+import { canUpdatePurchaseOrder } from "@shared/purchase-order-status";
 import { getActiveOrganizationId } from "../../organization-context";
 import { getApplicableRequisitionPolicyForOrg, roleMatchesPolicy } from "./service";
 import type { AuthBundle } from "./types";
@@ -36,6 +41,82 @@ async function validateProjectIdForOrg(
   if (!row) return { ok: false, message: "Project not found in this organization" };
   return { ok: true };
 }
+
+async function assertPurchaseOrderCommercialReferences(params: {
+  organizationId: number;
+  supplierId: number;
+  patch: Pick<
+    Partial<InsertPurchaseOrder>,
+    "departmentId" | "contractId" | "paymentTermsId" | "incotermId"
+  >;
+}): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  const { organizationId, supplierId, patch } = params;
+
+  if (patch.departmentId != null) {
+    const [row] = await db
+      .select({ id: departments.id })
+      .from(departments)
+      .where(and(eq(departments.id, patch.departmentId), eq(departments.organizationId, organizationId)))
+      .limit(1);
+    if (!row) {
+      return { ok: false, code: "PO_DEPARTMENT_NOT_FOUND", message: "Department not found for this organization." };
+    }
+  }
+
+  if (patch.contractId != null) {
+    const [row] = await db
+      .select({ id: supplierContracts.id })
+      .from(supplierContracts)
+      .where(
+        and(
+          eq(supplierContracts.id, patch.contractId),
+          eq(supplierContracts.organizationId, organizationId),
+          eq(supplierContracts.supplierId, supplierId),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      return {
+        ok: false,
+        code: "PO_CONTRACT_NOT_FOUND",
+        message: "Contract not found for this supplier and organization.",
+      };
+    }
+  }
+
+  if (patch.paymentTermsId != null) {
+    const [row] = await db
+      .select({ id: paymentTerms.id })
+      .from(paymentTerms)
+      .where(eq(paymentTerms.id, patch.paymentTermsId))
+      .limit(1);
+    if (!row) {
+      return { ok: false, code: "PO_PAYMENT_TERMS_NOT_FOUND", message: "Payment terms not found." };
+    }
+  }
+
+  if (patch.incotermId != null) {
+    const [row] = await db
+      .select({ id: incoterms.id })
+      .from(incoterms)
+      .where(eq(incoterms.id, patch.incotermId))
+      .limit(1);
+    if (!row) {
+      return { ok: false, code: "PO_INCOTERM_NOT_FOUND", message: "Incoterm not found." };
+    }
+  }
+
+  return { ok: true };
+}
+
+const purchaseOrderCommercialPatchSchema = z
+  .object({
+    departmentId: z.union([z.number().int().positive(), z.null()]).optional(),
+    contractId: z.union([z.number().int().positive(), z.null()]).optional(),
+    paymentTermsId: z.union([z.number().int().positive(), z.null()]).optional(),
+    incotermId: z.union([z.number().int().positive(), z.null()]).optional(),
+  })
+  .strict();
 
 function normalizeRequisitionLineInput(item: unknown, index: number) {
   const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
@@ -68,7 +149,7 @@ function normalizeRequisitionLineInput(item: unknown, index: number) {
 export function registerProcurementRoutes(app: Express, auth: AuthBundle): void {
   // Purchase Requisition & Purchase Order — RBAC: viewer read-only; manager/admin for create/update/delete/approve
   const poRead = [auth.ensureAuthenticated];
-  const poWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const poWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "planner", "admin"])];
     app.get("/api/purchase-requisitions", ...poRead, async (_req: Request, res: Response) => {
     try {
       const requisitions = await storage.getAllPurchaseRequisitions();
@@ -752,21 +833,59 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
   app.put("/api/purchase-orders/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
+      if (!Number.isFinite(id) || id <= 0) {
+        return sendError(res, 400, "PO_INVALID_ID", "Invalid purchase order ID");
       }
-      
-      const validatedData = insertPurchaseOrderSchema.partial().parse(req.body);
-      const projectCheckUpdate = await validateProjectIdForOrg(validatedData.projectId ?? undefined);
-      if (!projectCheckUpdate.ok) {
-        return res.status(400).json({ message: projectCheckUpdate.message });
+
+      const parsedBody = purchaseOrderCommercialPatchSchema.safeParse(req.body);
+      if (!parsedBody.success) {
+        const validationError = fromZodError(parsedBody.error);
+        return sendError(res, 400, "PO_COMMERCIAL_VALIDATION_FAILED", validationError.message);
       }
+
+      const existing = await storage.getPurchaseOrder(id);
+      if (!existing) {
+        return sendError(res, 404, "PO_NOT_FOUND", "Purchase order not found");
+      }
+
+      if (!canUpdatePurchaseOrder(existing.status)) {
+        return sendError(
+          res,
+          409,
+          "PO_COMMERCIAL_UPDATE_LOCKED",
+          "Commercial terms can only be updated before the PO is sent.",
+          { hint: String(existing.status) },
+        );
+      }
+
+      const patchPayload = parsedBody.data;
+      const validatedData: Partial<InsertPurchaseOrder> = {};
+      (["departmentId", "contractId", "paymentTermsId", "incotermId"] as const).forEach((key) => {
+        if (patchPayload[key] !== undefined) {
+          validatedData[key] = patchPayload[key] as never;
+        }
+      });
+
+      if (Object.keys(validatedData).length === 0) {
+        return sendError(res, 400, "PO_COMMERCIAL_EMPTY", "Provide at least one commercial field to update.");
+      }
+
+      const orgId = getActiveOrganizationId();
+      const refCheck = await assertPurchaseOrderCommercialReferences({
+        organizationId: orgId,
+        supplierId: existing.supplierId,
+        patch: validatedData,
+      });
+      if (!refCheck.ok) {
+        return sendError(res, 400, refCheck.code, refCheck.message);
+      }
+
       const updatedOrder = await storage.updatePurchaseOrder(id, validatedData);
-      
+
       if (!updatedOrder) {
-        return res.status(404).json({ message: "Purchase order not found" });
+        return sendError(res, 404, "PO_NOT_FOUND", "Purchase order not found");
       }
-      
+
       const rev = await pool.query<{ max: number }>(
         "SELECT COALESCE(MAX(revision_number), 0) AS max FROM purchase_order_revisions WHERE order_id = $1",
         [id],
@@ -779,19 +898,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         snapshot: {
           update: validatedData,
           orderAfterUpdate: updatedOrder,
-          source: "update",
+          source: "commercial_update",
         },
         createdBy: updaterId,
       } as any);
       res.json(updatedOrder);
     } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error updating purchase order:", error);
-        res.status(500).json({ message: "Failed to update purchase order" });
-      }
+      console.error("Error updating purchase order:", error);
+      res.status(500).json({ message: "Failed to update purchase order" });
     }
   });
 

@@ -22,6 +22,10 @@ export type PoCommercialTermsCardProps = {
   paymentTerms: TermOpt[];
   incoterms: IncotermOpt[];
   saveCommercialTerms: { mutate: () => void; isPending: boolean };
+  /** When false, terms are read-only (PO sent or later). */
+  canSaveCommercial: boolean;
+  commercialLockedReason?: string;
+  commercialSaveError?: string | null;
 };
 
 export function PoCommercialTermsCard({
@@ -38,16 +42,36 @@ export function PoCommercialTermsCard({
   paymentTerms,
   incoterms,
   saveCommercialTerms,
+  canSaveCommercial,
+  commercialLockedReason,
+  commercialSaveError,
 }: PoCommercialTermsCardProps) {
+  const disableFields = !canSaveCommercial || saveCommercialTerms.isPending;
   return (
-    <Card id="po-commercial" className="scroll-mt-36">
+    <Card id="po-commercial" className="scroll-mt-36" data-testid="po-commercial-card">
       <CardHeader>
         <CardTitle>Commercial terms</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-2">
+        {!canSaveCommercial && commercialLockedReason ? (
+          <div
+            className="md:col-span-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+            data-testid="po-commercial-disabled-message"
+          >
+            {commercialLockedReason}
+          </div>
+        ) : null}
+        {commercialSaveError ? (
+          <div
+            className="md:col-span-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+            data-testid="po-commercial-error"
+          >
+            {commercialSaveError}
+          </div>
+        ) : null}
         <div className="space-y-1">
           <Label htmlFor="po-department">Department</Label>
-          <Select value={departmentId} onValueChange={setDepartmentId}>
+          <Select value={departmentId} onValueChange={setDepartmentId} disabled={disableFields}>
             <SelectTrigger id="po-department">
               <SelectValue placeholder="Select department" />
             </SelectTrigger>
@@ -63,7 +87,7 @@ export function PoCommercialTermsCard({
         </div>
         <div className="space-y-1">
           <Label htmlFor="po-contract">Contract reference</Label>
-          <Select value={contractId} onValueChange={setContractId}>
+          <Select value={contractId} onValueChange={setContractId} disabled={disableFields}>
             <SelectTrigger id="po-contract">
               <SelectValue placeholder="Select contract" />
             </SelectTrigger>
@@ -79,7 +103,7 @@ export function PoCommercialTermsCard({
         </div>
         <div className="space-y-1">
           <Label htmlFor="po-payment-terms">Payment terms</Label>
-          <Select value={paymentTermsId} onValueChange={setPaymentTermsId}>
+          <Select value={paymentTermsId} onValueChange={setPaymentTermsId} disabled={disableFields}>
             <SelectTrigger id="po-payment-terms">
               <SelectValue placeholder="Select payment terms" />
             </SelectTrigger>
@@ -95,7 +119,7 @@ export function PoCommercialTermsCard({
         </div>
         <div className="space-y-1">
           <Label htmlFor="po-incoterm">Incoterm</Label>
-          <Select value={incotermId} onValueChange={setIncotermId}>
+          <Select value={incotermId} onValueChange={setIncotermId} disabled={disableFields}>
             <SelectTrigger id="po-incoterm">
               <SelectValue placeholder="Select incoterm" />
             </SelectTrigger>
@@ -110,7 +134,12 @@ export function PoCommercialTermsCard({
           </Select>
         </div>
         <div className="md:col-span-2 flex justify-end">
-          <Button type="button" onClick={() => saveCommercialTerms.mutate()} disabled={saveCommercialTerms.isPending}>
+          <Button
+            type="button"
+            data-testid="po-commercial-save-button"
+            onClick={() => saveCommercialTerms.mutate()}
+            disabled={!canSaveCommercial || saveCommercialTerms.isPending}
+          >
             Save terms
           </Button>
         </div>

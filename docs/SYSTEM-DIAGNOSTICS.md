@@ -51,4 +51,11 @@ npm run test:e2e
 npm run verify:core
 ```
 
+Slow `GET /api/activity` warnings are **deduped** in the client (same path, ~30s window) to keep exports readable when a page retries or refetches. Route marker checks wait **8s**, then **re-check at 10s**, before emitting a “page may not have rendered” warning (lazy routes such as System Diagnostics).
+
+## Purchase Order action stability (diagnostics perspective)
+
+- PO detail activity uses **entity-scoped** activity queries and cached reads so diagnostics are not flooded by unfiltered `/api/activity` calls.
+- **AP payment batch** self-approval is a **403** business rule (`PAYMENT_BATCH_SELF_APPROVAL_BLOCKED`) in the API envelope, not a 500; the client records it as a **warning**-class diagnostics event and avoids spamming the global action-error tray for that code.
+
 When sharing a report, include the user action that triggered the issue and whether the app was running locally, in Codespaces, or in production.

@@ -24,6 +24,10 @@ export type ApCapturePayload = {
   extractedLines: unknown[];
 };
 
+export type ApPaymentBatchApproveInput =
+  | number
+  | { batchId: number; adminOverride?: boolean; overrideReason?: string };
+
 export function useApWorkspaceMutations(toast: {
   toast: (opts: { title: string; description?: string; variant?: "destructive" }) => void;
 }) {
@@ -174,7 +178,14 @@ export function useApWorkspaceMutations(toast: {
   });
 
   const approveBatchMutation = useMutation({
-    mutationFn: (batchId: number) => requestJson("POST", `/api/ap/payment-batches/${batchId}/approve`, {}),
+    mutationFn: (input: ApPaymentBatchApproveInput) => {
+      const batchId = typeof input === "number" ? input : input.batchId;
+      const body =
+        typeof input === "object" && input.adminOverride
+          ? { adminOverride: true, overrideReason: input.overrideReason ?? "" }
+          : {};
+      return requestJson("POST", `/api/ap/payment-batches/${batchId}/approve`, body);
+    },
     onSuccess: async () => {
       await invalidateAfterPaymentBatch();
       showToast({ title: "Batch approved", description: "The payment batch can now be released." });
@@ -188,7 +199,14 @@ export function useApWorkspaceMutations(toast: {
   });
 
   const releaseBatchMutation = useMutation({
-    mutationFn: (batchId: number) => requestJson("POST", `/api/ap/payment-batches/${batchId}/release`, {}),
+    mutationFn: (input: ApPaymentBatchApproveInput) => {
+      const batchId = typeof input === "number" ? input : input.batchId;
+      const body =
+        typeof input === "object" && input.adminOverride
+          ? { adminOverride: true, overrideReason: input.overrideReason ?? "" }
+          : {};
+      return requestJson("POST", `/api/ap/payment-batches/${batchId}/release`, body);
+    },
     onSuccess: async () => {
       await invalidateAfterPaymentBatch();
       showToast({ title: "Batch released", description: "Payments were posted for the batch items." });

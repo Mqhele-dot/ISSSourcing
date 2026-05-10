@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type DependencyList } from "react";
 
 /** Align with client apiRequest (12s); server operational timeout is 8s */
 const FETCH_TIMEOUT_MS = 12000;
@@ -27,7 +27,7 @@ type AsyncResourceState<T> = {
  */
 export function useAsyncResource<T>(
   fetcher: () => Promise<T>,
-  options?: { immediate?: boolean },
+  options?: { immediate?: boolean; revalidateDeps?: DependencyList },
 ): AsyncResourceState<T> {
   const [loading, setLoading] = useState(Boolean(options?.immediate ?? true));
   const [error, setError] = useState<Error | null>(null);
@@ -72,7 +72,7 @@ export function useAsyncResource<T>(
       }
     }
     void refetch();
-  }, [options?.immediate, refetch, fetcher, isDev]);
+  }, [options?.immediate, refetch, isDev, ...(options?.revalidateDeps ?? [fetcher])]);
 
   return { loading, error, data, refetch };
 }

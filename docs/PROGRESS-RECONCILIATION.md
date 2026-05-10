@@ -69,3 +69,13 @@ This file is informational; authoritative counts live in PROGRESS-REPORT after r
 | Shared CSV export helper | `client/src/lib/csv-download.ts` `downloadCsv`; used by `audit-logs.tsx`, `exceptions.tsx`, `inventory.tsx`. |
 | Mobile pick error UX | `mobile-pick.tsx`: toast on `fetchInventory` failure; `toastRef` keeps `useAsyncResource` fetcher stable (avoids refetch loops if `toast` identity changes). |
 | Inventory API docs | JSDoc on operational `GET /api/inventory` in `server/operations-routes.ts`; note in `server/routes.ts` where a shadow route exists. |
+
+## 2026-05-10 — Purchase Order action stability
+
+| Item | Evidence |
+|------|----------|
+| Shared PO lifecycle / gating | `shared/purchase-order-status.ts`; operations transitions in `server/modules/operations/operations-core.ts`. |
+| Commercial-only `PUT` + FK checks | `server/modules/procurement/register-procurement-routes.ts` `/api/purchase-orders/:id`; planners included in `poWrite`. |
+| Activity performance / UI churn | `GET /api/activity` limit 50 max 100, entity filters, `idx_ops_activity_entity_created`; `client/src/components/activity/entity-activity-panel.tsx`; slow-request dedupe in `client/src/lib/queryClient.ts`. |
+| Route marker false positives | `client/src/components/diagnostics/diagnostics-route-monitor.tsx` delayed re-check; `data-testid="system-diagnostics-page"` contract in `scripts/test-route-diagnostics.ts`. |
+| AP batch segregation UX + status | `server/modules/accounts-payable/register-ap-routes.ts` 403 `PAYMENT_BATCH_SELF_APPROVAL_BLOCKED`; `ap-payments-panel.tsx` creator disable + admin override reason field. |

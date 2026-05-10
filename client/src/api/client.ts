@@ -528,7 +528,37 @@ export async function fetchPurchaseOrdersEnvelope(params?: {
 }
 
 export async function fetchPurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
-  return apiFetch<PurchaseOrderDetail>(`/api/purchase/orders/${encodeURIComponent(po)}`);
+  const payload = await apiFetch<unknown>(`/api/purchase/orders/${encodeURIComponent(po)}`);
+  return normalizePurchaseOrderDetail(payload);
+}
+
+function normalizePurchaseOrderDetail(raw: unknown): PurchaseOrderDetail {
+  const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const lines = Array.isArray(r.lines) ? (r.lines as PurchaseOrderDetail["lines"]) : [];
+  const shipments = Array.isArray(r.shipments) ? (r.shipments as PurchaseOrderDetail["shipments"]) : [];
+  const prog = r.progress && typeof r.progress === "object" ? (r.progress as Record<string, unknown>) : {};
+  const qtyOrdered = Number(prog.qtyOrdered ?? 0);
+  const qtyReceived = Number(prog.qtyReceived ?? 0);
+  const percentRaw = prog.percent;
+  const percent =
+    typeof percentRaw === "number" && Number.isFinite(percentRaw)
+      ? percentRaw
+      : qtyOrdered > 0
+        ? Math.round((qtyReceived / qtyOrdered) * 100)
+        : 0;
+  return {
+    id: Number(r.id ?? 0),
+    poNumber: String(r.poNumber ?? ""),
+    supplierId: Number(r.supplierId ?? 0),
+    supplierName: (r.supplierName as string | null) ?? null,
+    status: String(r.status ?? ""),
+    requestedDate: (r.requestedDate as string | null) ?? null,
+    createdAt: (r.createdAt as string | null) ?? null,
+    totalAmount: Number(r.totalAmount ?? 0),
+    lines,
+    shipments,
+    progress: { qtyOrdered, qtyReceived, percent },
+  };
 }
 
 /** Official PO PDF with line items, terms, and dual signature lines (for wet ink or e-sign workflow). */
@@ -562,17 +592,19 @@ export async function transitionPurchaseOrderStatus(
 }
 
 export async function approvePurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
-  return apiMutate<PurchaseOrderDetail>(
+  const payload = await apiMutate<unknown>(
     "POST",
     `/api/purchase/orders/${encodeURIComponent(po)}/approve`,
   );
+  return normalizePurchaseOrderDetail(payload);
 }
 
 export async function sendPurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
-  return apiMutate<PurchaseOrderDetail>(
+  const payload = await apiMutate<unknown>(
     "POST",
     `/api/purchase/orders/${encodeURIComponent(po)}/send`,
   );
+  return normalizePurchaseOrderDetail(payload);
 }
 
 export async function receivePurchaseOrder(

@@ -15,22 +15,29 @@ export function DiagnosticsRouteMonitor() {
       route: location,
     });
 
+    const clearFollowUp = { id: undefined as number | undefined };
     const timer = window.setTimeout(() => {
-      const result = checkRouteRenderHealth(location);
-      if (!result.ok) {
+      const first = checkRouteRenderHealth(location);
+      if (first.ok) return;
+      clearFollowUp.id = window.setTimeout(() => {
+        const second = checkRouteRenderHealth(location);
+        if (second.ok) return;
         addDiagnosticEvent({
           severity: "warning",
           source: "route",
           title: "Page may not have rendered expected content",
-          message: result.message,
+          message: second.message,
           route: location,
-          details: result,
+          details: second,
           userAction: "Reload the page or open System Diagnostics if this route remains blank.",
         });
-      }
+      }, 2_000);
     }, 8_000);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (clearFollowUp.id != null) window.clearTimeout(clearFollowUp.id);
+    };
   }, [location]);
 
   return null;

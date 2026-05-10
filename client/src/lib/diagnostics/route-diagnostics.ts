@@ -59,6 +59,6 @@ export function checkRouteRenderHealth(route: string): RouteRenderHealth {
   return {
     ok: false,
     route,
-    message: `No route-specific page marker was visible after 8 seconds for ${route}.`,
+    message: `No route-specific page marker was visible for ${route} after delayed checks.`,
   };
 }

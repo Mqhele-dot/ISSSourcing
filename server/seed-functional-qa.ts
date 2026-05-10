@@ -130,7 +130,7 @@ export async function seedFunctionalQA(): Promise<void> {
   const supplierId = sup.rows[0]?.id;
   if (supplierId) {
     for (const row of [
-      { num: "PO-FQA-001", status: "draft", total: FQA_PO_001_HEADER_TOTAL },
+      { num: "PO-FQA-001", status: "open", total: FQA_PO_001_HEADER_TOTAL },
       { num: "PO-FQA-002", status: "approved", total: 2500 },
       { num: "PO-FQA-003", status: "received", total: 500 },
     ] as const) {

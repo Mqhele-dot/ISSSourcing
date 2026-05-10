@@ -421,7 +421,18 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       recordApprovalFailure();
       console.error("Error approving payment batch:", error);
-      return sendError(res, 500, "PAYMENT_BATCH_APPROVE_FAILED", error instanceof Error ? error.message : "Failed to approve payment batch");
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("Batch creator cannot approve or release their own batch")) {
+        return sendError(res, 403, "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED", msg, {
+          hint: "Use another approver or submit an admin override with overrideReason on this request.",
+        });
+      }
+      return sendError(
+        res,
+        500,
+        "PAYMENT_BATCH_APPROVE_FAILED",
+        error instanceof Error ? error.message : "Failed to approve payment batch",
+      );
     }
   });
 
@@ -437,7 +448,18 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       recordReleaseFailure();
       console.error("Error releasing payment batch:", error);
-      return sendError(res, 400, "PAYMENT_BATCH_RELEASE_FAILED", error instanceof Error ? error.message : "Failed to release payment batch");
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("Batch creator cannot approve or release their own batch")) {
+        return sendError(res, 403, "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED", msg, {
+          hint: "Use another approver or submit an admin override with overrideReason on this request.",
+        });
+      }
+      if (msg.includes("Batch releaser cannot release a batch containing only invoices they approved")) {
+        return sendError(res, 403, "PAYMENT_BATCH_RELEASE_SEGREGATION_BLOCKED", msg, {
+          hint: "Segregation of duties requires a different releaser or an explicit admin override.",
+        });
+      }
+      return sendError(res, 400, "PAYMENT_BATCH_RELEASE_FAILED", msg || "Failed to release payment batch");
     }
   });
 

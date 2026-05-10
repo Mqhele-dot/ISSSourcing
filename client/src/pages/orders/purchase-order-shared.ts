@@ -1,4 +1,10 @@
 import type { PurchaseOrderDetail } from "@/api/client";
+import {
+  canApprovePurchaseOrder,
+  canReceivePurchaseOrder,
+  canSendPurchaseOrder,
+  canUpdatePurchaseOrder,
+} from "@shared/purchase-order-status";
 
 export function formatDate(value: string | null) {
   if (!value) return "-";
@@ -15,24 +21,25 @@ export function formatDateTime(value: string | null) {
 }
 
 export function canApprove(status: string) {
-  const s = String(status || "").toLowerCase();
-  return s === "open";
+  return canApprovePurchaseOrder(status);
 }
 
 export function canSend(status: string) {
-  const s = String(status || "").toLowerCase();
-  return s === "approved";
+  return canSendPurchaseOrder(status);
 }
 
 export function canReceive(status: string) {
-  const s = String(status || "").toLowerCase();
-  return (
-    s === "approved" ||
-    s === "sent" ||
-    s === "partially_received" ||
-    s === "partial_received" ||
-    s === "partially received"
-  );
+  return canReceivePurchaseOrder(status);
+}
+
+export { canUpdatePurchaseOrder } from "@shared/purchase-order-status";
+
+export function canApproveWithRole(status: string, role: string | undefined) {
+  return canApprovePurchaseOrder(status, { role });
+}
+
+export function canSendWithRole(status: string, role: string | undefined) {
+  return canSendPurchaseOrder(status, { role });
 }
 
 function escapeHtml(value: unknown): string {
@@ -120,35 +127,13 @@ export async function fetchPurchaseOrderRecordById(id: number): Promise<{
     method: "GET",
     credentials: "include",
   });
-
-  if (response.status === 404 || response.status === 401) {
+  if (response.status === 404) {
     return null;
   }
-
-  const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && "message" in payload
-        ? String((payload as { message?: unknown }).message ?? `Request failed with ${response.status}`)
-        : `Request failed with ${response.status}`;
-    throw new Error(message);
+    return null;
   }
-
-  if (payload && typeof payload === "object" && "ok" in payload) {
-    const envelope = payload as { ok: boolean; data?: unknown; error?: { message?: string } };
-    if (!envelope.ok) {
-      throw new Error(envelope.error?.message ?? "Failed to fetch purchase order details");
-    }
-    return (envelope.data as {
-      id: number;
-      departmentId?: number | null;
-      contractId?: number | null;
-      paymentTermsId?: number | null;
-      incotermId?: number | null;
-    }) ?? null;
-  }
-
-  return payload as {
+  return (await response.json()) as {
     id: number;
     departmentId?: number | null;
     contractId?: number | null;

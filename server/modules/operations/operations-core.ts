@@ -756,22 +756,21 @@ type ReceivePurchaseMetaInput = {
   received_at?: Date | null;
 };
 
-const PURCHASE_TRANSITIONS: Record<string, string[]> = {
-  draft: ["open"],
-  open: ["approved"],
-  approved: ["sent"],
-  sent: ["received"],
-};
+import {
+  normalizePurchaseOrderStatus,
+  OPERATIONAL_PO_TRANSITIONS,
+  type PurchaseOrderNorm,
+} from "@shared/purchase-order-status";
+
+const PURCHASE_TRANSITIONS: Record<string, string[]> = Object.fromEntries(
+  (Object.entries(OPERATIONAL_PO_TRANSITIONS) as [PurchaseOrderNorm, PurchaseOrderNorm[]][]).map(([from, targets]) => [
+    from,
+    targets.map((t) => String(t)),
+  ]),
+);
 
 function normalizePurchaseStatus(rawStatus: string | null | undefined): string {
-  const normalized = (rawStatus ?? "").toLowerCase();
-  if (normalized === "acknowledged" || normalized === "partially_received") {
-    return "sent";
-  }
-  if (normalized === "completed") {
-    return "received";
-  }
-  return normalized;
+  return normalizePurchaseOrderStatus(rawStatus);
 }
 
 async function resolvePurchaseOrder(poOrId: string) {
@@ -2158,7 +2157,7 @@ export async function listOperationalActivity(filters: ActivityListFilters = {})
     whereClauses.push(`lower(action) LIKE $${params.length}`);
   }
 
-  const limit = Math.min(Math.max(filters.limit ?? 20, 1), 200);
+  const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
   params.push(limit);
   const limitParam = `$${params.length}`;
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";

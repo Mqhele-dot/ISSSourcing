@@ -199,7 +199,7 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     await page.getByTestId("po-row-preview-PO-FQA-001").click();
     await expect(page.getByTestId("po-preview-panel")).toBeVisible();
     await expect(page.getByTestId("po-preview-title")).toContainText("PO-FQA-001");
-    await expect(page.getByTestId("po-preview-status")).toContainText(/draft/i);
+    await expect(page.getByTestId("po-preview-status")).toContainText(/open/i);
     await expect(page.getByTestId("po-preview-total")).toContainText(/1,?000|1000/);
     await expect(page.getByTestId("po-preview-panel")).toContainText(/0%|received progress/i);
     await page.getByTestId("po-preview-open-full").click();

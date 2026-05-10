@@ -71,6 +71,10 @@ export const OPERATIONAL_TABLE_DDLS = [
   )
   `,
   `
+  CREATE INDEX IF NOT EXISTS idx_ops_activity_entity_created
+  ON ops_activity (entity_type, entity_id, created_at DESC)
+  `,
+  `
   CREATE TABLE IF NOT EXISTS shipments (
     id serial PRIMARY KEY,
     po_number text NOT NULL,

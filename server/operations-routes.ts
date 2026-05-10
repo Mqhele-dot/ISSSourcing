@@ -99,8 +99,23 @@ function logOperationalError(path: string, elapsedMs: number, err: unknown): voi
   console.error("[operations]", path, "elapsed_ms", elapsedMs, toErrorMessage(err));
 }
 
+function requirePoWorkflowRole(req: Request): void {
+  const role = String((req as Request & { user?: { role?: string } }).user?.role ?? "").toLowerCase();
+  if (!["manager", "planner", "admin"].includes(role)) {
+    throw contractError(
+      403,
+      "PO_ACTION_FORBIDDEN",
+      "Purchase order approve and send require Manager, Planner, or Admin.",
+      "Sign in with a role that can move POs through the operational workflow.",
+    );
+  }
+}
+
 function resolveActor(req: Request): string {
-  return req.user?.username || req.user?.email || "system";
+  const u = (req as Request & { user?: { username?: string | null; email?: string | null } }).user;
+  if (u && typeof u.username === "string" && u.username.trim()) return u.username.trim();
+  if (u && typeof u.email === "string" && u.email.trim()) return u.email.trim();
+  return "system";
 }
 
 function mapAdjustInventoryError(error: unknown): never {
@@ -519,6 +534,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         res.setHeader("X-InvTrack-Fallback", "degraded");
         throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
       }
+      requirePoWorkflowRole(req);
       try {
         const detail = await withTimeout(
           transitionOperationalPurchaseOrderStatus(
@@ -550,6 +566,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         res.setHeader("X-InvTrack-Fallback", "degraded");
         throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
       }
+      requirePoWorkflowRole(req);
       try {
         const detail = await withTimeout(
           transitionOperationalPurchaseOrderStatus(
@@ -1091,6 +1108,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       }
       try {
         const limitRaw = Number(req.query.limit);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 50;
         const entityType = typeof req.query.entity_type === "string" ? req.query.entity_type : "";
         const entityId = typeof req.query.entity_id === "string" ? req.query.entity_id : "";
         const action = typeof req.query.action === "string" ? req.query.action : "";
@@ -1099,7 +1117,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const to = typeof req.query.to === "string" ? new Date(req.query.to) : null;
         const records = await withTimeout(
           listOperationalActivity({
-            limit: Number.isFinite(limitRaw) ? limitRaw : 20,
+            limit,
             entityType,
             entityId,
             action,

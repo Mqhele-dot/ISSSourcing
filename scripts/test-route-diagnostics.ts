@@ -46,5 +46,7 @@ expectIncludes("warehouse operations has route marker", "/warehouse-operations",
 expectIncludes("master data has route marker", "/admin/master-data", `[data-testid="master-data-page"]`);
 expectEmpty("unknown routes return no configured contract", "/unknown-release-cleanup-route");
 
+expectIncludes("system diagnostics has route marker", "/admin/system-diagnostics", `[data-testid="system-diagnostics-page"]`);
+
 console.log(`\nRoute diagnostics result: ${failures} failure(s)`);
 exitTest(failures > 0 ? 1 : 0);

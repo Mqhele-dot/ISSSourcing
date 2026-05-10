@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Landmark, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { Invoice, PaymentBatch } from "./types";
-import type { ApPaymentBatchPayload } from "./use-ap-workspace-mutations";
+import type { ApPaymentBatchApproveInput, ApPaymentBatchPayload } from "./use-ap-workspace-mutations";
 import type { UseMutationResult } from "@tanstack/react-query";
 
 type Props = {
@@ -38,9 +39,12 @@ type Props = {
   formatMoney: (n: number | null | undefined) => string;
   paymentBatches: PaymentBatch[];
   createBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchPayload>;
-  approveBatchMutation: UseMutationResult<unknown, Error, number>;
-  releaseBatchMutation: UseMutationResult<unknown, Error, number>;
+  approveBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchApproveInput>;
+  releaseBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchApproveInput>;
   onCreateBatch: () => void;
+  /** Current user — used to enforce batch creator segregation in the UI */
+  actorUserId?: number | null;
+  actorRole?: string | null;
 };
 
 function apInvoiceDomId(invoiceNumber: string): string {
@@ -66,7 +70,13 @@ export function ApPaymentsPanel({
   approveBatchMutation,
   releaseBatchMutation,
   onCreateBatch,
+  actorUserId,
+  actorRole,
 }: Props) {
+  const [batchSegregationReason, setBatchSegregationReason] = useState<Record<number, string>>({});
+
+  const isAdmin = String(actorRole ?? "").toLowerCase() === "admin";
+
   return (
     <div className="space-y-4">
       {paymentBatchErrors.length > 0 ? (
@@ -201,7 +211,16 @@ export function ApPaymentsPanel({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paymentBatches.map((batch) => (
+                {paymentBatches.map((batch) => {
+                  const selfBatch =
+                    batch.createdBy != null &&
+                    actorUserId != null &&
+                    Number(batch.createdBy) === Number(actorUserId);
+                  const blockSelfApprove = selfBatch && !isAdmin;
+                  const needsAdminOverride = selfBatch && isAdmin;
+                  const overrideReason = batchSegregationReason[batch.id] ?? "";
+
+                  return (
                   <TableRow key={batch.id}>
                     <TableCell>{batch.batchNumber}</TableCell>
                     <TableCell>
@@ -211,21 +230,75 @@ export function ApPaymentsPanel({
                     <TableCell>{batch.items.length}</TableCell>
                     <TableCell className="text-right">{formatMoney(Number(batch.totalAmount ?? 0))}</TableCell>
                     <TableCell className="text-right">
-                      <div className="flex flex-wrap justify-end gap-2">
+                      <div className="flex min-w-[220px] flex-col items-end gap-2">
+                        {blockSelfApprove ? (
+                          <p className="max-w-xs text-left text-xs text-muted-foreground">
+                            Batch creator cannot approve or release their own batch. Use another approver.
+                          </p>
+                        ) : null}
+                        {needsAdminOverride && (batch.status === "PENDING_APPROVAL" || batch.status === "APPROVED") ? (
+                          <div className="w-full space-y-1">
+                            <Label className="text-xs font-normal text-muted-foreground">Admin override reason</Label>
+                            <Input
+                              value={overrideReason}
+                              onChange={(e) =>
+                                setBatchSegregationReason((prev) => ({ ...prev, [batch.id]: e.target.value }))
+                              }
+                              placeholder="Required for self-approval / self-release"
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap justify-end gap-2">
                         {batch.status === "PENDING_APPROVAL" ? (
-                          <Button size="sm" variant="outline" onClick={() => approveBatchMutation.mutate(batch.id)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              blockSelfApprove ||
+                              (needsAdminOverride && !overrideReason.trim()) ||
+                              approveBatchMutation.isPending
+                            }
+                            onClick={() =>
+                              needsAdminOverride
+                                ? approveBatchMutation.mutate({
+                                    batchId: batch.id,
+                                    adminOverride: true,
+                                    overrideReason: overrideReason.trim(),
+                                  })
+                                : approveBatchMutation.mutate(batch.id)
+                            }
+                          >
                             Approve
                           </Button>
                         ) : null}
                         {batch.status === "APPROVED" ? (
-                          <Button size="sm" onClick={() => releaseBatchMutation.mutate(batch.id)}>
+                          <Button
+                            size="sm"
+                            disabled={
+                              blockSelfApprove ||
+                              (needsAdminOverride && !overrideReason.trim()) ||
+                              releaseBatchMutation.isPending
+                            }
+                            onClick={() =>
+                              needsAdminOverride
+                                ? releaseBatchMutation.mutate({
+                                    batchId: batch.id,
+                                    adminOverride: true,
+                                    overrideReason: overrideReason.trim(),
+                                  })
+                                : releaseBatchMutation.mutate(batch.id)
+                            }
+                          >
                             Release
                           </Button>
                         ) : null}
+                        </div>
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}

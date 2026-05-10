@@ -98,13 +98,20 @@ function reportRequestError(params: {
 }) {
   const suppressed = shouldSuppressGlobalError(params.method, params.status, params.url);
   const method = params.method.toUpperCase();
+  const apiCode = extractApiErrorCode(params.payload);
+  const businessRuleMutationWarning =
+    isMutationMethod(method) &&
+    params.status === 403 &&
+    apiCode === "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED";
   addDiagnosticEvent({
     severity:
-      params.status == null || params.status >= 500 || isMutationMethod(method)
-        ? "error"
-        : suppressed
-          ? "info"
-          : "warning",
+      businessRuleMutationWarning
+        ? "warning"
+        : params.status == null || params.status >= 500 || isMutationMethod(method)
+          ? "error"
+          : suppressed
+            ? "info"
+            : "warning",
     source: params.status == null ? "network" : params.status === 401 ? "auth" : "api",
     title: params.status == null ? "Network request failed" : `API request failed (${params.status})`,
     message: params.reason,
@@ -121,7 +128,7 @@ function reportRequestError(params: {
     userAction: suppressed ? undefined : "Review the endpoint, status code, and server logs around this timestamp.",
   });
 
-  if (suppressed) {
+  if (suppressed || businessRuleMutationWarning) {
     return;
   }
   actionErrorStore.push({
@@ -305,6 +312,10 @@ function reportNetworkFailure(params: {
   });
 }
 
+/** Dedupe repeated slow-request diagnostics for the same path (burst refetches / polling). */
+const lastSlowRequestDiagnosticAt = new Map<string, number>();
+const SLOW_REQUEST_DIAGNOSTIC_COOLDOWN_MS = 30_000;
+
 function recordSlowRequest(params: {
   method: string;
   url: string;
@@ -313,12 +324,20 @@ function recordSlowRequest(params: {
   details?: unknown;
 }) {
   if (params.durationMs < 3_000) return;
+  const path = normalizeEndpointPath(params.url);
+  const dedupeKey = `${params.method.toUpperCase()}|${path}`;
+  const now = Date.now();
+  const last = lastSlowRequestDiagnosticAt.get(dedupeKey);
+  if (last != null && now - last < SLOW_REQUEST_DIAGNOSTIC_COOLDOWN_MS) {
+    return;
+  }
+  lastSlowRequestDiagnosticAt.set(dedupeKey, now);
   addDiagnosticEvent({
     severity: "warning",
     source: "api",
     title: "Slow API request",
-    message: `${params.method.toUpperCase()} ${normalizeEndpointPath(params.url)} took ${Math.round(params.durationMs)}ms.`,
-    endpoint: normalizeEndpointPath(params.url),
+    message: `${params.method.toUpperCase()} ${path} took ${Math.round(params.durationMs)}ms.`,
+    endpoint: path,
     method: params.method.toUpperCase(),
     status: params.status,
     durationMs: params.durationMs,

@@ -36,6 +36,7 @@ export type PaymentBatch = {
   totalAmount: number;
   scheduledDate: string | null;
   items: Array<{ id: number; invoiceId: number; amount: number; status: string }>;
+  createdBy?: number | null;
 };
 export type Overview = {
   invoiceCount: number;

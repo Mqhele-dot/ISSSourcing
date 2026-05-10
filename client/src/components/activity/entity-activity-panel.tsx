@@ -1,7 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataState } from "@/components/ui/data-state";
 import { Badge } from "@/components/ui/badge";
-import { useAsyncResource } from "@/hooks/use-async-resource";
 import { fetchActivityEnvelope } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
 
@@ -29,6 +29,7 @@ type EntityActivityPanelProps = {
   entityType: string;
   entityId: string | number;
   title?: string;
+  /** Capped server-side at 100; default 20 for entity panels */
   limit?: number;
 };
 
@@ -38,32 +39,55 @@ export function EntityActivityPanel({
   title = "Activity",
   limit = 20,
 }: EntityActivityPanelProps) {
-  const fetcher = async () =>
-    fetchActivityEnvelope({
-      limit,
-      entityType,
-      entityId,
-    });
+  const entityIdStr = String(entityId ?? "").trim();
+  const enabled = Boolean(entityType?.trim() && entityIdStr.length > 0);
 
-  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const { isLoading, isFetching, error, data: envelope, refetch } = useQuery({
+    queryKey: ["activity", "ops", entityType.trim().toLowerCase(), entityIdStr, limit],
+    queryFn: () =>
+      fetchActivityEnvelope({
+        limit,
+        entityType: entityType.trim(),
+        entityId: entityIdStr,
+      }),
+    enabled,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    gcTime: 5 * 60_000,
+  });
+
   const data = envelope?.data ?? null;
   const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
+  const loading = enabled && (isLoading || isFetching);
+
+  if (!enabled) {
+    return (
+      <Card data-testid="entity-activity-panel-disabled">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">Activity requires a linked record reference.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
-    <Card>
+    <Card data-testid="entity-activity-panel">
       <CardHeader className="flex flex-row items-center justify-between gap-3">
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
         <DataState
           loading={loading}
-          error={error}
+          error={error instanceof Error ? error : error ? new Error(String(error)) : null}
           data={data}
           isEmpty={(items) => items.length === 0}
           emptyTitle="No activity recorded"
           emptyDescription="Actions for this record will appear here."
           fallback={fallback}
-          onRetry={refetch}
+          onRetry={() => void refetch()}
         >
           {(items) => (
             <div className="space-y-2">

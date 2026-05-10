@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -55,8 +55,11 @@ import { PoCommercialTermsCard } from "./po-commercial-terms-card";
 import { PoLastReceiveSummaryCard } from "./po-last-receive-summary-card";
 import {
   canApprove,
+  canApproveWithRole,
   canReceive,
   canSend,
+  canSendWithRole,
+  canUpdatePurchaseOrder,
   fetchPurchaseOrderRecordById,
   formatDate,
   formatDateTime,
@@ -88,9 +91,15 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [paymentTermsId, setPaymentTermsId] = useState<string>("none");
   const [incotermId, setIncotermId] = useState<string>("none");
   const [receiveError, setReceiveError] = useState<string | null>(null);
+  const [commercialSaveError, setCommercialSaveError] = useState<string | null>(null);
+  const purchaseOrderIdRef = useRef<number | null>(null);
 
   const fetcher = useCallback((): Promise<PurchaseOrderDetail> => fetchPurchaseOrder(po), [po]);
-  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const { loading, error, data, refetch } = useAsyncResource(fetcher, { revalidateDeps: [po] });
+
+  useEffect(() => {
+    purchaseOrderIdRef.current = data?.id ?? null;
+  }, [data?.id]);
   const { data: revisions = [], isError: revisionsError } = useQuery({
     queryKey: ["/api/purchase-orders/revisions", data?.id],
     enabled: Boolean(data?.id),
@@ -179,8 +188,9 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
 
   const saveCommercialTerms = useMutation({
     mutationFn: () => {
-      if (!data?.id) throw new Error("Purchase order ID missing");
-      return requestJson("PUT", `/api/purchase-orders/${data.id}`, {
+      const id = purchaseOrderIdRef.current;
+      if (!id) throw new Error("Purchase order ID missing");
+      return requestJson("PUT", `/api/purchase-orders/${id}`, {
         departmentId: departmentId === "none" ? null : Number(departmentId),
         contractId: contractId === "none" ? null : Number(contractId),
         paymentTermsId: paymentTermsId === "none" ? null : Number(paymentTermsId),
@@ -188,14 +198,20 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
       });
     },
     onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", data?.id] });
+      const id = purchaseOrderIdRef.current;
+      if (id) {
+        await queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", id] });
+      }
       await refetch();
+      setCommercialSaveError(null);
       toast({ title: "PO commercial terms updated" });
     },
     onError: (e) => {
+      const description = e instanceof Error ? e.message : String(e);
+      setCommercialSaveError(description);
       toast({
         title: "Failed to update PO terms",
-        description: e instanceof Error ? e.message : String(e),
+        description,
         variant: "destructive",
       });
     },
@@ -450,7 +466,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       <Button
                         variant="outline"
                         className="gap-2"
-                        disabled={!canApprove(detail.status) || statusUpdating}
+                        disabled={!canApproveWithRole(detail.status, user?.role ?? undefined) || statusUpdating}
                         data-testid="po-approve-button"
                         onClick={() => updateStatus("approve")}
                       >
@@ -462,7 +478,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       <Button
                         variant="outline"
                         className="gap-2"
-                        disabled={!canSend(detail.status) || statusUpdating}
+                        disabled={!canSendWithRole(detail.status, user?.role ?? undefined) || statusUpdating}
                         data-testid="po-send-button"
                         onClick={() => updateStatus("send")}
                       >
@@ -516,7 +532,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                           <CardTitle className="text-sm font-medium text-muted-foreground">Receive progress</CardTitle>
                         </CardHeader>
                         <CardContent data-testid="po-detail-progress" className="text-lg font-semibold">
-                          {detail.progress.percent}%
+                          {detail.progress?.percent ?? 0}%
                         </CardContent>
                       </Card>
                       <Card>
@@ -530,7 +546,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     </div>
                   </section>
 
-                  <div data-testid="po-commercial-card">
+                  <div className="space-y-3">
                     {commercialReferenceError ? (
                       <Card className="mb-3 border-amber-500/50 bg-amber-500/10">
                         <CardHeader className="pb-2">
@@ -556,6 +572,9 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       paymentTerms={paymentTerms}
                       incoterms={incoterms}
                       saveCommercialTerms={saveCommercialTerms}
+                      canSaveCommercial={canUpdatePurchaseOrder(detail.status)}
+                      commercialLockedReason="Commercial terms can only be updated before the PO is sent."
+                      commercialSaveError={commercialSaveError}
                     />
                   </div>
 

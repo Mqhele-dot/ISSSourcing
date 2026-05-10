@@ -22,6 +22,7 @@ import { parseApIntakeForSubmit, parsePaymentBatchForSubmit } from "./validation
 import type { ApWorkspaceTab } from "./types";
 import { isApWorkspaceTab } from "./types";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
+import { useAuth } from "@/hooks/use-auth";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { fromMoneyCents, sumSelectedInvoicePayableCents } from "@shared/functional-calculations";
 
@@ -34,6 +35,7 @@ const TAB_TO_ROUTE: Record<ApWorkspaceTab, string> = {
 
 export default function AccountsPayableWorkspace() {
   const productSetupComplete = useProductSetupComplete();
+  const { user } = useAuth();
   const { toast } = useToast();
   const { formatMoney } = useReportingMoney();
   const [, setLocation] = useLocation();
@@ -412,6 +414,8 @@ export default function AccountsPayableWorkspace() {
                   approveBatchMutation={mutations.approveBatchMutation}
                   releaseBatchMutation={mutations.releaseBatchMutation}
                   onCreateBatch={onCreateBatch}
+                  actorUserId={user?.id}
+                  actorRole={user?.role}
                 />
         </TabsContent>
       </Tabs>
