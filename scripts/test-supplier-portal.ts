@@ -154,6 +154,19 @@ async function main() {
   });
   expectStatus("POST /api/supplier/invoices", 201, invoice.status);
 
+  const invoiceList = await apiJsonRequest(`/supplier/invoices?supplierId=${supplierId}`, {
+    method: "GET",
+    cookie: adminCookie,
+  });
+  expectStatus("GET /api/supplier/invoices", 200, invoiceList.status);
+  const submitted = asArray<{ invoiceNumber?: string }>(unwrapData<unknown>(invoiceList.json));
+  if (submitted.some((row) => String(row.invoiceNumber || "").startsWith("SUP-INV-"))) {
+    console.log("  ✓ Supplier invoices list includes submitted invoice");
+  } else {
+    failures++;
+    console.log("  ✗ Supplier invoices list does not include submitted invoice");
+  }
+
   console.log("\nSupplier portal result: %d failure(s)", failures);
   exitTest(failures > 0 ? 1 : 0);
 }

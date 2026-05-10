@@ -9,6 +9,7 @@ import { createSupplierService } from "../../services/supplier-service";
 import { insertSupplierSchema, insertSupplierLogoSchema, PurchaseOrderStatus } from "@shared/schema";
 import type { AuthBundle } from "../procurement/types";
 import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
+import { createInvoiceRecord } from "../accounts-payable/service";
 
 const supplierRepo = createSupplierRepository(storage);
 const supplierService = createSupplierService(supplierRepo, storage);
@@ -318,31 +319,44 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
         return sendFunctionError(res, 400, "createSupplierPortalInvoice", "Invoice total must be a positive number");
       }
       const orgCurrency = await getReportingCurrencyCode(storage);
-      const invoice = await storage.createInvoice(
-        {
-          invoiceNumber: payload?.invoiceNumber || `INV-SUP-${Date.now().toString().slice(-8)}`,
-          issueDate: payload?.issueDate ? new Date(payload.issueDate) : now,
-          dueDate: due,
-          customerId: null,
-          supplierId,
-          purchaseOrderId: poId,
-          subtotal: Number(payload?.subtotal ?? total),
-          tax: Number(payload?.tax ?? 0),
-          discount: Number(payload?.discount ?? 0),
-          total,
-          paidAmount: 0,
-          dueAmount: total,
-          currency: payload?.currency ?? orgCurrency,
-          status: "DRAFT",
-          notes: payload?.notes ?? null,
-          createdBy: Number((req as Request & { user?: { id?: number } }).user?.id ?? 1),
-        } as any,
-        Array.isArray(payload?.items) ? payload.items : [],
-      );
+      const invoice = await createInvoiceRecord({
+        invoiceNumber: payload?.invoiceNumber || `INV-SUP-${Date.now().toString().slice(-8)}`,
+        issueDate: payload?.issueDate ? new Date(payload.issueDate) : now,
+        dueDate: due,
+        customerId: null,
+        supplierId,
+        purchaseOrderId: poId,
+        subtotal: Number(payload?.subtotal ?? total),
+        tax: Number(payload?.tax ?? 0),
+        discount: Number(payload?.discount ?? 0),
+        total,
+        paidAmount: 0,
+        dueAmount: total,
+        currency: payload?.currency ?? orgCurrency,
+        status: "DRAFT",
+        notes: payload?.notes ?? null,
+        items: Array.isArray(payload?.items) ? payload.items : [],
+      }, Number((req as Request & { user?: { id?: number } }).user?.id ?? 1));
       res.status(201).json(invoice);
     } catch (error) {
       console.error("Error creating supplier invoice:", error);
       return sendFunctionError(res, 500, "createSupplierPortalInvoice", "Failed to create supplier invoice", error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  app.get("/api/supplier/invoices", ...supplierRead, async (req: Request, res: Response) => {
+    try {
+      const user = (req as Request & { user?: { role?: string } }).user;
+      if (!["supplier", "admin", "manager"].includes(String(user?.role ?? ""))) {
+        return sendFunctionError(res, 403, "getSupplierPortalInvoices", "Forbidden");
+      }
+      const supplierId = await resolveSupplierIdForUser(req);
+      if (!supplierId) return sendFunctionError(res, 400, "getSupplierPortalInvoices", "Supplier mapping not found for user");
+      const invoices = await storage.getAllInvoices();
+      res.json(invoices.filter((invoice) => Number(invoice.supplierId) === supplierId));
+    } catch (error) {
+      console.error("Error fetching supplier invoices:", error);
+      return sendFunctionError(res, 500, "getSupplierPortalInvoices", "Failed to fetch supplier invoices", error instanceof Error ? error.message : String(error));
     }
   });
   // Supplier Logo endpoints (same RBAC as suppliers)

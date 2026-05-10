@@ -209,7 +209,7 @@ export default function InventoryDetailPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="mx-auto max-w-7xl space-y-4" data-testid="inventory-detail-page">
       <Button variant="ghost" onClick={() => setLocation("/inventory")} className="w-fit">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to inventory

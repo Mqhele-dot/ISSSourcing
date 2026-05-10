@@ -26,7 +26,7 @@ export type MatchException = {
   invoiceId: number;
   status: string;
   mismatchCount: number;
-  mismatchSummary: Array<{ message?: string; type?: string }>;
+  mismatchSummary: Array<{ message?: string; type?: string; code?: string }>;
   updatedAt: string;
 };
 export type PaymentBatch = {

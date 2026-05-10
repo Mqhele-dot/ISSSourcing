@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { confirmSupplierPortalOrder, fetchSupplierPortalOrders, updateSupplierPortalDelivery, uploadDocumentFile } from "@/api/client";
+import { confirmSupplierPortalOrder, fetchSupplierPortalInvoices, fetchSupplierPortalOrders, updateSupplierPortalDelivery, uploadDocumentFile } from "@/api/client";
 import { requestJson } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -22,6 +22,8 @@ export default function SupplierPortalPage() {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [invoicePoId, setInvoicePoId] = useState<string>("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceTotal, setInvoiceTotal] = useState("");
+  const [invoiceCurrency, setInvoiceCurrency] = useState("ZAR");
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const role = String(user?.role ?? "");
   const canChooseSupplier = role === "admin" || role === "manager";
@@ -38,6 +40,12 @@ export default function SupplierPortalPage() {
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["/api/supplier/orders", supplierScopeId ?? "self"],
     queryFn: () => fetchSupplierPortalOrders(supplierScopeId),
+    enabled: !canChooseSupplier || supplierScopeId != null,
+  });
+
+  const { data: portalInvoices = [] } = useQuery({
+    queryKey: ["/api/supplier/invoices", supplierScopeId ?? "self"],
+    queryFn: () => fetchSupplierPortalInvoices(supplierScopeId),
     enabled: !canChooseSupplier || supplierScopeId != null,
   });
 
@@ -80,9 +88,18 @@ export default function SupplierPortalPage() {
       if (!Number.isFinite(poId) || poId <= 0) {
         throw new Error("Choose a valid purchase order");
       }
+      if (!invoiceNumber.trim()) {
+        throw new Error("Invoice number is required");
+      }
+      const total = Number(invoiceTotal);
+      if (!Number.isFinite(total) || total <= 0) {
+        throw new Error("Invoice total must be greater than zero");
+      }
       const createdInvoice = await requestJson<{ id: number }>("POST", "/api/supplier/invoices", {
         purchaseOrderId: poId,
-        invoiceNumber: invoiceNumber || undefined,
+        invoiceNumber: invoiceNumber.trim(),
+        total,
+        currency: invoiceCurrency.trim() || "ZAR",
         ...(supplierScopeId ? { supplierId: supplierScopeId } : {}),
       });
       if (invoiceFile) {
@@ -97,7 +114,9 @@ export default function SupplierPortalPage() {
     onSuccess: () => {
       setInvoicePoId("");
       setInvoiceNumber("");
+      setInvoiceTotal("");
       setInvoiceFile(null);
+      void queryClient.invalidateQueries({ queryKey: ["/api/supplier/invoices"] });
       toast({
         title: "Supplier invoice submitted",
         description: "Invoice has been created and attachment uploaded.",
@@ -126,7 +145,7 @@ export default function SupplierPortalPage() {
   }, [orders]);
 
   return (
-    <PageShell variant="standard">
+    <PageShell variant="standard" data-testid="supplier-portal-page">
       <PageHeader
         title="Supplier Portal"
         subtitle="Review your assigned purchase orders and share acknowledgments/delivery dates."
@@ -232,7 +251,7 @@ export default function SupplierPortalPage() {
               </TableHeader>
               <TableBody>
                 {orders.map((order) => (
-                  <TableRow key={order.id}>
+                  <TableRow key={order.id} data-testid={`supplier-portal-po-row-${order.poNumber}`}>
                     <TableCell className="font-medium">{order.poNumber}</TableCell>
                     <TableCell>{order.status}</TableCell>
                     <TableCell>{Number(order.totalAmount ?? 0).toFixed(2)}</TableCell>
@@ -299,16 +318,22 @@ export default function SupplierPortalPage() {
         <CardHeader>
           <CardTitle>Submit invoice</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
+        <CardContent className="grid gap-3 md:grid-cols-5">
           <div className="space-y-1">
-            <Label htmlFor="supplier-invoice-po">Purchase order ID</Label>
-            <Input
-              id="supplier-invoice-po"
-              value={invoicePoId}
-              onChange={(event) => setInvoicePoId(event.target.value)}
-              placeholder="e.g. 123"
-              disabled={!supplierSelected}
-            />
+            <Label htmlFor="supplier-invoice-po">Purchase order</Label>
+            <Select value={invoicePoId || "none"} onValueChange={(value) => setInvoicePoId(value === "none" ? "" : value)} disabled={!supplierSelected}>
+              <SelectTrigger id="supplier-invoice-po" data-testid="supplier-portal-order-picker">
+                <SelectValue placeholder="Choose PO" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Choose PO</SelectItem>
+                {orders.map((order) => (
+                  <SelectItem key={order.id} value={String(order.id)}>
+                    {order.poNumber} · {Number(order.totalAmount ?? 0).toFixed(2)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label htmlFor="supplier-invoice-number">Invoice number</Label>
@@ -316,7 +341,29 @@ export default function SupplierPortalPage() {
               id="supplier-invoice-number"
               value={invoiceNumber}
               onChange={(event) => setInvoiceNumber(event.target.value)}
-              placeholder="Optional"
+              placeholder="Required"
+              disabled={!supplierSelected}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="supplier-invoice-total">Invoice total</Label>
+            <Input
+              id="supplier-invoice-total"
+              type="number"
+              min={0}
+              step={0.01}
+              value={invoiceTotal}
+              onChange={(event) => setInvoiceTotal(event.target.value)}
+              placeholder="0.00"
+              disabled={!supplierSelected}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="supplier-invoice-currency">Currency</Label>
+            <Input
+              id="supplier-invoice-currency"
+              value={invoiceCurrency}
+              onChange={(event) => setInvoiceCurrency(event.target.value.toUpperCase())}
               disabled={!supplierSelected}
             />
           </div>
@@ -331,12 +378,69 @@ export default function SupplierPortalPage() {
           </div>
           <div className="flex items-end">
             <Button
+              data-testid="supplier-portal-submit-invoice"
               onClick={() => uploadInvoice.mutate()}
               disabled={uploadInvoice.isPending || !supplierSelected}
             >
               Submit invoice
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Open POs</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            {orders.filter((order) => !["received", "completed", "cancelled"].includes(String(order.status).toLowerCase())).length} assigned order(s) remain open for acknowledgement, delivery updates, or invoice submission.
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Invoices submitted</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {portalInvoices.length === 0 ? (
+              <p className="text-muted-foreground">No supplier invoices submitted yet.</p>
+            ) : (
+              portalInvoices.slice(0, 5).map((invoice) => (
+                <div key={invoice.id} className="flex justify-between gap-3 rounded-md border p-2">
+                  <span>{invoice.invoiceNumber}</span>
+                  <span className="text-muted-foreground">{invoice.status}</span>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+        <Card data-testid="supplier-portal-payment-status">
+          <CardHeader>
+            <CardTitle>Payment / remittance status</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {portalInvoices.length === 0 ? (
+              <p className="text-muted-foreground">Payment status appears after invoice submission.</p>
+            ) : (
+              portalInvoices.slice(0, 5).map((invoice) => (
+                <div key={invoice.id} className="flex justify-between gap-3 rounded-md border p-2">
+                  <span>{invoice.invoiceNumber}</span>
+                  <span className="text-muted-foreground">
+                    Paid {Number(invoice.paidAmount ?? 0).toFixed(2)} / Due {Number(invoice.dueAmount ?? invoice.total).toFixed(2)}
+                  </span>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Documents</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Upload invoice documents from the submission panel. Additional supplier document center workflows can build on the same attachment service.
         </CardContent>
       </Card>
     </PageShell>

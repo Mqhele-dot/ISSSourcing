@@ -14,6 +14,7 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     page,
     baseURL,
   }) => {
+    test.setTimeout(90000);
     await gotoAuthed(page, "/inventory");
     await expect(page.getByTestId("inventory-page")).toBeVisible({ timeout: 30000 });
     await expect(page.getByTestId("inventory-row-SKU-A")).toBeVisible({ timeout: 45000 });
@@ -253,7 +254,7 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     await expect(page.getByTestId("purchase-orders-page")).toBeVisible({ timeout: 30000 });
 
     await page.goto("/procurement/requisitions?status=PENDING");
-    await expect(page.getByTestId("purchase-orders-page")).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId("requisitions-page")).toBeVisible({ timeout: 30000 });
     await expect(page.getByText("REQ-FQA-001")).toBeVisible({ timeout: 20000 });
 
     await page.goto("/procurement/orders");

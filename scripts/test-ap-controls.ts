@@ -145,6 +145,39 @@ async function main() {
   });
   failures += expectPass("Self-approval allowed with explicit override", selfApproveOverride.status === 200);
 
+  const duplicateInvoiceNumber = `AP-DUP-${Date.now().toString().slice(-6)}`;
+  const duplicateOne = await apiJsonRequest("/invoices", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      supplierId,
+      invoiceNumber: duplicateInvoiceNumber,
+      issueDate: new Date().toISOString(),
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      status: "DRAFT",
+      subtotal: 12,
+      tax: 0,
+      total: 12,
+      dueAmount: 12,
+    },
+  });
+  const duplicateTwo = await apiJsonRequest("/invoices", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      supplierId,
+      invoiceNumber: duplicateInvoiceNumber,
+      issueDate: new Date().toISOString(),
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      status: "DRAFT",
+      subtotal: 12,
+      tax: 0,
+      total: 12,
+      dueAmount: 12,
+    },
+  });
+  failures += expectPass("Duplicate supplier invoice number is blocked", duplicateOne.status === 201 && duplicateTwo.status >= 400);
+
   const invalidApproverInvoiceId = await createInvoice(adminCookie, supplierId, itemId, 11, "BADAPP");
   await apiJsonRequest(`/invoices/${invalidApproverInvoiceId}`, {
     method: "PATCH",

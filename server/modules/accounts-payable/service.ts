@@ -88,6 +88,25 @@ function buildDuplicateCheckKey(input: {
   ].join("|");
 }
 
+async function invoiceNumberExistsForSupplier(input: {
+  orgId: number;
+  supplierId: number;
+  invoiceNumber: string;
+  excludeInvoiceId?: number;
+}): Promise<boolean> {
+  const rows = await db
+    .select({ id: invoices.id })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.organizationId, input.orgId),
+        eq(invoices.supplierId, input.supplierId),
+        eq(invoices.invoiceNumber, input.invoiceNumber),
+      ),
+    );
+  return rows.some((row) => row.id !== input.excludeInvoiceId);
+}
+
 function normalizeDateOnly(value: Date | null | undefined): string {
   if (!value) return "unknown-date";
   return new Date(value).toISOString().slice(0, 10);
@@ -123,6 +142,79 @@ async function createApprovalHistoryEntry(input: {
     newStatus: input.newStatus ?? null,
     comment: input.comment ?? null,
   });
+}
+
+async function emitApDomainEvent(input: {
+  organizationId: number;
+  aggregateType: string;
+  aggregateId: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+}) {
+  await db.execute(sql`
+    INSERT INTO event_outbox (organization_id, aggregate_type, aggregate_id, event_type, event_version, payload)
+    VALUES (${input.organizationId}, ${input.aggregateType}, ${input.aggregateId}, ${input.eventType}, 1, ${JSON.stringify(input.payload)}::jsonb)
+  `);
+}
+
+async function postInvoiceApprovedSubledger(input: {
+  organizationId: number;
+  invoiceId: number;
+  invoiceNumber: string;
+  supplierId: number | null;
+  amount: number;
+  currency: string;
+}) {
+  const amount = Number(input.amount.toFixed(2));
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  const sourceId = String(input.invoiceId);
+  const eventRows = await db.execute(sql`
+    INSERT INTO subledger_events (organization_id, source_type, source_id, event_type, currency, amount, payload)
+    VALUES (
+      ${input.organizationId},
+      'invoice',
+      ${sourceId},
+      'invoice_approved',
+      ${input.currency},
+      ${amount},
+      ${JSON.stringify({ invoiceId: input.invoiceId, invoiceNumber: input.invoiceNumber, supplierId: input.supplierId })}::jsonb
+    )
+    ON CONFLICT (organization_id, source_type, source_id, event_type)
+    DO UPDATE SET event_time = subledger_events.event_time
+    RETURNING id
+  `);
+  const subledgerEventId = Number((eventRows.rows[0] as { id?: unknown } | undefined)?.id);
+  if (!Number.isFinite(subledgerEventId)) return;
+  const batchKey = `AP-INV-${input.invoiceId}`;
+  const batchRows = await db.execute(sql`
+    INSERT INTO journal_batches (organization_id, batch_key, status)
+    VALUES (${input.organizationId}, ${batchKey}, 'posted')
+    ON CONFLICT (organization_id, batch_key)
+    DO UPDATE SET status = journal_batches.status
+    RETURNING id
+  `);
+  const batchId = Number((batchRows.rows[0] as { id?: unknown } | undefined)?.id);
+  if (!Number.isFinite(batchId)) return;
+  const existingEntry = await db.execute(sql`
+    SELECT id FROM journal_entries
+    WHERE organization_id = ${input.organizationId}
+      AND subledger_event_id = ${subledgerEventId}
+    LIMIT 1
+  `);
+  if (existingEntry.rows.length > 0) return;
+  const entryRows = await db.execute(sql`
+    INSERT INTO journal_entries (organization_id, batch_id, subledger_event_id, entry_number, description)
+    VALUES (${input.organizationId}, ${batchId}, ${subledgerEventId}, ${`JE-AP-${input.invoiceId}`}, ${`AP invoice approved: ${input.invoiceNumber}`})
+    RETURNING id
+  `);
+  const entryId = Number((entryRows.rows[0] as { id?: unknown } | undefined)?.id);
+  if (!Number.isFinite(entryId)) return;
+  await db.execute(sql`
+    INSERT INTO journal_lines (journal_entry_id, line_no, account_code, dr_amount, cr_amount)
+    VALUES
+      (${entryId}, 1, 'AP_EXPENSE_CLEARING', ${amount}, 0),
+      (${entryId}, 2, 'ACCOUNTS_PAYABLE', 0, ${amount})
+  `);
 }
 
 export async function listInvoices(filters: InvoiceFilters = {}) {
@@ -162,6 +254,7 @@ export async function getInvoiceDetail(invoiceId: number) {
 }
 
 export async function createInvoiceRecord(invoiceData: Record<string, unknown>, userId: number) {
+  const orgId = getActiveOrganizationId();
   const items = Array.isArray(invoiceData.items) ? (invoiceData.items as InsertInvoiceItem[]) : [];
   const supplierId = toNumber(invoiceData.supplierId, 0);
   if (!supplierId) {
@@ -201,12 +294,17 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
   const tax = toNumber(invoiceData.tax ?? invoiceData.totalTax, 0);
   const discount = toNumber(invoiceData.discount, 0);
 
+  const invoiceNumber =
+    typeof invoiceData.invoiceNumber === "string" && invoiceData.invoiceNumber.trim()
+      ? invoiceData.invoiceNumber.trim()
+      : `INV-${Date.now().toString().slice(-8)}`;
+  if (await invoiceNumberExistsForSupplier({ orgId, supplierId, invoiceNumber })) {
+    throw new Error("Duplicate supplier invoice number detected for this supplier.");
+  }
+
   const created = await storage.createInvoice(
     {
-      invoiceNumber:
-        typeof invoiceData.invoiceNumber === "string" && invoiceData.invoiceNumber.trim()
-          ? invoiceData.invoiceNumber.trim()
-          : `INV-${Date.now().toString().slice(-8)}`,
+      invoiceNumber,
       supplierId,
       customerId: invoiceData.customerId == null ? null : toNumber(invoiceData.customerId, 0),
       purchaseOrderId: purchaseOrderId || null,
@@ -234,6 +332,13 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
     referenceId: created.id,
     userId,
   }).catch(() => {});
+
+  if (purchaseOrderId) {
+    await evaluateInvoiceMatch(created.id, { priceTolerancePct: 0, quantityTolerancePct: 0, taxTolerancePct: 0 }, userId)
+      .catch((error) => {
+        console.warn("Initial AP match case creation failed:", error);
+      });
+  }
 
   return created;
 }
@@ -388,6 +493,29 @@ export async function approveInvoice(
   });
   const updated = await updateInvoiceStatus(invoiceId, "APPROVED", userId, comment ?? context.overrideReason);
   if (updated) {
+    await emitApDomainEvent({
+      organizationId: orgId,
+      aggregateType: "invoice",
+      aggregateId: String(updated.id),
+      eventType: "ap_invoice.approved",
+      payload: {
+        invoiceId: updated.id,
+        invoiceNumber: updated.invoiceNumber,
+        supplierId: updated.supplierId,
+        amount: updated.total,
+        approvedBy: userId,
+      },
+    }).catch(() => {});
+    await postInvoiceApprovedSubledger({
+      organizationId: orgId,
+      invoiceId: updated.id,
+      invoiceNumber: updated.invoiceNumber,
+      supplierId: updated.supplierId ?? null,
+      amount: toNumber(updated.total, 0),
+      currency: "ZAR",
+    }).catch((error) => {
+      console.warn("AP invoice subledger posting failed:", error);
+    });
     await emitNotificationToRoles(["manager", "admin"], {
       type: "ap_invoice_approved",
       title: `Invoice ${updated.invoiceNumber} approved`,

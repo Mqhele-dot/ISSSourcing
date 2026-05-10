@@ -179,6 +179,20 @@ export type PurchaseOrderDetail = {
 
 export type PurchaseOrder = PurchaseOrderDetail;
 
+export type SupplierPortalInvoice = {
+  id: number;
+  invoiceNumber: string;
+  purchaseOrderId: number | null;
+  supplierId: number | null;
+  status: string;
+  total: number;
+  dueAmount: number | null;
+  paidAmount: number | null;
+  issueDate: string | null;
+  dueDate: string | null;
+  createdAt: string | null;
+};
+
 export type PurchaseReceiveResult = {
   order: PurchaseOrderDetail;
   inventoryChanges: Array<{

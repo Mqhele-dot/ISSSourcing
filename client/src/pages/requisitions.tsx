@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -12,9 +12,20 @@ import {
   ChevronRight,
   History,
   Users,
+  Eye,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
@@ -40,6 +51,13 @@ import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { useQueryState } from "@/hooks/use-query-state";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface RequisitionsPageProps {
   embedded?: boolean;
@@ -57,7 +75,8 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const [selectedReq, setSelectedReq] = useState<PurchaseRequisition | null>(null);
   const [shareUserIds, setShareUserIds] = useState<number[]>([]);
   const [search, setSearch] = useState("");
-  const { queryState } = useQueryState({ status: "" });
+  const { queryState, setQueryState } = useQueryState({ status: "" });
+  const [previewReq, setPreviewReq] = useState<PurchaseRequisition | null>(null);
   const [rejectDialogReq, setRejectDialogReq] = useState<PurchaseRequisition | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [historyDialogReq, setHistoryDialogReq] = useState<PurchaseRequisition | null>(null);
@@ -145,14 +164,32 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   });
 
   const statusFilter = String(queryState.status || "").trim().toUpperCase();
+  const searchFilter = search.trim();
   const filtered = requisitions.filter((r) => {
     if (statusFilter && String(r.status || "").toUpperCase() !== statusFilter) return false;
     return (
-      !search ||
-      r.requisitionNumber?.toLowerCase().includes(search.toLowerCase()) ||
-      String(r.id).includes(search)
+      !searchFilter ||
+      r.requisitionNumber?.toLowerCase().includes(searchFilter.toLowerCase()) ||
+      String(r.id).includes(searchFilter)
     );
   });
+  const requisitionKpis = useMemo(() => {
+    const norm = (value: unknown) => String(value || "").toUpperCase();
+    return {
+      total: filtered.length,
+      pending: filtered.filter((r) => norm(r.status) === "PENDING").length,
+      approved: filtered.filter((r) => norm(r.status) === "APPROVED").length,
+      rejected: filtered.filter((r) => norm(r.status) === "REJECTED").length,
+      converted: filtered.filter((r) => norm(r.status) === "CONVERTED").length,
+    };
+  }, [filtered]);
+  const hasActiveFilters = Boolean(searchFilter || statusFilter);
+  const supplierNameFor = (req: PurchaseRequisition) =>
+    suppliers.find((s) => s.id === req.supplierId)?.name ?? (req.supplierId ? "Supplier #" + req.supplierId : "-");
+  const clearFilter = (key: "search" | "status") => {
+    if (key === "search") setSearch("");
+    if (key === "status") setQueryState({ status: "" });
+  };
 
   const approveMutation = useMutation({
     mutationFn: (id: number) =>
@@ -237,7 +274,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="mx-auto max-w-7xl space-y-4" data-testid="requisitions-page">
       {!embedded && (
         <PageHeader
           title="Purchase Requisitions"
@@ -249,12 +286,31 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
       <Toolbar
         sticky
         left={
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search requisition number..."
-            className="w-full sm:w-[260px]"
-          />
+          <>
+            <Input
+              data-testid="requisition-search-input"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search requisition number..."
+              className="w-full sm:w-[260px]"
+            />
+            <Select
+              value={String(queryState.status || "") || "all"}
+              onValueChange={(value) => setQueryState({ status: value === "all" ? "" : value })}
+            >
+              <SelectTrigger className="w-full sm:w-[200px]" data-testid="requisition-status-filter">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="APPROVED">Approved</SelectItem>
+                <SelectItem value="REJECTED">Rejected</SelectItem>
+                <SelectItem value="CONVERTED">Converted</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
         }
         right={
           <>
@@ -272,6 +328,47 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
           </>
         }
       />
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Card data-testid="requisition-kpi-total">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total</CardTitle></CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{requisitionKpis.total}</CardContent>
+        </Card>
+        <Card data-testid="requisition-kpi-pending">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Pending</CardTitle></CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{requisitionKpis.pending}</CardContent>
+        </Card>
+        <Card data-testid="requisition-kpi-approved">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Approved</CardTitle></CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{requisitionKpis.approved}</CardContent>
+        </Card>
+        <Card data-testid="requisition-kpi-rejected">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Rejected</CardTitle></CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{requisitionKpis.rejected}</CardContent>
+        </Card>
+        <Card data-testid="requisition-kpi-converted">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Converted</CardTitle></CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{requisitionKpis.converted}</CardContent>
+        </Card>
+      </div>
+
+      {hasActiveFilters ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="requisition-active-filters">
+          <span className="text-muted-foreground">Active filters:</span>
+          {searchFilter ? (
+            <Button variant="secondary" size="sm" className="gap-1" data-testid="requisition-filter-chip-search" onClick={() => clearFilter("search")}>
+              Search: {searchFilter}
+              <X className="h-3 w-3" />
+            </Button>
+          ) : null}
+          {statusFilter ? (
+            <Button variant="secondary" size="sm" className="gap-1" data-testid="requisition-filter-chip-status" onClick={() => clearFilter("status")}>
+              Status: {statusFilter}
+              <X className="h-3 w-3" />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {usersError || suppliersError ? (
         <PanelInlineError
@@ -339,13 +436,13 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
             </TableHeader>
             <TableBody>
               {(Array.isArray(data) ? data : []).map((req) => (
-                <TableRow key={req.id}>
+                <TableRow key={req.id} data-testid={`requisition-row-${req.requisitionNumber ?? req.id}`} className="cursor-pointer" onClick={() => setPreviewReq(req)}>
                   <TableCell className="font-medium">{req.requisitionNumber}</TableCell>
                   <TableCell>
                     <StatusBadge status={req.status} />
                   </TableCell>
                   <TableCell>
-                    {suppliers.find((s) => s.id === req.supplierId)?.name ?? (req.supplierId ? "Supplier #" + req.supplierId : "-")}
+                    {supplierNameFor(req)}
                   </TableCell>
                   <TableCell>{formatMoney(Number(req.totalAmount || 0))}</TableCell>
                   <TableCell>{formatRequisitionDate(req.requiredDate)}</TableCell>
@@ -353,7 +450,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to edit">
-                        <Button variant="ghost" size="icon" asChild>
+                        <Button variant="ghost" size="icon" asChild onClick={(event) => event.stopPropagation()}>
                           <Link href={basePath + "/" + req.id}>
                             <Pencil className="h-4 w-4" />
                           </Link>
@@ -366,7 +463,10 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                               variant="ghost"
                               size="icon"
                               title="Suggested approvers"
-                              onClick={() => setApproverHelpAmount(Number(req.totalAmount ?? 0))}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setApproverHelpAmount(Number(req.totalAmount ?? 0));
+                              }}
                             >
                               <Users className="h-4 w-4 text-muted-foreground" />
                             </Button>
@@ -375,7 +475,10 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => approveMutation.mutate(req.id)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                approveMutation.mutate(req.id);
+                              }}
                               disabled={approveMutation.isPending}
                             >
                               {approveMutation.isPending ? (
@@ -389,7 +492,10 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => setRejectDialogReq(req)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setRejectDialogReq(req);
+                              }}
                               disabled={rejectMutation.isPending}
                             >
                               <XCircle className="h-4 w-4 text-red-600" />
@@ -402,7 +508,10 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => convertMutation.mutate(req.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              convertMutation.mutate(req.id);
+                            }}
                             disabled={convertMutation.isPending}
                             title="Convert to PO"
                           >
@@ -418,7 +527,10 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => openShareDialog(req)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openShareDialog(req);
+                          }}
                           title="Share"
                         >
                           <Share2 className="h-4 w-4" />
@@ -427,10 +539,25 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => setHistoryDialogReq(req)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setHistoryDialogReq(req);
+                        }}
                         title="Approval history"
                       >
                         <History className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid={`requisition-row-preview-${req.requisitionNumber ?? req.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setPreviewReq(req);
+                        }}
+                        title="Preview requisition"
+                      >
+                        <Eye className="h-4 w-4" />
                       </Button>
                     </div>
                   </TableCell>
@@ -472,6 +599,50 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
         historyError={historyError}
         onRetryHistory={() => void refetchApprovalHistory()}
       />
+      <Dialog open={Boolean(previewReq)} onOpenChange={(open) => !open && setPreviewReq(null)}>
+        <DialogContent data-testid="requisition-preview-panel" className="sm:max-w-2xl">
+          {previewReq ? (
+            <>
+              <DialogHeader>
+                <DialogTitle data-testid="requisition-preview-title">
+                  {previewReq.requisitionNumber ?? `Requisition #${previewReq.id}`}
+                </DialogTitle>
+                <DialogDescription>{supplierNameFor(previewReq)}</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div data-testid="requisition-preview-status"><StatusBadge status={previewReq.status} /></div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Total</div>
+                  <div className="text-xl font-semibold tabular-nums">{formatMoney(Number(previewReq.totalAmount || 0))}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Required date</div>
+                  <div className="font-medium">{formatRequisitionDate(previewReq.requiredDate)}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Created</div>
+                  <div className="font-medium">{formatRequisitionDate(previewReq.createdAt)}</div>
+                </div>
+                <div className="rounded-md border p-3 sm:col-span-2">
+                  <div className="text-xs text-muted-foreground">Justification / notes</div>
+                  <p className="text-sm">{(previewReq as { justification?: string | null }).justification || previewReq.notes || "No justification recorded."}</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setPreviewReq(null)}>
+                  Close
+                </Button>
+                <Button type="button" asChild>
+                  <Link href={basePath + "/" + previewReq.id}>Open full requisition</Link>
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

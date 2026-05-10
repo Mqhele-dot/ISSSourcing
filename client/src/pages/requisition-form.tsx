@@ -53,16 +53,14 @@ export default function RequisitionFormPage() {
             onNotesChange={f.setNotes}
           />
 
-          {isNew && (
-            <RequisitionLinesEditor
-              items={f.items}
-              inventoryItems={f.inventoryItems}
-              fieldError={f.fieldErrors.items}
-              onAddRow={f.addItem}
-              onRemoveRow={f.removeItem}
-              onUpdateRow={f.updateItem}
-            />
-          )}
+          <RequisitionLinesEditor
+            items={f.items}
+            inventoryItems={f.inventoryItems}
+            fieldError={f.fieldErrors.items}
+            onAddRow={f.addItem}
+            onRemoveRow={f.removeItem}
+            onUpdateRow={f.updateItem}
+          />
 
           <div className="flex gap-2">
             <Button onClick={f.handleSubmit} disabled={f.isPending}>

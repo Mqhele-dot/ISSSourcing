@@ -2192,15 +2192,35 @@ export class DatabaseStorage implements IStorage {
   }
   
   async addPurchaseRequisitionItem(item: InsertPurchaseRequisitionItem): Promise<PurchaseRequisitionItem> {
-    return this.memStorage.addPurchaseRequisitionItem(item);
+    const [created] = await db
+      .insert(purchaseRequisitionItems)
+      .values({
+        ...item,
+        totalPrice: Number(item.totalPrice ?? Number(item.quantity ?? 0) * Number(item.unitPrice ?? 0)),
+      })
+      .returning();
+    return created;
   }
   
   async updatePurchaseRequisitionItem(id: number, item: Partial<InsertPurchaseRequisitionItem>): Promise<PurchaseRequisitionItem | undefined> {
-    return this.memStorage.updatePurchaseRequisitionItem(id, item);
+    const [updated] = await db
+      .update(purchaseRequisitionItems)
+      .set({
+        ...item,
+        totalPrice:
+          item.totalPrice ??
+          (item.quantity != null && item.unitPrice != null
+            ? Number(item.quantity) * Number(item.unitPrice)
+            : undefined),
+      })
+      .where(eq(purchaseRequisitionItems.id, id))
+      .returning();
+    return updated;
   }
   
   async deletePurchaseRequisitionItem(id: number): Promise<boolean> {
-    return this.memStorage.deletePurchaseRequisitionItem(id);
+    const result = await db.delete(purchaseRequisitionItems).where(eq(purchaseRequisitionItems.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async approvePurchaseRequisition(id: number, approverId: number): Promise<PurchaseRequisition | undefined> {

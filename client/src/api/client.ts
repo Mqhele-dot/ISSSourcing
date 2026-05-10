@@ -18,6 +18,7 @@ import type {
   OperationalException,
   PurchaseOrderDetail,
   PurchaseOrder,
+  SupplierPortalInvoice,
   PurchaseOrderListItem,
   PurchaseReceiveResult,
   ShipmentDetail,
@@ -45,6 +46,7 @@ export type {
   InventoryListItem,
   OperationalException,
   PurchaseOrder,
+  SupplierPortalInvoice,
   PurchaseOrderDetail,
   PurchaseOrderListItem,
   PurchaseReceiveResult,
@@ -721,6 +723,15 @@ export async function updateSupplierPortalDelivery(
   return apiMutate<PurchaseOrder>("PATCH", url, {
     expectedDeliveryDate,
   });
+}
+
+export async function fetchSupplierPortalInvoices(supplierId?: number): Promise<SupplierPortalInvoice[]> {
+  const search = new URLSearchParams();
+  if (typeof supplierId === "number" && Number.isFinite(supplierId) && supplierId > 0) {
+    search.set("supplierId", String(supplierId));
+  }
+  const url = search.size > 0 ? `/api/supplier/invoices?${search.toString()}` : "/api/supplier/invoices";
+  return apiFetch<SupplierPortalInvoice[]>(url);
 }
 
 export async function uploadDocumentFile(formData: FormData): Promise<Record<string, unknown>> {

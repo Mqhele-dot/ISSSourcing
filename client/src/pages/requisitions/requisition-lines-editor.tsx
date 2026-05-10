@@ -12,6 +12,7 @@ import {
 import type { InventoryItem } from "@shared/schema";
 
 export interface ReqLineDraft {
+  id?: number;
   itemId: number;
   quantity: number;
   unitPrice: number;

@@ -37,6 +37,31 @@ async function validateProjectIdForOrg(
   return { ok: true };
 }
 
+function normalizeRequisitionLineInput(item: unknown, index: number) {
+  const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+  const itemId = Number(row.itemId);
+  const qty = Number(row.quantity);
+  const unit = Number(row.unitPrice);
+  if (!Number.isFinite(itemId) || itemId <= 0) {
+    throw new Error(`Line ${index + 1}: item is required`);
+  }
+  if (!Number.isFinite(qty) || qty <= 0) {
+    throw new Error(`Line ${index + 1}: quantity must be greater than zero`);
+  }
+  if (!Number.isFinite(unit) || unit <= 0) {
+    throw new Error(`Line ${index + 1}: unit price must be greater than zero`);
+  }
+  const id = row.id == null ? null : Number(row.id);
+  return {
+    id: id !== null && Number.isFinite(id) && id > 0 ? id : undefined,
+    itemId,
+    quantity: qty,
+    unitPrice: unit,
+    totalPrice: qty * unit,
+    notes: typeof row.notes === "string" && row.notes.trim() ? row.notes.trim() : null,
+  };
+}
+
 /**
  * Purchase requisitions, purchase orders, line items, receive — org-scoped via storage.
  */
@@ -192,8 +217,9 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (isNaN(id)) {
         return sendFunctionError(res, 400, "updatePurchaseRequisition", "Invalid purchase requisition ID");
       }
-      
-      const validatedData = insertPurchaseRequisitionSchema.partial().parse(req.body);
+      const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+      const { items, revisionReason: _revisionReason, ...headerPatch } = body;
+      const validatedData = insertPurchaseRequisitionSchema.partial().parse(headerPatch);
       if (validatedData.supplierId != null) {
         const supplier = await storage.getSupplier(Number(validatedData.supplierId));
         if (!supplier) {
@@ -214,10 +240,62 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (!projectCheckPut.ok) {
         return sendFunctionError(res, 400, "updatePurchaseRequisition", projectCheckPut.message);
       }
-      const updatedRequisition = await storage.updatePurchaseRequisition(id, validatedData);
+      let updatedRequisition = await storage.updatePurchaseRequisition(id, validatedData);
       
       if (!updatedRequisition) {
         return sendFunctionError(res, 404, "updatePurchaseRequisition", "Purchase requisition not found");
+      }
+
+      if (Array.isArray(items)) {
+        if (items.length === 0) {
+          return sendFunctionError(res, 400, "updatePurchaseRequisition", "At least one requisition line is required");
+        }
+        const normalizedLines = items.map((item, index) => normalizeRequisitionLineInput(item, index));
+        const existingLines = await storage.getPurchaseRequisitionItems(id);
+        const existingById = new Map(existingLines.map((line) => [line.id, line]));
+        const keptIds = new Set<number>();
+        for (const line of normalizedLines) {
+          const payload = {
+            requisitionId: id,
+            itemId: line.itemId,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            totalPrice: line.totalPrice,
+            notes: line.notes,
+          };
+          if (line.id && existingById.has(line.id)) {
+            await storage.updatePurchaseRequisitionItem(line.id, payload);
+            keptIds.add(line.id);
+          } else {
+            const created = await storage.addPurchaseRequisitionItem(payload);
+            keptIds.add(created.id);
+          }
+        }
+        for (const existing of existingLines) {
+          if (!keptIds.has(existing.id)) {
+            await storage.deletePurchaseRequisitionItem(existing.id);
+          }
+        }
+        const totalAmount = normalizedLines.reduce((sum, line) => sum + line.totalPrice, 0);
+        updatedRequisition = await storage.updatePurchaseRequisition(id, { totalAmount }) ?? updatedRequisition;
+        await storage.createActivityLog({
+          action: "Requisition Lines Revised",
+          description: `Revised ${normalizedLines.length} line(s) on requisition ${updatedRequisition.requisitionNumber}`,
+          referenceType: "requisition",
+          referenceId: id,
+          userId: (req as Request & { user?: { id?: number } }).user?.id ?? null,
+        }).catch(() => {});
+        await db.insert(approvalHistory).values({
+          organizationId: getActiveOrganizationId(),
+          entityType: "requisition",
+          entityId: id,
+          level: 0,
+          action: "revised",
+          performedBy: Number((req as Request & { user?: { id?: number } }).user?.id ?? 0),
+          previousStatus: updatedRequisition.status,
+          newStatus: updatedRequisition.status,
+          comment: typeof body.revisionReason === "string" ? body.revisionReason : "Requisition lines revised",
+        } as any).catch(() => {});
       }
       
       res.json(updatedRequisition);

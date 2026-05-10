@@ -38,6 +38,7 @@ export function ApExceptionsPanel({ exceptions, formatMoney, loadFailed }: Props
           title: `Invoice #${result.invoiceId}`,
           subtitle:
             result.mismatchSummary?.[0]?.message ||
+            result.mismatchSummary?.[0]?.code ||
             `${result.mismatchCount} mismatch(es) require AP resolution`,
         }))}
       />

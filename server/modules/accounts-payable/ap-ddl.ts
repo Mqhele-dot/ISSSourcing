@@ -198,6 +198,70 @@ const AP_DDLS = [
     updated_at timestamp NOT NULL DEFAULT now()
   )
   `,
+  `
+  CREATE TABLE IF NOT EXISTS event_outbox (
+    id bigserial PRIMARY KEY,
+    organization_id integer NOT NULL DEFAULT 1 REFERENCES organizations(id),
+    aggregate_type text NOT NULL,
+    aggregate_id text NOT NULL,
+    event_type text NOT NULL,
+    event_version integer NOT NULL DEFAULT 1,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at timestamp NOT NULL DEFAULT now(),
+    published_at timestamp,
+    publish_attempts integer NOT NULL DEFAULT 0
+  )
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS event_outbox_unpublished_idx ON event_outbox (organization_id, published_at, occurred_at)
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS subledger_events (
+    id bigserial PRIMARY KEY,
+    organization_id integer NOT NULL DEFAULT 1 REFERENCES organizations(id),
+    source_type text NOT NULL,
+    source_id text NOT NULL,
+    event_type text NOT NULL,
+    event_time timestamp NOT NULL DEFAULT now(),
+    currency text NOT NULL DEFAULT 'ZAR',
+    amount numeric(18,2) NOT NULL DEFAULT 0,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    UNIQUE (organization_id, source_type, source_id, event_type)
+  )
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS journal_batches (
+    id bigserial PRIMARY KEY,
+    organization_id integer NOT NULL DEFAULT 1 REFERENCES organizations(id),
+    batch_key text NOT NULL,
+    status text NOT NULL DEFAULT 'posted',
+    posted_at timestamp NOT NULL DEFAULT now(),
+    UNIQUE (organization_id, batch_key)
+  )
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS journal_entries (
+    id bigserial PRIMARY KEY,
+    organization_id integer NOT NULL DEFAULT 1 REFERENCES organizations(id),
+    batch_id bigint NOT NULL REFERENCES journal_batches(id),
+    subledger_event_id bigint NOT NULL REFERENCES subledger_events(id),
+    entry_number text NOT NULL,
+    entry_date date NOT NULL DEFAULT CURRENT_DATE,
+    description text NOT NULL
+  )
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS journal_lines (
+    id bigserial PRIMARY KEY,
+    journal_entry_id bigint NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+    line_no integer NOT NULL,
+    account_code text NOT NULL,
+    dr_amount numeric(18,2) NOT NULL DEFAULT 0,
+    cr_amount numeric(18,2) NOT NULL DEFAULT 0,
+    CHECK (dr_amount = 0 OR cr_amount = 0),
+    CHECK (dr_amount <> cr_amount)
+  )
+  `,
 ];
 
 export async function initializeAccountsPayableData() {

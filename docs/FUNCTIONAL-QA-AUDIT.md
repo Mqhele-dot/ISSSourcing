@@ -26,8 +26,9 @@
 | **Wrong calculations found** | Inventory detail availability now preserves explicit negative availability instead of falling back or clamping. PO quick print uses the configured reporting money formatter. **Remaining product gap:** analytics `/api/reports/analytics` spend still uses **Number** sums on PO totals (cent drift risk) — date-window test asserts **zero spend** for a far-future window, not cent parity. |
 | **Pages that do not function** | None observed in **`verify:core`** for routes exercised; partial modules may still hide defects outside smoke/deep-smoke actions. |
 | **Filter behavior fixed** | Inventory search/location/category/low-stock filters are enforced in the UI over the current result set so users see correct rows even if an API returns extra rows. PO search/supplier/status filters have visible chips and can clear one filter at a time. |
-| **Tests added** | Expanded **`e2e/functional-audit.spec.ts`** for Inventory workspace controls and PO workspace/detail behavior. Existing pure checks still cover deterministic calculations and filters. |
-| **Remaining partial / unverified** | Operations / Control Tower, mobile scan UX, every **reports tab** export job → download → parse, **Export Center** job lifecycle, warehouse/project dimensions beyond current Inventory filters, multi-org isolation, full requisition approval → PO conversion, deliberate over-receive override workflow (not implemented). |
+| **Procurement/AP build increment** | Requisitions now expose workbench controls and edit-mode line revisions; supplier portal invoices are submitted from assigned POs; diagnostics route checks require route-specific markers; AP blocks duplicate supplier invoice numbers, creates match cases for PO-linked invoices, and posts an invoice-approved subledger event/journal slice. |
+| **Tests added** | Expanded **`e2e/functional-audit.spec.ts`** for Inventory workspace controls and PO workspace/detail behavior. Extended targeted API checks for supplier invoices and AP duplicate controls. Existing pure checks still cover deterministic calculations and filters. |
+| **Remaining partial / unverified** | Operations / Control Tower, mobile scan UX, every **reports tab** export job → download → parse, **Export Center** job lifecycle, warehouse/project dimensions beyond current Inventory filters, multi-org isolation, supplier portal ASN/messaging, and full workflow-engine orchestration. |
 
 ---
 
@@ -43,10 +44,10 @@
 | 6 | Reorder | `/inventory/reorder` | 1 | `module-deep-smoke` |
 | 7 | Barcodes | `/inventory/barcodes` | 1 | `module-deep-smoke` |
 | 8 | Purchase Orders | `/procurement/orders` | 3 | `functional-audit`: KPI cards, status select filters, total column/card, preview, full PO open, receive validation, quick-print currency check; line sum = header; **sum(PO-FQA totals)=4000** |
-| 9 | Requisitions | `/procurement/requisitions` | 2 | `functional-audit`: `REQ-FQA-001`, tabs, back/forward, new/cancel |
+| 9 | Requisitions | `/procurement/requisitions` | 2 | `functional-audit`: `REQ-FQA-001`, tabs, back/forward, new/cancel; UI now includes status filter, KPIs, preview, and edit-mode lines |
 | 10 | Suppliers | `/procurement/suppliers` | 1 | `module-deep-smoke` |
 | 11 | Contracts | `/procurement/contracts` | 1 | `module-deep-smoke` |
-| 12 | Accounts Payable | `/finance/accounts-payable/...` | 3 | `functional-audit`: **125000 / 155000** cents; toggle; empty batch; `/api/ap/invoices` FQA sum **1550** |
+| 12 | Accounts Payable | `/finance/accounts-payable/...` | 3 | `functional-audit`: **125000 / 155000** cents; toggle; empty batch; `/api/ap/invoices` FQA sum **1550**; `test:ap-controls` covers duplicate controls and approval/payment gates |
 | 13 | Billing | `/finance/billing` | 1 | `module-deep-smoke` |
 | 14 | Invoices | `/finance/invoices` | 1 | `module-deep-smoke` |
 | 15 | Analytics | `/analytics/...` | 3 | `functional-audit`: `/api/analytics/inventory-value` FQA **4** rows, totals **70 / 100** by category, full value **170**; `/api/reports/analytics` far-future **maxSpend=0** |

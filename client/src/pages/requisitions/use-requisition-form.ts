@@ -85,6 +85,7 @@ export function useRequisitionForm(params: {
       if (requisition.items?.length) {
         setItems(
           requisition.items.map((i) => ({
+            id: i.id,
             itemId: i.itemId,
             quantity: i.quantity,
             unitPrice: i.unitPrice,
@@ -128,6 +129,15 @@ export function useRequisitionForm(params: {
 
   const updateMutation = useMutation({
     mutationFn: async () => {
+      const validItems = items
+        .filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0)
+        .map((i) => ({
+          id: i.id,
+          itemId: i.itemId,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          notes: i.notes,
+        }));
       const body = {
         notes: notes || undefined,
         supplierId: supplierId || undefined,
@@ -135,6 +145,8 @@ export function useRequisitionForm(params: {
         justification: justification || undefined,
         requiredDate: requiredDate ? new Date(requiredDate).toISOString() : undefined,
         projectId: projectId === "" ? undefined : Number(projectId),
+        items: validItems,
+        revisionReason: "Line revision saved from requisition edit form",
       };
       await apiRequest("PUT", `/api/purchase-requisitions/${id}`, body);
     },
