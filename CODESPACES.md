@@ -93,6 +93,7 @@ In terminal B, run verification checks:
 
 ```bash
 npm run check
+npm run test:diagnostics
 npm run lint
 npm run test:api
 ```
@@ -161,6 +162,10 @@ npm run test:e2e
 ```
 
 The forwarded Codespaces URL (**`https://<codespace>-5000.app.github.dev`**) can work in your browser while **Playwright still uses `http://127.0.0.1:5000`** — a working public URL does **not** prove the app is bound on loopback inside the container. Use the `curl` lines above **from the same environment** where you run tests.
+
+### System Diagnostics command center
+
+Open **`/admin/system-diagnostics`** as an admin to inspect live browser diagnostics, failed or slow API requests, route warnings, readiness, server snapshot data, internal calculation/filter self-checks, and the existing diagnostics scan. Use **Export JSON** or **Export Markdown** to create a redacted report for Cursor or developers. It captures practical runtime signals; it does not replace automated tests or server log access.
 
 **`net::ERR_CONNECTION_REFUSED` at `http://127.0.0.1:5000/auth`:** the browser can start, but **nothing accepts TCP on 127.0.0.1:5000** when the test navigates. Fix Postgres / **`DATABASE_URL`**, ensure **`npm run dev`** stays running, free port **5000**, and check wrapper stderr (last `/api/ready` and `/auth` probes). If **`sudo npx playwright install …`** was used, run dev and tests as the same user (**`node`**) so caches and env match.
 

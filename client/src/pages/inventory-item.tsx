@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { AlertTriangle, ArrowLeft, ArrowUpDown, Loader2 } from "lucide-react";
 import {
@@ -124,7 +124,7 @@ export default function InventoryDetailPage() {
   const [adjustReason, setAdjustReason] = useState(ADJUST_REASONS[0]);
   const [adjustRef, setAdjustRef] = useState("");
 
-  const fetchDetail = (): Promise<InventoryDetail> => fetchInventoryDetail(sku);
+  const fetchDetail = useCallback((): Promise<InventoryDetail> => fetchInventoryDetail(sku), [sku]);
 
   const {
     loading,
@@ -232,7 +232,7 @@ export default function InventoryDetailPage() {
           const summary = detail.summary ?? { onHand: 0, allocated: 0, available: 0 };
           const available =
             summary.available ??
-            Math.max((summary.onHand ?? 0) - (summary.allocated ?? 0), 0);
+            ((summary.onHand ?? 0) - (summary.allocated ?? 0));
           const positions = Array.isArray(detail.positions) ? detail.positions : [];
           const movements = Array.isArray(detail.movements) ? detail.movements : [];
           return (

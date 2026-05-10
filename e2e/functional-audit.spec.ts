@@ -17,6 +17,12 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     await gotoAuthed(page, "/inventory");
     await expect(page.getByTestId("inventory-page")).toBeVisible({ timeout: 30000 });
     await expect(page.getByTestId("inventory-row-SKU-A")).toBeVisible({ timeout: 45000 });
+    await expect(page.getByTestId("inventory-kpi-total-skus")).toBeVisible();
+    await expect(page.getByTestId("inventory-kpi-low-stock")).toBeVisible();
+    await expect(page.getByTestId("inventory-kpi-negative-availability")).toBeVisible();
+    await expect(page.getByTestId("inventory-kpi-total-on-hand")).toBeVisible();
+    await expect(page.getByTestId("inventory-kpi-total-allocated")).toBeVisible();
+    await expect(page.getByTestId("inventory-kpi-total-available")).toBeVisible();
 
     const clearAll = async () => {
       await page.getByRole("button", { name: /clear filters/i }).click();
@@ -41,7 +47,32 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     await expect(page.getByTestId("inventory-status-SKU-D")).toContainText(/error/i, { timeout: 5000 });
     await expect(page.getByTestId("inventory-status-SKU-B")).toContainText(/low/i, { timeout: 5000 });
 
+    await page.getByTestId("inventory-sort-select").click();
+    await page.getByRole("option", { name: /available low to high/i }).click();
+    await expect(page.getByTestId("inventory-row-SKU-D")).toBeVisible();
+
+    await page.getByTestId("inventory-view-cards-button").click();
+    await expect(page.getByTestId("inventory-card-SKU-A")).toBeVisible({ timeout: 10000 });
+    await page.getByTestId("inventory-card-SKU-D").click();
+    await expect(page.getByTestId("inventory-item-preview")).toBeVisible();
+    await expect(page.getByTestId("inventory-item-preview-title")).toBeVisible();
+    await expect(page.getByTestId("inventory-item-preview-status")).toContainText(/negative availability|error/i);
+    await expect(page.getByTestId("inventory-item-preview")).toContainText("SKU-D");
+    await expect(page.getByTestId("inventory-item-preview")).toContainText("-2");
+    await page.getByTestId("inventory-item-preview-close").click();
+    await page.getByTestId("inventory-view-table-button").click();
+
+    await page.getByTestId("inventory-row-preview-SKU-A").click();
+    await expect(page.getByTestId("inventory-item-preview")).toBeVisible();
+    await page.getByTestId("inventory-item-preview-open-full").click();
+    await expect(page).toHaveURL(/\/inventory\/SKU-A/);
+    await gotoAuthed(page, "/inventory");
+    await expect(page.getByTestId("inventory-page")).toBeVisible({ timeout: 30000 });
+    await clearAll();
+
     await page.getByTestId("inventory-search-input").fill("SKU-A");
+    await expect(page.getByTestId("inventory-active-filters")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId("inventory-filter-chip-search")).toContainText("SKU-A");
     await expect(async () => expect(await visibleFqaSkus(page)).toEqual(["SKU-A"])).toPass({ timeout: 20000 });
 
     await page.getByTestId("inventory-search-input").fill("");
@@ -52,6 +83,7 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     await clearAll();
     await page.getByTestId("inventory-category-filter").click();
     await page.getByRole("option", { name: "Electronics" }).click();
+    await expect(page.getByTestId("inventory-filter-chip-category")).toBeVisible();
     await expect(async () =>
       expect((await visibleFqaSkus(page)).sort()).toEqual(["SKU-A", "SKU-B"].sort()),
     ).toPass({ timeout: 20000 });
@@ -59,12 +91,14 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     await clearAll();
     await page.getByTestId("inventory-location-filter").click();
     await page.getByRole("option", { name: "Johannesburg" }).click();
+    await expect(page.getByTestId("inventory-filter-chip-location")).toBeVisible();
     await expect(async () =>
       expect((await visibleFqaSkus(page)).sort()).toEqual(["SKU-A", "SKU-D"].sort()),
     ).toPass({ timeout: 20000 });
 
     await clearAll();
     await page.getByTestId("inventory-low-stock-filter").click();
+    await expect(page.getByTestId("inventory-filter-chip-low-stock")).toBeVisible();
     await expect(async () =>
       expect((await visibleFqaSkus(page)).sort()).toEqual(["SKU-B", "SKU-D"].sort()),
     ).toPass({ timeout: 20000 });
@@ -130,17 +164,60 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     await gotoAuthed(page, "/procurement/orders");
     await expect(page.getByTestId("purchase-orders-page")).toBeVisible({ timeout: 30000 });
 
-    const poTable = page.locator('[data-tour="po-list"] table');
-    await page.getByPlaceholder(/search po number/i).fill("PO-FQA-001");
-    await expect(poTable.getByText("PO-FQA-001").first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("po-kpi-total")).toBeVisible();
+    await expect(page.getByTestId("po-kpi-open")).toBeVisible();
+    await expect(page.getByTestId("po-kpi-approved")).toBeVisible();
+    await expect(page.getByTestId("po-kpi-sent")).toBeVisible();
+    await expect(page.getByTestId("po-kpi-received")).toBeVisible();
+    await page.getByTestId("po-search-input").fill("PO-FQA");
+    await expect(page.getByTestId("po-row-PO-FQA-001")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("po-kpi-total-value")).toContainText(/4,?000|4000/);
 
-    await page.getByPlaceholder(/search po number/i).fill("");
-    await page.getByPlaceholder(/status/i).fill("approved");
-    await expect(poTable.getByText("PO-FQA-002").first()).toBeVisible({ timeout: 15000 });
-    await expect(poTable.locator("tbody").getByRole("cell", { name: "PO-FQA-001", exact: true })).toHaveCount(0);
+    await page.getByTestId("po-sort-select").click();
+    await page.getByRole("option", { name: /total high to low/i }).click();
+    await expect(page.getByTestId("po-table")).toBeVisible();
 
-    await page.getByPlaceholder(/status/i).fill("received");
-    await expect(poTable.getByText("PO-FQA-003").first()).toBeVisible({ timeout: 15000 });
+    await page.getByTestId("po-search-input").fill("PO-FQA-001");
+    await expect(page.getByTestId("po-active-filters")).toBeVisible();
+    await expect(page.getByTestId("po-filter-chip-search")).toContainText("PO-FQA-001");
+    await expect(page.getByTestId("po-row-PO-FQA-001")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("po-row-PO-FQA-002")).toHaveCount(0);
+
+    await page.getByTestId("po-clear-filters-button").click();
+    await page.getByTestId("po-status-filter").click();
+    await page.getByRole("option", { name: "Approved" }).click();
+    await expect(page.getByTestId("po-filter-chip-status")).toContainText(/approved/i);
+    await expect(page.getByTestId("po-row-PO-FQA-002")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("po-row-PO-FQA-001")).toHaveCount(0);
+
+    await page.getByTestId("po-status-filter").click();
+    await page.getByRole("option", { name: "Received", exact: true }).click();
+    await expect(page.getByTestId("po-row-PO-FQA-003")).toBeVisible({ timeout: 15000 });
+
+    await page.getByTestId("po-clear-filters-button").click();
+    await page.getByTestId("po-row-preview-PO-FQA-001").click();
+    await expect(page.getByTestId("po-preview-panel")).toBeVisible();
+    await expect(page.getByTestId("po-preview-title")).toContainText("PO-FQA-001");
+    await expect(page.getByTestId("po-preview-status")).toContainText(/draft/i);
+    await expect(page.getByTestId("po-preview-total")).toContainText(/1,?000|1000/);
+    await expect(page.getByTestId("po-preview-panel")).toContainText(/0%|received progress/i);
+    await page.getByTestId("po-preview-open-full").click();
+    await expect(page).toHaveURL(/\/procurement\/orders\/PO-FQA-001/);
+    await expect(page.getByTestId("po-detail-page")).toBeVisible({ timeout: 20000 });
+    await expect(page.getByTestId("po-detail-title")).toContainText("PO-FQA-001");
+    await expect(page.getByTestId("po-detail-total")).toContainText(/1,?000|1000/);
+    await expect(page.getByTestId("po-quick-print-button")).toBeVisible();
+    const popupPromise = page.waitForEvent("popup");
+    await page.getByTestId("po-quick-print-button").click();
+    const popup = await popupPromise;
+    await expect(popup.locator("body")).not.toContainText("$");
+    await popup.close();
+
+    await gotoAuthed(page, "/procurement/orders/PO-FQA-002");
+    await expect(page.getByTestId("po-detail-page")).toBeVisible({ timeout: 20000 });
+    await page.getByTestId("po-receive-qty-SKU-A").first().fill("999");
+    await page.getByTestId("po-receive-submit-button").click();
+    await expect(page.getByTestId("po-receive-error")).toContainText(/cannot exceed remaining quantity/i);
 
     const origin = baseURL ?? "http://127.0.0.1:5000";
     const listRes = await page.request.get(`${origin}/api/purchase/orders?q=PO-FQA-001`);

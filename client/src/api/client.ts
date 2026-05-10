@@ -1,6 +1,7 @@
 import { apiRequest, buildRequestHeaders, requestJson } from "@/lib/queryClient";
 import { setFallbackState } from "@/lib/fallback-store";
 import { toastStore } from "@/lib/toast-store";
+import { addDiagnosticEvent, redactDiagnosticDetails } from "@/lib/diagnostics/diagnostics-store";
 import type {
   ActivityRecord,
   ApiErrorPayload,
@@ -125,7 +126,44 @@ const API_TIMEOUT_MS = 12000;
 
 export type ApiEnvelopeResult<T> = { data: T; meta?: { fallback?: string } };
 
+function recordApiClientDiagnostic(params: {
+  method: string;
+  url: string;
+  status?: number;
+  durationMs?: number;
+  title: string;
+  message: string;
+  severity?: "warning" | "error";
+  details?: unknown;
+}) {
+  addDiagnosticEvent({
+    severity: params.severity ?? (params.status != null && params.status < 500 ? "warning" : "error"),
+    source: params.status == null ? "network" : "api",
+    title: params.title,
+    message: params.message,
+    endpoint: params.url.split("?")[0],
+    method: params.method.toUpperCase(),
+    status: params.status,
+    durationMs: params.durationMs,
+    details: redactDiagnosticDetails(params.details),
+  });
+}
+
+function recordApiClientSlowRequest(method: string, url: string, status: number | undefined, durationMs: number) {
+  if (durationMs < 3_000) return;
+  recordApiClientDiagnostic({
+    method,
+    url,
+    status,
+    durationMs,
+    title: "Slow API request",
+    message: `${method.toUpperCase()} ${url.split("?")[0]} took ${Math.round(durationMs)}ms.`,
+    severity: "warning",
+  });
+}
+
 async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnvelopeResult<T>> {
+  const startedAt = performance.now();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   if (init?.signal) {
@@ -148,13 +186,24 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
     const headerFallback = response.headers.get("X-InvTrack-Fallback") ?? null;
     const headerEndpoint = response.headers.get("X-InvTrack-Endpoint") ?? null;
     const payload = await parseJsonOrNull(response);
+    const durationMs = performance.now() - startedAt;
     if (isApiEnvelope<T>(payload)) {
       if (payload.ok) {
         const meta = (payload as { meta?: { fallback?: string } }).meta;
         const fallback = headerFallback ?? meta?.fallback ?? null;
         setFallbackState(fallback, headerEndpoint);
+        recordApiClientSlowRequest(method, url, response.status, durationMs);
         return { data: payload.data as T, meta };
       }
+      recordApiClientDiagnostic({
+        method,
+        url,
+        status: response.status,
+        durationMs,
+        title: `API request failed (${response.status || "unknown"})`,
+        message: payload.error.message,
+        details: payload.error,
+      });
       toastStore.push({
         type: "error",
         title: payload.error.code || "Request failed",
@@ -173,15 +222,35 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
         typeof (payload as { message?: unknown }).message === "string"
           ? String((payload as { message: string }).message)
           : `Request failed: ${response.status}`;
+      recordApiClientDiagnostic({
+        method,
+        url,
+        status: response.status,
+        durationMs,
+        title: `API request failed (${response.status})`,
+        message: fallbackMessage,
+        details: payload,
+      });
       throw new ApiError(
         { code: "UNEXPECTED_RESPONSE", message: fallbackMessage },
         response.status,
       );
     }
     setFallbackState(headerFallback, headerEndpoint);
+    recordApiClientSlowRequest(method, url, response.status, durationMs);
     return { data: payload as T, meta: undefined };
   } catch (err) {
+    const durationMs = performance.now() - startedAt;
     if (err instanceof Error && err.name === "AbortError") {
+      recordApiClientDiagnostic({
+        method: init?.method ?? "GET",
+        url,
+        status: 408,
+        durationMs,
+        title: "API request timed out",
+        message: `Request timed out after ${API_TIMEOUT_MS / 1000}s.`,
+        details: err,
+      });
       toastStore.push({
         type: "error",
         title: "Request timeout",
@@ -191,6 +260,16 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
         { code: "REQUEST_TIMEOUT", message: `Request timed out after ${API_TIMEOUT_MS / 1000}s` },
         408,
       );
+    }
+    if (err instanceof TypeError) {
+      recordApiClientDiagnostic({
+        method: init?.method ?? "GET",
+        url,
+        durationMs,
+        title: "Network request failed",
+        message: err.message,
+        details: err,
+      });
     }
     throw err;
   } finally {
@@ -222,18 +301,31 @@ export async function fetchReady(): Promise<ReadyState> {
 }
 
 export async function fetchHealth(): Promise<HealthCheck> {
+  const startedAt = performance.now();
   const response = await fetch("/health", { credentials: "include" });
+  const durationMs = performance.now() - startedAt;
   if (!response.ok) {
+    recordApiClientDiagnostic({
+      method: "GET",
+      url: "/health",
+      status: response.status,
+      durationMs,
+      title: "Health check failed",
+      message: `Health request failed: ${response.status}`,
+    });
     throw new ApiError({
       code: "HEALTH_REQUEST_FAILED",
       message: `Health request failed: ${response.status}`,
     });
   }
+  recordApiClientSlowRequest("GET", "/health", response.status, durationMs);
   return (await response.json()) as HealthCheck;
 }
 
 export async function fetchDeepHealth(): Promise<DeepHealthCheck> {
+  const startedAt = performance.now();
   const response = await fetch("/health/deep", { credentials: "include" });
+  const durationMs = performance.now() - startedAt;
   if (!response.ok) {
     const payload = await parseJsonOrNull(response);
     const message =
@@ -243,11 +335,21 @@ export async function fetchDeepHealth(): Promise<DeepHealthCheck> {
       typeof (payload as { message?: unknown }).message === "string"
         ? String((payload as { message: string }).message)
         : `Deep health request failed: ${response.status}`;
+    recordApiClientDiagnostic({
+      method: "GET",
+      url: "/health/deep",
+      status: response.status,
+      durationMs,
+      title: "Deep health check failed",
+      message,
+      details: payload,
+    });
     throw new ApiError({
       code: "DEEP_HEALTH_REQUEST_FAILED",
       message,
     });
   }
+  recordApiClientSlowRequest("GET", "/health/deep", response.status, durationMs);
   return (await response.json()) as DeepHealthCheck;
 }
 
@@ -276,8 +378,14 @@ export async function fetchInventoryDetail(sku: string): Promise<InventoryDetail
   const summary = d.summary as Record<string, unknown> | undefined;
   const onHand = Number(summary?.onHand ?? d.onHand ?? d.quantity ?? 0);
   const allocated = Number(summary?.allocated ?? d.allocated ?? 0);
+  const rawAvailable = summary?.available ?? d.available;
+  const parsedAvailable = Number(rawAvailable);
   const available =
-    Number(summary?.available ?? d.available ?? 0) || Math.max(onHand - allocated, 0);
+    rawAvailable !== undefined &&
+    rawAvailable !== null &&
+    Number.isFinite(parsedAvailable)
+      ? parsedAvailable
+      : onHand - allocated;
   return {
     id: Number(d.id ?? item?.id ?? 0),
     sku: String(d.sku ?? item?.sku ?? sku),
@@ -793,6 +901,25 @@ export type DiagnosticsFixResult = {
   message?: string;
   fixed?: string[];
 };
+
+export type DiagnosticsSnapshotResult = {
+  generatedAt: string;
+  uptimeSeconds: number;
+  nodeVersion: string;
+  environment: string;
+  runtimeProfile: string;
+  deploymentMode: string;
+  build?: Record<string, unknown>;
+  readiness?: Record<string, boolean>;
+  paths?: Record<string, unknown>;
+  env?: Record<string, boolean>;
+  routeCount?: number;
+  events?: unknown[];
+};
+
+export async function fetchDiagnosticsSnapshot(): Promise<DiagnosticsSnapshotResult> {
+  return apiFetch<DiagnosticsSnapshotResult>("/api/diagnostics/snapshot");
+}
 
 export async function fixDiagnostics(category: string): Promise<DiagnosticsFixResult> {
   const response = await apiRequest("POST", "/api/diagnostics/fix", { category });

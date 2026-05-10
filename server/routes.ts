@@ -83,6 +83,7 @@ import Excel from 'exceljs';
 import { createObjectCsvWriter } from 'csv-writer';
 import {
   mountUploadsStatic,
+  exportsDir,
   pdfTemplateUpload,
   uploadsDir,
 } from "./http/upload-config";
@@ -93,9 +94,29 @@ import { getBuildInfo } from "./lib/build-info";
 import { getReportingCurrencyCode } from "./lib/org-reporting-money";
 import { allowDevOnlyRoutes } from "./lib/deployment-behavior";
 import { analyticsRateLimiter, exportRateLimiter, uploadRateLimiter } from "./services/security-service";
+import { getServerDiagnosticEvents, recordServerDiagnosticEvent } from "./diagnostics/server-diagnostics-store";
 
 function isInternalExportRequest(req: Request): boolean {
   return req.get("x-internal-export-key") === appEnv.sessionSecret;
+}
+
+function pathStatus(targetPath: string) {
+  try {
+    const exists = fs.existsSync(targetPath);
+    let writable = false;
+    if (exists) {
+      fs.accessSync(targetPath, fs.constants.W_OK);
+      writable = true;
+    }
+    return { path: targetPath, exists, writable };
+  } catch (error) {
+    return {
+      path: targetPath,
+      exists: fs.existsSync(targetPath),
+      writable: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -919,6 +940,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Error updating app settings:", error);
         res.status(500).json({ message: "Failed to update app settings" });
       }
+    }
+  });
+
+  app.get("/api/diagnostics/snapshot", async (_req: Request, res: Response) => {
+    try {
+      const routerStack = (app as unknown as { _router?: { stack?: unknown[] } })._router?.stack ?? [];
+      res.json({
+        generatedAt: new Date().toISOString(),
+        uptimeSeconds: Math.round(process.uptime()),
+        nodeVersion: process.version,
+        environment: appEnv.runtimeProfile,
+        runtimeProfile: appEnv.runtimeProfile,
+        deploymentMode: appEnv.deploymentMode,
+        build: getBuildInfo(),
+        readiness: {
+          dbReady: readiness.dbReady,
+          schemaReady: readiness.schemaReady,
+          sessionStoreReady: readiness.sessionStoreReady,
+          websocketReady: readiness.websocketReady,
+        },
+        paths: {
+          uploads: pathStatus(uploadsDir),
+          exports: pathStatus(exportsDir),
+        },
+        env: {
+          databaseUrlConfigured: Boolean(process.env.DATABASE_URL?.trim()),
+          sessionSecretConfigured: Boolean(process.env.SESSION_SECRET?.trim()),
+          stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY?.trim()),
+          smtpConfigured: Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim()),
+          legacyEmailConfigured: Boolean(process.env.EMAIL_HOST?.trim() && process.env.EMAIL_USER?.trim() && process.env.EMAIL_PASS?.trim()),
+        },
+        routeCount: routerStack.length,
+        events: getServerDiagnosticEvents(),
+      });
+    } catch (error) {
+      recordServerDiagnosticEvent({
+        severity: "error",
+        source: "system",
+        title: "Diagnostics snapshot failed",
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        details: error,
+      });
+      res.status(500).json({ message: "Diagnostics snapshot failed" });
     }
   });
 

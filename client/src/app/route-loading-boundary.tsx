@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { routeDebug } from "@/lib/route-debug";
+import { addDiagnosticEvent } from "@/lib/diagnostics/diagnostics-store";
 
 const ROUTE_LOAD_TIMEOUT_MS = 12_000;
 
@@ -77,6 +78,18 @@ class RouteChunkErrorBoundary extends React.Component<
     const hint =
       "Lazy route failed to load or run. This is a localized error (not necessarily a full app reload). " +
       "Use Try again or Reload app; check the Network tab for failed chunk requests (often 401/502 on forwarded dev ports).";
+    addDiagnosticEvent({
+      severity: "critical",
+      source: "route",
+      title: "Route failed to load",
+      message: error.message || "A lazy-loaded route failed to load or render.",
+      stack: error.stack,
+      details: {
+        hint,
+        componentStack: info.componentStack,
+      },
+      userAction: "Try again, reload the app, or check forwarded dev port auth/chunk requests.",
+    });
     console.error("[RouteChunkErrorBoundary]", hint, error.message, info.componentStack);
     routeDebug("route.chunk-error", { message: error.message, stack: info.componentStack?.slice(0, 500) });
   }

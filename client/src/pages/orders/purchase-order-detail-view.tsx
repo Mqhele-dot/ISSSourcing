@@ -87,10 +87,11 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [contractId, setContractId] = useState<string>("none");
   const [paymentTermsId, setPaymentTermsId] = useState<string>("none");
   const [incotermId, setIncotermId] = useState<string>("none");
+  const [receiveError, setReceiveError] = useState<string | null>(null);
 
   const fetcher = useCallback((): Promise<PurchaseOrderDetail> => fetchPurchaseOrder(po), [po]);
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
-  const { data: revisions = [] } = useQuery({
+  const { data: revisions = [], isError: revisionsError } = useQuery({
     queryKey: ["/api/purchase-orders/revisions", data?.id],
     enabled: Boolean(data?.id),
     queryFn: () =>
@@ -104,7 +105,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         }>
       >("GET", `/api/purchase-orders/${data?.id}/revisions`),
   });
-  const { data: approvalHistory = [] } = useQuery({
+  const { data: approvalHistory = [], isError: approvalHistoryError } = useQuery({
     queryKey: ["/api/approval-history/purchase-order", data?.id],
     enabled: Boolean(data?.id),
     queryFn: () =>
@@ -121,28 +122,28 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         }>
       >("GET", `/api/approval-history/purchase_order/${data?.id}`),
   });
-  const { data: purchaseOrderRecord } = useQuery({
+  const { data: purchaseOrderRecord, isError: purchaseOrderRecordError } = useQuery({
     queryKey: ["/api/purchase-orders", data?.id],
     enabled: Boolean(data?.id),
     queryFn: () => fetchPurchaseOrderRecordById(Number(data?.id)),
   });
-  const { data: departments = [] } = useQuery({
+  const { data: departments = [], isError: departmentsError } = useQuery({
     queryKey: ["/api/departments"],
     queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/departments"),
   });
-  const { data: contracts = [] } = useQuery({
+  const { data: contracts = [], isError: contractsError } = useQuery({
     queryKey: ["/api/contracts"],
     queryFn: () => requestJson<Array<{ id: number; title: string; supplierId: number }>>("GET", "/api/contracts"),
   });
-  const { data: paymentTerms = [] } = useQuery({
+  const { data: paymentTerms = [], isError: paymentTermsError } = useQuery({
     queryKey: ["/api/payment-terms"],
     queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/payment-terms"),
   });
-  const { data: incoterms = [] } = useQuery({
+  const { data: incoterms = [], isError: incotermsError } = useQuery({
     queryKey: ["/api/incoterms"],
     queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/incoterms"),
   });
-  const { data: approvalPoliciesRaw } = useQuery({
+  const { data: approvalPoliciesRaw, isError: approvalPoliciesError } = useQuery({
     queryKey: ["/api/approval-policies"],
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/approval-policies");
@@ -166,7 +167,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
       .sort((a, b) => a.approvalLevel - b.approvalLevel || a.amountMin - b.amountMin);
   }, [approvalPoliciesRaw]);
 
-  const { data: poApproverSuggestions } = useQuery({
+  const { data: poApproverSuggestions, isError: approvalSuggestionsError } = useQuery({
     queryKey: ["/api/approval-suggestions", "purchase_order", data?.totalAmount, data?.status],
     enabled: Boolean(data && canApprove(data.status)),
     queryFn: () =>
@@ -232,6 +233,28 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     [batchState, receiveState, serialState],
   );
 
+  const validateReceive = useCallback(
+    (detail: PurchaseOrderDetail): string | null => {
+      let hasPositiveQty = false;
+      for (const line of detail.lines) {
+        const rawQty = receiveState[line.sku] ?? 0;
+        const qty = Number(rawQty);
+        if (!Number.isFinite(qty)) {
+          return `Receive quantity for ${line.sku} must be a finite number.`;
+        }
+        if (qty < 0) {
+          return `Receive quantity for ${line.sku} cannot be negative.`;
+        }
+        if (qty > Number(line.expectedRemaining ?? 0)) {
+          return `Receive quantity for ${line.sku} cannot exceed remaining quantity (${line.expectedRemaining}).`;
+        }
+        if (qty > 0) hasPositiveQty = true;
+      }
+      return hasPositiveQty ? null : "Enter at least one receive quantity greater than 0.";
+    },
+    [receiveState],
+  );
+
   const updateStatus = async (action: "approve" | "send") => {
     setStatusUpdating(true);
     try {
@@ -265,7 +288,20 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   };
 
   const submitReceive = async () => {
+    if (!data) return;
+    const validationMessage = validateReceive(data);
+    if (validationMessage) {
+      setReceiveError(validationMessage);
+      toast({
+        title: "Receive validation failed",
+        description: validationMessage,
+        variant: "destructive",
+      });
+      return;
+    }
+    setReceiveError(null);
     if (receivePayload.length === 0) {
+      setReceiveError("Enter at least one receive quantity greater than 0.");
       toast({
         title: "No lines selected",
         description: "Enter at least one receive quantity.",
@@ -285,6 +321,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
       setReceiveState({});
       setBatchState({});
       setSerialState({});
+      setReceiveError(null);
       await refetch();
     } catch (receiveError) {
       const err = receiveError as Error & { status?: number };
@@ -314,6 +351,14 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         onRetry={refetch}
       >
         {(detail) => {
+          const commercialReferenceError =
+            purchaseOrderRecordError ||
+            departmentsError ||
+            contractsError ||
+            paymentTermsError ||
+            incotermsError ||
+            approvalPoliciesError ||
+            approvalSuggestionsError;
           const downloadSignedPdf = async () => {
             setPdfLoading(true);
             try {
@@ -355,15 +400,22 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                 Purchase orders
               </Button>
 
-              <header className="sticky top-0 z-20 -mx-4 mb-6 border-b border-border/80 bg-background/90 px-4 py-3 shadow-sm backdrop-blur-md md:-mx-6 md:px-6 supports-[backdrop-filter]:bg-background/80">
+              <header
+                data-testid="po-detail-page"
+                className="sticky top-0 z-20 -mx-4 mb-6 border-b border-border/80 bg-background/90 px-4 py-3 shadow-sm backdrop-blur-md md:-mx-6 md:px-6 supports-[backdrop-filter]:bg-background/80"
+              >
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 space-y-1">
                     <p className="text-xs text-muted-foreground">
                       Operations / Purchase orders / {detail.poNumber}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
-                      <h1 className="truncate text-xl font-semibold tracking-tight">PO {detail.poNumber}</h1>
-                      <StatusBadge status={detail.status} />
+                      <h1 data-testid="po-detail-title" className="truncate text-xl font-semibold tracking-tight">
+                        PO {detail.poNumber}
+                      </h1>
+                      <span data-testid="po-detail-status">
+                        <StatusBadge status={detail.status} />
+                      </span>
                     </div>
                     <p className="truncate text-sm text-muted-foreground">
                       {detail.supplierName || `Supplier #${detail.supplierId}`}
@@ -374,6 +426,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       type="button"
                       className="gap-2"
                       disabled={pdfLoading}
+                      data-testid="po-signable-pdf-button"
                       onClick={() => void downloadSignedPdf()}
                     >
                       {pdfLoading ? (
@@ -387,7 +440,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       type="button"
                       variant="outline"
                       className="gap-2"
-                      onClick={() => openPurchaseOrderPrintView(detail)}
+                      data-testid="po-quick-print-button"
+                      onClick={() => openPurchaseOrderPrintView(detail, formatMoney)}
                     >
                       <Printer className="h-4 w-4" aria-hidden />
                       Quick print
@@ -397,6 +451,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                         variant="outline"
                         className="gap-2"
                         disabled={!canApprove(detail.status) || statusUpdating}
+                        data-testid="po-approve-button"
                         onClick={() => updateStatus("approve")}
                       >
                         <CheckCircle2 className="h-4 w-4" aria-hidden />
@@ -408,6 +463,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                         variant="outline"
                         className="gap-2"
                         disabled={!canSend(detail.status) || statusUpdating}
+                        data-testid="po-send-button"
                         onClick={() => updateStatus("send")}
                       >
                         <Send className="h-4 w-4" aria-hidden />
@@ -459,32 +515,49 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                         <CardHeader className="pb-2">
                           <CardTitle className="text-sm font-medium text-muted-foreground">Receive progress</CardTitle>
                         </CardHeader>
-                        <CardContent className="text-lg font-semibold">{detail.progress.percent}%</CardContent>
+                        <CardContent data-testid="po-detail-progress" className="text-lg font-semibold">
+                          {detail.progress.percent}%
+                        </CardContent>
                       </Card>
                       <Card>
                         <CardHeader className="pb-2">
                           <CardTitle className="text-sm font-medium text-muted-foreground">Order total</CardTitle>
                         </CardHeader>
-                        <CardContent className="text-lg font-semibold">{formatMoney(detail.totalAmount)}</CardContent>
+                        <CardContent data-testid="po-detail-total" className="text-lg font-semibold">
+                          {formatMoney(detail.totalAmount)}
+                        </CardContent>
                       </Card>
                     </div>
                   </section>
 
-                  <PoCommercialTermsCard
-                    departmentId={departmentId}
-                    setDepartmentId={setDepartmentId}
-                    contractId={contractId}
-                    setContractId={setContractId}
-                    paymentTermsId={paymentTermsId}
-                    setPaymentTermsId={setPaymentTermsId}
-                    incotermId={incotermId}
-                    setIncotermId={setIncotermId}
-                    departments={departments}
-                    contractsForSupplier={contracts.filter((contract) => contract.supplierId === detail.supplierId)}
-                    paymentTerms={paymentTerms}
-                    incoterms={incoterms}
-                    saveCommercialTerms={saveCommercialTerms}
-                  />
+                  <div data-testid="po-commercial-card">
+                    {commercialReferenceError ? (
+                      <Card className="mb-3 border-amber-500/50 bg-amber-500/10">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base">Commercial reference data could not load</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm text-muted-foreground">
+                          The PO remains available, but departments, contracts, payment terms, incoterms, or approval
+                          references may be incomplete. Refresh this section before updating commercial terms.
+                        </CardContent>
+                      </Card>
+                    ) : null}
+                    <PoCommercialTermsCard
+                      departmentId={departmentId}
+                      setDepartmentId={setDepartmentId}
+                      contractId={contractId}
+                      setContractId={setContractId}
+                      paymentTermsId={paymentTermsId}
+                      setPaymentTermsId={setPaymentTermsId}
+                      incotermId={incotermId}
+                      setIncotermId={setIncotermId}
+                      departments={departments}
+                      contractsForSupplier={contracts.filter((contract) => contract.supplierId === detail.supplierId)}
+                      paymentTerms={paymentTerms}
+                      incoterms={incoterms}
+                      saveCommercialTerms={saveCommercialTerms}
+                    />
+                  </div>
 
                   <PoReceivePanel
                     sectionId="po-receive"
@@ -503,16 +576,27 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     setWarehouseLocation={setWarehouseLocation}
                     userId={typeof user?.id === "number" ? user.id : undefined}
                     receiving={receiving}
+                    receiveError={receiveError}
                     onSubmitReceive={submitReceive}
                   />
 
                   {lastChangeSummary ? <PoLastReceiveSummaryCard summary={lastChangeSummary} /> : null}
 
-                  <section id="po-activity" className="scroll-mt-36">
+                  <section id="po-activity" className="scroll-mt-36" data-testid="po-activity">
                     <EntityActivityPanel entityType="purchase_order" entityId={detail.poNumber} />
                   </section>
 
                   <div id="po-revisions" className="scroll-mt-36">
+                    {revisionsError ? (
+                      <Card className="mb-3 border-amber-500/50 bg-amber-500/10">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base">Revision history unavailable</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm text-muted-foreground">
+                          Revision records could not load. The current PO details are still shown.
+                        </CardContent>
+                      </Card>
+                    ) : null}
                     <PoRevisionHistoryCard revisions={revisions} formatDateTime={formatDateTime} />
                   </div>
 
@@ -526,12 +610,16 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     </div>
                   ) : null}
 
-                  <Card id="po-approval-history" className="scroll-mt-36">
+                  <Card id="po-approval-history" className="scroll-mt-36" data-testid="po-approval-history">
                     <CardHeader>
                       <CardTitle>Approval history</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      {approvalHistory.length === 0 ? (
+                      {approvalHistoryError ? (
+                        <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-muted-foreground">
+                          Approval history unavailable
+                        </div>
+                      ) : approvalHistory.length === 0 ? (
                         <div className="text-sm text-muted-foreground">No approval history found.</div>
                       ) : (
                         <Table>
@@ -562,7 +650,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     </CardContent>
                   </Card>
 
-                  <Card id="po-shipments" className="scroll-mt-36">
+                  <Card id="po-shipments" className="scroll-mt-36" data-testid="po-shipments">
                     <CardHeader>
                       <CardTitle>Linked shipments</CardTitle>
                     </CardHeader>

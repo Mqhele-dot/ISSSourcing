@@ -2,6 +2,7 @@ import type { QueryFunction } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import { setFallbackState } from "./fallback-store";
 import { actionErrorStore } from "./action-error-store";
+import { addDiagnosticEvent, redactDiagnosticDetails } from "./diagnostics/diagnostics-store";
 
 type ApiErrorEnvelope = {
   ok: false;
@@ -93,8 +94,34 @@ function reportRequestError(params: {
   requestId?: string;
   payloadSummary?: string;
   stack?: string;
+  durationMs?: number;
 }) {
-  if (shouldSuppressGlobalError(params.method, params.status, params.url)) {
+  const suppressed = shouldSuppressGlobalError(params.method, params.status, params.url);
+  const method = params.method.toUpperCase();
+  addDiagnosticEvent({
+    severity:
+      params.status == null || params.status >= 500 || isMutationMethod(method)
+        ? "error"
+        : suppressed
+          ? "info"
+          : "warning",
+    source: params.status == null ? "network" : params.status === 401 ? "auth" : "api",
+    title: params.status == null ? "Network request failed" : `API request failed (${params.status})`,
+    message: params.reason,
+    endpoint: normalizeEndpointPath(params.url),
+    method,
+    status: params.status,
+    durationMs: params.durationMs,
+    stack: params.stack,
+    details: redactDiagnosticDetails({
+      requestId: params.requestId ?? getRequestIdFromPayload(params.payload),
+      payload: params.payload,
+      payloadSummary: params.payloadSummary,
+    }),
+    userAction: suppressed ? undefined : "Review the endpoint, status code, and server logs around this timestamp.",
+  });
+
+  if (suppressed) {
     return;
   }
   actionErrorStore.push({
@@ -248,6 +275,7 @@ function reportNetworkFailure(params: {
   url: string;
   error: unknown;
   requestPayload?: unknown;
+  durationMs?: number;
 }) {
   const reason =
     params.error instanceof Error
@@ -273,6 +301,29 @@ function reportNetworkFailure(params: {
     requestPayload: params.requestPayload,
     payloadSummary: summarizeRequestPayload(params.requestPayload),
     stack: isDevRuntime ? new Error().stack : undefined,
+    durationMs: params.durationMs,
+  });
+}
+
+function recordSlowRequest(params: {
+  method: string;
+  url: string;
+  status?: number;
+  durationMs: number;
+  details?: unknown;
+}) {
+  if (params.durationMs < 3_000) return;
+  addDiagnosticEvent({
+    severity: "warning",
+    source: "api",
+    title: "Slow API request",
+    message: `${params.method.toUpperCase()} ${normalizeEndpointPath(params.url)} took ${Math.round(params.durationMs)}ms.`,
+    endpoint: normalizeEndpointPath(params.url),
+    method: params.method.toUpperCase(),
+    status: params.status,
+    durationMs: params.durationMs,
+    details: redactDiagnosticDetails(params.details),
+    userAction: "Check database readiness, server logs, and network/proxy latency if this repeats.",
   });
 }
 
@@ -343,6 +394,7 @@ export async function invTrackFetch<T>(
   let csrfRetried = false;
 
   for (;;) {
+    const requestStartedAt = performance.now();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     let res: Response;
@@ -359,8 +411,9 @@ export async function invTrackFetch<T>(
       });
     } catch (err) {
       clearTimeout(timeoutId);
+      const durationMs = performance.now() - requestStartedAt;
       if (isLikelyTransportError(err)) {
-        reportNetworkFailure({ method, url, error: err, requestPayload: data });
+        reportNetworkFailure({ method, url, error: err, requestPayload: data, durationMs });
       }
       if (err instanceof Error && err.name === "AbortError") {
         const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & { status?: number };
@@ -370,6 +423,7 @@ export async function invTrackFetch<T>(
       throw err instanceof Error ? err : new Error(String(err));
     }
     clearTimeout(timeoutId);
+    const durationMs = performance.now() - requestStartedAt;
 
     const headerFallback = res.headers.get("X-InvTrack-Fallback") ?? undefined;
     const headerEndpoint = res.headers.get("X-InvTrack-Endpoint") ?? undefined;
@@ -399,6 +453,7 @@ export async function invTrackFetch<T>(
         requestId: res.headers.get("X-Request-Id") ?? undefined,
         payloadSummary: summarizeRequestPayload(data),
         stack: isDevRuntime ? new Error().stack : undefined,
+        durationMs,
       });
       const err = attachRequestId(new Error(`${res.status}: ${msg}`), res.headers.get("X-Request-Id")) as Error & {
         status?: number;
@@ -410,6 +465,7 @@ export async function invTrackFetch<T>(
     if (res.status === 204 || res.headers.get("content-length") === "0") {
       setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
       lastGoodByEndpoint.set(url, { status: 204 });
+      recordSlowRequest({ method, url, status: res.status, durationMs });
       return { data: undefined as T, meta: { fallback: headerFallback, endpoint: headerEndpoint } };
     }
 
@@ -422,6 +478,7 @@ export async function invTrackFetch<T>(
       if (payload.ok) {
         const success = payload as ApiSuccessEnvelope<T>;
         lastGoodByEndpoint.set(url, success.data);
+        recordSlowRequest({ method, url, status: res.status, durationMs, details: { fallback: success.meta?.fallback } });
         return {
           data: success.data as T,
           meta: {
@@ -442,6 +499,7 @@ export async function invTrackFetch<T>(
         requestId: res.headers.get("X-Request-Id") ?? payload.error.requestId,
         payloadSummary: summarizeRequestPayload(data),
         stack: isDevRuntime ? new Error().stack : undefined,
+        durationMs,
       });
       const err = attachRequestId(
         new Error(`${codePrefix}${payload.error.message}`),
@@ -452,6 +510,7 @@ export async function invTrackFetch<T>(
     }
 
     lastGoodByEndpoint.set(url, payload as T);
+    recordSlowRequest({ method, url, status: res.status, durationMs, details: { fallback: headerFallback } });
     return {
       data: payload as T,
       meta: { fallback: headerFallback, endpoint: headerEndpoint },
@@ -468,6 +527,7 @@ export async function apiRequest(
   let csrfRetried = false;
 
   for (;;) {
+    const requestStartedAt = performance.now();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
@@ -484,6 +544,7 @@ export async function apiRequest(
       const headerFallback = res.headers.get("X-InvTrack-Fallback");
       const headerEndpoint = res.headers.get("X-InvTrack-Endpoint");
       setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
+      const durationMs = performance.now() - requestStartedAt;
 
       if (!res.ok) {
         const payload = await parseJsonOrText(res);
@@ -510,6 +571,7 @@ export async function apiRequest(
           requestPayload: undefined,
           requestId: res.headers.get("X-Request-Id") ?? undefined,
           stack: isDevRuntime ? new Error().stack : undefined,
+          durationMs,
         });
         const err = attachRequestId(new Error(`${res.status}: ${message}`), res.headers.get("X-Request-Id")) as Error & {
           status?: number;
@@ -520,11 +582,13 @@ export async function apiRequest(
       }
 
       clearTimeout(timeoutId);
+      recordSlowRequest({ method, url, status: res.status, durationMs, details: { fallback: headerFallback } });
       return res;
     } catch (err) {
       clearTimeout(timeoutId);
+      const durationMs = performance.now() - requestStartedAt;
       if (isLikelyTransportError(err)) {
-        reportNetworkFailure({ method, url, error: err, requestPayload: data });
+        reportNetworkFailure({ method, url, error: err, requestPayload: data, durationMs });
       }
       if (err instanceof Error && err.name === "AbortError") {
         const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & {

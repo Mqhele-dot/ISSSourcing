@@ -10,8 +10,14 @@ import { startBackgroundTasks } from "./bootstrap/background-tasks";
 import { registerGlobalErrorHandler } from "./bootstrap/global-error-handler";
 import { attachStartupBannerListener } from "./bootstrap/startup-banner";
 import { registerDevTestRoutes } from "./dev-test-routes";
+import {
+  recordServerDiagnosticEvent,
+  registerProcessDiagnosticHandlers,
+} from "./diagnostics/server-diagnostics-store";
 
 const app = express();
+
+registerProcessDiagnosticHandlers();
 
 registerRequestContextMiddleware(app);
 registerSecurityMiddleware(app);
@@ -22,6 +28,14 @@ registerSecurityMiddleware(app);
   } catch (err) {
     const { logger } = await import("./lib/logger");
     const message = err instanceof Error ? err.message : String(err);
+    recordServerDiagnosticEvent({
+      severity: "critical",
+      source: "startup",
+      title: "Startup validation failed",
+      message,
+      stack: err instanceof Error ? err.stack : undefined,
+      details: err,
+    });
     logger.error("Startup validation failed", {
       error: message,
     });

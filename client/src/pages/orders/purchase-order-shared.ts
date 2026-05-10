@@ -15,22 +15,40 @@ export function formatDateTime(value: string | null) {
 }
 
 export function canApprove(status: string) {
-  return status === "open";
+  const s = String(status || "").toLowerCase();
+  return s === "open";
 }
 
 export function canSend(status: string) {
-  return status === "approved";
+  const s = String(status || "").toLowerCase();
+  return s === "approved";
 }
 
 export function canReceive(status: string) {
-  return status === "approved" || status === "sent";
+  const s = String(status || "").toLowerCase();
+  return (
+    s === "approved" ||
+    s === "sent" ||
+    s === "partially_received" ||
+    s === "partial_received" ||
+    s === "partially received"
+  );
 }
 
-export function openPurchaseOrderPrintView(detail: PurchaseOrderDetail) {
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function openPurchaseOrderPrintView(detail: PurchaseOrderDetail, formatMoney: (amount: number) => string) {
   const html = `
     <html>
       <head>
-        <title>PO ${detail.poNumber}</title>
+        <title>PO ${escapeHtml(detail.poNumber)}</title>
         <style>
           body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
           h1 { margin-bottom: 4px; }
@@ -42,11 +60,11 @@ export function openPurchaseOrderPrintView(detail: PurchaseOrderDetail) {
         </style>
       </head>
       <body>
-        <h1>Purchase Order ${detail.poNumber}</h1>
+        <h1>Purchase Order ${escapeHtml(detail.poNumber)}</h1>
         <div class="meta">
-          Supplier: ${detail.supplierName || `Supplier #${detail.supplierId}`}<br/>
-          Status: ${detail.status}<br/>
-          Requested: ${formatDate(detail.requestedDate)}
+          Supplier: ${escapeHtml(detail.supplierName || `Supplier #${detail.supplierId}`)}<br/>
+          Status: ${escapeHtml(detail.status)}<br/>
+          Requested: ${escapeHtml(formatDate(detail.requestedDate))}
         </div>
         <table>
           <thead>
@@ -63,11 +81,11 @@ export function openPurchaseOrderPrintView(detail: PurchaseOrderDetail) {
               .map(
                 (line) => `
                   <tr>
-                    <td>${line.sku}</td>
-                    <td>${line.itemName}</td>
-                    <td class="right">${line.qtyOrdered}</td>
-                    <td class="right">${line.qtyReceived}</td>
-                    <td class="right">$${line.unitPrice.toFixed(2)}</td>
+                    <td>${escapeHtml(line.sku)}</td>
+                    <td>${escapeHtml(line.itemName)}</td>
+                    <td class="right">${escapeHtml(line.qtyOrdered)}</td>
+                    <td class="right">${escapeHtml(line.qtyReceived)}</td>
+                    <td class="right">${escapeHtml(formatMoney(Number(line.unitPrice ?? 0)))}</td>
                   </tr>
                 `,
               )

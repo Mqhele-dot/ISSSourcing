@@ -3,6 +3,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { TutorialSteps } from "@/components/tutorial/tutorial-steps";
 import { isElectronEnvironment } from "./lib/electron-bridge";
 import { GlobalActionErrorCenter } from "@/components/diagnostics/global-action-error-center";
+import { DiagnosticsGlobalListeners } from "@/components/diagnostics/diagnostics-global-listeners";
+import { DiagnosticsRouteMonitor } from "@/components/diagnostics/diagnostics-route-monitor";
+import { DiagnosticsStatusIndicator } from "@/components/diagnostics/diagnostics-status-indicator";
 import { AppRouter } from "./router";
 import { AppErrorBoundary } from "@/app/app-error-boundary";
 import { AppProviders } from "@/app/app-providers";
@@ -25,6 +28,8 @@ function App() {
   return (
     <AppErrorBoundary>
       <AppProviders>
+        <DiagnosticsGlobalListeners />
+        <DiagnosticsRouteMonitor />
         <div className="app-shell relative flex h-svh min-h-0 flex-col overflow-hidden" data-testid="app-shell">
           <ReadinessBanner />
           {/**
@@ -36,6 +41,7 @@ function App() {
           </AppShellLayout>
         </div>
         <TutorialSteps />
+        <DiagnosticsStatusIndicator />
         <GlobalActionErrorCenter />
         <Toaster />
       </AppProviders>

@@ -33,6 +33,7 @@ type PoReceivePanelProps = {
   setWarehouseLocation: (v: string) => void;
   userId?: number;
   receiving: boolean;
+  receiveError?: string | null;
   onSubmitReceive: () => void | Promise<void>;
 };
 
@@ -54,10 +55,11 @@ export function PoReceivePanel({
   setWarehouseLocation,
   userId,
   receiving,
+  receiveError,
   onSubmitReceive,
 }: PoReceivePanelProps) {
   return (
-    <Card id={sectionId} className={className}>
+    <Card id={sectionId} className={className} data-testid="po-receive-panel">
       <CardHeader>
         <CardTitle>Receive panel</CardTitle>
       </CardHeader>
@@ -121,6 +123,7 @@ export function PoReceivePanel({
                 </TableCell>
                 <TableCell className="text-right">
                   <Input
+                    data-testid={`po-receive-qty-${line.sku}`}
                     className="ml-auto w-28 text-right"
                     type="number"
                     min={0}
@@ -167,9 +170,18 @@ export function PoReceivePanel({
           </div>
         </div>
 
+        {receiveError ? (
+          <div
+            data-testid="po-receive-error"
+            className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {receiveError}
+          </div>
+        ) : null}
+
         <div className="flex justify-end">
           <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
-            <Button onClick={onSubmitReceive} disabled={!canReceive || receiving}>
+            <Button data-testid="po-receive-submit-button" onClick={onSubmitReceive} disabled={!canReceive || receiving}>
               <Truck className="mr-2 h-4 w-4" />
               Receive selected
             </Button>

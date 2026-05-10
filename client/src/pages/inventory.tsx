@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Can } from "@/components/auth/can";
-import { Boxes, Download, RefreshCw, Search } from "lucide-react";
+import { Boxes, Download, ExternalLink, Eye, LayoutGrid, List, RefreshCw, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -31,6 +39,7 @@ import { requestJson } from "@/lib/queryClient";
 import { downloadCsv } from "@/lib/csv-download";
 import { isLikelyCsvResponse, parseExportFailureMessage } from "@/lib/export-download";
 import { fetchInventory } from "@/api/client";
+import type { InventoryListItem } from "@/api/types";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { getInventoryAvailabilityStatus } from "@shared/functional-calculations";
@@ -42,9 +51,47 @@ type Category = {
 
 const EMPTY_CATEGORIES: Category[] = [];
 
+type InventorySort = "name-asc" | "sku-asc" | "available-asc" | "available-desc" | "updated-desc" | "updated-asc";
+type InventoryViewMode = "table" | "cards";
+
 function isLowFilterEnabled(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+}
+
+function formatUpdated(value: InventoryListItem["updatedAt"]): string {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "-" : parsed.toLocaleString();
+}
+
+function updatedTime(value: InventoryListItem["updatedAt"]): number {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function inventoryStatus(item: InventoryListItem): "error" | "low" | "active" {
+  const status = getInventoryAvailabilityStatus(item.available, item.lowStockThreshold);
+  return status === "error" || status === "low" ? status : "active";
+}
+
+function inventoryStatusExplanation(item: InventoryListItem): string {
+  const status = inventoryStatus(item);
+  if (status === "error") {
+    return "Allocated stock is higher than on-hand stock. Check reservations, picks, or recent adjustments.";
+  }
+  if (status === "low") {
+    return "This item is at or below its reorder threshold.";
+  }
+  return "This item currently has availability above threshold.";
+}
+
+function recommendedInventoryAction(item: InventoryListItem): string {
+  const status = inventoryStatus(item);
+  if (status === "error") return "Review reservations and recent stock movements before promising more stock.";
+  if (status === "low") return "Create or review a reorder request for replenishment.";
+  return "No immediate stock action is needed.";
 }
 
 export default function InventoryPage() {
@@ -56,11 +103,23 @@ export default function InventoryPage() {
     category: "",
     low: "",
   });
+  const [sortBy, setSortBy] = useState<InventorySort>("name-asc");
+  const [viewMode, setViewMode] = useState<InventoryViewMode>("table");
+  const [previewItem, setPreviewItem] = useState<InventoryListItem | null>(null);
 
   const [searchInput, setSearchInput] = useState(String(queryState.q ?? ""));
   useEffect(() => {
     setSearchInput(String(queryState.q ?? ""));
   }, [queryState.q]);
+  useEffect(() => {
+    const next = String(searchInput ?? "").trim();
+    const current = String(queryState.q ?? "");
+    if (next === current) return;
+    const handle = window.setTimeout(() => {
+      setQueryState({ q: next });
+    }, 350);
+    return () => window.clearTimeout(handle);
+  }, [queryState.q, searchInput, setQueryState]);
 
   const [locationFilter, setLocationFilter] = useState(String(queryState.location || ""));
   useEffect(() => {
@@ -78,14 +137,14 @@ export default function InventoryPage() {
   }, [queryState.low]);
 
   const inventoryFetcher = useCallback(async () => {
-    const lowEnabled = isLowFilterEnabled(lowFilter);
+    const lowEnabled = isLowFilterEnabled(String(queryState.low || ""));
     return fetchInventory({
-      q: String(searchInput ?? "").trim(),
-      location: String(locationFilter || "").trim(),
-      category: String(categoryFilter || "").trim(),
+      q: String(queryState.q ?? "").trim(),
+      location: String(queryState.location || "").trim(),
+      category: String(queryState.category || "").trim(),
       lowStock: lowEnabled,
     });
-  }, [searchInput, locationFilter, categoryFilter, lowFilter]);
+  }, [queryState.category, queryState.location, queryState.low, queryState.q]);
 
   const {
     loading: inventoryLoading,
@@ -119,6 +178,16 @@ export default function InventoryPage() {
   } = useAsyncResource(categoriesFetcher);
 
   const categories = categoriesData ?? EMPTY_CATEGORIES;
+  const categoryNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const category of categories) map.set(category.id, category.name);
+    return map;
+  }, [categories]);
+  const categoryNameFor = useCallback(
+    (item: InventoryListItem) =>
+      typeof item.categoryId === "number" ? categoryNameById.get(item.categoryId) ?? "Uncategorised" : "Uncategorised",
+    [categoryNameById],
+  );
 
   const runClientCsv = useCallback(() => {
     const items = inventoryData ?? [];
@@ -139,11 +208,11 @@ export default function InventoryPage() {
   }, [inventoryData, toast]);
 
   const runServerCsv = useCallback(async () => {
-    const lowEnabled = isLowFilterEnabled(lowFilter);
+    const lowEnabled = isLowFilterEnabled(String(queryState.low || ""));
     const params = new URLSearchParams();
-    const q = String(searchInput ?? "").trim();
-    const loc = String(locationFilter || "").trim();
-    const cat = String(categoryFilter || "").trim();
+    const q = String(queryState.q ?? "").trim();
+    const loc = String(queryState.location || "").trim();
+    const cat = String(queryState.category || "").trim();
     if (q) params.set("q", q);
     if (loc) params.set("location", loc);
     if (cat) params.set("category", cat);
@@ -177,7 +246,7 @@ export default function InventoryPage() {
     link.remove();
     URL.revokeObjectURL(href);
     toast({ title: "Export complete", description: "Downloaded server inventory CSV (matches current filters)." });
-  }, [toast, searchInput, locationFilter, categoryFilter, lowFilter]);
+  }, [toast, queryState.category, queryState.location, queryState.low, queryState.q]);
 
   const handleExportCsv = () => {
     void (async () => {
@@ -232,8 +301,62 @@ export default function InventoryPage() {
     setQueryState({ q: "", location: "", category: "", low: "" });
   };
 
-  /** Server applies q, location, category, low; list is single source of truth. */
-  const displayedItems = inventoryData ?? [];
+  const activeSearch = String(searchInput || "").trim();
+  const activeLocation = String(locationFilter || "").trim();
+  const activeCategory = String(categoryFilter || "").trim();
+  const activeLow = isLowFilterEnabled(String(lowFilter || ""));
+  const displayedItems = useMemo(() => {
+    const search = activeSearch.toLowerCase();
+    const location = activeLocation.toLowerCase();
+    const category = activeCategory.toLowerCase();
+    return (inventoryData ?? []).filter((item) => {
+      if (search && !`${item.sku} ${item.name}`.toLowerCase().includes(search)) return false;
+      if (location && String(item.location || "").toLowerCase() !== location) return false;
+      if (category) {
+        const categoryMatchesId = String(item.categoryId ?? "").toLowerCase() === category;
+        const categoryMatchesName = categoryNameFor(item).toLowerCase() === category;
+        if (!categoryMatchesId && !categoryMatchesName) return false;
+      }
+      if (activeLow && Number(item.available) > Number(item.lowStockThreshold)) return false;
+      return true;
+    });
+  }, [activeCategory, activeLocation, activeLow, activeSearch, categoryNameFor, inventoryData]);
+  const hasActiveFilters = Boolean(activeSearch || activeLocation || activeCategory || activeLow);
+  const activeCategoryName =
+    activeCategory && Number.isFinite(Number(activeCategory))
+      ? categoryNameById.get(Number(activeCategory)) ?? activeCategory
+      : activeCategory;
+  const sortedItems = useMemo(() => {
+    return [...displayedItems].sort((a, b) => {
+      if (sortBy === "sku-asc") return a.sku.localeCompare(b.sku);
+      if (sortBy === "available-asc") return Number(a.available) - Number(b.available);
+      if (sortBy === "available-desc") return Number(b.available) - Number(a.available);
+      if (sortBy === "updated-desc") return updatedTime(b.updatedAt) - updatedTime(a.updatedAt);
+      if (sortBy === "updated-asc") return updatedTime(a.updatedAt) - updatedTime(b.updatedAt);
+      return a.name.localeCompare(b.name);
+    });
+  }, [displayedItems, sortBy]);
+  const kpis = useMemo(
+    () => ({
+      totalSkus: displayedItems.length,
+      lowStock: displayedItems.filter((item) => inventoryStatus(item) === "low").length,
+      negativeAvailability: displayedItems.filter((item) => Number(item.available) < 0).length,
+      totalOnHand: displayedItems.reduce((sum, item) => sum + Number(item.onHand || 0), 0),
+      totalAllocated: displayedItems.reduce((sum, item) => sum + Number(item.allocated || 0), 0),
+      totalAvailable: displayedItems.reduce((sum, item) => sum + Number(item.available || 0), 0),
+    }),
+    [displayedItems],
+  );
+  const clearFilter = (key: "q" | "location" | "category" | "low") => {
+    if (key === "q") setSearchInput("");
+    if (key === "location") setLocationFilter("");
+    if (key === "category") setCategoryFilter("");
+    if (key === "low") setLowFilter("");
+    setQueryState({ [key]: "" });
+  };
+  const openFullItem = (sku: string) => {
+    setLocation(APP_ROUTES.inventory.item(sku));
+  };
 
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4" data-testid="inventory-page">
@@ -270,6 +393,45 @@ export default function InventoryPage() {
       />
 
       <ModuleTrainingPanel moduleId="inventory" />
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <Card data-testid="inventory-kpi-total-skus">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total SKUs</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{kpis.totalSkus}</CardContent>
+        </Card>
+        <Card data-testid="inventory-kpi-low-stock">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Low stock</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{kpis.lowStock}</CardContent>
+        </Card>
+        <Card data-testid="inventory-kpi-negative-availability">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Negative availability</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{kpis.negativeAvailability}</CardContent>
+        </Card>
+        <Card data-testid="inventory-kpi-total-on-hand">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total on hand</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{kpis.totalOnHand}</CardContent>
+        </Card>
+        <Card data-testid="inventory-kpi-total-allocated">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total allocated</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{kpis.totalAllocated}</CardContent>
+        </Card>
+        <Card data-testid="inventory-kpi-total-available">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total available</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{kpis.totalAvailable}</CardContent>
+        </Card>
+      </div>
 
       {categoriesError ? (
         <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
@@ -311,9 +473,7 @@ export default function InventoryPage() {
                 data-testid="inventory-search-input"
                 value={searchInput}
                 onChange={(event) => {
-                  const v = event.target.value;
-                  setSearchInput(v);
-                  setQueryState({ q: v });
+                  setSearchInput(event.target.value);
                 }}
                 placeholder="Search SKU or item name"
                 className="pl-8"
@@ -367,6 +527,43 @@ export default function InventoryPage() {
         }
         right={
           <div className="flex flex-wrap items-center gap-2">
+            <Select value={sortBy} onValueChange={(value) => setSortBy(value as InventorySort)}>
+              <SelectTrigger className="w-full sm:w-[190px]" data-testid="inventory-sort-select">
+                <SelectValue placeholder="Sort inventory" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name-asc">Name A-Z</SelectItem>
+                <SelectItem value="sku-asc">SKU A-Z</SelectItem>
+                <SelectItem value="available-asc">Available low to high</SelectItem>
+                <SelectItem value="available-desc">Available high to low</SelectItem>
+                <SelectItem value="updated-desc">Updated newest</SelectItem>
+                <SelectItem value="updated-asc">Updated oldest</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex rounded-md border p-1">
+              <Button
+                type="button"
+                variant={viewMode === "table" ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("table")}
+                data-testid="inventory-view-table-button"
+                className="gap-1"
+              >
+                <List className="h-4 w-4" />
+                Table
+              </Button>
+              <Button
+                type="button"
+                variant={viewMode === "cards" ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("cards")}
+                data-testid="inventory-view-cards-button"
+                className="gap-1"
+              >
+                <LayoutGrid className="h-4 w-4" />
+                Cards
+              </Button>
+            </div>
             <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
               Clear filters
             </Button>
@@ -387,45 +584,191 @@ export default function InventoryPage() {
         }
       />
 
+      {hasActiveFilters ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="inventory-active-filters">
+          <span className="text-muted-foreground">Active filters:</span>
+          {activeSearch ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => clearFilter("q")}
+              data-testid="inventory-filter-chip-search"
+              className="gap-1"
+            >
+              Search: {activeSearch}
+              <X className="h-3 w-3" />
+            </Button>
+          ) : null}
+          {activeLocation ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => clearFilter("location")}
+              data-testid="inventory-filter-chip-location"
+              className="gap-1"
+            >
+              Location: {activeLocation}
+              <X className="h-3 w-3" />
+            </Button>
+          ) : null}
+          {activeCategory ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => clearFilter("category")}
+              data-testid="inventory-filter-chip-category"
+              className="gap-1"
+            >
+              Category: {activeCategoryName}
+              <X className="h-3 w-3" />
+            </Button>
+          ) : null}
+          {activeLow ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => clearFilter("low")}
+              data-testid="inventory-filter-chip-low-stock"
+              className="gap-1"
+            >
+              Low stock only
+              <X className="h-3 w-3" />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <DataState
         loading={inventoryLoading}
         error={inventoryError}
-        data={displayedItems}
+        data={sortedItems}
         isEmpty={(items) => items.length === 0}
         emptyTitle="No inventory items found"
         emptyDescription="No inventory items match your filters. Inventory records show what stock exists, where it sits, and when to reorder—without them, teams oversell, duplicate buys, or miss shortages."
         emptyAction={
-          <div className="flex flex-wrap gap-2">
-            <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add inventory">
-              <Button asChild variant="default" size="sm">
-                <Link href={APP_ROUTES.analytics.overview}>Add items (Analytics)</Link>
+          <div className="space-y-3">
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Inventory item creation is not available from this screen yet. Use Master Data, imports, or setup tools.
+            </p>
+            <div className="flex flex-wrap gap-2">
+            {hasActiveFilters ? (
+              <Button type="button" variant="default" size="sm" onClick={clearFilters}>
+                Clear filters
               </Button>
-            </Can>
+            ) : null}
             <Button asChild variant="outline" size="sm">
-              <Link href="/">Overview / Demo</Link>
+              <Link href={APP_ROUTES.admin.masterData}>Go to Master Data</Link>
             </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={APP_ROUTES.inventory.reorder}>Go to Reorder Requests</Link>
+            </Button>
+            </div>
           </div>
         }
         onRetry={refetchInventory}
       >
         {(items) => (
+          viewMode === "cards" ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {items.map((item) => (
+                <Card
+                  key={item.sku}
+                  data-testid={`inventory-card-${item.sku}`}
+                  className="cursor-pointer transition-colors hover:bg-muted/40"
+                  onClick={() => setPreviewItem(item)}
+                >
+                  <CardHeader className="space-y-1 pb-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-base">{item.name}</CardTitle>
+                        <p className="font-mono text-xs text-muted-foreground">{item.sku}</p>
+                      </div>
+                      <span data-testid={`inventory-status-${item.sku}`}>
+                        <StatusBadge status={inventoryStatus(item)} />
+                      </span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Location</span>
+                      <span>{item.location || "Unassigned"}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Category</span>
+                      <span>{categoryNameFor(item)}</span>
+                    </div>
+                    <div
+                      className="grid grid-cols-3 gap-2 rounded-md border p-3 text-center tabular-nums"
+                      data-on-hand={item.onHand}
+                      data-allocated={item.allocated}
+                      data-available={item.available}
+                    >
+                      <div>
+                        <div className="text-xs text-muted-foreground">On hand</div>
+                        <div className="font-semibold">{item.onHand}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Allocated</div>
+                        <div className="font-semibold">{item.allocated}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Available</div>
+                        <div className="font-semibold">{item.available}</div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        data-testid={`inventory-row-preview-${item.sku}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setPreviewItem(item);
+                        }}
+                      >
+                        Preview
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        data-testid={`inventory-row-open-${item.sku}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openFullItem(item.sku);
+                        }}
+                      >
+                        Open
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
           <div data-testid="inventory-table" data-tour="inventory-table" className="overflow-x-auto">
-          <Table className="table-fixed w-full min-w-[48rem]">
+          <Table className="table-fixed w-full min-w-[64rem]">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[10%]">SKU</TableHead>
-                <TableHead className="w-[22%]">Name</TableHead>
-                <TableHead className="w-[14%]">Location</TableHead>
+                <TableHead className="w-[22%]">Item</TableHead>
+                <TableHead className="w-[13%]">Location</TableHead>
+                <TableHead className="w-[14%]">Category</TableHead>
                 <TableHead className="w-[20%] text-right">
                   <span className="inline-flex flex-col items-end gap-0.5 tabular-nums">
                     <span className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
-                      Stock
+                      Stock position
                     </span>
                     <span>On hand / Alloc / Avail</span>
                   </span>
                 </TableHead>
-                <TableHead className="w-[12%]">Status</TableHead>
-                <TableHead className="w-[14%] text-right">Updated</TableHead>
+                <TableHead className="w-[10%] text-right">Threshold</TableHead>
+                <TableHead className="w-[10%]">Status</TableHead>
+                <TableHead className="w-[11%] text-right">Updated</TableHead>
+                <TableHead className="w-[10%] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -434,11 +777,14 @@ export default function InventoryPage() {
                   key={item.sku}
                   data-testid={`inventory-row-${item.sku}`}
                   className="cursor-pointer"
-                  onClick={() => setLocation(APP_ROUTES.inventory.item(item.sku))}
+                  onClick={() => setPreviewItem(item)}
                 >
-                  <TableCell className="font-medium align-top">{item.sku}</TableCell>
-                  <TableCell className="align-top">{item.name}</TableCell>
+                  <TableCell className="align-top">
+                    <div className="font-medium">{item.name}</div>
+                    <div className="font-mono text-xs text-muted-foreground">{item.sku}</div>
+                  </TableCell>
                   <TableCell className="align-top text-sm">{item.location || "Unassigned"}</TableCell>
+                  <TableCell className="align-top text-sm">{categoryNameFor(item)}</TableCell>
                   <TableCell
                     className="text-right align-top tabular-nums"
                     data-on-hand={item.onHand}
@@ -453,19 +799,127 @@ export default function InventoryPage() {
                       <span>{item.available}</span>
                     </span>
                   </TableCell>
+                  <TableCell className="text-right align-top tabular-nums">{item.lowStockThreshold}</TableCell>
                   <TableCell data-testid={`inventory-status-${item.sku}`}>
-                    <StatusBadge status={getInventoryAvailabilityStatus(item.available, item.lowStockThreshold)} />
+                    <StatusBadge status={inventoryStatus(item)} />
                   </TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground">
-                    {item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "-"}
+                    {formatUpdated(item.updatedAt)}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        data-testid={`inventory-row-preview-${item.sku}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setPreviewItem(item);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" aria-hidden />
+                        <span className="sr-only">Preview {item.sku}</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        data-testid={`inventory-row-open-${item.sku}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openFullItem(item.sku);
+                        }}
+                      >
+                        <ExternalLink className="h-4 w-4" aria-hidden />
+                        <span className="sr-only">Open {item.sku}</span>
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
           </div>
+          )
         )}
       </DataState>
+
+      <Dialog open={Boolean(previewItem)} onOpenChange={(open) => !open && setPreviewItem(null)}>
+        <DialogContent data-testid="inventory-item-preview" className="sm:max-w-2xl">
+          {previewItem ? (
+            <>
+              <DialogHeader>
+                <DialogTitle data-testid="inventory-item-preview-title">{previewItem.name}</DialogTitle>
+                <DialogDescription>SKU {previewItem.sku}</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Location</div>
+                  <div className="font-medium">{previewItem.location || "Unassigned"}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Category</div>
+                  <div className="font-medium">{categoryNameFor(previewItem)}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">On hand</div>
+                  <div className="text-xl font-semibold tabular-nums">{previewItem.onHand}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Allocated</div>
+                  <div className="text-xl font-semibold tabular-nums">{previewItem.allocated}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Available</div>
+                  <div className="text-xl font-semibold tabular-nums">{previewItem.available}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Low stock threshold</div>
+                  <div className="text-xl font-semibold tabular-nums">{previewItem.lowStockThreshold}</div>
+                </div>
+              </div>
+              <Alert>
+                <AlertTitle className="flex items-center gap-2" data-testid="inventory-item-preview-status">
+                  <StatusBadge status={inventoryStatus(previewItem)} />
+                  {inventoryStatus(previewItem) === "error"
+                    ? "Negative availability"
+                    : inventoryStatus(previewItem) === "low"
+                      ? "Low stock"
+                      : "Active"}
+                </AlertTitle>
+                <AlertDescription className="mt-2 space-y-2">
+                  <p>{inventoryStatusExplanation(previewItem)}</p>
+                  <p>
+                    <span className="font-medium">Recommended next action:</span>{" "}
+                    {recommendedInventoryAction(previewItem)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Updated {formatUpdated(previewItem.updatedAt)}</p>
+                </AlertDescription>
+              </Alert>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid="inventory-item-preview-close"
+                  onClick={() => setPreviewItem(null)}
+                >
+                  Close
+                </Button>
+                <Button
+                  type="button"
+                  data-testid="inventory-item-preview-open-full"
+                  onClick={() => openFullItem(previewItem.sku)}
+                >
+                  Open full item page
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

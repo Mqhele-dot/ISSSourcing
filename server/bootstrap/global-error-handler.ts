@@ -3,6 +3,7 @@ import { sendError } from "../api-response";
 import { appEnv } from "../config/env";
 import { logger } from "../lib/logger";
 import { handleCSRFError } from "../services/security-service";
+import { recordServerDiagnosticEvent } from "../diagnostics/server-diagnostics-store";
 
 export function registerGlobalErrorHandler(app: Express): void {
   app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
@@ -19,6 +20,19 @@ export function registerGlobalErrorHandler(app: Express): void {
       method: req.method,
       status,
       error: err instanceof Error ? err.message : String(err),
+    });
+    recordServerDiagnosticEvent({
+      severity: status >= 500 ? "error" : "warning",
+      source: "request",
+      title: "Unhandled request error",
+      message,
+      route: req.path,
+      method: req.method,
+      status,
+      stack: appEnv.isProduction ? undefined : e?.stack,
+      details: {
+        requestId: res.locals?.requestId,
+      },
     });
     sendError(
       res,

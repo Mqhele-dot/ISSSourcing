@@ -1,6 +1,6 @@
 # InvTrack — Functional QA audit
 
-**Last updated:** 2026-04-20  
+**Last updated:** 2026-05-10  
 
 **Business correctness confidence (0–3)**  
 0 = shell visible only · 1 = one filter/action · 2 = several paths or API checks · 3 = **exact** FQA numbers, row sets, or CSV parity proven against **`seed:functional-qa`** (`SKU-A`–`D`, `PO-FQA-*`, `INV-FQA-*`, `REQ-FQA-001`).
@@ -9,10 +9,11 @@
 
 **Commands**
 
-- `npm run verify:core` — **`check`** + **`test:stabilization-client`** + **`test:functional-audit`** + **`test:e2e`** (local “core” verification; needs DB + Playwright where applicable).
-- `npm run test:functional-audit` — runs **`seed:functional-qa`**, `test:functional-calculations`, `test:functional-filters`, and **`test:functional-inventory-api`** (operational list vs seed, same path as GET `/api/inventory`). Requires **`DATABASE_URL`** (or configured dev DB).
+- `npm run verify:core` — **`check`** + **`test:stabilization-client`** + **`test:diagnostics`** + **`test:functional-audit`** + **`test:e2e`** (local “core” verification; needs DB + Playwright where applicable).
+- `npm run test:diagnostics` — lightweight shared calculation/filter self-checks surfaced in **System Diagnostics**; not a substitute for the full FQA seed or E2E suite.
+- `npm run test:functional-audit` — runs `test:functional-calculations`, `test:functional-filters`, and **`test:functional-e2e`** so the functional audit includes browser-level Inventory and Purchase Order behavior, not just pure logic checks.
 - E2E: `e2e/global-setup.ts` runs **`seed:functional-qa`** after `e2e:prep` unless **`SKIP_E2E_FUNCTIONAL_QA_SEED=1`**.
-- Local explicit: **`npm run test:functional-e2e`** = seed + Playwright.
+- Local explicit: **`npm run test:functional-e2e`** = `PLAYWRIGHT_REUSE_EXISTING_SERVER=1 npx playwright test e2e/functional-audit.spec.ts` (via `cross-env`; global setup seeds FQA data unless disabled).
 
 ---
 
@@ -20,12 +21,13 @@
 
 | Area | Finding |
 |------|---------|
-| **Broken filters found** | None in paths under test: inventory UI + **`listOperationalInventory`**, PO list client filter + API list, requisitions `PENDING` + `REQ-FQA-001`, reports inventory **category → preview** (fixed to respect `categoryId` + `search`). |
-| **Wrong calculations found** | **Documented product gap (not a failing test):** `/api/inventory/stats` / master **quantity** vs operational **available** for low-stock semantics. Analytics `/api/reports/analytics` spend uses **Number** sums on PO totals (cent drift risk) — date-window test asserts **zero spend** for a far-future window, not cent parity. |
+| **Inventory UX fixed** | Inventory now has operational KPI cards, table/card views, client-side sorting, active filter chips, row preview, full-item navigation, honest empty-state guidance, and visible negative availability. Functional E2E verifies the FQA rows, stock attributes, filter chips, card preview, and full-item path. |
+| **PO workspace fixed** | Purchase Orders now have KPI cards, status select, client-side sorting, active filter chips, total column, row preview, full-PO navigation, signable PDF actions, detail test IDs, safe quick print, and inline receive validation. Functional E2E verifies FQA filters, totals, preview, detail navigation, receive validation, and print output does not hardcode `$`. |
+| **Wrong calculations found** | Inventory detail availability now preserves explicit negative availability instead of falling back or clamping. PO quick print uses the configured reporting money formatter. **Remaining product gap:** analytics `/api/reports/analytics` spend still uses **Number** sums on PO totals (cent drift risk) — date-window test asserts **zero spend** for a far-future window, not cent parity. |
 | **Pages that do not function** | None observed in **`verify:core`** for routes exercised; partial modules may still hide defects outside smoke/deep-smoke actions. |
-| **Fixes applied** | Reports **inventory preview** now filters by **`categoryId` + `search`** to align with export filters; preview shows up to **25** rows; **`data-testid`** on preview table, rows, category filter; merged **business E2E** into **`functional-audit.spec.ts`**; added **DB API parity** script for inventory; **`test:functional-audit`** chains **seed + inventory API** checks. |
-| **Tests added** | `scripts/test-functional-inventory-api.ts`; expanded **`e2e/functional-audit.spec.ts`** (serial, exact stock attrs, CSV FQA low-stock subset, AP cents split tests, PO sum 4000, analytics + date window, reports UI + CSV); **`e2e/module-deep-smoke.spec.ts`**. Removed **`e2e/functional-correctness.spec.ts`** and **`e2e/reports-parity.spec.ts`** (merged). |
-| **Remaining partial / unverified** | Operations / Control Tower, mobile scan UX, every **reports tab** export job → download → parse, **Export Center** job lifecycle, warehouse/project dimensions on inventory filter, multi-org isolation, full requisition approval → PO conversion. |
+| **Filter behavior fixed** | Inventory search/location/category/low-stock filters are enforced in the UI over the current result set so users see correct rows even if an API returns extra rows. PO search/supplier/status filters have visible chips and can clear one filter at a time. |
+| **Tests added** | Expanded **`e2e/functional-audit.spec.ts`** for Inventory workspace controls and PO workspace/detail behavior. Existing pure checks still cover deterministic calculations and filters. |
+| **Remaining partial / unverified** | Operations / Control Tower, mobile scan UX, every **reports tab** export job → download → parse, **Export Center** job lifecycle, warehouse/project dimensions beyond current Inventory filters, multi-org isolation, full requisition approval → PO conversion, deliberate over-receive override workflow (not implemented). |
 
 ---
 
@@ -34,13 +36,13 @@
 | # | Module | Route(s) | Confidence | Pass criteria in automation |
 |---|--------|----------|------------|-----------------------------|
 | 1 | Operations / Control Tower | `/operations`, `/operations/control-tower` | 1 | `product-architecture` / load only |
-| 2 | Inventory | `/inventory` | 3 | `functional-audit`: exact **`FQA_INVENTORY_MASTER`** attrs on rows; FQA-visible filters; low-stock CSV **FQA subset** `{B,D}`; `test-functional-inventory-api` |
+| 2 | Inventory | `/inventory` | 3 | `functional-audit`: KPI cards, sort, card view, preview, full item open, exact **`FQA_INVENTORY_MASTER`** attrs on rows; FQA-visible filters; low-stock CSV **FQA subset** `{B,D}`; `test-functional-inventory-api` |
 | 3 | Warehouses | `/inventory/warehouses` | 1 | `module-deep-smoke` |
 | 4 | Warehouse Operations | `/inventory/warehouse-operations` | 1 | `module-deep-smoke` |
 | 5 | Cycle Counts | `/inventory/cycle-counts` | 1 | `module-deep-smoke` |
 | 6 | Reorder | `/inventory/reorder` | 1 | `module-deep-smoke` |
 | 7 | Barcodes | `/inventory/barcodes` | 1 | `module-deep-smoke` |
-| 8 | Purchase Orders | `/procurement/orders` | 3 | `functional-audit`: status filters; line sum = header; **sum(PO-FQA totals)=4000** |
+| 8 | Purchase Orders | `/procurement/orders` | 3 | `functional-audit`: KPI cards, status select filters, total column/card, preview, full PO open, receive validation, quick-print currency check; line sum = header; **sum(PO-FQA totals)=4000** |
 | 9 | Requisitions | `/procurement/requisitions` | 2 | `functional-audit`: `REQ-FQA-001`, tabs, back/forward, new/cancel |
 | 10 | Suppliers | `/procurement/suppliers` | 1 | `module-deep-smoke` |
 | 11 | Contracts | `/procurement/contracts` | 1 | `module-deep-smoke` |
