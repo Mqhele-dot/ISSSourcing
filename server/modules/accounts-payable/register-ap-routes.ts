@@ -298,7 +298,12 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, invoice);
     } catch (error) {
       console.error("Error submitting invoice for approval:", error);
-      return sendError(res, 500, "INVOICE_SUBMIT_APPROVAL_FAILED", "Failed to submit invoice for approval");
+      const message = error instanceof Error ? error.message : "Failed to submit invoice for approval";
+      const clientError =
+        /must be matched|unresolved matching exceptions|not linked to a purchase order|Linked purchase order not found|Invoice is not linked/i.test(
+          message,
+        );
+      return sendError(res, clientError ? 400 : 500, "INVOICE_SUBMIT_APPROVAL_FAILED", message);
     }
   });
 

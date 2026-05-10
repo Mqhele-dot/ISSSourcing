@@ -69,7 +69,7 @@ export default function BarcodeScannerPage() {
   };
   
   return (
-    <div className="container px-4 py-6 mx-auto max-w-7xl">
+    <div className="container px-4 py-6 mx-auto max-w-7xl" data-testid="barcode-scanner-page">
       <h1 className="text-3xl font-bold tracking-tight mb-6">Barcode & QR Scanner</h1>
 
       <ModuleTrainingPanel moduleId="barcode-scanner" />

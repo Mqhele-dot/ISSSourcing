@@ -340,6 +340,16 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       res.status(201).json(invoice);
     } catch (error) {
       console.error("Error creating supplier invoice:", error);
+      if (error instanceof Error && /duplicate supplier invoice number/i.test(error.message)) {
+        return res.status(409).json({
+          ok: false,
+          error: {
+            code: "SUPPLIER_INVOICE_DUPLICATE",
+            message: "This invoice number has already been submitted for this supplier.",
+          },
+          message: "This invoice number has already been submitted for this supplier.",
+        });
+      }
       return sendFunctionError(res, 500, "createSupplierPortalInvoice", "Failed to create supplier invoice", error instanceof Error ? error.message : String(error));
     }
   });

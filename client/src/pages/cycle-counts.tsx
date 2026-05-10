@@ -215,7 +215,7 @@ export default function CycleCountsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6" data-testid="cycle-counts-page">
       <Alert>
         <AlertTitle>Cycle count workflow</AlertTitle>
         <AlertDescription className="text-sm">

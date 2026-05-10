@@ -380,7 +380,7 @@ export default function SuppliersPage() {
   const performanceBySupplier = new Map(performance.map((row) => [row.supplierId, row]));
 
   return (
-    <div>
+    <div data-testid="suppliers-page">
       <PageHeader
         title="Suppliers"
         description="Manage your suppliers and their information"

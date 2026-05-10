@@ -24,6 +24,7 @@ export function RequisitionHeaderFields({
   justification,
   notes,
   fieldErrors,
+  readOnly = false,
   onSupplierChange,
   onDepartmentChange,
   onProjectChange,
@@ -42,6 +43,7 @@ export function RequisitionHeaderFields({
   justification: string;
   notes: string;
   fieldErrors: RequisitionFieldErrors;
+  readOnly?: boolean;
   onSupplierChange: (v: number | "") => void;
   onDepartmentChange: (v: number | "") => void;
   onProjectChange: (v: number | "") => void;
@@ -54,7 +56,7 @@ export function RequisitionHeaderFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="req-supplier">Supplier *</Label>
-          <Select value={String(supplierId)} onValueChange={(v) => onSupplierChange(v ? Number(v) : "")}>
+          <Select value={String(supplierId)} onValueChange={(v) => onSupplierChange(v ? Number(v) : "")} disabled={readOnly}>
             <SelectTrigger id="req-supplier" aria-label="Select supplier">
               <SelectValue placeholder="Select supplier..." />
             </SelectTrigger>
@@ -70,7 +72,7 @@ export function RequisitionHeaderFields({
         </div>
         <div className="space-y-2">
           <Label htmlFor="req-department">Department</Label>
-          <Select value={String(departmentId)} onValueChange={(v) => onDepartmentChange(v ? Number(v) : "")}>
+          <Select value={String(departmentId)} onValueChange={(v) => onDepartmentChange(v ? Number(v) : "")} disabled={readOnly}>
             <SelectTrigger id="req-department" aria-label="Select department">
               <SelectValue placeholder="Select department..." />
             </SelectTrigger>
@@ -92,6 +94,7 @@ export function RequisitionHeaderFields({
             type="date"
             value={requiredDate}
             onChange={(e) => onRequiredDateChange(e.target.value)}
+            disabled={readOnly}
           />
           {fieldErrors.requiredDate ? <p className="text-xs text-destructive">{fieldErrors.requiredDate}</p> : null}
         </div>
@@ -101,6 +104,7 @@ export function RequisitionHeaderFields({
             <Select
               value={projectId === "" ? "__none__" : String(projectId)}
               onValueChange={(v) => onProjectChange(v === "__none__" ? "" : Number(v))}
+              disabled={readOnly}
             >
               <SelectTrigger id="req-project" aria-label="Project">
                 <SelectValue placeholder="No project" />
@@ -127,12 +131,13 @@ export function RequisitionHeaderFields({
           value={justification}
           onChange={(e) => onJustificationChange(e.target.value)}
           rows={2}
+          disabled={readOnly}
         />
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="req-notes">Notes</Label>
-        <Textarea id="req-notes" aria-label="Requisition notes" value={notes} onChange={(e) => onNotesChange(e.target.value)} rows={3} />
+        <Textarea id="req-notes" aria-label="Requisition notes" value={notes} onChange={(e) => onNotesChange(e.target.value)} rows={3} disabled={readOnly} />
       </div>
     </>
   );

@@ -26,6 +26,8 @@ type RequisitionLinesEditorProps = {
   onAddRow: () => void;
   onRemoveRow: (idx: number) => void;
   onUpdateRow: (idx: number, field: keyof ReqLineDraft, value: number | string) => void;
+  readOnly?: boolean;
+  lockedReason?: string;
 };
 
 export function RequisitionLinesEditor({
@@ -35,26 +37,48 @@ export function RequisitionLinesEditor({
   onAddRow,
   onRemoveRow,
   onUpdateRow,
+  readOnly = false,
+  lockedReason,
 }: RequisitionLinesEditorProps) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="requisition-lines-editor">
       <div className="flex items-center justify-between">
         <Label id="req-items-label">Items</Label>
-        <Button type="button" variant="outline" size="sm" onClick={onAddRow} aria-label="Add item row">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onAddRow}
+          aria-label="Add item row"
+          data-testid="requisition-add-line-button"
+          disabled={readOnly}
+        >
           <Plus className="mr-2 h-4 w-4" />
           Add item
         </Button>
       </div>
+      {readOnly ? (
+        <p className="rounded-md border bg-muted p-3 text-sm text-muted-foreground" data-testid="requisition-lines-readonly-message">
+          {lockedReason || "Requisition lines are read-only for this status."}
+        </p>
+      ) : null}
       <div className="space-y-4" role="group" aria-labelledby="req-items-label">
-        {items.map((item, idx) => (
-          <div key={idx} className="flex gap-2 items-end">
+        {items.map((item, idx) => {
+          const lineKey = item.id ?? idx;
+          return (
+          <div key={lineKey} className="flex gap-2 items-end" data-testid={`requisition-line-row-${lineKey}`}>
             <div className="flex-1 space-y-2">
               <Label htmlFor={"req-item-" + idx}>Item *</Label>
               <Select
                 value={item.itemId ? String(item.itemId) : ""}
                 onValueChange={(v) => onUpdateRow(idx, "itemId", v ? Number(v) : 0)}
+                disabled={readOnly}
               >
-                <SelectTrigger id={"req-item-" + idx} aria-label={"Select item for line " + (idx + 1)}>
+                <SelectTrigger
+                  id={"req-item-" + idx}
+                  aria-label={"Select item for line " + (idx + 1)}
+                  data-testid={`requisition-line-item-${lineKey}`}
+                >
                   <SelectValue placeholder="Select item..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -75,6 +99,8 @@ export function RequisitionLinesEditor({
                 min={1}
                 value={item.quantity}
                 onChange={(e) => onUpdateRow(idx, "quantity", Number(e.target.value))}
+                disabled={readOnly}
+                data-testid={`requisition-line-qty-${lineKey}`}
               />
             </div>
             <div className="w-28 space-y-2">
@@ -87,18 +113,23 @@ export function RequisitionLinesEditor({
                 step={0.01}
                 value={item.unitPrice}
                 onChange={(e) => onUpdateRow(idx, "unitPrice", Number(e.target.value))}
+                disabled={readOnly}
+                data-testid={`requisition-line-unit-price-${lineKey}`}
               />
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onRemoveRow(idx)}
-              aria-label={"Remove item line " + (idx + 1)}
-            >
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
+            {!readOnly ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onRemoveRow(idx)}
+                aria-label={"Remove item line " + (idx + 1)}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            ) : null}
           </div>
-        ))}
+        );
+        })}
       </div>
       {fieldError ? <p className="text-xs text-destructive">{fieldError}</p> : null}
     </div>

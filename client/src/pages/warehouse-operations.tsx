@@ -355,7 +355,7 @@ export default function WarehouseOperationsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6" data-testid="warehouse-operations-page">
       <PageHeader
         title="Warehouse operations"
         subtitle="Allocations, put-away, batch/serial registration, and trace-based issue (decrement batch/serial + master stock + ISSUE movement). PO receive with batch/serial remains on the PO screen."

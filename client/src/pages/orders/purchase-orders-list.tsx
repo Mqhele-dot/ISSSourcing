@@ -103,9 +103,21 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
 
   const [qInput, setQInput] = useState(String(queryState.q || ""));
   useEffect(() => setQInput(String(queryState.q || "")), [queryState.q]);
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      if (String(queryState.q || "") !== qInput) setQueryState({ q: qInput });
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [qInput, queryState.q, setQueryState]);
 
   const [supplierInput, setSupplierInput] = useState(String(queryState.supplier || ""));
   useEffect(() => setSupplierInput(String(queryState.supplier || "")), [queryState.supplier]);
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      if (String(queryState.supplier || "") !== supplierInput) setQueryState({ supplier: supplierInput });
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [supplierInput, queryState.supplier, setQueryState]);
 
   const [statusInput, setStatusInput] = useState(String(queryState.status || ""));
   useEffect(() => setStatusInput(String(queryState.status || "")), [queryState.status]);
@@ -191,9 +203,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                 data-testid="po-search-input"
                 value={qInput}
                 onChange={(event) => {
-                  const v = event.target.value;
-                  setQInput(v);
-                  setQueryState({ q: v });
+                  setQInput(event.target.value);
                 }}
                 placeholder="Search PO number or supplier"
                 className="w-full sm:w-[260px]"
@@ -202,9 +212,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                 data-testid="po-supplier-filter"
                 value={supplierInput}
                 onChange={(event) => {
-                  const v = event.target.value;
-                  setSupplierInput(v);
-                  setQueryState({ supplier: v });
+                  setSupplierInput(event.target.value);
                 }}
                 placeholder="Supplier id or name"
                 className="w-full sm:w-[220px]"

@@ -57,6 +57,13 @@ type MatchOptions = {
   taxTolerancePct?: number;
 };
 
+/** Same defaults as the AP workbench "Match" action — used when submitting for approval without a prior match row. */
+const DEFAULT_MATCH_ON_SUBMIT_APPROVAL: MatchOptions = {
+  priceTolerancePct: 2,
+  quantityTolerancePct: 2,
+  taxTolerancePct: 0,
+};
+
 function toDateOrUndefined(value: unknown): Date | undefined {
   if (value == null || value === "") return undefined;
   const parsed = value instanceof Date ? value : new Date(String(value));
@@ -424,7 +431,11 @@ export async function submitInvoiceForApproval(invoiceId: number, userId: number
   const invoice = await storage.getInvoice(invoiceId);
   if (!invoice) return undefined;
   assertInvoiceTransition(String(invoice.status), "PENDING_APPROVAL");
-  const latestMatch = await getLatestMatchResult(invoiceId, orgId);
+  let latestMatch = await getLatestMatchResult(invoiceId, orgId);
+  if (!latestMatch) {
+    await evaluateInvoiceMatch(invoiceId, DEFAULT_MATCH_ON_SUBMIT_APPROVAL, userId);
+    latestMatch = await getLatestMatchResult(invoiceId, orgId);
+  }
   if (!latestMatch) {
     throw new Error("Invoice must be matched before submission for approval.");
   }

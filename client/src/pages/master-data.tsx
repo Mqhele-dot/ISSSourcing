@@ -284,7 +284,7 @@ export default function MasterDataPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6" data-testid="master-data-page">
       <PageHeader
         title="Master Data"
         subtitle="Maintain shared reference data for procurement and finance."

@@ -433,7 +433,7 @@ const DocumentExtractorPage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="container mx-auto py-8" data-testid="document-extractor-page">
       <div className="flex flex-col space-y-6">
         <DocumentExtractorPageIntro />
 

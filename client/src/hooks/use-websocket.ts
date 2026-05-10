@@ -184,11 +184,11 @@ export function useWebSocket({
         }
       };
       
-      socketRef.current.onerror = (error) => {
-        console.error('WebSocket error event:', error);
-        
-        // Don't show toast here - let the onclose handle reconnect logic
-        // The error event is always followed by a close event
+      socketRef.current.onerror = (event) => {
+        // Browser WebSocket `error` is an Event with no message; logging it as console.error
+        // floods diagnostics with useless "[object Event]" / isTrusted-only payloads. Details
+        // arrive on onclose (code/reason). Use debug only for local troubleshooting.
+        console.debug("WebSocket transport error (see onclose for code/reason)", event.type);
       };
       
     } catch (error) {

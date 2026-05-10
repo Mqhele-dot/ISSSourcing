@@ -9,6 +9,17 @@ export type RequisitionFieldErrors = Partial<
   Record<"supplierId" | "departmentId" | "requiredDate" | "items" | "projectId", string>
 >;
 
+const LOCKED_REQUISITION_STATUSES = new Set(["APPROVED", "CONVERTED", "CLOSED", "CANCELLED"]);
+
+function lockedReasonForStatus(status: unknown): string {
+  const normalized = String(status || "").trim().toUpperCase();
+  if (!LOCKED_REQUISITION_STATUSES.has(normalized)) return "";
+  if (normalized === "APPROVED") return "This requisition is approved and locked to preserve approval history.";
+  if (normalized === "CONVERTED") return "This requisition has been converted to a purchase order and can no longer be edited.";
+  if (normalized === "CLOSED") return "This requisition is closed and no longer accepts changes.";
+  return "This requisition is cancelled and no longer accepts changes.";
+}
+
 export function useRequisitionForm(params: {
   id: number | null;
   isNew: boolean;
@@ -36,6 +47,8 @@ export function useRequisitionForm(params: {
       >("GET", `/api/purchase-requisitions/${id}`),
     enabled: !!id && !isNew,
   });
+  const lockedReason = !isNew ? lockedReasonForStatus(requisition?.status) : "";
+  const isLocked = Boolean(lockedReason);
 
   const { data: suppliers = [] } = useQuery({
     queryKey: ["/api/suppliers"],
@@ -129,6 +142,9 @@ export function useRequisitionForm(params: {
 
   const updateMutation = useMutation({
     mutationFn: async () => {
+      if (isLocked) {
+        throw new Error(lockedReason || "This requisition is locked.");
+      }
       const validItems = items
         .filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0)
         .map((i) => ({
@@ -170,6 +186,14 @@ export function useRequisitionForm(params: {
   }, []);
 
   const handleSubmit = useCallback(() => {
+    if (isLocked) {
+      toast({
+        title: "Requisition is locked",
+        description: lockedReason,
+        variant: "destructive",
+      });
+      return;
+    }
     const nextErrors: RequisitionFieldErrors = {};
     if (!supplierId) nextErrors.supplierId = "Supplier is required";
     if (!departmentId) nextErrors.departmentId = "Department is required";
@@ -200,7 +224,7 @@ export function useRequisitionForm(params: {
     }
     if (isNew) createMutation.mutate();
     else updateMutation.mutate();
-  }, [supplierId, departmentId, requiredDate, items, isNew, createMutation, updateMutation, toast]);
+  }, [supplierId, departmentId, requiredDate, items, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
@@ -230,5 +254,7 @@ export function useRequisitionForm(params: {
     updateItem,
     handleSubmit,
     isPending,
+    isLocked,
+    lockedReason,
   };
 }

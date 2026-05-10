@@ -44,8 +44,8 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
-export function openPurchaseOrderPrintView(detail: PurchaseOrderDetail, formatMoney: (amount: number) => string) {
-  const html = `
+export function buildPurchaseOrderPrintHtml(detail: PurchaseOrderDetail, formatMoney: (amount: number) => string) {
+  return `
     <html>
       <head>
         <title>PO ${escapeHtml(detail.poNumber)}</title>
@@ -95,7 +95,10 @@ export function openPurchaseOrderPrintView(detail: PurchaseOrderDetail, formatMo
       </body>
     </html>
   `;
+}
 
+export function openPurchaseOrderPrintView(detail: PurchaseOrderDetail, formatMoney: (amount: number) => string) {
+  const html = buildPurchaseOrderPrintHtml(detail, formatMoney);
   const printWindow = window.open("", "_blank", "noopener,noreferrer,width=1000,height=760");
   if (!printWindow) {
     return;

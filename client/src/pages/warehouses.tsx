@@ -16,7 +16,7 @@ export default function WarehousesPage() {
   const [createWarehouseFormVariant, setCreateWarehouseFormVariant] = useState<"quick" | "full">("quick");
 
   return (
-    <div className="container mx-auto py-6 max-w-7xl">
+    <div className="container mx-auto py-6 max-w-7xl" data-testid="warehouses-page">
       <PageHeader
         title="Warehouses"
         description="Manage your warehouse locations and inventory distribution"

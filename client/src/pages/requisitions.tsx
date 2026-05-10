@@ -147,6 +147,12 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     throwOnError: false,
   });
 
+  const { data: departments = [] } = useQuery({
+    queryKey: ["/api/departments"],
+    queryFn: () => requestJson<Array<{ id: number; code?: string | null; name?: string | null }>>("GET", "/api/departments"),
+    throwOnError: false,
+  });
+
   const {
     data: reqApproverHints,
     isLoading: approverHintsLoading,
@@ -176,16 +182,44 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const requisitionKpis = useMemo(() => {
     const norm = (value: unknown) => String(value || "").toUpperCase();
     return {
-      total: filtered.length,
-      pending: filtered.filter((r) => norm(r.status) === "PENDING").length,
-      approved: filtered.filter((r) => norm(r.status) === "APPROVED").length,
-      rejected: filtered.filter((r) => norm(r.status) === "REJECTED").length,
-      converted: filtered.filter((r) => norm(r.status) === "CONVERTED").length,
+      total: requisitions.length,
+      draft: requisitions.filter((r) => norm(r.status) === "DRAFT").length,
+      pending: requisitions.filter((r) => norm(r.status) === "PENDING").length,
+      approved: requisitions.filter((r) => norm(r.status) === "APPROVED").length,
+      rejected: requisitions.filter((r) => norm(r.status) === "REJECTED").length,
+      converted: requisitions.filter((r) => norm(r.status) === "CONVERTED").length,
     };
-  }, [filtered]);
+  }, [requisitions]);
   const hasActiveFilters = Boolean(searchFilter || statusFilter);
   const supplierNameFor = (req: PurchaseRequisition) =>
     suppliers.find((s) => s.id === req.supplierId)?.name ?? (req.supplierId ? "Supplier #" + req.supplierId : "-");
+  const requesterNameFor = (req: PurchaseRequisition) => {
+    const requestorId = Number((req as { requestorId?: unknown }).requestorId);
+    if (!Number.isFinite(requestorId) || requestorId <= 0) return "—";
+    const user = users.find((candidate) => candidate.id === requestorId);
+    return user?.username ?? user?.email ?? `User #${requestorId}`;
+  };
+  const departmentNameFor = (req: PurchaseRequisition) => {
+    const departmentId = Number((req as { departmentId?: unknown }).departmentId);
+    if (!Number.isFinite(departmentId) || departmentId <= 0) return "—";
+    const department = departments.find((candidate) => candidate.id === departmentId);
+    return department ? `${department.code ? `${department.code} - ` : ""}${department.name ?? `Department #${departmentId}`}` : `Department #${departmentId}`;
+  };
+  const lineCountFor = (req: PurchaseRequisition) => {
+    const items = (req as { items?: unknown }).items;
+    // TODO: list API does not consistently include requisition line counts; prefer a lineCount field when added server-side.
+    if (Array.isArray(items)) return String(items.length);
+    const lineCount = Number((req as { lineCount?: unknown; linesCount?: unknown }).lineCount ?? (req as { linesCount?: unknown }).linesCount);
+    return Number.isFinite(lineCount) && lineCount >= 0 ? String(lineCount) : "—";
+  };
+  const linkedPoFor = (req: PurchaseRequisition) => {
+    const linked = (req as { purchaseOrderNumber?: unknown; poNumber?: unknown; linkedPoNumber?: unknown; convertedPurchaseOrderNumber?: unknown }).purchaseOrderNumber
+      ?? (req as { poNumber?: unknown }).poNumber
+      ?? (req as { linkedPoNumber?: unknown }).linkedPoNumber
+      ?? (req as { convertedPurchaseOrderNumber?: unknown }).convertedPurchaseOrderNumber;
+    if (linked) return String(linked);
+    return String(req.status || "").toUpperCase() === "CONVERTED" ? "Converted" : "—";
+  };
   const clearFilter = (key: "search" | "status") => {
     if (key === "search") setSearch("");
     if (key === "status") setQueryState({ status: "" });
@@ -329,10 +363,14 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         <Card data-testid="requisition-kpi-total">
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">All requisitions</CardTitle></CardHeader>
           <CardContent className="text-2xl font-semibold tabular-nums">{requisitionKpis.total}</CardContent>
+        </Card>
+        <Card data-testid="requisition-kpi-draft">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Draft</CardTitle></CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">{requisitionKpis.draft}</CardContent>
         </Card>
         <Card data-testid="requisition-kpi-pending">
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Pending</CardTitle></CardHeader>
@@ -369,6 +407,10 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
           ) : null}
         </div>
       ) : null}
+
+      <p className="text-sm text-muted-foreground" data-testid="requisition-results-count">
+        Showing {filtered.length} of {requisitions.length} requisitions
+      </p>
 
       {usersError || suppliersError ? (
         <PanelInlineError
@@ -422,12 +464,16 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
       >
         {(data) => (
           <div className="overflow-x-auto">
-          <Table className="requisitions-table min-w-[52rem]">
+          <Table className="requisitions-table min-w-[78rem]">
             <TableHeader>
               <TableRow>
                 <TableHead>Req #</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Requester</TableHead>
                 <TableHead>Supplier</TableHead>
+                <TableHead>Department / cost center</TableHead>
+                <TableHead>Lines</TableHead>
+                <TableHead>Linked PO</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Required</TableHead>
                 <TableHead>Created</TableHead>
@@ -441,9 +487,13 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                   <TableCell>
                     <StatusBadge status={req.status} />
                   </TableCell>
+                  <TableCell>{requesterNameFor(req)}</TableCell>
                   <TableCell>
                     {supplierNameFor(req)}
                   </TableCell>
+                  <TableCell>{departmentNameFor(req)}</TableCell>
+                  <TableCell>{lineCountFor(req)}</TableCell>
+                  <TableCell>{linkedPoFor(req)}</TableCell>
                   <TableCell>{formatMoney(Number(req.totalAmount || 0))}</TableCell>
                   <TableCell>{formatRequisitionDate(req.requiredDate)}</TableCell>
                   <TableCell>{formatRequisitionDate(req.createdAt)}</TableCell>

@@ -12,10 +12,15 @@ import { requestJson } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageShell } from "@/components/page-shell";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
+import type { PurchaseOrder } from "@/api/client";
 
 export default function SupplierPortalPage() {
   const { toast } = useToast();
+  const { formatMoney } = useReportingMoney();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [etaByOrder, setEtaByOrder] = useState<Record<number, string>>({});
@@ -25,6 +30,8 @@ export default function SupplierPortalPage() {
   const [invoiceTotal, setInvoiceTotal] = useState("");
   const [invoiceCurrency, setInvoiceCurrency] = useState("ZAR");
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [invoiceError, setInvoiceError] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const role = String(user?.role ?? "");
   const canChooseSupplier = role === "admin" || role === "manager";
   const supplierScopeId =
@@ -81,6 +88,7 @@ export default function SupplierPortalPage() {
 
   const uploadInvoice = useMutation({
     mutationFn: async () => {
+      setInvoiceError("");
       if (canChooseSupplier && !supplierScopeId) {
         throw new Error("Select a supplier account first");
       }
@@ -116,6 +124,7 @@ export default function SupplierPortalPage() {
       setInvoiceNumber("");
       setInvoiceTotal("");
       setInvoiceFile(null);
+      setInvoiceError("");
       void queryClient.invalidateQueries({ queryKey: ["/api/supplier/invoices"] });
       toast({
         title: "Supplier invoice submitted",
@@ -123,9 +132,11 @@ export default function SupplierPortalPage() {
       });
     },
     onError: (error) => {
+      const description = error instanceof Error ? error.message : "Unknown error";
+      setInvoiceError(description);
       toast({
         title: "Invoice submission failed",
-        description: error instanceof Error ? error.message : "Unknown error",
+        description,
         variant: "destructive",
       });
     },
@@ -226,6 +237,17 @@ export default function SupplierPortalPage() {
         </Alert>
       ) : null}
 
+      <Tabs defaultValue="open-pos" className="space-y-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-6" data-testid="supplier-portal-tabs">
+          <TabsTrigger value="open-pos" data-testid="supplier-portal-open-pos-tab">Open POs</TabsTrigger>
+          <TabsTrigger value="confirmations" data-testid="supplier-portal-confirmations-tab">Confirmations</TabsTrigger>
+          <TabsTrigger value="delivery-updates" data-testid="supplier-portal-delivery-updates-tab">Delivery Updates</TabsTrigger>
+          <TabsTrigger value="invoices" data-testid="supplier-portal-invoices-tab">Submitted Invoices</TabsTrigger>
+          <TabsTrigger value="payment-status" data-testid="supplier-portal-payment-status-tab">Payment Status</TabsTrigger>
+          <TabsTrigger value="documents" data-testid="supplier-portal-documents-tab">Documents</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="open-pos" className="space-y-4">
       <Card className={!supplierSelected ? "opacity-70" : undefined}>
         <CardHeader>
           <CardTitle>Assigned purchase orders</CardTitle>
@@ -254,7 +276,7 @@ export default function SupplierPortalPage() {
                   <TableRow key={order.id} data-testid={`supplier-portal-po-row-${order.poNumber}`}>
                     <TableCell className="font-medium">{order.poNumber}</TableCell>
                     <TableCell>{order.status}</TableCell>
-                    <TableCell>{Number(order.totalAmount ?? 0).toFixed(2)}</TableCell>
+                    <TableCell>{formatMoney(Number(order.totalAmount ?? 0))}</TableCell>
                     <TableCell>{order.requestedDate ? new Date(order.requestedDate).toLocaleDateString() : "-"}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -291,13 +313,19 @@ export default function SupplierPortalPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        onClick={() => confirmOrder.mutate(order.id)}
-                        disabled={confirmOrder.isPending}
-                      >
-                        Confirm
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setSelectedOrder(order)}>
+                          Preview
+                        </Button>
+                        <Button
+                          size="sm"
+                          data-testid="supplier-portal-confirm-po-button"
+                          onClick={() => confirmOrder.mutate(order.id)}
+                          disabled={confirmOrder.isPending}
+                        >
+                          Confirm
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -313,7 +341,9 @@ export default function SupplierPortalPage() {
           )}
         </CardContent>
       </Card>
+      </TabsContent>
 
+      <TabsContent value="invoices" className="space-y-4">
       <Card className={!supplierSelected ? "opacity-70" : undefined}>
         <CardHeader>
           <CardTitle>Submit invoice</CardTitle>
@@ -329,7 +359,7 @@ export default function SupplierPortalPage() {
                 <SelectItem value="none">Choose PO</SelectItem>
                 {orders.map((order) => (
                   <SelectItem key={order.id} value={String(order.id)}>
-                    {order.poNumber} · {Number(order.totalAmount ?? 0).toFixed(2)}
+                    {order.poNumber} · {formatMoney(Number(order.totalAmount ?? 0))}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -339,6 +369,7 @@ export default function SupplierPortalPage() {
             <Label htmlFor="supplier-invoice-number">Invoice number</Label>
             <Input
               id="supplier-invoice-number"
+              data-testid="supplier-portal-invoice-number-input"
               value={invoiceNumber}
               onChange={(event) => setInvoiceNumber(event.target.value)}
               placeholder="Required"
@@ -349,6 +380,7 @@ export default function SupplierPortalPage() {
             <Label htmlFor="supplier-invoice-total">Invoice total</Label>
             <Input
               id="supplier-invoice-total"
+              data-testid="supplier-portal-invoice-total-input"
               type="number"
               min={0}
               step={0.01}
@@ -362,6 +394,7 @@ export default function SupplierPortalPage() {
             <Label htmlFor="supplier-invoice-currency">Currency</Label>
             <Input
               id="supplier-invoice-currency"
+              data-testid="supplier-portal-invoice-currency-input"
               value={invoiceCurrency}
               onChange={(event) => setInvoiceCurrency(event.target.value.toUpperCase())}
               disabled={!supplierSelected}
@@ -371,6 +404,7 @@ export default function SupplierPortalPage() {
             <Label htmlFor="supplier-invoice-file">Invoice file</Label>
             <Input
               id="supplier-invoice-file"
+              data-testid="supplier-portal-invoice-file-input"
               type="file"
               onChange={(event) => setInvoiceFile(event.target.files?.[0] ?? null)}
               disabled={!supplierSelected}
@@ -386,34 +420,38 @@ export default function SupplierPortalPage() {
             </Button>
           </div>
         </CardContent>
+        {invoiceError ? (
+          <CardContent className="pt-0">
+            <Alert variant="destructive">
+              <AlertTitle>Invoice submission failed</AlertTitle>
+              <AlertDescription>{invoiceError}</AlertDescription>
+            </Alert>
+          </CardContent>
+        ) : null}
       </Card>
+      </TabsContent>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <TabsContent value="confirmations" className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Open POs</CardTitle>
+            <CardTitle>Confirmations</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            {orders.filter((order) => !["received", "completed", "cancelled"].includes(String(order.status).toLowerCase())).length} assigned order(s) remain open for acknowledgement, delivery updates, or invoice submission.
+            {orders.filter((order) => ["open", "sent", "approved"].includes(String(order.status).toLowerCase())).length} order(s) are likely waiting for acknowledgement.
           </CardContent>
         </Card>
+      </TabsContent>
+      <TabsContent value="delivery-updates" className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Invoices submitted</CardTitle>
+            <CardTitle>Delivery updates</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {portalInvoices.length === 0 ? (
-              <p className="text-muted-foreground">No supplier invoices submitted yet.</p>
-            ) : (
-              portalInvoices.slice(0, 5).map((invoice) => (
-                <div key={invoice.id} className="flex justify-between gap-3 rounded-md border p-2">
-                  <span>{invoice.invoiceNumber}</span>
-                  <span className="text-muted-foreground">{invoice.status}</span>
-                </div>
-              ))
-            )}
+          <CardContent className="text-sm text-muted-foreground">
+            Use the Open POs tab to set an ETA per order. Delivery updates are sent to procurement immediately.
           </CardContent>
         </Card>
+      </TabsContent>
+      <TabsContent value="payment-status" className="space-y-4">
         <Card data-testid="supplier-portal-payment-status">
           <CardHeader>
             <CardTitle>Payment / remittance status</CardTitle>
@@ -426,15 +464,16 @@ export default function SupplierPortalPage() {
                 <div key={invoice.id} className="flex justify-between gap-3 rounded-md border p-2">
                   <span>{invoice.invoiceNumber}</span>
                   <span className="text-muted-foreground">
-                    Paid {Number(invoice.paidAmount ?? 0).toFixed(2)} / Due {Number(invoice.dueAmount ?? invoice.total).toFixed(2)}
+                    Paid {formatMoney(Number(invoice.paidAmount ?? 0))} / Due {formatMoney(Number(invoice.dueAmount ?? invoice.total))}
                   </span>
                 </div>
               ))
             )}
           </CardContent>
         </Card>
-      </div>
+      </TabsContent>
 
+      <TabsContent value="documents" className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Documents</CardTitle>
@@ -443,6 +482,78 @@ export default function SupplierPortalPage() {
           Upload invoice documents from the submission panel. Additional supplier document center workflows can build on the same attachment service.
         </CardContent>
       </Card>
+      </TabsContent>
+      </Tabs>
+      <Dialog open={Boolean(selectedOrder)} onOpenChange={(open) => !open && setSelectedOrder(null)}>
+        <DialogContent data-testid="supplier-portal-po-preview" className="sm:max-w-xl">
+          {selectedOrder ? (
+            <>
+              <DialogHeader>
+                <DialogTitle data-testid="supplier-portal-po-preview-title">{selectedOrder.poNumber}</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div className="font-medium" data-testid="supplier-portal-po-preview-status">{selectedOrder.status}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Total</div>
+                  <div className="font-medium" data-testid="supplier-portal-po-preview-total">
+                    {formatMoney(Number(selectedOrder.totalAmount ?? 0))}
+                  </div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Requested</div>
+                  <div className="font-medium">{selectedOrder.requestedDate ? new Date(selectedOrder.requestedDate).toLocaleDateString() : "—"}</div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Line count</div>
+                  <div className="font-medium">{Array.isArray((selectedOrder as { lines?: unknown }).lines) ? (selectedOrder as { lines: unknown[] }).lines.length : "—"}</div>
+                </div>
+                <div className="rounded-md border p-3 sm:col-span-2">
+                  <div className="text-xs text-muted-foreground">Next supplier action</div>
+                  <p className="text-sm">
+                    Confirm the PO if you can fulfill it, or update the ETA when delivery timing changes.
+                  </p>
+                </div>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button type="button" variant="outline" data-testid="supplier-portal-po-preview-close" onClick={() => setSelectedOrder(null)}>
+                  Close
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid="supplier-portal-update-eta-button"
+                  onClick={() => {
+                    const date = etaByOrder[selectedOrder.id];
+                    if (!date) {
+                      toast({
+                        title: "Missing expected delivery date",
+                        description: "Select a delivery date in the Open POs tab before saving.",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    updateDelivery.mutate({ id: selectedOrder.id, date });
+                  }}
+                  disabled={updateDelivery.isPending}
+                >
+                  Update ETA
+                </Button>
+                <Button
+                  type="button"
+                  data-testid="supplier-portal-confirm-po-button"
+                  onClick={() => confirmOrder.mutate(selectedOrder.id)}
+                  disabled={confirmOrder.isPending}
+                >
+                  Confirm
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }
