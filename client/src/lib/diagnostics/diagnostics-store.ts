@@ -1,3 +1,8 @@
+import {
+  isSlowApiDiagnosticEvent,
+  slowApiDiagnosticDedupeKey,
+} from "@shared/diagnostics/event-dedupe";
+
 export type DiagnosticSeverity = "info" | "warning" | "error" | "critical";
 
 export type DiagnosticSource =
@@ -49,6 +54,7 @@ const STORAGE_KEY = "invtrack.diagnostics.events";
 const MAX_MEMORY_EVENTS = 500;
 const MAX_PERSISTED_EVENTS = 200;
 const DEDUPE_WINDOW_MS = 5_000;
+const SLOW_API_DIAGNOSTICS_DEDUPE_MS = 30_000;
 const listeners = new Set<DiagnosticListener>();
 const events: DiagnosticEvent[] = loadPersistedEvents();
 
@@ -103,7 +109,12 @@ function notify(latest?: DiagnosticEvent): void {
   listeners.forEach((listener) => listener(snapshot, latest));
 }
 
-function dedupeKey(event: Pick<DiagnosticEvent, "source" | "title" | "message" | "route">): string {
+function dedupeKey(
+  event: Pick<DiagnosticEvent, "source" | "title" | "message" | "route" | "endpoint" | "method">,
+): string {
+  if (isSlowApiDiagnosticEvent(event)) {
+    return slowApiDiagnosticDedupeKey(event.endpoint, event.method);
+  }
   return [event.source, event.title, event.message, event.route ?? ""].join("|");
 }
 
@@ -165,9 +176,10 @@ export function addDiagnosticEvent(input: DiagnosticEventInput): DiagnosticEvent
   };
 
   const key = dedupeKey(normalized);
+  const dedupeMs = isSlowApiDiagnosticEvent(normalized) ? SLOW_API_DIAGNOSTICS_DEDUPE_MS : DEDUPE_WINDOW_MS;
   const duplicate = events.find((event) => {
     const eventTime = new Date(event.timestamp).getTime();
-    return now - eventTime <= DEDUPE_WINDOW_MS && dedupeKey(event) === key;
+    return now - eventTime <= dedupeMs && dedupeKey(event) === key;
   });
 
   if (duplicate) {

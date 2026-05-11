@@ -49,9 +49,12 @@ npm run test:diagnostics
 npm run test:functional-audit
 npm run test:e2e
 npm run verify:core
+npm run verify:release
 ```
 
-Slow `GET /api/activity` warnings are **deduped** in the client (same path, ~30s window) to keep exports readable when a page retries or refetches. Route marker checks wait **8s**, then **re-check at 10s**, before emitting a “page may not have rendered” warning (lazy routes such as System Diagnostics).
+`npm run test:diagnostics` includes self-checks for slow-API dedupe keys, `/admin/system-diagnostics` route-contract markers, money/filter invariants, and related shared helpers.
+
+Slow `GET /api/activity` warnings are **deduped** in the client: the diagnostics store coalesces identical slow-API rows (~30s window) using endpoint + method keys, and `queryClient` applies the same ~30s cooldown per path before emitting another **Slow API request** event. Together this keeps exports readable when a page retries or refetches. Route marker checks wait **8s**, then **re-check at 10s**, before emitting a “page may not have rendered” warning (lazy routes such as System Diagnostics).
 
 ## Purchase Order action stability (diagnostics perspective)
 

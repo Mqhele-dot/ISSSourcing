@@ -86,13 +86,14 @@ export function EntityActivityPanel({
           isEmpty={(items) => items.length === 0}
           emptyTitle="No activity recorded"
           emptyDescription="Actions for this record will appear here."
+          emptyTestId="entity-activity-empty"
           fallback={fallback}
           onRetry={() => void refetch()}
         >
           {(items) => (
             <div className="space-y-2">
               {items.map((item) => (
-                <div key={item.id} className="rounded-md border border-border p-3">
+                <div key={item.id} className="rounded-md border border-border p-3" data-testid="entity-activity-row">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">{item.action}</Badge>

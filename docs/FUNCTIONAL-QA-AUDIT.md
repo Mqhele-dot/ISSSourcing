@@ -9,7 +9,8 @@
 
 **Commands**
 
-- `npm run verify:core` — **`check`** + **`test:stabilization-client`** + **`test:diagnostics`** + **`test:route-diagnostics`** + **`test:purchase-order-status`** + **`test:functional-audit`** + **`test:e2e`** (local “core” verification; needs DB + Playwright where applicable).
+- `npm run verify:core` — **`check`** + **`test:stabilization-client`** + **`test:diagnostics`** + **`test:route-diagnostics`** + **`test:po-print-html`** + **`test:purchase-order-status`** + **`test:functional-audit`** + **`test:e2e`** (local “core” verification; needs DB + Playwright where applicable). The **`test:e2e`** wrapper brings up (or reuses) the dev server, runs **`test:purchase-order-endpoints`** immediately before the Playwright suite, then executes browser E2E.
+- `npm run verify:release` — **`verify:core`** plus **`test:purchase-order-actions-e2e`** (serial PO approve/send/commercial/activity proof).
 - `npm run test:diagnostics` — lightweight shared calculation/filter self-checks surfaced in **System Diagnostics**; not a substitute for the full FQA seed or E2E suite.
 - `npm run test:functional-audit` — runs `test:functional-calculations`, `test:functional-filters`, and **`test:functional-e2e`** so the functional audit includes browser-level Inventory and Purchase Order behavior, not just pure logic checks.
 - E2E: `e2e/global-setup.ts` runs **`seed:functional-qa`** after `e2e:prep` unless **`SKIP_E2E_FUNCTIONAL_QA_SEED=1`**.
@@ -97,16 +98,17 @@ Idempotent for FQA prefixes. See **`shared/functional-qa-constants.ts`** and **`
 | Operational inventory API parity (needs DB) | `tsx scripts/test-functional-inventory-api.ts` |
 | **Full audit chain** | `npm run test:functional-audit` |
 | **PO status rules (shared)** | `npm run test:purchase-order-status` |
+| **PO API contract (needs running server)** | `npm run test:purchase-order-endpoints` (also run automatically before Playwright in `npm run test:e2e`) |
 
 ---
 
 ## Purchase Order action stability
 
-- **Lifecycle:** Shared rules in `shared/purchase-order-status.ts` align with operations transitions (`open` → `approved` → `sent`). Approve/send remain role-gated (`manager`, `planner`, `admin`) on operations routes.
+- **Lifecycle:** Shared rules in `shared/purchase-order-status.ts` include **`partially_received`** and **`closed`** where the backend exposes them; transitions match operations (`open` → `approved` → `sent` → `partially_received` / `received` → `closed`). Approve/send remain role-gated (`manager`, `planner`, `admin`) on operations routes.
 - **Commercial terms:** `PUT /api/purchase-orders/:id` accepts only `departmentId`, `contractId`, `paymentTermsId`, `incotermId` (camelCase), validates org/supplier FKs, and returns **409** `PO_COMMERCIAL_UPDATE_LOCKED` when the PO is no longer editable (e.g. sent/received). UI disables save with copy: “Commercial terms can only be updated before the PO is sent.”
-- **Activity panel:** Entity activity uses `GET /api/activity?entity_type=...&entity_id=...&limit=...` with TanStack Query **`staleTime`** and **no window-focus refetch**, avoiding unfiltered history pulls and `useAsyncResource` fetcher churn on PO detail.
-- **Automation:** `npm run test:purchase-order-status`; optional `npm run test:purchase-order-actions-e2e` (mutates **PO-FQA-001** to sent; global FQA seed restores on the next E2E run).
-- **Limitations:** Other `PUT` shapes on `/api/purchase-orders/:id` are no longer accepted (commercial-only contract). Multi-org FQA coverage unchanged.
+- **Activity panel:** Entity activity uses `GET /api/activity?entity_type=...&entity_id=...&limit=...` with SQL-side filters on `ops_activity`, default limit **50**, max **100**, index **`idx_ops_activity_entity_created`**, TanStack Query **`staleTime`** and **no window-focus refetch**, avoiding unfiltered history pulls and `useAsyncResource` fetcher churn on PO detail.
+- **Automation:** `npm run test:purchase-order-status`; **`npm run test:purchase-order-endpoints`** (seed + approve/send/commercial/activity contract); `npm run test:e2e` runs that script once the dev server is ready; **`npm run test:purchase-order-actions-e2e`** re-seeds FQA in **`beforeAll`** then exercises approve/send UI, commercial save/lock, activity panel, and rejects **5xx** on PO/activity APIs.
+- **Limitations:** Full ERP-style partial receiving and GRN-centric accounting are not fully modeled; receiving may advance PO progress without full three-way inventory settlement. Other `PUT` shapes on `/api/purchase-orders/:id` are no longer accepted (commercial-only contract). Multi-org FQA coverage unchanged.
 
 ---
 
@@ -115,7 +117,7 @@ Idempotent for FQA prefixes. See **`shared/functional-qa-constants.ts`** and **`
 | File | Role |
 |------|------|
 | `e2e/functional-audit.spec.ts` | **Serial business audit:** inventory, AP, PO, requisitions, analytics, reports inventory preview + CSV, export center shell, Get Educated |
-| `e2e/purchase-order-actions.spec.ts` | PO approve/send, commercial save on **PO-FQA-002**, locked terms on **PO-FQA-003**, activity panel mount, **no** `useAsyncResource` warning churn; `/admin/system-diagnostics` marker |
+| `e2e/purchase-order-actions.spec.ts` | PO approve/send (button gating), commercial save on **PO-FQA-002**, locked terms on **PO-FQA-003**, activity panel mount, **`beforeAll`** `seed:functional-qa`, no `useAsyncResource` / unstable-fetcher warnings; fails on **5xx** for `/api/purchase/*`, `/api/purchase-orders/*`, `/api/activity`; `/admin/system-diagnostics` marker |
 | `e2e/module-deep-smoke.spec.ts` | Partial modules: shell + one interaction |
 | `e2e/module-smoke.spec.ts` | Fast route load list |
 | Other `e2e/*.spec.ts` | Product routing, installable setup, reports redirect, settings |

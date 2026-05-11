@@ -9,6 +9,12 @@ import {
   inventoryMatchesSearch,
   purchaseOrderMatchesStatus,
 } from "../functional-filters";
+import {
+  slowApiDiagnosticDedupeKey,
+  SLOW_API_DIAGNOSTIC_TITLE,
+  isSlowApiDiagnosticEvent,
+} from "./event-dedupe";
+import { expectedSelectorsForRoute } from "../../client/src/lib/diagnostics/route-diagnostics";
 
 export type SelfCheckResult = {
   id: string;
@@ -92,6 +98,27 @@ export function runDiagnosticsSelfChecks(): SelfCheckReport {
       apInvoiceMatchesStatus({ status: "PENDING_APPROVAL" }, "pending_approval"),
       true,
       "AP invoice status filtering normalizes case.",
+    ),
+    check(
+      "slow-api-dedupe-key",
+      "Slow API diagnostics dedupe key stable",
+      slowApiDiagnosticDedupeKey("/api/activity", "GET") === slowApiDiagnosticDedupeKey("/api/activity", "GET"),
+      true,
+      "Slow API diagnostics dedupe key is stable for same endpoint.",
+    ),
+    check(
+      "slow-api-flag",
+      "Slow API diagnostic detection",
+      isSlowApiDiagnosticEvent({ source: "api", title: SLOW_API_DIAGNOSTIC_TITLE, endpoint: "/api/activity" }),
+      true,
+      "isSlowApiDiagnosticEvent matches slow API rows.",
+    ),
+    check(
+      "route-system-diagnostics",
+      "System diagnostics route contract",
+      expectedSelectorsForRoute("/admin/system-diagnostics").includes(`[data-testid="system-diagnostics-page"]`),
+      true,
+      "Route diagnostics expects system-diagnostics page marker.",
     ),
   ];
   const failed = checks.filter((row) => !row.ok).length;

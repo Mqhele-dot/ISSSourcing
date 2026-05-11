@@ -1124,7 +1124,9 @@ export async function transitionOperationalPurchaseOrderStatus(
       ? "approve"
       : toStatus === "sent"
         ? "send"
-        : "status_change";
+        : toStatus === "partially_received"
+          ? "partial_receive"
+          : "status_change";
   await recordActivity({
     actor,
     entityType: "purchase_order",
@@ -1156,7 +1158,7 @@ export async function receiveOperationalPurchaseOrder(
   }
 
   const currentStatus = normalizePurchaseStatus(order.status);
-  if (!["approved", "sent"].includes(currentStatus)) {
+  if (!["approved", "sent", "partially_received"].includes(currentStatus)) {
     throw new Error("invalid_receive_state");
   }
 
@@ -1379,7 +1381,7 @@ export async function receiveOperationalPurchaseOrder(
 
   const refreshedLines = await getPurchaseOrderLines(order.id);
   const fullyReceived = refreshedLines.every((line) => line.qtyReceived >= line.qtyOrdered);
-  const nextStatus = fullyReceived ? "received" : "sent";
+  const nextStatus = fullyReceived ? "received" : "partially_received";
 
   await pool.query(
     `

@@ -26,6 +26,8 @@ type DataStateProps<T> = {
   errorAction?: React.ReactNode;
   /** When set and data is empty, show fallback empty state instead of emptyTitle/emptyDescription */
   fallback?: FallbackKind;
+  /** Optional test id on the empty (non-fallback) state */
+  emptyTestId?: string;
   children: (data: T) => React.ReactNode;
 };
 
@@ -40,6 +42,7 @@ export function DataState<T>({
   onRetry,
   errorAction,
   fallback,
+  emptyTestId,
   children,
 }: DataStateProps<T>) {
   if (loading) {
@@ -91,6 +94,7 @@ export function DataState<T>({
         title={emptyTitle}
         description={emptyDescription}
         action={emptyAction}
+        testId={emptyTestId}
       />
     );
   }

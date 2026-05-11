@@ -140,6 +140,16 @@ try {
     process.exit(1);
   }
 
+  console.log("[E2E] Running npm run test:purchase-order-endpoints (server is up)...\n");
+  const poEndpoints = spawnSync("npm", ["run", "test:purchase-order-endpoints"], {
+    stdio: "inherit",
+    shell: true,
+    env: process.env,
+  });
+  if (poEndpoints.status !== 0) {
+    process.exit(poEndpoints.status ?? 1);
+  }
+
   const testResult = spawnSync(
     "npx",
     ["playwright", "test", "-c", "playwright.config.ts", ...process.argv.slice(2)],

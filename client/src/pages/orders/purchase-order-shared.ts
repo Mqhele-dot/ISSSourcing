@@ -127,17 +127,52 @@ export async function fetchPurchaseOrderRecordById(id: number): Promise<{
     method: "GET",
     credentials: "include",
   });
-  if (response.status === 404) {
+
+  const payload: unknown = await response.json().catch(() => null);
+
+  if (response.status === 404 || response.status === 401) {
     return null;
   }
+
+  if (payload && typeof payload === "object" && "ok" in payload && (payload as { ok: boolean }).ok === false) {
+    const err = (payload as { error?: { code?: string; message?: string } }).error;
+    const code = typeof err?.code === "string" ? err.code : "";
+    const message = typeof err?.message === "string" ? err.message : "Request failed";
+    throw new Error(code ? `[${code}] ${message}` : message);
+  }
+
   if (!response.ok) {
-    return null;
+    const msg =
+      payload && typeof payload === "object" && "message" in payload
+        ? String((payload as { message?: unknown }).message ?? "")
+        : "";
+    throw new Error(
+      msg ? `GET /api/purchase-orders/${id} failed (${response.status}): ${msg}` : `GET /api/purchase-orders/${id} failed: ${response.status}`,
+    );
   }
-  return (await response.json()) as {
-    id: number;
-    departmentId?: number | null;
-    contractId?: number | null;
-    paymentTermsId?: number | null;
-    incotermId?: number | null;
-  };
+
+  if (payload && typeof payload === "object" && "ok" in payload && (payload as { ok?: boolean }).ok === true) {
+    const data = (payload as { data?: unknown }).data;
+    if (data && typeof data === "object" && "id" in data) {
+      return data as {
+        id: number;
+        departmentId?: number | null;
+        contractId?: number | null;
+        paymentTermsId?: number | null;
+        incotermId?: number | null;
+      };
+    }
+  }
+
+  if (payload && typeof payload === "object" && "id" in payload && typeof (payload as { id?: unknown }).id === "number") {
+    return payload as {
+      id: number;
+      departmentId?: number | null;
+      contractId?: number | null;
+      paymentTermsId?: number | null;
+      incotermId?: number | null;
+    };
+  }
+
+  return null;
 }

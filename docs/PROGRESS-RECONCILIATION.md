@@ -70,12 +70,14 @@ This file is informational; authoritative counts live in PROGRESS-REPORT after r
 | Mobile pick error UX | `mobile-pick.tsx`: toast on `fetchInventory` failure; `toastRef` keeps `useAsyncResource` fetcher stable (avoids refetch loops if `toast` identity changes). |
 | Inventory API docs | JSDoc on operational `GET /api/inventory` in `server/operations-routes.ts`; note in `server/routes.ts` where a shadow route exists. |
 
-## 2026-05-10 — Purchase Order action stability
+## 2026-05-10 — PO release gate, activity, diagnostics
 
 | Item | Evidence |
 |------|----------|
-| Shared PO lifecycle / gating | `shared/purchase-order-status.ts`; operations transitions in `server/modules/operations/operations-core.ts`. |
-| Commercial-only `PUT` + FK checks | `server/modules/procurement/register-procurement-routes.ts` `/api/purchase-orders/:id`; planners included in `poWrite`. |
-| Activity performance / UI churn | `GET /api/activity` limit 50 max 100, entity filters, `idx_ops_activity_entity_created`; `client/src/components/activity/entity-activity-panel.tsx`; slow-request dedupe in `client/src/lib/queryClient.ts`. |
-| Route marker false positives | `client/src/components/diagnostics/diagnostics-route-monitor.tsx` delayed re-check; `data-testid="system-diagnostics-page"` contract in `scripts/test-route-diagnostics.ts`. |
-| AP batch segregation UX + status | `server/modules/accounts-payable/register-ap-routes.ts` 403 `PAYMENT_BATCH_SELF_APPROVAL_BLOCKED`; `ap-payments-panel.tsx` creator disable + admin override reason field. |
+| PO approve/send/update API | `scripts/test-purchase-order-endpoints.ts` (invoked from `scripts/run-playwright-e2e.mjs` after server ready); `shared/purchase-order-status.ts`; `server/modules/operations/operations-core.ts` transitions |
+| Commercial-only `PUT` + lock | `server/modules/procurement/register-procurement-routes.ts` `/api/purchase-orders/:id`; 409 `PO_COMMERCIAL_UPDATE_LOCKED`; PO detail UI |
+| Activity filtering / performance | `listOperationalActivity` in `operations-core.ts`; `GET /api/activity` in `server/operations-routes.ts` (default 50, max 100); `idx_ops_activity_entity_created` in `operational-ddl.ts`; `entity-activity-panel.tsx` |
+| PO action E2E | `e2e/purchase-order-actions.spec.ts`; `npm run verify:release` |
+| Diagnostics dedupe + routes | `shared/diagnostics/event-dedupe.ts`, `diagnostics-store.ts`, `queryClient.ts`, `self-checks.ts`; `diagnostics-route-monitor.tsx`; `scripts/test-route-diagnostics.ts` |
+| AP batch segregation | `register-ap-routes.ts` 403 `PAYMENT_BATCH_SELF_APPROVAL_BLOCKED`; `ap-payments-panel.tsx` |
+| **Remaining gap** | Full ERP partial receiving / GRN accounting and inventory settlement beyond current operational receive + PO progress |

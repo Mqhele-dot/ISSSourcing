@@ -1,5 +1,6 @@
 import type { QueryFunction } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
+import { SLOW_API_DIAGNOSTIC_TITLE } from "@shared/diagnostics/event-dedupe";
 import { setFallbackState } from "./fallback-store";
 import { actionErrorStore } from "./action-error-store";
 import { addDiagnosticEvent, redactDiagnosticDetails } from "./diagnostics/diagnostics-store";
@@ -335,7 +336,7 @@ function recordSlowRequest(params: {
   addDiagnosticEvent({
     severity: "warning",
     source: "api",
-    title: "Slow API request",
+    title: SLOW_API_DIAGNOSTIC_TITLE,
     message: `${params.method.toUpperCase()} ${path} took ${Math.round(params.durationMs)}ms.`,
     endpoint: path,
     method: params.method.toUpperCase(),
