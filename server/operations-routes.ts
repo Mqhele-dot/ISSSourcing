@@ -23,6 +23,7 @@ import {
   transitionOperationalPurchaseOrderStatus,
   updateOperationalShipmentStatus,
 } from "./operations-core";
+import { buildEmptyControlTowerDashboard, getControlTowerDashboard } from "./modules/operations/control-tower-dashboard";
 import { contractError, respondOk, withApiContract } from "./api-contract";
 import { pool } from "./db";
 import { readiness } from "./readiness";
@@ -1227,6 +1228,48 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
         respondOk(res, stubOverview, 200, { fallback: getFallbackValue(err) });
+      }
+    }),
+  );
+
+  app.get(
+    "/api/dashboard/control-tower",
+    auth.ensureAuthenticated,
+    withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+      const orgId =
+        typeof res.locals.organizationId === "number" && Number.isFinite(res.locals.organizationId)
+          ? res.locals.organizationId
+          : 1;
+      const daysRaw = Number(req.query.days);
+      const trendDays = [7, 30, 90].includes(daysRaw) ? daysRaw : 7;
+      const businessArea =
+        typeof req.query.area === "string" && req.query.area.trim()
+          ? req.query.area.trim().toLowerCase()
+          : "all";
+
+      const stub = buildEmptyControlTowerDashboard(orgId, trendDays, businessArea);
+
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        return respondOk(res, { ...stub, meta: { ...stub.meta, queryMs: Date.now() - start } }, 200, {
+          fallback: "degraded",
+        });
+      }
+
+      try {
+        const data = await withTimeout(
+          getControlTowerDashboard(orgId, { trendDays, businessArea }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
+        respondOk(res, { ...data, meta: { ...data.meta, queryMs: Date.now() - start } });
+      } catch (err) {
+        logOperationalError(req.path, Date.now() - start, err);
+        setFallbackHeader(res, err);
+        respondOk(res, { ...stub, meta: { ...stub.meta, queryMs: Date.now() - start } }, 200, {
+          fallback: getFallbackValue(err),
+        });
       }
     }),
   );

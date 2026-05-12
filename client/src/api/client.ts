@@ -7,6 +7,7 @@ import type {
   ApiErrorPayload,
   ApiResponse,
   ControlTowerOverview,
+  ControlTowerDashboardData,
   DeepHealthCheck,
   DemoDataSummary,
   DemoWalkthroughResult,
@@ -35,6 +36,7 @@ export type {
   ActivityItem,
   ApiErrorPayload,
   ControlTowerOverview,
+  ControlTowerDashboardData,
   GasDashboardSummary,
   GasComplianceAlertsResult,
   MobileScanResolveResult,
@@ -898,6 +900,24 @@ export async function fetchControlTowerOverviewEnvelope(): Promise<
   ApiEnvelopeResult<ControlTowerOverview>
 > {
   return fetchWithMeta<ControlTowerOverview>("/api/control-tower/overview");
+}
+
+export async function fetchControlTowerDashboardEnvelope(params?: {
+  days?: 7 | 30 | 90;
+  area?: string;
+}): Promise<ApiEnvelopeResult<ControlTowerDashboardData>> {
+  const search = new URLSearchParams();
+  if (params?.days != null) search.set("days", String(params.days));
+  if (params?.area) search.set("area", params.area);
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  return fetchWithMeta<ControlTowerDashboardData>(`/api/dashboard/control-tower${suffix}`);
+}
+
+export async function fetchControlTowerDashboard(
+  params?: { days?: 7 | 30 | 90; area?: string },
+): Promise<ControlTowerDashboardData> {
+  const { data } = await fetchControlTowerDashboardEnvelope(params);
+  return data;
 }
 
 export async function fetchActivity(params?: {

@@ -1,49 +1,41 @@
 import { expect, test } from "@playwright/test";
 import { gotoAuthed } from "./test-helpers";
 
-test.describe("Analytics workspace", () => {
-  test("legacy dashboard route redirects to canonical analytics overview", async ({ page }) => {
-    await gotoAuthed(page, "/dashboard");
-    await expect(page).toHaveURL(/\/analytics\/overview$/);
-    const title = page.getByTestId("page-title");
-    await expect(title).toBeVisible({ timeout: 20000 });
-    await expect(title).toHaveText(/analytics workspace/i);
-  });
+const CONTROL_TOWER = "/operations/control-tower";
 
-  test("analytics overview exposes tutorial anchor dashboard-stats", async ({ page }) => {
-    await gotoAuthed(page, "/analytics/overview");
-    const title = page.getByTestId("page-title");
-    await expect(title).toBeVisible({ timeout: 20000 });
-    await expect(title).toHaveText(/analytics workspace/i);
-    await expect(page.locator("#dashboard-stats")).toBeVisible();
-  });
+test.describe("Control Tower dashboard", () => {
+  test("executive dashboard loads with charts and filters", async ({ page }) => {
+    test.setTimeout(120_000);
+    await gotoAuthed(page, CONTROL_TOWER);
+    await expect(page.getByTestId("control-tower-page")).toBeVisible({ timeout: 30_000 });
 
-  test("overview exposes canonical analytics sections", async ({ page }) => {
-    await gotoAuthed(page, "/analytics/overview");
-    const sectionNav = page.getByLabel(/section navigation/i);
-    const title = page.getByTestId("page-title");
-    await expect(title).toBeVisible({ timeout: 20000 });
-    await expect(title).toHaveText(/analytics workspace/i);
-    await expect(sectionNav.getByRole("link", { name: /^Overview$/ })).toBeVisible();
-    await expect(sectionNav.getByRole("link", { name: /^Inventory$/ })).toBeVisible();
-    await expect(sectionNav.getByRole("link", { name: /^Procurement$/ })).toBeVisible();
-    await expect(sectionNav.getByRole("link", { name: /^Finance$/ })).toBeVisible();
-    await expect(sectionNav.getByRole("link", { name: /^Logistics$/ })).toBeVisible();
-  });
+    await expect(page.getByTestId("dashboard-kpi-inventory-value")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("dashboard-kpi-low-stock")).toBeVisible();
+    await expect(page.getByTestId("dashboard-kpi-open-requisitions")).toBeVisible();
+    await expect(page.getByTestId("dashboard-kpi-open-pos")).toBeVisible();
+    await expect(page.getByTestId("dashboard-kpi-delayed-shipments")).toBeVisible();
+    await expect(page.getByTestId("dashboard-kpi-ap-due")).toBeVisible();
+    await expect(page.getByTestId("dashboard-kpi-exceptions")).toBeVisible();
+    await expect(page.getByTestId("dashboard-kpi-supplier-risk")).toBeVisible();
 
-  test("workspace drilldown navigates to finance analytics", async ({ page }) => {
-    await gotoAuthed(page, "/analytics/overview");
-    await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 20000 });
-    await page.getByLabel(/section navigation/i).getByRole("link", { name: /^Finance$/ }).click();
-    await expect(page).toHaveURL(/\/analytics\/finance$/);
-    await expect(page.getByRole("heading", { name: /outstanding ap/i })).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText(/pending ap approvals/i).first()).toBeVisible({ timeout: 5000 });
-  });
+    await expect(page.getByTestId("dashboard-procurement-pipeline-chart")).toBeVisible();
+    await expect(page.getByTestId("dashboard-inventory-health-chart")).toBeVisible();
+    await expect(page.getByTestId("dashboard-stock-value-category-chart")).toBeVisible();
+    await expect(page.getByTestId("dashboard-ap-aging-chart")).toBeVisible();
+    await expect(page.getByTestId("dashboard-logistics-risk-chart")).toBeVisible();
+    await expect(page.getByTestId("dashboard-supplier-performance-chart")).toBeVisible();
+    await expect(page.getByTestId("dashboard-operations-trend-chart")).toBeVisible();
 
-  test("workspace actions link to current product surfaces", async ({ page }) => {
-    await gotoAuthed(page, "/analytics/overview");
-    await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 20000 });
-    await expect(page.getByRole("link", { name: /open control tower/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /export center/i }).nth(1)).toBeVisible();
+    await expect(page.getByTestId("dashboard-needs-attention-panel")).toBeVisible();
+    await expect(page.getByTestId("dashboard-recent-activity-panel")).toBeVisible();
+
+    await page.getByTestId("dashboard-refresh-button").click();
+    await expect(page.getByTestId("control-tower-page")).toBeVisible();
+
+    await page.getByTestId("dashboard-date-range-filter").click();
+    await page.getByRole("option", { name: /last 30 days/i }).click();
+    await expect(page.getByTestId("dashboard-procurement-pipeline-chart")).toBeVisible({ timeout: 20_000 });
+
+    await expect(page.getByTestId("control-tower-page")).toBeVisible();
   });
 });

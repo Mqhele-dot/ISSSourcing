@@ -159,7 +159,7 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 
 | Feature | Status | Notes |
 |--------|--------|------|
-| Dashboard: POs, shipments, stock, supplier performance, exceptions | **Partial** | Dashboard and analytics pages; no single control-tower view with all KPIs. |
+| Dashboard: POs, shipments, stock, supplier performance, exceptions | **Partial** | **`/operations/control-tower`**: KPI cards, procurement pipeline, inventory health & value-by-category charts, AP aging, logistics ETA risk, supplier late snapshot, activity trend, needs-attention + recent activity; **`GET /api/dashboard/control-tower`** (org-scoped aggregates). Does not replace deep ERP analytics or formal supplier scorecards. |
 
 ---
 

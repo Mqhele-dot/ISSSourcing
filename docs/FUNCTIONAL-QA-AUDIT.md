@@ -29,7 +29,7 @@
 | **Filter behavior fixed** | Inventory search/location/category/low-stock filters are enforced in the UI over the current result set so users see correct rows even if an API returns extra rows. PO search/supplier/status filters have visible chips and can clear one filter at a time. |
 | **Procurement/AP build increment** | Requisitions now expose workbench controls and edit-mode line revisions; supplier portal invoices are submitted from assigned POs; diagnostics route checks require route-specific markers; AP blocks duplicate supplier invoice numbers, creates match cases for PO-linked invoices, and posts an invoice-approved subledger event/journal slice. |
 | **Tests added** | Expanded **`e2e/functional-audit.spec.ts`** for Inventory workspace controls and PO workspace/detail behavior. Extended targeted API checks for supplier invoices and AP duplicate controls. Existing pure checks still cover deterministic calculations and filters. |
-| **Remaining partial / unverified** | Operations / Control Tower, mobile scan UX, every **reports tab** export job → download → parse, **Export Center** job lifecycle, warehouse/project dimensions beyond current Inventory filters, multi-org isolation, supplier portal ASN/messaging, and full workflow-engine orchestration. |
+| **Remaining partial / unverified** | Broader **operations** hub beyond control tower, mobile scan UX, every **reports tab** export job → download → parse, **Export Center** job lifecycle, warehouse/project dimensions beyond current Inventory filters, multi-org isolation, supplier portal ASN/messaging, and full workflow-engine orchestration. |
 
 ---
 
@@ -37,7 +37,7 @@
 
 | # | Module | Route(s) | Confidence | Pass criteria in automation |
 |---|--------|----------|------------|-----------------------------|
-| 1 | Operations / Control Tower | `/operations`, `/operations/control-tower` | 1 | `product-architecture` / load only |
+| 1 | Operations / Control Tower | `/operations`, `/operations/control-tower` | 2 | **`/operations/control-tower`:** KPIs, Recharts pipeline/health/value/AP/logistics/supplier/trend, needs-attention, recent activity, filters; **`GET /api/dashboard/control-tower`** + `test:dashboard-data` + `e2e/dashboard.spec.ts`; `/operations` hub shell unchanged |
 | 2 | Inventory | `/inventory` | 3 | `functional-audit`: KPI cards, sort, card view, preview, full item open, exact **`FQA_INVENTORY_MASTER`** attrs on rows; FQA-visible filters; low-stock CSV **FQA subset** `{B,D}`; `test-functional-inventory-api` |
 | 3 | Warehouses | `/inventory/warehouses` | 1 | `module-deep-smoke` |
 | 4 | Warehouse Operations | `/inventory/warehouse-operations` | 1 | `module-deep-smoke` |
@@ -99,6 +99,7 @@ Idempotent for FQA prefixes. See **`shared/functional-qa-constants.ts`** and **`
 | **Full audit chain** | `npm run test:functional-audit` |
 | **PO status rules (shared)** | `npm run test:purchase-order-status` |
 | **PO API contract (needs running server)** | `npm run test:purchase-order-endpoints` (also run automatically before Playwright in `npm run test:e2e`) |
+| **Control Tower dashboard API (needs running server)** | `npm run test:dashboard-data` (also run automatically before Playwright in `npm run test:e2e`) |
 
 ---
 
@@ -117,6 +118,7 @@ Idempotent for FQA prefixes. See **`shared/functional-qa-constants.ts`** and **`
 | File | Role |
 |------|------|
 | `e2e/functional-audit.spec.ts` | **Serial business audit:** inventory, AP, PO, requisitions, analytics, reports inventory preview + CSV, export center shell, Get Educated |
+| `e2e/dashboard.spec.ts` | Control Tower **`/operations/control-tower`**: KPIs, seven chart cards, needs-attention & recent-activity panels, refresh + date-range filter |
 | `e2e/purchase-order-actions.spec.ts` | PO approve/send (button gating), commercial save on **PO-FQA-002**, locked terms on **PO-FQA-003**, activity panel mount, **`beforeAll`** `seed:functional-qa`, no `useAsyncResource` / unstable-fetcher warnings; fails on **5xx** for `/api/purchase/*`, `/api/purchase-orders/*`, `/api/activity`; `/admin/system-diagnostics` marker |
 | `e2e/module-deep-smoke.spec.ts` | Partial modules: shell + one interaction |
 | `e2e/module-smoke.spec.ts` | Fast route load list |

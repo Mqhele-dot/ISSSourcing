@@ -70,6 +70,15 @@ This file is informational; authoritative counts live in PROGRESS-REPORT after r
 | Mobile pick error UX | `mobile-pick.tsx`: toast on `fetchInventory` failure; `toastRef` keeps `useAsyncResource` fetcher stable (avoids refetch loops if `toast` identity changes). |
 | Inventory API docs | JSDoc on operational `GET /api/inventory` in `server/operations-routes.ts`; note in `server/routes.ts` where a shadow route exists. |
 
+## 2026-05-11 — Executive Control Tower dashboard
+
+| Item | Evidence |
+|------|----------|
+| Aggregated endpoint | `GET /api/dashboard/control-tower` in `server/operations-routes.ts`; implementation `server/modules/operations/control-tower-dashboard.ts` |
+| UI | `client/src/pages/control-tower.tsx`; components under `client/src/components/dashboard/`; Recharts charts; training link + `ModuleTrainingPanel` |
+| Tests | `scripts/test-dashboard-data.ts`; `e2e/dashboard.spec.ts`; `npm run test:dashboard-e2e`; route contract `control-tower-page` in `route-diagnostics.ts` |
+| **Limitation** | Charts summarize operational tables; not a replacement for ledger-level ERP reporting; supplier “performance” is a late-shipment proxy until richer scoring exists |
+
 ## 2026-05-10 — PO release gate, activity, diagnostics
 
 | Item | Evidence |

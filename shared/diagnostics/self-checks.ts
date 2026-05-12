@@ -120,6 +120,13 @@ export function runDiagnosticsSelfChecks(): SelfCheckReport {
       true,
       "Route diagnostics expects system-diagnostics page marker.",
     ),
+    check(
+      "route-control-tower",
+      "Control tower route contract",
+      expectedSelectorsForRoute("/operations/control-tower").includes(`[data-testid="control-tower-page"]`),
+      true,
+      "Route diagnostics expects control-tower page marker.",
+    ),
   ];
   const failed = checks.filter((row) => !row.ok).length;
   return {

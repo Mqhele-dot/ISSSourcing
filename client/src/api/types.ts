@@ -291,6 +291,72 @@ export type ControlTowerOverview = {
   }>;
 };
 
+/** GET /api/dashboard/control-tower aggregated payload */
+export type ControlTowerDashboardData = {
+  generatedAt: string;
+  meta: {
+    organizationId: number;
+    trendDays: number;
+    valueBasisLabel: string;
+    businessArea: string;
+    queryMs?: number;
+  };
+  kpis: {
+    inventoryValue: number;
+    inventoryValueTrendPct: number | null;
+    lowStockItems: number;
+    openRequisitions: number;
+    openPurchaseOrders: number;
+    delayedShipments: number;
+    apInvoicesDueOrOverdue: number;
+    operationalExceptions: number;
+    supplierRiskAlerts: number;
+  };
+  procurementPipeline: Array<{
+    id: string;
+    label: string;
+    count: number;
+    href: string;
+    area: "procurement";
+  }>;
+  inventoryHealth: Array<{ id: string; label: string; count: number; href: string }>;
+  stockValueByCategory: Array<{ category: string; value: number }>;
+  apAging: Array<{ bucket: string; label: string; count: number; amount: number }>;
+  logisticsRisk: Array<{ id: string; label: string; count: number }>;
+  supplierPerformance: Array<{
+    supplierId: number;
+    name: string;
+    riskScore: number;
+    lateShipments: number;
+    openExceptions: number;
+  }>;
+  operationsTrend: Array<{
+    date: string;
+    requisitions: number;
+    purchaseOrders: number;
+    receiving: number;
+    invoices: number;
+    exceptions: number;
+  }>;
+  needsAttention: Array<{
+    id: string;
+    title: string;
+    severity: "low" | "medium" | "high";
+    reason: string;
+    href: string;
+    area: string;
+  }>;
+  recentActivity: Array<{
+    id: number;
+    action: string;
+    entityType: string;
+    entityId: string;
+    actor: string;
+    createdAt: string | null;
+    summary: string;
+  }>;
+};
+
 export type ActivityItem = ControlTowerOverview["activity"][number];
 
 export type GasDashboardSummary = {

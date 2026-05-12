@@ -48,5 +48,7 @@ expectEmpty("unknown routes return no configured contract", "/unknown-release-cl
 
 expectIncludes("system diagnostics has route marker", "/admin/system-diagnostics", `[data-testid="system-diagnostics-page"]`);
 
+expectIncludes("control tower has route marker", "/operations/control-tower", `[data-testid="control-tower-page"]`);
+
 console.log(`\nRoute diagnostics result: ${failures} failure(s)`);
 exitTest(failures > 0 ? 1 : 0);

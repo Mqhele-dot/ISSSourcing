@@ -150,6 +150,16 @@ try {
     process.exit(poEndpoints.status ?? 1);
   }
 
+  console.log("[E2E] Running npm run test:dashboard-data (server is up)...\n");
+  const dashData = spawnSync("npm", ["run", "test:dashboard-data"], {
+    stdio: "inherit",
+    shell: true,
+    env: process.env,
+  });
+  if (dashData.status !== 0) {
+    process.exit(dashData.status ?? 1);
+  }
+
   const testResult = spawnSync(
     "npx",
     ["playwright", "test", "-c", "playwright.config.ts", ...process.argv.slice(2)],

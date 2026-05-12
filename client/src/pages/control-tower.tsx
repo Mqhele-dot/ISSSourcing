@@ -1,50 +1,95 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Activity,
   AlertTriangle,
+  Building2,
   CircleDollarSign,
-  FileWarning,
+  GraduationCap,
   Package,
+  RefreshCw,
   Ship,
   Truck,
+  Warehouse,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { GasOpsCard } from "@/pages/control-tower/gas-ops-card";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataState } from "@/components/ui/data-state";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
-import { requestJson } from "@/lib/queryClient";
-import type { ControlTowerOverview } from "@/api/types";
+import { fetchControlTowerDashboard } from "@/api/client";
+import type { ControlTowerDashboardData } from "@/api/types";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
+import { DashboardKpiCard } from "@/components/dashboard/dashboard-kpi-card";
+import { ControlTowerChartsSection } from "@/components/dashboard/control-tower-charts";
+import { NeedsAttentionPanel } from "@/components/dashboard/needs-attention-panel";
+import { RecentActivityPanel } from "@/components/dashboard/recent-activity-panel";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { formatDistanceToNow } from "date-fns";
 
 export default function ControlTowerPage() {
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["/api/control-tower/overview", "full-page"],
-    queryFn: () => requestJson<ControlTowerOverview>("GET", "/api/control-tower/overview"),
+  const { formatMoney } = useReportingMoney();
+  const [trendDays, setTrendDays] = useState<7 | 30 | 90>(7);
+  const [businessArea, setBusinessArea] = useState("all");
+
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
+    queryKey: ["/api/dashboard/control-tower", trendDays, businessArea],
+    queryFn: () => fetchControlTowerDashboard({ days: trendDays, area: businessArea }),
+    staleTime: 45_000,
+    refetchOnWindowFocus: false,
+    gcTime: 5 * 60_000,
   });
 
-  const kpis = data?.kpis;
-  const activity = data?.activity ?? [];
+  const refreshedLabel = useMemo(() => {
+    if (!data?.generatedAt) return "—";
+    try {
+      return formatDistanceToNow(new Date(data.generatedAt), { addSuffix: true });
+    } catch {
+      return "—";
+    }
+  }, [data?.generatedAt]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6" data-testid="control-tower-page">
       <PageHeader
-        title="Control tower"
+        title="Control Tower"
         titleTestId="page-title"
-        subtitle="Operational KPIs, risk signals, and recent control-tower activity."
+        subtitle="Live overview of inventory, procurement, logistics, finance, and operational risk."
         breadcrumb={<span>Operations / Control tower</span>}
         actions={
-          <div className="flex flex-wrap gap-2" data-tour="control-tower-shortcuts">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground tabular-nums">
+              Last refreshed {refreshedLabel}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="dashboard-refresh-button"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
+              <RefreshCw className={`mr-1 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button variant="default" size="sm" asChild>
+              <Link href={APP_ROUTES.training.getEducatedModule("control-tower")}>
+                <GraduationCap className="mr-1 h-4 w-4" />
+                Get Educated: Control Tower
+              </Link>
+            </Button>
             <Button variant="outline" size="sm" asChild>
               <Link href={APP_ROUTES.operations.exceptions}>Exceptions</Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
               <Link href={APP_ROUTES.operations.logistics}>Shipments</Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link href={APP_ROUTES.procurement.orders}>Purchase orders</Link>
             </Button>
           </div>
         }
@@ -52,148 +97,161 @@ export default function ControlTowerPage() {
 
       <ModuleTrainingPanel moduleId="control-tower" />
 
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Trend window</span>
+          <Select
+            value={String(trendDays)}
+            onValueChange={(v) => setTrendDays(Number(v) as 7 | 30 | 90)}
+          >
+            <SelectTrigger className="w-[140px]" data-testid="dashboard-date-range-filter">
+              <SelectValue placeholder="Range" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7">Last 7 days</SelectItem>
+              <SelectItem value="30">Last 30 days</SelectItem>
+              <SelectItem value="90">Last 90 days</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Focus</span>
+          <Select value={businessArea} onValueChange={setBusinessArea}>
+            <SelectTrigger className="w-[180px]" data-testid="dashboard-business-area-filter">
+              <SelectValue placeholder="Area" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All areas</SelectItem>
+              <SelectItem value="inventory">Inventory</SelectItem>
+              <SelectItem value="procurement">Procurement</SelectItem>
+              <SelectItem value="logistics">Logistics</SelectItem>
+              <SelectItem value="finance">Finance</SelectItem>
+              <SelectItem value="operations">Operations</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Charts summarize operational data and are not a replacement for detailed module records. See{" "}
+        <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.admin.systemDiagnostics}>
+          System Diagnostics
+        </Link>{" "}
+        if responses are slow or incomplete.
+      </p>
+
       <DataState
         loading={isLoading}
         error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
-        data={data}
+        data={data ?? null}
         isEmpty={() => false}
-        emptyTitle="No overview"
+        emptyTitle="No dashboard data"
         onRetry={() => void refetch()}
+        errorAction={
+          <Button variant="link" className="h-auto px-0" asChild>
+            <Link href={APP_ROUTES.admin.systemDiagnostics}>System Diagnostics</Link>
+          </Button>
+        }
       >
-        {() => (
+        {(payload: ControlTowerDashboardData) => (
           <>
-            <div className="space-y-4" data-tour="control-tower-kpis">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium">Late / at-risk shipments</CardTitle>
-                  <Ship className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{kpis?.lateShipments ?? 0}</p>
-                  <p className="text-xs text-muted-foreground">From operations logistics model</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium">POs awaiting action</CardTitle>
-                  <Truck className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{kpis?.posAwaitingAction ?? 0}</p>
-                  <p className="text-xs text-muted-foreground">Open / approved / sent pipeline</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium">Low-stock SKUs</CardTitle>
-                  <Package className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{kpis?.lowStockSkus ?? 0}</p>
-                  <p className="text-xs text-muted-foreground">At or below threshold</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium">Open exceptions (total)</CardTitle>
-                  <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">
-                    {typeof kpis?.openExceptionsTotal === "number"
-                      ? kpis.openExceptionsTotal
-                      : kpis?.exceptionsBySeverity
-                        ? Object.values(kpis.exceptionsBySeverity).reduce((a, n) => a + Number(n ?? 0), 0)
-                        : 0}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Sum of open / in-progress cases</p>
-                </CardContent>
-              </Card>
+              <DashboardKpiCard
+                testId="dashboard-kpi-inventory-value"
+                title="Inventory value (est.)"
+                value={formatMoney(payload.kpis.inventoryValue)}
+                description={payload.meta.valueBasisLabel}
+                href={APP_ROUTES.inventory.root}
+                status="neutral"
+                trendLabel={
+                  payload.kpis.inventoryValueTrendPct != null
+                    ? `Δ ${payload.kpis.inventoryValueTrendPct}% vs prior`
+                    : "Trend not available yet"
+                }
+                icon={<CircleDollarSign className="h-4 w-4" />}
+              />
+              <DashboardKpiCard
+                testId="dashboard-kpi-low-stock"
+                title="Low stock items"
+                value={payload.kpis.lowStockItems ?? 0}
+                description="At or below reorder threshold"
+                href={`${APP_ROUTES.inventory.root}?lowStock=1`}
+                status={(payload.kpis.lowStockItems ?? 0) > 0 ? "warn" : "good"}
+                icon={<Package className="h-4 w-4" />}
+              />
+              <DashboardKpiCard
+                testId="dashboard-kpi-open-requisitions"
+                title="Open requisitions"
+                value={payload.kpis.openRequisitions ?? 0}
+                description="Draft and pending approval"
+                href={APP_ROUTES.procurement.requisitions}
+                status="neutral"
+                icon={<Warehouse className="h-4 w-4" />}
+              />
+              <DashboardKpiCard
+                testId="dashboard-kpi-open-pos"
+                title="Open purchase orders"
+                value={payload.kpis.openPurchaseOrders ?? 0}
+                description="Not yet received / closed"
+                href={APP_ROUTES.procurement.orders}
+                status="neutral"
+                icon={<Truck className="h-4 w-4" />}
+              />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium">Pending requisitions</CardTitle>
-                  <FileWarning className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{kpis?.pendingRequisitions ?? 0}</p>
-                  <p className="text-xs text-muted-foreground">Draft or pending approval</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium">In-transit shipments</CardTitle>
-                  <Ship className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{kpis?.inTransitShipments ?? 0}</p>
-                  <p className="text-xs text-muted-foreground">Created, in transit, or delayed</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium">Overdue invoices</CardTitle>
-                  <CircleDollarSign className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{kpis?.overdueInvoices ?? 0}</p>
-                  <p className="text-xs text-muted-foreground">Status OVERDUE in AP</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium">Exceptions by severity</CardTitle>
-                  <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-1 text-sm">
-                  {kpis?.exceptionsBySeverity && Object.keys(kpis.exceptionsBySeverity).length > 0 ? (
-                    Object.entries(kpis.exceptionsBySeverity).map(([sev, count]) => (
-                      <div key={sev} className="flex justify-between">
-                        <span className="text-muted-foreground capitalize">{sev}</span>
-                        <span className="font-medium">{count}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-muted-foreground text-xs">No open exception buckets</p>
-                  )}
-                </CardContent>
-              </Card>
+              <DashboardKpiCard
+                testId="dashboard-kpi-delayed-shipments"
+                title="Shipments delayed"
+                value={payload.kpis.delayedShipments ?? 0}
+                description="Past ETA, not delivered (PO-scoped)"
+                href={APP_ROUTES.operations.logistics}
+                status={(payload.kpis.delayedShipments ?? 0) > 0 ? "critical" : "good"}
+                icon={<Ship className="h-4 w-4" />}
+              />
+              <DashboardKpiCard
+                testId="dashboard-kpi-ap-due"
+                title="AP due / overdue"
+                value={payload.kpis.apInvoicesDueOrOverdue ?? 0}
+                description="Supplier invoices needing payment attention"
+                href={APP_ROUTES.finance.accountsPayable}
+                status={(payload.kpis.apInvoicesDueOrOverdue ?? 0) > 0 ? "warn" : "good"}
+                icon={<Building2 className="h-4 w-4" />}
+              />
+              <DashboardKpiCard
+                testId="dashboard-kpi-exceptions"
+                title="Operational exceptions"
+                value={payload.kpis.operationalExceptions ?? 0}
+                description="Open or in progress"
+                href={APP_ROUTES.operations.exceptions}
+                status={(payload.kpis.operationalExceptions ?? 0) > 0 ? "warn" : "good"}
+                icon={<AlertTriangle className="h-4 w-4" />}
+              />
+              <DashboardKpiCard
+                testId="dashboard-kpi-supplier-risk"
+                title="Supplier risk alerts"
+                value={payload.kpis.supplierRiskAlerts ?? 0}
+                description="Suppliers with late inbound loads in scope"
+                href={APP_ROUTES.procurement.suppliers}
+                status={(payload.kpis.supplierRiskAlerts ?? 0) > 0 ? "warn" : "good"}
+                icon={<AlertTriangle className="h-4 w-4" />}
+              />
             </div>
-            </div>
+
+            <ControlTowerChartsSection
+              data={payload}
+              loading={false}
+              error={null}
+              onRetry={() => void refetch()}
+              area={businessArea}
+              formatMoney={formatMoney}
+            />
+
+            <NeedsAttentionPanel items={payload.needsAttention} areaFilter={businessArea} />
+
+            <RecentActivityPanel items={payload.recentActivity.slice(0, 10)} />
 
             <GasOpsCard />
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Activity className="h-4 w-4" />
-                  Recent activity
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {activity.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No recent control-tower events.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {activity.slice(0, 40).map((row) => (
-                      <li key={row.id} className="rounded-md border p-3 text-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-medium">{row.title}</span>
-                          <span className="text-xs text-muted-foreground">{row.eventType}</span>
-                        </div>
-                        {row.details ? <p className="mt-1 text-xs text-muted-foreground">{row.details}</p> : null}
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {row.createdAt ? new Date(row.createdAt).toLocaleString() : "—"}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
           </>
         )}
       </DataState>
