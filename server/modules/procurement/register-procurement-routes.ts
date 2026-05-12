@@ -707,18 +707,25 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     }
   });
 
-  // Purchase Order endpoints (same RBAC as requisitions)
-  app.get("/api/purchase-orders", ...poRead, async (_req: Request, res: Response) => {
-    try {
-      const orders = await storage.getAllPurchaseOrders();
-      res.json(orders);
-    } catch (error) {
-      console.error("Error fetching purchase orders:", error);
-      res.status(500).json({ message: "Failed to fetch purchase orders" });
-    }
-  });
+  // Purchase Order endpoints (same RBAC as requisitions) — legacy + canonical record paths
+  app.get(
+    ["/api/purchase-orders", "/api/procurement/purchase-orders/records"],
+    ...poRead,
+    async (_req: Request, res: Response) => {
+      try {
+        const orders = await storage.getAllPurchaseOrders();
+        res.json(orders);
+      } catch (error) {
+        console.error("Error fetching purchase orders:", error);
+        res.status(500).json({ message: "Failed to fetch purchase orders" });
+      }
+    },
+  );
 
-  app.get("/api/purchase-orders/:id", ...poRead, async (req: Request, res: Response) => {
+  app.get(
+    ["/api/purchase-orders/:id", "/api/procurement/purchase-orders/records/:id"],
+    ...poRead,
+    async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -736,7 +743,8 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       console.error("Error fetching purchase order:", error);
       res.status(500).json({ message: "Failed to fetch purchase order" });
     }
-  });
+  },
+  );
 
   app.post("/api/purchase-orders", ...poWrite, async (req: Request, res: Response) => {
     try {
@@ -830,7 +838,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     }
   });
 
-  app.put("/api/purchase-orders/:id", ...poWrite, async (req: Request, res: Response) => {
+  const handlePurchaseOrderCommercialUpdate = async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
@@ -907,9 +915,22 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       console.error("Error updating purchase order:", error);
       res.status(500).json({ message: "Failed to update purchase order" });
     }
-  });
+  };
 
-  app.get("/api/purchase-orders/:id/revisions", ...poRead, async (req: Request, res: Response) => {
+  app.put("/api/purchase-orders/:id", ...poWrite, handlePurchaseOrderCommercialUpdate);
+  app.patch(
+    "/api/procurement/purchase-orders/records/:id/commercial",
+    ...poWrite,
+    handlePurchaseOrderCommercialUpdate,
+  );
+
+  app.get(
+    [
+      "/api/purchase-orders/:id/revisions",
+      "/api/procurement/purchase-orders/records/:id/revisions",
+    ],
+    ...poRead,
+    async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid purchase order ID" });
@@ -919,7 +940,8 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       console.error("Error fetching purchase order revisions:", error);
       res.status(500).json({ message: "Failed to fetch purchase order revisions" });
     }
-  });
+  },
+  );
 
   app.delete("/api/purchase-orders/:id", ...poWrite, async (req: Request, res: Response) => {
     try {
@@ -1020,7 +1042,13 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
   });
 
   // Purchase Order Items endpoints
-  app.get("/api/purchase-orders/:orderId/items", ...poRead, async (req: Request, res: Response) => {
+  app.get(
+    [
+      "/api/purchase-orders/:orderId/items",
+      "/api/procurement/purchase-orders/records/:orderId/items",
+    ],
+    ...poRead,
+    async (req: Request, res: Response) => {
     try {
       const orderId = Number(req.params.orderId);
       if (isNaN(orderId)) {
@@ -1033,9 +1061,16 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       console.error("Error fetching purchase order items:", error);
       res.status(500).json({ message: "Failed to fetch purchase order items" });
     }
-  });
+  },
+  );
 
-  app.post("/api/purchase-orders/:orderId/items", ...poWrite, async (req: Request, res: Response) => {
+  app.post(
+    [
+      "/api/purchase-orders/:orderId/items",
+      "/api/procurement/purchase-orders/records/:orderId/items",
+    ],
+    ...poWrite,
+    async (req: Request, res: Response) => {
     try {
       const orderId = Number(req.params.orderId);
       if (isNaN(orderId)) {
@@ -1058,7 +1093,8 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         res.status(500).json({ message: "Failed to add purchase order item" });
       }
     }
-  });
+  },
+  );
 
   app.put("/api/purchase-order-items/:id", ...poWrite, async (req: Request, res: Response) => {
     try {

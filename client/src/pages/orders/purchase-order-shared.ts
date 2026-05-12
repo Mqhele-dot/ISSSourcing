@@ -1,4 +1,5 @@
 import type { PurchaseOrderDetail } from "@/api/client";
+import { procurementPoRecordUrl } from "@/api/procurement-purchase-order-paths";
 import {
   canApprovePurchaseOrder,
   canReceivePurchaseOrder,
@@ -123,7 +124,7 @@ export async function fetchPurchaseOrderRecordById(id: number): Promise<{
   paymentTermsId?: number | null;
   incotermId?: number | null;
 } | null> {
-  const response = await fetch(`/api/purchase-orders/${id}`, {
+  const response = await fetch(procurementPoRecordUrl(id), {
     method: "GET",
     credentials: "include",
   });
@@ -147,7 +148,7 @@ export async function fetchPurchaseOrderRecordById(id: number): Promise<{
         ? String((payload as { message?: unknown }).message ?? "")
         : "";
     throw new Error(
-      msg ? `GET /api/purchase-orders/${id} failed (${response.status}): ${msg}` : `GET /api/purchase-orders/${id} failed: ${response.status}`,
+      msg ? `GET ${procurementPoRecordUrl(id)} failed (${response.status}): ${msg}` : `GET ${procurementPoRecordUrl(id)} failed: ${response.status}`,
     );
   }
 

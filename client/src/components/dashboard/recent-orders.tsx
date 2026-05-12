@@ -21,7 +21,7 @@ export function RecentOrders() {
   const [, setLocation] = useLocation();
 
   const { data: orders, isLoading, error } = useQuery({
-    queryKey: ["/api/purchase/orders", "dashboard-recent"],
+    queryKey: ["/api/procurement/purchase-orders", "dashboard-recent"],
     queryFn: async () => {
       const envelope = await fetchPurchaseOrdersEnvelope({});
       return envelope.data ?? [];

@@ -12,12 +12,12 @@ function isPoCriticalApiUrl(url: string): boolean {
     const u = new URL(url);
     const p = u.pathname;
     return (
-      p.includes("/api/purchase/orders") ||
+      p.includes("/api/procurement/purchase-orders") ||
       p.includes("/api/purchase-orders") ||
       p.includes("/api/activity")
     );
   } catch {
-    return /\/api\/(purchase\/orders|purchase-orders|activity)/i.test(url);
+    return /\/api\/(purchase\/orders|procurement\/purchase-orders|purchase-orders|activity)/i.test(url);
   }
 }
 

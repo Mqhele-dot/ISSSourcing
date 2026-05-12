@@ -65,6 +65,10 @@ async function main() {
   assert.ok(Array.isArray(data.operationsTrend), "operationsTrend");
   assert.ok(Array.isArray(data.needsAttention), "needsAttention");
   assert.ok(Array.isArray(data.recentActivity), "recentActivity");
+  assert.ok(data.spotlight && typeof data.spotlight === "object", "spotlight");
+  const spotlight = data.spotlight as { delayedShipments?: unknown; oldestOpenExceptions?: unknown };
+  assert.ok(Array.isArray(spotlight.delayedShipments), "spotlight.delayedShipments");
+  assert.ok(Array.isArray(spotlight.oldestOpenExceptions), "spotlight.oldestOpenExceptions");
   assert.ok(
     (data.recentActivity as unknown[]).length <= 10,
     `recentActivity must be <= 10, got ${(data.recentActivity as unknown[]).length}`,

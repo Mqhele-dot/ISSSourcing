@@ -13,6 +13,7 @@ import {
   Warehouse,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { GasOpsCard } from "@/pages/control-tower/gas-ops-card";
 import { Button } from "@/components/ui/button";
@@ -250,6 +251,67 @@ export default function ControlTowerPage() {
             <NeedsAttentionPanel items={payload.needsAttention} areaFilter={businessArea} />
 
             <RecentActivityPanel items={payload.recentActivity.slice(0, 10)} />
+
+            {(payload.spotlight.delayedShipments.length > 0 ||
+              payload.spotlight.oldestOpenExceptions.length > 0) && (
+              <div className="grid gap-4 lg:grid-cols-2" data-testid="control-tower-spotlight">
+                {payload.spotlight.delayedShipments.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Most delayed shipments</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {payload.spotlight.delayedShipments.map((row) => (
+                        <div
+                          key={row.id}
+                          className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 last:border-0 last:pb-0"
+                        >
+                          <div>
+                            <Link className="font-medium text-primary underline-offset-4 hover:underline" href={row.href}>
+                              #{row.id} · PO {row.poNumber}
+                            </Link>
+                            <p className="text-xs text-muted-foreground">
+                              {row.carrier || "—"} · {row.driftMinutes}m past ETA
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+                {payload.spotlight.oldestOpenExceptions.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Oldest open exceptions</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {payload.spotlight.oldestOpenExceptions.map((row) => (
+                        <div
+                          key={row.id}
+                          className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 last:border-0 last:pb-0"
+                        >
+                          <div>
+                            <Link className="font-medium text-primary underline-offset-4 hover:underline" href={row.href}>
+                              {row.title}
+                            </Link>
+                            <p className="text-xs text-muted-foreground">
+                              {row.type} · {row.agedHours}h open · {row.severity}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {payload.meta.partialFailures && payload.meta.partialFailures.length > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="control-tower-partial-failures">
+                Some dashboard sections used fallbacks:{" "}
+                {payload.meta.partialFailures.map((f) => f.area).join(", ")}
+              </p>
+            )}
 
             <GasOpsCard />
           </>

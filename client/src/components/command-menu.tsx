@@ -108,7 +108,7 @@ function prefetchPrimaryData(): void {
   const warm: { queryKey: string[] }[] = [
     { queryKey: ["/api/inventory"] },
     { queryKey: ["/api/suppliers"] },
-    { queryKey: ["/api/purchase-orders"] },
+    { queryKey: ["/api/procurement/purchase-orders/records"] },
     { queryKey: ["/api/warehouses"] },
   ];
   for (const { queryKey } of warm) {

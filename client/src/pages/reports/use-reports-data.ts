@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { normalizeApiList, requestJson } from "@/lib/queryClient";
+import { PROCUREMENT_PURCHASE_ORDER_RECORDS_PATH } from "@/api/procurement-purchase-order-paths";
 import type {
   Category,
   InventoryItem,
@@ -81,9 +82,9 @@ export function useReportsPageData() {
   });
 
   const { data: purchaseOrders, isLoading: poLoading } = useQuery({
-    queryKey: ["/api/purchase-orders"],
+    queryKey: ["/api/procurement/purchase-orders/records"],
     queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/purchase-orders");
+      const raw = await requestJson<unknown>("GET", PROCUREMENT_PURCHASE_ORDER_RECORDS_PATH);
       return normalizeApiList<PurchaseOrder>(raw);
     },
     throwOnError: false,

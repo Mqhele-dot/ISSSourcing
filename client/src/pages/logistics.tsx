@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useToast } from "@/hooks/use-toast";
@@ -41,6 +42,7 @@ import {
   type ShipmentDetail,
   type ShipmentListItem,
 } from "@/api/client";
+import type { ShipmentTimelineEvent } from "@/api/types";
 import type { FallbackKind } from "@/components/ui/data-state";
 import { queryClient, requestJson } from "@/lib/queryClient";
 import { downloadFile } from "@/lib/utils";
@@ -95,18 +97,34 @@ function ShipmentListView() {
     risk: "",
   });
 
-  const fetcher = useCallback(
-    () =>
-      fetchShipmentsEnvelope({
-        status: String(queryState.status || ""),
-        po: String(queryState.po || ""),
-        carrier: String(queryState.carrier || ""),
-        risk: String(queryState.risk || ""),
-      }),
-    [queryState.status, queryState.po, queryState.carrier, queryState.risk],
-  );
+  const debouncedQuery = useDebouncedValue(queryState, 350);
 
-  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const {
+    data: envelope,
+    isLoading: loading,
+    isError,
+    error: queryError,
+    refetch,
+    isFetching,
+  } = useQuery({
+    queryKey: [
+      "/api/logistics/shipments",
+      debouncedQuery.status,
+      debouncedQuery.po,
+      debouncedQuery.carrier,
+      debouncedQuery.risk,
+    ],
+    queryFn: () =>
+      fetchShipmentsEnvelope({
+        status: String(debouncedQuery.status || ""),
+        po: String(debouncedQuery.po || ""),
+        carrier: String(debouncedQuery.carrier || ""),
+        risk: String(debouncedQuery.risk || ""),
+      }),
+    staleTime: 10_000,
+  });
+
+  const error = isError ? (queryError instanceof Error ? queryError : new Error(String(queryError))) : null;
   const [newPoNumber, setNewPoNumber] = useState("");
   const [newCarrier, setNewCarrier] = useState("");
   const [newEta, setNewEta] = useState("");
@@ -166,6 +184,11 @@ function ShipmentListView() {
   });
   const data = envelope?.data ?? null;
   const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
+
+  const refetchShipmentsList = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
+
   const {
     autoRefreshEnabled,
     setAutoRefreshEnabled,
@@ -173,7 +196,7 @@ function ShipmentListView() {
     lastRefreshedLabel,
     refreshNow,
     markRefreshed,
-  } = useAutoRefresh(refetch);
+  } = useAutoRefresh(refetchShipmentsList);
 
   useEffect(() => {
     if (data && !lastRefreshedAt) {
@@ -246,6 +269,7 @@ function ShipmentListView() {
             </Label>
             <Input
               id="ship-filter-status"
+              data-testid="logistics-filter-status"
               value={String(queryState.status || "")}
               onChange={(event) => setQueryState({ status: event.target.value })}
               placeholder="e.g. in_transit"
@@ -258,6 +282,7 @@ function ShipmentListView() {
             </Label>
             <Input
               id="ship-filter-po"
+              data-testid="logistics-filter-po"
               value={String(queryState.po || "")}
               onChange={(event) => setQueryState({ po: event.target.value })}
               placeholder="Filter by PO"
@@ -270,6 +295,7 @@ function ShipmentListView() {
             </Label>
             <Input
               id="ship-filter-carrier"
+              data-testid="logistics-filter-carrier"
               value={String(queryState.carrier || "")}
               onChange={(event) => setQueryState({ carrier: event.target.value })}
               placeholder="Carrier name"
@@ -284,12 +310,16 @@ function ShipmentListView() {
               value={String(queryState.risk || "") || "all"}
               onValueChange={(value) => setQueryState({ risk: value === "all" ? "" : value })}
             >
-              <SelectTrigger id="ship-filter-risk" className="w-full min-w-0">
+              <SelectTrigger id="ship-filter-risk" data-testid="logistics-filter-risk" className="w-full min-w-0">
                 <SelectValue placeholder="Risk" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All risk</SelectItem>
-                <SelectItem value="late">Late risk</SelectItem>
+                <SelectItem value="late">Late (past ETA)</SelectItem>
+                <SelectItem value="due_soon">Due soon</SelectItem>
+                <SelectItem value="no_eta">No ETA</SelectItem>
+                <SelectItem value="exception">Exception / delayed status</SelectItem>
+                <SelectItem value="on_time">On time</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -298,7 +328,13 @@ function ShipmentListView() {
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" disabled={shipmentExporting} className="shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={shipmentExporting}
+                className="shrink-0"
+                data-testid="logistics-export"
+              >
                 <Download className="mr-2 h-4 w-4" />
                 {shipmentExporting ? "Exporting…" : "Export"}
               </Button>
@@ -315,14 +351,27 @@ function ShipmentListView() {
             variant={autoRefreshEnabled ? "default" : "outline"}
             size="sm"
             className="shrink-0"
+            data-testid="logistics-auto-refresh"
             onClick={() => setAutoRefreshEnabled((current) => !current)}
           >
             Auto-refresh: {autoRefreshEnabled ? "On" : "Off"}
           </Button>
-          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={refreshNow}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            data-testid="logistics-refresh"
+            onClick={refreshNow}
+          >
             Refresh
           </Button>
-          <span className="ml-auto text-xs text-muted-foreground">Last refreshed: {lastRefreshedLabel}</span>
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+            Last refreshed: {lastRefreshedLabel}
+            {envelope?.meta?.resultCount != null ? ` · ${envelope.meta.resultCount} result(s)` : ""}
+            {envelope?.meta?.queryMs != null ? ` · ${Math.round(Number(envelope.meta.queryMs))}ms` : ""}
+            {isFetching ? " · updating…" : ""}
+          </span>
         </div>
 
         <Can roles={["manager", "admin"]}>
@@ -401,6 +450,7 @@ function ShipmentListView() {
               <Button
                 type="button"
                 className="shrink-0"
+                data-testid="logistics-create-shipment"
                 onClick={async () => {
                   try {
                     await createShipment({
@@ -473,7 +523,7 @@ function ShipmentListView() {
                 <TableRow
                   key={shipment.id}
                   className="cursor-pointer"
-                  onClick={() => setLocation(`/operations/logistics/${shipment.id}`)}
+                  onClick={() => setLocation(APP_ROUTES.operations.shipment(shipment.id))}
                 >
                   <TableCell className="font-medium">{shipment.id}</TableCell>
                   <TableCell>{shipment.poNumber}</TableCell>
@@ -859,7 +909,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {shipment.timeline.map((event) => (
+                    {shipment.timeline.map((event: ShipmentTimelineEvent) => (
                       <TableRow key={event.id}>
                         <TableCell>{formatDate(event.eventAt)}</TableCell>
                         <TableCell>

@@ -56,6 +56,7 @@ import type { InventoryItem } from "@shared/schema";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 import { PanelInlineError } from "@/components/panel-inline-error";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { procurementPoRecordItemsUrl, PROCUREMENT_PURCHASE_ORDER_RECORDS_PATH } from "@/api/procurement-purchase-order-paths";
 import { Separator } from "@/components/ui/separator";
 
 type Invoice = {
@@ -248,8 +249,8 @@ export default function InvoicesPage() {
     throwOnError: false,
   });
   const purchaseOrdersQuery = useQuery({
-    queryKey: ["/api/purchase-orders"],
-    queryFn: () => requestJson<PurchaseOrder[]>("GET", "/api/purchase-orders"),
+    queryKey: ["/api/procurement/purchase-orders/records"],
+    queryFn: () => requestJson<PurchaseOrder[]>("GET", PROCUREMENT_PURCHASE_ORDER_RECORDS_PATH),
     throwOnError: false,
   });
   const taxCodesQuery = useQuery({
@@ -267,9 +268,10 @@ export default function InvoicesPage() {
     throwOnError: false,
   });
   const poItemsQuery = useQuery({
-    queryKey: ["/api/purchase-orders/items", purchaseOrderId],
+    queryKey: ["/api/procurement/purchase-orders/records/items", purchaseOrderId],
     enabled: purchaseOrderId !== "none",
-    queryFn: () => requestJson<PurchaseOrderItem[]>("GET", `/api/purchase-orders/${purchaseOrderId}/items`),
+    queryFn: () =>
+      requestJson<PurchaseOrderItem[]>("GET", procurementPoRecordItemsUrl(Number(purchaseOrderId))),
     throwOnError: false,
   });
 

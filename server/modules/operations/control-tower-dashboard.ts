@@ -34,6 +34,24 @@ export type ControlTowerDashboardPayload = {
     trendDays: number;
     valueBasisLabel: string;
     businessArea: string;
+    queryMs?: number;
+    dataFreshness?: Partial<Record<
+      | "inventory"
+      | "purchaseOrders"
+      | "shipments"
+      | "invoices"
+      | "exceptions"
+      | "activity"
+      | "requisitions",
+      string | null
+    >>;
+    partialFailures?: Array<{
+      area: string;
+      code: string;
+      message: string;
+      fallbackUsed: boolean;
+    }>;
+    filtersApplied?: Record<string, string | number | boolean | null>;
   };
   kpis: {
     inventoryValue: number;
@@ -89,6 +107,24 @@ export type ControlTowerDashboardPayload = {
     createdAt: string | null;
     summary: string;
   }>;
+  spotlight: {
+    delayedShipments: Array<{
+      id: number;
+      poNumber: string;
+      carrier: string | null;
+      eta: string | null;
+      driftMinutes: number;
+      href: string;
+    }>;
+    oldestOpenExceptions: Array<{
+      id: number;
+      type: string;
+      title: string;
+      agedHours: number;
+      severity: string;
+      href: string;
+    }>;
+  };
 };
 
 const EMPTY: ControlTowerDashboardPayload = {
@@ -119,6 +155,7 @@ const EMPTY: ControlTowerDashboardPayload = {
   operationsTrend: [],
   needsAttention: [],
   recentActivity: [],
+  spotlight: { delayedShipments: [], oldestOpenExceptions: [] },
 };
 
 export function buildEmptyControlTowerDashboard(
@@ -134,6 +171,9 @@ export function buildEmptyControlTowerDashboard(
       organizationId,
       trendDays,
       businessArea,
+      filtersApplied: { trendDays, businessArea },
+      partialFailures: [],
+      dataFreshness: {},
     },
   };
 }
@@ -155,7 +195,15 @@ export async function getControlTowerDashboard(
   const base: ControlTowerDashboardPayload = {
     ...EMPTY,
     generatedAt: new Date().toISOString(),
-    meta: { ...EMPTY.meta, organizationId: orgId, trendDays, businessArea },
+    meta: {
+      ...EMPTY.meta,
+      organizationId: orgId,
+      trendDays,
+      businessArea,
+      filtersApplied: { trendDays, businessArea },
+      partialFailures: [],
+      dataFreshness: {},
+    },
   };
 
   /* ── inventory rollups (SKU-level available, threshold, value) ── */
@@ -190,8 +238,15 @@ export async function getControlTowerDashboard(
       [orgId],
     );
     invRows = invRes.rows;
+    base.meta.dataFreshness = { ...base.meta.dataFreshness, inventory: new Date().toISOString() };
   } catch {
     invRows = [];
+    base.meta.partialFailures!.push({
+      area: "inventory",
+      code: "ROLLUP_FAILED",
+      message: "Inventory KPI rollup query failed",
+      fallbackUsed: true,
+    });
   }
 
   let inventoryValue = 0;
@@ -685,6 +740,81 @@ export async function getControlTowerDashboard(
     }));
   } catch {
     base.recentActivity = [];
+  }
+
+  /* spotlight — delayed shipments + oldest open exceptions */
+  try {
+    const ds = await pool.query<{
+      id: number;
+      po_number: string;
+      carrier: string | null;
+      eta: Date | null;
+      drift: string | null;
+    }>(
+      `
+      SELECT s.id, s.po_number, s.carrier, s.eta,
+        (EXTRACT(EPOCH FROM (now() - s.eta)) / 60.0)::text AS drift
+      FROM shipments s
+      INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
+      WHERE s.eta IS NOT NULL
+        AND s.eta < now()
+        AND lower(s.status) <> 'delivered'
+      ORDER BY s.eta ASC
+      LIMIT 8
+      `,
+      [orgId],
+    );
+    base.spotlight.delayedShipments = ds.rows.map((r) => ({
+      id: r.id,
+      poNumber: r.po_number,
+      carrier: r.carrier,
+      eta: r.eta ? r.eta.toISOString() : null,
+      driftMinutes: Math.max(0, Math.round(Number(r.drift ?? 0))),
+      href: `/operations/logistics/${r.id}`,
+    }));
+    base.meta.dataFreshness = { ...base.meta.dataFreshness, shipments: new Date().toISOString() };
+  } catch {
+    base.meta.partialFailures!.push({
+      area: "spotlight_shipments",
+      code: "QUERY_FAILED",
+      message: "Delayed shipments spotlight failed",
+      fallbackUsed: true,
+    });
+  }
+
+  try {
+    const ox = await pool.query<{
+      id: number;
+      type: string;
+      title: string;
+      severity: string;
+      aged: string | null;
+    }>(
+      `
+      SELECT id, type, title, severity,
+        (EXTRACT(EPOCH FROM (now() - created_at)) / 3600.0)::text AS aged
+      FROM operational_exceptions
+      WHERE lower(status) IN ('open', 'in_progress')
+      ORDER BY created_at ASC
+      LIMIT 8
+      `,
+    );
+    base.spotlight.oldestOpenExceptions = ox.rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      agedHours: Math.max(0, Math.round(Number(r.aged ?? 0))),
+      severity: r.severity,
+      href: `/operations/exceptions/${r.id}`,
+    }));
+    base.meta.dataFreshness = { ...base.meta.dataFreshness, exceptions: new Date().toISOString() };
+  } catch {
+    base.meta.partialFailures!.push({
+      area: "spotlight_exceptions",
+      code: "QUERY_FAILED",
+      message: "Oldest exceptions spotlight failed",
+      fallbackUsed: true,
+    });
   }
 
   return base;

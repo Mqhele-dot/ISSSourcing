@@ -445,10 +445,13 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
     const refs = data.relatedRefs;
     const links: Array<{ label: string; href: string }> = [];
     if (typeof refs.po_number === "string") {
-      links.push({ label: `PO ${refs.po_number}`, href: `/orders/${refs.po_number}` });
+      links.push({ label: `PO ${refs.po_number}`, href: APP_ROUTES.procurement.order(refs.po_number) });
     }
     if (typeof refs.shipment_id === "number") {
-      links.push({ label: `Shipment ${refs.shipment_id}`, href: `/logistics/${refs.shipment_id}` });
+      links.push({
+        label: `Shipment ${refs.shipment_id}`,
+        href: APP_ROUTES.operations.shipment(refs.shipment_id),
+      });
     }
     if (typeof refs.sku === "string") {
       links.push({ label: `SKU ${refs.sku}`, href: APP_ROUTES.inventory.item(refs.sku) });

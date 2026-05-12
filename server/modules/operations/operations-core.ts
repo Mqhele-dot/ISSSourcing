@@ -1608,6 +1608,8 @@ export async function listOperationalShipments(filters: {
   po?: string;
   carrier?: string;
   risk?: string;
+  etaFrom?: string;
+  etaTo?: string;
 }) {
   const whereClauses: string[] = [];
   const params: string[] = [];
@@ -1623,6 +1625,34 @@ export async function listOperationalShipments(filters: {
   if (filters.carrier && filters.carrier.trim()) {
     params.push(`%${filters.carrier.trim().toLowerCase()}%`);
     whereClauses.push(`lower(COALESCE(s.carrier, '')) LIKE $${params.length}`);
+  }
+
+  const risk = filters.risk?.trim().toLowerCase() ?? "";
+  if (risk === "late") {
+    whereClauses.push(`s.eta IS NOT NULL AND s.eta < now() AND lower(s.status) <> 'delivered'`);
+  } else if (risk === "no_eta") {
+    whereClauses.push(`s.eta IS NULL`);
+  } else if (risk === "due_soon") {
+    whereClauses.push(
+      `s.eta IS NOT NULL AND s.eta >= now() AND s.eta <= now() + interval '3 days' AND lower(s.status) NOT IN ('delivered', 'cancelled')`,
+    );
+  } else if (risk === "exception") {
+    whereClauses.push(`lower(s.status) IN ('delayed', 'exception')`);
+  } else if (risk === "on_time") {
+    whereClauses.push(
+      `(lower(s.status) = 'delivered' OR (s.eta IS NOT NULL AND s.eta > now() + interval '3 days' AND lower(s.status) NOT IN ('delivered', 'cancelled')))`,
+    );
+  }
+
+  const etaFrom = filters.etaFrom?.trim() ?? "";
+  const etaTo = filters.etaTo?.trim() ?? "";
+  if (etaFrom) {
+    params.push(etaFrom);
+    whereClauses.push(`s.eta IS NOT NULL AND s.eta >= $${params.length}::timestamptz`);
+  }
+  if (etaTo) {
+    params.push(etaTo);
+    whereClauses.push(`s.eta IS NOT NULL AND s.eta <= $${params.length}::timestamptz`);
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
@@ -1672,10 +1702,6 @@ export async function listOperationalShipments(filters: {
       trackingNumber: row.tracking_number,
       atRisk,
     });
-  }
-
-  if (filters.risk?.trim().toLowerCase() === "late") {
-    return shipments.filter((shipment) => shipment.atRisk);
   }
 
   return shipments;

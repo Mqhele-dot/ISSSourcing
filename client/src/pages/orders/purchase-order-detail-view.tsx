@@ -47,6 +47,13 @@ import {
   type PurchaseOrderDetail,
   type PurchaseReceiveResult,
 } from "@/api/client";
+import {
+  procurementPoApproveUrl,
+  procurementPoCommercialUrl,
+  procurementPoReceiveUrl,
+  procurementPoRevisionsUrl,
+  procurementPoSendUrl,
+} from "@/api/procurement-purchase-order-paths";
 import { useAuth } from "@/hooks/use-auth";
 import { PoReceivePanel } from "./po-receive-panel";
 import { PoRevisionHistoryCard } from "./po-revision-history-card";
@@ -101,7 +108,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     purchaseOrderIdRef.current = data?.id ?? null;
   }, [data?.id]);
   const { data: revisions = [], isError: revisionsError } = useQuery({
-    queryKey: ["/api/purchase-orders/revisions", data?.id],
+    queryKey: ["/api/procurement/purchase-orders/records/revisions", data?.id],
     enabled: Boolean(data?.id),
     queryFn: () =>
       requestJson<
@@ -112,7 +119,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
           createdAt: string;
           snapshot: Record<string, unknown>;
         }>
-      >("GET", `/api/purchase-orders/${data?.id}/revisions`),
+      >("GET", procurementPoRevisionsUrl(data!.id)),
   });
   const { data: approvalHistory = [], isError: approvalHistoryError } = useQuery({
     queryKey: ["/api/approval-history/purchase-order", data?.id],
@@ -132,7 +139,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
       >("GET", `/api/approval-history/purchase_order/${data?.id}`),
   });
   const { data: purchaseOrderRecord, isError: purchaseOrderRecordError } = useQuery({
-    queryKey: ["/api/purchase-orders", data?.id],
+    queryKey: ["/api/procurement/purchase-orders/records", data?.id],
     enabled: Boolean(data?.id),
     queryFn: () => fetchPurchaseOrderRecordById(Number(data?.id)),
   });
@@ -190,7 +197,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     mutationFn: () => {
       const id = purchaseOrderIdRef.current;
       if (!id) throw new Error("Purchase order ID missing");
-      return requestJson("PUT", `/api/purchase-orders/${id}`, {
+      return requestJson("PATCH", procurementPoCommercialUrl(id), {
         departmentId: departmentId === "none" ? null : Number(departmentId),
         contractId: contractId === "none" ? null : Number(contractId),
         paymentTermsId: paymentTermsId === "none" ? null : Number(paymentTermsId),
@@ -200,7 +207,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     onSuccess: async () => {
       const id = purchaseOrderIdRef.current;
       if (id) {
-        await queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", id] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/procurement/purchase-orders/records", id] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/procurement/purchase-orders/records/revisions", id] });
       }
       await refetch();
       setCommercialSaveError(null);
@@ -288,7 +296,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         description: formatMutationError(
           actionLabel,
           "POST",
-          action === "approve" ? `/api/purchase/orders/${po}/approve` : `/api/purchase/orders/${po}/send`,
+          action === "approve" ? procurementPoApproveUrl(po) : procurementPoSendUrl(po),
           err,
         ),
         variant: "destructive",
@@ -343,7 +351,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
       const err = receiveError as Error & { status?: number };
       toast({
         title: "Receive failed",
-        description: formatMutationError("Receive PO", "POST", `/api/purchase/orders/${po}/receive`, err),
+        description: formatMutationError("Receive PO", "POST", procurementPoReceiveUrl(po), err),
         variant: "destructive",
         action: (
           <ToastAction altText="Retry" onClick={() => submitReceive()}>

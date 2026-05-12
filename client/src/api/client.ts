@@ -30,6 +30,15 @@ import type {
   GasComplianceAlertsResult,
   MobileScanResolveResult,
 } from "./types";
+import {
+  procurementPoApproveUrl,
+  procurementPoOperationalDetailUrl,
+  procurementPoOperationalListUrl,
+  procurementPoReceiveUrl,
+  procurementPoSendUrl,
+  procurementPoSignedPdfUrl,
+  procurementPoStatusUrl,
+} from "./procurement-purchase-order-paths";
 
 export type {
   ActivityRecord,
@@ -128,7 +137,15 @@ async function unwrapEnvelope<T>(response: Response): Promise<T> {
 /** Align with server operational timeout (8s); client gives up at 12s */
 const API_TIMEOUT_MS = 12000;
 
-export type ApiEnvelopeResult<T> = { data: T; meta?: { fallback?: string } };
+export type ApiEnvelopeResult<T> = {
+  data: T;
+  meta?: {
+    fallback?: string;
+    appliedFilters?: Record<string, string | number | boolean | null | undefined>;
+    resultCount?: number;
+    queryMs?: number;
+  };
+};
 
 function recordApiClientDiagnostic(params: {
   method: string;
@@ -193,7 +210,7 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
     const durationMs = performance.now() - startedAt;
     if (isApiEnvelope<T>(payload)) {
       if (payload.ok) {
-        const meta = (payload as { meta?: { fallback?: string } }).meta;
+        const meta = (payload as { meta?: ApiEnvelopeResult<T>["meta"] }).meta;
         const fallback = headerFallback ?? meta?.fallback ?? null;
         setFallbackState(fallback, headerEndpoint);
         recordApiClientSlowRequest(method, url, response.status, durationMs);
@@ -524,13 +541,12 @@ export async function fetchPurchaseOrdersEnvelope(params?: {
   if (params?.status) search.set("status", params.status);
   if (params?.supplier) search.set("supplier", params.supplier);
   if (params?.q) search.set("q", params.q);
-  const url =
-    search.size > 0 ? `/api/purchase/orders?${search.toString()}` : "/api/purchase/orders";
+  const url = procurementPoOperationalListUrl(search);
   return fetchWithMeta<PurchaseOrderListItem[]>(url);
 }
 
 export async function fetchPurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
-  const payload = await apiFetch<unknown>(`/api/purchase/orders/${encodeURIComponent(po)}`);
+  const payload = await apiFetch<unknown>(procurementPoOperationalDetailUrl(po));
   return normalizePurchaseOrderDetail(payload);
 }
 
@@ -565,7 +581,7 @@ function normalizePurchaseOrderDetail(raw: unknown): PurchaseOrderDetail {
 
 /** Official PO PDF with line items, terms, and dual signature lines (for wet ink or e-sign workflow). */
 export async function downloadPurchaseOrderSignedPdf(po: string): Promise<Blob> {
-  const res = await fetch(`/api/purchase/orders/${encodeURIComponent(po)}/signed-pdf`, {
+  const res = await fetch(procurementPoSignedPdfUrl(po), {
     credentials: "include",
   });
   if (!res.ok) {
@@ -588,7 +604,7 @@ export async function transitionPurchaseOrderStatus(
 ): Promise<PurchaseOrderDetail> {
   return apiMutate<PurchaseOrderDetail>(
     "POST",
-    `/api/purchase/orders/${encodeURIComponent(po)}/status`,
+    procurementPoStatusUrl(po),
     { toStatus },
   );
 }
@@ -596,7 +612,7 @@ export async function transitionPurchaseOrderStatus(
 export async function approvePurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
   const payload = await apiMutate<unknown>(
     "POST",
-    `/api/purchase/orders/${encodeURIComponent(po)}/approve`,
+    procurementPoApproveUrl(po),
   );
   return normalizePurchaseOrderDetail(payload);
 }
@@ -604,7 +620,7 @@ export async function approvePurchaseOrder(po: string): Promise<PurchaseOrderDet
 export async function sendPurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
   const payload = await apiMutate<unknown>(
     "POST",
-    `/api/purchase/orders/${encodeURIComponent(po)}/send`,
+    procurementPoSendUrl(po),
   );
   return normalizePurchaseOrderDetail(payload);
 }
@@ -626,7 +642,7 @@ export async function receivePurchaseOrder(
 ): Promise<PurchaseReceiveResult> {
   const result = await apiMutate<PurchaseReceiveResult>(
     "POST",
-    `/api/purchase/orders/${encodeURIComponent(po)}/receive`,
+    procurementPoReceiveUrl(po),
     {
       lines: lines.map((line) => ({
         sku: line.sku,
@@ -660,6 +676,8 @@ export async function fetchShipments(params?: {
   po?: string;
   carrier?: string;
   risk?: string;
+  etaFrom?: string;
+  etaTo?: string;
 }): Promise<ShipmentListItem[]> {
   const { data } = await fetchShipmentsEnvelope(params);
   return data;
@@ -670,12 +688,16 @@ export async function fetchShipmentsEnvelope(params?: {
   po?: string;
   carrier?: string;
   risk?: string;
+  etaFrom?: string;
+  etaTo?: string;
 }): Promise<ApiEnvelopeResult<ShipmentListItem[]>> {
   const search = new URLSearchParams();
   if (params?.status) search.set("status", params.status);
   if (params?.po) search.set("po", params.po);
   if (params?.carrier) search.set("carrier", params.carrier);
   if (params?.risk) search.set("risk", params.risk);
+  if (params?.etaFrom) search.set("etaFrom", params.etaFrom);
+  if (params?.etaTo) search.set("etaTo", params.etaTo);
   const url =
     search.size > 0 ? `/api/logistics/shipments?${search.toString()}` : "/api/logistics/shipments";
   return fetchWithMeta<ShipmentListItem[]>(url);

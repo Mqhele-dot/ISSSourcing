@@ -300,6 +300,23 @@ export type ControlTowerDashboardData = {
     valueBasisLabel: string;
     businessArea: string;
     queryMs?: number;
+    dataFreshness?: Partial<Record<
+      | "inventory"
+      | "purchaseOrders"
+      | "shipments"
+      | "invoices"
+      | "exceptions"
+      | "activity"
+      | "requisitions",
+      string | null
+    >>;
+    partialFailures?: Array<{
+      area: string;
+      code: string;
+      message: string;
+      fallbackUsed: boolean;
+    }>;
+    filtersApplied?: Record<string, string | number | boolean | null>;
   };
   kpis: {
     inventoryValue: number;
@@ -355,6 +372,24 @@ export type ControlTowerDashboardData = {
     createdAt: string | null;
     summary: string;
   }>;
+  spotlight: {
+    delayedShipments: Array<{
+      id: number;
+      poNumber: string;
+      carrier: string | null;
+      eta: string | null;
+      driftMinutes: number;
+      href: string;
+    }>;
+    oldestOpenExceptions: Array<{
+      id: number;
+      type: string;
+      title: string;
+      agedHours: number;
+      severity: string;
+      href: string;
+    }>;
+  };
 };
 
 export type ActivityItem = ControlTowerOverview["activity"][number];

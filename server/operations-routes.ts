@@ -381,299 +381,306 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     }),
   );
 
-  app.get(
-    "/api/purchase/orders/:po/signed-pdf",
-    auth.ensureAuthenticated,
-    withApiContract(async (req: Request, res: Response) => {
-      const start = Date.now();
-      setEndpointHeader(res, req.path);
-      if (isOperationsDegraded()) {
-        res.setHeader("X-InvTrack-Fallback", "degraded");
-        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
-      }
-      const poParam = req.params.po;
-      try {
-        const detail = await withTimeout(
-          getOperationalPurchaseOrderDetail(poParam),
-          OPERATIONS_QUERY_TIMEOUT_MS,
-        );
-        if (!detail) {
-          throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
-        }
-        const full = await storage.getPurchaseOrderWithDetails(detail.id);
-        if (!full) {
-          throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
-        }
-        const actor =
-          typeof req.user?.username === "string" && req.user.username.trim()
-            ? req.user.username.trim()
-            : typeof req.user?.email === "string" && req.user.email.trim()
-              ? req.user.email.trim()
-              : "user";
-        const metadataLines = [`Exported by: ${actor}`];
-        const reportingCurrencyCode = await getReportingCurrencyCode(storage);
-        const buffer = await generatePurchaseOrdersDocumentPdf(
-          [full],
-          `Purchase order - ${full.orderNumber}`,
-          metadataLines,
-          { reportingCurrencyCode },
-        );
-        const safeName = String(full.orderNumber).replace(/[^\w.-]+/g, "_");
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `attachment; filename="PO-${safeName}-for-signature.pdf"`);
-        res.send(buffer);
-      } catch (error) {
-        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
-          logOperationalError(req.path, Date.now() - start, error);
-          setFallbackHeader(res, error);
-          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
-        }
-        mapPurchaseStatusError(error);
-      }
-    }),
-  );
-
-  app.get(
+  const procurementPurchaseOrderOperationalBases = [
     "/api/purchase/orders",
-    withApiContract(async (req: Request, res: Response) => {
-      const start = Date.now();
-      setEndpointHeader(res, req.path);
-      if (isOperationsDegraded()) {
-        res.setHeader("X-InvTrack-Fallback", "degraded");
-        return respondOk(res, [], 200, { fallback: "degraded" });
-      }
-      try {
-        const status = typeof req.query.status === "string" ? req.query.status : "";
-        const supplier = typeof req.query.supplier === "string" ? req.query.supplier : "";
-        const q = typeof req.query.q === "string" ? req.query.q : "";
-        const orders = await withTimeout(
-          listOperationalPurchaseOrders({ status, supplier, q }),
-          OPERATIONS_QUERY_TIMEOUT_MS,
-        );
-        respondOk(res, orders);
-      } catch (err) {
-        logOperationalError(req.path, Date.now() - start, err);
-        setFallbackHeader(res, err);
-        respondOk(res, [], 200, { fallback: getFallbackValue(err) });
-      }
-    }),
-  );
+    "/api/procurement/purchase-orders",
+  ] as const;
 
-  app.get(
-    "/api/purchase/orders/:po",
-    withApiContract(async (req: Request, res: Response) => {
-      const start = Date.now();
-      setEndpointHeader(res, req.path);
-      if (isOperationsDegraded()) {
-        res.setHeader("X-InvTrack-Fallback", "degraded");
-        throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
-      }
-      try {
-        const detail = await withTimeout(
-          getOperationalPurchaseOrderDetail(req.params.po),
-          OPERATIONS_QUERY_TIMEOUT_MS,
-        );
-        if (!detail) {
+  for (const base of procurementPurchaseOrderOperationalBases) {
+    app.get(
+      `${base}/:po/signed-pdf`,
+      auth.ensureAuthenticated,
+      withApiContract(async (req: Request, res: Response) => {
+        const start = Date.now();
+        setEndpointHeader(res, req.path);
+        if (isOperationsDegraded()) {
+          res.setHeader("X-InvTrack-Fallback", "degraded");
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
+        const poParam = req.params.po;
+        try {
+          const detail = await withTimeout(
+            getOperationalPurchaseOrderDetail(poParam),
+            OPERATIONS_QUERY_TIMEOUT_MS,
+          );
+          if (!detail) {
+            throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
+          }
+          const full = await storage.getPurchaseOrderWithDetails(detail.id);
+          if (!full) {
+            throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
+          }
+          const actor =
+            typeof req.user?.username === "string" && req.user.username.trim()
+              ? req.user.username.trim()
+              : typeof req.user?.email === "string" && req.user.email.trim()
+                ? req.user.email.trim()
+                : "user";
+          const metadataLines = [`Exported by: ${actor}`];
+          const reportingCurrencyCode = await getReportingCurrencyCode(storage);
+          const buffer = await generatePurchaseOrdersDocumentPdf(
+            [full],
+            `Purchase order - ${full.orderNumber}`,
+            metadataLines,
+            { reportingCurrencyCode },
+          );
+          const safeName = String(full.orderNumber).replace(/[^\w.-]+/g, "_");
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", `attachment; filename="PO-${safeName}-for-signature.pdf"`);
+          res.send(buffer);
+        } catch (error) {
+          if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+            logOperationalError(req.path, Date.now() - start, error);
+            setFallbackHeader(res, error);
+            throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+          }
+          mapPurchaseStatusError(error);
+        }
+      }),
+    );
+
+    app.get(
+      base,
+      withApiContract(async (req: Request, res: Response) => {
+        const start = Date.now();
+        setEndpointHeader(res, req.path);
+        if (isOperationsDegraded()) {
+          res.setHeader("X-InvTrack-Fallback", "degraded");
+          return respondOk(res, [], 200, { fallback: "degraded" });
+        }
+        try {
+          const status = typeof req.query.status === "string" ? req.query.status : "";
+          const supplier = typeof req.query.supplier === "string" ? req.query.supplier : "";
+          const q = typeof req.query.q === "string" ? req.query.q : "";
+          const orders = await withTimeout(
+            listOperationalPurchaseOrders({ status, supplier, q }),
+            OPERATIONS_QUERY_TIMEOUT_MS,
+          );
+          respondOk(res, orders);
+        } catch (err) {
+          logOperationalError(req.path, Date.now() - start, err);
+          setFallbackHeader(res, err);
+          respondOk(res, [], 200, { fallback: getFallbackValue(err) });
+        }
+      }),
+    );
+
+    app.get(
+      `${base}/:po`,
+      withApiContract(async (req: Request, res: Response) => {
+        const start = Date.now();
+        setEndpointHeader(res, req.path);
+        if (isOperationsDegraded()) {
+          res.setHeader("X-InvTrack-Fallback", "degraded");
           throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
         }
-        respondOk(res, detail);
-      } catch (error) {
-        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
-          logOperationalError(req.path, Date.now() - start, error);
-          setFallbackHeader(res, error);
-          throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
+        try {
+          const detail = await withTimeout(
+            getOperationalPurchaseOrderDetail(req.params.po),
+            OPERATIONS_QUERY_TIMEOUT_MS,
+          );
+          if (!detail) {
+            throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
+          }
+          respondOk(res, detail);
+        } catch (error) {
+          if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+            logOperationalError(req.path, Date.now() - start, error);
+            setFallbackHeader(res, error);
+            throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
+          }
+          mapPurchaseStatusError(error);
         }
-        mapPurchaseStatusError(error);
-      }
-    }),
-  );
+      }),
+    );
 
-  app.post(
-    "/api/purchase/orders/:po/status",
-    auth.ensureAuthenticated,
-    withApiContract(async (req: Request, res: Response) => {
-      const start = Date.now();
-      setEndpointHeader(res, req.path);
-      if (isOperationsDegraded()) {
-        res.setHeader("X-InvTrack-Fallback", "degraded");
-        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
-      }
-      const toStatus =
-        typeof req.body?.toStatus === "string"
-          ? req.body.toStatus
-          : typeof req.body?.status === "string"
-            ? req.body.status
-            : "";
-      try {
-        const detail = await withTimeout(
-          transitionOperationalPurchaseOrderStatus(
-            req.params.po,
-            toStatus,
-            resolveActor(req),
-          ),
-          OPERATIONS_QUERY_TIMEOUT_MS,
-        );
-        respondOk(res, detail);
-      } catch (error) {
-        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
-          logOperationalError(req.path, Date.now() - start, error);
-          setFallbackHeader(res, error);
+    app.post(
+      `${base}/:po/status`,
+      auth.ensureAuthenticated,
+      withApiContract(async (req: Request, res: Response) => {
+        const start = Date.now();
+        setEndpointHeader(res, req.path);
+        if (isOperationsDegraded()) {
+          res.setHeader("X-InvTrack-Fallback", "degraded");
           throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
         }
-        mapPurchaseStatusError(error);
-      }
-    }),
-  );
+        const toStatus =
+          typeof req.body?.toStatus === "string"
+            ? req.body.toStatus
+            : typeof req.body?.status === "string"
+              ? req.body.status
+              : "";
+        try {
+          const detail = await withTimeout(
+            transitionOperationalPurchaseOrderStatus(
+              req.params.po,
+              toStatus,
+              resolveActor(req),
+            ),
+            OPERATIONS_QUERY_TIMEOUT_MS,
+          );
+          respondOk(res, detail);
+        } catch (error) {
+          if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+            logOperationalError(req.path, Date.now() - start, error);
+            setFallbackHeader(res, error);
+            throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+          }
+          mapPurchaseStatusError(error);
+        }
+      }),
+    );
 
-  app.post(
-    "/api/purchase/orders/:po/approve",
-    auth.ensureAuthenticated,
-    withApiContract(async (req: Request, res: Response) => {
-      const start = Date.now();
-      setEndpointHeader(res, req.path);
-      if (isOperationsDegraded()) {
-        res.setHeader("X-InvTrack-Fallback", "degraded");
-        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
-      }
-      requirePoWorkflowRole(req);
-      try {
-        const detail = await withTimeout(
-          transitionOperationalPurchaseOrderStatus(
-            req.params.po,
-            "approved",
-            resolveActor(req),
-          ),
-          OPERATIONS_QUERY_TIMEOUT_MS,
-        );
-        respondOk(res, detail);
-      } catch (error) {
-        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
-          logOperationalError(req.path, Date.now() - start, error);
-          setFallbackHeader(res, error);
+    app.post(
+      `${base}/:po/approve`,
+      auth.ensureAuthenticated,
+      withApiContract(async (req: Request, res: Response) => {
+        const start = Date.now();
+        setEndpointHeader(res, req.path);
+        if (isOperationsDegraded()) {
+          res.setHeader("X-InvTrack-Fallback", "degraded");
           throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
         }
-        mapPurchaseStatusError(error);
-      }
-    }),
-  );
+        requirePoWorkflowRole(req);
+        try {
+          const detail = await withTimeout(
+            transitionOperationalPurchaseOrderStatus(
+              req.params.po,
+              "approved",
+              resolveActor(req),
+            ),
+            OPERATIONS_QUERY_TIMEOUT_MS,
+          );
+          respondOk(res, detail);
+        } catch (error) {
+          if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+            logOperationalError(req.path, Date.now() - start, error);
+            setFallbackHeader(res, error);
+            throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+          }
+          mapPurchaseStatusError(error);
+        }
+      }),
+    );
 
-  app.post(
-    "/api/purchase/orders/:po/send",
-    auth.ensureAuthenticated,
-    withApiContract(async (req: Request, res: Response) => {
-      const start = Date.now();
-      setEndpointHeader(res, req.path);
-      if (isOperationsDegraded()) {
-        res.setHeader("X-InvTrack-Fallback", "degraded");
-        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
-      }
-      requirePoWorkflowRole(req);
-      try {
-        const detail = await withTimeout(
-          transitionOperationalPurchaseOrderStatus(
-            req.params.po,
-            "sent",
-            resolveActor(req),
-          ),
-          OPERATIONS_QUERY_TIMEOUT_MS,
-        );
-        respondOk(res, detail);
-      } catch (error) {
-        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
-          logOperationalError(req.path, Date.now() - start, error);
-          setFallbackHeader(res, error);
+    app.post(
+      `${base}/:po/send`,
+      auth.ensureAuthenticated,
+      withApiContract(async (req: Request, res: Response) => {
+        const start = Date.now();
+        setEndpointHeader(res, req.path);
+        if (isOperationsDegraded()) {
+          res.setHeader("X-InvTrack-Fallback", "degraded");
           throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
         }
-        mapPurchaseStatusError(error);
-      }
-    }),
-  );
+        requirePoWorkflowRole(req);
+        try {
+          const detail = await withTimeout(
+            transitionOperationalPurchaseOrderStatus(
+              req.params.po,
+              "sent",
+              resolveActor(req),
+            ),
+            OPERATIONS_QUERY_TIMEOUT_MS,
+          );
+          respondOk(res, detail);
+        } catch (error) {
+          if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+            logOperationalError(req.path, Date.now() - start, error);
+            setFallbackHeader(res, error);
+            throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+          }
+          mapPurchaseStatusError(error);
+        }
+      }),
+    );
 
-  app.post(
-    "/api/purchase/orders/:po/receive",
-    auth.ensureAuthenticated,
-    withApiContract(async (req: Request, res: Response) => {
-      const start = Date.now();
-      setEndpointHeader(res, req.path);
-      if (isOperationsDegraded()) {
-        res.setHeader("X-InvTrack-Fallback", "degraded");
-        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
-      }
-      const bodyLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
-      const lines = bodyLines.map(
-        (line: {
-          sku?: unknown;
-          qty_received_now?: unknown;
-          qtyReceivedNow?: unknown;
-          batch_number?: unknown;
-          batchNumber?: unknown;
-          serial_numbers?: unknown;
-          serialNumbers?: unknown;
-        }) => {
-          const serialInput = line.serial_numbers ?? line.serialNumbers;
-          const normalizedSerials = Array.isArray(serialInput)
-            ? (serialInput as unknown[])
-                .map((value) => String(value))
-                .filter((value) => value.trim().length > 0)
-            : undefined;
-          return {
-            sku: typeof line.sku === "string" ? line.sku : "",
-            qty_received_now: Number(line.qty_received_now ?? line.qtyReceivedNow),
-            batch_number:
-              typeof (line.batch_number ?? line.batchNumber) === "string"
-                ? String(line.batch_number ?? line.batchNumber)
-                : undefined,
-            serial_numbers: normalizedSerials,
-          };
-        },
-      );
-      const receiveMeta = {
-        receiver_user_id:
-          req.body?.receiver_user_id != null || req.body?.receiverUserId != null
-            ? Number(req.body?.receiver_user_id ?? req.body?.receiverUserId)
-            : undefined,
-        receiver_name:
-          typeof (req.body?.receiver_name ?? req.body?.receiverName) === "string"
-            ? String(req.body?.receiver_name ?? req.body?.receiverName)
-            : undefined,
-        warehouse_location:
-          typeof (req.body?.warehouse_location ?? req.body?.warehouseLocation) === "string"
-            ? String(req.body?.warehouse_location ?? req.body?.warehouseLocation)
-            : undefined,
-        received_at:
-          typeof (req.body?.received_at ?? req.body?.receivedAt) === "string"
-            ? new Date(String(req.body?.received_at ?? req.body?.receivedAt))
-            : undefined,
-      };
-
-      try {
-        const result = await withTimeout(
-          receiveOperationalPurchaseOrder(
-            req.params.po,
-            lines,
-            receiveMeta,
-            resolveActor(req),
-          ),
-          OPERATIONS_QUERY_TIMEOUT_MS,
-        );
-        respondOk(res, {
-          ...result,
-          changed: {
-            inventoryChanges: result.inventoryChanges.length,
-            shipmentUpdates: result.shipmentUpdates.length,
-            mismatchExceptions: result.mismatchExceptions.length,
+    app.post(
+      `${base}/:po/receive`,
+      auth.ensureAuthenticated,
+      withApiContract(async (req: Request, res: Response) => {
+        const start = Date.now();
+        setEndpointHeader(res, req.path);
+        if (isOperationsDegraded()) {
+          res.setHeader("X-InvTrack-Fallback", "degraded");
+          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
+        const bodyLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+        const lines = bodyLines.map(
+          (line: {
+            sku?: unknown;
+            qty_received_now?: unknown;
+            qtyReceivedNow?: unknown;
+            batch_number?: unknown;
+            batchNumber?: unknown;
+            serial_numbers?: unknown;
+            serialNumbers?: unknown;
+          }) => {
+            const serialInput = line.serial_numbers ?? line.serialNumbers;
+            const normalizedSerials = Array.isArray(serialInput)
+              ? (serialInput as unknown[])
+                  .map((value) => String(value))
+                  .filter((value) => value.trim().length > 0)
+              : undefined;
+            return {
+              sku: typeof line.sku === "string" ? line.sku : "",
+              qty_received_now: Number(line.qty_received_now ?? line.qtyReceivedNow),
+              batch_number:
+                typeof (line.batch_number ?? line.batchNumber) === "string"
+                  ? String(line.batch_number ?? line.batchNumber)
+                  : undefined,
+              serial_numbers: normalizedSerials,
+            };
           },
-        });
-      } catch (error) {
-        if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
-          logOperationalError(req.path, Date.now() - start, error);
-          setFallbackHeader(res, error);
-          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        );
+        const receiveMeta = {
+          receiver_user_id:
+            req.body?.receiver_user_id != null || req.body?.receiverUserId != null
+              ? Number(req.body?.receiver_user_id ?? req.body?.receiverUserId)
+              : undefined,
+          receiver_name:
+            typeof (req.body?.receiver_name ?? req.body?.receiverName) === "string"
+              ? String(req.body?.receiver_name ?? req.body?.receiverName)
+              : undefined,
+          warehouse_location:
+            typeof (req.body?.warehouse_location ?? req.body?.warehouseLocation) === "string"
+              ? String(req.body?.warehouse_location ?? req.body?.warehouseLocation)
+              : undefined,
+          received_at:
+            typeof (req.body?.received_at ?? req.body?.receivedAt) === "string"
+              ? new Date(String(req.body?.received_at ?? req.body?.receivedAt))
+              : undefined,
+        };
+
+        try {
+          const result = await withTimeout(
+            receiveOperationalPurchaseOrder(
+              req.params.po,
+              lines,
+              receiveMeta,
+              resolveActor(req),
+            ),
+            OPERATIONS_QUERY_TIMEOUT_MS,
+          );
+          respondOk(res, {
+            ...result,
+            changed: {
+              inventoryChanges: result.inventoryChanges.length,
+              shipmentUpdates: result.shipmentUpdates.length,
+              mismatchExceptions: result.mismatchExceptions.length,
+            },
+          });
+        } catch (error) {
+          if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
+            logOperationalError(req.path, Date.now() - start, error);
+            setFallbackHeader(res, error);
+            throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+          }
+          mapPurchaseReceiveError(error);
         }
-        mapPurchaseReceiveError(error);
-      }
-    }),
-  );
+      }),
+    );
+  }
 
   app.get(
     "/api/logistics/shipments/:id/delivery-note.pdf",
@@ -734,11 +741,18 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const po = typeof req.query.po === "string" ? req.query.po : "";
         const carrier = typeof req.query.carrier === "string" ? req.query.carrier : "";
         const risk = typeof req.query.risk === "string" ? req.query.risk : "";
+        const etaFrom = typeof req.query.etaFrom === "string" ? req.query.etaFrom : "";
+        const etaTo = typeof req.query.etaTo === "string" ? req.query.etaTo : "";
         const shipments = await withTimeout(
-          listOperationalShipments({ status, po, carrier, risk }),
+          listOperationalShipments({ status, po, carrier, risk, etaFrom, etaTo }),
           OPERATIONS_QUERY_TIMEOUT_MS,
         );
-        respondOk(res, shipments);
+        const queryMs = Date.now() - start;
+        respondOk(res, shipments, 200, {
+          appliedFilters: { status, po, carrier, risk, etaFrom, etaTo },
+          resultCount: shipments.length,
+          queryMs,
+        });
       } catch (err) {
         logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);

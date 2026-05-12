@@ -1,9 +1,16 @@
 import type { NextFunction, Request, Response } from "express";
 
+export type ApiSuccessMeta = {
+  fallback?: string;
+  appliedFilters?: Record<string, string | number | boolean | null | undefined>;
+  resultCount?: number;
+  queryMs?: number;
+};
+
 export type ApiSuccessEnvelope<T> = {
   ok: true;
   data: T;
-  meta?: { fallback?: string };
+  meta?: ApiSuccessMeta;
 };
 
 export type ApiErrorDetails = Record<string, unknown> | unknown[] | null;
@@ -52,12 +59,7 @@ export function contractError(
   return new ApiContractError(status, code, message, hint, details);
 }
 
-export function respondOk<T>(
-  res: Response,
-  data: T,
-  status = 200,
-  meta?: { fallback: string },
-) {
+export function respondOk<T>(res: Response, data: T, status = 200, meta?: ApiSuccessMeta) {
   if (meta) {
     res.setHeader("Cache-Control", "no-store");
   }

@@ -72,6 +72,7 @@ export const APP_ROUTES = {
     mobileWorkflows: "/operations/mobile-workflows",
     controlTower: "/operations/control-tower",
     logistics: "/operations/logistics",
+    shipment: (id: string | number) => `/operations/logistics/${id}`,
     exceptions: "/operations/exceptions",
     mobileHub: "/m/home",
     mobileTasks: "/m/tasks",
