@@ -9,8 +9,8 @@
 
 **Commands**
 
-- `npm run verify:core` — **`check`** + **`test:stabilization-client`** + **`test:diagnostics`** + **`test:route-diagnostics`** + **`test:po-print-html`** + **`test:purchase-order-status`** + **`test:functional-audit`** + **`test:e2e`** (local “core” verification; needs DB + Playwright where applicable). The **`test:e2e`** wrapper brings up (or reuses) the dev server, runs **`test:purchase-order-endpoints`** immediately before the Playwright suite, then executes browser E2E.
-- `npm run verify:release` — **`verify:core`** plus **`test:purchase-order-actions-e2e`** (serial PO approve/send/commercial/activity proof).
+- `npm run verify:core` — **`check`** + **`test:stabilization-client`** + **`test:diagnostics`** + **`test:route-diagnostics`** + **`test:po-print-html`** + **`test:purchase-order-status`** + **`test:functional-audit`** + **`test:e2e`** (local “core” verification; needs DB + Playwright where applicable). The **`test:e2e`** wrapper brings up (or reuses) the dev server, runs **`test:purchase-order-endpoints`**, **`test:dashboard-data`**, **`test:logistics-filters`**, **`test:control-tower-dashboard`**, and **`test:exceptions-workflow`** (server-side mutating run-checks) while the server is up, then executes the full browser E2E glob (includes **`e2e/logistics.spec.ts`**, **`e2e/exceptions.spec.ts`**, **`e2e/dashboard.spec.ts`**, and the rest).
+- `npm run verify:release` — **`verify:core`** plus **`test:purchase-order-actions-e2e`** (serial PO approve/send/commercial/activity proof). The exceptions workflow is already covered inside **`test:e2e`** as **`test:exceptions-workflow`**.
 - `npm run test:diagnostics` — lightweight shared calculation/filter self-checks surfaced in **System Diagnostics**; not a substitute for the full FQA seed or E2E suite.
 - `npm run test:functional-audit` — runs `test:functional-calculations`, `test:functional-filters`, and **`test:functional-e2e`** so the functional audit includes browser-level Inventory and Purchase Order behavior, not just pure logic checks.
 - E2E: `e2e/global-setup.ts` runs **`seed:functional-qa`** after `e2e:prep` unless **`SKIP_E2E_FUNCTIONAL_QA_SEED=1`**.
@@ -37,7 +37,7 @@
 
 | # | Module | Route(s) | Confidence | Pass criteria in automation |
 |---|--------|----------|------------|-----------------------------|
-| 1 | Operations / Control Tower | `/operations`, `/operations/control-tower` | 2 | **`/operations/control-tower`:** KPIs, Recharts pipeline/health/value/AP/logistics/supplier/trend, needs-attention, recent activity, filters; **`GET /api/dashboard/control-tower`** + `test:dashboard-data` + `e2e/dashboard.spec.ts`; `/operations` hub shell unchanged |
+| 1 | Operations / Control Tower | `/operations`, `/operations/control-tower` | 2 | **`/operations/control-tower`:** KPIs, charts, needs-attention, recent activity, **Focus** area gating, spotlight + supplier-risk card, freshness/partial-failure meta; **`GET /api/dashboard/control-tower`** + `test:dashboard-data` + `test:control-tower-dashboard` + `e2e/dashboard.spec.ts`; `/operations` hub shell unchanged |
 | 2 | Inventory | `/inventory` | 3 | `functional-audit`: KPI cards, sort, card view, preview, full item open, exact **`FQA_INVENTORY_MASTER`** attrs on rows; FQA-visible filters; low-stock CSV **FQA subset** `{B,D}`; `test-functional-inventory-api` |
 | 3 | Warehouses | `/inventory/warehouses` | 1 | `module-deep-smoke` |
 | 4 | Warehouse Operations | `/inventory/warehouse-operations` | 1 | `module-deep-smoke` |
@@ -100,6 +100,9 @@ Idempotent for FQA prefixes. See **`shared/functional-qa-constants.ts`** and **`
 | **PO status rules (shared)** | `npm run test:purchase-order-status` |
 | **PO API contract (needs running server)** | `npm run test:purchase-order-endpoints` (also run automatically before Playwright in `npm run test:e2e`) |
 | **Control Tower dashboard API (needs running server)** | `npm run test:dashboard-data` (also run automatically before Playwright in `npm run test:e2e`) |
+| **Logistics filters API (read-only GET, needs server + DB)** | `npm run test:logistics-filters` (also run automatically before Playwright in `npm run test:e2e`) |
+| **Control Tower readiness (read-only GET, needs server + DB)** | `npm run test:control-tower-dashboard` (also run automatically before Playwright in `npm run test:e2e`) |
+| **Exceptions workflow (mutating: run-checks, needs server + DB)** | `npm run test:exceptions-workflow` (also run automatically before Playwright in `npm run test:e2e`; avoid shared read-only DBs) |
 
 ---
 
@@ -118,7 +121,9 @@ Idempotent for FQA prefixes. See **`shared/functional-qa-constants.ts`** and **`
 | File | Role |
 |------|------|
 | `e2e/functional-audit.spec.ts` | **Serial business audit:** inventory, AP, PO, requisitions, analytics, reports inventory preview + CSV, export center shell, Get Educated |
-| `e2e/dashboard.spec.ts` | Control Tower **`/operations/control-tower`**: KPIs, seven chart cards, needs-attention & recent-activity panels, refresh + date-range filter |
+| `e2e/dashboard.spec.ts` | Control Tower **`/operations/control-tower`**: KPIs, charts, spotlight (supplier risks when rendered), needs-attention & recent-activity, **Focus** area filter (inventory hides procurement chart), refresh + date-range |
+| `e2e/logistics.spec.ts` | **`/operations/logistics`**: filter toolbar test IDs, results count, optional row → detail summary |
+| `e2e/exceptions.spec.ts` | **`/operations/exceptions`**: filter toolbar + run-checks button, optional row → detail incident card |
 | `e2e/purchase-order-actions.spec.ts` | PO approve/send (button gating), commercial save on **PO-FQA-002**, locked terms on **PO-FQA-003**, activity panel mount, **`beforeAll`** `seed:functional-qa`, no `useAsyncResource` / unstable-fetcher warnings; fails on **5xx** for `/api/purchase/*`, `/api/purchase-orders/*`, `/api/activity`; `/admin/system-diagnostics` marker |
 | `e2e/module-deep-smoke.spec.ts` | Partial modules: shell + one interaction |
 | `e2e/module-smoke.spec.ts` | Fast route load list |

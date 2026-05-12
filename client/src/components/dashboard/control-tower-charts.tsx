@@ -264,11 +264,24 @@ export function ControlTowerChartsSection({
               </PieChart>
             </ResponsiveContainer>
           )}
-          <p className="text-xs text-center">
+          <div className="mt-2 space-y-2 text-center text-xs">
             <Link className="text-primary underline-offset-4 hover:underline" href="/operations/logistics">
               Open logistics
             </Link>
-          </p>
+            {logisticsPie.length > 0 ? (
+              <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+                {logisticsPie.map((row) => (
+                  <Link
+                    key={row.id}
+                    href={row.href}
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    {row.label} ({row.count})
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </DashboardChartCard>
       ) : null}
 

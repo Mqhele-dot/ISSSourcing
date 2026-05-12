@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 
 export type QueryStateValue = string | number | boolean | null | undefined;
 export type QueryState = Record<string, QueryStateValue>;
@@ -16,10 +16,11 @@ function normalizeValue(value: QueryStateValue): string | null {
 }
 
 export function useQueryState<T extends QueryState>(defaults: T) {
-  const [location, setLocation] = useLocation();
+  const [pathname, setLocation] = useLocation();
+  const search = useSearch();
 
   const current = useMemo(() => {
-    const search = location.includes("?") ? location.slice(location.indexOf("?")) : "";
+    // wouter v3: `useLocation` is pathname-only; query lives in `useSearch()`.
     const params = new URLSearchParams(search);
 
     const parsed = { ...defaults } as Record<string, QueryStateValue>;
@@ -30,11 +31,11 @@ export function useQueryState<T extends QueryState>(defaults: T) {
       }
     }
     return parsed as T;
-  }, [defaults, location]);
+  }, [defaults, search]);
 
   const updateQueryState = useCallback(
     (updates: Partial<T>) => {
-      const pathname = location.split("?")[0];
+      const pathOnly = pathname.split("?")[0];
       const params = new URLSearchParams(
         typeof window !== "undefined" ? window.location.search : "",
       );
@@ -49,9 +50,9 @@ export function useQueryState<T extends QueryState>(defaults: T) {
       }
 
       const nextQuery = params.toString();
-      setLocation(nextQuery ? `${pathname}?${nextQuery}` : pathname, { replace: true });
+      setLocation(nextQuery ? `${pathOnly}?${nextQuery}` : pathOnly, { replace: true });
     },
-    [location, setLocation],
+    [pathname, setLocation],
   );
 
   return {

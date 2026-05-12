@@ -74,7 +74,7 @@ export type ControlTowerDashboardPayload = {
   inventoryHealth: Array<{ id: string; label: string; count: number; href: string }>;
   stockValueByCategory: Array<{ category: string; value: number }>;
   apAging: Array<{ bucket: string; label: string; count: number; amount: number }>;
-  logisticsRisk: Array<{ id: string; label: string; count: number }>;
+  logisticsRisk: Array<{ id: string; label: string; count: number; href: string }>;
   supplierPerformance: Array<{
     supplierId: number;
     name: string;
@@ -124,6 +124,13 @@ export type ControlTowerDashboardPayload = {
       severity: string;
       href: string;
     }>;
+    supplierRisks: Array<{
+      supplierId: number;
+      name: string;
+      lateShipments: number;
+      openExceptions: number;
+      href: string;
+    }>;
   };
 };
 
@@ -155,7 +162,7 @@ const EMPTY: ControlTowerDashboardPayload = {
   operationsTrend: [],
   needsAttention: [],
   recentActivity: [],
-  spotlight: { delayedShipments: [], oldestOpenExceptions: [] },
+  spotlight: { delayedShipments: [], oldestOpenExceptions: [], supplierRisks: [] },
 };
 
 export function buildEmptyControlTowerDashboard(
@@ -176,6 +183,82 @@ export function buildEmptyControlTowerDashboard(
       dataFreshness: {},
     },
   };
+}
+
+function wipeInventoryDash(base: ControlTowerDashboardPayload) {
+  base.kpis.inventoryValue = 0;
+  base.kpis.inventoryValueTrendPct = null;
+  base.kpis.lowStockItems = 0;
+  base.inventoryHealth = [];
+  base.stockValueByCategory = [];
+}
+
+function wipeProcurementDash(base: ControlTowerDashboardPayload) {
+  base.kpis.openRequisitions = 0;
+  base.kpis.openPurchaseOrders = 0;
+  base.procurementPipeline = [];
+}
+
+function wipeLogisticsDash(base: ControlTowerDashboardPayload) {
+  base.kpis.delayedShipments = 0;
+  base.logisticsRisk = [];
+  base.spotlight.delayedShipments = [];
+  base.supplierPerformance = [];
+  base.spotlight.supplierRisks = [];
+  base.kpis.supplierRiskAlerts = 0;
+}
+
+function wipeFinanceDash(base: ControlTowerDashboardPayload) {
+  base.kpis.apInvoicesDueOrOverdue = 0;
+  base.apAging = base.apAging.map((b) => ({ ...b, count: 0, amount: 0 }));
+}
+
+function wipeOperationsExceptionDash(base: ControlTowerDashboardPayload) {
+  base.kpis.operationalExceptions = 0;
+  base.spotlight.oldestOpenExceptions = [];
+}
+
+function applyBusinessAreaFilter(base: ControlTowerDashboardPayload, areaRaw: string): void {
+  const a = (areaRaw || "all").toLowerCase();
+  if (a === "all") return;
+  if (a === "inventory") {
+    wipeProcurementDash(base);
+    wipeLogisticsDash(base);
+    wipeFinanceDash(base);
+    wipeOperationsExceptionDash(base);
+  } else if (a === "procurement") {
+    wipeInventoryDash(base);
+    wipeLogisticsDash(base);
+    wipeFinanceDash(base);
+    wipeOperationsExceptionDash(base);
+  } else if (a === "logistics") {
+    wipeInventoryDash(base);
+    wipeProcurementDash(base);
+    wipeFinanceDash(base);
+    wipeOperationsExceptionDash(base);
+  } else if (a === "finance") {
+    wipeInventoryDash(base);
+    wipeProcurementDash(base);
+    wipeLogisticsDash(base);
+    wipeOperationsExceptionDash(base);
+  } else if (a === "operations") {
+    wipeInventoryDash(base);
+    wipeProcurementDash(base);
+    wipeLogisticsDash(base);
+    wipeFinanceDash(base);
+  }
+
+  const allowedAreas =
+    a === "inventory"
+      ? new Set(["inventory"])
+      : a === "procurement"
+        ? new Set(["procurement"])
+        : a === "logistics"
+          ? new Set(["logistics"])
+          : a === "finance"
+            ? new Set(["finance"])
+            : new Set(["operations"]);
+  base.needsAttention = base.needsAttention.filter((n) => allowedAreas.has(n.area));
 }
 
 function summaryText(summary: Record<string, unknown>): string {
@@ -469,11 +552,11 @@ export async function getControlTowerDashboard(
     /* leave zeros */
   }
   base.logisticsRisk = [
-    { id: "on_time", label: "On time", count: onTime },
-    { id: "due_soon", label: "Due soon", count: dueSoon },
-    { id: "late", label: "Late", count: late },
-    { id: "no_eta", label: "No ETA", count: noEta },
-    { id: "exception", label: "Exception", count: excShip },
+    { id: "on_time", label: "On time", count: onTime, href: "/operations/logistics?risk=on_time" },
+    { id: "due_soon", label: "Due soon", count: dueSoon, href: "/operations/logistics?risk=due_soon" },
+    { id: "late", label: "Late", count: late, href: "/operations/logistics?risk=late" },
+    { id: "no_eta", label: "No ETA", count: noEta, href: "/operations/logistics?risk=no_eta" },
+    { id: "exception", label: "Exception", count: excShip, href: "/operations/logistics?risk=exception" },
   ];
 
   /* AP aging — supplier invoices with due balances */
@@ -576,9 +659,17 @@ export async function getControlTowerDashboard(
       openExceptions: 0,
     }));
     base.kpis.supplierRiskAlerts = base.supplierPerformance.filter((s) => s.riskScore > 0).length;
+    base.spotlight.supplierRisks = base.supplierPerformance.slice(0, 8).map((r) => ({
+      supplierId: r.supplierId,
+      name: r.name,
+      lateShipments: r.lateShipments,
+      openExceptions: r.openExceptions,
+      href: `/procurement/suppliers/${r.supplierId}`,
+    }));
   } catch {
     base.supplierPerformance = [];
     base.kpis.supplierRiskAlerts = 0;
+    base.spotlight.supplierRisks = [];
   }
 
   /* operations trend from ops_activity */
@@ -817,5 +908,6 @@ export async function getControlTowerDashboard(
     });
   }
 
+  applyBusinessAreaFilter(base, businessArea);
   return base;
 }

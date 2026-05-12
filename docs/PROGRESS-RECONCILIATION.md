@@ -70,6 +70,17 @@ This file is informational; authoritative counts live in PROGRESS-REPORT after r
 | Mobile pick error UX | `mobile-pick.tsx`: toast on `fetchInventory` failure; `toastRef` keeps `useAsyncResource` fetcher stable (avoids refetch loops if `toast` identity changes). |
 | Inventory API docs | JSDoc on operational `GET /api/inventory` in `server/operations-routes.ts`; note in `server/routes.ts` where a shadow route exists. |
 
+## 2026-05-10 — Logistics, exceptions, control tower readiness
+
+| Item | Evidence |
+|------|----------|
+| Logistics list contract | `GET /api/logistics/shipments` — `etaFrom`/`etaTo`/`tracking`, `meta.generatedAt`, `appliedFilters`; invalid dates → **400**; `listOperationalShipments` in `operations-core.ts`; UI `client/src/pages/logistics.tsx` + `fetchShipmentsEnvelope` |
+| Shipment detail | `getOperationalShipmentDetail` — PO/supplier joins, `riskBucket`, related exception |
+| Exception context + performance | `related_refs._invtrack` merge in `operational-exception-context.ts`; `getOperationalExceptionDetail` single-row SELECT; list columns + `exceptions.tsx` |
+| Run checks + dedupe | `POST /exceptions/run-checks` payload keys; root-entity dedupe in `createOrGetOperationalException` |
+| Dashboard | `spotlight.supplierRisks`, server `businessArea` gating in `control-tower-dashboard.ts`; UI spotlight + freshness in `control-tower.tsx`; `test:control-tower-dashboard.ts` |
+| Scripts / E2E | `scripts/test-logistics-filters.ts`, `test-exceptions-workflow.ts`, `test-control-tower-dashboard.ts`; `e2e/logistics.spec.ts`, `e2e/exceptions.spec.ts`; `verify:core` / `verify:release` in `package.json`; logistics + control-tower + exceptions-workflow run **inside** `scripts/run-playwright-e2e.mjs` while dev server is up |
+
 ## 2026-05-11 — Executive Control Tower dashboard
 
 | Item | Evidence |

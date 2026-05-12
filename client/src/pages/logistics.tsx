@@ -24,6 +24,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useQueryState } from "@/hooks/use-query-state";
@@ -65,12 +71,6 @@ async function downloadShipmentDeliveryNote(shipmentId: number): Promise<void> {
   const blob = await res.blob();
   downloadFile(blob, `delivery-note-${shipmentId}.pdf`);
 }
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 type Carrier = {
   id: number;
@@ -87,6 +87,54 @@ function formatDate(value: string | null) {
   return parsed.toLocaleString();
 }
 
+function shipmentRiskBucketLabel(bucket: string | undefined) {
+  switch (bucket) {
+    case "late":
+      return "Late (past ETA)";
+    case "no_eta":
+      return "No ETA";
+    case "due_soon":
+      return "Due soon";
+    case "exception":
+      return "Exception / delayed status";
+    case "on_time":
+      return "On time";
+    default:
+      return "—";
+  }
+}
+
+type LogisticsListFiltersState = {
+  status: string;
+  po: string;
+  carrier: string;
+  risk: string;
+  etaFrom: string;
+  etaTo: string;
+  tracking: string;
+};
+
+function logisticsListFiltersNormalized(q: LogisticsListFiltersState): LogisticsListFiltersState {
+  return {
+    status: String(q.status ?? "").trim(),
+    po: String(q.po ?? "").trim(),
+    carrier: String(q.carrier ?? "").trim(),
+    risk: String(q.risk ?? "").trim(),
+    etaFrom: String(q.etaFrom ?? "").trim(),
+    etaTo: String(q.etaTo ?? "").trim(),
+    tracking: String(q.tracking ?? "").trim(),
+  };
+}
+
+function logisticsListQueryKeyTuple(n: LogisticsListFiltersState): (readonly [string, string])[] {
+  const keys = ["carrier", "etaFrom", "etaTo", "po", "risk", "status", "tracking"] as const;
+  return keys.map((k) => [k, n[k]] as const);
+}
+
+function logisticsListHasActiveFilters(n: LogisticsListFiltersState): boolean {
+  return Object.values(n).some((v) => v.length > 0);
+}
+
 function ShipmentListView() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -95,9 +143,13 @@ function ShipmentListView() {
     po: "",
     carrier: "",
     risk: "",
+    etaFrom: "",
+    etaTo: "",
+    tracking: "",
   });
 
   const debouncedQuery = useDebouncedValue(queryState, 350);
+  const debouncedNorm = logisticsListFiltersNormalized(debouncedQuery);
 
   const {
     data: envelope,
@@ -107,20 +159,8 @@ function ShipmentListView() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: [
-      "/api/logistics/shipments",
-      debouncedQuery.status,
-      debouncedQuery.po,
-      debouncedQuery.carrier,
-      debouncedQuery.risk,
-    ],
-    queryFn: () =>
-      fetchShipmentsEnvelope({
-        status: String(debouncedQuery.status || ""),
-        po: String(debouncedQuery.po || ""),
-        carrier: String(debouncedQuery.carrier || ""),
-        risk: String(debouncedQuery.risk || ""),
-      }),
+    queryKey: ["/api/logistics/shipments", ...logisticsListQueryKeyTuple(debouncedNorm)],
+    queryFn: () => fetchShipmentsEnvelope(debouncedNorm),
     staleTime: 10_000,
   });
 
@@ -210,14 +250,22 @@ function ShipmentListView() {
     try {
       const qs = new URLSearchParams();
       if (format === "pdf") qs.set("template", "standard");
-      const st = String(queryState.status || "").trim();
-      if (st) qs.set("status", st);
-      const po = String(queryState.po || "").trim();
-      if (po) qs.set("po", po);
-      const carrier = String(queryState.carrier || "").trim();
-      if (carrier) qs.set("carrier", carrier);
-      const risk = String(queryState.risk || "").trim();
-      if (risk) qs.set("risk", risk);
+      const ex = logisticsListFiltersNormalized({
+        status: String(queryState.status ?? ""),
+        po: String(queryState.po ?? ""),
+        carrier: String(queryState.carrier ?? ""),
+        risk: String(queryState.risk ?? ""),
+        etaFrom: String(queryState.etaFrom ?? ""),
+        etaTo: String(queryState.etaTo ?? ""),
+        tracking: String(queryState.tracking ?? ""),
+      });
+      if (ex.status) qs.set("status", ex.status);
+      if (ex.po) qs.set("po", ex.po);
+      if (ex.carrier) qs.set("carrier", ex.carrier);
+      if (ex.risk) qs.set("risk", ex.risk);
+      if (ex.etaFrom) qs.set("etaFrom", ex.etaFrom);
+      if (ex.etaTo) qs.set("etaTo", ex.etaTo);
+      if (ex.tracking) qs.set("tracking", ex.tracking);
       const q = qs.toString();
       const url = `/api/export/shipments/${format}${q ? `?${q}` : ""}`;
       const response = await fetch(url, { credentials: "include" });
@@ -249,6 +297,8 @@ function ShipmentListView() {
     }
   };
 
+  const shipmentsFilteredEmpty = logisticsListHasActiveFilters(debouncedNorm);
+
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
       <PageHeader
@@ -269,7 +319,7 @@ function ShipmentListView() {
             </Label>
             <Input
               id="ship-filter-status"
-              data-testid="logistics-filter-status"
+              data-testid="logistics-status-filter"
               value={String(queryState.status || "")}
               onChange={(event) => setQueryState({ status: event.target.value })}
               placeholder="e.g. in_transit"
@@ -282,7 +332,7 @@ function ShipmentListView() {
             </Label>
             <Input
               id="ship-filter-po"
-              data-testid="logistics-filter-po"
+              data-testid="logistics-po-filter"
               value={String(queryState.po || "")}
               onChange={(event) => setQueryState({ po: event.target.value })}
               placeholder="Filter by PO"
@@ -295,7 +345,7 @@ function ShipmentListView() {
             </Label>
             <Input
               id="ship-filter-carrier"
-              data-testid="logistics-filter-carrier"
+              data-testid="logistics-carrier-filter"
               value={String(queryState.carrier || "")}
               onChange={(event) => setQueryState({ carrier: event.target.value })}
               placeholder="Carrier name"
@@ -310,7 +360,7 @@ function ShipmentListView() {
               value={String(queryState.risk || "") || "all"}
               onValueChange={(value) => setQueryState({ risk: value === "all" ? "" : value })}
             >
-              <SelectTrigger id="ship-filter-risk" data-testid="logistics-filter-risk" className="w-full min-w-0">
+              <SelectTrigger id="ship-filter-risk" data-testid="logistics-risk-filter" className="w-full min-w-0">
                 <SelectValue placeholder="Risk" />
               </SelectTrigger>
               <SelectContent>
@@ -325,6 +375,48 @@ function ShipmentListView() {
           </div>
         </div>
 
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-eta-from" className="text-xs text-muted-foreground">
+              ETA from
+            </Label>
+            <Input
+              id="ship-filter-eta-from"
+              data-testid="logistics-eta-from"
+              type="datetime-local"
+              value={String(queryState.etaFrom || "")}
+              onChange={(event) => setQueryState({ etaFrom: event.target.value })}
+              className="w-full min-w-0"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-eta-to" className="text-xs text-muted-foreground">
+              ETA to
+            </Label>
+            <Input
+              id="ship-filter-eta-to"
+              data-testid="logistics-eta-to"
+              type="datetime-local"
+              value={String(queryState.etaTo || "")}
+              onChange={(event) => setQueryState({ etaTo: event.target.value })}
+              className="w-full min-w-0"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-tracking" className="text-xs text-muted-foreground">
+              Tracking contains
+            </Label>
+            <Input
+              id="ship-filter-tracking"
+              data-testid="logistics-tracking-filter"
+              value={String(queryState.tracking || "")}
+              onChange={(event) => setQueryState({ tracking: event.target.value })}
+              placeholder="PRO…"
+              className="w-full min-w-0"
+            />
+          </div>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -333,7 +425,7 @@ function ShipmentListView() {
                 size="sm"
                 disabled={shipmentExporting}
                 className="shrink-0"
-                data-testid="logistics-export"
+                data-testid="logistics-export-button"
               >
                 <Download className="mr-2 h-4 w-4" />
                 {shipmentExporting ? "Exporting…" : "Export"}
@@ -361,15 +453,21 @@ function ShipmentListView() {
             variant="outline"
             size="sm"
             className="shrink-0"
-            data-testid="logistics-refresh"
+            data-testid="logistics-refresh-button"
             onClick={refreshNow}
           >
             Refresh
           </Button>
-          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-            Last refreshed: {lastRefreshedLabel}
-            {envelope?.meta?.resultCount != null ? ` · ${envelope.meta.resultCount} result(s)` : ""}
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums text-right">
+            <span className="mr-2 inline-block">
+              Results:{" "}
+              <span data-testid="logistics-results-count">
+                {loading ? "—" : envelope?.meta?.resultCount ?? 0}
+              </span>
+            </span>
+            · Last refreshed: {lastRefreshedLabel}
             {envelope?.meta?.queryMs != null ? ` · ${Math.round(Number(envelope.meta.queryMs))}ms` : ""}
+            {envelope?.meta?.generatedAt ? ` · data: ${new Date(envelope.meta.generatedAt).toLocaleTimeString()}` : ""}
             {isFetching ? " · updating…" : ""}
           </span>
         </div>
@@ -450,7 +548,7 @@ function ShipmentListView() {
               <Button
                 type="button"
                 className="shrink-0"
-                data-testid="logistics-create-shipment"
+                data-testid="logistics-create-shipment-button"
                 onClick={async () => {
                   try {
                     await createShipment({
@@ -486,8 +584,12 @@ function ShipmentListView() {
         error={error}
         data={data}
         isEmpty={(shipments) => (Array.isArray(shipments) ? shipments : []).length === 0}
-        emptyTitle="No shipments found"
-        emptyDescription="Shipments are created from purchase orders. Create a PO or run the demo."
+        emptyTitle={shipmentsFilteredEmpty ? "No shipments match these filters" : "No shipments found"}
+        emptyDescription={
+          shipmentsFilteredEmpty
+            ? "Try clearing filters or widening the ETA range."
+            : "Shipments are created from purchase orders. Create a PO or run the demo."
+        }
         emptyAction={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="default" size="sm">
@@ -522,6 +624,7 @@ function ShipmentListView() {
               {list.map((shipment) => (
                 <TableRow
                   key={shipment.id}
+                  data-testid="logistics-shipment-row"
                   className="cursor-pointer"
                   onClick={() => setLocation(APP_ROUTES.operations.shipment(shipment.id))}
                 >
@@ -720,8 +823,8 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
       });
       setNote("");
       await refetch();
+      toast({ title: "Status updated" });
     } catch (statusError) {
-      console.error("Shipment status update failed:", statusError);
       const err = statusError as Error & { status?: number };
       const msg =
         err.status === 503
@@ -798,6 +901,72 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                 </AlertDescription>
               </Alert>
             ) : null}
+
+            <Card data-testid="logistics-detail-summary">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Shipment overview</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Shipment ID</p>
+                  <p className="font-medium tabular-nums">{shipment.id}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Purchase order</p>
+                  <Link
+                    href={APP_ROUTES.procurement.order(shipment.poNumber)}
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    {shipment.poNumber}
+                  </Link>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Supplier</p>
+                  {shipment.supplierId != null && shipment.supplierName?.trim() ? (
+                    <Link
+                      href={APP_ROUTES.procurement.supplier(shipment.supplierId)}
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      {shipment.supplierName}
+                    </Link>
+                  ) : (
+                    <p className="font-medium">{shipment.supplierName?.trim() || "—"}</p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Carrier</p>
+                  <p className="font-medium">{shipment.carrier?.trim() || "—"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Tracking</p>
+                  <p className="font-mono text-sm">{shipment.trackingNumber?.trim() || "—"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Risk</p>
+                  <p className="font-medium">{shipmentRiskBucketLabel(shipment.riskBucket)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Last updated</p>
+                  <p className="font-medium">
+                    {formatDate(shipment.updatedAtFormatted ?? shipment.updatedAt ?? null)}
+                  </p>
+                </div>
+                <div className="space-y-1 sm:col-span-2 lg:col-span-3">
+                  <p className="text-xs text-muted-foreground">Related operational exception</p>
+                  {shipment.relatedException ? (
+                    <Link
+                      href={`${APP_ROUTES.operations.exceptions}/${shipment.relatedException.id}`}
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      #{shipment.relatedException.id} · {shipment.relatedException.title} (
+                      {shipment.relatedException.status})
+                    </Link>
+                  ) : (
+                    <p className="text-muted-foreground">None linked</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
 
             <div className="grid gap-4 md:grid-cols-3">
               <Card>
@@ -932,7 +1101,9 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
 }
 
 export default function LogisticsPage() {
-  const [detailMatch, detailParams] = useRoute<{ id: string }>("/logistics/:id");
+  const [detailMatch, detailParams] = useRoute<{ id: string }>(
+    `${APP_ROUTES.operations.logistics}/:id`,
+  );
 
   if (detailMatch && detailParams?.id) {
     return <ShipmentDetailView shipmentId={detailParams.id} />;

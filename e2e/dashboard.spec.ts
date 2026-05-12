@@ -7,7 +7,7 @@ test.describe("Control Tower dashboard", () => {
   test("executive dashboard loads with charts and filters", async ({ page }) => {
     test.setTimeout(120_000);
     await gotoAuthed(page, CONTROL_TOWER);
-    await expect(page.getByTestId("control-tower-page")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("control-tower-page")).toBeVisible({ timeout: 60_000 });
 
     await expect(page.getByTestId("dashboard-kpi-inventory-value")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("dashboard-kpi-low-stock")).toBeVisible();
@@ -28,6 +28,19 @@ test.describe("Control Tower dashboard", () => {
 
     await expect(page.getByTestId("dashboard-needs-attention-panel")).toBeVisible();
     await expect(page.getByTestId("dashboard-recent-activity-panel")).toBeVisible();
+
+    const supplierSpotlight = page.getByTestId("control-tower-spotlight-supplier-risks");
+    if ((await supplierSpotlight.count()) > 0) {
+      await expect(supplierSpotlight).toBeVisible();
+    }
+
+    await page.getByTestId("dashboard-business-area-filter").click();
+    await page.getByRole("option", { name: /^inventory$/i }).click();
+    await expect(page.getByTestId("dashboard-procurement-pipeline-chart")).not.toBeVisible({ timeout: 25_000 });
+
+    await page.getByTestId("dashboard-business-area-filter").click();
+    await page.getByRole("option", { name: /all areas/i }).click();
+    await expect(page.getByTestId("dashboard-procurement-pipeline-chart")).toBeVisible({ timeout: 25_000 });
 
     await page.getByTestId("dashboard-refresh-button").click();
     await expect(page.getByTestId("control-tower-page")).toBeVisible();

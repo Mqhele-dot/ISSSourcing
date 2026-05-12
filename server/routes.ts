@@ -27,7 +27,7 @@ import { registerDocumentExtractorRoutes } from "./controllers/document-extracto
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument, generateOperationalInventoryCsvFromRows } from "./services/document-generator-service";
-import { listOperationalInventory } from "./operations-core";
+import { listOperationalInventory, listOperationalShipments } from "./operations-core";
 import { recordExportHistory } from "./modules/exports/export-history-service";
 import { loadLogoBytesForPdf } from "./services/pdf-logo-loader";
 import type { ReportFormat, ReportType} from "@shared/schema";
@@ -235,6 +235,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const poParam = typeof req.query.po === "string" ? req.query.po : undefined;
       const carrierParam = typeof req.query.carrier === "string" ? req.query.carrier : undefined;
       const riskParam = typeof req.query.risk === "string" ? req.query.risk : undefined;
+      const etaFromExportParam = typeof req.query.etaFrom === "string" ? req.query.etaFrom : undefined;
+      const etaToExportParam = typeof req.query.etaTo === "string" ? req.query.etaTo : undefined;
+      const trackingExportParam = typeof req.query.tracking === "string" ? req.query.tracking : undefined;
       const templateParam = (req.query.template as string) || "standard";
 
       // Create filter object
@@ -298,6 +301,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (riskParam) {
         filter.risk = riskParam;
       }
+      if (etaFromExportParam) {
+        filter.etaFrom = etaFromExportParam;
+      }
+      if (etaToExportParam) {
+        filter.etaTo = etaToExportParam;
+      }
+      if (trackingExportParam) {
+        filter.tracking = trackingExportParam;
+      }
       
       // Build filter text for title
       let filterTexts = [];
@@ -350,6 +362,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (filter.risk) {
         filterTexts.push(`Risk: ${filter.risk}`);
+      }
+      if (filter.etaFrom) {
+        filterTexts.push(`ETA from: ${filter.etaFrom}`);
+      }
+      if (filter.etaTo) {
+        filterTexts.push(`ETA to: ${filter.etaTo}`);
+      }
+      if (filter.tracking) {
+        filterTexts.push(`Tracking: ${filter.tracking}`);
       }
       
       const filterText = filterTexts.length > 0 ? ` (${filterTexts.join(', ')})` : '';
@@ -654,72 +675,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         case "shipments": {
-          const params: string[] = [];
-          const whereParts: string[] = [];
-          if (filter.status?.trim()) {
-            params.push(filter.status.trim().toLowerCase());
-            whereParts.push(`lower(s.status) = $${params.length}`);
-          }
-          if (filter.po?.trim()) {
-            params.push(`%${filter.po.trim().toLowerCase()}%`);
-            whereParts.push(`lower(s.po_number) LIKE $${params.length}`);
-          }
-          if (filter.carrier?.trim()) {
-            params.push(`%${filter.carrier.trim().toLowerCase()}%`);
-            whereParts.push(`lower(COALESCE(s.carrier, '')) LIKE $${params.length}`);
-          }
-          if (filter.startDate && filter.endDate) {
-            params.push(filter.startDate.toISOString(), filter.endDate.toISOString());
-            whereParts.push(
-              `s.updated_at >= $${params.length - 1}::timestamptz AND s.updated_at <= $${params.length}::timestamptz`,
-            );
-          }
-          const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
-          const shResult = await pool.query<{
-            id: number;
-            po_number: string;
-            carrier: string | null;
-            status: string;
-            eta: Date | null;
-            drift_minutes: number;
-            created_at: Date | null;
-            updated_at: Date | null;
-            tracking_number: string | null;
-          }>(
-            `
-            SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at, tracking_number
-            FROM shipments s
-            ${whereSql}
-            ORDER BY s.updated_at DESC NULLS LAST
-            `,
-            params,
-          );
-          const fmtTs = (d: Date | null | undefined) =>
-            d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(0, 19).replace("T", " ") : "";
-          let shipRows = shResult.rows.map((row) => {
-            const statusLower = row.status.toLowerCase();
-            const eta = row.eta;
-            const atRisk = Boolean(
-              eta && eta.getTime() < Date.now() && statusLower !== "delivered",
-            );
-            return {
-              id: row.id,
-              poNumber: row.po_number,
-              carrier: row.carrier ?? "",
-              status: statusLower,
-              eta: fmtTs(row.eta),
-              trackingNumber: row.tracking_number ?? "",
-              driftMinutes: row.drift_minutes ?? 0,
-              lateRisk: atRisk ? "Yes" : "No",
-              atRisk,
-              createdAt: fmtTs(row.created_at),
-              updatedAt: fmtTs(row.updated_at),
-            };
+          const fmtTs = (d: Date | string | null | undefined) => {
+            if (d == null) return "";
+            const dt = d instanceof Date ? d : new Date(d);
+            return !Number.isNaN(dt.getTime())
+              ? dt.toISOString().slice(0, 19).replace("T", " ")
+              : "";
+          };
+          const shipRowsRaw = await listOperationalShipments({
+            status: typeof filter.status === "string" ? filter.status : "",
+            po: typeof filter.po === "string" ? filter.po : "",
+            carrier: typeof filter.carrier === "string" ? filter.carrier : "",
+            risk: typeof filter.risk === "string" ? filter.risk : "",
+            etaFrom: typeof filter.etaFrom === "string" ? filter.etaFrom : "",
+            etaTo: typeof filter.etaTo === "string" ? filter.etaTo : "",
+            tracking: typeof filter.tracking === "string" ? filter.tracking : "",
           });
-          if (filter.risk?.trim().toLowerCase() === "late") {
-            shipRows = shipRows.filter((r) => r.atRisk);
+          let rawRows = shipRowsRaw;
+          if (filter.startDate && filter.endDate) {
+            const startMs = filter.startDate.getTime();
+            const endMs = filter.endDate.getTime();
+            rawRows = rawRows.filter((r) => {
+              const u = r.updatedAt ? new Date(r.updatedAt as Date).getTime() : NaN;
+              return !Number.isNaN(u) && u >= startMs && u <= endMs;
+            });
           }
-          data = shipRows.map(({ atRisk: _ar, ...rest }) => rest);
+          const dataRows = rawRows.map((row) => ({
+            id: row.id,
+            poNumber: row.poNumber,
+            carrier: row.carrier ?? "",
+            status: row.status,
+            eta: fmtTs(row.eta),
+            trackingNumber: row.trackingNumber ?? "",
+            driftMinutes: row.driftMinutes ?? 0,
+            lateRisk: row.atRisk ? "Yes" : "No",
+            createdAt: fmtTs(row.createdAt),
+            updatedAt: fmtTs(row.updatedAt),
+          }));
+
+          data = dataRows;
           title = "Shipments Report" + filterText;
           break;
         }

@@ -57,6 +57,8 @@ export default function ControlTowerPage() {
     }
   }, [data?.generatedAt]);
 
+  const showInitialSkeleton = isLoading && !data && !isError;
+
   return (
     <div className="mx-auto max-w-7xl space-y-6" data-testid="control-tower-page">
       <PageHeader
@@ -141,8 +143,30 @@ export default function ControlTowerPage() {
         if responses are slow or incomplete.
       </p>
 
+      {data?.meta?.dataFreshness && Object.keys(data.meta.dataFreshness).length > 0 ? (
+        <p className="text-xs text-muted-foreground" data-testid="control-tower-data-freshness">
+          Snapshot times:{" "}
+          {Object.entries(data.meta.dataFreshness)
+            .filter(([, v]) => v)
+            .map(([k, v]) => `${k}: ${v ? new Date(String(v)).toLocaleTimeString() : ""}`)
+            .join(" · ")}
+        </p>
+      ) : null}
+
+      {showInitialSkeleton ? (
+        <div
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          data-testid="control-tower-loading-skeleton"
+        >
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-lg border border-border bg-muted/50" />
+          ))}
+        </div>
+      ) : null}
+
+      {!showInitialSkeleton ? (
       <DataState
-        loading={isLoading}
+        loading={false}
         error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
         data={data ?? null}
         isEmpty={() => false}
@@ -253,10 +277,11 @@ export default function ControlTowerPage() {
             <RecentActivityPanel items={payload.recentActivity.slice(0, 10)} />
 
             {(payload.spotlight.delayedShipments.length > 0 ||
-              payload.spotlight.oldestOpenExceptions.length > 0) && (
-              <div className="grid gap-4 lg:grid-cols-2" data-testid="control-tower-spotlight">
+              payload.spotlight.oldestOpenExceptions.length > 0 ||
+              payload.spotlight.supplierRisks.length > 0) && (
+              <div className="grid gap-4 lg:grid-cols-3" data-testid="control-tower-spotlight">
                 {payload.spotlight.delayedShipments.length > 0 && (
-                  <Card>
+                  <Card data-testid="control-tower-spotlight-shipments">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base">Most delayed shipments</CardTitle>
                     </CardHeader>
@@ -280,7 +305,7 @@ export default function ControlTowerPage() {
                   </Card>
                 )}
                 {payload.spotlight.oldestOpenExceptions.length > 0 && (
-                  <Card>
+                  <Card data-testid="control-tower-spotlight-exceptions">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base">Oldest open exceptions</CardTitle>
                     </CardHeader>
@@ -303,6 +328,34 @@ export default function ControlTowerPage() {
                     </CardContent>
                   </Card>
                 )}
+                {payload.spotlight.supplierRisks.length > 0 && (
+                  <Card data-testid="control-tower-spotlight-supplier-risks">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Supplier risk spotlight</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {payload.spotlight.supplierRisks.map((row) => (
+                        <div
+                          key={row.supplierId}
+                          className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 last:border-0 last:pb-0"
+                        >
+                          <div>
+                            <Link
+                              className="font-medium text-primary underline-offset-4 hover:underline"
+                              href={row.href}
+                            >
+                              {row.name}
+                            </Link>
+                            <p className="text-xs text-muted-foreground">
+                              Late loads: {row.lateShipments}
+                              {row.openExceptions > 0 ? ` · Open exceptions: ${row.openExceptions}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
@@ -317,6 +370,7 @@ export default function ControlTowerPage() {
           </>
         )}
       </DataState>
+      ) : null}
     </div>
   );
 }

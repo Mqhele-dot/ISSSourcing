@@ -113,8 +113,8 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 
 | Feature | Status | Notes |
 |--------|--------|------|
-| Shipment creation, carrier, tracking, ETA, delivery confirmation | **Partial** | Logistics page exists; no full shipment/carrier/tracking model in core schema. |
-| Route planning, shipping documents, freight cost, exception alerts | **Not started** | Not implemented. |
+| Shipment creation, carrier, tracking, ETA, delivery confirmation | **Partial** | **`/operations/logistics`**: operational shipments list with server filters (status, PO, carrier, risk bucket, ETA range, tracking substring), CSV export with the same filters, `meta.generatedAt` + `appliedFilters` on `GET /api/logistics/shipments`, invalid ETA params → **400** contract error; detail joins PO/supplier, risk bucket, related open exception when present. Still not a full TMS/carrier master model. |
+| Route planning, shipping documents, freight cost, exception alerts | **Not started** | Not implemented (operational exceptions cover some alert-style cases; no route/freight module). |
 
 ---
 
@@ -159,7 +159,7 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 
 | Feature | Status | Notes |
 |--------|--------|------|
-| Dashboard: POs, shipments, stock, supplier performance, exceptions | **Partial** | **`/operations/control-tower`**: KPI cards, procurement pipeline, inventory health & value-by-category charts, AP aging, logistics ETA risk, supplier late snapshot, activity trend, needs-attention + recent activity; **`GET /api/dashboard/control-tower`** (org-scoped aggregates). Does not replace deep ERP analytics or formal supplier scorecards. |
+| Dashboard: POs, shipments, stock, supplier performance, exceptions | **Partial** | **`/operations/control-tower`**: KPI cards, procurement pipeline, inventory health & value-by-category charts, AP aging, logistics ETA risk (with safe **`href`** drilldowns where available), supplier performance + **spotlight** blocks (delayed shipments, oldest exceptions, **supplier risk** summary); **Focus** filter threads **`businessArea`** into server aggregation so irrelevant sections empty out; meta **dataFreshness** + **partialFailures**; loading skeleton + freshness strip in UI. Does not replace deep ERP analytics or formal supplier scorecards. |
 
 ---
 
@@ -167,8 +167,8 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 
 | Feature | Status | Notes |
 |--------|--------|------|
-| Late shipment, price mismatch, stock shortage, contract violation | **Partial** | Exceptions page exists; no structured exception types (e.g. late shipment, 3-way match). |
-| Owner, priority, status, resolution tracking | **Partial** | Schema supports structure; not fully implemented per exception type. |
+| Late shipment, price mismatch, stock shortage, contract violation | **Partial** | **`/operations/exceptions`**: list + detail with severity/status/type filters; **`related_refs._invtrack`** stores normalized **`exceptionCode`**, area, SLA/aging hints, and denormalized links (PO, supplier, shipment, SKU) for display; run-checks endpoint returns **`created` / `updated` / `skippedDuplicates` / `checksRun` / `generatedAt`**; dedupe prefers **(exceptionCode, rootEntityType, rootEntityId)** for open/in-progress rows. Full 3-way match-driven codes remain a product gap. |
+| Owner, priority, status, resolution tracking | **Partial** | Assignee + status in UI; resolution/comments vary by workflow depth. |
 
 ---
 
@@ -194,7 +194,7 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 
 | Feature | Status | Notes |
 |--------|--------|------|
-| Confirm POs, update delivery dates, upload invoices, track payments | **Not started** | No supplier-facing portal; role “supplier” exists in schema but no dedicated UI. |
+| Confirm POs, update delivery dates, upload invoices, track payments | **Partial** | Supplier-authenticated flows exist for **assigned PO context** and **invoice submission** (see supplier portal / requisition-supplier E2E); not a full self-service portal (ASN, payments timeline, PO confirm UX) yet. |
 
 ---
 
@@ -297,7 +297,7 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 | 2 | Procurement | 8 | 12 | 2 |
 | 3 | Inventory | 4 | 3 | 2 |
 | 4 | Warehouse | 4 | 4 | 1 |
-| 5 | Logistics | 0 | 1 | 2 |
+| 5 | Logistics | 0 | 2 | 1 |
 | 6 | Supplier Management | 1 | 0 | 3 |
 | 7 | Contract Lifecycle | 0 | 1 | 3 |
 | 8 | Demand Forecasting | 0 | 3 | 1 |
@@ -306,7 +306,7 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 | 11 | Exception Management | 0 | 2 | 0 |
 | 12 | Analytics | 0 | 2 | 0 |
 | 13 | Financial Integration | 0 | 3 | 0 |
-| 14 | Supplier Portal | 0 | 0 | 1 |
+| 14 | Supplier Portal | 0 | 1 | 0 |
 | 15 | Integration & Automation | 1 | 2 | 0 |
 | 16 | Document Management | 0 | 3 | 0 |
 | 17 | Compliance & Legal | 0 | 2 | 1 |

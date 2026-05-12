@@ -48,6 +48,8 @@ Useful commands:
 npm run test:diagnostics
 npm run test:functional-audit
 npm run test:e2e
+npm run test:logistics-filters
+npm run test:control-tower-dashboard
 npm run verify:core
 npm run verify:release
 ```

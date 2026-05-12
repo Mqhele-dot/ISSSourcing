@@ -24,7 +24,7 @@ import {
   updateOperationalShipmentStatus,
 } from "./operations-core";
 import { buildEmptyControlTowerDashboard, getControlTowerDashboard } from "./modules/operations/control-tower-dashboard";
-import { contractError, respondOk, withApiContract } from "./api-contract";
+import { ApiContractError, contractError, respondOk, withApiContract } from "./api-contract";
 import { pool } from "./db";
 import { readiness } from "./readiness";
 import { seedOperationalIfEmpty } from "./seed-operational";
@@ -117,6 +117,20 @@ function resolveActor(req: Request): string {
   if (u && typeof u.username === "string" && u.username.trim()) return u.username.trim();
   if (u && typeof u.email === "string" && u.email.trim()) return u.email.trim();
   return "system";
+}
+
+function assertValidLogisticsDateQuery(value: string, fieldLabel: string): void {
+  const v = value.trim();
+  if (!v) return;
+  const ms = Date.parse(v);
+  if (Number.isNaN(ms)) {
+    throw contractError(
+      400,
+      "INVALID_LOGISTICS_FILTER",
+      `${fieldLabel} must be a valid date or ISO-8601 timestamp`,
+      fieldLabel,
+    );
+  }
 }
 
 function mapAdjustInventoryError(error: unknown): never {
@@ -743,17 +757,25 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const risk = typeof req.query.risk === "string" ? req.query.risk : "";
         const etaFrom = typeof req.query.etaFrom === "string" ? req.query.etaFrom : "";
         const etaTo = typeof req.query.etaTo === "string" ? req.query.etaTo : "";
+        const tracking = typeof req.query.tracking === "string" ? req.query.tracking : "";
+        assertValidLogisticsDateQuery(etaFrom, "etaFrom");
+        assertValidLogisticsDateQuery(etaTo, "etaTo");
         const shipments = await withTimeout(
-          listOperationalShipments({ status, po, carrier, risk, etaFrom, etaTo }),
+          listOperationalShipments({ status, po, carrier, risk, etaFrom, etaTo, tracking }),
           OPERATIONS_QUERY_TIMEOUT_MS,
         );
         const queryMs = Date.now() - start;
+        const generatedAt = new Date().toISOString();
         respondOk(res, shipments, 200, {
-          appliedFilters: { status, po, carrier, risk, etaFrom, etaTo },
+          appliedFilters: { status, po, carrier, risk, etaFrom, etaTo, tracking },
           resultCount: shipments.length,
           queryMs,
+          generatedAt,
         });
       } catch (err) {
+        if (err instanceof ApiContractError) {
+          throw err;
+        }
         logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
         respondOk(res, [], 200, { fallback: getFallbackValue(err) });

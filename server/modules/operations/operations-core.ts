@@ -2,6 +2,14 @@ import { pool } from "../../db";
 import { resetAndSeedDemoData } from "../../seed";
 import { initializeOperationalData } from "./operational-ddl";
 import { refsMatch, toNumber, toString } from "./operational-utils";
+import {
+  buildOperationalExceptionInvtrackContext,
+  inferOperationalExceptionArea,
+  mergeOperationalExceptionRelatedRefs,
+  normalizeOperationalExceptionCode,
+  OPERATIONAL_EXCEPTION_CONTEXT_KEY,
+  parseInvtrackFromRelatedRefs,
+} from "./operational-exception-context";
 import { getActiveOrganizationId } from "../../organization-context";
 
 type InventoryFilterInput = {
@@ -73,6 +81,71 @@ type ExceptionPayload = {
   relatedRefs: Record<string, string | number>;
   slaHours?: number;
 };
+
+type OperationalExceptionSqlRow = {
+  id: number;
+  type: string;
+  severity: string;
+  status: string;
+  title: string;
+  description: string | null;
+  related_refs: Record<string, unknown>;
+  assignee: string | null;
+  sla_hours: number;
+  comments: unknown;
+  created_at: Date | null;
+  updated_at: Date | null;
+};
+
+function mapOperationalExceptionSqlRow(row: OperationalExceptionSqlRow) {
+  const relatedRefs = row.related_refs || {};
+  const ctx = parseInvtrackFromRelatedRefs(relatedRefs);
+  const createdAt = row.created_at;
+  const cMs = createdAt ? new Date(createdAt).getTime() : NaN;
+  const agedHours = !Number.isNaN(cMs) ? Math.max(0, (Date.now() - cMs) / 3600000) : 0;
+  const slaHours = toNumber(row.sla_hours, 24);
+  const slaDueMs = !Number.isNaN(cMs) ? cMs + slaHours * 3600000 : NaN;
+  const st = String(row.status || "").toLowerCase();
+  let slaStatus: "ok" | "due" | "breached" | "n/a" = "n/a";
+  if (!Number.isNaN(slaDueMs)) {
+    if (st === "open" || st === "in_progress") {
+      if (Date.now() > slaDueMs) slaStatus = "breached";
+      else if (Date.now() > slaDueMs - 3600000) slaStatus = "due";
+      else slaStatus = "ok";
+    } else {
+      slaStatus = "ok";
+    }
+  }
+  const exceptionCode =
+    typeof ctx.exceptionCode === "string"
+      ? ctx.exceptionCode
+      : normalizeOperationalExceptionCode(row.type);
+  const area = typeof ctx.area === "string" ? ctx.area : inferOperationalExceptionArea(row.type);
+  const relatedSummaryParts: string[] = [];
+  if (typeof ctx.poNumber === "string" && ctx.poNumber) relatedSummaryParts.push(`PO ${ctx.poNumber}`);
+  if (typeof ctx.shipmentId === "number") relatedSummaryParts.push(`Shipment ${ctx.shipmentId}`);
+  if (typeof ctx.itemSku === "string" && ctx.itemSku) relatedSummaryParts.push(`SKU ${ctx.itemSku}`);
+
+  return {
+    id: row.id,
+    type: row.type,
+    severity: row.severity,
+    status: row.status,
+    title: row.title,
+    description: row.description,
+    relatedRefs,
+    assignee: row.assignee,
+    slaHours,
+    comments: Array.isArray(row.comments) ? (row.comments as Array<Record<string, unknown>>) : [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    exceptionCode,
+    area,
+    agedHours: Math.round(agedHours * 10) / 10,
+    slaStatus,
+    relatedSummary: relatedSummaryParts.length > 0 ? relatedSummaryParts.join(" · ") : null,
+  };
+}
 
 type ActivityInput = {
   actor?: string;
@@ -151,6 +224,55 @@ export async function recordActivity(input: ActivityInput) {
 }
 
 export async function createOrGetOperationalException(payload: ExceptionPayload) {
+  const mergedRefs = mergeOperationalExceptionRelatedRefs(payload.relatedRefs, payload.type);
+  const inv = parseInvtrackFromRelatedRefs(mergedRefs);
+  const exceptionCode =
+    typeof inv.exceptionCode === "string" && inv.exceptionCode
+      ? inv.exceptionCode
+      : normalizeOperationalExceptionCode(payload.type);
+  const rootEntityType = inv.rootEntityType != null ? String(inv.rootEntityType) : "";
+  const rootEntityId = inv.rootEntityId != null ? String(inv.rootEntityId) : "";
+
+  if (exceptionCode && rootEntityType && rootEntityId) {
+    const dup = await pool.query<{ id: number; related_refs: Record<string, unknown> }>(
+      `
+      SELECT id, related_refs
+      FROM operational_exceptions
+      WHERE status IN ('open', 'in_progress')
+        AND related_refs->'_invtrack'->>'exceptionCode' = $1
+        AND related_refs->'_invtrack'->>'rootEntityType' = $2
+        AND related_refs->'_invtrack'->>'rootEntityId' = $3
+      ORDER BY updated_at DESC
+      LIMIT 1
+      `,
+      [exceptionCode, rootEntityType, rootEntityId],
+    );
+    const hit = dup.rows[0];
+    if (hit) {
+      const freshInv = buildOperationalExceptionInvtrackContext(payload.type, payload.relatedRefs);
+      const prior = (hit.related_refs || {}) as Record<string, unknown>;
+      const priorInv = parseInvtrackFromRelatedRefs(prior);
+      const nextInv = { ...priorInv, ...freshInv, detectedAt: new Date().toISOString() };
+      const nextRefs: Record<string, unknown> = {
+        ...prior,
+        ...payload.relatedRefs,
+        [OPERATIONAL_EXCEPTION_CONTEXT_KEY]: nextInv,
+      };
+      await pool.query(
+        `
+        UPDATE operational_exceptions
+        SET related_refs = $2::jsonb,
+            title = COALESCE(NULLIF($3, ''), title),
+            description = COALESCE(NULLIF($4, ''), description),
+            updated_at = now()
+        WHERE id = $1
+        `,
+        [hit.id, JSON.stringify(nextRefs), payload.title, payload.description ?? ""],
+      );
+      return { id: hit.id, created: false, updated: true, skippedDuplicate: true };
+    }
+  }
+
   const existingResult = await pool.query<{
     id: number;
     related_refs: Record<string, unknown>;
@@ -171,7 +293,7 @@ export async function createOrGetOperationalException(payload: ExceptionPayload)
   );
 
   if (existing) {
-    return { id: existing.id, created: false };
+    return { id: existing.id, created: false, updated: false, skippedDuplicate: false };
   }
 
   const insertResult = await pool.query<{ id: number }>(
@@ -189,7 +311,7 @@ export async function createOrGetOperationalException(payload: ExceptionPayload)
       payload.severity,
       payload.title,
       payload.description ?? "",
-      JSON.stringify(payload.relatedRefs),
+      JSON.stringify(mergedRefs),
       payload.slaHours ?? 24,
     ],
   );
@@ -201,7 +323,7 @@ export async function createOrGetOperationalException(payload: ExceptionPayload)
     payload.relatedRefs,
   );
 
-  return { id: insertResult.rows[0].id, created: true };
+  return { id: insertResult.rows[0].id, created: true, updated: false, skippedDuplicate: false };
 }
 
 export { initializeOperationalData };
@@ -992,7 +1114,9 @@ export async function listOperationalPurchaseOrders(filters: {
     params,
   );
 
-  const statusFilter = normalizePurchaseStatus(filters.status);
+  const statusFilter = filters.status?.trim()
+    ? normalizePurchaseStatus(filters.status)
+    : "";
 
   return result.rows
     .map((row) => {
@@ -1493,16 +1617,54 @@ async function ensureLateShipmentException(shipment: {
   });
 }
 
+async function ensureNoEtaShipmentException(shipment: {
+  id: number;
+  poNumber: string;
+  status: string;
+}) {
+  const st = shipment.status.toLowerCase();
+  if (st === "delivered" || st === "cancelled") {
+    return null;
+  }
+  return createOrGetOperationalException({
+    type: "shipment_no_eta",
+    severity: "medium",
+    title: `Shipment ${shipment.id} has no ETA`,
+    description: `Shipment ${shipment.id} for ${shipment.poNumber} is missing an ETA while still active`,
+    relatedRefs: {
+      shipment_id: shipment.id,
+      po_number: shipment.poNumber,
+    },
+    slaHours: 12,
+  });
+}
+
 export async function runOperationalExceptionChecks(actor = "system") {
-  const created = {
-    lateShipments: 0,
-    stockShortages: 0,
-    contractViolations: 0,
+  type Totals = {
+    lateShipments: number;
+    noEtaShipments: number;
+    stockShortages: number;
+    contractViolations: number;
   };
-  const touched = {
+  const emptyTotals = (): Totals => ({
     lateShipments: 0,
+    noEtaShipments: 0,
     stockShortages: 0,
     contractViolations: 0,
+  });
+  const created = emptyTotals();
+  const updated = emptyTotals();
+  const skippedDuplicates = emptyTotals();
+
+  const apply = (key: keyof Totals, result: Awaited<ReturnType<typeof createOrGetOperationalException>>) => {
+    if (result.created) {
+      created[key] += 1;
+      return;
+    }
+    if (result.updated && result.skippedDuplicate) {
+      updated[key] += 1;
+      skippedDuplicates[key] += 1;
+    }
   };
 
   const lateShipments = await pool.query<{
@@ -1520,14 +1682,34 @@ export async function runOperationalExceptionChecks(actor = "system") {
     `,
   );
   for (const shipment of lateShipments.rows) {
-    touched.lateShipments += 1;
     const result = await ensureLateShipmentException({
       id: shipment.id,
       poNumber: shipment.po_number,
       status: shipment.status.toLowerCase(),
       eta: shipment.eta,
     });
-    if (result?.created) created.lateShipments += 1;
+    if (result) apply("lateShipments", result);
+  }
+
+  const noEtaRows = await pool.query<{
+    id: number;
+    po_number: string;
+    status: string;
+  }>(
+    `
+    SELECT id, po_number, status
+    FROM shipments
+    WHERE eta IS NULL
+      AND lower(status) NOT IN ('delivered', 'cancelled')
+    `,
+  );
+  for (const shipment of noEtaRows.rows) {
+    const result = await ensureNoEtaShipmentException({
+      id: shipment.id,
+      poNumber: shipment.po_number,
+      status: shipment.status.toLowerCase(),
+    });
+    if (result) apply("noEtaShipments", result);
   }
 
   const lowStockRows = await pool.query<{
@@ -1544,7 +1726,6 @@ export async function runOperationalExceptionChecks(actor = "system") {
     `,
   );
   for (const item of lowStockRows.rows) {
-    touched.stockShortages += 1;
     const result = await createOrGetOperationalException({
       type: "stock_shortage",
       severity: "high",
@@ -1556,7 +1737,7 @@ export async function runOperationalExceptionChecks(actor = "system") {
       },
       slaHours: 6,
     });
-    if (result.created) created.stockShortages += 1;
+    apply("stockShortages", result);
   }
 
   const contractViolations = await pool.query<{
@@ -1577,7 +1758,6 @@ export async function runOperationalExceptionChecks(actor = "system") {
     `,
   );
   for (const po of contractViolations.rows) {
-    touched.contractViolations += 1;
     const result = await createOrGetOperationalException({
       type: "contract_violation",
       severity: "high",
@@ -1589,18 +1769,26 @@ export async function runOperationalExceptionChecks(actor = "system") {
       },
       slaHours: 8,
     });
-    if (result.created) created.contractViolations += 1;
+    apply("contractViolations", result);
   }
+
+  const checksRun = [
+    "late_shipments",
+    "no_eta_shipments",
+    "low_stock",
+    "contract_violations",
+  ] as const;
+  const generatedAt = new Date().toISOString();
 
   await recordActivity({
     actor,
     entityType: "exception",
     entityId: "system",
     action: "run_checks",
-    summary: { created, touched },
+    summary: { created, updated, skippedDuplicates, checksRun, generatedAt },
   });
 
-  return { created, touched };
+  return { created, updated, skippedDuplicates, checksRun, generatedAt };
 }
 
 export async function listOperationalShipments(filters: {
@@ -1610,6 +1798,7 @@ export async function listOperationalShipments(filters: {
   risk?: string;
   etaFrom?: string;
   etaTo?: string;
+  tracking?: string;
 }) {
   const whereClauses: string[] = [];
   const params: string[] = [];
@@ -1625,6 +1814,10 @@ export async function listOperationalShipments(filters: {
   if (filters.carrier && filters.carrier.trim()) {
     params.push(`%${filters.carrier.trim().toLowerCase()}%`);
     whereClauses.push(`lower(COALESCE(s.carrier, '')) LIKE $${params.length}`);
+  }
+  if (filters.tracking && filters.tracking.trim()) {
+    params.push(`%${filters.tracking.trim().toLowerCase()}%`);
+    whereClauses.push(`lower(COALESCE(s.tracking_number, '')) LIKE $${params.length}`);
   }
 
   const risk = filters.risk?.trim().toLowerCase() ?? "";
@@ -1707,6 +1900,37 @@ export async function listOperationalShipments(filters: {
   return shipments;
 }
 
+function computeOperationalShipmentRiskBucket(params: { status: string; eta: Date | null }):
+  | "late"
+  | "no_eta"
+  | "due_soon"
+  | "exception"
+  | "on_time" {
+  const status = params.status.toLowerCase();
+  if (status === "delayed" || status === "exception") {
+    return "exception";
+  }
+  if (!params.eta) {
+    return "no_eta";
+  }
+  const etaMs = params.eta.getTime();
+  const now = Date.now();
+  if (etaMs < now && status !== "delivered") {
+    return "late";
+  }
+  if (status === "delivered") {
+    return "on_time";
+  }
+  if (
+    etaMs >= now &&
+    etaMs <= now + 3 * 24 * 60 * 60 * 1000 &&
+    !["delivered", "cancelled"].includes(status)
+  ) {
+    return "due_soon";
+  }
+  return "on_time";
+}
+
 export async function getOperationalShipmentDetail(idOrRef: string) {
   const id = Number(idOrRef);
   if (!Number.isFinite(id)) {
@@ -1723,11 +1947,28 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     created_at: Date | null;
     updated_at: Date | null;
     tracking_number: string | null;
+    purchase_order_id: number | null;
+    supplier_id: number | null;
+    supplier_name: string | null;
   }>(
     `
-    SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at, tracking_number
-    FROM shipments
-    WHERE id = $1
+    SELECT
+      s.id,
+      s.po_number,
+      s.carrier,
+      s.status,
+      s.eta,
+      s.drift_minutes,
+      s.created_at,
+      s.updated_at,
+      s.tracking_number,
+      po.id AS purchase_order_id,
+      sup.id AS supplier_id,
+      sup.name AS supplier_name
+    FROM shipments s
+    LEFT JOIN purchase_orders po ON po.order_number = s.po_number
+    LEFT JOIN suppliers sup ON sup.id = po.supplier_id
+    WHERE s.id = $1
     LIMIT 1
     `,
     [id],
@@ -1766,6 +2007,28 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     });
   }
 
+  const relatedEx = await pool.query<{
+    id: number;
+    status: string;
+    title: string;
+    type: string;
+  }>(
+    `
+    SELECT id, status, title, type
+    FROM operational_exceptions e
+    WHERE (e.related_refs->>'shipment_id') = $1
+    ORDER BY
+      CASE WHEN lower(e.status) IN ('open', 'in_progress') THEN 0 ELSE 1 END,
+      e.updated_at DESC NULLS LAST
+    LIMIT 1
+    `,
+    [String(shipment.id)],
+  );
+  const relatedException = relatedEx.rows[0] ?? null;
+
+  const riskBucket = computeOperationalShipmentRiskBucket({ status, eta: shipment.eta });
+  const updatedAt = shipment.updated_at;
+
   return {
     id: shipment.id,
     poNumber: shipment.po_number,
@@ -1774,9 +2037,18 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     eta: shipment.eta,
     driftMinutes: toNumber(shipment.drift_minutes, 0),
     createdAt: shipment.created_at,
-    updatedAt: shipment.updated_at,
+    updatedAt,
     trackingNumber: shipment.tracking_number,
     atRisk,
+    riskBucket,
+    supplierId: shipment.supplier_id,
+    supplierName: shipment.supplier_name,
+    purchaseOrderId: shipment.purchase_order_id,
+    relatedException,
+    updatedAtFormatted:
+      updatedAt && !Number.isNaN(new Date(updatedAt).getTime())
+        ? new Date(updatedAt).toISOString()
+        : null,
     timeline: timelineResult.rows.map((event) => ({
       id: event.id,
       status: event.status,
@@ -1912,20 +2184,7 @@ export async function listOperationalExceptions(filters: ExceptionListFilters) {
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
-  const result = await pool.query<{
-    id: number;
-    type: string;
-    severity: string;
-    status: string;
-    title: string;
-    description: string | null;
-    related_refs: Record<string, unknown>;
-    assignee: string | null;
-    sla_hours: number;
-    comments: Array<Record<string, unknown>>;
-    created_at: Date | null;
-    updated_at: Date | null;
-  }>(
+  const result = await pool.query<OperationalExceptionSqlRow>(
     `
     SELECT
       e.id,
@@ -1947,20 +2206,7 @@ export async function listOperationalExceptions(filters: ExceptionListFilters) {
     params,
   );
 
-  return result.rows.map((row) => ({
-    id: row.id,
-    type: row.type,
-    severity: row.severity,
-    status: row.status,
-    title: row.title,
-    description: row.description,
-    relatedRefs: row.related_refs || {},
-    assignee: row.assignee,
-    slaHours: toNumber(row.sla_hours, 24),
-    comments: Array.isArray(row.comments) ? row.comments : [],
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+  return result.rows.map((row) => mapOperationalExceptionSqlRow(row));
 }
 
 export async function getOperationalExceptionDetail(idOrRef: string) {
@@ -1969,12 +2215,33 @@ export async function getOperationalExceptionDetail(idOrRef: string) {
     throw new Error("exception_not_found");
   }
 
-  const list = await listOperationalExceptions({});
-  const found = list.find((exception) => exception.id === id);
-  if (!found) {
+  const result = await pool.query<OperationalExceptionSqlRow>(
+    `
+    SELECT
+      e.id,
+      e.type,
+      e.severity,
+      e.status,
+      e.title,
+      e.description,
+      e.related_refs,
+      e.assignee,
+      e.sla_hours,
+      e.comments,
+      e.created_at,
+      e.updated_at
+    FROM operational_exceptions e
+    WHERE e.id = $1
+    LIMIT 1
+    `,
+    [id],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
     throw new Error("exception_not_found");
   }
-  return found;
+  return mapOperationalExceptionSqlRow(row);
 }
 
 const EXCEPTION_TRANSITIONS: Record<string, string[]> = {

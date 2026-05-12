@@ -144,6 +144,8 @@ export type ApiEnvelopeResult<T> = {
     appliedFilters?: Record<string, string | number | boolean | null | undefined>;
     resultCount?: number;
     queryMs?: number;
+    /** ISO timestamp when the server assembled this payload */
+    generatedAt?: string;
   };
 };
 
@@ -678,6 +680,7 @@ export async function fetchShipments(params?: {
   risk?: string;
   etaFrom?: string;
   etaTo?: string;
+  tracking?: string;
 }): Promise<ShipmentListItem[]> {
   const { data } = await fetchShipmentsEnvelope(params);
   return data;
@@ -690,6 +693,7 @@ export async function fetchShipmentsEnvelope(params?: {
   risk?: string;
   etaFrom?: string;
   etaTo?: string;
+  tracking?: string;
 }): Promise<ApiEnvelopeResult<ShipmentListItem[]>> {
   const search = new URLSearchParams();
   if (params?.status) search.set("status", params.status);
@@ -698,6 +702,7 @@ export async function fetchShipmentsEnvelope(params?: {
   if (params?.risk) search.set("risk", params.risk);
   if (params?.etaFrom) search.set("etaFrom", params.etaFrom);
   if (params?.etaTo) search.set("etaTo", params.etaTo);
+  if (params?.tracking) search.set("tracking", params.tracking);
   const url =
     search.size > 0 ? `/api/logistics/shipments?${search.toString()}` : "/api/logistics/shipments";
   return fetchWithMeta<ShipmentListItem[]>(url);

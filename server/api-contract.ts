@@ -5,6 +5,8 @@ export type ApiSuccessMeta = {
   appliedFilters?: Record<string, string | number | boolean | null | undefined>;
   resultCount?: number;
   queryMs?: number;
+  /** ISO timestamp for when this response payload was assembled */
+  generatedAt?: string;
 };
 
 export type ApiSuccessEnvelope<T> = {

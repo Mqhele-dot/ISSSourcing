@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Download } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
@@ -33,7 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useQueryState } from "@/hooks/use-query-state";
-import { useAsyncResource } from "@/hooks/use-async-resource";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
@@ -57,10 +58,37 @@ function formatDate(value: string | null) {
   return parsed.toLocaleString();
 }
 
+function exceptionsListFiltersNormalized(q: { severity: string; status: string; type: string }) {
+  return {
+    severity: String(q.severity ?? "").trim(),
+    status: String(q.status ?? "").trim(),
+    type: String(q.type ?? "").trim(),
+  };
+}
+
+function readExceptionInvtrack(refs: Record<string, unknown>): Record<string, unknown> {
+  const raw = refs._invtrack;
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+}
+
+function slaStatusLabel(s: string | undefined) {
+  switch (s) {
+    case "breached":
+      return "Breached";
+    case "due":
+      return "Due soon";
+    case "ok":
+      return "Within SLA";
+    default:
+      return "—";
+  }
+}
+
 /** Matches types emitted by runOperationalExceptionChecks / ops rules */
 const EXCEPTION_TYPE_PRESETS = [
   { value: "__all__", label: "All types" },
   { value: "late_shipment", label: "Late shipment" },
+  { value: "shipment_no_eta", label: "Shipment — no ETA" },
   { value: "stock_shortage", label: "Stock shortage" },
   { value: "inventory_shortage", label: "Inventory shortage" },
   { value: "contract_violation", label: "Contract violation" },
@@ -75,18 +103,28 @@ function ExceptionListView() {
     status: "",
     type: "",
   });
+  const debouncedQuery = useDebouncedValue(queryState, 350);
+  const debouncedNorm = exceptionsListFiltersNormalized(debouncedQuery);
 
-  const fetcher = useCallback(
-    () =>
+  const {
+    data: envelope,
+    isLoading: loading,
+    isError,
+    error: queryError,
+    refetch,
+    isFetching,
+  } = useQuery({
+    queryKey: ["/api/exceptions", debouncedNorm.severity, debouncedNorm.status, debouncedNorm.type],
+    queryFn: () =>
       fetchExceptionsEnvelope({
-        severity: String(queryState.severity || ""),
-        status: String(queryState.status || ""),
-        type: String(queryState.type || ""),
+        severity: debouncedNorm.severity || undefined,
+        status: debouncedNorm.status || undefined,
+        type: debouncedNorm.type || undefined,
       }),
-    [queryState.severity, queryState.status, queryState.type],
-  );
+    staleTime: 10_000,
+  });
 
-  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const error = isError ? (queryError instanceof Error ? queryError : new Error(String(queryError))) : null;
   const data = envelope?.data ?? null;
   const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
   const {
@@ -96,7 +134,9 @@ function ExceptionListView() {
     lastRefreshedLabel,
     refreshNow,
     markRefreshed,
-  } = useAutoRefresh(refetch);
+  } = useAutoRefresh(useCallback(async () => {
+    await refetch();
+  }, [refetch]));
 
   const [quickException, setQuickException] = useState<OperationalException | null>(null);
   const [quickStatus, setQuickStatus] = useState("in_progress");
@@ -119,6 +159,11 @@ function ExceptionListView() {
       );
     }
   }, [quickException]);
+
+  const exceptionDetailPath = useCallback(
+    (id: number) => `${APP_ROUTES.operations.exceptions}/${id}`,
+    [],
+  );
 
   const handleExportCsv = () => {
     try {
@@ -158,15 +203,34 @@ function ExceptionListView() {
   const handleRunChecks = async () => {
     try {
       const result = await requestJson<{
-        created: { lateShipments: number; stockShortages: number; contractViolations: number };
-        touched: { lateShipments: number; stockShortages: number; contractViolations: number };
+        created: {
+          lateShipments: number;
+          noEtaShipments: number;
+          stockShortages: number;
+          contractViolations: number;
+        };
+        updated: {
+          lateShipments: number;
+          noEtaShipments: number;
+          stockShortages: number;
+          contractViolations: number;
+        };
+        skippedDuplicates: {
+          lateShipments: number;
+          noEtaShipments: number;
+          stockShortages: number;
+          contractViolations: number;
+        };
+        checksRun: readonly string[];
+        generatedAt: string;
       }>("POST", "/api/exceptions/run-checks");
       const c = result?.created;
-      const t = result?.touched;
+      const u = result?.updated;
+      const s = result?.skippedDuplicates;
       toast({
         title: "Exception checks completed",
         description: c
-          ? `New: late ${c.lateShipments}, stock ${c.stockShortages}, contract ${c.contractViolations}. Scanned: late ${t?.lateShipments ?? 0}, stock ${t?.stockShortages ?? 0}, contract ${t?.contractViolations ?? 0}.`
+          ? `New: late ${c.lateShipments}, no ETA ${c.noEtaShipments}, stock ${c.stockShortages}, contract ${c.contractViolations}. Updated: late ${u?.lateShipments ?? 0}, no ETA ${u?.noEtaShipments ?? 0}, stock ${u?.stockShortages ?? 0}, contract ${u?.contractViolations ?? 0}. Skipped dupes: ${(s?.lateShipments ?? 0) + (s?.noEtaShipments ?? 0) + (s?.stockShortages ?? 0) + (s?.contractViolations ?? 0)}.`
           : "Scan finished.",
       });
       await refreshNow();
@@ -180,7 +244,7 @@ function ExceptionListView() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div data-testid="exceptions-page" className="mx-auto max-w-7xl space-y-4">
       <PageHeader
         title="Exceptions"
         subtitle="Control tower lifecycle management"
@@ -194,12 +258,14 @@ function ExceptionListView() {
         left={
           <>
             <Input
+              data-testid="exception-filter-severity"
               value={String(queryState.severity || "")}
               onChange={(event) => setQueryState({ severity: event.target.value })}
               placeholder="Severity"
               className="w-40"
             />
             <Input
+              data-testid="exception-filter-status"
               value={String(queryState.status || "")}
               onChange={(event) => setQueryState({ status: event.target.value })}
               placeholder="Status"
@@ -214,7 +280,7 @@ function ExceptionListView() {
                 } else setQueryState({ type: v });
               }}
             >
-              <SelectTrigger className="w-52">
+              <SelectTrigger data-testid="exception-filter-type" className="w-52">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
@@ -238,20 +304,22 @@ function ExceptionListView() {
           <div className="flex items-center gap-2">
             <Button
               variant={autoRefreshEnabled ? "default" : "outline"}
+              data-testid="exceptions-auto-refresh"
               onClick={() => setAutoRefreshEnabled((current) => !current)}
             >
               Auto-refresh: {autoRefreshEnabled ? "On" : "Off"}
             </Button>
-            <Button variant="outline" onClick={refreshNow}>
+            <Button variant="outline" data-testid="exceptions-refresh" onClick={refreshNow}>
               Refresh
             </Button>
             <Can roles={["manager", "admin"]} reason="Requires Manager/Admin">
-              <Button variant="outline" onClick={handleRunChecks}>
+              <Button variant="outline" data-testid="exceptions-run-checks" onClick={handleRunChecks}>
                 Run checks
               </Button>
             </Can>
             <Button
               variant="outline"
+              data-testid="exceptions-export-csv"
               onClick={handleExportCsv}
               disabled={!data || data.length === 0}
               className="gap-2"
@@ -261,6 +329,7 @@ function ExceptionListView() {
             </Button>
             <span className="text-xs text-muted-foreground">
               Last refreshed: {lastRefreshedLabel}
+              {isFetching ? " · updating…" : ""}
             </span>
           </div>
         }
@@ -277,7 +346,7 @@ function ExceptionListView() {
         emptyAction={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="default" size="sm">
-              <Link href="/inventory">View inventory</Link>
+              <Link href={APP_ROUTES.inventory.root}>View inventory</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link href="/">Overview / Demo</Link>
@@ -295,10 +364,15 @@ function ExceptionListView() {
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
+                <TableHead>Area</TableHead>
+                <TableHead>Code</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Severity</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Title</TableHead>
+                <TableHead>Related</TableHead>
+                <TableHead className="tabular-nums">Aged (h)</TableHead>
+                <TableHead>SLA</TableHead>
                 <TableHead>Assignee</TableHead>
                 <TableHead className="w-[100px] text-right">Actions</TableHead>
               </TableRow>
@@ -307,10 +381,13 @@ function ExceptionListView() {
               {list.map((exception) => (
                 <TableRow
                   key={exception.id}
+                  data-testid="exception-list-row"
                   className="cursor-pointer"
-                  onClick={() => setLocation(`/exceptions/${exception.id}`)}
+                  onClick={() => setLocation(exceptionDetailPath(exception.id))}
                 >
                   <TableCell className="font-medium">#{exception.id}</TableCell>
+                  <TableCell>{exception.area ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{exception.exceptionCode ?? exception.type}</TableCell>
                   <TableCell>{exception.type}</TableCell>
                   <TableCell>
                     <StatusBadge status={exception.severity} />
@@ -319,6 +396,11 @@ function ExceptionListView() {
                     <StatusBadge status={exception.status} />
                   </TableCell>
                   <TableCell>{exception.title}</TableCell>
+                  <TableCell className="max-w-[160px] truncate text-sm text-muted-foreground">
+                    {exception.relatedSummary ?? "—"}
+                  </TableCell>
+                  <TableCell className="tabular-nums">{exception.agedHours ?? "—"}</TableCell>
+                  <TableCell className="text-sm">{slaStatusLabel(exception.slaStatus)}</TableCell>
                   <TableCell>{exception.assignee || "-"}</TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -380,7 +462,7 @@ function ExceptionListView() {
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
             {quickException ? (
               <Button variant="link" className="px-0" asChild>
-                <Link href={`/exceptions/${quickException.id}`}>Open full detail</Link>
+                <Link href={exceptionDetailPath(quickException.id)}>Open full detail</Link>
               </Button>
             ) : (
               <span />
@@ -434,11 +516,25 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const fetcher = useCallback(
-    (): Promise<OperationalException> => fetchException(exceptionId),
-    [exceptionId],
-  );
-  const { loading, error, data, refetch } = useAsyncResource(fetcher);
+  const {
+    data,
+    isLoading: loading,
+    isError,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: ["/api/exceptions/detail", exceptionId],
+    queryFn: () => fetchException(exceptionId),
+  });
+  const error = isError ? (queryError instanceof Error ? queryError : new Error(String(queryError))) : null;
+
+  useEffect(() => {
+    if (!data) return;
+    setAssignee(data.assignee?.trim() || "");
+    setNextStatus(
+      ["open", "in_progress", "resolved", "closed"].includes(data.status) ? data.status : "in_progress",
+    );
+  }, [data]);
 
   const relatedLinks = useMemo(() => {
     if (!data) return [];
@@ -477,7 +573,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div data-testid="exception-detail-page" className="mx-auto max-w-7xl space-y-4">
       <Button variant="ghost" onClick={() => setLocation(APP_ROUTES.operations.exceptions)} className="w-fit">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to exceptions
@@ -486,7 +582,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
       <DataState
         loading={loading}
         error={error}
-        data={data}
+        data={data ?? null}
         isEmpty={() => false}
         emptyTitle="Exception detail unavailable"
         onRetry={refetch}
@@ -498,6 +594,36 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
               subtitle={exception.title}
               breadcrumb={<span>Operations / Exceptions / {exception.id}</span>}
             />
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card data-testid="exception-detail-incident">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Incident summary</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  {exception.description?.trim() ? exception.description : "No description recorded."}
+                </CardContent>
+              </Card>
+              <Card data-testid="exception-detail-sla">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Aging & SLA</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-2 text-sm">
+                  <div>Area: {exception.area ?? "—"}</div>
+                  <div>Code: {exception.exceptionCode ?? exception.type}</div>
+                  <div>Aged: {exception.agedHours != null ? `${exception.agedHours} h` : "—"}</div>
+                  <div>
+                    SLA status: {slaStatusLabel(exception.slaStatus)} ({exception.slaHours}h target)
+                  </div>
+                  {(() => {
+                    const inv = readExceptionInvtrack(exception.relatedRefs);
+                    return inv.rootCause ? (
+                      <div className="text-muted-foreground">Root cause: {String(inv.rootCause)}</div>
+                    ) : null;
+                  })()}
+                </CardContent>
+              </Card>
+            </div>
 
             <div className="grid gap-4 md:grid-cols-4">
               <Card>
@@ -636,24 +762,25 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card data-testid="exception-detail-related">
               <CardHeader>
-                <CardTitle>Related references</CardTitle>
+                <CardTitle>Related records</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {relatedLinks.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No linked records</p>
                 ) : (
-                  relatedLinks.map((link) => (
-                    <Button
-                      key={link.href}
-                      variant="outline"
-                      className="mr-2"
-                      onClick={() => setLocation(link.href)}
-                    >
-                      {link.label}
-                    </Button>
-                  ))
+                  <div className="flex flex-wrap gap-2">
+                    {relatedLinks.map((link) => (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        className="inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
+                      >
+                        {link.label}
+                      </Link>
+                    ))}
+                  </div>
                 )}
                 <p className="text-xs text-muted-foreground">
                   Created {formatDate(exception.createdAt)} • Updated {formatDate(exception.updatedAt)}
@@ -670,7 +797,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
 }
 
 export default function ExceptionsPage() {
-  const [detailMatch, detailParams] = useRoute<{ id: string }>("/exceptions/:id");
+  const [detailMatch, detailParams] = useRoute<{ id: string }>(`${APP_ROUTES.operations.exceptions}/:id`);
   if (detailMatch && detailParams?.id) {
     return <ExceptionDetailView exceptionId={detailParams.id} />;
   }

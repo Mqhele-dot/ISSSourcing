@@ -3,6 +3,8 @@
  * Ensures the dev server answers /api/ready AND /auth on 127.0.0.1:PORT before Playwright runs.
  * Sets PLAYWRIGHT_EXTERNAL_DEV_SERVER=1 only for the Playwright child after both probes pass.
  *
+ * With the dev server up, also runs (same as CI / local full E2E gate): purchase-order-endpoints,
+ * dashboard-data, logistics-filters, control-tower-dashboard, exceptions-workflow — then all Playwright specs.
  * - If both are already healthy (e.g. CI or `npm run dev` in another terminal), only tests run.
  * - Otherwise starts `npm run dev`, waits for both URLs, runs tests, then stops only the server we started.
  */
@@ -158,6 +160,18 @@ try {
   });
   if (dashData.status !== 0) {
     process.exit(dashData.status ?? 1);
+  }
+
+  for (const label of ["test:logistics-filters", "test:control-tower-dashboard", "test:exceptions-workflow"]) {
+    console.log(`[E2E] Running npm run ${label} (server is up)...\n`);
+    const sub = spawnSync("npm", ["run", label], {
+      stdio: "inherit",
+      shell: true,
+      env: process.env,
+    });
+    if (sub.status !== 0) {
+      process.exit(sub.status ?? 1);
+    }
   }
 
   const testResult = spawnSync(

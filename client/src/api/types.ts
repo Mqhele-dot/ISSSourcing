@@ -240,6 +240,12 @@ export type ShipmentTimelineEvent = {
 
 export type ShipmentDetail = ShipmentListItem & {
   timeline: ShipmentTimelineEvent[];
+  riskBucket?: "late" | "no_eta" | "due_soon" | "exception" | "on_time";
+  supplierId?: number | null;
+  supplierName?: string | null;
+  purchaseOrderId?: number | null;
+  relatedException?: { id: number; status: string; title: string; type: string } | null;
+  updatedAtFormatted?: string | null;
 };
 
 export type Shipment = ShipmentDetail;
@@ -257,6 +263,16 @@ export type OperationalException = {
   comments: Array<Record<string, unknown>>;
   createdAt: string | null;
   updatedAt: string | null;
+  /** Canonical code (normalized from legacy `type` when missing in stored context). */
+  exceptionCode?: string;
+  /** Business area inferred from type / stored context. */
+  area?: string;
+  /** Hours since `createdAt`. */
+  agedHours?: number;
+  /** SLA clock vs open/in_progress status. */
+  slaStatus?: "ok" | "due" | "breached" | "n/a";
+  /** Short line built from denormalized context (PO / shipment / SKU). */
+  relatedSummary?: string | null;
 };
 
 export type ExceptionCase = OperationalException;
@@ -339,7 +355,7 @@ export type ControlTowerDashboardData = {
   inventoryHealth: Array<{ id: string; label: string; count: number; href: string }>;
   stockValueByCategory: Array<{ category: string; value: number }>;
   apAging: Array<{ bucket: string; label: string; count: number; amount: number }>;
-  logisticsRisk: Array<{ id: string; label: string; count: number }>;
+  logisticsRisk: Array<{ id: string; label: string; count: number; href: string }>;
   supplierPerformance: Array<{
     supplierId: number;
     name: string;
@@ -387,6 +403,13 @@ export type ControlTowerDashboardData = {
       title: string;
       agedHours: number;
       severity: string;
+      href: string;
+    }>;
+    supplierRisks: Array<{
+      supplierId: number;
+      name: string;
+      lateShipments: number;
+      openExceptions: number;
       href: string;
     }>;
   };
