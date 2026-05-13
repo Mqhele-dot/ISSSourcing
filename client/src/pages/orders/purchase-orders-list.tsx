@@ -36,7 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
 import { usePurchaseOrdersEnvelopeQuery, downloadPurchaseOrderSignedPdf } from "@/features/purchase-orders";
 import type { PurchaseOrderListItem } from "@/api/types";
-import { downloadFile } from "@/lib/utils";
+import { downloadBlobAsFile } from "@/lib/utils";
 import { formatDate } from "./purchase-order-shared";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
@@ -160,7 +160,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
     setExportingPo(poNumber);
     try {
       const blob = await downloadPurchaseOrderSignedPdf(poNumber);
-      downloadFile(blob, `PO-${poNumber}-for-signature.pdf`, "application/pdf");
+      downloadBlobAsFile(blob, `PO-${poNumber}-for-signature.pdf`);
       toast({
         title: "Signable PDF downloaded",
         description: `PO ${poNumber} — includes terms and signature page.`,

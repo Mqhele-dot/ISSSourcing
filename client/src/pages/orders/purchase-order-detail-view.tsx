@@ -33,7 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { ToastAction } from "@/components/ui/toast";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
-import { downloadFile } from "@/lib/utils";
+import { downloadBlobAsFile } from "@/lib/utils";
 import { Can } from "@/components/auth/can";
 import {
   downloadPurchaseOrderSignedPdf,
@@ -311,15 +311,23 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
 
     const checked = validateReceiveLines(data, receivePayload);
     if (!checked.ok) {
-      const general = checked.errors.filter((e) => !e.sku || e.field === "_line");
+      const globalLine = checked.errors.filter((e) => e.field === "_line");
       const perLine = checked.errors.filter((e) => e.sku && e.field !== "_line");
-      setReceiveLineIssues(perLine);
-      const message = general.map((e) => e.message).join(" ");
-      setReceiveError(message || null);
-      if (message || perLine.length) {
+      setReceiveLineIssues([...globalLine, ...perLine]);
+      const otherGeneral = checked.errors
+        .filter((e) => e.field !== "_line" && !e.sku)
+        .map((e) => e.message)
+        .join(" ");
+      setReceiveError(otherGeneral || null);
+      const toastParts = [
+        ...globalLine.map((e) => e.message),
+        otherGeneral,
+        ...perLine.map((e) => `${e.sku}: ${e.message}`),
+      ].filter(Boolean);
+      if (toastParts.length) {
         toast({
           title: "Receive validation failed",
-          description: [message, ...perLine.map((e) => `${e.sku}: ${e.message}`)].filter(Boolean).join(" "),
+          description: toastParts.join(" "),
           variant: "destructive",
         });
       }
@@ -388,7 +396,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
             setPdfLoading(true);
             try {
               const blob = await downloadPurchaseOrderSignedPdf(detail.poNumber);
-              downloadFile(blob, `PO-${detail.poNumber}-for-signature.pdf`, "application/pdf");
+              downloadBlobAsFile(blob, `PO-${detail.poNumber}-for-signature.pdf`);
               toast({
                 title: "Signable PDF downloaded",
                 description: "Includes line items, standard terms, and buyer/supplier signature lines.",

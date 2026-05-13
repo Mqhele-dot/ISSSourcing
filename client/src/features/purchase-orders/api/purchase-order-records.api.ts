@@ -14,17 +14,24 @@ function asRecord(raw: unknown): Record<string, unknown> {
   return raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 }
 
+function pickNullableNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function normalizeRecordSummary(raw: unknown): PurchaseOrderRecordSummary | null {
   const d = asRecord(raw);
   const idRaw = d.id;
+  if (idRaw === null || idRaw === undefined || idRaw === "") return null;
   const id = typeof idRaw === "number" ? idRaw : Number(idRaw);
   if (!Number.isFinite(id)) return null;
   return {
     id,
-    departmentId: (d.departmentId ?? d.department_id ?? null) as number | null | undefined,
-    contractId: (d.contractId ?? d.contract_id ?? null) as number | null | undefined,
-    paymentTermsId: (d.paymentTermsId ?? d.payment_terms_id ?? null) as number | null | undefined,
-    incotermId: (d.incotermId ?? d.incoterm_id ?? null) as number | null | undefined,
+    departmentId: pickNullableNum(d.departmentId ?? d.department_id),
+    contractId: pickNullableNum(d.contractId ?? d.contract_id),
+    paymentTermsId: pickNullableNum(d.paymentTermsId ?? d.payment_terms_id),
+    incotermId: pickNullableNum(d.incotermId ?? d.incoterm_id),
   };
 }
 

@@ -5,6 +5,12 @@ function asRecord(raw: unknown): Record<string, unknown> {
   return raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 }
 
+export function pickNum(v: unknown, fallback = 0): number {
+  if (v === null || v === undefined || v === "") return fallback;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 /** Safe runtime shape for receive API responses so toast/UI never throws on partial payloads. */
 export function normalizePurchaseReceiveResult(raw: unknown): PurchaseReceiveResult {
   const r = asRecord(raw);
@@ -15,9 +21,9 @@ export function normalizePurchaseReceiveResult(raw: unknown): PurchaseReceiveRes
         return {
           sku: String(e.sku ?? ""),
           location: String(e.location ?? ""),
-          delta: Number(e.delta ?? 0),
-          available: Number(e.available ?? 0),
-          onHand: Number(e.onHand ?? e.on_hand ?? 0),
+          delta: pickNum(e.delta, 0),
+          available: pickNum(e.available, 0),
+          onHand: pickNum(e.onHand ?? e.on_hand, 0),
         };
       })
     : [];
@@ -27,7 +33,7 @@ export function normalizePurchaseReceiveResult(raw: unknown): PurchaseReceiveRes
     ? shipRaw.map((entry) => {
         const e = asRecord(entry);
         return {
-          shipmentId: Number(e.shipmentId ?? e.shipment_id ?? 0),
+          shipmentId: pickNum(e.shipmentId ?? e.shipment_id, 0),
           toStatus: String(e.toStatus ?? e.to_status ?? ""),
         };
       })
@@ -38,7 +44,7 @@ export function normalizePurchaseReceiveResult(raw: unknown): PurchaseReceiveRes
     ? mismatchRaw.map((entry) => {
         const e = asRecord(entry);
         return {
-          id: Number(e.id ?? 0),
+          id: pickNum(e.id, 0),
           sku: String(e.sku ?? ""),
           created: Boolean(e.created),
         };
@@ -47,9 +53,9 @@ export function normalizePurchaseReceiveResult(raw: unknown): PurchaseReceiveRes
 
   const ch = asRecord(r.changed);
   const changed = {
-    inventoryChanges: Number(ch.inventoryChanges ?? ch.inventory_changes ?? 0),
-    shipmentUpdates: Number(ch.shipmentUpdates ?? ch.shipment_updates ?? 0),
-    mismatchExceptions: Number(ch.mismatchExceptions ?? ch.mismatch_exceptions ?? 0),
+    inventoryChanges: pickNum(ch.inventoryChanges ?? ch.inventory_changes, 0),
+    shipmentUpdates: pickNum(ch.shipmentUpdates ?? ch.shipment_updates, 0),
+    mismatchExceptions: pickNum(ch.mismatchExceptions ?? ch.mismatch_exceptions, 0),
   };
 
   const orderRaw = r.order;

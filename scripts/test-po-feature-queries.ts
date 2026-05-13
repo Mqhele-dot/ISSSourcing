@@ -64,6 +64,39 @@ async function main() {
   assert.equal(recvSnake.inventoryChanges[0]?.onHand, 3);
   assert.equal(recvSnake.mismatchExceptions[0]?.created, true);
 
+  const recvMalformed = normalizePurchaseReceiveResult({
+    inventory_changes: [
+      {
+        sku: "s",
+        location: "l",
+        delta: "abc",
+        available: null,
+        on_hand: "",
+      },
+    ],
+    shipment_updates: [{ shipment_id: "nope", to_status: "ok" }],
+    mismatch_exceptions: [{ id: undefined, sku: "a", created: false }],
+    changed: {
+      inventory_changes: "bad",
+      shipment_updates: null,
+      mismatch_exceptions: "xyz",
+    },
+  });
+  const malformedNums: number[] = [
+    recvMalformed.inventoryChanges[0]!.delta,
+    recvMalformed.inventoryChanges[0]!.available,
+    recvMalformed.inventoryChanges[0]!.onHand,
+    recvMalformed.shipmentUpdates[0]!.shipmentId,
+    recvMalformed.mismatchExceptions[0]!.id,
+    recvMalformed.changed.inventoryChanges,
+    recvMalformed.changed.shipmentUpdates,
+    recvMalformed.changed.mismatchExceptions,
+  ];
+  for (const n of malformedNums) {
+    assert.ok(Number.isFinite(n));
+    assert.ok(!Number.isNaN(n));
+  }
+
   assert.throws(() => assertPoNumberForMutation(""), /required/i);
   assert.throws(() => assertPoNumberForMutation("   "), /required/i);
   assert.throws(() => assertTransitionTargetStatus(""), /required/i);
@@ -105,6 +138,16 @@ async function main() {
     shipments: [],
     progress: { qtyOrdered: 10, qtyReceived: 0, percent: 0 },
   } satisfies PurchaseOrderDetail;
+
+  const noLines = validateReceiveLines(detail, []);
+  assert.equal(noLines.ok, false);
+  if (noLines.ok) throw new Error("expected no-lines failure");
+  assert.ok(noLines.errors.some((e) => e.field === "_line"));
+
+  const zeroQty = validateReceiveLines(detail, [{ sku: "SKU1", qtyReceivedNow: 0 }]);
+  assert.equal(zeroQty.ok, false);
+  if (zeroQty.ok) throw new Error("expected zero-qty failure");
+  assert.ok(zeroQty.errors.some((e) => e.field === "_line"));
 
   const badSerial = validateReceiveLines(detail, [
     { sku: "SKU1", qtyReceivedNow: 2, serialNumbers: ["a", "a"] },

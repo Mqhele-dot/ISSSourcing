@@ -65,12 +65,26 @@ export function PoReceivePanel({
 }: PoReceivePanelProps) {
   const issuesFor = (sku: string, field: ReceiveLineFieldError["field"]) =>
     receiveLineIssues.filter((i) => i.sku === sku && i.field === field);
+  const globalLineIssues = receiveLineIssues.filter((i) => i.field === "_line");
   return (
     <Card id={sectionId} className={className} data-testid="po-receive-panel">
       <CardHeader>
         <CardTitle>Receive panel</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {globalLineIssues.length > 0 ? (
+          <div
+            role="alert"
+            aria-live="assertive"
+            data-testid="po-receive-global-line-errors"
+            className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {globalLineIssues.map((iss, idx) => (
+              <p key={`${iss.message}-${idx}`}>{iss.message}</p>
+            ))}
+          </div>
+        ) : null}
+
         <Table>
           <TableCaption className="sr-only">
             Goods receipt lines for this purchase order. Enter batch, serial, and quantities to receive.

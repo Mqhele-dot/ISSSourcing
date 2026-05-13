@@ -112,6 +112,24 @@ export function downloadFile(
   }, 100);
 }
 
+/**
+ * Download a Blob using `URL.createObjectURL` / `URL.revokeObjectURL` in one place (short delay before revoke for browser compatibility).
+ */
+export function downloadBlobAsFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 100);
+  }
+}
+
 export type StatusColorStyle = { bg: string; text: string; pulse?: boolean };
 
 /**
