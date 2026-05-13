@@ -14,7 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Can } from "@/components/auth/can";
-import type { PurchaseOrderDetail } from "@/api/client";
+import type { PurchaseOrderDetail } from "@/api/types";
+import { clampReceiveQtyToRemaining, normalizeReceiveQtyInput } from "@/features/purchase-orders";
 
 type PoReceivePanelProps = {
   /** Anchor id for in-page navigation (e.g. po-receive). */
@@ -144,12 +145,16 @@ export function PoReceivePanel({
                     min={0}
                     step={1}
                     value={receiveState[line.sku] ?? 0}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const raw = normalizeReceiveQtyInput(event.target.value);
+                      const next = Number.isFinite(raw)
+                        ? clampReceiveQtyToRemaining(raw, line.expectedRemaining)
+                        : 0;
                       setReceiveState((current) => ({
                         ...current,
-                        [line.sku]: Number(event.target.value),
-                      }))
-                    }
+                        [line.sku]: next,
+                      }));
+                    }}
                     disabled={!canReceive}
                   />
                 </TableCell>
@@ -198,7 +203,11 @@ export function PoReceivePanel({
 
         <div className="flex justify-end">
           <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
-            <Button data-testid="po-receive-submit-button" onClick={onSubmitReceive} disabled={!canReceive || receiving}>
+            <Button
+              data-testid="po-receive-submit-button"
+              onClick={onSubmitReceive}
+              disabled={!canReceive || receiving}
+            >
               <Truck className="mr-2 h-4 w-4" />
               Receive selected
             </Button>

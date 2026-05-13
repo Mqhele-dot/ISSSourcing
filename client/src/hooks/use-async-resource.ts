@@ -19,16 +19,39 @@ type AsyncResourceState<T> = {
   refetch: () => Promise<void>;
 };
 
+type BaseAsyncOptions = {
+  immediate?: boolean;
+  revalidateDeps?: DependencyList;
+};
+
+function isAbortError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === "AbortError") return true;
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
 /**
  * Fetches data once on mount (when immediate) and when fetcher identity changes.
  * Uses a ref for the fetcher so refetch is stable and does not trigger effect loops
  * when the parent does not memoize the fetcher. Callers should pass useCallback(fn, deps)
  * so that we refetch only when deps (e.g. query params) actually change.
+ *
+ * Pass `{ abortable: true }` and a fetcher `(signal) => Promise<T>` to forward cancellation
+ * to `fetch` / `invTrackFetch` when the effect re-runs or the component unmounts.
  */
 export function useAsyncResource<T>(
+  fetcher: (signal: AbortSignal) => Promise<T>,
+  options: BaseAsyncOptions & { abortable: true },
+): AsyncResourceState<T>;
+export function useAsyncResource<T>(
   fetcher: () => Promise<T>,
-  options?: { immediate?: boolean; revalidateDeps?: DependencyList },
+  options?: BaseAsyncOptions,
+): AsyncResourceState<T>;
+export function useAsyncResource<T>(
+  fetcher: ((signal: AbortSignal) => Promise<T>) | (() => Promise<T>),
+  options?: BaseAsyncOptions & { abortable?: boolean },
 ): AsyncResourceState<T> {
+  const abortable = options?.abortable === true;
   const [loading, setLoading] = useState(Boolean(options?.immediate ?? true));
   const [error, setError] = useState<Error | null>(null);
   const [data, setData] = useState<T | null>(null);
@@ -39,14 +62,22 @@ export function useAsyncResource<T>(
     setLoading(true);
     setError(null);
     try {
-      const nextData = await withTimeout(fetcherRef.current(), FETCH_TIMEOUT_MS);
+      const nextData = await withTimeout(
+        abortable
+          ? (fetcherRef.current as (s: AbortSignal) => Promise<T>)(new AbortController().signal)
+          : (fetcherRef.current as () => Promise<T>)(),
+        FETCH_TIMEOUT_MS,
+      );
       setData(nextData);
     } catch (fetchError) {
+      if (isAbortError(fetchError)) {
+        return;
+      }
       setError(fetchError instanceof Error ? fetchError : new Error("Unknown fetch error"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [abortable]);
 
   // Dev-only: warn if fetcher identity changes too often (e.g. non-memoized fetcher).
   const callTimesRef = useRef<number[]>([]);
@@ -59,6 +90,7 @@ export function useAsyncResource<T>(
       return;
     }
     let cancelled = false;
+    const controller = abortable ? new AbortController() : null;
     const now = Date.now();
     if (isDev) {
       callTimesRef.current = callTimesRef.current.filter((t) => now - t < 2000);
@@ -76,14 +108,20 @@ export function useAsyncResource<T>(
       setLoading(true);
       setError(null);
       try {
-        const nextData = await withTimeout(fetcherRef.current(), FETCH_TIMEOUT_MS);
+        const nextData = await withTimeout(
+          abortable
+            ? (fetcherRef.current as (s: AbortSignal) => Promise<T>)(controller!.signal)
+            : (fetcherRef.current as () => Promise<T>)(),
+          FETCH_TIMEOUT_MS,
+        );
         if (!cancelled) {
           setData(nextData);
         }
       } catch (fetchError) {
-        if (!cancelled) {
-          setError(fetchError instanceof Error ? fetchError : new Error("Unknown fetch error"));
+        if (cancelled || isAbortError(fetchError)) {
+          return;
         }
+        setError(fetchError instanceof Error ? fetchError : new Error("Unknown fetch error"));
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -92,8 +130,9 @@ export function useAsyncResource<T>(
     })();
     return () => {
       cancelled = true;
+      controller?.abort();
     };
-  }, [options?.immediate, isDev, ...(options?.revalidateDeps ?? [fetcher])]);
+  }, [abortable, options?.immediate, isDev, ...(options?.revalidateDeps ?? [fetcher])]);
 
   return { loading, error, data, refetch };
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -34,18 +34,22 @@ import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { ToastAction } from "@/components/ui/toast";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { downloadFile } from "@/lib/utils";
-import { usePurchaseOrderOperationalDetailQuery } from "@/features/purchase-orders";
 import { Can } from "@/components/auth/can";
-import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
-  approvePurchaseOrder,
   downloadPurchaseOrderSignedPdf,
-  fetchApprovalSuggestions,
-  receivePurchaseOrder,
-  sendPurchaseOrder,
-  type PurchaseOrderDetail,
-  type PurchaseReceiveResult,
-} from "@/api/client";
+  fetchPurchaseOrderRecordById,
+  normalizeBatchInput,
+  normalizeOperationalPoParam,
+  normalizeSerialTokensCsv,
+  useApprovePurchaseOrderMutation,
+  usePurchaseOrderOperationalDetailQuery,
+  useReceivePurchaseOrderMutation,
+  useSendPurchaseOrderMutation,
+  validateReceiveLines,
+} from "@/features/purchase-orders";
+import { fetchApprovalSuggestions } from "@/api/client";
+import type { PurchaseReceiveResult } from "@/api/types";
+import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
   procurementPoApproveUrl,
   procurementPoCommercialUrl,
@@ -66,7 +70,6 @@ import {
   canSend,
   canSendWithRole,
   canUpdatePurchaseOrder,
-  fetchPurchaseOrderRecordById,
   formatDate,
   formatDateTime,
   openPurchaseOrderPrintView,
@@ -82,9 +85,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const { toast } = useToast();
   const { formatMoney } = useReportingMoney();
   const { user } = useAuth();
+  const poNumber = normalizeOperationalPoParam(po);
 
-  const [receiving, setReceiving] = useState(false);
-  const [statusUpdating, setStatusUpdating] = useState(false);
   const [receiveState, setReceiveState] = useState<Record<string, number>>({});
   const [batchState, setBatchState] = useState<Record<string, string>>({});
   const [serialState, setSerialState] = useState<Record<string, string>>({});
@@ -101,6 +103,11 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const purchaseOrderIdRef = useRef<number | null>(null);
 
   const detailQuery = usePurchaseOrderOperationalDetailQuery(po);
+  const approvePurchaseOrderMutation = useApprovePurchaseOrderMutation(po);
+  const sendPurchaseOrderMutation = useSendPurchaseOrderMutation(po);
+  const receivePurchaseOrderMutation = useReceivePurchaseOrderMutation(po);
+  const statusMutationPending =
+    approvePurchaseOrderMutation.isPending || sendPurchaseOrderMutation.isPending;
   const loading = detailQuery.isLoading;
   const error =
     detailQuery.error instanceof Error
@@ -150,7 +157,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const { data: purchaseOrderRecord, isError: purchaseOrderRecordError } = useQuery({
     queryKey: ["/api/procurement/purchase-orders/records", data?.id],
     enabled: Boolean(data?.id),
-    queryFn: () => fetchPurchaseOrderRecordById(Number(data?.id)),
+    queryFn: ({ signal }) => fetchPurchaseOrderRecordById(Number(data?.id), { signal }),
   });
   const { data: departments = [], isError: departmentsError } = useQuery({
     queryKey: ["/api/departments"],
@@ -252,126 +259,97 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     () =>
       Object.entries(receiveState)
         .filter(([, qty]) => qty > 0)
-        .map(([sku, qty]) => ({
-          sku,
-          qtyReceivedNow: qty,
-          batchNumber: batchState[sku]?.trim() || undefined,
-          serialNumbers: serialState[sku]
-            ? serialState[sku]
-                .split(",")
-                .map((value) => value.trim())
-                .filter(Boolean)
-            : undefined,
-        })),
+        .map(([sku, qty]) => {
+          const batchRaw = batchState[sku];
+          const batchNorm = normalizeBatchInput(batchRaw);
+          const serials = serialState[sku] ? normalizeSerialTokensCsv(serialState[sku]) : undefined;
+          return {
+            sku,
+            qtyReceivedNow: qty,
+            ...(batchNorm ? { batchNumber: batchNorm } : {}),
+            ...(serials?.length ? { serialNumbers: serials } : {}),
+          };
+        }),
     [batchState, receiveState, serialState],
   );
 
-  const validateReceive = useCallback(
-    (detail: PurchaseOrderDetail): string | null => {
-      let hasPositiveQty = false;
-      for (const line of detail.lines) {
-        const rawQty = receiveState[line.sku] ?? 0;
-        const qty = Number(rawQty);
-        if (!Number.isFinite(qty)) {
-          return `Receive quantity for ${line.sku} must be a finite number.`;
-        }
-        if (qty > 0 && !Number.isInteger(qty)) {
-          return `Receive quantity for ${line.sku} must be a whole number.`;
-        }
-        if (qty < 0) {
-          return `Receive quantity for ${line.sku} cannot be negative.`;
-        }
-        if (qty > Number(line.expectedRemaining ?? 0)) {
-          return `Receive quantity for ${line.sku} cannot exceed remaining quantity (${line.expectedRemaining}).`;
-        }
-        if (qty > 0) hasPositiveQty = true;
-      }
-      return hasPositiveQty ? null : "Enter at least one receive quantity greater than 0.";
-    },
-    [receiveState],
-  );
-
-  const updateStatus = async (action: "approve" | "send") => {
-    setStatusUpdating(true);
-    try {
-      const next =
-        action === "approve" ? await approvePurchaseOrder(po) : await sendPurchaseOrder(po);
-      queryClient.setQueryData(["purchase-order-operational-detail", po], next);
-      await refetch();
-    } catch (statusError) {
-      const err = statusError as Error & { status?: number };
-      const actionLabel = action === "approve" ? "Approve PO" : "Send PO";
-      toast({
-        title: "Update failed",
-        description: formatMutationError(
-          actionLabel,
-          "POST",
-          action === "approve" ? procurementPoApproveUrl(po) : procurementPoSendUrl(po),
-          err,
-        ),
-        variant: "destructive",
-        action: (
-          <ToastAction altText="Retry" onClick={() => updateStatus(action)}>
-            Retry
-          </ToastAction>
-        ),
-      });
-    } finally {
-      setStatusUpdating(false);
-    }
+  const updateStatus = (action: "approve" | "send") => {
+    const mutation = action === "approve" ? approvePurchaseOrderMutation : sendPurchaseOrderMutation;
+    if (mutation.isPending || !poNumber) return;
+    mutation.mutate(undefined, {
+      onError: (statusError) => {
+        const err = statusError as Error & { status?: number };
+        const actionLabel = action === "approve" ? "Approve PO" : "Send PO";
+        toast({
+          title: "Update failed",
+          description: formatMutationError(
+            actionLabel,
+            "POST",
+            action === "approve" ? procurementPoApproveUrl(poNumber) : procurementPoSendUrl(poNumber),
+            err,
+          ),
+          variant: "destructive",
+          action: (
+            <ToastAction altText="Retry" onClick={() => updateStatus(action)}>
+              Retry
+            </ToastAction>
+          ),
+        });
+      },
+    });
   };
 
-  const submitReceive = async () => {
-    if (!data) return;
-    const validationMessage = validateReceive(data);
-    if (validationMessage) {
-      setReceiveError(validationMessage);
+  const submitReceive = () => {
+    if (!data || !poNumber) return;
+    if (receivePurchaseOrderMutation.isPending) return;
+
+    const checked = validateReceiveLines(data, receivePayload);
+    if (!checked.ok) {
+      const message = checked.errors.map((e) => (e.sku ? `${e.sku}: ${e.message}` : e.message)).join(" ");
+      setReceiveError(message);
       toast({
         title: "Receive validation failed",
-        description: validationMessage,
+        description: message,
         variant: "destructive",
-      });
-      return;
-    }
-    setReceiveError(null);
-    if (receivePayload.length === 0) {
-      setReceiveError("Enter at least one receive quantity greater than 0.");
-      toast({
-        title: "No lines selected",
-        description: "Enter at least one receive quantity.",
       });
       return;
     }
 
-    setReceiving(true);
-    try {
-      const result = await receivePurchaseOrder(po, receivePayload, {
-        receiverUserId: typeof user?.id === "number" ? user.id : undefined,
-        receiverName: receiverName.trim() || undefined,
-        warehouseLocation: warehouseLocation.trim() || undefined,
-        receivedAt: new Date().toISOString(),
-      });
-      setLastChangeSummary(result);
-      setReceiveState({});
-      setBatchState({});
-      setSerialState({});
-      setReceiveError(null);
-      await refetch();
-    } catch (receiveError) {
-      const err = receiveError as Error & { status?: number };
-      toast({
-        title: "Receive failed",
-        description: formatMutationError("Receive PO", "POST", procurementPoReceiveUrl(po), err),
-        variant: "destructive",
-        action: (
-          <ToastAction altText="Retry" onClick={() => submitReceive()}>
-            Retry
-          </ToastAction>
-        ),
-      });
-    } finally {
-      setReceiving(false);
-    }
+    setReceiveError(null);
+
+    receivePurchaseOrderMutation.mutate(
+      {
+        lines: checked.lines,
+        receiveOptions: {
+          receiverUserId: typeof user?.id === "number" ? user.id : undefined,
+          receiverName: receiverName.trim() || undefined,
+          warehouseLocation: warehouseLocation.trim() || undefined,
+          receivedAt: new Date().toISOString(),
+        },
+      },
+      {
+        onSuccess: (result) => {
+          setLastChangeSummary(result);
+          setReceiveState({});
+          setBatchState({});
+          setSerialState({});
+          setReceiveError(null);
+        },
+        onError: (receiveErr) => {
+          const err = receiveErr as Error & { status?: number };
+          toast({
+            title: "Receive failed",
+            description: formatMutationError("Receive PO", "POST", procurementPoReceiveUrl(poNumber), err),
+            variant: "destructive",
+            action: (
+              <ToastAction altText="Retry" onClick={() => submitReceive()}>
+                Retry
+              </ToastAction>
+            ),
+          });
+        },
+      },
+    );
   };
 
   return (
@@ -459,7 +437,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     <Button
                       type="button"
                       className="gap-2"
-                      disabled={pdfLoading}
+                      disabled={!poNumber || pdfLoading || !detail.poNumber.trim()}
                       data-testid="po-signable-pdf-button"
                       onClick={() => void downloadSignedPdf()}
                     >
@@ -484,7 +462,11 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       <Button
                         variant="outline"
                         className="gap-2"
-                        disabled={!canApproveWithRole(detail.status, user?.role ?? undefined) || statusUpdating}
+                        disabled={
+                          !poNumber ||
+                          !canApproveWithRole(detail.status, user?.role ?? undefined) ||
+                          statusMutationPending
+                        }
                         data-testid="po-approve-button"
                         onClick={() => updateStatus("approve")}
                       >
@@ -496,7 +478,11 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       <Button
                         variant="outline"
                         className="gap-2"
-                        disabled={!canSendWithRole(detail.status, user?.role ?? undefined) || statusUpdating}
+                        disabled={
+                          !poNumber ||
+                          !canSendWithRole(detail.status, user?.role ?? undefined) ||
+                          statusMutationPending
+                        }
                         data-testid="po-send-button"
                         onClick={() => updateStatus("send")}
                       >
@@ -612,7 +598,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     warehouseLocation={warehouseLocation}
                     setWarehouseLocation={setWarehouseLocation}
                     userId={typeof user?.id === "number" ? user.id : undefined}
-                    receiving={receiving}
+                    receiving={receivePurchaseOrderMutation.isPending}
                     receiveError={receiveError}
                     onSubmitReceive={submitReceive}
                   />
@@ -746,7 +732,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       <Button
                         type="button"
                         className="w-full gap-2 sm:w-auto"
-                        disabled={pdfLoading}
+                        disabled={!poNumber || pdfLoading || !detail.poNumber.trim()}
                         onClick={() => void downloadSignedPdf()}
                       >
                         {pdfLoading ? (

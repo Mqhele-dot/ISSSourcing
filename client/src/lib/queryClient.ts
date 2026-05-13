@@ -411,6 +411,7 @@ export async function invTrackFetch<T>(
   method: string,
   url: string,
   data?: unknown,
+  options?: { signal?: AbortSignal },
 ): Promise<{ data: T; meta: InvTrackMeta }> {
   let csrfRetried = false;
 
@@ -418,6 +419,13 @@ export async function invTrackFetch<T>(
     const requestStartedAt = performance.now();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        clearTimeout(timeoutId);
+        throw new DOMException("Aborted", "AbortError");
+      }
+      options.signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
     let res: Response;
     try {
       const headers = await buildRequestHeaders(method, undefined, {

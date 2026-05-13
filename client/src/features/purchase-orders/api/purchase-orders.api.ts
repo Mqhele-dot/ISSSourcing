@@ -1,7 +1,11 @@
 /**
- * Domain-facing re-exports for purchase-order API calls.
- * Keep transport in `@/api/client`; feature code imports from here for a stable seam.
+ * Purchase-order feature API: operational routes + commercial record fetches.
+ * Shared HTTP transport patterns live in `@/lib/queryClient` (`invTrackFetch`); this module owns PO URLs and normalization.
  */
+export type { ApiEnvelopeResult } from "@/api/client";
+export type { PurchaseOrderDetail, PurchaseOrderListItem, PurchaseReceiveResult } from "@/api/types";
+
+export type { PoHttpOptions } from "./http-options";
 export {
   fetchPurchaseOrders,
   fetchPurchaseOrdersEnvelope,
@@ -11,7 +15,6 @@ export {
   sendPurchaseOrder,
   receivePurchaseOrder,
   transitionPurchaseOrderStatus,
-  type PurchaseOrderDetail,
-  type PurchaseOrderListItem,
-  type ApiEnvelopeResult,
-} from "@/api/client";
+} from "./operational-purchase-orders.api";
+
+export { fetchPurchaseOrderRecordById, type PurchaseOrderRecordSummary } from "./purchase-order-records.api";

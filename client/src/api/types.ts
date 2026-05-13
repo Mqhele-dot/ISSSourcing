@@ -147,6 +147,8 @@ export type PurchaseOrderDetailLine = {
   qtyReceived: number;
   unitPrice: number;
   expectedRemaining: number;
+  /** When true, client should collect one serial per unit received (UX hint; server may evolve). */
+  serialTrackingRequired?: boolean | null;
 };
 
 export type PurchaseOrderShipment = {

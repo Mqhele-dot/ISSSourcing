@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { fetchPurchaseOrdersEnvelope } from "@/api/client";
+import { fetchPurchaseOrdersEnvelope } from "@/features/purchase-orders";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { FileText } from "lucide-react";
@@ -22,8 +22,8 @@ export function RecentOrders() {
 
   const { data: orders, isLoading, error } = useQuery({
     queryKey: ["/api/procurement/purchase-orders", "dashboard-recent"],
-    queryFn: async () => {
-      const envelope = await fetchPurchaseOrdersEnvelope({});
+    queryFn: async ({ signal }) => {
+      const envelope = await fetchPurchaseOrdersEnvelope({}, { signal });
       return envelope.data ?? [];
     },
   });

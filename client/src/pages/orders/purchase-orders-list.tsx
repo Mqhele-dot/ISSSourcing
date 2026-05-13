@@ -34,8 +34,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
-import { usePurchaseOrdersEnvelopeQuery } from "@/features/purchase-orders";
-import { downloadPurchaseOrderSignedPdf } from "@/api/client";
+import { usePurchaseOrdersEnvelopeQuery, downloadPurchaseOrderSignedPdf } from "@/features/purchase-orders";
 import type { PurchaseOrderListItem } from "@/api/types";
 import { downloadFile } from "@/lib/utils";
 import { formatDate } from "./purchase-order-shared";

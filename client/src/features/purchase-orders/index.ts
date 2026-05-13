@@ -5,9 +5,25 @@ export {
 } from "./hooks/use-purchase-orders-envelope-query";
 export { usePurchaseOrderOperationalDetailQuery } from "./hooks/use-purchase-order-operational-detail-query";
 export {
+  useApprovePurchaseOrderMutation,
+  useReceivePurchaseOrderMutation,
+  useSendPurchaseOrderMutation,
+  useTransitionPurchaseOrderStatusMutation,
+} from "./hooks/use-purchase-order-mutations";
+export {
+  normalizeEnvelopeFilters,
+  normalizeOperationalPoParam,
+  purchaseOrdersEnvelopeQueryKey,
+  purchaseOrderOperationalDetailQueryKey,
+} from "./lib/query-keys";
+export {
   normalizeReceiveQtyInput,
   isValidReceiveQty,
   clampReceiveQtyToRemaining,
   normalizeBatchInput,
   normalizeSerialTokensCsv,
+  validateReceiveLines,
+  type ReceiveLineValidationInput,
+  type ReceiveLineFieldError,
+  type ValidateReceiveLinesResult,
 } from "./lib/receive-line-rules";

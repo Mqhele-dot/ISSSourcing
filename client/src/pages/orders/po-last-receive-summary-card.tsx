@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { PurchaseReceiveResult } from "@/api/client";
+import type { PurchaseReceiveResult } from "@/api/types";
 
 export function PoLastReceiveSummaryCard({ summary }: { summary: PurchaseReceiveResult }) {
   return (

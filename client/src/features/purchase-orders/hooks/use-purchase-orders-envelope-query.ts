@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchPurchaseOrdersEnvelope } from "../api/purchase-orders.api";
-import type { PurchaseOrderListItem } from "../api/purchase-orders.api";
+import type { PurchaseOrderListItem } from "@/api/types";
 import type { ApiEnvelopeResult } from "@/api/client";
+import { normalizeEnvelopeFilters, purchaseOrdersEnvelopeQueryKey } from "../lib/query-keys";
 
 export type PurchaseOrdersListFilters = {
   status: string;
@@ -10,19 +11,20 @@ export type PurchaseOrdersListFilters = {
 };
 
 export function usePurchaseOrdersEnvelopeQuery(filters: PurchaseOrdersListFilters) {
-  const status = String(filters.status || "").trim();
-  const supplier = String(filters.supplier || "").trim();
-  const q = String(filters.q || "").trim();
+  const normalized = normalizeEnvelopeFilters(filters);
 
   return useQuery<ApiEnvelopeResult<PurchaseOrderListItem[]>>({
-    queryKey: ["purchase-orders-envelope", status, supplier, q],
-    queryFn: () =>
-      fetchPurchaseOrdersEnvelope({
-        status: status || undefined,
-        supplier: supplier || undefined,
-        q: q || undefined,
-      }),
-    staleTime: 10_000,
+    queryKey: purchaseOrdersEnvelopeQueryKey(normalized),
+    queryFn: ({ signal }) =>
+      fetchPurchaseOrdersEnvelope(
+        {
+          status: normalized.status || undefined,
+          supplier: normalized.supplier || undefined,
+          q: normalized.q || undefined,
+        },
+        { signal },
+      ),
+    staleTime: 15_000,
     retry: 1,
   });
 }

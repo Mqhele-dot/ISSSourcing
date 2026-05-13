@@ -69,8 +69,24 @@ test.describe("Purchase order actions (FQA)", () => {
     await expect(page.getByTestId("po-approve-button")).toBeEnabled({ timeout: 15_000 });
     await expect(page.getByTestId("po-send-button")).toBeDisabled({ timeout: 15_000 });
 
-    await page.getByTestId("po-approve-button").click();
+    let approvePostCount = 0;
+    const onApproveRequest = (req: { method: () => string; url: () => string }) => {
+      if (req.method() !== "POST") return;
+      try {
+        const { pathname } = new URL(req.url());
+        if (pathname.includes("/api/procurement/purchase-orders/") && pathname.endsWith("/approve")) {
+          approvePostCount += 1;
+        }
+      } catch {
+        /* ignore malformed URL */
+      }
+    };
+    page.on("request", onApproveRequest);
+    await page.getByTestId("po-approve-button").click({ clickCount: 2, delay: 25 });
     await expect(page.getByTestId("po-detail-status")).toContainText(/approved/i, { timeout: 20_000 });
+    expect(approvePostCount, "exactly one approve POST after rapid double-click").toBe(1);
+    page.off("request", onApproveRequest);
+
     await expect(page.getByTestId("po-approve-button")).toBeDisabled({ timeout: 15_000 });
     await expect(page.getByTestId("po-send-button")).toBeEnabled({ timeout: 15_000 });
 

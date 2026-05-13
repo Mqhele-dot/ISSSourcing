@@ -5,7 +5,8 @@ import { ChevronRight, Package } from "lucide-react";
 import { useAsyncResource } from "@/hooks/use-async-resource";
 import { PageHeader } from "@/components/page-header";
 import { DataState } from "@/components/ui/data-state";
-import { fetchPurchaseOrdersEnvelope, type PurchaseOrderListItem } from "@/api/client";
+import { fetchPurchaseOrdersEnvelope } from "@/features/purchase-orders";
+import type { PurchaseOrderListItem } from "@/api/types";
 import type { FallbackKind } from "@/components/ui/data-state";
 
 /**
@@ -13,9 +14,9 @@ import type { FallbackKind } from "@/components/ui/data-state";
  * Opens full receive UI on the standard PO detail page.
  */
 export default function MobileReceivePage() {
-  const fetcher = useCallback(async () => {
-    const envApproved = await fetchPurchaseOrdersEnvelope({ status: "approved" });
-    const envSent = await fetchPurchaseOrdersEnvelope({ status: "sent" });
+  const fetcher = useCallback(async (signal: AbortSignal) => {
+    const envApproved = await fetchPurchaseOrdersEnvelope({ status: "approved" }, { signal });
+    const envSent = await fetchPurchaseOrdersEnvelope({ status: "sent" }, { signal });
     const map = new Map<string, PurchaseOrderListItem>();
     for (const o of envApproved.data ?? []) map.set(o.poNumber, o);
     for (const o of envSent.data ?? []) map.set(o.poNumber, o);
@@ -28,7 +29,7 @@ export default function MobileReceivePage() {
     };
   }, []);
 
-  const { loading, error, data: bundle, refetch } = useAsyncResource(fetcher);
+  const { loading, error, data: bundle, refetch } = useAsyncResource(fetcher, { abortable: true });
   const rows = bundle?.data ?? [];
   const fallback = bundle?.meta?.fallback as FallbackKind | undefined;
 

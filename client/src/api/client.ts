@@ -30,16 +30,6 @@ import type {
   GasComplianceAlertsResult,
   MobileScanResolveResult,
 } from "./types";
-import {
-  procurementPoApproveUrl,
-  procurementPoOperationalDetailUrl,
-  procurementPoOperationalListUrl,
-  procurementPoReceiveUrl,
-  procurementPoSendUrl,
-  procurementPoSignedPdfUrl,
-  procurementPoStatusUrl,
-} from "./procurement-purchase-order-paths";
-
 export type {
   ActivityRecord,
   ActivityItem,
@@ -526,153 +516,16 @@ export async function fetchApprovalSuggestions(params: {
   return apiFetch<ApprovalSuggestionsResult>(`/api/approval-suggestions?${search.toString()}`);
 }
 
-export async function fetchPurchaseOrders(params?: {
-  status?: string;
-  supplier?: string;
-  q?: string;
-}): Promise<PurchaseOrderListItem[]> {
-  const { data } = await fetchPurchaseOrdersEnvelope(params);
-  return data;
-}
-
-export async function fetchPurchaseOrdersEnvelope(params?: {
-  status?: string;
-  supplier?: string;
-  q?: string;
-}): Promise<ApiEnvelopeResult<PurchaseOrderListItem[]>> {
-  const search = new URLSearchParams();
-  if (params?.status) search.set("status", params.status);
-  if (params?.supplier) search.set("supplier", params.supplier);
-  if (params?.q) search.set("q", params.q);
-  const url = procurementPoOperationalListUrl(search);
-  return fetchWithMeta<PurchaseOrderListItem[]>(url);
-}
-
-export async function fetchPurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
-  const payload = await apiFetch<unknown>(procurementPoOperationalDetailUrl(po));
-  return normalizePurchaseOrderDetail(payload);
-}
-
-function normalizePurchaseOrderDetail(raw: unknown): PurchaseOrderDetail {
-  const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const lines = Array.isArray(r.lines) ? (r.lines as PurchaseOrderDetail["lines"]) : [];
-  const shipments = Array.isArray(r.shipments) ? (r.shipments as PurchaseOrderDetail["shipments"]) : [];
-  const prog = r.progress && typeof r.progress === "object" ? (r.progress as Record<string, unknown>) : {};
-  const qtyOrdered = Number(prog.qtyOrdered ?? 0);
-  const qtyReceived = Number(prog.qtyReceived ?? 0);
-  const percentRaw = prog.percent;
-  const percent =
-    typeof percentRaw === "number" && Number.isFinite(percentRaw)
-      ? percentRaw
-      : qtyOrdered > 0
-        ? Math.round((qtyReceived / qtyOrdered) * 100)
-        : 0;
-  return {
-    id: Number(r.id ?? 0),
-    poNumber: String(r.poNumber ?? ""),
-    supplierId: Number(r.supplierId ?? 0),
-    supplierName: (r.supplierName as string | null) ?? null,
-    status: String(r.status ?? ""),
-    requestedDate: (r.requestedDate as string | null) ?? null,
-    createdAt: (r.createdAt as string | null) ?? null,
-    totalAmount: Number(r.totalAmount ?? 0),
-    lines,
-    shipments,
-    progress: { qtyOrdered, qtyReceived, percent },
-  };
-}
-
-/** Official PO PDF with line items, terms, and dual signature lines (for wet ink or e-sign workflow). */
-export async function downloadPurchaseOrderSignedPdf(po: string): Promise<Blob> {
-  const res = await fetch(procurementPoSignedPdfUrl(po), {
-    credentials: "include",
-  });
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const j = (await res.json()) as { error?: { message?: string }; message?: string };
-      if (j?.error?.message) detail = j.error.message;
-      else if (typeof j?.message === "string") detail = j.message;
-    } catch {
-      /* not JSON */
-    }
-    throw new Error(detail);
-  }
-  return res.blob();
-}
-
-export async function transitionPurchaseOrderStatus(
-  po: string,
-  toStatus: string,
-): Promise<PurchaseOrderDetail> {
-  return apiMutate<PurchaseOrderDetail>(
-    "POST",
-    procurementPoStatusUrl(po),
-    { toStatus },
-  );
-}
-
-export async function approvePurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
-  const payload = await apiMutate<unknown>(
-    "POST",
-    procurementPoApproveUrl(po),
-  );
-  return normalizePurchaseOrderDetail(payload);
-}
-
-export async function sendPurchaseOrder(po: string): Promise<PurchaseOrderDetail> {
-  const payload = await apiMutate<unknown>(
-    "POST",
-    procurementPoSendUrl(po),
-  );
-  return normalizePurchaseOrderDetail(payload);
-}
-
-export async function receivePurchaseOrder(
-  po: string,
-  lines: Array<{
-    sku: string;
-    qtyReceivedNow: number;
-    batchNumber?: string;
-    serialNumbers?: string[];
-  }>,
-  options?: {
-    receiverUserId?: number;
-    receiverName?: string;
-    warehouseLocation?: string;
-    receivedAt?: string;
-  },
-): Promise<PurchaseReceiveResult> {
-  const result = await apiMutate<PurchaseReceiveResult>(
-    "POST",
-    procurementPoReceiveUrl(po),
-    {
-      lines: lines.map((line) => ({
-        sku: line.sku,
-        qty_received_now: line.qtyReceivedNow,
-        batch_number: line.batchNumber,
-        serial_numbers: line.serialNumbers,
-      })),
-      receiver_user_id: options?.receiverUserId,
-      receiver_name: options?.receiverName,
-      warehouse_location: options?.warehouseLocation,
-      received_at: options?.receivedAt,
-    },
-  );
-  const firstChange = result.inventoryChanges[0];
-  const mismatchCreated = result.mismatchExceptions.some((entry) => entry.created);
-  const baseMessage = firstChange
-    ? `Received (partial): ${firstChange.sku} +${firstChange.delta}`
-    : `Received (partial): ${result.changed.inventoryChanges} inventory updates`;
-  toastStore.push({
-    type: mismatchCreated ? "warning" : "success",
-    title: "PO receive processed",
-    message: mismatchCreated
-      ? `${baseMessage}, mismatch exception created`
-      : baseMessage,
-  });
-  return result;
-}
+export {
+  fetchPurchaseOrders,
+  fetchPurchaseOrdersEnvelope,
+  fetchPurchaseOrder,
+  downloadPurchaseOrderSignedPdf,
+  approvePurchaseOrder,
+  sendPurchaseOrder,
+  receivePurchaseOrder,
+  transitionPurchaseOrderStatus,
+} from "@/features/purchase-orders/api/purchase-orders.api";
 
 export async function fetchShipments(params?: {
   status?: string;
