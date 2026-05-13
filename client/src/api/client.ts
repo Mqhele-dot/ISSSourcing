@@ -205,6 +205,7 @@ async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnv
       ...init,
       headers,
       signal: controller.signal,
+      cache: "no-store",
     });
     const headerFallback = response.headers.get("X-InvTrack-Fallback") ?? null;
     const headerEndpoint = response.headers.get("X-InvTrack-Endpoint") ?? null;

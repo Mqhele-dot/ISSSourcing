@@ -200,6 +200,7 @@ async function fetchCsrfToken(): Promise<string> {
   const response = await fetch("/api/csrf-token", {
     method: "GET",
     credentials: "include",
+    cache: "no-store",
   });
 
   if (!response.ok) {
@@ -427,6 +428,7 @@ export async function invTrackFetch<T>(
         headers,
         body: data != null ? JSON.stringify(data) : undefined,
         credentials: "include",
+        cache: "no-store",
         signal: controller.signal,
       });
     } catch (err) {
@@ -559,6 +561,7 @@ export async function apiRequest(
         headers,
         body: data ? JSON.stringify(data) : undefined,
         credentials: "include",
+        cache: "no-store",
         signal: controller.signal,
       });
       const headerFallback = res.headers.get("X-InvTrack-Fallback");

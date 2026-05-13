@@ -294,11 +294,9 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const updateStatus = async (action: "approve" | "send") => {
     setStatusUpdating(true);
     try {
-      if (action === "approve") {
-        await approvePurchaseOrder(po);
-      } else {
-        await sendPurchaseOrder(po);
-      }
+      const next =
+        action === "approve" ? await approvePurchaseOrder(po) : await sendPurchaseOrder(po);
+      queryClient.setQueryData(["purchase-order-operational-detail", po], next);
       await refetch();
     } catch (statusError) {
       const err = statusError as Error & { status?: number };

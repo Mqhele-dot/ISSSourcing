@@ -62,9 +62,8 @@ export function contractError(
 }
 
 export function respondOk<T>(res: Response, data: T, status = 200, meta?: ApiSuccessMeta) {
-  if (meta) {
-    res.setHeader("Cache-Control", "no-store");
-  }
+  /** Avoid stale reads after mutations (PO approve/send, etc.): browsers may cache GET JSON without this. */
+  res.setHeader("Cache-Control", "no-store");
   const payload: ApiSuccessEnvelope<T> = meta ? { ok: true, data, meta } : { ok: true, data };
   return res.status(status).json(payload);
 }
