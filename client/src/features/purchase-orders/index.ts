@@ -1,4 +1,12 @@
 export * from "./api/purchase-orders.api";
+export { normalizePurchaseOrderDetail } from "./lib/normalize-operational-detail";
+export { normalizePurchaseReceiveResult } from "./lib/normalize-purchase-receive-result";
+export {
+  PO_MUTATION_ERRORS,
+  assertNonEmptyReceiveLines,
+  assertPoNumberForMutation,
+  assertTransitionTargetStatus,
+} from "./lib/po-mutation-guards";
 export {
   usePurchaseOrdersEnvelopeQuery,
   type PurchaseOrdersListFilters,

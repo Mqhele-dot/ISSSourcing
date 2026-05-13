@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Can } from "@/components/auth/can";
 import type { PurchaseOrderDetail } from "@/api/types";
-import { clampReceiveQtyToRemaining, normalizeReceiveQtyInput } from "@/features/purchase-orders";
+import { clampReceiveQtyToRemaining, normalizeReceiveQtyInput, type ReceiveLineFieldError } from "@/features/purchase-orders";
 
 type PoReceivePanelProps = {
   /** Anchor id for in-page navigation (e.g. po-receive). */
@@ -36,6 +36,8 @@ type PoReceivePanelProps = {
   userId?: number;
   receiving: boolean;
   receiveError?: string | null;
+  /** Validation issues to show next to the affected line controls (submit-time only). */
+  receiveLineIssues?: ReceiveLineFieldError[];
   onSubmitReceive: () => void | Promise<void>;
 };
 
@@ -58,8 +60,11 @@ export function PoReceivePanel({
   userId,
   receiving,
   receiveError,
+  receiveLineIssues = [],
   onSubmitReceive,
 }: PoReceivePanelProps) {
+  const issuesFor = (sku: string, field: ReceiveLineFieldError["field"]) =>
+    receiveLineIssues.filter((i) => i.sku === sku && i.field === field);
   return (
     <Card id={sectionId} className={className} data-testid="po-receive-panel">
       <CardHeader>
@@ -121,6 +126,11 @@ export function PoReceivePanel({
                     }
                     disabled={!canReceive}
                   />
+                  {issuesFor(line.sku, "batchNumber").map((iss, idx) => (
+                    <p key={idx} className="mt-1 text-xs text-destructive">
+                      {iss.message}
+                    </p>
+                  ))}
                 </TableCell>
                 <TableCell>
                   <Input
@@ -135,6 +145,11 @@ export function PoReceivePanel({
                     }
                     disabled={!canReceive}
                   />
+                  {issuesFor(line.sku, "serialNumbers").map((iss, idx) => (
+                    <p key={idx} className="mt-1 text-xs text-destructive">
+                      {iss.message}
+                    </p>
+                  ))}
                 </TableCell>
                 <TableCell className="text-right">
                   <Input
@@ -157,6 +172,16 @@ export function PoReceivePanel({
                     }}
                     disabled={!canReceive}
                   />
+                  {issuesFor(line.sku, "qtyReceivedNow").map((iss, idx) => (
+                    <p key={idx} className="mt-1 text-xs text-destructive">
+                      {iss.message}
+                    </p>
+                  ))}
+                  {issuesFor(line.sku, "sku").map((iss, idx) => (
+                    <p key={idx} className="mt-1 text-xs text-destructive">
+                      {iss.message}
+                    </p>
+                  ))}
                 </TableCell>
               </TableRow>
             ))}

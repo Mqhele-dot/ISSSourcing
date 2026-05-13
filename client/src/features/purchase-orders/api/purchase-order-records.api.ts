@@ -1,4 +1,5 @@
 import { procurementPoRecordUrl } from "@/api/procurement-purchase-order-paths";
+import { invTrackFetch } from "@/lib/queryClient";
 import type { PoHttpOptions } from "./http-options";
 
 export type PurchaseOrderRecordSummary = {
@@ -9,51 +10,46 @@ export type PurchaseOrderRecordSummary = {
   incotermId?: number | null;
 };
 
+function asRecord(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+}
+
+function normalizeRecordSummary(raw: unknown): PurchaseOrderRecordSummary | null {
+  const d = asRecord(raw);
+  const idRaw = d.id;
+  const id = typeof idRaw === "number" ? idRaw : Number(idRaw);
+  if (!Number.isFinite(id)) return null;
+  return {
+    id,
+    departmentId: (d.departmentId ?? d.department_id ?? null) as number | null | undefined,
+    contractId: (d.contractId ?? d.contract_id ?? null) as number | null | undefined,
+    paymentTermsId: (d.paymentTermsId ?? d.payment_terms_id ?? null) as number | null | undefined,
+    incotermId: (d.incotermId ?? d.incoterm_id ?? null) as number | null | undefined,
+  };
+}
+
 export async function fetchPurchaseOrderRecordById(
   id: number,
   options?: PoHttpOptions,
 ): Promise<PurchaseOrderRecordSummary | null> {
-  const response = await fetch(procurementPoRecordUrl(id), {
-    method: "GET",
-    credentials: "include",
-    signal: options?.signal,
-  });
+  if (!Number.isFinite(id) || id <= 0) return null;
 
-  const payload: unknown = await response.json().catch(() => null);
-
-  if (response.status === 404 || response.status === 401) {
-    return null;
-  }
-
-  if (payload && typeof payload === "object" && "ok" in payload && (payload as { ok: boolean }).ok === false) {
-    const err = (payload as { error?: { code?: string; message?: string } }).error;
-    const code = typeof err?.code === "string" ? err.code : "";
-    const message = typeof err?.message === "string" ? err.message : "Request failed";
-    throw new Error(code ? `[${code}] ${message}` : message);
-  }
-
-  if (!response.ok) {
-    const msg =
-      payload && typeof payload === "object" && "message" in payload
-        ? String((payload as { message?: unknown }).message ?? "")
-        : "";
-    throw new Error(
-      msg
-        ? `GET ${procurementPoRecordUrl(id)} failed (${response.status}): ${msg}`
-        : `GET ${procurementPoRecordUrl(id)} failed: ${response.status}`,
+  try {
+    const { data: raw } = await invTrackFetch<unknown>(
+      "GET",
+      procurementPoRecordUrl(id),
+      undefined,
+      options,
     );
+    const normalized = normalizeRecordSummary(raw);
+    if (normalized) return normalized;
+    /** Some deployments wrap the row in `{ data: { ... } }` after unwrap; handle loose shapes */
+    const outer = asRecord(raw);
+    const inner = outer.data;
+    return normalizeRecordSummary(inner);
+  } catch (e) {
+    const status = (e as Error & { status?: number }).status;
+    if (status === 404 || status === 401) return null;
+    throw e;
   }
-
-  if (payload && typeof payload === "object" && "ok" in payload && (payload as { ok?: boolean }).ok === true) {
-    const data = (payload as { data?: unknown }).data;
-    if (data && typeof data === "object" && "id" in data) {
-      return data as PurchaseOrderRecordSummary;
-    }
-  }
-
-  if (payload && typeof payload === "object" && "id" in payload && typeof (payload as { id?: unknown }).id === "number") {
-    return payload as PurchaseOrderRecordSummary;
-  }
-
-  return null;
 }

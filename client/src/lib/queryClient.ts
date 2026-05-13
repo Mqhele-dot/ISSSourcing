@@ -633,6 +633,92 @@ export async function apiRequest(
   }
 }
 
+/**
+ * Authenticated GET that returns a Blob (PDF, export files). Uses the same timeout, credentials,
+ * CSRF-backed headers, diagnostics, and error shaping as other app transport — but preserves binary bodies.
+ */
+export async function fetchAuthenticatedBlob(url: string, options?: { signal?: AbortSignal }): Promise<Blob> {
+  let csrfRetried = false;
+
+  for (;;) {
+    const requestStartedAt = performance.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        clearTimeout(timeoutId);
+        throw new DOMException("Aborted", "AbortError");
+      }
+      options.signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+
+    try {
+      const headers = await buildRequestHeaders("GET", undefined, { contentType: false });
+      const res = await fetch(url, {
+        method: "GET",
+        headers,
+        credentials: "include",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const durationMs = performance.now() - requestStartedAt;
+      const headerFallback = res.headers.get("X-InvTrack-Fallback") ?? undefined;
+      const headerEndpoint = res.headers.get("X-InvTrack-Endpoint") ?? undefined;
+      setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
+
+      if (!res.ok) {
+        const payload = await parseJsonOrText(res);
+        if (
+          !csrfRetried &&
+          res.status === 403 &&
+          extractApiErrorCode(payload) === "CSRF_TOKEN_INVALID"
+        ) {
+          csrfTokenCache = null;
+          await getCsrfToken(true);
+          csrfRetried = true;
+          continue;
+        }
+        const msg = formatServerErrorPayload(payload) ?? res.statusText;
+        scheduleAuthInvalidateOn401(res.status, "GET", url);
+        reportRequestError({
+          method: "GET",
+          url,
+          status: res.status,
+          reason: msg,
+          payload,
+          requestPayload: undefined,
+          requestId: res.headers.get("X-Request-Id") ?? undefined,
+          stack: isDevRuntime ? new Error().stack : undefined,
+          durationMs,
+        });
+        const err = attachRequestId(new Error(`${res.status}: ${msg}`), res.headers.get("X-Request-Id")) as Error & {
+          status?: number;
+        };
+        err.status = res.status;
+        throw err;
+      }
+
+      recordSlowRequest({ method: "GET", url, status: res.status, durationMs, details: { fallback: headerFallback } });
+      return res.blob();
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const durationMs = performance.now() - requestStartedAt;
+      if (isLikelyTransportError(err)) {
+        reportNetworkFailure({ method: "GET", url, error: err, requestPayload: undefined, durationMs });
+      }
+      if (err instanceof Error && err.name === "AbortError") {
+        const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & {
+          status?: number;
+        };
+        timeoutError.status = 408;
+        throw timeoutError;
+      }
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  }
+}
+
 /** Append correlation id for support when the server set `X-Request-Id` (see `invTrackFetch` error throws). */
 export function errorMessageWithRequestId(error: unknown): string {
   const base = error instanceof Error ? error.message : String(error);

@@ -46,6 +46,7 @@ import {
   useReceivePurchaseOrderMutation,
   useSendPurchaseOrderMutation,
   validateReceiveLines,
+  type ReceiveLineFieldError,
 } from "@/features/purchase-orders";
 import { fetchApprovalSuggestions } from "@/api/client";
 import type { PurchaseReceiveResult } from "@/api/types";
@@ -99,6 +100,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [paymentTermsId, setPaymentTermsId] = useState<string>("none");
   const [incotermId, setIncotermId] = useState<string>("none");
   const [receiveError, setReceiveError] = useState<string | null>(null);
+  const [receiveLineIssues, setReceiveLineIssues] = useState<ReceiveLineFieldError[]>([]);
   const [commercialSaveError, setCommercialSaveError] = useState<string | null>(null);
   const purchaseOrderIdRef = useRef<number | null>(null);
 
@@ -255,6 +257,10 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     );
   }, [purchaseOrderRecord]);
 
+  useEffect(() => {
+    setReceiveLineIssues([]);
+  }, [receiveState, batchState, serialState]);
+
   const receivePayload = useMemo(
     () =>
       Object.entries(receiveState)
@@ -305,17 +311,23 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
 
     const checked = validateReceiveLines(data, receivePayload);
     if (!checked.ok) {
-      const message = checked.errors.map((e) => (e.sku ? `${e.sku}: ${e.message}` : e.message)).join(" ");
-      setReceiveError(message);
-      toast({
-        title: "Receive validation failed",
-        description: message,
-        variant: "destructive",
-      });
+      const general = checked.errors.filter((e) => !e.sku || e.field === "_line");
+      const perLine = checked.errors.filter((e) => e.sku && e.field !== "_line");
+      setReceiveLineIssues(perLine);
+      const message = general.map((e) => e.message).join(" ");
+      setReceiveError(message || null);
+      if (message || perLine.length) {
+        toast({
+          title: "Receive validation failed",
+          description: [message, ...perLine.map((e) => `${e.sku}: ${e.message}`)].filter(Boolean).join(" "),
+          variant: "destructive",
+        });
+      }
       return;
     }
 
     setReceiveError(null);
+    setReceiveLineIssues([]);
 
     receivePurchaseOrderMutation.mutate(
       {
@@ -334,6 +346,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
           setBatchState({});
           setSerialState({});
           setReceiveError(null);
+          setReceiveLineIssues([]);
         },
         onError: (receiveErr) => {
           const err = receiveErr as Error & { status?: number };
@@ -600,6 +613,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     userId={typeof user?.id === "number" ? user.id : undefined}
                     receiving={receivePurchaseOrderMutation.isPending}
                     receiveError={receiveError}
+                    receiveLineIssues={receiveLineIssues}
                     onSubmitReceive={submitReceive}
                   />
 

@@ -1,7 +1,7 @@
 import type { ApiEnvelopeResult } from "@/api/client";
 import type { PurchaseOrderDetail, PurchaseOrderListItem, PurchaseReceiveResult } from "@/api/types";
 import { toastStore } from "@/lib/toast-store";
-import { invTrackFetch } from "@/lib/queryClient";
+import { invTrackFetch, fetchAuthenticatedBlob } from "@/lib/queryClient";
 import {
   procurementPoApproveUrl,
   procurementPoOperationalDetailUrl,
@@ -12,6 +12,12 @@ import {
   procurementPoStatusUrl,
 } from "@/api/procurement-purchase-order-paths";
 import { normalizePurchaseOrderDetail } from "../lib/normalize-operational-detail";
+import { normalizePurchaseReceiveResult } from "../lib/normalize-purchase-receive-result";
+import {
+  assertNonEmptyReceiveLines,
+  assertPoNumberForMutation,
+  assertTransitionTargetStatus,
+} from "../lib/po-mutation-guards";
 import { normalizeOperationalPoParam } from "../lib/query-keys";
 import type { PoHttpOptions } from "./http-options";
 
@@ -48,6 +54,7 @@ export async function fetchPurchaseOrders(
 
 export async function fetchPurchaseOrder(po: string, options?: PoHttpOptions): Promise<PurchaseOrderDetail> {
   const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
   const { data: raw } = await invTrackFetch<unknown>(
     "GET",
     procurementPoOperationalDetailUrl(poNumber),
@@ -63,6 +70,8 @@ export async function transitionPurchaseOrderStatus(
   options?: PoHttpOptions,
 ): Promise<PurchaseOrderDetail> {
   const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
+  assertTransitionTargetStatus(toStatus);
   const { data: raw } = await invTrackFetch<unknown>(
     "POST",
     procurementPoStatusUrl(poNumber),
@@ -74,6 +83,7 @@ export async function transitionPurchaseOrderStatus(
 
 export async function approvePurchaseOrder(po: string, options?: PoHttpOptions): Promise<PurchaseOrderDetail> {
   const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
   const { data: raw } = await invTrackFetch<unknown>(
     "POST",
     procurementPoApproveUrl(poNumber),
@@ -85,6 +95,7 @@ export async function approvePurchaseOrder(po: string, options?: PoHttpOptions):
 
 export async function sendPurchaseOrder(po: string, options?: PoHttpOptions): Promise<PurchaseOrderDetail> {
   const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
   const { data: raw } = await invTrackFetch<unknown>("POST", procurementPoSendUrl(poNumber), {}, options);
   return normalizePurchaseOrderDetail(raw);
 }
@@ -106,7 +117,9 @@ export async function receivePurchaseOrder(
   httpOptions?: PoHttpOptions,
 ): Promise<PurchaseReceiveResult> {
   const poNumber = normalizeOperationalPoParam(po);
-  const { data: result } = await invTrackFetch<PurchaseReceiveResult>(
+  assertPoNumberForMutation(poNumber);
+  assertNonEmptyReceiveLines(lines);
+  const { data: result } = await invTrackFetch<unknown>(
     "POST",
     procurementPoReceiveUrl(poNumber),
     {
@@ -124,36 +137,22 @@ export async function receivePurchaseOrder(
     httpOptions,
   );
 
-  const firstChange = result.inventoryChanges[0];
-  const mismatchCreated = result.mismatchExceptions.some((entry) => entry.created);
+  const normalized = normalizePurchaseReceiveResult(result);
+  const firstChange = normalized.inventoryChanges[0];
+  const mismatchCreated = normalized.mismatchExceptions.some((entry) => entry.created);
   const baseMessage = firstChange
     ? `Received (partial): ${firstChange.sku} +${firstChange.delta}`
-    : `Received (partial): ${result.changed.inventoryChanges} inventory updates`;
+    : `Received (partial): ${normalized.changed.inventoryChanges} inventory updates`;
   toastStore.push({
     type: mismatchCreated ? "warning" : "success",
     title: "PO receive processed",
     message: mismatchCreated ? `${baseMessage}, mismatch exception created` : baseMessage,
   });
-  return result;
+  return normalized;
 }
 
 export async function downloadPurchaseOrderSignedPdf(po: string, options?: PoHttpOptions): Promise<Blob> {
   const poNumber = normalizeOperationalPoParam(po);
-  const res = await fetch(procurementPoSignedPdfUrl(poNumber), {
-    credentials: "include",
-    cache: "no-store",
-    signal: options?.signal,
-  });
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const j = (await res.json()) as { error?: { message?: string }; message?: string };
-      if (j?.error?.message) detail = j.error.message;
-      else if (typeof j?.message === "string") detail = j.message;
-    } catch {
-      /* not JSON */
-    }
-    throw new Error(detail);
-  }
-  return res.blob();
+  assertPoNumberForMutation(poNumber);
+  return fetchAuthenticatedBlob(procurementPoSignedPdfUrl(poNumber), options);
 }
