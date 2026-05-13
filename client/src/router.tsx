@@ -4,9 +4,9 @@ import { ProtectedRoute } from "@/lib/protected-route";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { buildLegacyRedirectRules, type LegacyRedirectRule } from "@/lib/routes/legacy-redirects";
 import { RouteLoadingBoundary } from "@/app/route-loading-boundary";
+import AuthPage from "@/pages/auth-page";
 
 const NotFound = lazy(() => import("@/pages/not-found"));
-const AuthPage = lazy(() => import("@/pages/auth-page"));
 const Home = lazy(() => import("@/pages/home"));
 const Inventory = lazy(() => import("@/pages/inventory"));
 const InventoryItemDetail = lazy(() => import("@/pages/inventory-item"));

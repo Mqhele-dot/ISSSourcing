@@ -97,6 +97,20 @@ export default function AuthPage() {
     }
   }, [toast]);
 
+  /** Deterministic boot: avoid rendering a half-hydrated login shell while session is still loading. */
+  if (authLoading && !user) {
+    return (
+      <div
+        className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background text-muted-foreground"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
+        <span className="text-sm">Checking session…</span>
+      </div>
+    );
+  }
+
   /**
    * Don’t redirect while `/api/user` is still revalidating — stale cached user + 401 on refetch caused auth ↔ `/` churn.
    * Show a minimal spinner instead of bouncing through a blank lazy shell.

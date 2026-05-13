@@ -13,7 +13,7 @@ export function RouteFallback() {
     <div className="flex min-h-[40vh] flex-col gap-4 p-4 md:p-6" aria-busy="true" aria-label="Loading page">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-        <span>Loading workspace…</span>
+        <span>Loading page…</span>
       </div>
       <div className="grid gap-3 max-w-3xl">
         <Skeleton className="h-8 w-2/3" />

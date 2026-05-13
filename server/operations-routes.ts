@@ -218,6 +218,18 @@ function mapPurchaseReceiveError(error: unknown): never {
       { sku: message.split(":")[1] },
     );
   }
+  if (message.startsWith("invalid_receive_qty_integer:")) {
+    throw contractError(
+      400,
+      "INVALID_RECEIVE_QTY",
+      "Receive quantity must be a whole number",
+      undefined,
+      { sku: message.split(":")[1] },
+    );
+  }
+  if (message === "line_sku_required") {
+    throw contractError(400, "LINE_SKU_REQUIRED", "Each receive line must include a SKU");
+  }
   throw error;
 }
 

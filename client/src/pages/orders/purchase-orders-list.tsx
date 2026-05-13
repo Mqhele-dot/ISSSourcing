@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { ExternalLink, Eye, FileDown, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,8 +34,8 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryState } from "@/hooks/use-query-state";
-import { useAsyncResource } from "@/hooks/use-async-resource";
-import { downloadPurchaseOrderSignedPdf, fetchPurchaseOrdersEnvelope } from "@/api/client";
+import { usePurchaseOrdersEnvelopeQuery } from "@/features/purchase-orders";
+import { downloadPurchaseOrderSignedPdf } from "@/api/client";
 import type { PurchaseOrderListItem } from "@/api/types";
 import { downloadFile } from "@/lib/utils";
 import { formatDate } from "./purchase-order-shared";
@@ -122,17 +122,22 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   const [statusInput, setStatusInput] = useState(String(queryState.status || ""));
   useEffect(() => setStatusInput(String(queryState.status || "")), [queryState.status]);
 
-  const fetcher = useCallback(
-    () =>
-      fetchPurchaseOrdersEnvelope({
-        status: String(queryState.status || ""),
-        supplier: String(queryState.supplier || ""),
-        q: String(queryState.q || ""),
-      }),
-    [queryState.status, queryState.supplier, queryState.q],
-  );
-
-  const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
+  const poListQuery = usePurchaseOrdersEnvelopeQuery({
+    status: String(queryState.status || ""),
+    supplier: String(queryState.supplier || ""),
+    q: String(queryState.q || ""),
+  });
+  const envelope = poListQuery.data;
+  const loading = poListQuery.isLoading;
+  const error =
+    poListQuery.error instanceof Error
+      ? poListQuery.error
+      : poListQuery.error
+        ? new Error(String(poListQuery.error))
+        : null;
+  const refetch = async () => {
+    await poListQuery.refetch();
+  };
   const data = envelope?.data ?? null;
   const fallbackRaw = envelope?.meta?.fallback as FallbackKind | undefined;
   /** Do not show degraded/timeout empty copy when the list request itself failed. */

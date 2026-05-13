@@ -1302,12 +1302,25 @@ export async function receiveOperationalPurchaseOrder(
   }> = [];
   const mismatchExceptions: Array<{ id: number; sku: string; created: boolean }> = [];
 
+  const MAX_BATCH_LEN = 256;
+  const MAX_SERIAL_TOKENS = 200;
+  const MAX_SERIAL_TOKEN_LEN = 128;
+
   for (const lineInput of lines) {
-    const sku = lineInput.sku;
+    const sku = String(lineInput.sku ?? "").trim();
+    if (!sku) {
+      throw new Error("line_sku_required");
+    }
     const receiveNow = Number(lineInput.qty_received_now);
-    const batchNumber = typeof lineInput.batch_number === "string" ? lineInput.batch_number.trim() : "";
+    const batchNumber =
+      typeof lineInput.batch_number === "string"
+        ? lineInput.batch_number.trim().slice(0, MAX_BATCH_LEN)
+        : "";
     const serialNumbers = Array.isArray(lineInput.serial_numbers)
-      ? lineInput.serial_numbers.map((s) => String(s).trim()).filter(Boolean)
+      ? lineInput.serial_numbers
+          .map((s) => String(s).trim().slice(0, MAX_SERIAL_TOKEN_LEN))
+          .filter(Boolean)
+          .slice(0, MAX_SERIAL_TOKENS)
       : [];
     const line = lineBySku.get(sku);
 
@@ -1316,6 +1329,9 @@ export async function receiveOperationalPurchaseOrder(
     }
     if (!Number.isFinite(receiveNow) || receiveNow <= 0) {
       throw new Error(`invalid_receive_qty:${sku}`);
+    }
+    if (!Number.isInteger(receiveNow)) {
+      throw new Error(`invalid_receive_qty_integer:${sku}`);
     }
 
     const remaining = Math.max(line.qtyOrdered - line.qtyReceived, 0);

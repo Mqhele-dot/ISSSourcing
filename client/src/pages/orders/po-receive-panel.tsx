@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -65,18 +66,29 @@ export function PoReceivePanel({
       </CardHeader>
       <CardContent className="space-y-4">
         <Table>
+          <TableCaption className="sr-only">
+            Goods receipt lines for this purchase order. Enter batch, serial, and quantities to receive.
+          </TableCaption>
           <TableHeader>
             <TableRow>
-              <TableHead>SKU</TableHead>
-              <TableHead>Item</TableHead>
-              <TableHead>Supplier part #</TableHead>
-              <TableHead>Commodity</TableHead>
-              <TableHead className="text-right">Ordered</TableHead>
-              <TableHead className="text-right">Received</TableHead>
-              <TableHead className="text-right">Remaining</TableHead>
-              <TableHead>Batch</TableHead>
-              <TableHead>Serial numbers</TableHead>
-              <TableHead className="text-right">Receive now</TableHead>
+              <TableHead scope="col">SKU</TableHead>
+              <TableHead scope="col">Item</TableHead>
+              <TableHead scope="col">Supplier part #</TableHead>
+              <TableHead scope="col">Commodity</TableHead>
+              <TableHead scope="col" className="text-right">
+                Ordered
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Received
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Remaining
+              </TableHead>
+              <TableHead scope="col">Batch</TableHead>
+              <TableHead scope="col">Serial numbers</TableHead>
+              <TableHead scope="col" className="text-right">
+                Receive now
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -97,6 +109,7 @@ export function PoReceivePanel({
                 <TableCell className="text-right">{line.expectedRemaining}</TableCell>
                 <TableCell>
                   <Input
+                    aria-label={`Batch number for ${line.sku}`}
                     placeholder="Batch #"
                     value={batchState[line.sku] ?? ""}
                     onChange={(event) =>
@@ -110,6 +123,7 @@ export function PoReceivePanel({
                 </TableCell>
                 <TableCell>
                   <Input
+                    aria-label={`Serial numbers for ${line.sku}, comma separated`}
                     placeholder="Serials CSV"
                     value={serialState[line.sku] ?? ""}
                     onChange={(event) =>
@@ -123,6 +137,7 @@ export function PoReceivePanel({
                 </TableCell>
                 <TableCell className="text-right">
                   <Input
+                    aria-label={`Quantity to receive now for ${line.sku}`}
                     data-testid={`po-receive-qty-${line.sku}`}
                     className="ml-auto w-28 text-right"
                     type="number"
@@ -172,6 +187,8 @@ export function PoReceivePanel({
 
         {receiveError ? (
           <div
+            role="alert"
+            aria-live="assertive"
             data-testid="po-receive-error"
             className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >

@@ -58,6 +58,7 @@ export function useAsyncResource<T>(
       setLoading(false);
       return;
     }
+    let cancelled = false;
     const now = Date.now();
     if (isDev) {
       callTimesRef.current = callTimesRef.current.filter((t) => now - t < 2000);
@@ -71,8 +72,28 @@ export function useAsyncResource<T>(
         }
       }
     }
-    void refetch();
-  }, [options?.immediate, refetch, isDev, ...(options?.revalidateDeps ?? [fetcher])]);
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const nextData = await withTimeout(fetcherRef.current(), FETCH_TIMEOUT_MS);
+        if (!cancelled) {
+          setData(nextData);
+        }
+      } catch (fetchError) {
+        if (!cancelled) {
+          setError(fetchError instanceof Error ? fetchError : new Error("Unknown fetch error"));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [options?.immediate, isDev, ...(options?.revalidateDeps ?? [fetcher])]);
 
   return { loading, error, data, refetch };
 }

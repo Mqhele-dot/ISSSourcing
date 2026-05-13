@@ -34,14 +34,13 @@ import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { ToastAction } from "@/components/ui/toast";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { downloadFile } from "@/lib/utils";
-import { useAsyncResource } from "@/hooks/use-async-resource";
+import { usePurchaseOrderOperationalDetailQuery } from "@/features/purchase-orders";
 import { Can } from "@/components/auth/can";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
   approvePurchaseOrder,
   downloadPurchaseOrderSignedPdf,
   fetchApprovalSuggestions,
-  fetchPurchaseOrder,
   receivePurchaseOrder,
   sendPurchaseOrder,
   type PurchaseOrderDetail,
@@ -101,8 +100,18 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [commercialSaveError, setCommercialSaveError] = useState<string | null>(null);
   const purchaseOrderIdRef = useRef<number | null>(null);
 
-  const fetcher = useCallback((): Promise<PurchaseOrderDetail> => fetchPurchaseOrder(po), [po]);
-  const { loading, error, data, refetch } = useAsyncResource(fetcher, { revalidateDeps: [po] });
+  const detailQuery = usePurchaseOrderOperationalDetailQuery(po);
+  const loading = detailQuery.isLoading;
+  const error =
+    detailQuery.error instanceof Error
+      ? detailQuery.error
+      : detailQuery.error
+        ? new Error(String(detailQuery.error))
+        : null;
+  const data = detailQuery.data ?? null;
+  const refetch = async () => {
+    await detailQuery.refetch();
+  };
 
   useEffect(() => {
     purchaseOrderIdRef.current = data?.id ?? null;
@@ -265,6 +274,9 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         const qty = Number(rawQty);
         if (!Number.isFinite(qty)) {
           return `Receive quantity for ${line.sku} must be a finite number.`;
+        }
+        if (qty > 0 && !Number.isInteger(qty)) {
+          return `Receive quantity for ${line.sku} must be a whole number.`;
         }
         if (qty < 0) {
           return `Receive quantity for ${line.sku} cannot be negative.`;
