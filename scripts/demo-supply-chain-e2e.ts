@@ -26,6 +26,19 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
+function unwrapData<T>(value: unknown): T {
+  if (
+    value &&
+    typeof value === "object" &&
+    "ok" in value &&
+    (value as { ok?: unknown }).ok === true &&
+    "data" in value
+  ) {
+    return (value as { data: T }).data;
+  }
+  return value as T;
+}
+
 function expectStatus(name: string, expected: number, actual: number): boolean {
   if (actual === expected) {
     console.log("  ✓ %s -> %d", name, actual);
@@ -148,7 +161,9 @@ async function main() {
 
   const poItemsRes = await apiJsonRequest(`/purchase-orders/${poId}/items`, { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/purchase-orders/:id/items", 200, poItemsRes.status)) failures++;
-  const poItems = asArray<{ id: number; quantity: number; receivedQuantity?: number | null }>(poItemsRes.json);
+  const poItems = asArray<{ id: number; quantity: number; receivedQuantity?: number | null }>(
+    unwrapData<unknown[]>(poItemsRes.json),
+  );
   for (const line of poItems) {
     const remaining = Number(line.quantity ?? 0) - Number(line.receivedQuantity ?? 0);
     if (remaining <= 0) continue;

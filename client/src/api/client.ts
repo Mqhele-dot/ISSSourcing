@@ -30,6 +30,7 @@ import type {
   GasComplianceAlertsResult,
   MobileScanResolveResult,
 } from "./types";
+import { normalizeShipmentFilters } from "@shared/logistics-shipment-filters";
 export type {
   ActivityRecord,
   ActivityItem,
@@ -551,15 +552,16 @@ export async function fetchShipmentsEnvelope(params?: {
   etaTo?: string;
   tracking?: string;
 }): Promise<ApiEnvelopeResult<ShipmentListItem[]>> {
+  const n = normalizeShipmentFilters(params ?? {});
   const search = new URLSearchParams();
-  if (params?.status) search.set("status", params.status);
-  if (params?.po) search.set("po", params.po);
-  if (params?.supplier) search.set("supplier", params.supplier);
-  if (params?.carrier) search.set("carrier", params.carrier);
-  if (params?.risk) search.set("risk", params.risk);
-  if (params?.etaFrom) search.set("etaFrom", params.etaFrom);
-  if (params?.etaTo) search.set("etaTo", params.etaTo);
-  if (params?.tracking) search.set("tracking", params.tracking);
+  if (n.status) search.set("status", n.status);
+  if (n.po) search.set("po", n.po);
+  if (n.supplier) search.set("supplier", n.supplier);
+  if (n.carrier) search.set("carrier", n.carrier);
+  if (n.risk) search.set("risk", n.risk);
+  if (n.etaFrom) search.set("etaFrom", n.etaFrom);
+  if (n.etaTo) search.set("etaTo", n.etaTo);
+  if (n.tracking) search.set("tracking", n.tracking);
   const url =
     search.size > 0 ? `/api/logistics/shipments?${search.toString()}` : "/api/logistics/shipments";
   return fetchWithMeta<ShipmentListItem[]>(url);

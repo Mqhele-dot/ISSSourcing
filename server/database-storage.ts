@@ -307,8 +307,8 @@ export class DatabaseStorage implements IStorage {
   // Additional methods would be implemented here following the same pattern
   // Each method would use Drizzle ORM to interact with the database
   
-  // For the remaining methods, we use MemStorage temporarily until they're fully implemented
-  // We create an instance of MemStorage for temporary fallback
+  // Tier-B: MemStorage covers ancillary features (VAT/auth/session helpers, supplier logos, bulk-import fallback,
+  // legacy email stub). PO/receive/grn persistence uses Drizzle (see recordPurchaseOrderItemReceived, purchase_orders).
   private memStorage = new MemStorage();
   
   // Image Analysis Log methods
@@ -2708,6 +2708,11 @@ export class DatabaseStorage implements IStorage {
   }
   
   async sendPurchaseOrderEmail(id: number, recipientEmail: string): Promise<boolean> {
+    if (process.env.NODE_ENV === "production") {
+      console.warn(
+        "[database-storage] sendPurchaseOrderEmail delegates to MemStorage; outbound PO email may be a no-op in production.",
+      );
+    }
     return this.memStorage.sendPurchaseOrderEmail(id, recipientEmail);
   }
   

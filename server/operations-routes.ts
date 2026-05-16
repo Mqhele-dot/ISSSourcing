@@ -35,6 +35,7 @@ import {
   generateShipmentDeliveryNotePdf,
 } from "./services/document-generator-service";
 import { getReportingCurrencyCode } from "./lib/org-reporting-money";
+import { normalizeShipmentFilters } from "@shared/logistics-shipment-filters";
 
 type AuthGuards = {
   ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => void;
@@ -781,27 +782,18 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const trackingRaw = typeof req.query.tracking === "string" ? req.query.tracking : "";
         assertValidLogisticsDateQuery(etaFromRaw, "etaFrom");
         assertValidLogisticsDateQuery(etaToRaw, "etaTo");
-        const appliedFilters = {
-          status: statusRaw.trim(),
-          po: poRaw.trim(),
-          supplier: supplierRaw.trim(),
-          carrier: carrierRaw.trim(),
-          risk: riskRaw.trim(),
-          etaFrom: etaFromRaw.trim(),
-          etaTo: etaToRaw.trim(),
-          tracking: trackingRaw.trim(),
-        };
+        const appliedFilters = normalizeShipmentFilters({
+          status: statusRaw,
+          po: poRaw,
+          supplier: supplierRaw,
+          carrier: carrierRaw,
+          risk: riskRaw,
+          etaFrom: etaFromRaw,
+          etaTo: etaToRaw,
+          tracking: trackingRaw,
+        });
         const shipments = await withTimeout(
-          listOperationalShipments({
-            status: appliedFilters.status,
-            po: appliedFilters.po,
-            supplier: appliedFilters.supplier,
-            carrier: appliedFilters.carrier,
-            risk: appliedFilters.risk,
-            etaFrom: appliedFilters.etaFrom,
-            etaTo: appliedFilters.etaTo,
-            tracking: appliedFilters.tracking,
-          }),
+          listOperationalShipments(appliedFilters),
           OPERATIONS_QUERY_TIMEOUT_MS,
         );
         const queryMs = Date.now() - start;

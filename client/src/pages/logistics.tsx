@@ -54,6 +54,7 @@ import type { FallbackKind } from "@/components/ui/data-state";
 import { queryClient, requestJson } from "@/lib/queryClient";
 import { downloadFile } from "@/lib/utils";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { normalizeShipmentFilters, type ShipmentListFiltersNormalized } from "@shared/logistics-shipment-filters";
 
 async function downloadShipmentDeliveryNote(shipmentId: number): Promise<void> {
   const res = await fetch(`/api/logistics/shipments/${shipmentId}/delivery-note.pdf`, {
@@ -105,28 +106,10 @@ function shipmentRiskBucketLabel(bucket: string | undefined) {
   }
 }
 
-type LogisticsListFiltersState = {
-  status: string;
-  po: string;
-  supplier: string;
-  carrier: string;
-  risk: string;
-  etaFrom: string;
-  etaTo: string;
-  tracking: string;
-};
+type LogisticsListFiltersState = ShipmentListFiltersNormalized;
 
 function logisticsListFiltersNormalized(q: LogisticsListFiltersState): LogisticsListFiltersState {
-  return {
-    status: String(q.status ?? "").trim(),
-    po: String(q.po ?? "").trim(),
-    supplier: String(q.supplier ?? "").trim(),
-    carrier: String(q.carrier ?? "").trim(),
-    risk: String(q.risk ?? "").trim(),
-    etaFrom: String(q.etaFrom ?? "").trim(),
-    etaTo: String(q.etaTo ?? "").trim(),
-    tracking: String(q.tracking ?? "").trim(),
-  };
+  return normalizeShipmentFilters(q);
 }
 
 function logisticsListQueryKeyTuple(n: LogisticsListFiltersState): (readonly [string, string])[] {

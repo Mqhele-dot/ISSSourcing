@@ -268,16 +268,18 @@ async function main() {
       items: [{ itemId, quantity: 1, unitPrice: 10 }],
     },
   });
-  const requisitionId = Number(asRecord(reqRes.json).id ?? 0);
+  const requisitionId = Number(asRecord(unwrapData<unknown>(reqRes.json)).id ?? 0);
   await apiJsonRequest(`/purchase-requisitions/${requisitionId}/approve`, { method: "POST", cookie: adminCookie, body: {} });
   const convertRes = await apiJsonRequest(`/purchase-requisitions/${requisitionId}/convert`, {
     method: "POST",
     cookie: adminCookie,
     body: {},
   });
-  const poId = Number(asRecord(convertRes.json).id ?? 0);
+  const poId = Number(asRecord(unwrapData<unknown>(convertRes.json)).id ?? 0);
   const poDetail = await apiJsonRequest(`/purchase-orders/${poId}`, { method: "GET", cookie: adminCookie });
-  const poLineId = Number(asArray<Record<string, unknown>>(asRecord(poDetail.json).items)[0]?.id ?? 0);
+  const poLineId = Number(
+    asArray<Record<string, unknown>>(asRecord(unwrapData<unknown>(poDetail.json)).items)[0]?.id ?? 0,
+  );
   const invalidReceipt = await apiJsonRequest("/ap/receipts", {
     method: "POST",
     cookie: adminCookie,

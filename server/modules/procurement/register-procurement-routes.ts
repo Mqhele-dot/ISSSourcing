@@ -153,13 +153,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     app.get("/api/purchase-requisitions", ...poRead, async (_req: Request, res: Response) => {
     try {
       const requisitions = await storage.getAllPurchaseRequisitions();
-      res.json(requisitions);
+      return sendOk(res, requisitions);
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Error fetching purchase requisitions:", error);
-      res.status(500).json({
-        message: "Failed to fetch purchase requisitions",
-        ...(process.env.NODE_ENV !== "production" && { detail: errMsg }),
+      return sendError(res, 500, "FETCH_REQUISITIONS_FAILED", "Failed to fetch purchase requisitions", {
+        details: process.env.NODE_ENV !== "production" ? { detail: errMsg } : undefined,
       });
     }
   });
@@ -168,19 +167,19 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+        return sendError(res, 400, "INVALID_REQUISITION_ID", "Invalid purchase requisition ID");
       }
       
       const requisition = await storage.getRequisitionWithDetails(id);
       
       if (!requisition) {
-        return res.status(404).json({ message: "Purchase requisition not found" });
+        return sendError(res, 404, "REQUISITION_NOT_FOUND", "Purchase requisition not found");
       }
       
-      res.json(requisition);
+      return sendOk(res, requisition);
     } catch (error) {
       console.error("Error fetching purchase requisition:", error);
-      res.status(500).json({ message: "Failed to fetch purchase requisition" });
+      return sendError(res, 500, "FETCH_REQUISITION_FAILED", "Failed to fetch purchase requisition");
     }
   });
 
@@ -274,7 +273,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         validatedItemsData
       );
       
-      res.status(201).json(newRequisition);
+      return sendOk(res, newRequisition, 201);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
@@ -379,21 +378,20 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         } as any).catch(() => {});
       }
       
-      res.json(updatedRequisition);
+      return sendOk(res, updatedRequisition);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
         return sendFunctionError(res, 400, "updatePurchaseRequisition", validationError.message);
-      } else {
-        console.error("Error updating purchase requisition:", error);
-        return sendFunctionError(
-          res,
-          500,
-          "updatePurchaseRequisition",
-          "Failed to update purchase requisition",
-          error instanceof Error ? error.message : String(error),
-        );
       }
+      console.error("Error updating purchase requisition:", error);
+      return sendFunctionError(
+        res,
+        500,
+        "updatePurchaseRequisition",
+        "Failed to update purchase requisition",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   });
 
@@ -401,19 +399,19 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+        return sendError(res, 400, "INVALID_REQUISITION_ID", "Invalid purchase requisition ID");
       }
       
       const success = await storage.deletePurchaseRequisition(id);
       
       if (!success) {
-        return res.status(404).json({ message: "Purchase requisition not found" });
+        return sendError(res, 404, "REQUISITION_NOT_FOUND", "Purchase requisition not found");
       }
       
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting purchase requisition:", error);
-      res.status(500).json({ message: "Failed to delete purchase requisition" });
+      return sendError(res, 500, "DELETE_REQUISITION_FAILED", "Failed to delete purchase requisition");
     }
   });
 
@@ -485,7 +483,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         });
       }
       
-      res.json(updatedRequisition);
+      return sendOk(res, updatedRequisition);
     } catch (error) {
       console.error("Error approving purchase requisition:", error);
       return sendFunctionError(
@@ -549,7 +547,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         });
       }
       
-      res.json(updatedRequisition);
+      return sendOk(res, updatedRequisition);
     } catch (error) {
       console.error("Error rejecting purchase requisition:", error);
       return sendFunctionError(
@@ -625,14 +623,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const reqId = Number(req.params.reqId);
       if (isNaN(reqId)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+        return sendError(res, 400, "INVALID_REQUISITION_ID", "Invalid purchase requisition ID");
       }
       
       const items = await storage.getPurchaseRequisitionItems(reqId);
-      res.json(items);
+      return sendOk(res, items);
     } catch (error) {
       console.error("Error fetching purchase requisition items:", error);
-      res.status(500).json({ message: "Failed to fetch purchase requisition items" });
+      return sendError(res, 500, "FETCH_REQUISITION_ITEMS_FAILED", "Failed to fetch purchase requisition items");
     }
   });
 
@@ -640,7 +638,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const reqId = Number(req.params.reqId);
       if (isNaN(reqId)) {
-        return res.status(400).json({ message: "Invalid purchase requisition ID" });
+        return sendError(res, 400, "INVALID_REQUISITION_ID", "Invalid purchase requisition ID");
       }
       
       const validatedData = insertPurchaseRequisitionItemSchema.parse({
@@ -649,14 +647,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       });
       
       const newItem = await storage.addPurchaseRequisitionItem(validatedData);
-      res.status(201).json(newItem);
+      return sendOk(res, newItem, 201);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
+        return sendError(res, 400, "VALIDATION_ERROR", validationError.message);
       } else {
         console.error("Error adding purchase requisition item:", error);
-        res.status(500).json({ message: "Failed to add purchase requisition item" });
+        return sendError(res, 500, "ADD_REQUISITION_ITEM_FAILED", "Failed to add purchase requisition item");
       }
     }
   });
@@ -665,24 +663,24 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition item ID" });
+        return sendError(res, 400, "INVALID_REQUISITION_ITEM_ID", "Invalid purchase requisition item ID");
       }
       
       const validatedData = insertPurchaseRequisitionItemSchema.partial().parse(req.body);
       const updatedItem = await storage.updatePurchaseRequisitionItem(id, validatedData);
       
       if (!updatedItem) {
-        return res.status(404).json({ message: "Purchase requisition item not found" });
+        return sendError(res, 404, "REQUISITION_ITEM_NOT_FOUND", "Purchase requisition item not found");
       }
       
-      res.json(updatedItem);
+      return sendOk(res, updatedItem);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
+        return sendError(res, 400, "VALIDATION_ERROR", validationError.message);
       } else {
         console.error("Error updating purchase requisition item:", error);
-        res.status(500).json({ message: "Failed to update purchase requisition item" });
+        return sendError(res, 500, "UPDATE_REQUISITION_ITEM_FAILED", "Failed to update purchase requisition item");
       }
     }
   });
@@ -691,19 +689,19 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase requisition item ID" });
+        return sendError(res, 400, "INVALID_REQUISITION_ITEM_ID", "Invalid purchase requisition item ID");
       }
       
       const success = await storage.deletePurchaseRequisitionItem(id);
       
       if (!success) {
-        return res.status(404).json({ message: "Purchase requisition item not found" });
+        return sendError(res, 404, "REQUISITION_ITEM_NOT_FOUND", "Purchase requisition item not found");
       }
       
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting purchase requisition item:", error);
-      res.status(500).json({ message: "Failed to delete purchase requisition item" });
+      return sendError(res, 500, "DELETE_REQUISITION_ITEM_FAILED", "Failed to delete purchase requisition item");
     }
   });
 
@@ -714,10 +712,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     async (_req: Request, res: Response) => {
       try {
         const orders = await storage.getAllPurchaseOrders();
-        res.json(orders);
+        return sendOk(res, orders);
       } catch (error) {
         console.error("Error fetching purchase orders:", error);
-        res.status(500).json({ message: "Failed to fetch purchase orders" });
+        return sendError(res, 500, "FETCH_PURCHASE_ORDERS_FAILED", "Failed to fetch purchase orders");
       }
     },
   );
@@ -729,19 +727,19 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ID", "Invalid purchase order ID");
       }
       
       const order = await storage.getPurchaseOrderWithDetails(id);
       
       if (!order) {
-        return res.status(404).json({ message: "Purchase order not found" });
+        return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
       }
       
-      res.json(order);
+      return sendOk(res, order);
     } catch (error) {
       console.error("Error fetching purchase order:", error);
-      res.status(500).json({ message: "Failed to fetch purchase order" });
+      return sendError(res, 500, "FETCH_PURCHASE_ORDER_FAILED", "Failed to fetch purchase order");
     }
   },
   );
@@ -749,7 +747,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
   app.post("/api/purchase-orders", ...poWrite, async (req: Request, res: Response) => {
     try {
       if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
-        return res.status(400).json({ message: "At least one item is required" });
+        return sendError(res, 400, "ITEMS_REQUIRED", "At least one item is required");
       }
       
       const purchaseOrderInput = { ...(req.body ?? {}) } as Record<string, unknown>;
@@ -807,7 +805,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       });
       const projectCheckPo = await validateProjectIdForOrg(validatedOrderData.projectId ?? undefined);
       if (!projectCheckPo.ok) {
-        return res.status(400).json({ message: projectCheckPo.message });
+        return sendError(res, 400, "INVALID_PROJECT", projectCheckPo.message);
       }
 
       const newOrder = await storage.createPurchaseOrder(
@@ -826,14 +824,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         createdBy: creatorId,
       } as any);
       
-      res.status(201).json(newOrder);
+      return sendOk(res, newOrder, 201);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
+        return sendError(res, 400, "VALIDATION_ERROR", validationError.message);
       } else {
         console.error("Error creating purchase order:", error);
-        res.status(500).json({ message: "Failed to create purchase order" });
+        return sendError(res, 500, "CREATE_PURCHASE_ORDER_FAILED", "Failed to create purchase order");
       }
     }
   });
@@ -910,10 +908,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         },
         createdBy: updaterId,
       } as any);
-      res.json(updatedOrder);
+      return sendOk(res, updatedOrder);
     } catch (error) {
       console.error("Error updating purchase order:", error);
-      res.status(500).json({ message: "Failed to update purchase order" });
+      return sendError(res, 500, "UPDATE_PURCHASE_ORDER_FAILED", "Failed to update purchase order");
     }
   };
 
@@ -933,12 +931,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid purchase order ID" });
+      if (isNaN(id)) return sendError(res, 400, "INVALID_PURCHASE_ORDER_ID", "Invalid purchase order ID");
       const rows = await db.select().from(purchaseOrderRevisions).where(eq(purchaseOrderRevisions.orderId, id));
-      res.json(rows);
+      return sendOk(res, rows);
     } catch (error) {
       console.error("Error fetching purchase order revisions:", error);
-      res.status(500).json({ message: "Failed to fetch purchase order revisions" });
+      return sendError(res, 500, "FETCH_PO_REVISIONS_FAILED", "Failed to fetch purchase order revisions");
     }
   },
   );
@@ -947,19 +945,19 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ID", "Invalid purchase order ID");
       }
       
       const success = await storage.deletePurchaseOrder(id);
       
       if (!success) {
-        return res.status(404).json({ message: "Purchase order not found" });
+        return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
       }
       
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting purchase order:", error);
-      res.status(500).json({ message: "Failed to delete purchase order" });
+      return sendError(res, 500, "DELETE_PURCHASE_ORDER_FAILED", "Failed to delete purchase order");
     }
   });
 
@@ -967,24 +965,24 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ID", "Invalid purchase order ID");
       }
       
       const { status } = req.body;
       if (!status || !Object.values(PurchaseOrderStatus).includes(status as PurchaseOrderStatus)) {
-        return res.status(400).json({ message: "Valid status is required" });
+        return sendError(res, 400, "INVALID_PO_STATUS", "Valid status is required");
       }
       
       const updatedOrder = await storage.updatePurchaseOrderStatus(id, status);
       
       if (!updatedOrder) {
-        return res.status(404).json({ message: "Purchase order not found" });
+        return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
       }
       
-      res.json(updatedOrder);
+      return sendOk(res, updatedOrder);
     } catch (error) {
       console.error("Error updating purchase order status:", error);
-      res.status(500).json({ message: "Failed to update purchase order status" });
+      return sendError(res, 500, "UPDATE_PO_STATUS_FAILED", "Failed to update purchase order status");
     }
   });
 
@@ -992,24 +990,24 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ID", "Invalid purchase order ID");
       }
       
       const { paymentStatus, reference } = req.body;
       if (!paymentStatus || !Object.values(PaymentStatus).includes(paymentStatus as PaymentStatus)) {
-        return res.status(400).json({ message: "Valid payment status is required" });
+        return sendError(res, 400, "INVALID_PAYMENT_STATUS", "Valid payment status is required");
       }
       
       const updatedOrder = await storage.updatePurchaseOrderPaymentStatus(id, paymentStatus, reference);
       
       if (!updatedOrder) {
-        return res.status(404).json({ message: "Purchase order not found" });
+        return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
       }
       
-      res.json(updatedOrder);
+      return sendOk(res, updatedOrder);
     } catch (error) {
       console.error("Error updating purchase order payment status:", error);
-      res.status(500).json({ message: "Failed to update purchase order payment status" });
+      return sendError(res, 500, "UPDATE_PO_PAYMENT_FAILED", "Failed to update purchase order payment status");
     }
   });
 
@@ -1017,27 +1015,27 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ID", "Invalid purchase order ID");
       }
       
       const { email } = req.body;
       if (!email) {
-        return res.status(400).json({ message: "Recipient email is required" });
+        return sendError(res, 400, "EMAIL_REQUIRED", "Recipient email is required");
       }
       
       const success = await storage.sendPurchaseOrderEmail(id, email);
       
       if (!success) {
-        return res.status(500).json({ message: "Failed to send purchase order email" });
+        return sendError(res, 500, "SEND_PO_EMAIL_FAILED", "Failed to send purchase order email");
       }
       
       // Update the order status to SENT if successful
       await storage.updatePurchaseOrderStatus(id, PurchaseOrderStatus.SENT);
       
-      res.json({ message: "Purchase order email sent successfully" });
+      return sendOk(res, { message: "Purchase order email sent successfully" });
     } catch (error) {
       console.error("Error sending purchase order email:", error);
-      res.status(500).json({ message: "Failed to send purchase order email" });
+      return sendError(res, 500, "SEND_PO_EMAIL_FAILED", "Failed to send purchase order email");
     }
   });
 
@@ -1052,14 +1050,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const orderId = Number(req.params.orderId);
       if (isNaN(orderId)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ID", "Invalid purchase order ID");
       }
       
       const items = await storage.getPurchaseOrderItems(orderId);
-      res.json(items);
+      return sendOk(res, items);
     } catch (error) {
       console.error("Error fetching purchase order items:", error);
-      res.status(500).json({ message: "Failed to fetch purchase order items" });
+      return sendError(res, 500, "FETCH_PO_ITEMS_FAILED", "Failed to fetch purchase order items");
     }
   },
   );
@@ -1074,7 +1072,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const orderId = Number(req.params.orderId);
       if (isNaN(orderId)) {
-        return res.status(400).json({ message: "Invalid purchase order ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ID", "Invalid purchase order ID");
       }
       
       const validatedData = insertPurchaseOrderItemSchema.parse({
@@ -1083,14 +1081,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       });
       
       const newItem = await storage.addPurchaseOrderItem(validatedData);
-      res.status(201).json(newItem);
+      return sendOk(res, newItem, 201);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
+        return sendError(res, 400, "VALIDATION_ERROR", validationError.message);
       } else {
         console.error("Error adding purchase order item:", error);
-        res.status(500).json({ message: "Failed to add purchase order item" });
+        return sendError(res, 500, "ADD_PO_ITEM_FAILED", "Failed to add purchase order item");
       }
     }
   },
@@ -1100,24 +1098,24 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order item ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ITEM_ID", "Invalid purchase order item ID");
       }
       
       const validatedData = insertPurchaseOrderItemSchema.partial().parse(req.body);
       const updatedItem = await storage.updatePurchaseOrderItem(id, validatedData);
       
       if (!updatedItem) {
-        return res.status(404).json({ message: "Purchase order item not found" });
+        return sendError(res, 404, "PURCHASE_ORDER_ITEM_NOT_FOUND", "Purchase order item not found");
       }
       
-      res.json(updatedItem);
+      return sendOk(res, updatedItem);
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
+        return sendError(res, 400, "VALIDATION_ERROR", validationError.message);
       } else {
         console.error("Error updating purchase order item:", error);
-        res.status(500).json({ message: "Failed to update purchase order item" });
+        return sendError(res, 500, "UPDATE_PO_ITEM_FAILED", "Failed to update purchase order item");
       }
     }
   });
@@ -1126,19 +1124,19 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order item ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ITEM_ID", "Invalid purchase order item ID");
       }
       
       const success = await storage.deletePurchaseOrderItem(id);
       
       if (!success) {
-        return res.status(404).json({ message: "Purchase order item not found" });
+        return sendError(res, 404, "PURCHASE_ORDER_ITEM_NOT_FOUND", "Purchase order item not found");
       }
       
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting purchase order item:", error);
-      res.status(500).json({ message: "Failed to delete purchase order item" });
+      return sendError(res, 500, "DELETE_PO_ITEM_FAILED", "Failed to delete purchase order item");
     }
   });
 
@@ -1146,12 +1144,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid purchase order item ID" });
+        return sendError(res, 400, "INVALID_PURCHASE_ORDER_ITEM_ID", "Invalid purchase order item ID");
       }
       
       const { receivedQuantity, receiverName, warehouseLocation, receivedAt, receiverUserId } = req.body ?? {};
       if (receivedQuantity === undefined || isNaN(Number(receivedQuantity)) || Number(receivedQuantity) < 0) {
-        return res.status(400).json({ message: "Valid received quantity is required" });
+        return sendError(res, 400, "INVALID_RECEIVED_QUANTITY", "Valid received quantity is required");
       }
 
       const meta =
@@ -1168,16 +1166,16 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       const updatedItem = await storage.recordPurchaseOrderItemReceived(id, Number(receivedQuantity), meta);
       
       if (!updatedItem) {
-        return res.status(404).json({ message: "Purchase order item not found" });
+        return sendError(res, 404, "PURCHASE_ORDER_ITEM_NOT_FOUND", "Purchase order item not found");
       }
       
-      res.json(updatedItem);
+      return sendOk(res, updatedItem);
     } catch (error) {
       if (error instanceof Error && error.message === "RECEIVE_EXCEEDS_REMAINING") {
-        return res.status(400).json({ message: "Quantity cannot exceed remaining quantity" });
+        return sendError(res, 400, "RECEIVE_EXCEEDS_REMAINING", "Quantity cannot exceed remaining quantity");
       }
       console.error("Error recording received quantity:", error);
-      res.status(500).json({ message: "Failed to record received quantity" });
+      return sendError(res, 500, "RECORD_RECEIVE_FAILED", "Failed to record received quantity");
     }
   });
 

@@ -11,6 +11,7 @@ import {
   parseInvtrackFromRelatedRefs,
 } from "./operational-exception-context";
 import { getActiveOrganizationId } from "../../organization-context";
+import { normalizeShipmentFilters } from "@shared/logistics-shipment-filters";
 
 type InventoryFilterInput = {
   location?: string;
@@ -1835,14 +1836,14 @@ export async function listOperationalShipments(filters: {
   etaTo?: string;
   tracking?: string;
 }) {
-  const statusPat = filters.status?.trim().toLowerCase() ?? "";
-  const poPat = filters.po?.trim().toLowerCase() ?? "";
-  const supplierPat = filters.supplier?.trim().toLowerCase() ?? "";
-  const carrierPat = filters.carrier?.trim().toLowerCase() ?? "";
-  const trackingPat = filters.tracking?.trim().toLowerCase() ?? "";
-  const riskWantedRaw = filters.risk?.trim().toLowerCase() ?? "";
-  const etaFrom = filters.etaFrom?.trim() ?? "";
-  const etaTo = filters.etaTo?.trim() ?? "";
+  const n = normalizeShipmentFilters(filters);
+  const statusPat = n.status;
+  const poPat = n.po;
+  const supplierPat = n.supplier;
+  const carrierPat = n.carrier;
+  const trackingPat = n.tracking;
+  const etaFrom = n.etaFrom;
+  const etaTo = n.etaTo;
 
   const whereClauses: string[] = [];
   const params: unknown[] = [];
@@ -1891,9 +1892,10 @@ export async function listOperationalShipments(filters: {
     whereClauses.push(`s.eta IS NOT NULL AND s.eta <= $${params.length}::timestamptz`);
   }
 
+  const riskToken = n.risk;
   const riskWanted =
-    riskWantedRaw && ["late", "no_eta", "due_soon", "exception", "on_time"].includes(riskWantedRaw)
-      ? (riskWantedRaw as "late" | "no_eta" | "due_soon" | "exception" | "on_time")
+    riskToken && ["late", "no_eta", "due_soon", "exception", "on_time"].includes(riskToken)
+      ? (riskToken as "late" | "no_eta" | "due_soon" | "exception" | "on_time")
       : "";
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
