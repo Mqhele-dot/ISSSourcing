@@ -112,7 +112,7 @@ export function validateReceiveLines(
       errors.push({
         sku,
         field: "qtyReceivedNow",
-        message: `Quantity cannot exceed remaining (${remaining}).`,
+        message: `Quantity cannot exceed remaining quantity (${remaining} remaining).`,
       });
       continue;
     }

@@ -3897,15 +3897,20 @@ export class MemStorage implements IStorage {
     const poItem = this.purchaseOrderItems.get(itemId);
     if (!poItem) return undefined;
     
-    // Check if we're receiving a valid amount
-    if (receivedQuantity < 0 || receivedQuantity > poItem.quantity) {
+    // Incremental receive: validate against remaining, then add to received total.
+    const current = poItem.receivedQuantity ?? 0;
+    const remaining = poItem.quantity - current;
+    if (!Number.isFinite(receivedQuantity) || !Number.isInteger(receivedQuantity) || receivedQuantity < 0) {
       throw new Error(`Invalid received quantity: ${receivedQuantity}`);
+    }
+    if (receivedQuantity > remaining) {
+      throw new Error("RECEIVE_EXCEEDS_REMAINING");
     }
     
     // Update the received quantity
     const updatedItem = {
       ...poItem,
-      receivedQuantity: (poItem.receivedQuantity ?? 0) + receivedQuantity
+      receivedQuantity: current + receivedQuantity
     };
     
     this.purchaseOrderItems.set(itemId, updatedItem);

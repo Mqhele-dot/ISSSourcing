@@ -314,19 +314,13 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
 
     const checked = validateReceiveLines(data, receivePayload);
     if (!checked.ok) {
-      const globalLine = checked.errors.filter((e) => e.field === "_line");
-      const perLine = checked.errors.filter((e) => e.sku && e.field !== "_line");
-      setReceiveLineIssues([...globalLine, ...perLine]);
-      const otherGeneral = checked.errors
-        .filter((e) => e.field !== "_line" && !e.sku)
-        .map((e) => e.message)
-        .join(" ");
-      setReceiveError(otherGeneral || null);
-      const toastParts = [
-        ...globalLine.map((e) => e.message),
-        otherGeneral,
-        ...perLine.map((e) => `${e.sku}: ${e.message}`),
-      ].filter(Boolean);
+      setReceiveLineIssues(checked.errors);
+      const combined = checked.errors
+        .map((e) => (e.sku ? `${e.sku}: ${e.message}` : e.message))
+        .join(" ")
+        .trim();
+      setReceiveError(combined || "Receive validation failed.");
+      const toastParts = checked.errors.map((e) => (e.sku ? `${e.sku}: ${e.message}` : e.message)).filter(Boolean);
       if (toastParts.length) {
         toast({
           title: "Receive validation failed",

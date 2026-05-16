@@ -148,7 +148,7 @@ async function main() {
   });
   if (!expectStatus("POST /api/purchase-requisitions/:id/convert", 201, convertRes.status)) failures++;
   if (!expectRequestId("POST /api/purchase-requisitions/:id/convert", convertRes.requestId)) failures++;
-  const po = asRecord(convertRes.json);
+  const po = asRecord(unwrapData<unknown>(convertRes.json));
   const poId = Number(po.id ?? 0);
   const poNumber = String(po.orderNumber ?? "");
   if (!poId || !poNumber) {

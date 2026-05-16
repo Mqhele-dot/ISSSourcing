@@ -230,6 +230,14 @@ function mapPurchaseReceiveError(error: unknown): never {
   if (message === "line_sku_required") {
     throw contractError(400, "LINE_SKU_REQUIRED", "Each receive line must include a SKU");
   }
+  if (message.startsWith("receive_exceeds_remaining")) {
+    throw contractError(
+      400,
+      "RECEIVE_EXCEEDS_REMAINING",
+      "Quantity cannot exceed remaining quantity",
+      "Reduce qty_received_now to the line remaining or receive in multiple steps.",
+    );
+  }
   throw error;
 }
 

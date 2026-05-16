@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Can } from "@/components/auth/can";
 import type { PurchaseOrderDetail } from "@/api/types";
-import { clampReceiveQtyToRemaining, normalizeReceiveQtyInput, type ReceiveLineFieldError } from "@/features/purchase-orders";
+import { normalizeReceiveQtyInput, type ReceiveLineFieldError } from "@/features/purchase-orders";
 
 type PoReceivePanelProps = {
   /** Anchor id for in-page navigation (e.g. po-receive). */
@@ -176,9 +176,7 @@ export function PoReceivePanel({
                     value={receiveState[line.sku] ?? 0}
                     onChange={(event) => {
                       const raw = normalizeReceiveQtyInput(event.target.value);
-                      const next = Number.isFinite(raw)
-                        ? clampReceiveQtyToRemaining(raw, line.expectedRemaining)
-                        : 0;
+                      const next = Number.isFinite(raw) ? Math.trunc(raw) : 0;
                       setReceiveState((current) => ({
                         ...current,
                         [line.sku]: next,

@@ -1173,6 +1173,9 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       
       res.json(updatedItem);
     } catch (error) {
+      if (error instanceof Error && error.message === "RECEIVE_EXCEEDS_REMAINING") {
+        return res.status(400).json({ message: "Quantity cannot exceed remaining quantity" });
+      }
       console.error("Error recording received quantity:", error);
       res.status(500).json({ message: "Failed to record received quantity" });
     }

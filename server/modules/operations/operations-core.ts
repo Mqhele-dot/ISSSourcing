@@ -1335,33 +1335,20 @@ export async function receiveOperationalPurchaseOrder(
     }
 
     const remaining = Math.max(line.qtyOrdered - line.qtyReceived, 0);
-    const appliedQty = Math.min(remaining, receiveNow);
+    if (receiveNow > remaining) {
+      throw new Error(`receive_exceeds_remaining:${sku}`);
+    }
 
     await pool.query(
       `
       UPDATE purchase_order_items
-      SET received_quantity = LEAST(quantity, COALESCE(received_quantity, 0) + $2)
+      SET received_quantity = COALESCE(received_quantity, 0) + $2
       WHERE id = $1
       `,
       [line.id, receiveNow],
     );
 
-    if (receiveNow !== remaining) {
-      const mismatch = await createOrGetOperationalException({
-        type: "po_mismatch",
-        severity: "medium",
-        title: `PO mismatch on ${order.order_number}`,
-        description: `Expected remaining ${remaining}, received now ${receiveNow}`,
-        relatedRefs: {
-          po_number: order.order_number,
-          sku: line.sku,
-        },
-        slaHours: 12,
-      });
-      mismatchExceptions.push({ id: mismatch.id, sku: line.sku, created: mismatch.created });
-    }
-
-    if (appliedQty > 0) {
+    if (receiveNow > 0) {
       const itemLocationResult = await pool.query<{
         default_location: string | null;
         location: string | null;
@@ -1383,7 +1370,7 @@ export async function receiveOperationalPurchaseOrder(
       const adjustment = await adjustOperationalInventory({
         skuOrId: line.sku,
         location,
-        delta: appliedQty,
+        delta: receiveNow,
         reason: "PO Receive",
         ref: order.order_number,
         createdBy: "po-receive",
@@ -1393,7 +1380,7 @@ export async function receiveOperationalPurchaseOrder(
       inventoryChanges.push({
         sku: line.sku,
         location,
-        delta: appliedQty,
+        delta: receiveNow,
         available: adjustment.summary.available,
         onHand: adjustment.summary.onHand,
       });
@@ -1422,7 +1409,7 @@ export async function receiveOperationalPurchaseOrder(
         `,
         [
           line.itemId,
-          appliedQty,
+          receiveNow,
           order.id,
           `Received against PO ${order.order_number}`,
           receiveMeta.receiver_user_id ?? null,
@@ -1455,7 +1442,7 @@ export async function receiveOperationalPurchaseOrder(
                 updated_at = now()
             WHERE id = $1
             `,
-            [existingBatch.rows[0].id, appliedQty],
+            [existingBatch.rows[0].id, receiveNow],
           );
         } else {
           await pool.query(
@@ -1463,7 +1450,7 @@ export async function receiveOperationalPurchaseOrder(
             INSERT INTO inventory_batches (item_id, warehouse_id, batch_number, quantity_received, quantity_on_hand)
             VALUES ($1, NULL, $2, $3, $3)
             `,
-            [line.itemId, batchNumber, appliedQty],
+            [line.itemId, batchNumber, receiveNow],
           );
         }
       }
@@ -1487,7 +1474,7 @@ export async function receiveOperationalPurchaseOrder(
         }
       }
 
-      let remainingToFulfill = appliedQty;
+      let remainingToFulfill = receiveNow;
       const allocationRows = await pool.query<{ id: number; quantity: number }>(
         `
         SELECT id, quantity
@@ -2792,15 +2779,14 @@ export async function runOperationalDemoWalkthrough(actor: string) {
     {},
     actor,
   );
-  const mismatchExceptionId = receiveResult.mismatchExceptions[0]?.id ?? null;
   steps.push({
     id: "partial-receive",
-    label: "Partial receive causing mismatch",
+    label: "Partial receive",
     completed: true,
-    details: `Mismatches ${receiveResult.mismatchExceptions.length}`,
+    details: `Received 4 of ${lineQuantity} ordered (exceptions ${receiveResult.mismatchExceptions.length})`,
   });
 
-  const chosenExceptionId = mismatchExceptionId ?? shortageExceptionId;
+  const chosenExceptionId = shortageExceptionId;
   if (chosenExceptionId !== null) {
     await getOperationalExceptionDetail(String(chosenExceptionId));
     steps.push({

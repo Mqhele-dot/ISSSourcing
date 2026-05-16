@@ -2381,15 +2381,114 @@ export class DatabaseStorage implements IStorage {
   }
   
   async addPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem> {
-    return this.memStorage.addPurchaseOrderItem(item);
+    const orgId = getActiveOrganizationId();
+    const [order] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.id, item.orderId), eq(purchaseOrders.organizationId, orgId)))
+      .limit(1);
+    if (!order) {
+      throw new Error(`Purchase order ${item.orderId} not found`);
+    }
+    const inv = await repoGetInventoryItem(item.itemId);
+    if (!inv) {
+      throw new Error(`Inventory item with ID ${item.itemId} not found`);
+    }
+
+    const [row] = await db
+      .insert(purchaseOrderItems)
+      .values({
+        orderId: item.orderId,
+        itemId: item.itemId,
+        quantity: item.quantity ?? 1,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
+        receivedQuantity: item.receivedQuantity ?? 0,
+        notes: item.notes ?? null,
+      })
+      .returning();
+
+    await db
+      .update(purchaseOrders)
+      .set({
+        totalAmount: Number(order.totalAmount ?? 0) + Number(row.totalPrice),
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseOrders.id, order.id));
+
+    return row;
   }
   
-  async updatePurchaseOrderItem(id: number, item: Partial<InsertPurchaseOrderItem>): Promise<PurchaseOrderItem | undefined> {
-    return this.memStorage.updatePurchaseOrderItem(id, item);
+  async updatePurchaseOrderItem(
+    id: number,
+    item: Partial<InsertPurchaseOrderItem>,
+  ): Promise<PurchaseOrderItem | undefined> {
+    const orgId = getActiveOrganizationId();
+    const [row] = await db
+      .select({ poi: purchaseOrderItems })
+      .from(purchaseOrderItems)
+      .innerJoin(purchaseOrders, eq(purchaseOrderItems.orderId, purchaseOrders.id))
+      .where(and(eq(purchaseOrderItems.id, id), eq(purchaseOrders.organizationId, orgId)));
+    if (!row) return undefined;
+
+    const existingItem = row.poi;
+    const oldPrice = Number(existingItem.totalPrice);
+
+    const merged = {
+      quantity: item.quantity ?? existingItem.quantity,
+      unitPrice: item.unitPrice ?? existingItem.unitPrice,
+      totalPrice: item.totalPrice ?? existingItem.totalPrice,
+      notes: item.notes !== undefined ? item.notes : existingItem.notes,
+      itemId: item.itemId ?? existingItem.itemId,
+      orderId: item.orderId ?? existingItem.orderId,
+      receivedQuantity:
+        item.receivedQuantity !== undefined ? item.receivedQuantity : existingItem.receivedQuantity,
+    };
+
+    const [updatedItem] = await db.update(purchaseOrderItems).set(merged).where(eq(purchaseOrderItems.id, id)).returning();
+
+    if (!updatedItem) return undefined;
+
+    const newPrice = Number(updatedItem.totalPrice);
+    if (newPrice !== oldPrice) {
+      const order = await this.getPurchaseOrder(existingItem.orderId);
+      if (order) {
+        await db
+          .update(purchaseOrders)
+          .set({
+            totalAmount: Number(order.totalAmount ?? 0) - oldPrice + newPrice,
+            updatedAt: new Date(),
+          })
+          .where(eq(purchaseOrders.id, order.id));
+      }
+    }
+
+    return updatedItem;
   }
   
   async deletePurchaseOrderItem(id: number): Promise<boolean> {
-    return this.memStorage.deletePurchaseOrderItem(id);
+    const orgId = getActiveOrganizationId();
+    const [row] = await db
+      .select({ poi: purchaseOrderItems })
+      .from(purchaseOrderItems)
+      .innerJoin(purchaseOrders, eq(purchaseOrderItems.orderId, purchaseOrders.id))
+      .where(and(eq(purchaseOrderItems.id, id), eq(purchaseOrders.organizationId, orgId)));
+    if (!row) return false;
+
+    const poi = row.poi;
+    const order = await this.getPurchaseOrder(poi.orderId);
+    if (order) {
+      await db
+        .update(purchaseOrders)
+        .set({
+          totalAmount: Math.max(0, Number(order.totalAmount ?? 0) - Number(poi.totalPrice)),
+          updatedAt: new Date(),
+        })
+        .where(eq(purchaseOrders.id, order.id));
+    }
+
+    const result = await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
   
   async updatePurchaseOrderStatus(id: number, status: PurchaseOrderStatus): Promise<PurchaseOrder | undefined> {
@@ -2445,7 +2544,78 @@ export class DatabaseStorage implements IStorage {
     receivedQuantity: number,
     meta?: PurchaseOrderItemReceiveMeta,
   ): Promise<PurchaseOrderItem | undefined> {
-    return this.memStorage.recordPurchaseOrderItemReceived(itemId, receivedQuantity, meta);
+    const orgId = getActiveOrganizationId();
+    if (!Number.isFinite(receivedQuantity) || !Number.isInteger(receivedQuantity) || receivedQuantity < 0) {
+      throw new Error(`Invalid received quantity: ${receivedQuantity}`);
+    }
+
+    const [row] = await db
+      .select({ item: purchaseOrderItems })
+      .from(purchaseOrderItems)
+      .innerJoin(purchaseOrders, eq(purchaseOrderItems.orderId, purchaseOrders.id))
+      .where(and(eq(purchaseOrderItems.id, itemId), eq(purchaseOrders.organizationId, orgId)));
+
+    if (!row) return undefined;
+
+    const poItem = row.item;
+    const current = poItem.receivedQuantity ?? 0;
+    const remaining = Math.max(0, poItem.quantity - current);
+
+    if (receivedQuantity > remaining) {
+      throw new Error("RECEIVE_EXCEEDS_REMAINING");
+    }
+
+    const newReceived = current + receivedQuantity;
+
+    const [updatedItem] = await db
+      .update(purchaseOrderItems)
+      .set({ receivedQuantity: newReceived })
+      .where(eq(purchaseOrderItems.id, itemId))
+      .returning();
+
+    if (!updatedItem) return undefined;
+
+    const inv = await repoGetInventoryItem(poItem.itemId);
+    if (inv) {
+      await repoUpdateInventoryItem(inv.id, {
+        quantity: Number(inv.quantity ?? 0) + receivedQuantity,
+      });
+    }
+
+    const order = await this.getPurchaseOrder(poItem.orderId);
+    if (order) {
+      const orderItems = await this.getPurchaseOrderItems(order.id);
+      const allItemsReceived = orderItems.every((oi) => (oi.receivedQuantity ?? 0) >= oi.quantity);
+      if (allItemsReceived) {
+        await this.updatePurchaseOrderStatus(order.id, PurchaseOrderStatus.RECEIVED);
+      } else {
+        const anyItemsReceived = orderItems.some((oi) => (oi.receivedQuantity ?? 0) > 0);
+        if (anyItemsReceived) {
+          await this.updatePurchaseOrderStatus(order.id, PurchaseOrderStatus.PARTIALLY_RECEIVED);
+        }
+      }
+    }
+
+    const grnParts: string[] = [];
+    if (meta?.receiverName?.trim()) grnParts.push(`receiver: ${meta.receiverName.trim()}`);
+    if (meta?.warehouseLocation?.trim()) grnParts.push(`location: ${meta.warehouseLocation.trim()}`);
+    if (meta?.receivedAt?.trim()) grnParts.push(`receivedAt: ${meta.receivedAt.trim()}`);
+    const grnSuffix = grnParts.length ? ` (${grnParts.join("; ")})` : "";
+    const actorUserId =
+      meta?.receiverUserId != null && Number.isFinite(Number(meta.receiverUserId))
+        ? Number(meta.receiverUserId)
+        : 1;
+
+    await this.createActivityLog({
+      action: "Item Received",
+      description: `Received ${receivedQuantity} unit(s) of item #${poItem.itemId} from PO #${poItem.orderId}${grnSuffix}`,
+      itemId: poItem.itemId,
+      referenceType: "purchase_order",
+      referenceId: poItem.orderId,
+      userId: actorUserId,
+    });
+
+    return updatedItem;
   }
   
   async createPurchaseOrderFromRequisition(requisitionId: number): Promise<PurchaseOrder | undefined> {
