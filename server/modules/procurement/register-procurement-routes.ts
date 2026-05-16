@@ -18,6 +18,7 @@ import {
   supplierContracts,
   paymentTerms,
   incoterms,
+  currencies,
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
@@ -109,12 +110,41 @@ async function assertPurchaseOrderCommercialReferences(params: {
   return { ok: true };
 }
 
+async function assertPurchaseOrderCurrencyCodeAllowed(
+  currencyCode: string | null | undefined,
+): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  if (currencyCode == null) return { ok: true };
+  const code = String(currencyCode).trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) {
+    return { ok: false, code: "PO_CURRENCY_INVALID", message: "Currency must be a 3-letter ISO 4217 code." };
+  }
+  const [row] = await db
+    .select({ id: currencies.id })
+    .from(currencies)
+    .where(and(eq(currencies.code, code), eq(currencies.active, true)))
+    .limit(1);
+  if (!row) {
+    return {
+      ok: false,
+      code: "PO_CURRENCY_UNKNOWN",
+      message: `Currency ${code} is not an active Master Data currency.`,
+    };
+  }
+  return { ok: true };
+}
+
 const purchaseOrderCommercialPatchSchema = z
   .object({
     departmentId: z.union([z.number().int().positive(), z.null()]).optional(),
     contractId: z.union([z.number().int().positive(), z.null()]).optional(),
     paymentTermsId: z.union([z.number().int().positive(), z.null()]).optional(),
     incotermId: z.union([z.number().int().positive(), z.null()]).optional(),
+    currencyCode: z
+      .string()
+      .length(3)
+      .regex(/^[A-Za-z]{3}$/)
+      .transform((c) => c.toUpperCase())
+      .optional(),
   })
   .strict();
 
@@ -141,6 +171,27 @@ function normalizeRequisitionLineInput(item: unknown, index: number) {
     totalPrice: qty * unit,
     notes: typeof row.notes === "string" && row.notes.trim() ? row.notes.trim() : null,
   };
+}
+
+/**
+ * Domain PO list (`GET /api/purchase-orders` + `GET /api/procurement/purchase-orders/records`).
+ * Must register **before** `registerOperationalRoutes` so `/records` is not captured by operational `/:po`.
+ */
+export function registerPurchaseOrderListRoutesBeforeOperationalMount(app: Express, auth: AuthBundle): void {
+  const poRead = [auth.ensureAuthenticated];
+  app.get(
+    ["/api/purchase-orders", "/api/procurement/purchase-orders/records"],
+    ...poRead,
+    async (_req: Request, res: Response) => {
+      try {
+        const orders = await storage.getAllPurchaseOrders();
+        return sendOk(res, orders);
+      } catch (error) {
+        console.error("Error fetching purchase orders:", error);
+        return sendError(res, 500, "FETCH_PURCHASE_ORDERS_FAILED", "Failed to fetch purchase orders");
+      }
+    },
+  );
 }
 
 /**
@@ -299,7 +350,15 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       }
       const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
       const { items, revisionReason: _revisionReason, ...headerPatch } = body;
-      const validatedData = insertPurchaseRequisitionSchema.partial().parse(headerPatch);
+      const requisitionPatch: Record<string, unknown> = { ...headerPatch };
+      // Match POST: JSON sends requiredDate as ISO string; insert schema expects Date.
+      if (typeof requisitionPatch.requiredDate === "string" && requisitionPatch.requiredDate.trim()) {
+        const parsedRequiredDate = new Date(requisitionPatch.requiredDate);
+        if (!Number.isNaN(parsedRequiredDate.getTime())) {
+          requisitionPatch.requiredDate = parsedRequiredDate;
+        }
+      }
+      const validatedData = insertPurchaseRequisitionSchema.partial().parse(requisitionPatch);
       if (validatedData.supplierId != null) {
         const supplier = await storage.getSupplier(Number(validatedData.supplierId));
         if (!supplier) {
@@ -705,20 +764,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     }
   });
 
-  // Purchase Order endpoints (same RBAC as requisitions) — legacy + canonical record paths
-  app.get(
-    ["/api/purchase-orders", "/api/procurement/purchase-orders/records"],
-    ...poRead,
-    async (_req: Request, res: Response) => {
-      try {
-        const orders = await storage.getAllPurchaseOrders();
-        return sendOk(res, orders);
-      } catch (error) {
-        console.error("Error fetching purchase orders:", error);
-        return sendError(res, 500, "FETCH_PURCHASE_ORDERS_FAILED", "Failed to fetch purchase orders");
-      }
-    },
-  );
+  // Purchase Order endpoints (same RBAC as requisitions) — list routes registered early in routes.ts
 
   app.get(
     ["/api/purchase-orders/:id", "/api/procurement/purchase-orders/records/:id"],
@@ -848,6 +894,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         const validationError = fromZodError(parsedBody.error);
         return sendError(res, 400, "PO_COMMERCIAL_VALIDATION_FAILED", validationError.message);
       }
+      const patchPayload = parsedBody.data;
+
+      const currencyValidation = await assertPurchaseOrderCurrencyCodeAllowed(patchPayload.currencyCode);
+      if (!currencyValidation.ok) {
+        return sendError(res, 400, currencyValidation.code, currencyValidation.message);
+      }
 
       const existing = await storage.getPurchaseOrder(id);
       if (!existing) {
@@ -864,9 +916,8 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         );
       }
 
-      const patchPayload = parsedBody.data;
       const validatedData: Partial<InsertPurchaseOrder> = {};
-      (["departmentId", "contractId", "paymentTermsId", "incotermId"] as const).forEach((key) => {
+      (["departmentId", "contractId", "paymentTermsId", "incotermId", "currencyCode"] as const).forEach((key) => {
         if (patchPayload[key] !== undefined) {
           validatedData[key] = patchPayload[key] as never;
         }
@@ -880,7 +931,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       const refCheck = await assertPurchaseOrderCommercialReferences({
         organizationId: orgId,
         supplierId: existing.supplierId,
-        patch: validatedData,
+        patch: {
+          departmentId: validatedData.departmentId,
+          contractId: validatedData.contractId,
+          paymentTermsId: validatedData.paymentTermsId,
+          incotermId: validatedData.incotermId,
+        },
       });
       if (!refCheck.ok) {
         return sendError(res, 400, refCheck.code, refCheck.message);

@@ -8,6 +8,7 @@ export type PurchaseOrderRecordSummary = {
   contractId?: number | null;
   paymentTermsId?: number | null;
   incotermId?: number | null;
+  currencyCode?: string | null;
 };
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -18,6 +19,13 @@ function pickNullableNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function pickNullableStr(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return s.length ? s : null;
 }
 
 function normalizeRecordSummary(raw: unknown): PurchaseOrderRecordSummary | null {
@@ -32,6 +40,7 @@ function normalizeRecordSummary(raw: unknown): PurchaseOrderRecordSummary | null
     contractId: pickNullableNum(d.contractId ?? d.contract_id),
     paymentTermsId: pickNullableNum(d.paymentTermsId ?? d.payment_terms_id),
     incotermId: pickNullableNum(d.incotermId ?? d.incoterm_id),
+    currencyCode: pickNullableStr(d.currencyCode ?? d.currency_code),
   };
 }
 

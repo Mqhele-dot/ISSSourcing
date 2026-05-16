@@ -31,6 +31,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
+import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
+import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallback";
 import { ToastAction } from "@/components/ui/toast";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { downloadBlobAsFile } from "@/lib/utils";
@@ -102,6 +104,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [contractId, setContractId] = useState<string>("none");
   const [paymentTermsId, setPaymentTermsId] = useState<string>("none");
   const [incotermId, setIncotermId] = useState<string>("none");
+  const [currencyCode, setCurrencyCode] = useState("USD");
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [receiveLineIssues, setReceiveLineIssues] = useState<ReceiveLineFieldError[]>([]);
   const [commercialSaveError, setCommercialSaveError] = useState<string | null>(null);
@@ -170,11 +173,34 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   });
   const { data: contracts = [], isError: contractsError } = useQuery({
     queryKey: ["/api/contracts"],
-    queryFn: () => requestJson<Array<{ id: number; title: string; supplierId: number }>>("GET", "/api/contracts"),
+    queryFn: () =>
+      requestJson<Array<{ id: number; title: string; supplierId: number; currency?: string | null }>>(
+        "GET",
+        "/api/contracts",
+      ),
+  });
+  const { data: currenciesList = [], isError: currenciesError } = useQuery({
+    queryKey: ["/api/currencies"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/currencies");
+      return normalizeApiList<{ code: string; name: string; active?: boolean | null }>(raw).filter(
+        (c) => c.active !== false,
+      );
+    },
   });
   const { data: paymentTerms = [], isError: paymentTermsError } = useQuery({
     queryKey: ["/api/payment-terms"],
     queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/payment-terms"),
+  });
+  const { data: supplierRow } = useQuery({
+    queryKey: ["/api/suppliers", data?.supplierId],
+    enabled: Boolean(data?.supplierId),
+    queryFn: () =>
+      requestJson<{
+        id: number;
+        paymentTermsId?: number | null;
+        defaultCurrencyCode?: string | null;
+      }>("GET", `/api/suppliers/${data!.supplierId}`),
   });
   const { data: incoterms = [], isError: incotermsError } = useQuery({
     queryKey: ["/api/incoterms"],
@@ -223,6 +249,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         contractId: contractId === "none" ? null : Number(contractId),
         paymentTermsId: paymentTermsId === "none" ? null : Number(paymentTermsId),
         incotermId: incotermId === "none" ? null : Number(incotermId),
+        currencyCode: currencyCode.trim().toUpperCase(),
       });
     },
     onSuccess: async () => {
@@ -257,6 +284,10 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     );
     setIncotermId(
       purchaseOrderRecord.incotermId == null ? "none" : String(purchaseOrderRecord.incotermId),
+    );
+    const rawCc = purchaseOrderRecord.currencyCode;
+    setCurrencyCode(
+      typeof rawCc === "string" && /^[A-Za-z]{3}$/.test(rawCc) ? rawCc.toUpperCase() : "USD",
     );
   }, [purchaseOrderRecord]);
 
@@ -387,8 +418,48 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
             contractsError ||
             paymentTermsError ||
             incotermsError ||
+            currenciesError ||
             approvalPoliciesError ||
             approvalSuggestionsError;
+
+          const poMoneyFormatter = createReportingMoneyFormatter(
+            purchaseOrderRecord &&
+              typeof purchaseOrderRecord.currencyCode === "string" &&
+              /^[A-Za-z]{3}$/.test(purchaseOrderRecord.currencyCode)
+              ? purchaseOrderRecord.currencyCode
+              : REPORTING_CURRENCY_FALLBACK_CODE,
+          );
+
+          const applyCommercialDefaults = () => {
+            if (contractId === "none") {
+              toast({ title: "Select a contract first", variant: "destructive" });
+              return;
+            }
+            const contractRow = contracts.find((x) => String(x.id) === contractId);
+            if (!contractRow) return;
+            const fromContract =
+              typeof contractRow.currency === "string" && /^[A-Za-z]{3}$/.test(contractRow.currency)
+                ? contractRow.currency.toUpperCase()
+                : null;
+            const fromSupplier =
+              supplierRow?.defaultCurrencyCode &&
+              typeof supplierRow.defaultCurrencyCode === "string" &&
+              /^[A-Za-z]{3}$/.test(supplierRow.defaultCurrencyCode)
+                ? supplierRow.defaultCurrencyCode.toUpperCase()
+                : null;
+            const pick =
+              [fromContract, fromSupplier].find((code) =>
+                code ? currenciesList.some((row) => row.code === code) : false,
+              ) ?? null;
+            if (pick) setCurrencyCode(pick);
+            if (supplierRow?.paymentTermsId != null) {
+              setPaymentTermsId(String(supplierRow.paymentTermsId));
+            }
+            toast({
+              title: "Defaults applied",
+              description: "Review fields, then Save terms to persist.",
+            });
+          };
           const downloadSignedPdf = async () => {
             setPdfLoading(true);
             try {
@@ -581,7 +652,10 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                           <CardTitle className="text-sm font-medium text-muted-foreground">Order total</CardTitle>
                         </CardHeader>
                         <CardContent data-testid="po-detail-total" className="text-lg font-semibold">
-                          {formatMoney(detail.totalAmount)}
+                          <div>{poMoneyFormatter.formatMoney(detail.totalAmount)}</div>
+                          <p className="mt-1 text-xs font-normal text-muted-foreground">
+                            PO currency {poMoneyFormatter.currencyCode}
+                          </p>
                         </CardContent>
                       </Card>
                     </div>
@@ -604,6 +678,10 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       setDepartmentId={setDepartmentId}
                       contractId={contractId}
                       setContractId={setContractId}
+                      currencyCode={currencyCode}
+                      setCurrencyCode={setCurrencyCode}
+                      currencies={currenciesList}
+                      onApplyContractTerms={applyCommercialDefaults}
                       paymentTermsId={paymentTermsId}
                       setPaymentTermsId={setPaymentTermsId}
                       incotermId={incotermId}

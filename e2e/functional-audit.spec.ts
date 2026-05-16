@@ -353,6 +353,7 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 25000 });
     await expect(page.getByLabel(/section navigation/i)).toBeVisible();
     await expect(page.locator("#dashboard-stats")).toBeVisible();
+    await expect(page.getByTestId("analytics-workspace-charts")).toBeVisible({ timeout: 20000 });
   });
 
   test("Get Educated: search AP and open Accounts Payable lesson", async ({ page }) => {

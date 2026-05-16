@@ -223,6 +223,7 @@ async function ensureMasterData(): Promise<void> {
     { code: "USD", name: "US Dollar", symbol: "$", decimalPlaces: 2, active: true },
     { code: "EUR", name: "Euro", symbol: "€", decimalPlaces: 2, active: true },
     { code: "GBP", name: "British Pound", symbol: "£", decimalPlaces: 2, active: true },
+    { code: "ZAR", name: "South African Rand", symbol: "R", decimalPlaces: 2, active: true },
   ]).onConflictDoNothing({ target: currencies.code });
 
   await db.insert(taxCodes).values([

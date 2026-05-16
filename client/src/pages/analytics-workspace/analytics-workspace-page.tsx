@@ -8,6 +8,7 @@ import { AnalyticsKpiRegistryPanel } from "./analytics-kpi-registry-panel";
 import { AnalyticsWorkspaceShell } from "./analytics-workspace-shell";
 import { buildAnalyticsSectionCards } from "./build-analytics-section-cards";
 import { useAnalyticsWorkspaceQueries } from "./use-analytics-workspace-queries";
+import { AnalyticsWorkspaceCharts } from "./analytics-workspace-charts";
 
 export default function AnalyticsWorkspacePage() {
   const [location] = useLocation();
@@ -55,6 +56,13 @@ export default function AnalyticsWorkspacePage() {
     >
       <>
         <AnalyticsKpiGrid cards={cards} section={section} />
+        <AnalyticsWorkspaceCharts
+          section={section}
+          bundle={{ inventoryStats, controlTower, apOverview, spendAnalytics }}
+          health={health}
+          formatMoney={formatMoney}
+          loading={shell.loading}
+        />
         <AnalyticsBoundaryMap section={section} />
         <AnalyticsKpiRegistryPanel section={section} />
       </>

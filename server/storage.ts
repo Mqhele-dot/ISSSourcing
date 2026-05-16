@@ -3652,6 +3652,7 @@ export class MemStorage implements IStorage {
       contractId: order.contractId ?? null,
       paymentTermsId: order.paymentTermsId ?? null,
       incotermId: order.incotermId ?? null,
+      currencyCode: order.currencyCode ?? "USD",
       totalAmount: order.totalAmount ?? 0,
       orderDate: order.orderDate ?? now,
       expectedDeliveryDate: order.expectedDeliveryDate ?? null,

@@ -202,6 +202,16 @@ async function main() {
   assert.ok(loginAdmin2.ok);
   const adminCookie2 = peekSessionCookie();
 
+  const procurementRecords = await apiJsonRequest("/procurement/purchase-orders/records", {
+    cookie: adminCookie2,
+  });
+  assert.ok(
+    procurementRecords.ok,
+    `GET /api/procurement/purchase-orders/records must list (not PO_NOT_FOUND): ${procurementRecords.status} ${JSON.stringify(procurementRecords.json)}`,
+  );
+  const procurementRecordsData = unwrapData<unknown[]>(procurementRecords.json, "procurement PO records");
+  assert.ok(Array.isArray(procurementRecordsData), "procurement PO records data must be an array");
+
   const get2 = await apiJsonRequest("/purchase/orders/PO-FQA-002", { cookie: adminCookie2 });
   if (!get2.ok) {
     console.error("GET PO-FQA-002 failed:", get2.status);
@@ -220,6 +230,15 @@ async function main() {
     cookie: adminCookie2,
   });
   assert.ok(put2.ok, `PUT commercial PO-FQA-002 should succeed: ${put2.status} ${JSON.stringify(put2.json)}`);
+
+  const putEur = await apiJsonRequest(`/purchase-orders/${id2}`, {
+    method: "PUT",
+    body: { currencyCode: "EUR" },
+    cookie: adminCookie2,
+  });
+  assert.ok(putEur.ok, `PUT PO currency EUR should succeed: ${putEur.status} ${JSON.stringify(putEur.json)}`);
+  const afterEur = unwrapData<{ currencyCode?: string }>(putEur.json, "PO after currency");
+  assert.equal(String(afterEur.currencyCode ?? "").toUpperCase(), "EUR");
 
   const get3 = await apiJsonRequest("/purchase/orders/PO-FQA-003", { cookie: adminCookie2 });
   if (!get3.ok) {

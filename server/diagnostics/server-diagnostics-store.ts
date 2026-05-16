@@ -19,7 +19,7 @@ type ServerDiagnosticEventInput = Omit<ServerDiagnosticEvent, "id" | "timestamp"
   timestamp?: string;
 };
 
-const MAX_EVENTS = 300;
+const MAX_EVENTS = 1200;
 const events: ServerDiagnosticEvent[] = [];
 const SENSITIVE_KEY_RE = /(database_url|authorization|cookie|token|password|secret|session|csrf|api[-_]?key|set-cookie)/i;
 

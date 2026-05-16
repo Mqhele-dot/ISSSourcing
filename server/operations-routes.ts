@@ -421,11 +421,23 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/procurement/purchase-orders",
   ] as const;
 
+  /** e.g. `GET /api/procurement/purchase-orders/records` is domain list — not operational PO id "records". */
+  const OPERATIONAL_PO_PARAM_RESERVED_SEGMENTS = new Set(["records"]);
+  function delegateReservedOperationalPoSegment(req: Request, next: NextFunction): boolean {
+    const po = req.params.po;
+    if (typeof po === "string" && OPERATIONAL_PO_PARAM_RESERVED_SEGMENTS.has(po)) {
+      next("route");
+      return true;
+    }
+    return false;
+  }
+
   for (const base of procurementPurchaseOrderOperationalBases) {
     app.get(
       `${base}/:po/signed-pdf`,
       auth.ensureAuthenticated,
-      withApiContract(async (req: Request, res: Response) => {
+      withApiContract(async (req: Request, res: Response, next: NextFunction) => {
+        if (delegateReservedOperationalPoSegment(req, next)) return;
         const start = Date.now();
         setEndpointHeader(res, req.path);
         if (isOperationsDegraded()) {
@@ -502,7 +514,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
 
     app.get(
       `${base}/:po`,
-      withApiContract(async (req: Request, res: Response) => {
+      withApiContract(async (req: Request, res: Response, next: NextFunction) => {
+        if (delegateReservedOperationalPoSegment(req, next)) return;
         const start = Date.now();
         setEndpointHeader(res, req.path);
         if (isOperationsDegraded()) {
@@ -532,7 +545,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     app.post(
       `${base}/:po/status`,
       auth.ensureAuthenticated,
-      withApiContract(async (req: Request, res: Response) => {
+      withApiContract(async (req: Request, res: Response, next: NextFunction) => {
+        if (delegateReservedOperationalPoSegment(req, next)) return;
         const start = Date.now();
         setEndpointHeader(res, req.path);
         if (isOperationsDegraded()) {
@@ -569,7 +583,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     app.post(
       `${base}/:po/approve`,
       auth.ensureAuthenticated,
-      withApiContract(async (req: Request, res: Response) => {
+      withApiContract(async (req: Request, res: Response, next: NextFunction) => {
+        if (delegateReservedOperationalPoSegment(req, next)) return;
         const start = Date.now();
         setEndpointHeader(res, req.path);
         if (isOperationsDegraded()) {
@@ -601,7 +616,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     app.post(
       `${base}/:po/send`,
       auth.ensureAuthenticated,
-      withApiContract(async (req: Request, res: Response) => {
+      withApiContract(async (req: Request, res: Response, next: NextFunction) => {
+        if (delegateReservedOperationalPoSegment(req, next)) return;
         const start = Date.now();
         setEndpointHeader(res, req.path);
         if (isOperationsDegraded()) {
@@ -633,7 +649,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     app.post(
       `${base}/:po/receive`,
       auth.ensureAuthenticated,
-      withApiContract(async (req: Request, res: Response) => {
+      withApiContract(async (req: Request, res: Response, next: NextFunction) => {
+        if (delegateReservedOperationalPoSegment(req, next)) return;
         const start = Date.now();
         setEndpointHeader(res, req.path);
         if (isOperationsDegraded()) {

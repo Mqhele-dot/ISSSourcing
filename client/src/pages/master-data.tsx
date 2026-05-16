@@ -39,6 +39,19 @@ const MASTER_ENDPOINTS = {
   departments: "/api/departments",
 } as const;
 
+const PO_REFERENCE_MASTER_ENDPOINTS = new Set<string>([
+  MASTER_ENDPOINTS.currencies,
+  MASTER_ENDPOINTS.paymentTerms,
+  MASTER_ENDPOINTS.incoterms,
+  MASTER_ENDPOINTS.departments,
+]);
+
+function invalidatePurchaseOrderScreensAfterMasterDataChange(endpoint: string) {
+  if (!PO_REFERENCE_MASTER_ENDPOINTS.has(endpoint)) return;
+  void queryClient.invalidateQueries({ queryKey: ["/api/procurement/purchase-orders/records"] });
+  void queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+}
+
 function MasterTable({
   label,
   endpoint,
@@ -65,6 +78,7 @@ function MasterTable({
     mutationFn: (payload: Record<string, unknown>) => requestJson("POST", endpoint, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
+      invalidatePurchaseOrderScreensAfterMasterDataChange(endpoint);
       setCode("");
       setName("");
       setSymbol("");
@@ -84,6 +98,7 @@ function MasterTable({
       requestJson("PATCH", `${endpoint}/${id}`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
+      invalidatePurchaseOrderScreensAfterMasterDataChange(endpoint);
       setEditingId(null);
       setCode("");
       setName("");
@@ -103,6 +118,7 @@ function MasterTable({
     mutationFn: (id: number) => requestJson("DELETE", `${endpoint}/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
+      invalidatePurchaseOrderScreensAfterMasterDataChange(endpoint);
       toast({ title: `${label} removed` });
     },
     onError: (e) => {

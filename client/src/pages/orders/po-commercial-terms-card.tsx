@@ -8,11 +8,17 @@ type ContractOpt = { id: number; title: string; supplierId: number };
 type TermOpt = { id: number; code: string; name: string };
 type IncotermOpt = { id: number; code: string; name: string };
 
+type CurrencyOpt = { code: string; name: string };
+
 export type PoCommercialTermsCardProps = {
   departmentId: string;
   setDepartmentId: (v: string) => void;
   contractId: string;
   setContractId: (v: string) => void;
+  currencyCode: string;
+  setCurrencyCode: (v: string) => void;
+  currencies: CurrencyOpt[];
+  onApplyContractTerms?: () => void;
   paymentTermsId: string;
   setPaymentTermsId: (v: string) => void;
   incotermId: string;
@@ -33,6 +39,10 @@ export function PoCommercialTermsCard({
   setDepartmentId,
   contractId,
   setContractId,
+  currencyCode,
+  setCurrencyCode,
+  currencies,
+  onApplyContractTerms,
   paymentTermsId,
   setPaymentTermsId,
   incotermId,
@@ -87,7 +97,7 @@ export function PoCommercialTermsCard({
         </div>
         <div className="space-y-1">
           <Label htmlFor="po-contract">Contract reference</Label>
-          <Select value={contractId} onValueChange={setContractId} disabled={disableFields}>
+          <Select aria-label="Contract reference" value={contractId} onValueChange={setContractId} disabled={disableFields}>
             <SelectTrigger id="po-contract">
               <SelectValue placeholder="Select contract" />
             </SelectTrigger>
@@ -100,6 +110,42 @@ export function PoCommercialTermsCard({
               ))}
             </SelectContent>
           </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="po-currency">Order currency</Label>
+          <Select
+            value={currencyCode}
+            onValueChange={setCurrencyCode}
+            disabled={disableFields}
+          >
+            <SelectTrigger id="po-currency" data-testid="po-currency-select">
+              <SelectValue placeholder="Currency" />
+            </SelectTrigger>
+            <SelectContent>
+              {currencies.map((c) => (
+                <SelectItem key={c.code} value={c.code}>
+                  {c.code} — {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="md:col-span-2 flex flex-wrap items-center gap-2">
+          {typeof onApplyContractTerms === "function" ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              data-testid="po-apply-contract-terms"
+              disabled={disableFields || contractId === "none"}
+              onClick={onApplyContractTerms}
+            >
+              Apply contract & supplier defaults
+            </Button>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            Uses contract currency (and supplier default currency / payment terms when available). Save terms to persist.
+          </p>
         </div>
         <div className="space-y-1">
           <Label htmlFor="po-payment-terms">Payment terms</Label>

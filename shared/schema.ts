@@ -661,6 +661,8 @@ export const purchaseOrders = pgTable(
   contractId: integer("contract_id"),
   paymentTermsId: integer("payment_terms_id"),
   incotermId: integer("incoterm_id"),
+  /** ISO 4217; must exist in Master Data `currencies`. */
+  currencyCode: text("currency_code").notNull().default("USD"),
   status: text("status").notNull().default("DRAFT"),
   orderDate: timestamp("order_date").defaultNow().notNull(),
   expectedDeliveryDate: timestamp("expected_delivery_date"),

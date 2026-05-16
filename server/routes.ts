@@ -34,6 +34,7 @@ import type { ReportFormat, ReportType} from "@shared/schema";
 import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { registerOperationsRoutes as registerOperationalRoutes } from "./modules/operations/register-operations-routes";
 import { registerDomainModules } from "./modules/register-domain-modules";
+import { registerPurchaseOrderListRoutesBeforeOperationalMount } from "./modules/procurement/register-procurement-routes";
 import { registerRbacRoutes } from "./modules/rbac/register-rbac-routes";
 import { registerCatalogRoutes } from "./modules/catalog/register-catalog-routes";
 import { registerMasterDataRoutes } from "./modules/master-data/register-master-data-routes";
@@ -133,6 +134,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/inventory/image-recognition/analyze", uploadRateLimiter);
   // Set up authentication routes and middleware
   const auth = setupAuth(app);
+  registerPurchaseOrderListRoutesBeforeOperationalMount(app, auth);
   registerOperationalRoutes(app, auth);
   registerDomainModules(app, auth);
   registerRbacRoutes(app, auth);
