@@ -1,3 +1,8 @@
+/**
+ * Local/manual preflight: runs a broad script checklist (includes lint, migrate:check, e2e).
+ * GitHub Actions "release-gate" job instead runs: verify:release + release:gate:delta after a live server,
+ * plus org-api-isolation for contracts/procurement/org-api. Keep this script for developers who want one command.
+ */
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 
