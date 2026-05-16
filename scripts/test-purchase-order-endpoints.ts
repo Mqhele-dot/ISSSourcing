@@ -153,6 +153,21 @@ async function main() {
   assert.equal(viewerApprove.status, 403, "viewer approve should be forbidden");
 
   clearSessionCookie();
+  const loginSupplier = await apiJsonRequest("/login", {
+    method: "POST",
+    body: { username: "supplierdemo", password: "Admin123!" },
+  });
+  assert.ok(loginSupplier.ok, `supplier login: ${loginSupplier.status}`);
+  const supplierCookie = peekSessionCookie();
+  await setOperationalPoStatus("PO-FQA-001", "open");
+  const supplierApprove = await apiJsonRequest("/purchase/orders/PO-FQA-001/approve", {
+    method: "POST",
+    body: {},
+    cookie: supplierCookie,
+  });
+  assert.equal(supplierApprove.status, 403, "supplier role approve should be forbidden");
+
+  clearSessionCookie();
   const loginPlanner = await apiJsonRequest("/login", {
     method: "POST",
     body: { username: "planner", password: "Admin123!" },

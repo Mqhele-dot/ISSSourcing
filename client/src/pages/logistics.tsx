@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
-import { AlertTriangle, ArrowLeft, Download, FileDown, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Download, FileDown, Loader2, X } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataState } from "@/components/ui/data-state";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,6 +108,7 @@ function shipmentRiskBucketLabel(bucket: string | undefined) {
 type LogisticsListFiltersState = {
   status: string;
   po: string;
+  supplier: string;
   carrier: string;
   risk: string;
   etaFrom: string;
@@ -118,6 +120,7 @@ function logisticsListFiltersNormalized(q: LogisticsListFiltersState): Logistics
   return {
     status: String(q.status ?? "").trim(),
     po: String(q.po ?? "").trim(),
+    supplier: String(q.supplier ?? "").trim(),
     carrier: String(q.carrier ?? "").trim(),
     risk: String(q.risk ?? "").trim(),
     etaFrom: String(q.etaFrom ?? "").trim(),
@@ -127,7 +130,7 @@ function logisticsListFiltersNormalized(q: LogisticsListFiltersState): Logistics
 }
 
 function logisticsListQueryKeyTuple(n: LogisticsListFiltersState): (readonly [string, string])[] {
-  const keys = ["carrier", "etaFrom", "etaTo", "po", "risk", "status", "tracking"] as const;
+  const keys = ["carrier", "etaFrom", "etaTo", "po", "risk", "status", "supplier", "tracking"] as const;
   return keys.map((k) => [k, n[k]] as const);
 }
 
@@ -141,6 +144,7 @@ function ShipmentListView() {
   const { queryState, setQueryState } = useQueryState({
     status: "",
     po: "",
+    supplier: "",
     carrier: "",
     risk: "",
     etaFrom: "",
@@ -150,6 +154,36 @@ function ShipmentListView() {
 
   const debouncedQuery = useDebouncedValue(queryState, 350);
   const debouncedNorm = logisticsListFiltersNormalized(debouncedQuery);
+
+  const filterChipEntries = useMemo(() => {
+    const n = debouncedNorm;
+    const entries: { key: keyof LogisticsListFiltersState; label: string; value: string }[] = [];
+    if (n.status) entries.push({ key: "status", label: "Status", value: n.status });
+    if (n.po) entries.push({ key: "po", label: "PO", value: n.po });
+    if (n.supplier) entries.push({ key: "supplier", label: "Supplier", value: n.supplier });
+    if (n.carrier) entries.push({ key: "carrier", label: "Carrier", value: n.carrier });
+    if (n.risk) {
+      const riskLabel = shipmentRiskBucketLabel(n.risk);
+      entries.push({ key: "risk", label: "Risk", value: riskLabel });
+    }
+    if (n.etaFrom) entries.push({ key: "etaFrom", label: "ETA from", value: n.etaFrom });
+    if (n.etaTo) entries.push({ key: "etaTo", label: "ETA to", value: n.etaTo });
+    if (n.tracking) entries.push({ key: "tracking", label: "Tracking", value: n.tracking });
+    return entries;
+  }, [debouncedNorm]);
+
+  const clearLogisticsFilters = useCallback(() => {
+    setQueryState({
+      status: "",
+      po: "",
+      supplier: "",
+      carrier: "",
+      risk: "",
+      etaFrom: "",
+      etaTo: "",
+      tracking: "",
+    });
+  }, [setQueryState]);
 
   const {
     data: envelope,
@@ -253,6 +287,7 @@ function ShipmentListView() {
       const ex = logisticsListFiltersNormalized({
         status: String(queryState.status ?? ""),
         po: String(queryState.po ?? ""),
+        supplier: String(queryState.supplier ?? ""),
         carrier: String(queryState.carrier ?? ""),
         risk: String(queryState.risk ?? ""),
         etaFrom: String(queryState.etaFrom ?? ""),
@@ -261,6 +296,7 @@ function ShipmentListView() {
       });
       if (ex.status) qs.set("status", ex.status);
       if (ex.po) qs.set("po", ex.po);
+      if (ex.supplier) qs.set("supplier", ex.supplier);
       if (ex.carrier) qs.set("carrier", ex.carrier);
       if (ex.risk) qs.set("risk", ex.risk);
       if (ex.etaFrom) qs.set("etaFrom", ex.etaFrom);
@@ -312,7 +348,7 @@ function ShipmentListView() {
         data-tour="logistics-toolbar"
         className="sticky top-16 z-20 space-y-4 rounded-lg border border-border bg-card p-4 shadow-sm"
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="space-y-1.5">
             <Label htmlFor="ship-filter-status" className="text-xs text-muted-foreground">
               Status contains
@@ -336,6 +372,19 @@ function ShipmentListView() {
               value={String(queryState.po || "")}
               onChange={(event) => setQueryState({ po: event.target.value })}
               placeholder="Filter by PO"
+              className="w-full min-w-0"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-supplier" className="text-xs text-muted-foreground">
+              Supplier contains
+            </Label>
+            <Input
+              id="ship-filter-supplier"
+              data-testid="logistics-supplier-filter"
+              value={String(queryState.supplier || "")}
+              onChange={(event) => setQueryState({ supplier: event.target.value })}
+              placeholder="Supplier name"
               className="w-full min-w-0"
             />
           </div>
@@ -374,6 +423,31 @@ function ShipmentListView() {
             </Select>
           </div>
         </div>
+
+        {filterChipEntries.length > 0 ? (
+          <div
+            className="flex flex-wrap items-center gap-2"
+            data-testid="logistics-active-filters"
+            aria-label="Active filters"
+          >
+            <span className="text-xs text-muted-foreground">Active:</span>
+            {filterChipEntries.map((entry) => (
+              <Badge key={entry.key} variant="secondary" className="gap-1 pr-1 font-normal">
+                <span className="max-w-[14rem] truncate">
+                  {entry.label}: {entry.value}
+                </span>
+                <button
+                  type="button"
+                  className="rounded-full p-0.5 hover:bg-muted"
+                  aria-label={`Remove ${entry.label} filter`}
+                  onClick={() => setQueryState({ [entry.key]: "" } as Partial<LogisticsListFiltersState>)}
+                >
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-1.5">
@@ -457,6 +531,17 @@ function ShipmentListView() {
             onClick={refreshNow}
           >
             Refresh
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            data-testid="logistics-clear-filters"
+            disabled={!logisticsListHasActiveFilters(queryState)}
+            onClick={clearLogisticsFilters}
+          >
+            Clear filters
           </Button>
           <span className="ml-auto text-xs text-muted-foreground tabular-nums text-right">
             <span className="mr-2 inline-block">
@@ -587,7 +672,7 @@ function ShipmentListView() {
         emptyTitle={shipmentsFilteredEmpty ? "No shipments match these filters" : "No shipments found"}
         emptyDescription={
           shipmentsFilteredEmpty
-            ? "Try clearing filters or widening the ETA range."
+            ? "Active filters may be hiding all rows. Try Clear filters, remove chips above, or widen the ETA range."
             : "Shipments are created from purchase orders. Create a PO or run the demo."
         }
         emptyAction={
@@ -638,14 +723,23 @@ function ShipmentListView() {
                   <TableCell className="max-w-[140px] truncate font-mono text-xs">
                     {shipment.trackingNumber?.trim() || "—"}
                   </TableCell>
-                  <TableCell>{shipment.atRisk ? "Late risk" : "-"}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium">{shipmentRiskBucketLabel(shipment.riskBucket)}</span>
+                      {shipment.atRisk ? (
+                        <span className="text-xs text-destructive" data-testid="logistics-row-at-risk-flag">
+                          Operational late flag
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="inline-flex flex-wrap items-center justify-end gap-1">
                       <Button
                         variant="outline"
                         size="sm"
                         className="gap-1"
-                        onClick={(event) => {
+                        onClick={(event: MouseEvent<HTMLButtonElement>) => {
                           event.stopPropagation();
                           void downloadShipmentDeliveryNote(shipment.id).catch((err) => {
                             toast({
@@ -663,7 +757,7 @@ function ShipmentListView() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={async (event) => {
+                          onClick={async (event: MouseEvent<HTMLButtonElement>) => {
                             event.stopPropagation();
                             try {
                               await deleteShipment(shipment.id);

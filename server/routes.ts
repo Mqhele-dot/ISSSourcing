@@ -233,6 +233,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const projectIdParam = req.query.projectId as string;
       const statusParam = req.query.status as string;
       const poParam = typeof req.query.po === "string" ? req.query.po : undefined;
+      const supplierFilterParam = typeof req.query.supplier === "string" ? req.query.supplier : undefined;
       const carrierParam = typeof req.query.carrier === "string" ? req.query.carrier : undefined;
       const riskParam = typeof req.query.risk === "string" ? req.query.risk : undefined;
       const etaFromExportParam = typeof req.query.etaFrom === "string" ? req.query.etaFrom : undefined;
@@ -295,6 +296,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (poParam) {
         filter.po = poParam;
       }
+      if (supplierFilterParam) {
+        filter.supplier = supplierFilterParam;
+      }
       if (carrierParam) {
         filter.carrier = carrierParam;
       }
@@ -356,6 +360,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (filter.po) {
         filterTexts.push(`PO: ${filter.po}`);
+      }
+      if (filter.supplier) {
+        filterTexts.push(`Supplier: ${filter.supplier}`);
       }
       if (filter.carrier) {
         filterTexts.push(`Carrier: ${filter.carrier}`);
@@ -685,6 +692,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const shipRowsRaw = await listOperationalShipments({
             status: typeof filter.status === "string" ? filter.status : "",
             po: typeof filter.po === "string" ? filter.po : "",
+            supplier: typeof filter.supplier === "string" ? filter.supplier : "",
             carrier: typeof filter.carrier === "string" ? filter.carrier : "",
             risk: typeof filter.risk === "string" ? filter.risk : "",
             etaFrom: typeof filter.etaFrom === "string" ? filter.etaFrom : "",

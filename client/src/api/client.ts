@@ -530,6 +530,7 @@ export {
 export async function fetchShipments(params?: {
   status?: string;
   po?: string;
+  supplier?: string;
   carrier?: string;
   risk?: string;
   etaFrom?: string;
@@ -543,6 +544,7 @@ export async function fetchShipments(params?: {
 export async function fetchShipmentsEnvelope(params?: {
   status?: string;
   po?: string;
+  supplier?: string;
   carrier?: string;
   risk?: string;
   etaFrom?: string;
@@ -552,6 +554,7 @@ export async function fetchShipmentsEnvelope(params?: {
   const search = new URLSearchParams();
   if (params?.status) search.set("status", params.status);
   if (params?.po) search.set("po", params.po);
+  if (params?.supplier) search.set("supplier", params.supplier);
   if (params?.carrier) search.set("carrier", params.carrier);
   if (params?.risk) search.set("risk", params.risk);
   if (params?.etaFrom) search.set("etaFrom", params.etaFrom);

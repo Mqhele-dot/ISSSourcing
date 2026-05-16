@@ -763,6 +763,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         return respondOk(res, [], 200, { fallback: "degraded" });
       }
       try {
+        const supplierRaw = typeof req.query.supplier === "string" ? req.query.supplier : "";
         const statusRaw = typeof req.query.status === "string" ? req.query.status : "";
         const poRaw = typeof req.query.po === "string" ? req.query.po : "";
         const carrierRaw = typeof req.query.carrier === "string" ? req.query.carrier : "";
@@ -775,6 +776,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const appliedFilters = {
           status: statusRaw.trim(),
           po: poRaw.trim(),
+          supplier: supplierRaw.trim(),
           carrier: carrierRaw.trim(),
           risk: riskRaw.trim(),
           etaFrom: etaFromRaw.trim(),
@@ -785,6 +787,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           listOperationalShipments({
             status: appliedFilters.status,
             po: appliedFilters.po,
+            supplier: appliedFilters.supplier,
             carrier: appliedFilters.carrier,
             risk: appliedFilters.risk,
             etaFrom: appliedFilters.etaFrom,

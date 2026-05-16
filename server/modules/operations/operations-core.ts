@@ -1841,6 +1841,7 @@ function computeOperationalShipmentRiskBucket(params: { status: string; eta: Dat
 export async function listOperationalShipments(filters: {
   status?: string;
   po?: string;
+  supplier?: string;
   carrier?: string;
   risk?: string;
   etaFrom?: string;
@@ -1849,6 +1850,7 @@ export async function listOperationalShipments(filters: {
 }) {
   const statusPat = filters.status?.trim().toLowerCase() ?? "";
   const poPat = filters.po?.trim().toLowerCase() ?? "";
+  const supplierPat = filters.supplier?.trim().toLowerCase() ?? "";
   const carrierPat = filters.carrier?.trim().toLowerCase() ?? "";
   const trackingPat = filters.tracking?.trim().toLowerCase() ?? "";
   const riskWantedRaw = filters.risk?.trim().toLowerCase() ?? "";
@@ -1865,6 +1867,10 @@ export async function listOperationalShipments(filters: {
   if (poPat) {
     params.push(poPat);
     whereClauses.push(`position($${params.length} in lower(s.po_number)) > 0`);
+  }
+  if (supplierPat) {
+    params.push(supplierPat);
+    whereClauses.push(`position($${params.length} in lower(coalesce(sup.name, ''))) > 0`);
   }
   if (carrierPat) {
     params.push(carrierPat);
@@ -1916,9 +1922,11 @@ export async function listOperationalShipments(filters: {
     tracking_number: string | null;
   }>(
     `
-    SELECT id, po_number, carrier, status, eta, drift_minutes, created_at, updated_at,
-           tracking_number
+    SELECT s.id, s.po_number, s.carrier, s.status, s.eta, s.drift_minutes, s.created_at, s.updated_at,
+           s.tracking_number
     FROM shipments s
+    LEFT JOIN purchase_orders po ON po.order_number = s.po_number
+    LEFT JOIN suppliers sup ON sup.id = po.supplier_id
     ${whereSql}
     ORDER BY s.updated_at DESC
     `,

@@ -3,6 +3,9 @@
  * Creates temporary shipments (POST), asserts filtered GET results, then DELETE.
  * Run: npm run test:logistics-filters
  */
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
   apiJsonRequest,
@@ -12,6 +15,8 @@ import {
   peekSessionCookie,
 } from "./test-http.ts";
 import { exitTest } from "./test-exit.ts";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 type ShipmentRow = {
   id: number;
@@ -39,6 +44,18 @@ function unwrapInsert(json: unknown): ShipmentRow {
 }
 
 async function main() {
+  const seed = spawnSync("npm", ["run", "seed:functional-qa"], {
+    cwd: repoRoot,
+    shell: true,
+    stdio: "inherit",
+    env: { ...process.env },
+  });
+  if (seed.status !== 0) {
+    console.error("test-logistics-filters: seed:functional-qa failed");
+    exitTest(1);
+    return;
+  }
+
   clearSessionCookie();
   const login = await apiJsonRequest("/login", {
     method: "POST",
@@ -57,6 +74,7 @@ async function main() {
   assert.ok(Array.isArray(env0.data), "data is array");
   const generatedAt = env0.meta?.generatedAt;
   assert.ok(typeof generatedAt === "string" && generatedAt.length > 5, "meta.generatedAt");
+  assert.ok(typeof env0.meta?.queryMs === "number", "meta.queryMs");
 
   const badFrom = await apiJsonRequest("/logistics/shipments?etaFrom=not-a-date", { cookie });
   assert.equal(badFrom.status, 400, "invalid etaFrom should be 400");
@@ -150,15 +168,37 @@ async function main() {
     });
     await patchStatus(rowOntime.id, "in_transit");
 
+    const qsMeta = new URLSearchParams({
+      status: "eate",
+      po: `${suffix}-late`,
+      supplier: "acme-co",
+      carrier: " zz ",
+      risk: "",
+      etaFrom: "",
+      etaTo: "",
+      tracking: "",
+    });
+    const rMetaShape = await apiJsonRequest(`/logistics/shipments?${qsMeta.toString()}`, { cookie });
+    assert.ok(rMetaShape.ok);
+    const envShape = unwrapEnvelope(rMetaShape.json);
+    assert.deepEqual(envShape.meta?.appliedFilters, {
+      status: "eate",
+      po: `${suffix}-late`,
+      supplier: "acme-co",
+      carrier: "zz",
+      risk: "",
+      etaFrom: "",
+      etaTo: "",
+      tracking: "",
+    });
+
     const rPo = await q(`?po=${encodeURIComponent(`${suffix}-late`)}`);
     assert.ok(rPo.ok);
     const envPo = unwrapEnvelope(rPo.json);
     const rowsPo = envPo.data as ShipmentRow[];
     assert.equal(rowsPo.length, 1);
     assert.equal(envPo.meta?.resultCount, 1);
-    assert.equal(rowsPo[0]?.poNumber, poLate);
-    const appliedPo = envPo.meta?.appliedFilters as Record<string, string>;
-    assert.equal(appliedPo.po, `${suffix}-late`);
+    assert.ok(rowsPo.every((r) => r.poNumber === poLate));
 
     const rStatus = await q(`?status=eate`);
     assert.ok(rStatus.ok);
@@ -178,6 +218,27 @@ async function main() {
     const rCarrierMaster = await q(`?carrier=fed`);
     assert.ok(rCarrierMaster.ok);
     assert.ok((unwrapEnvelope(rCarrierMaster.json).data as ShipmentRow[]).some((s) => s.poNumber === poFed));
+
+    const poDetailRes = await apiJsonRequest("/purchase/orders/PO-FQA-001", { cookie });
+    assert.ok(poDetailRes.ok, `GET PO-FQA-001: ${poDetailRes.status}`);
+    const poDetail = (poDetailRes.json as { data: { supplierName?: string | null } }).data;
+    const supNm = poDetail?.supplierName ? String(poDetail.supplierName).trim() : "";
+    if (supNm.length > 0) {
+      const needle = supNm.length >= 4 ? supNm.slice(0, 4).toLowerCase() : supNm.toLowerCase();
+      const supRow = await post({
+        poNumber: "PO-FQA-001",
+        carrier: "ZZ-SUP-ROW",
+        eta: etaFar,
+        trackingNumber: `ZZ-SUP-${suffix}`,
+      });
+      const rSup = await q(
+        `?supplier=${encodeURIComponent(needle)}&tracking=${encodeURIComponent(`ZZ-SUP-${suffix}`)}`,
+      );
+      assert.ok(rSup.ok);
+      const supRows = unwrapEnvelope(rSup.json).data as ShipmentRow[];
+      assert.ok(supRows.some((r) => r.id === supRow.id));
+      assert.ok(supRows.length >= 1);
+    }
 
     const rRiskLate = await q(`?risk=late&po=${encodeURIComponent(String(suffix))}`);
     assert.ok(rRiskLate.ok);

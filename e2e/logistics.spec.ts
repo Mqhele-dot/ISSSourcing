@@ -15,9 +15,16 @@ test.describe("Logistics workspace", () => {
     await expect(page.getByTestId("logistics-eta-from")).toBeVisible();
     await expect(page.getByTestId("logistics-eta-to")).toBeVisible();
     await expect(page.getByTestId("logistics-tracking-filter")).toBeVisible();
+    await expect(page.getByTestId("logistics-supplier-filter")).toBeVisible();
+    await expect(page.getByTestId("logistics-clear-filters")).toBeVisible();
     await expect(page.getByTestId("logistics-results-count")).toBeVisible();
     await expect(page.getByTestId("logistics-refresh-button")).toBeVisible();
     await expect(page.getByTestId("logistics-export-button")).toBeVisible();
+
+    await page.getByTestId("logistics-status-filter").fill("trans");
+    await expect(page.getByTestId("logistics-active-filters")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("logistics-clear-filters").click();
+    await expect(page.getByTestId("logistics-active-filters")).toHaveCount(0);
 
     const row = page.getByTestId("logistics-shipment-row").first();
     if (await row.count()) {
