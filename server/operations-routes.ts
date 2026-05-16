@@ -763,23 +763,40 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         return respondOk(res, [], 200, { fallback: "degraded" });
       }
       try {
-        const status = typeof req.query.status === "string" ? req.query.status : "";
-        const po = typeof req.query.po === "string" ? req.query.po : "";
-        const carrier = typeof req.query.carrier === "string" ? req.query.carrier : "";
-        const risk = typeof req.query.risk === "string" ? req.query.risk : "";
-        const etaFrom = typeof req.query.etaFrom === "string" ? req.query.etaFrom : "";
-        const etaTo = typeof req.query.etaTo === "string" ? req.query.etaTo : "";
-        const tracking = typeof req.query.tracking === "string" ? req.query.tracking : "";
-        assertValidLogisticsDateQuery(etaFrom, "etaFrom");
-        assertValidLogisticsDateQuery(etaTo, "etaTo");
+        const statusRaw = typeof req.query.status === "string" ? req.query.status : "";
+        const poRaw = typeof req.query.po === "string" ? req.query.po : "";
+        const carrierRaw = typeof req.query.carrier === "string" ? req.query.carrier : "";
+        const riskRaw = typeof req.query.risk === "string" ? req.query.risk : "";
+        const etaFromRaw = typeof req.query.etaFrom === "string" ? req.query.etaFrom : "";
+        const etaToRaw = typeof req.query.etaTo === "string" ? req.query.etaTo : "";
+        const trackingRaw = typeof req.query.tracking === "string" ? req.query.tracking : "";
+        assertValidLogisticsDateQuery(etaFromRaw, "etaFrom");
+        assertValidLogisticsDateQuery(etaToRaw, "etaTo");
+        const appliedFilters = {
+          status: statusRaw.trim(),
+          po: poRaw.trim(),
+          carrier: carrierRaw.trim(),
+          risk: riskRaw.trim(),
+          etaFrom: etaFromRaw.trim(),
+          etaTo: etaToRaw.trim(),
+          tracking: trackingRaw.trim(),
+        };
         const shipments = await withTimeout(
-          listOperationalShipments({ status, po, carrier, risk, etaFrom, etaTo, tracking }),
+          listOperationalShipments({
+            status: appliedFilters.status,
+            po: appliedFilters.po,
+            carrier: appliedFilters.carrier,
+            risk: appliedFilters.risk,
+            etaFrom: appliedFilters.etaFrom,
+            etaTo: appliedFilters.etaTo,
+            tracking: appliedFilters.tracking,
+          }),
           OPERATIONS_QUERY_TIMEOUT_MS,
         );
         const queryMs = Date.now() - start;
         const generatedAt = new Date().toISOString();
         respondOk(res, shipments, 200, {
-          appliedFilters: { status, po, carrier, risk, etaFrom, etaTo, tracking },
+          appliedFilters,
           resultCount: shipments.length,
           queryMs,
           generatedAt,

@@ -39,6 +39,7 @@ export type ReportFormat = typeof reportFormatEnum[number];
 export const userRoleEnum = pgEnum("user_role", [
   "admin",            // Full access to all features
   "manager",          // Approvals, reports, supplier management
+  "planner",          // Procurement planning, PO approve/send (operational workflow)
   "warehouse_staff",  // Stock updates, scanning, inventory requests
   "sales",            // View inventory, create orders
   "auditor",          // Read-only access to inventory history and reports

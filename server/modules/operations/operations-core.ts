@@ -1807,6 +1807,37 @@ export async function runOperationalExceptionChecks(actor = "system") {
   return { created, updated, skippedDuplicates, checksRun, generatedAt };
 }
 
+function computeOperationalShipmentRiskBucket(params: { status: string; eta: Date | null }):
+  | "late"
+  | "no_eta"
+  | "due_soon"
+  | "exception"
+  | "on_time" {
+  const status = params.status.toLowerCase();
+  if (status === "delayed" || status === "exception") {
+    return "exception";
+  }
+  if (!params.eta) {
+    return "no_eta";
+  }
+  const etaMs = params.eta.getTime();
+  const now = Date.now();
+  if (etaMs < now && status !== "delivered") {
+    return "late";
+  }
+  if (status === "delivered") {
+    return "on_time";
+  }
+  if (
+    etaMs >= now &&
+    etaMs <= now + 3 * 24 * 60 * 60 * 1000 &&
+    !["delivered", "cancelled"].includes(status)
+  ) {
+    return "due_soon";
+  }
+  return "on_time";
+}
+
 export async function listOperationalShipments(filters: {
   status?: string;
   po?: string;
@@ -1816,45 +1847,48 @@ export async function listOperationalShipments(filters: {
   etaTo?: string;
   tracking?: string;
 }) {
-  const whereClauses: string[] = [];
-  const params: string[] = [];
-
-  if (filters.status && filters.status.trim()) {
-    params.push(filters.status.trim().toLowerCase());
-    whereClauses.push(`lower(s.status) = $${params.length}`);
-  }
-  if (filters.po && filters.po.trim()) {
-    params.push(`%${filters.po.trim().toLowerCase()}%`);
-    whereClauses.push(`lower(s.po_number) LIKE $${params.length}`);
-  }
-  if (filters.carrier && filters.carrier.trim()) {
-    params.push(`%${filters.carrier.trim().toLowerCase()}%`);
-    whereClauses.push(`lower(COALESCE(s.carrier, '')) LIKE $${params.length}`);
-  }
-  if (filters.tracking && filters.tracking.trim()) {
-    params.push(`%${filters.tracking.trim().toLowerCase()}%`);
-    whereClauses.push(`lower(COALESCE(s.tracking_number, '')) LIKE $${params.length}`);
-  }
-
-  const risk = filters.risk?.trim().toLowerCase() ?? "";
-  if (risk === "late") {
-    whereClauses.push(`s.eta IS NOT NULL AND s.eta < now() AND lower(s.status) <> 'delivered'`);
-  } else if (risk === "no_eta") {
-    whereClauses.push(`s.eta IS NULL`);
-  } else if (risk === "due_soon") {
-    whereClauses.push(
-      `s.eta IS NOT NULL AND s.eta >= now() AND s.eta <= now() + interval '3 days' AND lower(s.status) NOT IN ('delivered', 'cancelled')`,
-    );
-  } else if (risk === "exception") {
-    whereClauses.push(`lower(s.status) IN ('delayed', 'exception')`);
-  } else if (risk === "on_time") {
-    whereClauses.push(
-      `(lower(s.status) = 'delivered' OR (s.eta IS NOT NULL AND s.eta > now() + interval '3 days' AND lower(s.status) NOT IN ('delivered', 'cancelled')))`,
-    );
-  }
-
+  const statusPat = filters.status?.trim().toLowerCase() ?? "";
+  const poPat = filters.po?.trim().toLowerCase() ?? "";
+  const carrierPat = filters.carrier?.trim().toLowerCase() ?? "";
+  const trackingPat = filters.tracking?.trim().toLowerCase() ?? "";
+  const riskWantedRaw = filters.risk?.trim().toLowerCase() ?? "";
   const etaFrom = filters.etaFrom?.trim() ?? "";
   const etaTo = filters.etaTo?.trim() ?? "";
+
+  const whereClauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (statusPat) {
+    params.push(statusPat);
+    whereClauses.push(`position($${params.length} in lower(coalesce(s.status, ''))) > 0`);
+  }
+  if (poPat) {
+    params.push(poPat);
+    whereClauses.push(`position($${params.length} in lower(s.po_number)) > 0`);
+  }
+  if (carrierPat) {
+    params.push(carrierPat);
+    const carrierParam = params.length;
+    whereClauses.push(`(
+      position($${carrierParam} in lower(coalesce(s.carrier, ''))) > 0
+      OR EXISTS (
+        SELECT 1 FROM carriers c
+        WHERE (
+          position($${carrierParam} in lower(coalesce(c.name, ''))) > 0
+          OR position($${carrierParam} in lower(coalesce(c.code, ''))) > 0
+        )
+        AND (
+          lower(trim(coalesce(s.carrier, ''))) = lower(trim(coalesce(c.code, '')))
+          OR lower(trim(coalesce(s.carrier, ''))) = lower(trim(coalesce(c.name, '')))
+        )
+      )
+    )`);
+  }
+  if (trackingPat) {
+    params.push(trackingPat);
+    whereClauses.push(`position($${params.length} in lower(coalesce(s.tracking_number, ''))) > 0`);
+  }
+
   if (etaFrom) {
     params.push(etaFrom);
     whereClauses.push(`s.eta IS NOT NULL AND s.eta >= $${params.length}::timestamptz`);
@@ -1863,6 +1897,11 @@ export async function listOperationalShipments(filters: {
     params.push(etaTo);
     whereClauses.push(`s.eta IS NOT NULL AND s.eta <= $${params.length}::timestamptz`);
   }
+
+  const riskWanted =
+    riskWantedRaw && ["late", "no_eta", "due_soon", "exception", "on_time"].includes(riskWantedRaw)
+      ? (riskWantedRaw as "late" | "no_eta" | "due_soon" | "exception" | "on_time")
+      : "";
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
   const result = await pool.query<{
@@ -1899,7 +1938,9 @@ export async function listOperationalShipments(filters: {
       });
     }
 
-    shipments.push({
+    const riskBucket = computeOperationalShipmentRiskBucket({ status, eta: row.eta });
+
+    const rowDto = {
       id: row.id,
       poNumber: row.po_number,
       carrier: row.carrier,
@@ -1910,41 +1951,15 @@ export async function listOperationalShipments(filters: {
       updatedAt: row.updated_at,
       trackingNumber: row.tracking_number,
       atRisk,
-    });
+      riskBucket,
+    };
+
+    if (!riskWanted || riskBucket === riskWanted) {
+      shipments.push(rowDto);
+    }
   }
 
   return shipments;
-}
-
-function computeOperationalShipmentRiskBucket(params: { status: string; eta: Date | null }):
-  | "late"
-  | "no_eta"
-  | "due_soon"
-  | "exception"
-  | "on_time" {
-  const status = params.status.toLowerCase();
-  if (status === "delayed" || status === "exception") {
-    return "exception";
-  }
-  if (!params.eta) {
-    return "no_eta";
-  }
-  const etaMs = params.eta.getTime();
-  const now = Date.now();
-  if (etaMs < now && status !== "delivered") {
-    return "late";
-  }
-  if (status === "delivered") {
-    return "on_time";
-  }
-  if (
-    etaMs >= now &&
-    etaMs <= now + 3 * 24 * 60 * 60 * 1000 &&
-    !["delivered", "cancelled"].includes(status)
-  ) {
-    return "due_soon";
-  }
-  return "on_time";
 }
 
 export async function getOperationalShipmentDetail(idOrRef: string) {

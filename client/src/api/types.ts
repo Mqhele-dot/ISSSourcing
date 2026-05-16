@@ -231,6 +231,7 @@ export type ShipmentListItem = {
   updatedAt: string | null;
   atRisk: boolean;
   trackingNumber?: string | null;
+  riskBucket?: "late" | "no_eta" | "due_soon" | "exception" | "on_time";
 };
 
 export type ShipmentTimelineEvent = {

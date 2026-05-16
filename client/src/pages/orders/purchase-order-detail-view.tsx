@@ -65,15 +65,18 @@ import { PoApprovalPolicyCard } from "./po-approval-policy-card";
 import { PoCommercialTermsCard } from "./po-commercial-terms-card";
 import { PoLastReceiveSummaryCard } from "./po-last-receive-summary-card";
 import {
+  approveActionDisabledReason,
   canApprove,
   canApproveWithRole,
   canReceive,
   canSend,
   canSendWithRole,
   canUpdatePurchaseOrder,
+  poWorkflowRoleAllowed,
   formatDate,
   formatDateTime,
   openPurchaseOrderPrintView,
+  sendActionDisabledReason,
 } from "./purchase-order-shared";
 
 export function PurchaseOrderDetailView({ po }: { po: string }) {
@@ -422,6 +425,19 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
             { href: "#po-activity", label: "Activity", icon: Activity },
           ] as const;
 
+          const approveDisabledMsg = approveActionDisabledReason({
+            poNumber,
+            status: detail.status,
+            role: user?.role ?? undefined,
+            mutationPending: statusMutationPending,
+          });
+          const sendDisabledMsg = sendActionDisabledReason({
+            poNumber,
+            status: detail.status,
+            role: user?.role ?? undefined,
+            mutationPending: statusMutationPending,
+          });
+
           return (
             <>
               <Button
@@ -454,7 +470,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       {detail.supplierName || `Supplier #${detail.supplierId}`}
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-col items-stretch gap-1 lg:items-end">
+                    <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
                       className="gap-2"
@@ -483,11 +500,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       <Button
                         variant="outline"
                         className="gap-2"
-                        disabled={
-                          !poNumber ||
-                          !canApproveWithRole(detail.status, user?.role ?? undefined) ||
-                          statusMutationPending
-                        }
+                        disabled={!!approveDisabledMsg}
+                        title={approveDisabledMsg ?? undefined}
                         data-testid="po-approve-button"
                         onClick={() => updateStatus("approve")}
                       >
@@ -499,11 +513,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       <Button
                         variant="outline"
                         className="gap-2"
-                        disabled={
-                          !poNumber ||
-                          !canSendWithRole(detail.status, user?.role ?? undefined) ||
-                          statusMutationPending
-                        }
+                        disabled={!!sendDisabledMsg}
+                        title={sendDisabledMsg ?? undefined}
                         data-testid="po-send-button"
                         onClick={() => updateStatus("send")}
                       >
@@ -511,6 +522,17 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                         Send
                       </Button>
                     </Can>
+                    </div>
+                    {(approveDisabledMsg || sendDisabledMsg) && poWorkflowRoleAllowed(user?.role ?? undefined) ? (
+                      <div
+                        className="max-w-md text-xs text-muted-foreground lg:text-right"
+                        data-testid="po-workflow-disabled-hints"
+                        role="status"
+                      >
+                        {approveDisabledMsg ? <p>{approveDisabledMsg}</p> : null}
+                        {sendDisabledMsg ? <p>{sendDisabledMsg}</p> : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 <nav

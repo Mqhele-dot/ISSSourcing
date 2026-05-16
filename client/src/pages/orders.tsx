@@ -32,7 +32,7 @@ export default function OrdersPage({ embedded = false }: OrdersPageProps) {
       ? purchaseDetailParams?.po
       : procurementDetailMatch
         ? procurementDetailParams?.po
-        : undefined;
+      : undefined;
 
   const isRequisitionsPath = po === "requisitions";
 

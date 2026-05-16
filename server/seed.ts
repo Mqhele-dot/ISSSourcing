@@ -328,7 +328,7 @@ async function ensureDemoUsers(demoPasswordHash: string): Promise<void> {
       username: "planner",
       email: "planner@example.com",
       fullName: "Demo Planner",
-      role: "manager" as const,
+      role: "planner" as const,
     },
     {
       username: "viewer",

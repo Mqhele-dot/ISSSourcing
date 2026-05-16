@@ -25,11 +25,16 @@ function main() {
   assert.equal(normalizePurchaseOrderStatus("void"), "cancelled");
 
   const mgr = { role: "manager" as const };
+  assert.equal(canApprovePurchaseOrder("draft", mgr), true);
+  assert.equal(canApprovePurchaseOrder("DRAFT", mgr), true);
   assert.equal(canApprovePurchaseOrder("open", mgr), true);
   assert.equal(canApprovePurchaseOrder("approved", mgr), false);
   assert.equal(canApprovePurchaseOrder("sent", mgr), false);
   assert.equal(canApprovePurchaseOrder("partially_received", mgr), false);
   assert.equal(canApprovePurchaseOrder("open", { role: "viewer" }), false);
+
+  assert.equal(canApprovePurchaseOrder("draft", { role: "planner" }), true);
+  assert.equal(canSendPurchaseOrder("approved", { role: "planner" }), true);
 
   assert.equal(canSendPurchaseOrder("approved", mgr), true);
   assert.equal(canSendPurchaseOrder("open", mgr), false);
@@ -53,6 +58,8 @@ function main() {
   assert.equal(canReceivePurchaseOrder("received"), false);
 
   assert.equal(canTransitionPurchaseOrderStatus("draft", "open"), true);
+  assert.equal(canTransitionPurchaseOrderStatus("draft", "approved"), true);
+  assert.equal(canTransitionPurchaseOrderStatus("draft", "sent"), false);
   assert.equal(canTransitionPurchaseOrderStatus("sent", "partially_received"), true);
   assert.equal(canTransitionPurchaseOrderStatus("sent", "received"), true);
   assert.equal(canTransitionPurchaseOrderStatus("partially_received", "received"), true);

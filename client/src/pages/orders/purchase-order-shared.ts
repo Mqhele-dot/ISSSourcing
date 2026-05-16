@@ -6,6 +6,44 @@ import {
   canUpdatePurchaseOrder,
 } from "@shared/purchase-order-status";
 
+const PO_WORKFLOW_ROLES = new Set(["manager", "planner", "admin"]);
+
+export function poWorkflowRoleAllowed(role: string | undefined): boolean {
+  return PO_WORKFLOW_ROLES.has(String(role ?? "").trim().toLowerCase());
+}
+
+/** Visible copy when Approve is disabled (user already has workflow role from Can). */
+export function approveActionDisabledReason(input: {
+  poNumber: string | null | undefined;
+  status: string;
+  role: string | undefined;
+  mutationPending: boolean;
+}): string | null {
+  if (input.mutationPending) return "Update in progress.";
+  if (!String(input.poNumber ?? "").trim()) return "PO number missing.";
+  if (!poWorkflowRoleAllowed(input.role)) return "Requires Manager, Planner, or Admin role.";
+  if (!canApprovePurchaseOrder(input.status, { role: input.role })) {
+    return "Approve is only available when the PO is draft or open.";
+  }
+  return null;
+}
+
+/** Visible copy when Send is disabled (user already has workflow role from Can). */
+export function sendActionDisabledReason(input: {
+  poNumber: string | null | undefined;
+  status: string;
+  role: string | undefined;
+  mutationPending: boolean;
+}): string | null {
+  if (input.mutationPending) return "Update in progress.";
+  if (!String(input.poNumber ?? "").trim()) return "PO number missing.";
+  if (!poWorkflowRoleAllowed(input.role)) return "Requires Manager, Planner, or Admin role.";
+  if (!canSendPurchaseOrder(input.status, { role: input.role })) {
+    return "Send is only available when the PO is approved.";
+  }
+  return null;
+}
+
 export function formatDate(value: string | null) {
   if (!value) return "-";
   const parsed = new Date(value);

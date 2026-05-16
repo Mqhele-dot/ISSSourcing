@@ -1,10 +1,26 @@
 /**
- * Read-only checks for GET /api/logistics/shipments (meta.generatedAt, invalid date → 400).
+ * GET /api/logistics/shipments filter semantics + meta shape.
+ * Creates temporary shipments (POST), asserts filtered GET results, then DELETE.
  * Run: npm run test:logistics-filters
  */
 import assert from "node:assert/strict";
-import { apiJsonRequest, clearSessionCookie, getTestBaseUrl, isConnectionRefused, peekSessionCookie } from "./test-http.ts";
+import {
+  apiJsonRequest,
+  clearSessionCookie,
+  getTestBaseUrl,
+  isConnectionRefused,
+  peekSessionCookie,
+} from "./test-http.ts";
 import { exitTest } from "./test-exit.ts";
+
+type ShipmentRow = {
+  id: number;
+  poNumber: string;
+  status: string;
+  riskBucket?: string;
+  trackingNumber?: string | null;
+  carrier?: string | null;
+};
 
 function unwrapEnvelope(json: unknown): { data: unknown; meta?: Record<string, unknown> } {
   if (json && typeof json === "object" && "ok" in json && (json as { ok?: boolean }).ok === true && "data" in json) {
@@ -12,6 +28,14 @@ function unwrapEnvelope(json: unknown): { data: unknown; meta?: Record<string, u
     return { data: (json as { data: unknown }).data, meta };
   }
   throw new Error("expected { ok: true, data, meta? }");
+}
+
+function unwrapInsert(json: unknown): ShipmentRow {
+  const { data } = unwrapEnvelope(json);
+  if (data && typeof data === "object" && "id" in data) {
+    return data as ShipmentRow;
+  }
+  throw new Error("expected shipment row");
 }
 
 async function main() {
@@ -29,16 +53,188 @@ async function main() {
 
   const ok = await apiJsonRequest("/logistics/shipments", { cookie });
   assert.ok(ok.ok, `shipments: ${ok.status} ${JSON.stringify(ok.json)}`);
-  const env = unwrapEnvelope(ok.json);
-  assert.ok(Array.isArray(env.data), "data is array");
-  const generatedAt = env.meta?.generatedAt;
+  const env0 = unwrapEnvelope(ok.json);
+  assert.ok(Array.isArray(env0.data), "data is array");
+  const generatedAt = env0.meta?.generatedAt;
   assert.ok(typeof generatedAt === "string" && generatedAt.length > 5, "meta.generatedAt");
 
-  const bad = await apiJsonRequest("/logistics/shipments?etaFrom=not-a-date", { cookie });
-  assert.equal(bad.status, 400, "invalid etaFrom should be 400");
-  const errBody = bad.json as { ok?: boolean; error?: { code?: string } };
-  assert.equal(errBody.ok, false);
-  assert.equal(errBody.error?.code, "INVALID_LOGISTICS_FILTER");
+  const badFrom = await apiJsonRequest("/logistics/shipments?etaFrom=not-a-date", { cookie });
+  assert.equal(badFrom.status, 400, "invalid etaFrom should be 400");
+  const errFrom = badFrom.json as { ok?: boolean; error?: { code?: string } };
+  assert.equal(errFrom.ok, false);
+  assert.equal(errFrom.error?.code, "INVALID_LOGISTICS_FILTER");
+
+  const badTo = await apiJsonRequest("/logistics/shipments?etaTo=not-a-date", { cookie });
+  assert.equal(badTo.status, 400, "invalid etaTo should be 400");
+  const errTo = badTo.json as { ok?: boolean; error?: { code?: string } };
+  assert.equal(errTo.ok, false);
+  assert.equal(errTo.error?.code, "INVALID_LOGISTICS_FILTER");
+
+  const suffix = Date.now();
+  const poLate = `PO-LT-${suffix}-late`;
+  const poExc = `PO-LT-${suffix}-exc`;
+  const poNoEta = `PO-LT-${suffix}-noeta`;
+  const poFed = `PO-LT-${suffix}-fed`;
+  const poEtaRange = `PO-LT-${suffix}-range`;
+  const poSoon = `PO-LT-${suffix}-soon`;
+  const poOnTime = `PO-LT-${suffix}-ontime`;
+
+  const dayMs = 86400000;
+  const etaPast = new Date(Date.now() - 2 * dayMs).toISOString();
+  const etaRangeMid = new Date(Date.now() + 5 * dayMs).toISOString();
+  const etaSoon = new Date(Date.now() + 2 * dayMs).toISOString();
+  const etaFar = new Date(Date.now() + 10 * dayMs).toISOString();
+
+  const createdIds: number[] = [];
+
+  const post = async (body: Record<string, unknown>) => {
+    const r = await apiJsonRequest("/logistics/shipments", { method: "POST", body, cookie });
+    assert.ok(r.ok, `POST shipment ${r.status} ${JSON.stringify(r.json)}`);
+    const row = unwrapInsert(r.json);
+    createdIds.push(row.id);
+    return row;
+  };
+
+  const patchStatus = async (id: number, toStatus: string) => {
+    const r = await apiJsonRequest(`/logistics/shipments/${id}/status`, {
+      method: "POST",
+      body: { toStatus },
+      cookie,
+    });
+    assert.ok(r.ok, `status ${toStatus}: ${r.status} ${JSON.stringify(r.json)}`);
+  };
+
+  const q = (search: string) => apiJsonRequest(`/logistics/shipments${search}`, { cookie });
+
+  try {
+    await post({
+      poNumber: poLate,
+      carrier: "ZZ-Acme-Test-Carrier",
+      eta: etaPast,
+      trackingNumber: "ZZ-TRACK-ALPHA-99",
+    });
+
+    const rowExc = await post({ poNumber: poExc, carrier: "ZZ-Exc", eta: etaFar, trackingNumber: "ZZ-EXC-1" });
+    await patchStatus(rowExc.id, "in_transit");
+    await patchStatus(rowExc.id, "delayed");
+
+    await post({ poNumber: poNoEta, carrier: "ZZ-NoEta", trackingNumber: "ZZ-NONE" });
+
+    await post({
+      poNumber: poFed,
+      carrier: "FDEX",
+      eta: etaFar,
+      trackingNumber: "ZZ-FED",
+    });
+
+    await post({
+      poNumber: poEtaRange,
+      carrier: "ZZ-Range",
+      eta: etaRangeMid,
+      trackingNumber: "ZZ-RNG",
+    });
+
+    const rowSoon = await post({
+      poNumber: poSoon,
+      carrier: "ZZ-Soon",
+      eta: etaSoon,
+      trackingNumber: "ZZ-SOON",
+    });
+    await patchStatus(rowSoon.id, "in_transit");
+
+    const rowOntime = await post({
+      poNumber: poOnTime,
+      carrier: "ZZ-OnTime",
+      eta: etaFar,
+      trackingNumber: "ZZ-OK",
+    });
+    await patchStatus(rowOntime.id, "in_transit");
+
+    const rPo = await q(`?po=${encodeURIComponent(`${suffix}-late`)}`);
+    assert.ok(rPo.ok);
+    const envPo = unwrapEnvelope(rPo.json);
+    const rowsPo = envPo.data as ShipmentRow[];
+    assert.equal(rowsPo.length, 1);
+    assert.equal(envPo.meta?.resultCount, 1);
+    assert.equal(rowsPo[0]?.poNumber, poLate);
+    const appliedPo = envPo.meta?.appliedFilters as Record<string, string>;
+    assert.equal(appliedPo.po, `${suffix}-late`);
+
+    const rStatus = await q(`?status=eate`);
+    assert.ok(rStatus.ok);
+    const rowsStatus = unwrapEnvelope(rStatus.json).data as ShipmentRow[];
+    assert.ok(rowsStatus.length >= 1);
+    assert.ok(rowsStatus.every((s) => s.status.includes("eate")));
+
+    const rTrack = await q(`?tracking=alpha-99`);
+    assert.ok(rTrack.ok);
+    const rowsTr = unwrapEnvelope(rTrack.json).data as ShipmentRow[];
+    assert.ok(rowsTr.some((s) => s.poNumber === poLate));
+
+    const rCarrierDirect = await q(`?carrier=acme-test`);
+    assert.ok(rCarrierDirect.ok);
+    assert.ok((unwrapEnvelope(rCarrierDirect.json).data as ShipmentRow[]).some((s) => s.poNumber === poLate));
+
+    const rCarrierMaster = await q(`?carrier=fed`);
+    assert.ok(rCarrierMaster.ok);
+    assert.ok((unwrapEnvelope(rCarrierMaster.json).data as ShipmentRow[]).some((s) => s.poNumber === poFed));
+
+    const rRiskLate = await q(`?risk=late&po=${encodeURIComponent(String(suffix))}`);
+    assert.ok(rRiskLate.ok);
+    const lateRows = unwrapEnvelope(rRiskLate.json).data as ShipmentRow[];
+    assert.ok(lateRows.length >= 1);
+    assert.ok(lateRows.some((s) => s.poNumber === poLate));
+    assert.ok(lateRows.every((s) => s.riskBucket === "late"));
+
+    const rRiskExc = await q(`?risk=exception&po=${encodeURIComponent(String(suffix))}`);
+    assert.ok(rRiskExc.ok);
+    const excRows = unwrapEnvelope(rRiskExc.json).data as ShipmentRow[];
+    assert.equal(excRows.length, 1);
+    assert.equal(excRows[0]?.poNumber, poExc);
+    assert.ok(excRows.every((s) => s.riskBucket === "exception"));
+
+    const rRiskNoEta = await q(`?risk=no_eta&po=${encodeURIComponent(String(suffix))}`);
+    assert.ok(rRiskNoEta.ok);
+    const neRows = unwrapEnvelope(rRiskNoEta.json).data as ShipmentRow[];
+    assert.equal(neRows.length, 1);
+    assert.equal(neRows[0]?.poNumber, poNoEta);
+    assert.ok(neRows.every((s) => s.riskBucket === "no_eta"));
+
+    const rRiskSoon = await q(`?risk=due_soon&po=${encodeURIComponent(String(suffix))}`);
+    assert.ok(rRiskSoon.ok);
+    const dsRows = unwrapEnvelope(rRiskSoon.json).data as ShipmentRow[];
+    assert.equal(dsRows.length, 1);
+    assert.equal(dsRows[0]?.poNumber, poSoon);
+    assert.ok(dsRows.every((s) => s.riskBucket === "due_soon"));
+
+    const rRiskOk = await q(`?risk=on_time&po=${encodeURIComponent(String(suffix))}`);
+    assert.ok(rRiskOk.ok);
+    const otRows = unwrapEnvelope(rRiskOk.json).data as ShipmentRow[];
+    assert.ok(otRows.length >= 1);
+    assert.ok(otRows.some((s) => s.poNumber === poOnTime));
+    assert.ok(otRows.some((s) => s.poNumber === poFed));
+    assert.ok(otRows.every((s) => s.riskBucket === "on_time"));
+
+    const etaFromEnc = encodeURIComponent(new Date(Date.now() + 4 * dayMs).toISOString());
+    const etaToEnc = encodeURIComponent(new Date(Date.now() + 7 * dayMs).toISOString());
+    const rEta = await q(`?etaFrom=${etaFromEnc}&etaTo=${etaToEnc}`);
+    assert.ok(rEta.ok);
+    assert.ok((unwrapEnvelope(rEta.json).data as ShipmentRow[]).some((s) => s.poNumber === poEtaRange));
+
+    const rMetaCount = await q("");
+    assert.ok(rMetaCount.ok);
+    const envFull = unwrapEnvelope(rMetaCount.json);
+    const fullRows = envFull.data as ShipmentRow[];
+    assert.ok(Array.isArray(fullRows));
+    assert.equal(envFull.meta?.resultCount, fullRows.length);
+  } finally {
+    for (const id of createdIds) {
+      const del = await apiJsonRequest(`/logistics/shipments/${id}`, { method: "DELETE", cookie });
+      if (!del.ok) {
+        console.warn("cleanup DELETE failed", id, del.status);
+      }
+    }
+  }
 
   console.log("test-logistics-filters: all checks passed.");
   exitTest(0);

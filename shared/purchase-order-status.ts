@@ -16,7 +16,7 @@ export type PurchaseOrderNorm =
 
 /** Allowed single-step transitions for operational PO workflow (normalized statuses). */
 export const OPERATIONAL_PO_TRANSITIONS: Record<PurchaseOrderNorm, PurchaseOrderNorm[]> = {
-  draft: ["open"],
+  draft: ["open", "approved"],
   open: ["approved"],
   approved: ["sent"],
   sent: ["partially_received", "received"],
@@ -72,7 +72,8 @@ export function purchaseOrderStatusLabel(status: string): string {
 }
 
 export function canApprovePurchaseOrder(status: string, opts?: { role?: string }): boolean {
-  if (normalizePurchaseOrderStatus(status) !== "open") return false;
+  const s = normalizePurchaseOrderStatus(status);
+  if (s !== "open" && s !== "draft") return false;
   if (!opts?.role) return true;
   const r = opts.role.toLowerCase();
   return ["manager", "planner", "admin"].includes(r);
