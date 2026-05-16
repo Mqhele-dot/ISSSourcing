@@ -322,6 +322,19 @@ async function ensureAdminUser(demoPasswordHash: string): Promise<void> {
     });
 }
 
+/** DBs created before schema added `planner` need this enum value before demo user inserts. */
+async function ensureUserRolePlannerEnumValue(): Promise<void> {
+  try {
+    await pool.query("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'planner'");
+  } catch {
+    try {
+      await pool.query("ALTER TYPE user_role ADD VALUE 'planner'");
+    } catch {
+      /* Value may already exist (older PG or race). */
+    }
+  }
+}
+
 async function ensureDemoUsers(demoPasswordHash: string): Promise<void> {
   const demoUsers = [
     {
@@ -1019,6 +1032,7 @@ export async function seedDatabase(): Promise<DemoDataSummary> {
   await ensureSettings();
   const demoPasswordHash = await hashPassword("Admin123!");
   await ensureAdminUser(demoPasswordHash);
+  await ensureUserRolePlannerEnumValue();
   await ensureDemoUsers(demoPasswordHash);
   await ensureInventoryItems(defaultWarehouseId, categoryMap, supplierMap);
   await ensureActivityLogs();

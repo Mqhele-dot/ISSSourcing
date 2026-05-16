@@ -59,6 +59,7 @@ async function main() {
   if (!adminCookie) {
     console.log("  ⚠ Admin login failed (seed users missing?).");
     exitTest(1);
+    return;
   }
 
   let failures = 0;
@@ -66,7 +67,7 @@ async function main() {
   const userRes = await apiJsonRequest("/user", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/user", 200, userRes.status)) failures++;
   if (!expectRequestId("GET /api/user", userRes.requestId)) failures++;
-  const currentUser = asRecord(userRes.json);
+  const currentUser = asRecord(unwrapData<unknown>(userRes.json));
   const createdBy = Number(currentUser.id ?? 1);
 
   const supplierRes = await apiJsonRequest("/suppliers", { method: "GET", cookie: adminCookie });
@@ -76,6 +77,7 @@ async function main() {
   if (!supplierId) {
     console.log("  ✗ Missing suppliers; run npm run db:seed");
     exitTest(1);
+    return;
   }
 
   const itemsRes = await apiJsonRequest("/inventory", { method: "GET", cookie: adminCookie });
@@ -90,6 +92,7 @@ async function main() {
   if (!firstItem?.id) {
     console.log("  ✗ Missing inventory items; run npm run db:seed");
     exitTest(1);
+    return;
   }
   const itemSku = String(firstItem.sku ?? "");
   let itemIdForWrites = Number(firstItem.id ?? 0);
@@ -132,6 +135,7 @@ async function main() {
   if (!requisitionId) {
     console.log("  ✗ Requisition was not created.");
     exitTest(1);
+    return;
   }
 
   const approveRes = await apiJsonRequest(`/purchase-requisitions/${requisitionId}/approve`, {
@@ -154,6 +158,7 @@ async function main() {
   if (!poId || !poNumber) {
     console.log("  ✗ PO conversion did not return id/orderNumber.");
     exitTest(1);
+    return;
   }
 
   const poDetailRes = await apiJsonRequest(`/purchase-orders/${poId}`, { method: "GET", cookie: adminCookie });
@@ -259,6 +264,7 @@ async function main() {
   if (!shipmentId) {
     console.log("  ✗ Shipment create did not return id.");
     exitTest(1);
+    return;
   }
 
   const inTransitRes = await apiJsonRequest(`/logistics/shipments/${shipmentId}/status`, {
@@ -307,6 +313,7 @@ async function main() {
   if (!invoiceId) {
     console.log("  ✗ Invoice creation did not return id.");
     exitTest(1);
+    return;
   }
 
   const paymentRes = await apiJsonRequest(`/invoices/${invoiceId}/payments`, {
@@ -334,8 +341,10 @@ main().catch((err) => {
   if (isConnectionRefused(err)) {
     console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", getTestBaseUrl());
     exitTest(0);
+    return;
   }
   console.error(err);
   exitTest(1);
+  return;
 });
 
