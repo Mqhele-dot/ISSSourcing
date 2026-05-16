@@ -86,8 +86,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # migrate:check validates schema in a temporary database; db:push:force prepares the live CI database before seed.
       - name: Check migrations
         run: npm run migrate:check
+
+      - name: Apply schema to CI database
+        run: npm run db:push:force
 
       - name: Seed demo data
         run: npm run db:seed
@@ -149,8 +153,12 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      # migrate:check validates schema in a temporary database; db:push:force prepares the live CI database before seed.
       - name: Check migrations
         run: npm run migrate:check
+
+      - name: Apply schema to CI database
+        run: npm run db:push:force
 
       - name: Seed demo data
         run: npm run db:seed
@@ -168,5 +176,14 @@ jobs:
           echo "Server failed to become healthy"
           exit 1
 
-      - name: Run release gate
-        run: npm run release:gate
+      - name: Purchase order endpoint tests
+        run: npm run test:purchase-order-endpoints
+
+      - name: Logistics filter tests
+        run: npm run test:logistics-filters
+
+      - name: Verify release
+        run: npm run verify:release
+
+      - name: Release gate (delta — scripts not covered by verify:release or parallel org-api job)
+        run: npm run release:gate:delta

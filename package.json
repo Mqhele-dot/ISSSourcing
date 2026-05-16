@@ -61,6 +61,7 @@
     "validate:migrations": "node scripts/validate-migrations.mjs",
     "migrate:check": "node scripts/migrate-check.mjs",
     "release:gate": "node scripts/release-gate.mjs",
+    "release:gate:delta": "npm run test:rbac && npm run test:requisitions && npm run test:ap-workflow && npm run test:ap-controls && npm run test:exports && npm run test:smoke && npm run test:setup-checkpoint && npm run test:installable-complete",
     "test:endpoints": "node scripts/test-button-endpoints.js http://127.0.0.1:5000",
     "db:push": "drizzle-kit push",
     "db:push:force": "drizzle-kit push --force",
