@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
+import { invalidateRequisitionDomain } from "@/lib/domain-invalidation";
 import type { PurchaseRequisition, PurchaseRequisitionItem, Supplier, InventoryItem } from "@shared/schema";
 import type { ReqLineDraft } from "@/pages/requisitions/requisition-lines-editor";
 
@@ -131,7 +132,7 @@ export function useRequisitionForm(params: {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      void invalidateRequisitionDomain(queryClient);
       toast({ title: "Requisition created", variant: "default" });
       setLocation(listPath);
     },
@@ -167,7 +168,7 @@ export function useRequisitionForm(params: {
       await apiRequest("PUT", `/api/purchase-requisitions/${id}`, body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      void invalidateRequisitionDomain(queryClient);
       toast({ title: "Requisition updated", variant: "default" });
     },
     onError: (e) => {

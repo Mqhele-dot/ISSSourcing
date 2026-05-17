@@ -5,6 +5,7 @@ import { useSettings } from "@/hooks/use-settings";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { ToastAction } from "@/components/ui/toast";
 import { queryClient, apiRequest, requestJson } from "@/lib/queryClient";
+import { invalidateContractDomain } from "@/lib/domain-invalidation";
 import { PanelInlineError } from "@/components/panel-inline-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -119,7 +120,7 @@ export default function ContractsPage() {
     mutationFn: (data: SupplierContractForm) => requestJson<SupplierContract>("POST", "/api/contracts", data),
     onSuccess: () => {
       toast({ title: "Contract created", description: "The contract has been added." });
-      queryClient.invalidateQueries({ queryKey: ["/api/contracts"] });
+      void invalidateContractDomain(queryClient);
       setFormOpen(false);
       form.reset(defaultFormValues);
     },
@@ -142,7 +143,7 @@ export default function ContractsPage() {
       requestJson<SupplierContract>("PATCH", `/api/contracts/${id}`, data),
     onSuccess: () => {
       toast({ title: "Contract updated", description: "Changes have been saved." });
-      queryClient.invalidateQueries({ queryKey: ["/api/contracts"] });
+      void invalidateContractDomain(queryClient);
       setFormOpen(false);
       setEditingId(null);
       form.reset(defaultFormValues);
@@ -165,7 +166,7 @@ export default function ContractsPage() {
     mutationFn: (id: number) => apiRequest("DELETE", `/api/contracts/${id}`),
     onSuccess: () => {
       toast({ title: "Contract deleted", description: "The contract has been removed." });
-      queryClient.invalidateQueries({ queryKey: ["/api/contracts"] });
+      void invalidateContractDomain(queryClient);
       setViewContract(null);
       setDeleteConfirmContract(null);
     },
