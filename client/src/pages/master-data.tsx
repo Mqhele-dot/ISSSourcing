@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { invalidateMasterDataDomain } from "@/lib/domain-invalidation";
 
 type BaseMasterRecord = {
   id: number;
@@ -79,6 +80,7 @@ function MasterTable({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
       invalidatePurchaseOrderScreensAfterMasterDataChange(endpoint);
+      void invalidateMasterDataDomain(queryClient, endpoint);
       setCode("");
       setName("");
       setSymbol("");
@@ -99,6 +101,7 @@ function MasterTable({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
       invalidatePurchaseOrderScreensAfterMasterDataChange(endpoint);
+      void invalidateMasterDataDomain(queryClient, endpoint);
       setEditingId(null);
       setCode("");
       setName("");
@@ -119,6 +122,7 @@ function MasterTable({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
       invalidatePurchaseOrderScreensAfterMasterDataChange(endpoint);
+      void invalidateMasterDataDomain(queryClient, endpoint);
       toast({ title: `${label} removed` });
     },
     onError: (e) => {
