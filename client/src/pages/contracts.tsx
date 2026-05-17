@@ -65,6 +65,7 @@ import { format } from "date-fns";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
 import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
+import { invalidateContractDomain } from "@/lib/domain-invalidation";
 
 const CONTRACT_TYPES = ["master", "framework", "one-off", "renewal"] as const;
 const STATUSES = ["draft", "active", "expired", "terminated"] as const;
@@ -117,9 +118,10 @@ export default function ContractsPage() {
 
   const createContract = useMutation({
     mutationFn: (data: SupplierContractForm) => requestJson<SupplierContract>("POST", "/api/contracts", data),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "Contract created", description: "The contract has been added." });
       queryClient.invalidateQueries({ queryKey: ["/api/contracts"] });
+      await invalidateContractDomain(queryClient);
       setFormOpen(false);
       form.reset(defaultFormValues);
     },
@@ -140,9 +142,10 @@ export default function ContractsPage() {
   const updateContract = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<SupplierContractForm> }) =>
       requestJson<SupplierContract>("PATCH", `/api/contracts/${id}`, data),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "Contract updated", description: "Changes have been saved." });
       queryClient.invalidateQueries({ queryKey: ["/api/contracts"] });
+      await invalidateContractDomain(queryClient);
       setFormOpen(false);
       setEditingId(null);
       form.reset(defaultFormValues);
@@ -163,9 +166,10 @@ export default function ContractsPage() {
 
   const deleteContract = useMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/contracts/${id}`),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "Contract deleted", description: "The contract has been removed." });
       queryClient.invalidateQueries({ queryKey: ["/api/contracts"] });
+      await invalidateContractDomain(queryClient);
       setViewContract(null);
       setDeleteConfirmContract(null);
     },

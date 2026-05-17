@@ -52,6 +52,7 @@ import {
 import type { ShipmentTimelineEvent } from "@/api/types";
 import type { FallbackKind } from "@/components/ui/data-state";
 import { queryClient, requestJson } from "@/lib/queryClient";
+import { invalidateLogisticsDomain } from "@/lib/domain-invalidation";
 import { downloadFile } from "@/lib/utils";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { normalizeShipmentFilters, type ShipmentListFiltersNormalized } from "@shared/logistics-shipment-filters";
@@ -217,6 +218,7 @@ function ShipmentListView() {
       setCarrierContact("");
       setCarrierEditId(null);
       await queryClient.invalidateQueries({ queryKey: ["/api/carriers"] });
+      await invalidateLogisticsDomain(queryClient);
     },
     onError: (error) => {
       toast({
@@ -230,6 +232,7 @@ function ShipmentListView() {
     mutationFn: (id: number) => requestJson("DELETE", `/api/carriers/${id}`),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/carriers"] });
+      await invalidateLogisticsDomain(queryClient);
     },
     onError: (error) => {
       toast({
@@ -630,6 +633,7 @@ function ShipmentListView() {
                     setNewEta("");
                     setNewTracking("");
                     await refreshNow();
+                    await invalidateLogisticsDomain(queryClient);
                   } catch (createError) {
                     toast({
                       title: "Create shipment failed",
@@ -745,6 +749,7 @@ function ShipmentListView() {
                             try {
                               await deleteShipment(shipment.id);
                               await refreshNow();
+                              await invalidateLogisticsDomain(queryClient);
                             } catch (deleteError) {
                               toast({
                                 title: "Delete shipment failed",
@@ -878,6 +883,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
         trackingNumber: metaTracking.trim() || null,
       });
       await refetch();
+      await invalidateLogisticsDomain(queryClient);
       toast({ title: "Shipment details updated" });
     } catch (e) {
       toast({
@@ -900,6 +906,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
       });
       setNote("");
       await refetch();
+      await invalidateLogisticsDomain(queryClient);
       toast({ title: "Status updated" });
     } catch (statusError) {
       const err = statusError as Error & { status?: number };

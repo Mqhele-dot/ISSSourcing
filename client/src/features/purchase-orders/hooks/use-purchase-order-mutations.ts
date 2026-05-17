@@ -14,6 +14,7 @@ import {
 } from "../lib/po-mutation-guards";
 import { normalizeOperationalPoParam } from "../lib/query-keys";
 import { invalidatePurchaseOrderOperationalQueries } from "../lib/invalidate-purchase-order-queries";
+import { invalidatePurchaseOrderDomain } from "@/lib/domain-invalidation";
 
 export function useApprovePurchaseOrderMutation(po: string) {
   const queryClient = useQueryClient();
@@ -26,6 +27,7 @@ export function useApprovePurchaseOrderMutation(po: string) {
     },
     onSuccess: async () => {
       await invalidatePurchaseOrderOperationalQueries(queryClient, poNumber);
+      await invalidatePurchaseOrderDomain(queryClient);
     },
   });
 }
@@ -41,6 +43,7 @@ export function useSendPurchaseOrderMutation(po: string) {
     },
     onSuccess: async () => {
       await invalidatePurchaseOrderOperationalQueries(queryClient, poNumber);
+      await invalidatePurchaseOrderDomain(queryClient);
     },
   });
 }
@@ -57,6 +60,7 @@ export function useTransitionPurchaseOrderStatusMutation(po: string) {
     },
     onSuccess: async () => {
       await invalidatePurchaseOrderOperationalQueries(queryClient, poNumber);
+      await invalidatePurchaseOrderDomain(queryClient);
     },
   });
 }
@@ -86,6 +90,7 @@ export function useReceivePurchaseOrderMutation(po: string) {
     },
     onSuccess: async () => {
       await invalidatePurchaseOrderOperationalQueries(queryClient, poNumber);
+      await invalidatePurchaseOrderDomain(queryClient);
     },
   });
 }

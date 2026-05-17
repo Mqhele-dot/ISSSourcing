@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { useSettings } from "@/hooks/use-settings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateInvoiceDomain } from "@/lib/domain-invalidation";
 import { format, addDays } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -403,13 +404,15 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
       
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      
+
       if (invoice?.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoice.id] });
       }
-      
+
+      await invalidateInvoiceDomain(queryClient);
+
       toast({
         title: invoice?.id ? "Invoice updated" : "Invoice created",
         description: invoice?.id ? "Invoice has been updated successfully" : "New invoice has been created successfully",

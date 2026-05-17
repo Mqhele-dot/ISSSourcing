@@ -32,6 +32,8 @@ export type PoCommercialTermsCardProps = {
   canSaveCommercial: boolean;
   commercialLockedReason?: string;
   commercialSaveError?: string | null;
+  /** Last “apply defaults” action — schema-level sourcing notes for currency and payment terms. */
+  applyDefaultsHint?: string | null;
 };
 
 export function PoCommercialTermsCard({
@@ -55,6 +57,7 @@ export function PoCommercialTermsCard({
   canSaveCommercial,
   commercialLockedReason,
   commercialSaveError,
+  applyDefaultsHint,
 }: PoCommercialTermsCardProps) {
   const disableFields = !canSaveCommercial || saveCommercialTerms.isPending;
   return (
@@ -144,9 +147,19 @@ export function PoCommercialTermsCard({
             </Button>
           ) : null}
           <p className="text-xs text-muted-foreground">
-            Uses contract currency (and supplier default currency / payment terms when available). Save terms to persist.
+            Fills order currency from the contract when it matches master data, otherwise from the supplier default.
+            Payment terms come from the supplier. Incoterms are PO-only (not stored on the contract row). Save to
+            persist.
           </p>
         </div>
+        {applyDefaultsHint ? (
+          <div
+            className="md:col-span-2 rounded-md border border-muted bg-muted/40 p-3 text-xs text-muted-foreground"
+            data-testid="po-commercial-apply-hint"
+          >
+            {applyDefaultsHint}
+          </div>
+        ) : null}
         <div className="space-y-1">
           <Label htmlFor="po-payment-terms">Payment terms</Label>
           <Select value={paymentTermsId} onValueChange={setPaymentTermsId} disabled={disableFields}>

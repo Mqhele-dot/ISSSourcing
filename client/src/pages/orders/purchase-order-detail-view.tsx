@@ -34,6 +34,7 @@ import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
 import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallback";
 import { ToastAction } from "@/components/ui/toast";
+import { invalidatePurchaseOrderDomain } from "@/lib/domain-invalidation";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { downloadBlobAsFile } from "@/lib/utils";
 import { Can } from "@/components/auth/can";
@@ -108,6 +109,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [receiveLineIssues, setReceiveLineIssues] = useState<ReceiveLineFieldError[]>([]);
   const [commercialSaveError, setCommercialSaveError] = useState<string | null>(null);
+  const [commercialApplyHint, setCommercialApplyHint] = useState<string | null>(null);
   const purchaseOrderIdRef = useRef<number | null>(null);
 
   const detailQuery = usePurchaseOrderOperationalDetailQuery(po);
@@ -258,8 +260,10 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         await queryClient.invalidateQueries({ queryKey: ["/api/procurement/purchase-orders/records", id] });
         await queryClient.invalidateQueries({ queryKey: ["/api/procurement/purchase-orders/records/revisions", id] });
       }
+      await invalidatePurchaseOrderDomain(queryClient);
       await refetch();
       setCommercialSaveError(null);
+      setCommercialApplyHint(null);
       toast({ title: "PO commercial terms updated" });
     },
     onError: (e) => {
@@ -447,17 +451,43 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
               /^[A-Za-z]{3}$/.test(supplierRow.defaultCurrencyCode)
                 ? supplierRow.defaultCurrencyCode.toUpperCase()
                 : null;
-            const pick =
-              [fromContract, fromSupplier].find((code) =>
-                code ? currenciesList.some((row) => row.code === code) : false,
-              ) ?? null;
-            if (pick) setCurrencyCode(pick);
+            const contractCurrencyOk = Boolean(fromContract && currenciesList.some((row) => row.code === fromContract));
+            const supplierCurrencyOk = Boolean(fromSupplier && currenciesList.some((row) => row.code === fromSupplier));
+            let pick: string | null = null;
+            let currencyNote: string | null = null;
+            if (contractCurrencyOk && fromContract) {
+              pick = fromContract;
+              currencyNote = `Currency ${pick} from contract “${contractRow.title}” (#${contractRow.id}).`;
+            } else if (supplierCurrencyOk && fromSupplier) {
+              pick = fromSupplier;
+              currencyNote =
+                fromContract && !contractCurrencyOk
+                  ? `Contract currency ${fromContract} is not in the active currency list; using supplier default ${pick}.`
+                  : `Currency ${pick} from supplier defaults.`;
+            } else if (fromContract || fromSupplier) {
+              toast({
+                title: "No matching currency",
+                description:
+                  "Neither the contract nor supplier default currency is available in master data. Add the code under Master data or choose a currency manually.",
+                variant: "destructive",
+              });
+              setCommercialApplyHint(null);
+              return;
+            }
+
+            const hintParts: string[] = [];
+            if (pick) {
+              setCurrencyCode(pick);
+              if (currencyNote) hintParts.push(currencyNote);
+            }
             if (supplierRow?.paymentTermsId != null) {
               setPaymentTermsId(String(supplierRow.paymentTermsId));
+              hintParts.push("Payment terms from supplier master data (contracts do not store payment terms in this schema).");
             }
+            setCommercialApplyHint(hintParts.length ? hintParts.join(" ") : null);
             toast({
               title: "Defaults applied",
-              description: "Review fields, then Save terms to persist.",
+              description: "Review fields — incoterms are not inherited from the contract. Save terms to persist.",
             });
           };
           const downloadSignedPdf = async () => {
@@ -694,6 +724,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       canSaveCommercial={canUpdatePurchaseOrder(detail.status)}
                       commercialLockedReason="Commercial terms can only be updated before the PO is sent."
                       commercialSaveError={commercialSaveError}
+                      applyDefaultsHint={commercialApplyHint}
                     />
                   </div>
 

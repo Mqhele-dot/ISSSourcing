@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateInvoiceDomain } from "@/lib/domain-invalidation";
 import {
   Table,
   TableBody,
@@ -150,8 +151,9 @@ export function InvoicesList({
       if (!res.ok) throw new Error("Failed to delete invoice");
       return id;
     },
-    onSuccess: (_id) => {
+    onSuccess: async (_id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      await invalidateInvoiceDomain(queryClient);
 
       toast({
         title: "Invoice deleted",
@@ -175,10 +177,11 @@ export function InvoicesList({
       if (!res.ok) throw new Error("Failed to send invoice");
       return id;
     },
-    onSuccess: (id) => {
+    onSuccess: async (id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", id] });
-      
+      await invalidateInvoiceDomain(queryClient);
+
       toast({
         title: "Invoice sent",
         description: "The invoice has been marked as sent and an email would be sent to the customer.",

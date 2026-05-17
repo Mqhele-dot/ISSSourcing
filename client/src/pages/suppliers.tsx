@@ -33,6 +33,7 @@ import {
 } from "@/pages/suppliers/supplier-form-types";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
+import { invalidateSupplierDomain } from "@/lib/domain-invalidation";
 
 function queryErrorDetail(e: unknown): string {
   if (e == null) return "";
@@ -114,12 +115,13 @@ export default function SuppliersPage() {
   const createSupplier = useMutation({
     mutationFn: (supplier: SupplierFormValues) => 
       requestJson<Supplier>('POST', '/api/suppliers', supplier),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: "Supplier created",
         description: "The supplier has been added successfully",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers'] });
+      await invalidateSupplierDomain(queryClient);
       setSupplierSheetOpen(false);
     },
     onError: (error, data) => {
@@ -140,13 +142,14 @@ export default function SuppliersPage() {
   const updateSupplier = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<SupplierFormValues> }) => 
       requestJson<Supplier>('PATCH', `/api/suppliers/${id}`, data),
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
       toast({
         title: "Supplier updated",
         description: "The supplier has been updated successfully",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers'] });
       queryClient.invalidateQueries({ queryKey: ['/api/suppliers', variables.id] });
+      await invalidateSupplierDomain(queryClient);
       setSupplierSheetOpen(false);
     },
     onError: (error, vars) => {
@@ -167,12 +170,13 @@ export default function SuppliersPage() {
   const deleteSupplier = useMutation({
     mutationFn: (id: number) => 
       requestJson<{ success: boolean }>('DELETE', `/api/suppliers/${id}`),
-    onSuccess: (_, deletedId) => {
+    onSuccess: async (_, deletedId) => {
       toast({
         title: "Supplier deleted",
         description: "The supplier has been deleted successfully",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      await invalidateSupplierDomain(queryClient);
       if (selectedSupplierId === deletedId) {
         setSelectedSupplierId(null);
         setLogoDialogOpen(false);

@@ -34,6 +34,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { useSettings } from "@/hooks/use-settings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateInvoiceDomain } from "@/lib/domain-invalidation";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -183,12 +184,13 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
       
       return await res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", data.invoiceId] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      
+      await invalidateInvoiceDomain(queryClient);
+
       toast({
         title: "Payment recorded",
         description: "The payment has been recorded successfully",

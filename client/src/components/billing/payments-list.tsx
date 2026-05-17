@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateInvoiceDomain } from "@/lib/domain-invalidation";
 import {
   Table,
   TableBody,
@@ -142,14 +143,15 @@ export function PaymentsList({
       if (!res.ok) throw new Error("Failed to delete payment");
       return id;
     },
-    onSuccess: (_id) => {
+    onSuccess: async (_id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
       // Also invalidate the invoice this payment was for to update its status
       if (selectedPayment?.invoiceId) {
         queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedPayment.invoiceId] });
         queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       }
-      
+      await invalidateInvoiceDomain(queryClient);
+
       toast({
         title: "Payment deleted",
         description: "The payment has been deleted successfully.",

@@ -51,6 +51,7 @@ import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { useQueryState } from "@/hooks/use-query-state";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { invalidatePurchaseOrderDomain, invalidateRequisitionDomain } from "@/lib/domain-invalidation";
 import {
   Select,
   SelectContent,
@@ -228,8 +229,9 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const approveMutation = useMutation({
     mutationFn: (id: number) =>
       apiRequest("POST", `/api/purchase-requisitions/${id}/approve`, {}),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      await invalidateRequisitionDomain(queryClient);
       toast({ title: "Requisition approved", variant: "default" });
     },
     onError: (e, id) => {
@@ -249,8 +251,9 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const rejectMutation = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) =>
       apiRequest("POST", `/api/purchase-requisitions/${id}/reject`, { reason }),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      await invalidateRequisitionDomain(queryClient);
       toast({ title: "Requisition rejected", variant: "default" });
     },
     onError: (e, vars) => {
@@ -270,8 +273,10 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const convertMutation = useMutation({
     mutationFn: (id: number) =>
       apiRequest("POST", `/api/purchase-requisitions/${id}/convert`, {}),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      await invalidateRequisitionDomain(queryClient);
+      await invalidatePurchaseOrderDomain(queryClient);
       toast({ title: "Converted to Purchase Order", variant: "default" });
     },
     onError: (e, id) => {
@@ -291,8 +296,9 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const shareMutation = useMutation({
     mutationFn: ({ id, userIds }: { id: number; userIds: number[] }) =>
       apiRequest("POST", `/api/purchase-requisitions/${id}/share`, { userIds }),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
+      await invalidateRequisitionDomain(queryClient);
       toast({ title: "Requisition shared", variant: "default" });
       setShareOpen(false);
     },
