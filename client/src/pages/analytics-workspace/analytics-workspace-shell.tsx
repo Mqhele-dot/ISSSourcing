@@ -58,14 +58,14 @@ export function AnalyticsWorkspaceShell({
         }
       />
 
-      {section === "overview" ? <ModuleTrainingPanel moduleId="analytics" /> : null}
+      {section === "overview" ? <div className="mb-4 scroll-mt-20"><ModuleTrainingPanel moduleId="analytics" /></div> : null}
 
       <SectionNav items={[...ANALYTICS_NAV]} />
 
       <AnalyticsDataStatusStrip sources={sourceStatuses} onRetryAll={onRetryAllFeeds} />
 
       {partialFailure && partialFailure.labels.length > 0 ? (
-        <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100">
+        <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100 mb-4">
           <AlertTitle>Partial analytics load</AlertTitle>
           <AlertDescription className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
             <span>

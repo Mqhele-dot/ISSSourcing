@@ -48,6 +48,15 @@ async function main() {
     "Saved reports API",
     apiJsonRequest("/export-center/saved-reports", { method: "GET", cookie, baseUrl }).then((res) => res.ok),
   );
+  await check(
+    "Reports analytics JSON (operational_exceptions summary)",
+    apiJsonRequest("/reports/analytics", { method: "GET", cookie, baseUrl }).then((res) => {
+      if (!res.ok || res.status !== 200) return false;
+      const body = res.json as { ok?: boolean; data?: Record<string, unknown> };
+      if (!body?.ok || !body.data || typeof body.data !== "object") return false;
+      return Array.isArray(body.data.exceptionSummary);
+    }),
+  );
   await check("AP overview API", apiJsonRequest("/ap/invoices", { method: "GET", cookie, baseUrl }).then((res) => res.ok));
   await check(
     "Canonical analytics route",

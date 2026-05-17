@@ -60,17 +60,49 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-// Invoice validation schema
+const INVOICE_FORM_STATUSES = [
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "APPROVED",
+  "SENT",
+  "DISPUTED",
+  "OVERDUE",
+  "PARTIALLY_PAID",
+  "PAID",
+  "CANCELLED",
+  "VOID",
+] as const;
+
+function normalizeInvoiceFormStatus(raw: string | null | undefined): (typeof INVOICE_FORM_STATUSES)[number] {
+  const u = String(raw ?? "DRAFT").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  return (INVOICE_FORM_STATUSES as readonly string[]).includes(u)
+    ? (u as (typeof INVOICE_FORM_STATUSES)[number])
+    : "DRAFT";
+}
+
+/** Line amount before tax (after discount), matching server line math. */
+function lineNetTotal(item: Pick<InvoiceLineItem, "quantity" | "unitPrice" | "discount">): number {
+  const line = item.quantity * item.unitPrice;
+  const discountPct = item.discount ?? 0;
+  return line - (line * discountPct) / 100;
+}
+
+function computeLineAmounts(quantity: number, unitPrice: number, discount: number = 0, taxRate: number = 0) {
+  const net = lineNetTotal({ quantity, unitPrice, discount });
+  const taxAmount = (net * taxRate) / 100;
+  return { net, taxAmount, gross: net + taxAmount };
+}
+
+// Invoice validation schema (customer optional for supplier-side AP; server enforces customer XOR supplier rules on create)
 const invoiceFormSchema = z.object({
-  customerId: z.number({
-    required_error: "Customer is required",
-  }),
+  customerId: z.preprocess(
+    (v) => (v === null || v === undefined || v === "" || v === 0 ? undefined : v),
+    z.number({ invalid_type_error: "Select a customer or leave empty for supplier-only invoices." }).int().positive().optional(),
+  ),
   dueDate: z.date({
     required_error: "Due date is required",
   }),
-  status: z.enum(["DRAFT", "SENT", "PAID", "PARTIALLY_PAID", "OVERDUE", "CANCELLED", "VOID"], {
-    required_error: "Status is required",
-  }).default("DRAFT"),
+  status: z.enum(INVOICE_FORM_STATUSES).default("DRAFT"),
   notes: z.string().nullable().optional(),
   invoiceNumber: z.string().optional(),
   subtotal: z.number().optional(),
@@ -118,6 +150,8 @@ type InvoiceDialogInvoice = InvoiceFormValues & {
   id: number;
   createdAt: string | Date;
   invoiceNumber?: string | null;
+  customerId?: number | null;
+  supplierId?: number | null;
   amountPaid: number;
   total: number;
   items: InvoiceLineItem[];
@@ -148,31 +182,25 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
   const [items, setItems] = useState<InvoiceLineItem[]>([]);
   const [newItemDialogOpen, setNewItemDialogOpen] = useState(false);
   
-  // Calculate totals
-  const calculateSubtotal = (lineItems: InvoiceLineItem[]) => {
-    return lineItems.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
-  };
-  
-  const calculateTaxTotal = (lineItems: InvoiceLineItem[]) => {
-    return lineItems.reduce((sum, item) => sum + (item.taxAmount || 0), 0);
-  };
-  
-  // Calculate item total price
+  // Calculate totals: net subtotal (pre-tax), tax roll-up, grand total
+  const calculateNetSubtotal = (lineItems: InvoiceLineItem[]) =>
+    lineItems.reduce((sum, item) => sum + lineNetTotal(item), 0);
+
+  const calculateTaxTotal = (lineItems: InvoiceLineItem[]) =>
+    lineItems.reduce((sum, item) => sum + (item.taxAmount || 0), 0);
+
+  const calculateGrandTotal = (lineItems: InvoiceLineItem[]) =>
+    calculateNetSubtotal(lineItems) + calculateTaxTotal(lineItems);
+
+  // Calculate item net / tax / gross (gross shown as line "Total")
   const calculateItemTotalPrice = (quantity: number, unitPrice: number, discount: number = 0, taxRate: number = 0) => {
-    const lineTotal = quantity * unitPrice;
-    const discountAmount = (lineTotal * discount) / 100;
-    const subtotalAfterDiscount = lineTotal - discountAmount;
-    const taxAmount = (subtotalAfterDiscount * taxRate) / 100;
-    
-    return {
-      totalPrice: subtotalAfterDiscount + taxAmount,
-      taxAmount
-    };
+    const { net, taxAmount, gross } = computeLineAmounts(quantity, unitPrice, discount, taxRate);
+    return { totalPrice: gross, taxAmount, net };
   };
-  
+
   // Default values for the form (memoized to satisfy exhaustive-deps)
   const defaultValues = useMemo<Partial<InvoiceFormValues>>(() => ({
-    customerId: 0,
+    customerId: undefined,
     dueDate: addDays(new Date(), 30),
     status: "DRAFT",
     notes: "",
@@ -224,15 +252,20 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
     resolver: zodResolver(invoiceFormSchema),
     defaultValues: invoice ? { ...invoice } : defaultValues,
   });
+
+  const watchedStatus = form.watch("status");
   
   // Initialize form with invoice data if editing
   useEffect(() => {
     if (invoice) {
       const formattedInvoice = {
         ...invoice,
-        dueDate: new Date(invoice.dueDate)
+        customerId: invoice.customerId == null ? undefined : invoice.customerId,
+        dueDate: new Date(invoice.dueDate),
+        status: normalizeInvoiceFormStatus(String(invoice.status)),
+        amountPaid: typeof invoice.amountPaid === "number" ? invoice.amountPaid : 0,
       };
-      
+
       form.reset(formattedInvoice);
       setItems(invoice.items || []);
     } else {
@@ -299,9 +332,9 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
     
     // Update form values
     form.setValue("items", updatedItems);
-    form.setValue("subtotal", calculateSubtotal(updatedItems));
+    form.setValue("subtotal", calculateNetSubtotal(updatedItems));
     form.setValue("taxAmount", calculateTaxTotal(updatedItems));
-    form.setValue("total", calculateSubtotal(updatedItems));
+    form.setValue("total", calculateGrandTotal(updatedItems));
     
     // Close dialog and reset form
     setNewItemDialogOpen(false);
@@ -323,9 +356,9 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
     
     // Update form values
     form.setValue("items", updatedItems);
-    form.setValue("subtotal", calculateSubtotal(updatedItems));
+    form.setValue("subtotal", calculateNetSubtotal(updatedItems));
     form.setValue("taxAmount", calculateTaxTotal(updatedItems));
-    form.setValue("total", calculateSubtotal(updatedItems));
+    form.setValue("total", calculateGrandTotal(updatedItems));
   };
   
   // Create or update invoice mutation
@@ -337,18 +370,23 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
         discount: it.discount ?? 0,
         taxRate: it.taxRate ?? 0,
       })) as InvoiceLineItem[];
-      const subtotal = calculateSubtotal(normalizedItems);
+      const netSubtotal = calculateNetSubtotal(normalizedItems);
       const taxAmount = calculateTaxTotal(normalizedItems);
-      const total = subtotal;
-      const dueAmount = total - (data.amountPaid || 0);
-      
-      // Prepare data for submission
+      const total = netSubtotal + taxAmount;
+      const amountPaid = Number(data.amountPaid ?? invoice?.amountPaid ?? 0) || 0;
+      const dueAmount = Math.max(0, total - amountPaid);
+
+      // Prepare data for submission (AP service expects `tax`, not only `taxAmount`)
       const invoiceData = {
         ...data,
-        subtotal,
+        customerId: data.customerId ?? null,
+        subtotal: netSubtotal,
+        tax: taxAmount,
         taxAmount,
         total,
-        dueAmount
+        dueAmount,
+        paidAmount: amountPaid,
+        amountPaid,
       };
       
       let res;
@@ -395,21 +433,24 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
   
   // Get status badge
   const getStatusBadge = (status: string) => {
-    let badgeVariant;
-    switch (status) {
+    let badgeVariant: "default" | "secondary" | "destructive" | "outline";
+    switch (String(status).toUpperCase()) {
       case "PAID":
-        badgeVariant = "success";
+        badgeVariant = "default";
         break;
       case "PARTIALLY_PAID":
-        badgeVariant = "warning";
+        badgeVariant = "secondary";
         break;
       case "OVERDUE":
+      case "DISPUTED":
         badgeVariant = "destructive";
         break;
       case "DRAFT":
+      case "PENDING_APPROVAL":
         badgeVariant = "outline";
         break;
       case "SENT":
+      case "APPROVED":
         badgeVariant = "default";
         break;
       case "CANCELLED":
@@ -419,15 +460,15 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
       default:
         badgeVariant = "outline";
     }
-    
+
     // Convert status to user-friendly format
-    const statusText = status
+    const statusText = String(status)
       .split("_")
       .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
       .join(" ");
-    
+
     return (
-      <Badge variant={badgeVariant as "default" | "secondary" | "destructive" | "outline"} className="font-normal">
+      <Badge variant={badgeVariant} className="font-normal">
         {statusText}
       </Badge>
     );
@@ -458,8 +499,10 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                     <FormItem>
                       <FormLabel>Customer</FormLabel>
                       <Select
-                        onValueChange={(value) => field.onChange(parseInt(value))}
-                        defaultValue={field.value ? field.value.toString() : undefined}
+                        value={field.value != null ? String(field.value) : "none"}
+                        onValueChange={(value) =>
+                          field.onChange(value === "none" ? undefined : Number.parseInt(value, 10))
+                        }
                         disabled={invoiceMutation.isPending}
                       >
                         <FormControl>
@@ -468,16 +511,17 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
+                          <SelectItem value="none">No customer (supplier-only)</SelectItem>
                           {customers.map((customer) => (
-                            <SelectItem
-                              key={customer.id}
-                              value={customer.id.toString()}
-                            >
+                            <SelectItem key={customer.id} value={customer.id.toString()}>
                               {customer.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Optional for supplier invoices; link a customer when billing an internal or external buyer.
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -533,8 +577,8 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                       <FormItem>
                         <FormLabel>Status</FormLabel>
                         <Select
+                          value={field.value}
                           onValueChange={field.onChange}
-                          defaultValue={field.value}
                           disabled={invoiceMutation.isPending}
                         >
                           <FormControl>
@@ -543,13 +587,14 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="DRAFT">Draft</SelectItem>
-                            <SelectItem value="SENT">Sent</SelectItem>
-                            <SelectItem value="PAID">Paid</SelectItem>
-                            <SelectItem value="PARTIALLY_PAID">Partially Paid</SelectItem>
-                            <SelectItem value="OVERDUE">Overdue</SelectItem>
-                            <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                            <SelectItem value="VOID">Void</SelectItem>
+                            {INVOICE_FORM_STATUSES.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s
+                                  .split("_")
+                                  .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+                                  .join(" ")}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -607,33 +652,31 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                       {invoice && (
                         <div className="flex justify-between items-center text-sm">
                           <span className="text-muted-foreground">Status:</span>
-                          <span>
-                            {getStatusBadge(invoice.status)}
-                          </span>
+                          <span>{getStatusBadge(watchedStatus)}</span>
                         </div>
                       )}
-                      
+
                       <div className="flex justify-between items-center text-sm pt-2 border-t">
-                        <span className="text-muted-foreground">Subtotal:</span>
+                        <span className="text-muted-foreground">Subtotal (pre-tax):</span>
                         <span className="font-medium">
-                          {formatMoney(calculateSubtotal(items))}
+                          {formatMoney(calculateNetSubtotal(items))}
                         </span>
                       </div>
-                      
+
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Tax:</span>
                         <span className="font-medium">
                           {formatMoney(calculateTaxTotal(items))}
                         </span>
                       </div>
-                      
+
                       <div className="flex justify-between items-center text-base font-medium pt-2 border-t">
                         <span>Total:</span>
                         <span>
-                          {formatMoney(calculateSubtotal(items))}
+                          {formatMoney(calculateGrandTotal(items))}
                         </span>
                       </div>
-                      
+
                       {invoice && invoice.amountPaid > 0 && (
                         <>
                           <div className="flex justify-between items-center text-sm">
@@ -642,11 +685,13 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                               {formatMoney(invoice.amountPaid)}
                             </span>
                           </div>
-                          
+
                           <div className="flex justify-between items-center text-base font-medium pt-2 border-t">
                             <span>Balance Due:</span>
                             <span className="text-red-600 dark:text-red-500">
-                              {formatMoney(invoice.total - invoice.amountPaid)}
+                              {formatMoney(
+                                Math.max(0, calculateGrandTotal(items) - invoice.amountPaid),
+                              )}
                             </span>
                           </div>
                         </>
@@ -719,7 +764,9 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                         <TableCell className="text-right">{formatMoney(item.unitPrice)}</TableCell>
                         <TableCell className="text-right">{item.discount || 0}%</TableCell>
                         <TableCell className="text-right">{item.taxRate || 0}%</TableCell>
-                        <TableCell className="text-right font-medium">{formatMoney(item.totalPrice)}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatMoney(calculateItemTotalPrice(item.quantity, item.unitPrice, item.discount ?? 0, item.taxRate ?? 0).totalPrice)}
+                        </TableCell>
                         <TableCell>
                           <Button
                             type="button"
@@ -740,10 +787,10 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                   <TableFooter>
                     <TableRow>
                       <TableCell colSpan={6} className="text-right font-medium">
-                        Subtotal
+                        Subtotal (pre-tax)
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        {formatMoney(calculateSubtotal(items))}
+                        {formatMoney(calculateNetSubtotal(items))}
                       </TableCell>
                       <TableCell />
                     </TableRow>
@@ -761,7 +808,7 @@ export function InvoiceDialog({ open, onClose, invoice }: InvoiceDialogProps) {
                         Total
                       </TableCell>
                       <TableCell className="text-right text-lg font-semibold">
-                        {formatMoney(calculateSubtotal(items))}
+                        {formatMoney(calculateGrandTotal(items))}
                       </TableCell>
                       <TableCell />
                     </TableRow>

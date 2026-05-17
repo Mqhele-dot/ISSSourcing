@@ -59,6 +59,14 @@ import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { procurementPoRecordItemsUrl, PROCUREMENT_PURCHASE_ORDER_RECORDS_PATH } from "@/api/procurement-purchase-order-paths";
 import { Separator } from "@/components/ui/separator";
 
+function queryErrorDetail(e: unknown): string {
+  if (e == null) return "";
+  const err = e as Error & { requestId?: string };
+  const rid = typeof err.requestId === "string" ? err.requestId.trim() : "";
+  const msg = err instanceof Error && err.message ? err.message : String(e);
+  return rid ? `${msg} Request ID: ${rid}.` : msg;
+}
+
 type Invoice = {
   id: number;
   invoiceNumber: string;
@@ -281,9 +289,7 @@ export default function InvoicesPage() {
   const inventoryForLines = inventoryLinesQuery.data ?? [];
   const selectedPoItems = poItemsQuery.data ?? [];
 
-  const invoiceFormReferenceError =
-    suppliersQuery.isError || purchaseOrdersQuery.isError || taxCodesQuery.isError;
-  const refetchInvoiceFormReference = () => {
+  const refetchAllInvoiceFormReferences = () => {
     void suppliersQuery.refetch();
     void purchaseOrdersQuery.refetch();
     void taxCodesQuery.refetch();
@@ -583,12 +589,33 @@ export default function InvoicesPage() {
         }
       />
 
-      {invoiceFormReferenceError ? (
+      {suppliersQuery.isError ? (
         <PanelInlineError
-          title="Some form reference data failed to load"
-          description="Supplier, purchase order, or tax code lists may be incomplete. You can still use the invoice list below."
-          onRetry={refetchInvoiceFormReference}
+          title="Suppliers reference data failed to load"
+          description={queryErrorDetail(suppliersQuery.error)}
+          onRetry={() => void suppliersQuery.refetch()}
         />
+      ) : null}
+      {purchaseOrdersQuery.isError ? (
+        <PanelInlineError
+          title="Purchase orders reference data failed to load"
+          description={`${queryErrorDetail(purchaseOrdersQuery.error)} If you see PO_NOT_FOUND, restart the server after pulling latest (records list route must register before operational /:po).`}
+          onRetry={() => void purchaseOrdersQuery.refetch()}
+        />
+      ) : null}
+      {taxCodesQuery.isError ? (
+        <PanelInlineError
+          title="Tax codes reference data failed to load"
+          description={queryErrorDetail(taxCodesQuery.error)}
+          onRetry={() => void taxCodesQuery.refetch()}
+        />
+      ) : null}
+      {(suppliersQuery.isError || purchaseOrdersQuery.isError || taxCodesQuery.isError) ? (
+        <div className="flex justify-end">
+          <Button type="button" variant="outline" size="sm" onClick={() => void refetchAllInvoiceFormReferences()}>
+            Retry all references
+          </Button>
+        </div>
       ) : null}
 
       <Card>

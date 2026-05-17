@@ -465,11 +465,20 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
                 : "user";
           const metadataLines = [`Exported by: ${actor}`];
           const reportingCurrencyCode = await getReportingCurrencyCode(storage);
+          const poCodeRaw = full.currencyCode;
+          const poCurrencyCode =
+            typeof poCodeRaw === "string" && poCodeRaw.trim().length > 0 ? poCodeRaw.trim().toUpperCase() : null;
+          const documentCurrencyCode = poCurrencyCode ?? reportingCurrencyCode;
+          if (poCurrencyCode && poCurrencyCode !== reportingCurrencyCode) {
+            metadataLines.push(
+              `PO currency: ${poCurrencyCode} (amounts formatted in PO currency; org reporting currency is ${reportingCurrencyCode}).`,
+            );
+          }
           const buffer = await generatePurchaseOrdersDocumentPdf(
             [full],
             `Purchase order - ${full.orderNumber}`,
             metadataLines,
-            { reportingCurrencyCode },
+            { reportingCurrencyCode: documentCurrencyCode },
           );
           const safeName = String(full.orderNumber).replace(/[^\w.-]+/g, "_");
           res.setHeader("Content-Type", "application/pdf");

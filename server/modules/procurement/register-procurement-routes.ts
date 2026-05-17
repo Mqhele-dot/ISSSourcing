@@ -352,9 +352,20 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       const { items, revisionReason: _revisionReason, ...headerPatch } = body;
       const requisitionPatch: Record<string, unknown> = { ...headerPatch };
       // Match POST: JSON sends requiredDate as ISO string; insert schema expects Date.
-      if (typeof requisitionPatch.requiredDate === "string" && requisitionPatch.requiredDate.trim()) {
-        const parsedRequiredDate = new Date(requisitionPatch.requiredDate);
-        if (!Number.isNaN(parsedRequiredDate.getTime())) {
+      if (typeof requisitionPatch.requiredDate === "string") {
+        const trimmed = requisitionPatch.requiredDate.trim();
+        if (!trimmed) {
+          delete requisitionPatch.requiredDate;
+        } else {
+          const parsedRequiredDate = new Date(trimmed);
+          if (Number.isNaN(parsedRequiredDate.getTime())) {
+            return sendFunctionError(
+              res,
+              400,
+              "updatePurchaseRequisition",
+              "requiredDate must be a valid ISO date string",
+            );
+          }
           requisitionPatch.requiredDate = parsedRequiredDate;
         }
       }

@@ -13,7 +13,7 @@ test.describe("Reports", () => {
     await expect(page.getByRole("heading", { name: /reports/i })).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole("button", { name: /export report/i })).toBeVisible();
     await expect(page.getByText(/report preview/i)).toBeVisible();
-    await expect(page.getByText(/items .* total value/i)).toBeVisible();
+    await expect(page.getByText(/filtered rows.*total value/i)).toBeVisible();
   });
 
   test("reports section nav switches to canonical purchase orders report route", async ({ page }) => {

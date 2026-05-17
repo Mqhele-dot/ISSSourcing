@@ -1,5 +1,14 @@
+import { useMemo, useState, useEffect } from "react";
 import { format } from "date-fns";
-import { BarChart2 } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabsContent } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -13,6 +22,7 @@ import type {
 } from "@shared/schema";
 import type { Category, InventoryItem, Warehouse } from "@shared/schema";
 import { ReportFilters } from "@/components/reports/report-filters";
+import { Button } from "@/components/ui/button";
 
 type ReportProjectOption = { id: number; code: string; name: string };
 
@@ -70,6 +80,8 @@ function filterReorderForPreview(rows: ReorderRequest[], f: ReportFilter): Reord
   if (f.status) r = r.filter((row) => row.status === f.status);
   return r;
 }
+
+const INV_PREVIEW_CHUNK = 25;
 
 function filterSuppliersForPreview(suppliers: Supplier[], f: ReportFilter): Supplier[] {
   if (f.supplierId) return suppliers.filter((s) => s.id === f.supplierId);
@@ -139,6 +151,14 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
         })
       : safeInventoryItems;
 
+  const [invPreviewLimit, setInvPreviewLimit] = useState(INV_PREVIEW_CHUNK);
+  useEffect(() => {
+    setInvPreviewLimit(INV_PREVIEW_CHUNK);
+  }, [filter.categoryId, filter.search]);
+
+  const visibleInventoryRows = filteredInventoryItems.slice(0, invPreviewLimit);
+  const invRemaining = Math.max(0, filteredInventoryItems.length - invPreviewLimit);
+
   return (
     <TabsContent value="inventory" className="mt-0">
       <ReportFilters
@@ -164,7 +184,9 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                 </p>
               </div>
               <div className="text-sm text-neutral-600 dark:text-neutral-300">
-                {`${filteredInventoryItems.length} items • Total Value: ${formatMoney(calculateTotalValue(filteredInventoryItems))}`}
+                {itemsLoading
+                  ? "Loading…"
+                  : `${Math.min(visibleInventoryRows.length, filteredInventoryItems.length)} of ${filteredInventoryItems.length} filtered rows • Total value: ${formatMoney(calculateTotalValue(filteredInventoryItems))}`}
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -202,7 +224,7 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                       </td>
                     </tr>
                   ) : filteredInventoryItems.length > 0 ? (
-                    filteredInventoryItems.slice(0, 25).map((item) => (
+                    visibleInventoryRows.map((item) => (
                       <tr key={item.id} data-testid={`reports-inventory-preview-row-${item.sku}`}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900 dark:text-white">
                           {item.name}
@@ -231,13 +253,13 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                       </td>
                     </tr>
                   )}
-                  {filteredInventoryItems.length > 25 && (
+                  {invRemaining > 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-4 text-center text-sm text-neutral-500 dark:text-neutral-400 italic">
-                        ... and {filteredInventoryItems.length - 25} more items
+                      <td colSpan={6} className="px-6 py-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                        {invRemaining} more rows not shown — use Load more or export for the full list.
                       </td>
                     </tr>
-                  )}
+                  ) : null}
                 </tbody>
                 <tfoot className="bg-neutral-50 dark:bg-neutral-800">
                   <tr>
@@ -255,11 +277,24 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                 </tfoot>
               </table>
             </div>
+            {!itemsLoading && invRemaining > 0 ? (
+              <div className="flex justify-center border-t border-neutral-200 dark:border-neutral-700 bg-neutral-50/80 dark:bg-neutral-900/40 px-4 py-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="reports-inventory-load-more"
+                  onClick={() => setInvPreviewLimit((n) => n + INV_PREVIEW_CHUNK)}
+                >
+                  Load more ({Math.min(INV_PREVIEW_CHUNK, invRemaining)} more)
+                </Button>
+              </div>
+            ) : null}
           </div>
         </CardContent>
         <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t border-neutral-200 dark:border-neutral-700 flex justify-between">
           <div className="text-sm text-neutral-600 dark:text-neutral-300">
-            The complete report includes all {safeInventoryItems.length} inventory items from the current inventory feed.
+            Export includes all {safeInventoryItems.length} inventory items from the current feed (filters above scope the preview only).
           </div>
         </CardFooter>
       </Card>
@@ -393,7 +428,37 @@ export function ReportsLowStockTabPanel(props: ReportsTabPanelsProps) {
 }
 
 export function ReportsValueTabPanel(props: ReportsTabPanelsProps) {
-  const { filter, onFilterChange, safeCategories, stats, formatMoney } = props;
+  const { filter, onFilterChange, safeCategories, stats, formatMoney, safeInventoryItems, getCategoryName } = props;
+
+  const itemsForValueBreakdown = useMemo(() => {
+    if (filter.categoryId != null) {
+      return safeInventoryItems.filter((item) => Number(item.categoryId) === Number(filter.categoryId));
+    }
+    return safeInventoryItems;
+  }, [safeInventoryItems, filter.categoryId]);
+
+  const { chartRows, totalCategories, shownLabel } = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of itemsForValueBreakdown) {
+      const name = getCategoryName(item.categoryId);
+      const v = (Number(item.price) || 0) * (Number(item.quantity) || 0);
+      map.set(name, (map.get(name) ?? 0) + v);
+    }
+    const rows = Array.from(map.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+    const cap = 12;
+    const top = rows.slice(0, cap);
+    const restSum = rows.slice(cap).reduce((s, r) => s + r.value, 0);
+    const merged = restSum > 0 ? [...top, { name: "Other categories (combined)", value: restSum }] : top;
+    const label =
+      rows.length > cap
+        ? `Top ${top.length} categories plus other (of ${rows.length} total${filter.categoryId != null ? ", filtered" : ""})`
+        : rows.length > 0
+          ? `${rows.length} categor${rows.length === 1 ? "y" : "ies"}${filter.categoryId != null ? " (filtered)" : ""}`
+          : "";
+    return { chartRows: merged, totalCategories: rows.length, shownLabel: label };
+  }, [itemsForValueBreakdown, getCategoryName, filter.categoryId]);
 
   return (
     <TabsContent value="value" className="mt-0">
@@ -418,15 +483,49 @@ export function ReportsValueTabPanel(props: ReportsTabPanelsProps) {
               </div>
             </div>
             <div className="p-6">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-medium">Inventory Value by Category</h3>
-                <p className="text-sm text-neutral-500 dark:text-neutral-400">Breakdown of inventory value distribution</p>
+              <div className="text-center mb-2 space-y-1">
+                <h3 className="text-lg font-medium">Inventory value by category</h3>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  Live preview from current inventory (export still includes full detail).
+                </p>
+                {shownLabel ? (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">{shownLabel}</p>
+                ) : null}
               </div>
-              <div className="w-full h-64 bg-neutral-50 dark:bg-neutral-800 rounded-lg flex items-center justify-center">
-                <div className="text-neutral-500 dark:text-neutral-400 flex items-center gap-2">
-                  <BarChart2 className="h-5 w-5" />
-                  Chart preview — Export to see complete data visualization
-                </div>
+              <div className="w-full h-64 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 p-2">
+                {totalCategories === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-neutral-500 dark:text-neutral-400 px-4 text-center">
+                    No inventory items in scope — adjust the category filter or seed inventory to see the chart.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={chartRows}
+                      margin={{ top: 8, right: 12, left: 4, bottom: totalCategories > 5 ? 56 : 32 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-neutral-200 dark:stroke-neutral-700" />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fontSize: 10, fill: "currentColor" }}
+                        interval={0}
+                        angle={chartRows.length > 5 ? -30 : 0}
+                        textAnchor={chartRows.length > 5 ? "end" : "middle"}
+                        height={chartRows.length > 5 ? 56 : 28}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: "currentColor" }}
+                        width={76}
+                        tickFormatter={(n) => formatMoney(Number(n))}
+                      />
+                      <Tooltip
+                        formatter={(v: number) => [formatMoney(v), "Value"]}
+                        labelFormatter={(l) => String(l)}
+                        contentStyle={{ borderRadius: 8 }}
+                      />
+                      <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={48} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
               <Separator className="my-6" />
               <div>
@@ -461,7 +560,7 @@ export function ReportsValueTabPanel(props: ReportsTabPanelsProps) {
         </CardContent>
         <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t border-neutral-200 dark:border-neutral-700 flex justify-between">
           <div className="text-sm text-neutral-600 dark:text-neutral-300">
-            The complete report will include detailed charts and value analysis.
+            Charts reflect the same inventory feed as exports; category filter above narrows the breakdown.
           </div>
         </CardFooter>
       </Card>
@@ -529,6 +628,15 @@ export function ReportsPurchaseOrdersTabPanel(props: ReportsTabPanelsProps) {
                         Loading purchase orders...
                       </td>
                     </tr>
+                  ) : safePurchaseOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-4 text-center text-sm text-neutral-500">
+                        No purchase orders loaded. If the PO list should have data, confirm{" "}
+                        <code className="rounded bg-muted px-1 py-0.5 text-xs">GET /api/procurement/purchase-orders/records</code>{" "}
+                        returns 200 (route ordering can return{" "}
+                        <code className="rounded bg-muted px-1 py-0.5 text-xs">PO_NOT_FOUND</code> on older servers — restart after pull).
+                      </td>
+                    </tr>
                   ) : previewRows.length > 0 ? (
                     previewRows.slice(0, 5).map((o) => (
                       <tr key={o.id}>
@@ -542,7 +650,7 @@ export function ReportsPurchaseOrdersTabPanel(props: ReportsTabPanelsProps) {
                   ) : (
                     <tr>
                       <td colSpan={5} className="px-6 py-4 text-center text-sm text-neutral-500">
-                        No purchase orders match the current filters.
+                        No purchase orders match the current filters ({safePurchaseOrders.length} loaded).
                       </td>
                     </tr>
                   )}

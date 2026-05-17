@@ -63,7 +63,7 @@ export function TutorialPageHint() {
   if (!meta || dismissed || isTutorialActive) return null;
 
   return (
-    <div className="sticky top-0 z-20 mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm shadow-sm">
+    <div className="sticky top-0 z-20 mb-4 scroll-mt-24 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm shadow-sm">
       <div className="flex items-center gap-2 min-w-0">
         <Sparkles className="h-4 w-4 shrink-0 text-primary" aria-hidden />
         <span className="text-foreground/90">

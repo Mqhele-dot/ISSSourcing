@@ -12,21 +12,45 @@ type Props = {
   moduleId: string;
 };
 
+function dismissedStorageKey(moduleId: string): string {
+  return `invtrack:training-dismissed:${moduleId}`;
+}
+
 export function ModuleTrainingPanel({ moduleId }: Props) {
   const mod = getTrainingModuleById(moduleId);
   const { focusedModuleId, clearTrainingFocus } = useTrainingPanel();
   const [open, setOpen] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return typeof localStorage !== "undefined" && localStorage.getItem(dismissedStorageKey(moduleId)) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     if (focusedModuleId === moduleId) {
       setOpen(true);
       setDismissed(false);
+      try {
+        localStorage.removeItem(dismissedStorageKey(moduleId));
+      } catch {
+        /* ignore */
+      }
       clearTrainingFocus();
     }
   }, [focusedModuleId, moduleId, clearTrainingFocus]);
 
   if (!mod || dismissed) return null;
+
+  const dismissForSession = () => {
+    try {
+      localStorage.setItem(dismissedStorageKey(moduleId), "1");
+    } catch {
+      /* ignore */
+    }
+    setDismissed(true);
+  };
 
   const mistakeLines = mod.functions
     .flatMap((f) => (f.commonMistakes ?? []).map((m) => ({ fn: f.name, m })))
@@ -67,7 +91,7 @@ export function ModuleTrainingPanel({ moduleId }: Props) {
               size="icon"
               className="h-8 w-8"
               aria-label="Dismiss training panel for this visit"
-              onClick={() => setDismissed(true)}
+              onClick={() => dismissForSession()}
             >
               <X className="h-4 w-4" />
             </Button>

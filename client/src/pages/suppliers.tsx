@@ -34,6 +34,14 @@ import {
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 
+function queryErrorDetail(e: unknown): string {
+  if (e == null) return "";
+  const err = e as Error & { requestId?: string };
+  const rid = typeof err.requestId === "string" ? err.requestId.trim() : "";
+  const msg = err instanceof Error && err.message ? err.message : String(e);
+  return rid ? `${msg} Request ID: ${rid}.` : msg;
+}
+
 export default function SuppliersPage() {
   const { toast } = useToast();
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
@@ -48,16 +56,19 @@ export default function SuppliersPage() {
   const {
     data: paymentTerms = [],
     isError: paymentTermsError,
+    error: paymentTermsErr,
     refetch: refetchPaymentTerms,
   } = paymentTermsQuery;
   const {
     data: currencies = [],
     isError: currenciesError,
+    error: currenciesErr,
     refetch: refetchCurrencies,
   } = currenciesQuery;
   const {
     data: performance = [],
     isError: performanceError,
+    error: performanceErr,
     refetch: refetchPerformance,
   } = performanceQuery;
 
@@ -401,13 +412,38 @@ export default function SuppliersPage() {
         <ModuleTrainingPanel moduleId="suppliers" />
       </div>
 
-      {suppliersAuxError ? (
+      {paymentTermsError ? (
         <div className="mb-4 px-4 md:px-6">
           <PanelInlineError
-            title="Some supplier reference data failed to load"
-            description="Payment terms, currencies, or performance metrics may be missing. The supplier list below should still work."
-            onRetry={refetchSuppliersAux}
+            title="Payment terms failed to load"
+            description={queryErrorDetail(paymentTermsErr)}
+            onRetry={() => void refetchPaymentTerms()}
           />
+        </div>
+      ) : null}
+      {currenciesError ? (
+        <div className="mb-4 px-4 md:px-6">
+          <PanelInlineError
+            title="Currencies failed to load"
+            description={queryErrorDetail(currenciesErr)}
+            onRetry={() => void refetchCurrencies()}
+          />
+        </div>
+      ) : null}
+      {performanceError ? (
+        <div className="mb-4 px-4 md:px-6">
+          <PanelInlineError
+            title="Supplier performance metrics failed to load"
+            description={queryErrorDetail(performanceErr)}
+            onRetry={() => void refetchPerformance()}
+          />
+        </div>
+      ) : null}
+      {suppliersAuxError ? (
+        <div className="mb-4 flex justify-end px-4 md:px-6">
+          <Button type="button" variant="outline" size="sm" onClick={() => void refetchSuppliersAux()}>
+            Retry all supplier reference data
+          </Button>
         </div>
       ) : null}
 

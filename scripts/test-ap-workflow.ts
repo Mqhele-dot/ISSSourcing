@@ -35,6 +35,15 @@ function unwrapData<T>(value: unknown): T {
   return value as T;
 }
 
+function truncatedJsonSnippet(value: unknown, max = 480): string {
+  try {
+    const s = JSON.stringify(value);
+    return s.length <= max ? s : `${s.slice(0, max)}…`;
+  } catch {
+    return String(value);
+  }
+}
+
 function expectStatus(name: string, expected: number, actual: number): boolean {
   if (expected === actual) {
     console.log("  ✓ %s -> %d", name, actual);
@@ -161,9 +170,15 @@ async function main() {
     },
   });
   if (!expectStatus("POST /api/purchase-requisitions", 201, requisitionRes.status)) failures++;
-  const requisition = asRecord(requisitionRes.json);
+  const requisition = asRecord(unwrapData<unknown>(requisitionRes.json));
   const requisitionId = Number(requisition.id ?? 0);
-  if (!requisitionId) exitTest(1);
+  if (!requisitionId) {
+    console.log(
+      "  ✗ Requisition create response missing data.id after envelope unwrap (expected { ok, data: { id } }). Body: %s",
+      truncatedJsonSnippet(requisitionRes.json),
+    );
+    exitTest(1);
+  }
 
   const approveReqRes = await apiJsonRequest(`/purchase-requisitions/${requisitionId}/approve`, {
     method: "POST",
@@ -178,10 +193,16 @@ async function main() {
     body: {},
   });
   if (!expectStatus("POST /api/purchase-requisitions/:id/convert", 201, convertRes.status)) failures++;
-  const po = asRecord(convertRes.json);
+  const po = asRecord(unwrapData<unknown>(convertRes.json));
   const poId = Number(po.id ?? 0);
   const poNumber = String(po.orderNumber ?? "");
-  if (!poId || !poNumber) exitTest(1);
+  if (!poId || !poNumber) {
+    console.log(
+      "  ✗ PO conversion missing id/orderNumber after envelope unwrap. Body: %s",
+      truncatedJsonSnippet(convertRes.json),
+    );
+    exitTest(1);
+  }
 
   const poDetailRes = await apiJsonRequest(`/purchase-orders/${poId}`, { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/purchase-orders/:id", 200, poDetailRes.status)) failures++;

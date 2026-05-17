@@ -109,7 +109,7 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
       try {
         const exceptionRows = await pool.query(
           `SELECT type, COUNT(*)::int AS open_count
-           FROM ops_exceptions
+           FROM operational_exceptions
            WHERE status IN ('open', 'in_progress')
            GROUP BY type
            ORDER BY open_count DESC`,

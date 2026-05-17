@@ -136,6 +136,20 @@ async function main() {
           const getOne = await apiJsonRequest(`/purchase-requisitions/${body.id}`, { method: "GET", cookie: adminCookie });
           expectStatus("Admin GET /api/purchase-requisitions/:id after create (expect 200)", 200, getOne.status);
 
+          const putIsoDate = await apiJsonRequest(`/purchase-requisitions/${body.id}`, {
+            method: "PUT",
+            body: { requiredDate: "2026-12-31T12:00:00.000Z" },
+            cookie: adminCookie,
+          });
+          expectStatus("Admin PUT requiredDate as ISO string (expect 200)", 200, putIsoDate.status);
+
+          const putBadDate = await apiJsonRequest(`/purchase-requisitions/${body.id}`, {
+            method: "PUT",
+            body: { requiredDate: "not-a-date" },
+            cookie: adminCookie,
+          });
+          expectStatus("Admin PUT requiredDate invalid string (expect 400)", 400, putBadDate.status);
+
           const approveRes = await apiJsonRequest(`/purchase-requisitions/${body.id}/approve`, {
             method: "POST",
             body: {},

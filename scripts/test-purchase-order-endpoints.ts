@@ -205,6 +205,14 @@ async function main() {
   const procurementRecords = await apiJsonRequest("/procurement/purchase-orders/records", {
     cookie: adminCookie2,
   });
+  if (!procurementRecords.ok) {
+    const errBody = procurementRecords.json as { error?: { code?: string } } | undefined;
+    assert.notStrictEqual(
+      errBody?.error?.code,
+      "PO_NOT_FOUND",
+      "GET /api/procurement/purchase-orders/records must not hit operational /:po (segment 'records' is a domain list, not a PO number).",
+    );
+  }
   assert.ok(
     procurementRecords.ok,
     `GET /api/procurement/purchase-orders/records must list (not PO_NOT_FOUND): ${procurementRecords.status} ${JSON.stringify(procurementRecords.json)}`,

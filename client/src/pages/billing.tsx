@@ -18,7 +18,7 @@ type BillingInvoice = {
   total: number;
   amountPaid: number;
   invoiceNumber?: string | null;
-  customerId: number;
+  customerId: number | null;
   dueDate: string | Date;
   createdAt: string | Date;
   items?: Array<Record<string, unknown>>;

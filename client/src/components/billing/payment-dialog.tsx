@@ -72,7 +72,7 @@ type PaymentInvoiceOption = {
   amountPaid: number;
   invoiceNumber?: string | null;
   dueDate: string | Date;
-  customerId: number;
+  customerId: number | null;
   customer?: {
     name?: string;
   } | null;
@@ -131,7 +131,7 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
         label: `#${invoice.invoiceNumber || invoice.id} - ${format(new Date(invoice.dueDate), "MMM d, yyyy")}`,
         dueAmount: invoice.total - (invoice.amountPaid || 0),
         status: invoice.status,
-        customerName: invoice.customer?.name || `Customer #${invoice.customerId}`
+        customerName: invoice.customer?.name ?? (invoice.customerId != null ? `Customer #${invoice.customerId}` : "No customer"),
       }));
   };
   

@@ -164,7 +164,7 @@ export function buildAnalyticsSectionCards(
         {
           title: "Inventory position",
           value: health.inventoryStats ? formatMoney(Number(inventoryStats?.inventoryValue ?? 0)) : "—",
-          description: "Unified inventory value KPI from the registry.",
+          description: "Stock on hand value.",
           href: APP_ROUTES.analytics.inventory,
           sourceWarning: warn(health, "inventoryStats"),
           valueState: health.inventoryStats ? "ok" : "unavailable",
@@ -172,7 +172,7 @@ export function buildAnalyticsSectionCards(
         {
           title: "Procurement flow",
           value: health.controlTower ? String(kpis.posAwaitingAction ?? 0) : "—",
-          description: "POs needing procurement action.",
+          description: "Open PO actions.",
           href: APP_ROUTES.analytics.procurement,
           sourceWarning: warn(health, "controlTower"),
           valueState: health.controlTower ? "ok" : "unavailable",
@@ -180,7 +180,7 @@ export function buildAnalyticsSectionCards(
         {
           title: "Finance exposure",
           value: health.apOverview ? formatMoney(Number(apOverview?.outstandingAmount ?? 0)) : "—",
-          description: "Outstanding AP (open invoices).",
+          description: "Unpaid accounts payable.",
           href: APP_ROUTES.analytics.finance,
           sourceWarning: warn(health, "apOverview"),
           valueState: health.apOverview ? "ok" : "unavailable",
@@ -188,7 +188,7 @@ export function buildAnalyticsSectionCards(
         {
           title: "Network execution",
           value: health.controlTower ? String(kpis.lateShipments ?? 0) : "—",
-          description: "Late / at-risk shipments.",
+          description: "Late or at-risk shipments.",
           href: APP_ROUTES.analytics.logistics,
           sourceWarning: warn(health, "controlTower"),
           valueState: health.controlTower ? "ok" : "unavailable",
