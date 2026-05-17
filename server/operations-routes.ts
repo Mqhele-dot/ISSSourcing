@@ -239,6 +239,29 @@ function mapPurchaseReceiveError(error: unknown): never {
       "Reduce qty_received_now to the line remaining or receive in multiple steps.",
     );
   }
+  if (message === "putaway_warehouse_not_found") {
+    throw contractError(400, "PUTAWAY_WAREHOUSE_NOT_FOUND", "Warehouse not found for this organization.");
+  }
+  if (message === "putaway_aisle_invalid") {
+    throw contractError(
+      400,
+      "PUTAWAY_AISLE_INVALID",
+      "Aisle is missing or not configured on the selected warehouse.",
+    );
+  }
+  if (message === "putaway_no_bins_for_aisle") {
+    throw contractError(
+      400,
+      "PUTAWAY_NO_BINS_FOR_AISLE",
+      "No bins are configured for this aisle on the warehouse.",
+    );
+  }
+  if (message === "putaway_bin_required") {
+    throw contractError(400, "PUTAWAY_BIN_REQUIRED", "Select a bin for this receive.");
+  }
+  if (message === "putaway_bin_invalid") {
+    throw contractError(400, "PUTAWAY_BIN_INVALID", "Bin is not valid for the selected warehouse and aisle.");
+  }
   throw error;
 }
 
@@ -706,6 +729,17 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           warehouse_location:
             typeof (req.body?.warehouse_location ?? req.body?.warehouseLocation) === "string"
               ? String(req.body?.warehouse_location ?? req.body?.warehouseLocation)
+              : undefined,
+          warehouse_id: (() => {
+            const raw = req.body?.warehouse_id ?? req.body?.warehouseId;
+            if (raw == null || raw === "") return undefined;
+            const n = Number(raw);
+            return Number.isFinite(n) ? n : undefined;
+          })(),
+          aisle: typeof req.body?.aisle === "string" ? String(req.body.aisle).trim() : undefined,
+          bin_code:
+            typeof (req.body?.bin_code ?? req.body?.binCode) === "string"
+              ? String(req.body?.bin_code ?? req.body?.binCode).trim()
               : undefined,
           received_at:
             typeof (req.body?.received_at ?? req.body?.receivedAt) === "string"

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Check, X, Plus } from "lucide-react";
+import { Check, X, Plus, ChevronDown } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -49,6 +49,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -71,30 +72,48 @@ type Permission = {
   permissionType: string;
 };
 
-const resourceCategories = [
+type PermissionCatalogCategory = { id: string; label: string; resources: string[] };
+type PermissionCatalogType = { value: string; label: string };
+type PermissionCatalogResponse = {
+  categories: PermissionCatalogCategory[];
+  permissionTypes: PermissionCatalogType[];
+};
+
+/** Mirrors `server/rbac/permission-catalog.ts` when the API is unavailable. */
+const FALLBACK_PERMISSION_CATALOG_CATEGORIES: PermissionCatalogCategory[] = [
   {
-    name: "Inventory",
+    id: "inventory",
+    label: "Inventory & logistics",
     resources: ["inventory", "categories", "warehouses", "stock_movements"],
   },
   {
-    name: "Purchasing",
+    id: "procurement",
+    label: "Purchasing",
     resources: ["purchases", "suppliers", "reorder_requests"],
   },
   {
-    name: "User Management",
+    id: "finance_data",
+    label: "Finance data",
+    resources: ["invoices", "billing", "taxes", "payments"],
+  },
+  {
+    id: "people_access",
+    label: "Users & access",
     resources: ["users", "custom_roles"],
   },
   {
-    name: "System",
-    resources: ["settings", "reports", "analytics", "activity_logs", "system"],
+    id: "insights",
+    label: "Reporting & analytics",
+    resources: ["reports", "analytics", "dashboards", "activity_logs", "audit_logs"],
   },
   {
-    name: "Other",
-    resources: ["documents", "dashboards", "notifications", "import_export", "audit_logs"],
+    id: "system",
+    label: "System",
+    resources: ["settings", "system", "import_export", "documents", "notifications"],
   },
 ];
 
-const permissionTypes = [
+const FALLBACK_PERMISSION_TYPES: PermissionCatalogType[] = [
   { value: "read", label: "Read" },
   { value: "create", label: "Create" },
   { value: "update", label: "Update" },
@@ -103,6 +122,7 @@ const permissionTypes = [
   { value: "export", label: "Export" },
   { value: "import", label: "Import" },
   { value: "assign", label: "Assign" },
+  { value: "execute", label: "Execute" },
   { value: "manage", label: "Manage" },
   { value: "admin", label: "Admin" },
 ];
@@ -120,6 +140,41 @@ export function RoleManager() {
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [selectedCustomRole, setSelectedCustomRole] = useState<number | null>(null);
   const [createRoleOpen, setCreateRoleOpen] = useState(false);
+  const [permissionSearch, setPermissionSearch] = useState("");
+
+  const { data: permissionCatalog } = useQuery<PermissionCatalogResponse>({
+    queryKey: ["/api/rbac/permission-catalog"],
+  });
+
+  const catalogCategories = useMemo(
+    () =>
+      permissionCatalog?.categories?.length
+        ? permissionCatalog.categories
+        : FALLBACK_PERMISSION_CATALOG_CATEGORIES,
+    [permissionCatalog?.categories],
+  );
+
+  const catalogPermissionTypes = useMemo(
+    () =>
+      permissionCatalog?.permissionTypes?.length
+        ? permissionCatalog.permissionTypes
+        : FALLBACK_PERMISSION_TYPES,
+    [permissionCatalog?.permissionTypes],
+  );
+
+  const filteredMatrixCategories = useMemo(() => {
+    const q = permissionSearch.trim().toLowerCase();
+    return catalogCategories
+      .map((c) => ({
+        ...c,
+        resources: q
+          ? c.resources.filter(
+              (r) => r.toLowerCase().includes(q) || c.label.toLowerCase().includes(q),
+            )
+          : c.resources,
+      }))
+      .filter((c) => c.resources.length > 0);
+  }, [catalogCategories, permissionSearch]);
   
   // Fetch system roles (predefined roles)
   const { data: systemRoles } = useQuery<string[]>({
@@ -314,42 +369,62 @@ export function RoleManager() {
                   {permissionsLoading ? (
                     <div>Loading permissions...</div>
                   ) : (
-                    <div className="space-y-6">
-                      {resourceCategories.map((category) => (
-                        <div key={category.name} className="space-y-2">
-                          <h4 className="text-sm font-semibold">{category.name}</h4>
-                          <div className="bg-muted p-4 rounded-md">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Resource</TableHead>
-                                  {permissionTypes.map((type) => (
-                                    <TableHead key={type.value}>{type.label}</TableHead>
-                                  ))}
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {category.resources.map((resource) => (
-                                  <TableRow key={resource}>
-                                    <TableCell className="font-medium">
-                                      {resource.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                                    </TableCell>
-                                    {permissionTypes.map((type) => (
-                                      <TableCell key={type.value}>
-                                        {hasPermission(resource, type.value) ? (
-                                          <Check className="text-green-500" size={16} />
-                                        ) : (
-                                          <X className="text-muted-foreground" size={16} />
-                                        )}
-                                      </TableCell>
-                                    ))}
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="space-y-4">
+                      <div className="max-w-md space-y-1">
+                        <Label htmlFor="permission-search-system">Filter resources</Label>
+                        <Input
+                          id="permission-search-system"
+                          placeholder="Search by resource or category…"
+                          value={permissionSearch}
+                          onChange={(event) => setPermissionSearch(event.target.value)}
+                        />
+                      </div>
+                      {filteredMatrixCategories.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No resources match your search.</p>
+                      ) : (
+                        filteredMatrixCategories.map((category) => (
+                          <Collapsible key={category.id} defaultOpen>
+                            <div className="overflow-hidden rounded-md border">
+                              <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted/40 px-4 py-3 text-left text-sm font-semibold hover:bg-muted/60">
+                                <ChevronDown className="h-4 w-4 shrink-0" />
+                                {category.label}
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <div className="bg-muted p-4 pt-2">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Resource</TableHead>
+                                        {catalogPermissionTypes.map((type) => (
+                                          <TableHead key={type.value}>{type.label}</TableHead>
+                                        ))}
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {category.resources.map((resource) => (
+                                        <TableRow key={resource}>
+                                          <TableCell className="font-medium">
+                                            {resource.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                                          </TableCell>
+                                          {catalogPermissionTypes.map((type) => (
+                                            <TableCell key={type.value}>
+                                              {hasPermission(resource, type.value) ? (
+                                                <Check className="text-green-500" size={16} />
+                                              ) : (
+                                                <X className="text-muted-foreground" size={16} />
+                                              )}
+                                            </TableCell>
+                                          ))}
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </CollapsibleContent>
+                            </div>
+                          </Collapsible>
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
@@ -478,49 +553,70 @@ export function RoleManager() {
                   {customPermissionsLoading ? (
                     <div>Loading permissions...</div>
                   ) : (
-                    <div className="space-y-6">
-                      {resourceCategories.map((category) => (
-                        <div key={category.name} className="space-y-2">
-                          <h4 className="text-sm font-semibold">{category.name}</h4>
-                          <div className="bg-muted p-4 rounded-md">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Resource</TableHead>
-                                  {permissionTypes.map((type) => (
-                                    <TableHead key={type.value}>{type.label}</TableHead>
-                                  ))}
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {category.resources.map((resource) => (
-                                  <TableRow key={resource}>
-                                    <TableCell className="font-medium">
-                                      {resource.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                                    </TableCell>
-                                    {permissionTypes.map((type) => (
-                                      <TableCell key={type.value} className="p-0">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="w-full h-full"
-                                          onClick={() => togglePermission(resource, type.value)}
-                                        >
-                                          {hasPermission(resource, type.value) ? (
-                                            <Check className="text-green-500" size={16} />
-                                          ) : (
-                                            <X className="text-muted-foreground" size={16} />
-                                          )}
-                                        </Button>
-                                      </TableCell>
-                                    ))}
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="space-y-4">
+                      <div className="max-w-md space-y-1">
+                        <Label htmlFor="permission-search-custom">Filter resources</Label>
+                        <Input
+                          id="permission-search-custom"
+                          placeholder="Search by resource or category…"
+                          value={permissionSearch}
+                          onChange={(event) => setPermissionSearch(event.target.value)}
+                        />
+                      </div>
+                      {filteredMatrixCategories.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No resources match your search.</p>
+                      ) : (
+                        filteredMatrixCategories.map((category) => (
+                          <Collapsible key={category.id} defaultOpen>
+                            <div className="overflow-hidden rounded-md border">
+                              <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted/40 px-4 py-3 text-left text-sm font-semibold hover:bg-muted/60">
+                                <ChevronDown className="h-4 w-4 shrink-0" />
+                                {category.label}
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <div className="bg-muted p-4 pt-2">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Resource</TableHead>
+                                        {catalogPermissionTypes.map((type) => (
+                                          <TableHead key={type.value}>{type.label}</TableHead>
+                                        ))}
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {category.resources.map((resource) => (
+                                        <TableRow key={resource}>
+                                          <TableCell className="font-medium">
+                                            {resource.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                                          </TableCell>
+                                          {catalogPermissionTypes.map((type) => (
+                                            <TableCell key={type.value} className="p-0">
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-full w-full"
+                                                type="button"
+                                                onClick={() => togglePermission(resource, type.value)}
+                                              >
+                                                {hasPermission(resource, type.value) ? (
+                                                  <Check className="text-green-500" size={16} />
+                                                ) : (
+                                                  <X className="text-muted-foreground" size={16} />
+                                                )}
+                                              </Button>
+                                            </TableCell>
+                                          ))}
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </CollapsibleContent>
+                            </div>
+                          </Collapsible>
+                        ))
+                      )}
                     </div>
                   )}
                 </div>

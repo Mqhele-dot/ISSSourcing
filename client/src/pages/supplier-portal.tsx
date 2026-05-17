@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { confirmSupplierPortalOrder, fetchSupplierPortalInvoices, fetchSupplierPortalOrders, updateSupplierPortalDelivery, uploadDocumentFile } from "@/api/client";
 import { requestJson } from "@/lib/queryClient";
+import {
+  MASTER_CURRENCIES_QUERY_KEY,
+  currencyOptionsForSelect,
+  fetchActiveMasterCurrencies,
+} from "@/lib/currencies-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,7 +33,7 @@ export default function SupplierPortalPage() {
   const [invoicePoId, setInvoicePoId] = useState<string>("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceTotal, setInvoiceTotal] = useState("");
-  const [invoiceCurrency, setInvoiceCurrency] = useState("ZAR");
+  const [invoiceCurrency, setInvoiceCurrency] = useState("");
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [invoiceError, setInvoiceError] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
@@ -37,6 +42,46 @@ export default function SupplierPortalPage() {
   const supplierScopeId =
     canChooseSupplier && selectedSupplierId ? Number(selectedSupplierId) : undefined;
   const supplierSelected = !canChooseSupplier || supplierScopeId != null;
+
+  const supplierProfileId =
+    canChooseSupplier && supplierScopeId != null
+      ? supplierScopeId
+      : !canChooseSupplier && user?.supplierId != null
+        ? Number(user.supplierId)
+        : undefined;
+
+  const { data: portalSupplierProfile } = useQuery({
+    queryKey: ["/api/suppliers", supplierProfileId],
+    enabled: supplierSelected && supplierProfileId != null && Number.isFinite(supplierProfileId),
+    queryFn: () =>
+      requestJson<{ id: number; defaultCurrencyCode?: string | null }>(
+        "GET",
+        `/api/suppliers/${supplierProfileId}`,
+      ),
+  });
+
+  const { data: activePortalCurrencies = [] } = useQuery({
+    queryKey: MASTER_CURRENCIES_QUERY_KEY,
+    queryFn: fetchActiveMasterCurrencies,
+    enabled: supplierSelected,
+  });
+
+  const portalInvoiceCurrencyOptions = useMemo(
+    () => currencyOptionsForSelect(activePortalCurrencies, [portalSupplierProfile?.defaultCurrencyCode]),
+    [activePortalCurrencies, portalSupplierProfile?.defaultCurrencyCode],
+  );
+
+  useEffect(() => {
+    if (!supplierSelected || !portalInvoiceCurrencyOptions.length) return;
+    setInvoiceCurrency((prev) => {
+      if (prev && portalInvoiceCurrencyOptions.some((c) => c.code === prev)) return prev;
+      const def = portalSupplierProfile?.defaultCurrencyCode?.trim().toUpperCase();
+      if (def && /^[A-Z]{3}$/.test(def) && portalInvoiceCurrencyOptions.some((c) => c.code === def)) {
+        return def;
+      }
+      return portalInvoiceCurrencyOptions[0]?.code ?? "";
+    });
+  }, [supplierSelected, portalInvoiceCurrencyOptions, portalSupplierProfile?.defaultCurrencyCode]);
 
   const { data: supplierOptions = [] } = useQuery({
     queryKey: ["/api/suppliers", "portal-options"],
@@ -55,6 +100,13 @@ export default function SupplierPortalPage() {
     queryFn: () => fetchSupplierPortalInvoices(supplierScopeId),
     enabled: !canChooseSupplier || supplierScopeId != null,
   });
+
+  const purchaseOrderCurrencyFromRow = useCallback((order: PurchaseOrder | undefined): string | null => {
+    if (!order) return null;
+    const o = order as PurchaseOrder & { currencyCode?: unknown; currency_code?: unknown };
+    const raw = o.currencyCode ?? o.currency_code;
+    return typeof raw === "string" && /^[A-Za-z]{3}$/.test(raw.trim()) ? raw.trim().toUpperCase() : null;
+  }, []);
 
   const confirmOrder = useMutation({
     mutationFn: (id: number) => confirmSupplierPortalOrder(id, supplierScopeId),
@@ -107,7 +159,8 @@ export default function SupplierPortalPage() {
         purchaseOrderId: poId,
         invoiceNumber: invoiceNumber.trim(),
         total,
-        currency: invoiceCurrency.trim() || "ZAR",
+        currency:
+          (invoiceCurrency.trim() || portalInvoiceCurrencyOptions[0]?.code || "USD").toUpperCase(),
         ...(supplierScopeId ? { supplierId: supplierScopeId } : {}),
       });
       if (invoiceFile) {
@@ -123,6 +176,7 @@ export default function SupplierPortalPage() {
       setInvoicePoId("");
       setInvoiceNumber("");
       setInvoiceTotal("");
+      setInvoiceCurrency("");
       setInvoiceFile(null);
       setInvoiceError("");
       void queryClient.invalidateQueries({ queryKey: ["/api/supplier/invoices"] });
@@ -351,7 +405,20 @@ export default function SupplierPortalPage() {
         <CardContent className="grid gap-3 md:grid-cols-5">
           <div className="space-y-1">
             <Label htmlFor="supplier-invoice-po">Purchase order</Label>
-            <Select value={invoicePoId || "none"} onValueChange={(value) => setInvoicePoId(value === "none" ? "" : value)} disabled={!supplierSelected}>
+            <Select
+              value={invoicePoId || "none"}
+              onValueChange={(value) => {
+                const next = value === "none" ? "" : value;
+                setInvoicePoId(next);
+                if (!next) return;
+                const po = orders.find((o) => String(o.id) === next);
+                const cc = purchaseOrderCurrencyFromRow(po);
+                if (cc && portalInvoiceCurrencyOptions.some((c) => c.code === cc)) {
+                  setInvoiceCurrency(cc);
+                }
+              }}
+              disabled={!supplierSelected}
+            >
               <SelectTrigger id="supplier-invoice-po" data-testid="supplier-portal-order-picker">
                 <SelectValue placeholder="Choose PO" />
               </SelectTrigger>
@@ -392,13 +459,47 @@ export default function SupplierPortalPage() {
           </div>
           <div className="space-y-1">
             <Label htmlFor="supplier-invoice-currency">Currency</Label>
-            <Input
-              id="supplier-invoice-currency"
-              data-testid="supplier-portal-invoice-currency-input"
-              value={invoiceCurrency}
-              onChange={(event) => setInvoiceCurrency(event.target.value.toUpperCase())}
-              disabled={!supplierSelected}
-            />
+            <Select
+              value={
+                portalInvoiceCurrencyOptions.length === 0
+                  ? "none"
+                  : invoiceCurrency && portalInvoiceCurrencyOptions.some((c) => c.code === invoiceCurrency)
+                    ? invoiceCurrency
+                    : (portalInvoiceCurrencyOptions[0]?.code ?? "none")
+              }
+              onValueChange={(value) => {
+                if (value === "none" || portalInvoiceCurrencyOptions.length === 0) return;
+                setInvoiceCurrency(value);
+              }}
+              disabled={!supplierSelected || portalInvoiceCurrencyOptions.length === 0}
+            >
+              <SelectTrigger
+                id="supplier-invoice-currency"
+                data-testid="supplier-portal-invoice-currency-input"
+              >
+                <SelectValue
+                  placeholder={
+                    portalInvoiceCurrencyOptions.length === 0 ? "Loading currencies…" : "Select currency"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {portalInvoiceCurrencyOptions.length === 0 ? (
+                  <SelectItem value="none" disabled>
+                    No active currencies in Master data
+                  </SelectItem>
+                ) : (
+                  portalInvoiceCurrencyOptions.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.code} — {c.name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Same active currency list as purchase orders (Master data). Choosing a PO sets currency to the order when available.
+            </p>
           </div>
           <div className="space-y-1">
             <Label htmlFor="supplier-invoice-file">Invoice file</Label>

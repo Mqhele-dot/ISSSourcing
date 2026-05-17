@@ -81,6 +81,9 @@ export function useReceivePurchaseOrderMutation(po: string) {
         receiverUserId?: number;
         receiverName?: string;
         warehouseLocation?: string;
+        warehouseId?: number;
+        aisle?: string;
+        binCode?: string;
         receivedAt?: string;
       };
     }) => {

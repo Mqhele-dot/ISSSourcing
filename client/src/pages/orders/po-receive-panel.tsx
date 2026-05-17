@@ -15,7 +15,20 @@ import {
 } from "@/components/ui/table";
 import { Can } from "@/components/auth/can";
 import type { PurchaseOrderDetail } from "@/api/types";
-import { normalizeReceiveQtyInput, type ReceiveLineFieldError } from "@/features/purchase-orders";
+import {
+  normalizeReceiveQtyInput,
+  normalizePutawayBins,
+  type ReceiveLineFieldError,
+  type ReceivePutawayState,
+  type ReceivePutawayWarehouse,
+} from "@/features/purchase-orders";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type PoReceivePanelProps = {
   /** Anchor id for in-page navigation (e.g. po-receive). */
@@ -31,8 +44,9 @@ type PoReceivePanelProps = {
   setSerialState: Dispatch<SetStateAction<Record<string, string>>>;
   receiverName: string;
   setReceiverName: (v: string) => void;
-  warehouseLocation: string;
-  setWarehouseLocation: (v: string) => void;
+  warehouses: ReceivePutawayWarehouse[];
+  receivePutaway: ReceivePutawayState;
+  setReceivePutaway: Dispatch<SetStateAction<ReceivePutawayState>>;
   userId?: number;
   receiving: boolean;
   receiveError?: string | null;
@@ -55,8 +69,9 @@ export function PoReceivePanel({
   setSerialState,
   receiverName,
   setReceiverName,
-  warehouseLocation,
-  setWarehouseLocation,
+  warehouses,
+  receivePutaway,
+  setReceivePutaway,
   userId,
   receiving,
   receiveError,
@@ -66,6 +81,13 @@ export function PoReceivePanel({
   const issuesFor = (sku: string, field: ReceiveLineFieldError["field"]) =>
     receiveLineIssues.filter((i) => i.sku === sku && i.field === field);
   const globalLineIssues = receiveLineIssues.filter((i) => i.field === "_line");
+  const selectedWarehouse = warehouses.find((w) => w.id === receivePutaway.warehouseId);
+  const aisles = Array.isArray(selectedWarehouse?.aisles) ? selectedWarehouse!.aisles! : [];
+  const aisleTrimmed = receivePutaway.aisle.trim();
+  const binOptions = normalizePutawayBins(selectedWarehouse, aisleTrimmed);
+  const needsAisle = aisles.length > 0;
+  const needsBin = binOptions.length > 0;
+
   return (
     <Card id={sectionId} className={className} data-testid="po-receive-panel">
       <CardHeader>
@@ -200,8 +222,8 @@ export function PoReceivePanel({
           </TableBody>
         </Table>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
+        <div className="space-y-4">
+          <div className="space-y-1 max-w-md">
             <Label htmlFor="receive-receiver-name">Receiver name</Label>
             <Input
               id="receive-receiver-name"
@@ -216,14 +238,115 @@ export function PoReceivePanel({
               </p>
             ) : null}
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="receive-location">Warehouse location</Label>
-            <Input
-              id="receive-location"
-              placeholder="Aisle/Bin/Location"
-              value={warehouseLocation}
-              onChange={(event) => setWarehouseLocation(event.target.value)}
-            />
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Receive into (warehouse layout)</div>
+            <p className="text-xs text-muted-foreground">
+              Aisles and bins come from the selected warehouse&apos;s master data. Pick a warehouse, then choose from
+              its configured aisles and bins.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label>Warehouse</Label>
+                <Select
+                  value={receivePutaway.warehouseId != null ? String(receivePutaway.warehouseId) : undefined}
+                  onValueChange={(v) => {
+                    const id = v ? Number(v) : NaN;
+                    setReceivePutaway({
+                      warehouseId: Number.isFinite(id) ? id : null,
+                      aisle: "",
+                      binCode: "",
+                    });
+                  }}
+                  disabled={warehouses.length === 0}
+                >
+                  <SelectTrigger aria-label="Receive warehouse">
+                    <SelectValue placeholder={warehouses.length ? "Select warehouse" : "No warehouses loaded"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses.map((w) => (
+                      <SelectItem key={w.id} value={String(w.id)}>
+                        {w.name}
+                        {w.isDefault ? " (default)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Aisle</Label>
+                {!selectedWarehouse ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    Select warehouse first
+                  </div>
+                ) : !needsAisle ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    No aisles on this warehouse
+                  </div>
+                ) : (
+                  <Select
+                    value={receivePutaway.aisle || undefined}
+                    onValueChange={(v) =>
+                      setReceivePutaway((p) => ({
+                        ...p,
+                        aisle: v,
+                        binCode: "",
+                      }))
+                    }
+                  >
+                    <SelectTrigger aria-label="Receive aisle">
+                      <SelectValue placeholder="Select aisle" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {aisles.map((a) => (
+                        <SelectItem key={a} value={a}>
+                          {a}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <Label>Bin</Label>
+                {!selectedWarehouse ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    Select warehouse first
+                  </div>
+                ) : needsAisle && !aisleTrimmed ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    Select aisle first
+                  </div>
+                ) : !needsBin ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    No bins on this warehouse
+                  </div>
+                ) : (
+                  <Select
+                    value={receivePutaway.binCode || undefined}
+                    onValueChange={(v) =>
+                      setReceivePutaway((p) => ({
+                        ...p,
+                        binCode: v,
+                      }))
+                    }
+                  >
+                    <SelectTrigger aria-label="Receive bin">
+                      <SelectValue placeholder="Select bin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {binOptions.map((b) => (
+                        <SelectItem key={b.code} value={b.code}>
+                          {b.code}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

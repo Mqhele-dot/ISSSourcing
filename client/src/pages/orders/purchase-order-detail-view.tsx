@@ -35,6 +35,11 @@ import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
 import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallback";
 import { ToastAction } from "@/components/ui/toast";
 import { invalidatePurchaseOrderDomain } from "@/lib/domain-invalidation";
+import {
+  MASTER_CURRENCIES_QUERY_KEY,
+  currencyOptionsForSelect,
+  fetchActiveMasterCurrencies,
+} from "@/lib/currencies-query";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { downloadBlobAsFile } from "@/lib/utils";
 import { Can } from "@/components/auth/can";
@@ -49,7 +54,9 @@ import {
   useReceivePurchaseOrderMutation,
   useSendPurchaseOrderMutation,
   validateReceiveLines,
+  validateReceivePutaway,
   type ReceiveLineFieldError,
+  type ReceivePutawayWarehouse,
 } from "@/features/purchase-orders";
 import { fetchApprovalSuggestions } from "@/api/client";
 import type { PurchaseReceiveResult } from "@/api/types";
@@ -98,7 +105,11 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [batchState, setBatchState] = useState<Record<string, string>>({});
   const [serialState, setSerialState] = useState<Record<string, string>>({});
   const [receiverName, setReceiverName] = useState("");
-  const [warehouseLocation, setWarehouseLocation] = useState("");
+  const [receivePutaway, setReceivePutaway] = useState<{
+    warehouseId: number | null;
+    aisle: string;
+    binCode: string;
+  }>({ warehouseId: null, aisle: "", binCode: "" });
   const [lastChangeSummary, setLastChangeSummary] = useState<PurchaseReceiveResult | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [departmentId, setDepartmentId] = useState<string>("none");
@@ -182,14 +193,10 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
       ),
   });
   const { data: currenciesList = [], isError: currenciesError } = useQuery({
-    queryKey: ["/api/currencies"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/currencies");
-      return normalizeApiList<{ code: string; name: string; active?: boolean | null }>(raw).filter(
-        (c) => c.active !== false,
-      );
-    },
+    queryKey: MASTER_CURRENCIES_QUERY_KEY,
+    queryFn: fetchActiveMasterCurrencies,
   });
+
   const { data: paymentTerms = [], isError: paymentTermsError } = useQuery({
     queryKey: ["/api/payment-terms"],
     queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/payment-terms"),
@@ -204,10 +211,68 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         defaultCurrencyCode?: string | null;
       }>("GET", `/api/suppliers/${data!.supplierId}`),
   });
+
+  const contractCurrencyCodesForSupplier = useMemo(() => {
+    const sid = data?.supplierId;
+    if (!sid) return [] as string[];
+    return contracts
+      .filter((contractRow) => contractRow.supplierId === sid)
+      .map((c) => c.currency)
+      .filter((x): x is string => typeof x === "string" && String(x).trim().length > 0);
+  }, [contracts, data?.supplierId]);
+
+  const currenciesForPoSelect = useMemo(
+    () =>
+      currencyOptionsForSelect(currenciesList, [
+        purchaseOrderRecord?.currencyCode,
+        supplierRow?.defaultCurrencyCode,
+        ...contractCurrencyCodesForSupplier,
+      ]),
+    [
+      currenciesList,
+      purchaseOrderRecord?.currencyCode,
+      supplierRow?.defaultCurrencyCode,
+      contractCurrencyCodesForSupplier,
+    ],
+  );
+
   const { data: incoterms = [], isError: incotermsError } = useQuery({
     queryKey: ["/api/incoterms"],
     queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/incoterms"),
   });
+
+  const { data: warehousesForReceive = [] } = useQuery({
+    queryKey: ["/api/warehouses"],
+    queryFn: () =>
+      requestJson<
+        Array<{
+          id: number;
+          name: string;
+          isDefault?: boolean | null;
+          aisles?: string[] | null;
+          bins?: Array<{ code: string; aisle?: string | null }> | null;
+        }>
+      >("GET", "/api/warehouses"),
+  });
+
+  const receiveWarehouses = useMemo((): ReceivePutawayWarehouse[] => {
+    return warehousesForReceive.map((w) => ({
+      id: w.id,
+      name: w.name,
+      isDefault: w.isDefault,
+      aisles: w.aisles ?? null,
+      bins: w.bins ?? null,
+    }));
+  }, [warehousesForReceive]);
+
+  useEffect(() => {
+    if (receiveWarehouses.length === 0) return;
+    setReceivePutaway((p) => {
+      if (p.warehouseId != null) return p;
+      const def = receiveWarehouses.find((w) => w.isDefault) ?? receiveWarehouses[0];
+      return { ...p, warehouseId: def?.id ?? null };
+    });
+  }, [receiveWarehouses]);
   const { data: approvalPoliciesRaw, isError: approvalPoliciesError } = useQuery({
     queryKey: ["/api/approval-policies"],
     queryFn: async () => {
@@ -347,6 +412,18 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     if (!data || !poNumber) return;
     if (receivePurchaseOrderMutation.isPending) return;
 
+    const putawayCheck = validateReceivePutaway(receiveWarehouses, receivePutaway);
+    if (!putawayCheck.ok) {
+      setReceiveLineIssues([]);
+      setReceiveError(putawayCheck.message);
+      toast({
+        title: "Putaway required",
+        description: putawayCheck.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const checked = validateReceiveLines(data, receivePayload);
     if (!checked.ok) {
       setReceiveLineIssues(checked.errors);
@@ -375,7 +452,9 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         receiveOptions: {
           receiverUserId: typeof user?.id === "number" ? user.id : undefined,
           receiverName: receiverName.trim() || undefined,
-          warehouseLocation: warehouseLocation.trim() || undefined,
+          warehouseId: receivePutaway.warehouseId ?? undefined,
+          aisle: receivePutaway.aisle.trim() || undefined,
+          binCode: receivePutaway.binCode.trim() || undefined,
           receivedAt: new Date().toISOString(),
         },
       },
@@ -385,6 +464,11 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
           setReceiveState({});
           setBatchState({});
           setSerialState({});
+          setReceivePutaway((p) => ({
+            warehouseId: p.warehouseId,
+            aisle: "",
+            binCode: "",
+          }));
           setReceiveError(null);
           setReceiveLineIssues([]);
         },
@@ -710,7 +794,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       setContractId={setContractId}
                       currencyCode={currencyCode}
                       setCurrencyCode={setCurrencyCode}
-                      currencies={currenciesList}
+                      currencies={currenciesForPoSelect}
                       onApplyContractTerms={applyCommercialDefaults}
                       paymentTermsId={paymentTermsId}
                       setPaymentTermsId={setPaymentTermsId}
@@ -741,8 +825,9 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     setSerialState={setSerialState}
                     receiverName={receiverName}
                     setReceiverName={setReceiverName}
-                    warehouseLocation={warehouseLocation}
-                    setWarehouseLocation={setWarehouseLocation}
+                    warehouses={receiveWarehouses}
+                    receivePutaway={receivePutaway}
+                    setReceivePutaway={setReceivePutaway}
                     userId={typeof user?.id === "number" ? user.id : undefined}
                     receiving={receivePurchaseOrderMutation.isPending}
                     receiveError={receiveError}

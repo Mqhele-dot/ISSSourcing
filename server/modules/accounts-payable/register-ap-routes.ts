@@ -45,6 +45,7 @@ import {
   updateInvoiceRecord,
   updateInvoiceStatus,
   updatePaymentRecord,
+  withdrawInvoiceFromApproval,
 } from "./service";
 import { trySendDbConstraintError } from "./ap-db-errors";
 import {
@@ -80,6 +81,7 @@ function logApFinanceEvent(event: string, payload: Record<string, unknown>) {
 export function registerApRoutes(app: Express, auth: AuthBundle): void {
   const apRead = [auth.ensureAuthenticated];
   const apWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const apInvoiceApprovalWrite = [auth.ensureAuthenticated, auth.ensureRole(["admin"])];
 
   app.get("/api/ap/overview", ...apRead, async (_req: Request, res: Response) => {
     try {
@@ -288,7 +290,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/invoices/:id/submit-approval", ...apWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/invoices/:id/submit-approval", ...apInvoiceApprovalWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "invoice ID");
@@ -307,7 +309,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/invoices/:id/approve", ...apWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/invoices/:id/approve", ...apInvoiceApprovalWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "invoice ID");
@@ -327,7 +329,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/invoices/:id/reject", ...apWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/invoices/:id/reject", ...apInvoiceApprovalWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "invoice ID");
@@ -344,6 +346,25 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       recordApprovalFailure();
       console.error("Error rejecting invoice:", error);
       return sendError(res, 500, "INVOICE_REJECT_FAILED", "Failed to reject invoice");
+    }
+  });
+
+  app.post("/api/ap/invoices/:id/withdraw-approval", ...apInvoiceApprovalWrite, async (req: Request, res: Response) => {
+    try {
+      const actor = requestActor(req);
+      const id = parseRouteId(res, req.params.id, "invoice ID");
+      if (id === null) return;
+      const comment = typeof req.body?.comment === "string" ? req.body.comment : undefined;
+      const invoice = await withdrawInvoiceFromApproval(id, actor.userId, comment);
+      if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
+      return sendOk(res, invoice);
+    } catch (error) {
+      console.error("Error withdrawing invoice from approval:", error);
+      const message = error instanceof Error ? error.message : "Failed to withdraw invoice";
+      if (/must be PENDING_APPROVAL/i.test(message)) {
+        return sendError(res, 400, "INVOICE_WITHDRAW_INVALID_STATE", message);
+      }
+      return sendError(res, 500, "INVOICE_WITHDRAW_FAILED", message);
     }
   });
 

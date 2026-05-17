@@ -1,13 +1,14 @@
 import { db } from "../../db";
 import { auditLogs } from "@shared/schema";
 
-type ApAuditAction =
+export type ApAuditAction =
   | "AP_CAPTURE_CREATED"
   | "AP_CAPTURE_PROMOTED"
   | "AP_INVOICE_MATCHED"
   | "AP_INVOICE_SUBMITTED"
   | "AP_INVOICE_APPROVED"
   | "AP_INVOICE_REJECTED"
+  | "AP_INVOICE_WITHDRAWN_FROM_APPROVAL"
   | "AP_PAYMENT_BATCH_CREATED"
   | "AP_PAYMENT_BATCH_APPROVED"
   | "AP_PAYMENT_BATCH_RELEASED";

@@ -148,8 +148,8 @@ export function PoCommercialTermsCard({
           ) : null}
           <p className="text-xs text-muted-foreground">
             Fills order currency from the contract when it matches master data, otherwise from the supplier default.
-            Payment terms come from the supplier. Incoterms are PO-only (not stored on the contract row). Save to
-            persist.
+            Payment terms come from the supplier. Incoterms are PO-only (not stored on the contract row). Currency
+            options are the same active Master data list used on the supplier portal. Save to persist.
           </p>
         </div>
         {applyDefaultsHint ? (

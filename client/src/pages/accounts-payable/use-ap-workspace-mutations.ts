@@ -28,6 +28,14 @@ export type ApPaymentBatchApproveInput =
   | number
   | { batchId: number; adminOverride?: boolean; overrideReason?: string };
 
+function invoiceApprovalDeniedDescription(err: unknown): string {
+  const st = (err as Error & { status?: number })?.status;
+  if (st === 403) {
+    return "Invoice submit, approve, reject, and withdraw require an administrator.";
+  }
+  return errorMessageWithRequestId(err);
+}
+
 export function useApWorkspaceMutations(toast: {
   toast: (opts: { title: string; description?: string; variant?: "destructive" }) => void;
 }) {
@@ -92,7 +100,7 @@ export function useApWorkspaceMutations(toast: {
     onError: (e) =>
       showToast({
         title: "Submit for approval failed",
-        description: errorMessageWithRequestId(e),
+        description: invoiceApprovalDeniedDescription(e),
         variant: "destructive",
       }),
   });
@@ -128,7 +136,7 @@ export function useApWorkspaceMutations(toast: {
     onError: (e) =>
       showToast({
         title: "Approve failed",
-        description: errorMessageWithRequestId(e),
+        description: invoiceApprovalDeniedDescription(e),
         variant: "destructive",
       }),
   });
@@ -148,7 +156,27 @@ export function useApWorkspaceMutations(toast: {
     onError: (e) =>
       showToast({
         title: "Reject failed",
-        description: errorMessageWithRequestId(e),
+        description: invoiceApprovalDeniedDescription(e),
+        variant: "destructive",
+      }),
+  });
+
+  const withdrawInvoiceApprovalMutation = useMutation({
+    mutationFn: (invoiceId: number) =>
+      requestJson("POST", `/api/ap/invoices/${invoiceId}/withdraw-approval`, {
+        comment: "Withdrawn from approval queue (admin)",
+      }),
+    onSuccess: async () => {
+      await invalidateAfterInvoiceLifecycle();
+      showToast({
+        title: "Invoice returned to draft",
+        description: "The invoice was withdrawn from the approval queue and can be edited or resubmitted.",
+      });
+    },
+    onError: (e) =>
+      showToast({
+        title: "Withdraw failed",
+        description: invoiceApprovalDeniedDescription(e),
         variant: "destructive",
       }),
   });
@@ -227,6 +255,7 @@ export function useApWorkspaceMutations(toast: {
     matchInvoiceMutation,
     approveInvoiceMutation,
     rejectInvoiceMutation,
+    withdrawInvoiceApprovalMutation,
     createBatchMutation,
     approveBatchMutation,
     releaseBatchMutation,

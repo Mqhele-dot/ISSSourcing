@@ -112,6 +112,9 @@ export async function receivePurchaseOrder(
     receiverUserId?: number;
     receiverName?: string;
     warehouseLocation?: string;
+    warehouseId?: number;
+    aisle?: string;
+    binCode?: string;
     receivedAt?: string;
   },
   httpOptions?: PoHttpOptions,
@@ -132,6 +135,9 @@ export async function receivePurchaseOrder(
       receiver_user_id: receiveOptions?.receiverUserId,
       receiver_name: receiveOptions?.receiverName,
       warehouse_location: receiveOptions?.warehouseLocation,
+      warehouse_id: receiveOptions?.warehouseId,
+      aisle: receiveOptions?.aisle,
+      bin_code: receiveOptions?.binCode,
       received_at: receiveOptions?.receivedAt,
     },
     httpOptions,

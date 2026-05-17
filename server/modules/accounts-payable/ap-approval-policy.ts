@@ -50,7 +50,8 @@ export async function enforceApprovalPolicy(params: {
     throw new Error(`No active approval policy found for ${params.entityType} amount ${params.amount}.`);
   }
 
-  if (policy.approverUserId != null && Number(policy.approverUserId) !== params.actorUserId) {
+  const isAdmin = params.actorRole.trim().toLowerCase() === "admin";
+  if (!isAdmin && policy.approverUserId != null && Number(policy.approverUserId) !== params.actorUserId) {
     throw new Error("This action requires the configured approver user.");
   }
 

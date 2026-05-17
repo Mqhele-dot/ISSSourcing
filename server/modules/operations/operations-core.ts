@@ -876,6 +876,9 @@ type ReceivePurchaseMetaInput = {
   receiver_user_id?: number | null;
   receiver_name?: string | null;
   warehouse_location?: string | null;
+  warehouse_id?: number | null;
+  aisle?: string | null;
+  bin_code?: string | null;
   received_at?: Date | null;
 };
 
@@ -1271,6 +1274,81 @@ export async function transitionOperationalPurchaseOrderStatus(
   return updated;
 }
 
+type ResolvedReceivePutaway = {
+  warehouseId: number | null;
+  locationFromPutaway: string | null;
+};
+
+async function resolveReceivePutaway(meta: ReceivePurchaseMetaInput): Promise<ResolvedReceivePutaway> {
+  const widRaw = meta.warehouse_id;
+  const wid = widRaw != null && Number.isFinite(Number(widRaw)) ? Number(widRaw) : null;
+
+  if (wid == null) {
+    const legacy = meta.warehouse_location != null ? String(meta.warehouse_location).trim() : "";
+    return { warehouseId: null, locationFromPutaway: legacy || null };
+  }
+
+  const orgId = getActiveOrganizationId();
+  const whRes = await pool.query<{ id: number; name: string; aisles: unknown; bins: unknown }>(
+    `
+    SELECT id, name, aisles, bins
+    FROM warehouses
+    WHERE id = $1 AND organization_id = $2
+    LIMIT 1
+    `,
+    [wid, orgId],
+  );
+  const row = whRes.rows[0];
+  if (!row) {
+    throw new Error("putaway_warehouse_not_found");
+  }
+
+  const aisles = Array.isArray(row.aisles) ? row.aisles.map((a) => String(a)) : [];
+  const rawBins = Array.isArray(row.bins) ? row.bins : [];
+  const normalizedBins = rawBins
+    .map((b: { code?: unknown; aisle?: unknown }) => ({
+      code: String(b?.code ?? "").trim(),
+      aisle: b?.aisle != null ? String(b.aisle).trim() : "",
+    }))
+    .filter((b) => b.code.length > 0);
+
+  const aisleParam = meta.aisle != null ? String(meta.aisle).trim() : "";
+  const binCodeParam = meta.bin_code != null ? String(meta.bin_code).trim() : "";
+
+  if (aisles.length > 0) {
+    if (!aisleParam || !aisles.includes(aisleParam)) {
+      throw new Error("putaway_aisle_invalid");
+    }
+  }
+
+  let binsFiltered = normalizedBins;
+  if (aisles.length > 0 && aisleParam) {
+    binsFiltered = normalizedBins.filter((b) => !b.aisle || b.aisle === aisleParam);
+  }
+
+  if (normalizedBins.length > 0 && aisles.length > 0 && aisleParam && binsFiltered.length === 0) {
+    throw new Error("putaway_no_bins_for_aisle");
+  }
+
+  if (binsFiltered.length > 0) {
+    if (!binCodeParam) {
+      throw new Error("putaway_bin_required");
+    }
+    const binMatch = binsFiltered.find((b) => b.code === binCodeParam);
+    if (!binMatch) {
+      throw new Error("putaway_bin_invalid");
+    }
+    const segments = [row.name, ...(aisleParam ? [aisleParam] : []), binMatch.code];
+    return { warehouseId: wid, locationFromPutaway: segments.join(" / ") };
+  }
+
+  if (aisles.length > 0) {
+    return { warehouseId: wid, locationFromPutaway: `${row.name} / ${aisleParam}` };
+  }
+
+  return { warehouseId: wid, locationFromPutaway: row.name };
+}
+
 export async function receiveOperationalPurchaseOrder(
   poOrId: string,
   lines: ReceivePurchaseLineInput[],
@@ -1290,6 +1368,8 @@ export async function receiveOperationalPurchaseOrder(
   if (!Array.isArray(lines) || lines.length === 0) {
     throw new Error("lines_required");
   }
+
+  const putaway = await resolveReceivePutaway(receiveMeta);
 
   const currentLines = await getPurchaseOrderLines(order.id);
   const lineBySku = new Map(currentLines.map((line) => [line.sku, line]));
@@ -1363,10 +1443,12 @@ export async function receiveOperationalPurchaseOrder(
         [line.itemId],
       );
 
-      const location =
+      const itemFallback =
         itemLocationResult.rows[0]?.default_location ||
         itemLocationResult.rows[0]?.location ||
         "Main Warehouse";
+      const location = putaway.locationFromPutaway ?? itemFallback;
+      const receiveWarehouseId = putaway.warehouseId;
 
       const adjustment = await adjustOperationalInventory({
         skuOrId: line.sku,
@@ -1387,6 +1469,9 @@ export async function receiveOperationalPurchaseOrder(
       });
 
       const receivedAt = receiveMeta.received_at ?? new Date();
+      /** Stock movement / serial location label (structured putaway or legacy string). */
+      const movementLocationLabel = location;
+
       await pool.query(
         `
         INSERT INTO stock_movements (
@@ -1406,7 +1491,7 @@ export async function receiveOperationalPurchaseOrder(
           timestamp,
           created_at
         )
-        VALUES (1, $1, NULL, 'RECEIPT', $2, $3, 'purchase_order', $4, $5, $6, $7, $8, $9, now(), now())
+        VALUES (1, $1, $10, 'RECEIPT', $2, $3, 'purchase_order', $4, $5, $6, $7, $8, $9, now(), now())
         `,
         [
           line.itemId,
@@ -1416,8 +1501,9 @@ export async function receiveOperationalPurchaseOrder(
           receiveMeta.receiver_user_id ?? null,
           receiveMeta.receiver_user_id ?? null,
           receiveMeta.receiver_name ?? null,
-          receiveMeta.warehouse_location ?? location,
+          movementLocationLabel,
           receivedAt,
+          receiveWarehouseId,
         ],
       );
 
@@ -1427,11 +1513,11 @@ export async function receiveOperationalPurchaseOrder(
           SELECT id
           FROM inventory_batches
           WHERE item_id = $1
-            AND COALESCE(warehouse_id, 0) = 0
+            AND COALESCE(warehouse_id, 0) = COALESCE($3::integer, 0)
             AND batch_number = $2
           LIMIT 1
           `,
-          [line.itemId, batchNumber],
+          [line.itemId, batchNumber, receiveWarehouseId],
         );
 
         if (existingBatch.rows[0]?.id) {
@@ -1449,9 +1535,9 @@ export async function receiveOperationalPurchaseOrder(
           await pool.query(
             `
             INSERT INTO inventory_batches (item_id, warehouse_id, batch_number, quantity_received, quantity_on_hand)
-            VALUES ($1, NULL, $2, $3, $3)
+            VALUES ($1, $2, $3, $4, $4)
             `,
-            [line.itemId, batchNumber, receiveNow],
+            [line.itemId, receiveWarehouseId, batchNumber, receiveNow],
           );
         }
       }
@@ -1461,7 +1547,7 @@ export async function receiveOperationalPurchaseOrder(
           await pool.query(
             `
             INSERT INTO inventory_serials (item_id, warehouse_id, serial_number, status, current_location)
-            VALUES ($1, NULL, $2, 'available', $3)
+            VALUES ($1, $2, $3, 'available', $4)
             ON CONFLICT (serial_number)
             DO UPDATE SET
               item_id = EXCLUDED.item_id,
@@ -1470,7 +1556,7 @@ export async function receiveOperationalPurchaseOrder(
               current_location = EXCLUDED.current_location,
               updated_at = now()
             `,
-            [line.itemId, serial, receiveMeta.warehouse_location ?? location],
+            [line.itemId, receiveWarehouseId, serial, movementLocationLabel],
           );
         }
       }

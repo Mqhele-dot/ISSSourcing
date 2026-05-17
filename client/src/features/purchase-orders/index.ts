@@ -35,3 +35,10 @@ export {
   type ReceiveLineFieldError,
   type ValidateReceiveLinesResult,
 } from "./lib/receive-line-rules";
+export {
+  normalizePutawayBins,
+  validateReceivePutaway,
+  type ReceivePutawayState,
+  type ReceivePutawayWarehouse,
+  type ValidateReceivePutawayResult,
+} from "./lib/receive-putaway";

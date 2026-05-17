@@ -1,7 +1,8 @@
 const INVOICE_TRANSITIONS: Record<string, Set<string>> = {
   DRAFT: new Set(["PENDING_APPROVAL", "DISPUTED", "CANCELLED", "VOID", "SENT"]),
   SENT: new Set(["PENDING_APPROVAL", "DISPUTED", "CANCELLED", "VOID"]),
-  PENDING_APPROVAL: new Set(["APPROVED", "DISPUTED", "CANCELLED"]),
+  /* DRAFT: allows admin to pull invoice back from approval queue (withdraw) */
+  PENDING_APPROVAL: new Set(["APPROVED", "DISPUTED", "CANCELLED", "DRAFT"]),
   APPROVED: new Set(["PARTIALLY_PAID", "PAID", "OVERDUE", "CANCELLED"]),
   DISPUTED: new Set(["PENDING_APPROVAL", "CANCELLED", "VOID"]),
   OVERDUE: new Set(["PARTIALLY_PAID", "PAID", "DISPUTED", "CANCELLED"]),

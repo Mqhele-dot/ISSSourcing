@@ -63,6 +63,7 @@ export default function AccountsPayableWorkspace() {
 
   const queries = useApWorkspaceQueries();
   const mutations = useApWorkspaceMutations({ toast });
+  const canRunInvoiceApprovalActions = String(user?.role ?? "").toLowerCase() === "admin";
 
   const {
     overview,
@@ -356,6 +357,7 @@ export default function AccountsPayableWorkspace() {
           <ApApprovalsPanel
                   invoices={invoices}
                   approvalQueue={approvalQueue}
+                  canRunInvoiceApprovalActions={canRunInvoiceApprovalActions}
                   invoicesLoadFailed={invoicesQuery.isError}
                   queueLoadFailed={approvalQueueQuery.isError}
                   formatMoney={formatMoney}
@@ -364,6 +366,7 @@ export default function AccountsPayableWorkspace() {
                   submitApprovalMutation={mutations.submitApprovalMutation}
                   approveInvoiceMutation={mutations.approveInvoiceMutation}
                   rejectInvoiceMutation={mutations.rejectInvoiceMutation}
+                  withdrawInvoiceApprovalMutation={mutations.withdrawInvoiceApprovalMutation}
                 />
         </TabsContent>
 

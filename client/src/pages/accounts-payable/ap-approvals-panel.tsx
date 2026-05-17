@@ -17,6 +17,8 @@ import type { UseMutationResult } from "@tanstack/react-query";
 type Props = {
   invoices: Invoice[];
   approvalQueue: ApprovalQueue;
+  /** Submit / approve / reject / withdraw (admin-only on server). */
+  canRunInvoiceApprovalActions: boolean;
   /** When true, invoice list failed to load — do not offer approval actions on assumed-empty data. */
   invoicesLoadFailed: boolean;
   /** When true, approval queue endpoint failed — queue cards may be empty or stale. */
@@ -27,11 +29,13 @@ type Props = {
   submitApprovalMutation: UseMutationResult<unknown, Error, number>;
   approveInvoiceMutation: UseMutationResult<unknown, Error, number>;
   rejectInvoiceMutation: UseMutationResult<unknown, Error, number>;
+  withdrawInvoiceApprovalMutation: UseMutationResult<unknown, Error, number>;
 };
 
 export function ApApprovalsPanel({
   invoices,
   approvalQueue,
+  canRunInvoiceApprovalActions,
   invoicesLoadFailed,
   queueLoadFailed,
   formatMoney,
@@ -40,6 +44,7 @@ export function ApApprovalsPanel({
   submitApprovalMutation,
   approveInvoiceMutation,
   rejectInvoiceMutation,
+  withdrawInvoiceApprovalMutation,
 }: Props) {
   const actionsDisabled = invoicesLoadFailed;
   const anyMutationPending =
@@ -47,7 +52,8 @@ export function ApApprovalsPanel({
     matchInvoiceMutation.isPending ||
     submitApprovalMutation.isPending ||
     approveInvoiceMutation.isPending ||
-    rejectInvoiceMutation.isPending;
+    rejectInvoiceMutation.isPending ||
+    withdrawInvoiceApprovalMutation.isPending;
 
   return (
     <div className="space-y-4">
@@ -59,6 +65,12 @@ export function ApApprovalsPanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {!canRunInvoiceApprovalActions ? (
+            <p className="mb-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              Submitting for approval, approving, rejecting, and withdrawing invoices from the queue require an
+              administrator account. You can still preview approvers and run matching from this tab.
+            </p>
+          ) : null}
           {invoicesLoadFailed ? (
             <p className="text-sm text-destructive">
               Invoices for AP could not be loaded. Use &quot;Retry invoices&quot; above — approval actions are
@@ -119,7 +131,7 @@ export function ApApprovalsPanel({
                             Match
                           </Button>
                         ) : null}
-                        {["DRAFT", "DISPUTED"].includes(invoice.status) ? (
+                        {canRunInvoiceApprovalActions && ["DRAFT", "DISPUTED"].includes(invoice.status) ? (
                           <Button
                             size="sm"
                             variant="outline"
@@ -129,7 +141,7 @@ export function ApApprovalsPanel({
                             Submit
                           </Button>
                         ) : null}
-                        {invoice.status === "PENDING_APPROVAL" ? (
+                        {canRunInvoiceApprovalActions && invoice.status === "PENDING_APPROVAL" ? (
                           <>
                             <Button
                               size="sm"
@@ -145,6 +157,14 @@ export function ApApprovalsPanel({
                               onClick={() => rejectInvoiceMutation.mutate(invoice.id)}
                             >
                               Reject
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={actionsDisabled || anyMutationPending}
+                              onClick={() => withdrawInvoiceApprovalMutation.mutate(invoice.id)}
+                            >
+                              Withdraw
                             </Button>
                           </>
                         ) : null}

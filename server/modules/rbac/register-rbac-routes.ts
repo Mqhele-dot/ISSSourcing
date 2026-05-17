@@ -1,6 +1,7 @@
 import type { Express, Request, RequestHandler, Response } from "express";
 import { storage } from "../../storage";
 import type { UserRole, Resource, PermissionType } from "@shared/schema";
+import { getPermissionCatalogPayload } from "../../rbac/permission-catalog";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -11,6 +12,15 @@ type AuthBundle = {
  * System roles, custom roles, and permission checks — extracted from `routes.ts` orchestrator.
  */
 export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
+  app.get("/api/rbac/permission-catalog", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
+    try {
+      res.json(getPermissionCatalogPayload());
+    } catch (error) {
+      console.error("Error fetching permission catalog:", error);
+      res.status(500).json({ message: "Error fetching permission catalog" });
+    }
+  });
+
   app.get("/api/roles", async (_req: Request, res: Response) => {
     try {
       const roles = await storage.getSystemRoles();

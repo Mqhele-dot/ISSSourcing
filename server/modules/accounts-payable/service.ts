@@ -5,7 +5,7 @@ import { storage } from "../../storage";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { getApprovalSuggestions } from "../../approval-suggestions";
 import { enforceApprovalPolicy } from "./ap-approval-policy";
-import { writeApAuditLog } from "./ap-audit-log";
+import { writeApAuditLog, type ApAuditAction } from "./ap-audit-log";
 import {
   assertBatchReleaseApproverSeparation,
   assertNotSelfBatchApproval,
@@ -412,10 +412,17 @@ export async function updateInvoiceStatus(
     comment,
   }).catch(() => {});
 
+  const prior = String(existing.status);
+  const next = String(status);
+  let auditAction: ApAuditAction = "AP_INVOICE_SUBMITTED";
+  if (next === "APPROVED") auditAction = "AP_INVOICE_APPROVED";
+  else if (next === "DISPUTED") auditAction = "AP_INVOICE_REJECTED";
+  else if (prior === "PENDING_APPROVAL" && next === "DRAFT") auditAction = "AP_INVOICE_WITHDRAWN_FROM_APPROVAL";
+
   await writeApAuditLog({
     organizationId: orgId,
     actorUserId: userId,
-    action: status === "APPROVED" ? "AP_INVOICE_APPROVED" : status === "DISPUTED" ? "AP_INVOICE_REJECTED" : "AP_INVOICE_SUBMITTED",
+    action: auditAction,
     entityType: "invoice",
     entityId: invoiceId,
     priorState: existing.status,
@@ -424,6 +431,19 @@ export async function updateInvoiceStatus(
   }).catch(() => {});
 
   return updated;
+}
+
+export async function withdrawInvoiceFromApproval(
+  invoiceId: number,
+  userId: number,
+  comment?: string,
+) {
+  const existing = await storage.getInvoice(invoiceId);
+  if (!existing) return undefined;
+  if (String(existing.status) !== "PENDING_APPROVAL") {
+    throw new Error(`Invoice must be PENDING_APPROVAL before withdraw; current status is ${existing.status}.`);
+  }
+  return updateInvoiceStatus(invoiceId, "DRAFT", userId, comment);
 }
 
 export async function submitInvoiceForApproval(invoiceId: number, userId: number) {
