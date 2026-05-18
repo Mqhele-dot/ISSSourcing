@@ -19,10 +19,12 @@ import {
   paymentTerms,
   incoterms,
   currencies,
+  taxCodes,
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
   type InsertPurchaseOrder,
+  type InsertPurchaseOrderItem,
 } from "@shared/schema";
 import { canUpdatePurchaseOrder } from "@shared/purchase-order-status";
 import { getActiveOrganizationId } from "../../organization-context";
@@ -110,6 +112,21 @@ async function assertPurchaseOrderCommercialReferences(params: {
   return { ok: true };
 }
 
+async function assertPurchaseOrderTaxCodeAllowed(
+  taxCodeId: number | null | undefined,
+): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  if (taxCodeId == null) return { ok: true };
+  const [row] = await db
+    .select({ id: taxCodes.id })
+    .from(taxCodes)
+    .where(and(eq(taxCodes.id, taxCodeId), eq(taxCodes.active, true)))
+    .limit(1);
+  if (!row) {
+    return { ok: false, code: "PO_TAX_CODE_NOT_FOUND", message: "Tax code not found or inactive." };
+  }
+  return { ok: true };
+}
+
 async function assertPurchaseOrderCurrencyCodeAllowed(
   currencyCode: string | null | undefined,
 ): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
@@ -145,6 +162,7 @@ const purchaseOrderCommercialPatchSchema = z
       .regex(/^[A-Za-z]{3}$/)
       .transform((c) => c.toUpperCase())
       .optional(),
+    taxCodeId: z.union([z.number().int().positive(), z.null()]).optional(),
   })
   .strict();
 
@@ -912,6 +930,13 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         return sendError(res, 400, currencyValidation.code, currencyValidation.message);
       }
 
+      if (patchPayload.taxCodeId !== undefined) {
+        const taxValidation = await assertPurchaseOrderTaxCodeAllowed(patchPayload.taxCodeId);
+        if (!taxValidation.ok) {
+          return sendError(res, 400, taxValidation.code, taxValidation.message);
+        }
+      }
+
       const existing = await storage.getPurchaseOrder(id);
       if (!existing) {
         return sendError(res, 404, "PO_NOT_FOUND", "Purchase order not found");
@@ -928,7 +953,16 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       }
 
       const validatedData: Partial<InsertPurchaseOrder> = {};
-      (["departmentId", "contractId", "paymentTermsId", "incotermId", "currencyCode"] as const).forEach((key) => {
+      (
+        [
+          "departmentId",
+          "contractId",
+          "paymentTermsId",
+          "incotermId",
+          "currencyCode",
+          "taxCodeId",
+        ] as const
+      ).forEach((key) => {
         if (patchPayload[key] !== undefined) {
           validatedData[key] = patchPayload[key] as never;
         }
@@ -1144,10 +1178,17 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       
       const validatedData = insertPurchaseOrderItemSchema.parse({
         ...req.body,
-        orderId
+        orderId,
       });
-      
-      const newItem = await storage.addPurchaseOrderItem(validatedData);
+      const inv = await storage.getInventoryItem(validatedData.itemId);
+      const enriched: InsertPurchaseOrderItem = {
+        ...validatedData,
+        unitOfMeasureId: validatedData.unitOfMeasureId ?? inv?.unitOfMeasureId ?? null,
+        commodityCodeId: validatedData.commodityCodeId ?? inv?.commodityCodeId ?? null,
+        taxCodeId: validatedData.taxCodeId ?? null,
+      };
+
+      const newItem = await storage.addPurchaseOrderItem(enriched);
       return sendOk(res, newItem, 201);
     } catch (error) {
       if (error instanceof ZodError) {

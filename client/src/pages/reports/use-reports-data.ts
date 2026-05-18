@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { normalizeApiList, requestJson } from "@/lib/queryClient";
+import { inventoryCatalogQueryKey, reportsKeys } from "@/lib/query-keys";
 import { PROCUREMENT_PURCHASE_ORDER_RECORDS_PATH } from "@/api/procurement-purchase-order-paths";
 import type {
   Category,
@@ -24,7 +25,7 @@ export function useReportsPageData() {
     error: itemsErrorDetail,
     refetch: refetchInventory,
   } = useQuery({
-    queryKey: ["/api/inventory"],
+    queryKey: inventoryCatalogQueryKey,
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory");
       return normalizeApiList<InventoryItem>(raw);
@@ -82,7 +83,7 @@ export function useReportsPageData() {
   });
 
   const { data: purchaseOrders, isLoading: poLoading } = useQuery({
-    queryKey: ["/api/procurement/purchase-orders/records"],
+    queryKey: reportsKeys.procurementPurchaseOrderRecords,
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", PROCUREMENT_PURCHASE_ORDER_RECORDS_PATH);
       return normalizeApiList<PurchaseOrder>(raw);

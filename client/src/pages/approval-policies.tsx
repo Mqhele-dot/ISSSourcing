@@ -190,6 +190,7 @@ export default function ApprovalPoliciesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/approval-policies"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/approval-suggestions"], exact: false });
       toast({ title: editingId != null ? "Policy updated" : "Policy created" });
       setForm(emptyForm);
       setEditingId(null);
@@ -212,6 +213,7 @@ export default function ApprovalPoliciesPage() {
     mutationFn: (id: number) => requestJson("DELETE", `/api/approval-policies/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/approval-policies"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/approval-suggestions"], exact: false });
       toast({ title: "Policy deleted" });
       if (editingId != null) {
         setEditingId(null);

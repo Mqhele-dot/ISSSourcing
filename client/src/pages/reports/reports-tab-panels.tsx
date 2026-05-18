@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { format } from "date-fns";
+import { Link } from "wouter";
 import {
   Bar,
   BarChart,
@@ -82,6 +83,8 @@ function filterReorderForPreview(rows: ReorderRequest[], f: ReportFilter): Reord
 }
 
 const INV_PREVIEW_CHUNK = 25;
+/** Default rows for tabular report previews (PO, requisitions, suppliers, etc.). */
+const REPORT_PREVIEW_CHUNK = 25;
 
 function filterSuppliersForPreview(suppliers: Supplier[], f: ReportFilter): Supplier[] {
   if (f.supplierId) return suppliers.filter((s) => s.id === f.supplierId);
@@ -580,6 +583,12 @@ export function ReportsPurchaseOrdersTabPanel(props: ReportsTabPanelsProps) {
     formatMoney,
   } = props;
   const previewRows = filterPurchaseOrdersForPreview(safePurchaseOrders, filter);
+  const [previewLimit, setPreviewLimit] = useState(REPORT_PREVIEW_CHUNK);
+  useEffect(() => {
+    setPreviewLimit(REPORT_PREVIEW_CHUNK);
+  }, [filter, safePurchaseOrders]);
+  const visibleRows = previewRows.slice(0, previewLimit);
+  const poRemaining = Math.max(0, previewRows.length - previewLimit);
 
   return (
     <TabsContent value="purchase-orders" className="mt-0">
@@ -638,9 +647,16 @@ export function ReportsPurchaseOrdersTabPanel(props: ReportsTabPanelsProps) {
                       </td>
                     </tr>
                   ) : previewRows.length > 0 ? (
-                    previewRows.slice(0, 5).map((o) => (
+                    visibleRows.map((o) => (
                       <tr key={o.id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{o.orderNumber}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <Link
+                            className="text-primary underline-offset-4 hover:underline"
+                            href={`/orders?q=${encodeURIComponent(o.orderNumber ?? "")}`}
+                          >
+                            {o.orderNumber}
+                          </Link>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{supplierName(safeSuppliers, o.supplierId)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{o.status}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{projectLabel(safeProjects, o.projectId)}</td>
@@ -654,22 +670,26 @@ export function ReportsPurchaseOrdersTabPanel(props: ReportsTabPanelsProps) {
                       </td>
                     </tr>
                   )}
-                  {previewRows.length > 5 && (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-4 text-center text-sm text-neutral-500 italic">
-                        ... and {previewRows.length - 5} more orders
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
           </div>
         </CardContent>
-        <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t flex justify-between">
+        <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-neutral-600 dark:text-neutral-300">
             Export applies the same filters as this preview (date range, supplier, status, project).
           </div>
+          {poRemaining > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="reports-po-preview-load-more"
+              onClick={() => setPreviewLimit((n) => n + REPORT_PREVIEW_CHUNK)}
+            >
+              Load more ({Math.min(REPORT_PREVIEW_CHUNK, poRemaining)} more)
+            </Button>
+          ) : null}
         </CardFooter>
       </Card>
     </TabsContent>
@@ -688,6 +708,12 @@ export function ReportsPurchaseRequisitionsTabPanel(props: ReportsTabPanelsProps
     formatMoney,
   } = props;
   const previewRows = filterRequisitionsForPreview(safePurchaseRequisitions, filter);
+  const [previewLimit, setPreviewLimit] = useState(REPORT_PREVIEW_CHUNK);
+  useEffect(() => {
+    setPreviewLimit(REPORT_PREVIEW_CHUNK);
+  }, [filter, safePurchaseRequisitions]);
+  const visibleRows = previewRows.slice(0, previewLimit);
+  const reqRemaining = Math.max(0, previewRows.length - previewLimit);
 
   return (
     <TabsContent value="purchase-requisitions" className="mt-0">
@@ -733,7 +759,7 @@ export function ReportsPurchaseRequisitionsTabPanel(props: ReportsTabPanelsProps
                       </td>
                     </tr>
                   ) : previewRows.length > 0 ? (
-                    previewRows.slice(0, 5).map((r) => (
+                    visibleRows.map((r) => (
                       <tr key={r.id}>
                         <td className="px-6 py-4 text-sm font-medium">{r.requisitionNumber}</td>
                         <td className="px-6 py-4 text-sm">{supplierName(safeSuppliers, r.supplierId)}</td>
@@ -749,22 +775,26 @@ export function ReportsPurchaseRequisitionsTabPanel(props: ReportsTabPanelsProps
                       </td>
                     </tr>
                   )}
-                  {previewRows.length > 5 && (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-4 text-center text-sm text-neutral-500 italic">
-                        ... and {previewRows.length - 5} more
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
           </div>
         </CardContent>
-        <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t">
+        <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-neutral-600 dark:text-neutral-300">
             PDF export includes line detail and approval history when available.
           </div>
+          {reqRemaining > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="reports-requisitions-preview-load-more"
+              onClick={() => setPreviewLimit((n) => n + REPORT_PREVIEW_CHUNK)}
+            >
+              Load more ({Math.min(REPORT_PREVIEW_CHUNK, reqRemaining)} more)
+            </Button>
+          ) : null}
         </CardFooter>
       </Card>
     </TabsContent>
@@ -774,6 +804,12 @@ export function ReportsPurchaseRequisitionsTabPanel(props: ReportsTabPanelsProps
 export function ReportsSuppliersTabPanel(props: ReportsTabPanelsProps) {
   const { filter, onFilterChange, safeSuppliers } = props;
   const previewRows = filterSuppliersForPreview(safeSuppliers, filter);
+  const [previewLimit, setPreviewLimit] = useState(REPORT_PREVIEW_CHUNK);
+  useEffect(() => {
+    setPreviewLimit(REPORT_PREVIEW_CHUNK);
+  }, [filter, safeSuppliers]);
+  const visibleRows = previewRows.slice(0, previewLimit);
+  const supRemaining = Math.max(0, previewRows.length - previewLimit);
 
   return (
     <TabsContent value="suppliers" className="mt-0">
@@ -805,7 +841,7 @@ export function ReportsSuppliersTabPanel(props: ReportsTabPanelsProps) {
                 </thead>
                 <tbody>
                   {previewRows.length > 0 ? (
-                    previewRows.slice(0, 5).map((s) => (
+                    visibleRows.map((s) => (
                       <tr key={s.id}>
                         <td className="px-6 py-4 text-sm font-medium">{s.name}</td>
                         <td className="px-6 py-4 text-sm">{s.contactName ?? "—"}</td>
@@ -820,18 +856,25 @@ export function ReportsSuppliersTabPanel(props: ReportsTabPanelsProps) {
                       </td>
                     </tr>
                   )}
-                  {previewRows.length > 5 && (
-                    <tr>
-                      <td colSpan={4} className="px-6 py-4 text-center text-sm text-neutral-500 italic">
-                        ... and {previewRows.length - 5} more
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
           </div>
         </CardContent>
+        <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-neutral-600">Export uses the same supplier filter as this preview.</div>
+          {supRemaining > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="reports-suppliers-preview-load-more"
+              onClick={() => setPreviewLimit((n) => n + REPORT_PREVIEW_CHUNK)}
+            >
+              Load more ({Math.min(REPORT_PREVIEW_CHUNK, supRemaining)} more)
+            </Button>
+          ) : null}
+        </CardFooter>
       </Card>
     </TabsContent>
   );
@@ -847,6 +890,12 @@ export function ReportsReorderRequestsTabPanel(props: ReportsTabPanelsProps) {
     reorderLoading,
   } = props;
   const previewRows = filterReorderForPreview(safeReorderRequests, filter);
+  const [previewLimit, setPreviewLimit] = useState(REPORT_PREVIEW_CHUNK);
+  useEffect(() => {
+    setPreviewLimit(REPORT_PREVIEW_CHUNK);
+  }, [filter, safeReorderRequests]);
+  const visibleRows = previewRows.slice(0, previewLimit);
+  const reorderRemaining = Math.max(0, previewRows.length - previewLimit);
 
   return (
     <TabsContent value="reorder-requests" className="mt-0">
@@ -891,7 +940,7 @@ export function ReportsReorderRequestsTabPanel(props: ReportsTabPanelsProps) {
                       </td>
                     </tr>
                   ) : previewRows.length > 0 ? (
-                    previewRows.slice(0, 5).map((req) => (
+                    visibleRows.map((req) => (
                       <tr key={req.id}>
                         <td className="px-6 py-4 text-sm font-medium">{req.requestNumber}</td>
                         <td className="px-6 py-4 text-sm">{req.quantity}</td>
@@ -911,18 +960,25 @@ export function ReportsReorderRequestsTabPanel(props: ReportsTabPanelsProps) {
                       </td>
                     </tr>
                   )}
-                  {previewRows.length > 5 && (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-4 text-center text-sm text-neutral-500 italic">
-                        ... and {previewRows.length - 5} more
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
           </div>
         </CardContent>
+        <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-neutral-600">Export applies the same filters.</div>
+          {reorderRemaining > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="reports-reorder-preview-load-more"
+              onClick={() => setPreviewLimit((n) => n + REPORT_PREVIEW_CHUNK)}
+            >
+              Load more ({Math.min(REPORT_PREVIEW_CHUNK, reorderRemaining)} more)
+            </Button>
+          ) : null}
+        </CardFooter>
       </Card>
     </TabsContent>
   );

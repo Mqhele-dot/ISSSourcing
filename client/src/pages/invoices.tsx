@@ -37,6 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { errorMessageWithRequestId, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { invalidateInvoiceDomain, invalidatePurchaseOrderDomain } from "@/lib/domain-invalidation";
 import {
   parseExportFailureMessage,
   isLikelyCsvResponse,
@@ -93,6 +94,14 @@ type MatchResult = {
   status: string;
   mismatches: Array<{ type: string; itemId: number; message: string }>;
 };
+
+async function invalidateAfterInvoiceChange(purchaseOrderId: number | null | undefined) {
+  await invalidateInvoiceDomain(queryClient);
+  const po = purchaseOrderId != null ? Number(purchaseOrderId) : NaN;
+  if (Number.isFinite(po) && po > 0) {
+    await invalidatePurchaseOrderDomain(queryClient);
+  }
+}
 
 function normalizeInvoiceMatchResult(raw: unknown): MatchResult | null {
   if (raw == null || typeof raw !== "object") return null;
@@ -371,7 +380,8 @@ export default function InvoicesPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      const poRef = purchaseOrderId !== "none" ? Number(purchaseOrderId) : null;
+      void invalidateAfterInvoiceChange(poRef);
       setPurchaseOrderId("none");
       toast({ title: "Invoice created" });
     },
@@ -388,7 +398,7 @@ export default function InvoicesPage() {
     mutationFn: ({ id, body }: { id: number; body: { status?: string; dueDate?: string | null } }) =>
       requestJson("PATCH", `/api/invoices/${id}`, body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void invalidateAfterInvoiceChange(editInvoice?.purchaseOrderId);
       setEditInvoice(null);
       toast({ title: "Invoice updated" });
     },
@@ -404,7 +414,7 @@ export default function InvoicesPage() {
   const deleteInvoiceMut = useMutation({
     mutationFn: (id: number) => requestJson("DELETE", `/api/invoices/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void invalidateAfterInvoiceChange(deleteInvoice?.purchaseOrderId);
       setDeleteInvoice(null);
       toast({ title: "Invoice removed" });
     },
@@ -467,7 +477,7 @@ export default function InvoicesPage() {
       body: { quantity: number; unitPrice: number; taxRate: number; taxAmount: number; totalPrice: number };
     }) => requestJson("PATCH", `/api/invoices/${invoiceId}/items/${line.id}`, body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void invalidateAfterInvoiceChange(linesEditInvoice?.purchaseOrderId);
       void refetchInvoiceLines();
       toast({ title: "Line updated" });
     },
@@ -501,7 +511,7 @@ export default function InvoicesPage() {
         totalPrice: payload.totalPrice,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void invalidateAfterInvoiceChange(linesEditInvoice?.purchaseOrderId);
       void refetchInvoiceLines();
       setNewLineItemId("none");
       setNewLineQty("1");
@@ -522,7 +532,7 @@ export default function InvoicesPage() {
     mutationFn: async ({ invoiceId, lineId }: { invoiceId: number; lineId: number }) =>
       requestJson("DELETE", `/api/invoices/${invoiceId}/items/${lineId}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void invalidateAfterInvoiceChange(linesEditInvoice?.purchaseOrderId);
       void refetchInvoiceLines();
       toast({ title: "Line removed" });
     },
@@ -538,7 +548,8 @@ export default function InvoicesPage() {
   const runMatch = useMutation({
     mutationFn: (invoiceId: number) => requestJson<unknown>("POST", `/api/invoices/${invoiceId}/match`),
     onSuccess: (raw, invoiceId) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      const inv = invoices.find((i) => i.id === invoiceId);
+      void invalidateAfterInvoiceChange(inv?.purchaseOrderId);
       const result = normalizeInvoiceMatchResult(raw);
       if (!result) {
         toast({

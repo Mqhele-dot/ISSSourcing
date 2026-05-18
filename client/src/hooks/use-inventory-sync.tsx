@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { queryClient } from '@/lib/queryClient';
+import { invalidateInventoryDomain } from '@/lib/domain-invalidation';
 
 // Define the message types that match the server
 interface WebSocketMessage {
@@ -112,8 +113,7 @@ export function useInventorySync(options: InventorySyncOptions = {}): InventoryS
               break;
 
             case 'inventory_update':
-              // When inventory updates come in, invalidate the relevant queries
-              queryClient.invalidateQueries({ queryKey: ['/api/inventory'] });
+              void invalidateInventoryDomain(queryClient);
               if (message.payload.warehouseId) {
                 queryClient.invalidateQueries({ queryKey: ['/api/warehouses', message.payload.warehouseId, 'inventory'] });
               }

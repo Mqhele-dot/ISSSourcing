@@ -21,6 +21,7 @@ import {
   runOperationalDemoWalkthrough,
   transitionOperationalExceptionStatus,
   transitionOperationalPurchaseOrderStatus,
+  tryCreateOperationalShipmentOnSend,
   updateOperationalShipmentStatus,
 } from "./operations-core";
 import { buildEmptyControlTowerDashboard, getControlTowerDashboard } from "./modules/operations/control-tower-dashboard";
@@ -261,6 +262,13 @@ function mapPurchaseReceiveError(error: unknown): never {
   }
   if (message === "putaway_bin_invalid") {
     throw contractError(400, "PUTAWAY_BIN_INVALID", "Bin is not valid for the selected warehouse and aisle.");
+  }
+  if (message === "shipment_not_found_for_po") {
+    throw contractError(
+      400,
+      "SHIPMENT_NOT_FOUND_FOR_PO",
+      "The selected shipment does not belong to this purchase order.",
+    );
   }
   throw error;
 }
@@ -666,6 +674,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             ),
             OPERATIONS_QUERY_TIMEOUT_MS,
           );
+          await tryCreateOperationalShipmentOnSend(req.params.po, req.body);
           respondOk(res, detail);
         } catch (error) {
           if (toErrorMessage(error) === "OPERATIONS_QUERY_TIMEOUT") {
@@ -745,6 +754,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             typeof (req.body?.received_at ?? req.body?.receivedAt) === "string"
               ? new Date(String(req.body?.received_at ?? req.body?.receivedAt))
               : undefined,
+          shipment_id: (() => {
+            const raw = req.body?.shipment_id ?? req.body?.shipmentId;
+            if (raw == null || raw === "") return undefined;
+            const n = Number(raw);
+            return Number.isFinite(n) && n > 0 ? n : undefined;
+          })(),
         };
 
         try {

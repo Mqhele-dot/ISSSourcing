@@ -880,6 +880,7 @@ type ReceivePurchaseMetaInput = {
   aisle?: string | null;
   bin_code?: string | null;
   received_at?: Date | null;
+  shipment_id?: number | null;
 };
 
 import {
@@ -1274,6 +1275,78 @@ export async function transitionOperationalPurchaseOrderStatus(
   return updated;
 }
 
+/** Optional: create an in-transit shipment when a PO is sent (`POST .../send` body.shipment.create). */
+export async function tryCreateOperationalShipmentOnSend(
+  poOrId: string,
+  body: unknown,
+): Promise<{ shipmentId: number | null }> {
+  const order = await resolvePurchaseOrder(poOrId);
+  if (!order) {
+    return { shipmentId: null };
+  }
+  const root = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const sh = root.shipment;
+  if (!sh || typeof sh !== "object") {
+    return { shipmentId: null };
+  }
+  const s = sh as Record<string, unknown>;
+  if (s.create !== true) {
+    return { shipmentId: null };
+  }
+
+  const carrierText = typeof s.carrier === "string" && s.carrier.trim() ? s.carrier.trim() : "Carrier TBD";
+  const carrierId = s.carrierId != null && Number.isFinite(Number(s.carrierId)) ? Number(s.carrierId) : null;
+  const transportMode = typeof s.transportMode === "string" ? s.transportMode.trim() : null;
+  const freightCost = s.freightCost != null && Number.isFinite(Number(s.freightCost)) ? Number(s.freightCost) : null;
+  const trackingNumber = typeof s.trackingNumber === "string" ? s.trackingNumber.trim() : null;
+  const deliveryNoteRef = typeof s.deliveryNoteRef === "string" ? s.deliveryNoteRef.trim() : null;
+  const vehicle = typeof s.vehicle === "string" ? s.vehicle.trim() : null;
+  const driver = typeof s.driver === "string" ? s.driver.trim() : null;
+
+  const ins = await pool.query<{ id: number }>(
+    `
+    INSERT INTO shipments (
+      po_number,
+      purchase_order_id,
+      carrier,
+      carrier_id,
+      transport_mode,
+      freight_cost,
+      vehicle,
+      driver,
+      delivery_note_ref,
+      tracking_number,
+      status,
+      eta,
+      created_at,
+      updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'in_transit', now() + interval '3 days', now(), now())
+    RETURNING id
+    `,
+    [
+      order.order_number,
+      order.id,
+      carrierText,
+      carrierId,
+      transportMode,
+      freightCost,
+      vehicle,
+      driver,
+      deliveryNoteRef || null,
+      trackingNumber || null,
+    ],
+  );
+  const shipmentId = ins.rows[0]?.id ?? null;
+  if (shipmentId != null) {
+    await pool.query(
+      `INSERT INTO shipment_events (shipment_id, status, note) VALUES ($1, 'in_transit', $2)`,
+      [shipmentId, `Created when PO ${order.order_number} was sent`],
+    );
+  }
+  return { shipmentId };
+}
+
 type ResolvedReceivePutaway = {
   warehouseId: number | null;
   locationFromPutaway: string | null;
@@ -1374,6 +1447,8 @@ export async function receiveOperationalPurchaseOrder(
   const currentLines = await getPurchaseOrderLines(order.id);
   const lineBySku = new Map(currentLines.map((line) => [line.sku, line]));
 
+  const apReceiptLines: Array<{ purchaseOrderItemId: number; itemId: number; acceptedQty: number }> = [];
+
   const inventoryChanges: Array<{
     sku: string;
     location: string;
@@ -1430,6 +1505,11 @@ export async function receiveOperationalPurchaseOrder(
     );
 
     if (receiveNow > 0) {
+      apReceiptLines.push({
+        purchaseOrderItemId: line.id,
+        itemId: line.itemId,
+        acceptedQty: receiveNow,
+      });
       const itemLocationResult = await pool.query<{
         default_location: string | null;
         location: string | null;
@@ -1606,17 +1686,32 @@ export async function receiveOperationalPurchaseOrder(
     [order.id, nextStatus],
   );
 
+  const targetShipmentId =
+    receiveMeta.shipment_id != null && Number.isFinite(Number(receiveMeta.shipment_id))
+      ? Number(receiveMeta.shipment_id)
+      : null;
+
   const shipmentCandidates = await pool.query<{
     id: number;
     status: string;
   }>(
+    targetShipmentId != null
+      ? `
+    SELECT id, status
+    FROM shipments
+    WHERE po_number = $1 AND id = $2
     `
+      : `
     SELECT id, status
     FROM shipments
     WHERE po_number = $1
     `,
-    [order.order_number],
+    targetShipmentId != null ? [order.order_number, targetShipmentId] : [order.order_number],
   );
+
+  if (targetShipmentId != null && shipmentCandidates.rows.length === 0) {
+    throw new Error("shipment_not_found_for_po");
+  }
 
   const shipmentUpdates: Array<{ shipmentId: number; toStatus: string }> = [];
   for (const shipment of shipmentCandidates.rows) {
@@ -1666,6 +1761,19 @@ export async function receiveOperationalPurchaseOrder(
       nextStatus,
     },
   });
+
+  if (apReceiptLines.length > 0) {
+    try {
+      const { syncOperationalReceiveToApReceipt } = await import("../accounts-payable/service");
+      await syncOperationalReceiveToApReceipt({
+        purchaseOrderId: order.id,
+        receiptLines: apReceiptLines,
+        receivedByUserId: receiveMeta.receiver_user_id ?? null,
+      });
+    } catch (apErr) {
+      console.warn("[operations] AP receipt bridge failed:", apErr);
+    }
+  }
 
   const updatedOrder = await getOperationalPurchaseOrderDetail(order.order_number);
   if (!updatedOrder) {

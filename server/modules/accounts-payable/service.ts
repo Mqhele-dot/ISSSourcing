@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { db } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import { storage } from "../../storage";
@@ -981,6 +982,83 @@ export async function createReceiptRecord(
 
     return created;
   });
+}
+
+/** Idempotent AP receipt for operational PO receive (does not double-update PO line quantities). */
+export async function syncOperationalReceiveToApReceipt(params: {
+  purchaseOrderId: number;
+  receiptLines: Array<{ purchaseOrderItemId: number; itemId: number; acceptedQty: number }>;
+  receivedByUserId?: number | null;
+}): Promise<{ receiptId: number | null; idempotent: boolean }> {
+  if (params.receiptLines.length === 0) {
+    return { receiptId: null, idempotent: false };
+  }
+  const orgId = getActiveOrganizationId();
+  const payload = [...params.receiptLines]
+    .map((r) => ({ id: r.purchaseOrderItemId, i: r.itemId, q: r.acceptedQty }))
+    .sort((a, b) => a.id - b.id || a.i - b.i || a.q - b.q);
+  const hash = createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 24);
+  const receiptNumber = `OP-${params.purchaseOrderId}-${hash}`;
+
+  const [existing] = await db
+    .select()
+    .from(apReceipts)
+    .where(and(eq(apReceipts.organizationId, orgId), eq(apReceipts.receiptNumber, receiptNumber)))
+    .limit(1);
+
+  let receiptId = existing?.id ?? null;
+  const idempotent = Boolean(existing);
+
+  if (!existing) {
+    const po = await storage.getPurchaseOrder(params.purchaseOrderId);
+    if (!po || Number(po.organizationId) !== orgId) {
+      return { receiptId: null, idempotent: false };
+    }
+    receiptId = await db.transaction(async (tx) => {
+      const [rec] = await tx
+        .insert(apReceipts)
+        .values({
+          organizationId: orgId,
+          receiptNumber,
+          purchaseOrderId: params.purchaseOrderId,
+          supplierId: po.supplierId ?? null,
+          status: "POSTED",
+          receivedDate: new Date(),
+          receivedBy: params.receivedByUserId ?? null,
+          notes: "Synced from operational PO receive",
+        })
+        .returning();
+      for (const line of params.receiptLines) {
+        await tx.insert(apReceiptItems).values({
+          receiptId: rec.id,
+          purchaseOrderItemId: line.purchaseOrderItemId,
+          itemId: line.itemId,
+          quantity: line.acceptedQty,
+          acceptedQuantity: line.acceptedQty,
+          rejectedQuantity: 0,
+        });
+      }
+      return rec.id;
+    });
+  }
+
+  const matchUserId =
+    params.receivedByUserId != null && Number.isFinite(Number(params.receivedByUserId))
+      ? Number(params.receivedByUserId)
+      : 1;
+  const linkedInvoices = await db
+    .select({ id: invoices.id })
+    .from(invoices)
+    .where(and(eq(invoices.organizationId, orgId), eq(invoices.purchaseOrderId, params.purchaseOrderId)));
+  for (const inv of linkedInvoices) {
+    try {
+      await evaluateInvoiceMatch(inv.id, DEFAULT_MATCH_ON_SUBMIT_APPROVAL, matchUserId);
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  return { receiptId, idempotent };
 }
 
 export async function evaluateInvoiceMatch(

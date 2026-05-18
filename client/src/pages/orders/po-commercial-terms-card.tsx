@@ -4,11 +4,20 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type DepartmentOpt = { id: number; code: string; name: string };
-type ContractOpt = { id: number; title: string; supplierId: number };
+type ContractOpt = {
+  id: number;
+  title: string;
+  supplierId: number;
+  paymentTermsId?: number | null;
+  incotermId?: number | null;
+  defaultTaxCodeId?: number | null;
+};
 type TermOpt = { id: number; code: string; name: string };
 type IncotermOpt = { id: number; code: string; name: string };
 
 type CurrencyOpt = { code: string; name: string };
+
+type TaxCodeOpt = { id: number; code: string; name: string };
 
 export type PoCommercialTermsCardProps = {
   departmentId: string;
@@ -23,6 +32,9 @@ export type PoCommercialTermsCardProps = {
   setPaymentTermsId: (v: string) => void;
   incotermId: string;
   setIncotermId: (v: string) => void;
+  taxCodeId: string;
+  setTaxCodeId: (v: string) => void;
+  taxCodes: TaxCodeOpt[];
   departments: DepartmentOpt[];
   contractsForSupplier: ContractOpt[];
   paymentTerms: TermOpt[];
@@ -49,6 +61,9 @@ export function PoCommercialTermsCard({
   setPaymentTermsId,
   incotermId,
   setIncotermId,
+  taxCodeId,
+  setTaxCodeId,
+  taxCodes,
   departments,
   contractsForSupplier,
   paymentTerms,
@@ -148,8 +163,9 @@ export function PoCommercialTermsCard({
           ) : null}
           <p className="text-xs text-muted-foreground">
             Fills order currency from the contract when it matches master data, otherwise from the supplier default.
-            Payment terms come from the supplier. Incoterms are PO-only (not stored on the contract row). Currency
-            options are the same active Master data list used on the supplier portal. Save to persist.
+            When the contract row has payment terms, incoterm, or default tax, those apply here. Payment terms and
+            incoterms from the supplier are used as fallback where the contract leaves them blank. Currency options are
+            the active Master Data list. Save to persist.
           </p>
         </div>
         {applyDefaultsHint ? (
@@ -187,6 +203,22 @@ export function PoCommercialTermsCard({
               {incoterms.map((incoterm) => (
                 <SelectItem key={incoterm.id} value={String(incoterm.id)}>
                   {incoterm.code} - {incoterm.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="po-tax-code">Default tax code (header)</Label>
+          <Select value={taxCodeId} onValueChange={setTaxCodeId} disabled={disableFields}>
+            <SelectTrigger id="po-tax-code">
+              <SelectValue placeholder="Select tax code" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              {taxCodes.map((t) => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.code} — {t.name}
                 </SelectItem>
               ))}
             </SelectContent>

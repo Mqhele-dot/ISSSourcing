@@ -53,6 +53,10 @@ type PoReceivePanelProps = {
   /** Validation issues to show next to the affected line controls (submit-time only). */
   receiveLineIssues?: ReceiveLineFieldError[];
   onSubmitReceive: () => void | Promise<void>;
+  /** When provided, user can tie GRN to a logistics shipment row for this PO. */
+  shipmentsForReceiveLink?: Array<{ id: number; status: string; carrier: string | null }>;
+  receiveShipmentId?: string;
+  onReceiveShipmentIdChange?: (value: string) => void;
 };
 
 /** GRN-style receive grid for a single PO detail view. */
@@ -77,6 +81,9 @@ export function PoReceivePanel({
   receiveError,
   receiveLineIssues = [],
   onSubmitReceive,
+  shipmentsForReceiveLink,
+  receiveShipmentId = "auto",
+  onReceiveShipmentIdChange,
 }: PoReceivePanelProps) {
   const issuesFor = (sku: string, field: ReceiveLineFieldError["field"]) =>
     receiveLineIssues.filter((i) => i.sku === sku && i.field === field);
@@ -238,6 +245,29 @@ export function PoReceivePanel({
               </p>
             ) : null}
           </div>
+
+          {shipmentsForReceiveLink && shipmentsForReceiveLink.length > 0 && onReceiveShipmentIdChange ? (
+            <div className="space-y-1 max-w-md">
+              <Label htmlFor="receive-shipment-link">Link to shipment (optional)</Label>
+              <Select value={receiveShipmentId} onValueChange={onReceiveShipmentIdChange}>
+                <SelectTrigger id="receive-shipment-link" aria-label="Shipment to mark delivered on receive">
+                  <SelectValue placeholder="Choose shipment" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto (all open shipments for this PO)</SelectItem>
+                  {shipmentsForReceiveLink.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      #{s.id} — {s.status}
+                      {s.carrier ? ` · ${s.carrier}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Choosing a specific shipment marks only that row delivered when you post the receipt.
+              </p>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <div className="text-sm font-medium">Receive into (warehouse layout)</div>

@@ -2333,7 +2333,15 @@ export class DatabaseStorage implements IStorage {
     for (const item of items) {
       const totalPrice = (Number(item.unitPrice) || 0) * (item.quantity || 0);
       totalAmount += totalPrice;
-      await db.insert(purchaseOrderItems).values({ ...item, orderId: created.id, totalPrice });
+      const inv = await repoGetInventoryItem(item.itemId);
+      await db.insert(purchaseOrderItems).values({
+        ...item,
+        orderId: created.id,
+        totalPrice,
+        unitOfMeasureId: item.unitOfMeasureId ?? inv?.unitOfMeasureId ?? null,
+        commodityCodeId: item.commodityCodeId ?? inv?.commodityCodeId ?? null,
+        taxCodeId: item.taxCodeId ?? null,
+      });
     }
     if (totalAmount > 0) {
       await db
@@ -2405,6 +2413,9 @@ export class DatabaseStorage implements IStorage {
         totalPrice: item.totalPrice,
         receivedQuantity: item.receivedQuantity ?? 0,
         notes: item.notes ?? null,
+        unitOfMeasureId: item.unitOfMeasureId ?? inv?.unitOfMeasureId ?? null,
+        commodityCodeId: item.commodityCodeId ?? inv?.commodityCodeId ?? null,
+        taxCodeId: item.taxCodeId ?? null,
       })
       .returning();
 
@@ -2443,6 +2454,11 @@ export class DatabaseStorage implements IStorage {
       orderId: item.orderId ?? existingItem.orderId,
       receivedQuantity:
         item.receivedQuantity !== undefined ? item.receivedQuantity : existingItem.receivedQuantity,
+      unitOfMeasureId:
+        item.unitOfMeasureId !== undefined ? item.unitOfMeasureId : existingItem.unitOfMeasureId,
+      commodityCodeId:
+        item.commodityCodeId !== undefined ? item.commodityCodeId : existingItem.commodityCodeId,
+      taxCodeId: item.taxCodeId !== undefined ? item.taxCodeId : existingItem.taxCodeId,
     };
 
     const [updatedItem] = await db.update(purchaseOrderItems).set(merged).where(eq(purchaseOrderItems.id, id)).returning();
@@ -2646,6 +2662,23 @@ export class DatabaseStorage implements IStorage {
         throw new Error("Requisition has no line items to convert");
       }
 
+      const [supplierRow] = await tx
+        .select()
+        .from(suppliers)
+        .where(and(eq(suppliers.id, requisition.supplierId!), eq(suppliers.organizationId, orgId)))
+        .limit(1);
+
+      const defaultCurRaw = String(supplierRow?.defaultCurrencyCode ?? "").trim().toUpperCase();
+      let currencyCode = "USD";
+      if (/^[A-Z]{3}$/.test(defaultCurRaw)) {
+        try {
+          new Intl.NumberFormat("en-US", { style: "currency", currency: defaultCurRaw }).format(0);
+          currencyCode = defaultCurRaw;
+        } catch {
+          currencyCode = "USD";
+        }
+      }
+
       const orderNumber = `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
       const expectedDeliveryDate =
         requisition.requiredDate ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
@@ -2657,6 +2690,8 @@ export class DatabaseStorage implements IStorage {
           orderNumber,
           supplierId: requisition.supplierId,
           requisitionId: requisition.id,
+          departmentId: requisition.departmentId ?? null,
+          currencyCode,
           projectId: requisition.projectId ?? null,
           status: PurchaseOrderStatus.DRAFT,
           orderDate: new Date(),
@@ -2671,6 +2706,12 @@ export class DatabaseStorage implements IStorage {
         .returning();
 
       for (const item of requisitionItems) {
+        const inv = await tx
+          .select()
+          .from(inventoryItems)
+          .where(eq(inventoryItems.id, item.itemId))
+          .limit(1);
+        const invRow = inv[0];
         await tx.insert(purchaseOrderItems).values({
           orderId: order.id,
           itemId: item.itemId,
@@ -2679,6 +2720,9 @@ export class DatabaseStorage implements IStorage {
           totalPrice: item.totalPrice,
           receivedQuantity: 0,
           notes: item.notes ?? null,
+          unitOfMeasureId: invRow?.unitOfMeasureId ?? null,
+          commodityCodeId: invRow?.commodityCodeId ?? null,
+          taxCodeId: null,
         });
       }
 
@@ -2786,6 +2830,7 @@ export class DatabaseStorage implements IStorage {
       dimensions: null,
       weight: null,
       unitOfMeasure: "each",
+      unitOfMeasureId: null,
       supplierPartNumber: null,
       commodityCodeId: null,
       defaultWarehouseId: null,
@@ -2891,6 +2936,7 @@ export class DatabaseStorage implements IStorage {
       dimensions: null,
       weight: null,
       unitOfMeasure: "each",
+      unitOfMeasureId: null,
       supplierPartNumber: null,
       commodityCodeId: null,
       defaultWarehouseId: null,

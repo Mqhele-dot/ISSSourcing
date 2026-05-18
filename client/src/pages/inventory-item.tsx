@@ -36,7 +36,9 @@ import { DataState } from "@/components/ui/data-state";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useAsyncResource } from "@/hooks/use-async-resource";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { invalidateInventoryDomain } from "@/lib/domain-invalidation";
 import { fetchInventoryDetail } from "@/api/client";
 
 type InventoryPosition = {
@@ -116,6 +118,7 @@ export default function InventoryDetailPage() {
     }
   }, [params?.sku]);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
@@ -181,6 +184,7 @@ export default function InventoryDetailPage() {
       const raw = (await response.json()) as { ok?: boolean; data?: AdjustResponse } | AdjustResponse;
       const payload = raw && typeof raw === "object" && "ok" in raw && raw.ok && raw.data ? raw.data : (raw as AdjustResponse);
       await refetch();
+      await invalidateInventoryDomain(queryClient);
       setAdjustOpen(false);
 
       const avail = payload?.summary?.available ?? (payload?.summary as { available?: number } | undefined)?.available;

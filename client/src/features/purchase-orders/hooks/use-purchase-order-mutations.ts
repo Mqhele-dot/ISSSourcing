@@ -4,6 +4,7 @@ import {
   receivePurchaseOrder,
   sendPurchaseOrder,
   transitionPurchaseOrderStatus,
+  type PurchaseOrderSendBody,
   type PurchaseReceiveResult,
 } from "../api/purchase-orders.api";
 import type { PurchaseOrderDetail } from "@/api/types";
@@ -37,9 +38,9 @@ export function useSendPurchaseOrderMutation(po: string) {
   const poNumber = normalizeOperationalPoParam(po);
   return useMutation({
     mutationKey: ["purchase-order-send", poNumber],
-    mutationFn: async () => {
+    mutationFn: async (sendBody?: PurchaseOrderSendBody) => {
       assertPoNumberForMutation(poNumber);
-      return sendPurchaseOrder(poNumber);
+      return sendPurchaseOrder(poNumber, sendBody);
     },
     onSuccess: async () => {
       await invalidatePurchaseOrderOperationalQueries(queryClient, poNumber);
@@ -85,6 +86,7 @@ export function useReceivePurchaseOrderMutation(po: string) {
         aisle?: string;
         binCode?: string;
         receivedAt?: string;
+        shipmentId?: number;
       };
     }) => {
       assertPoNumberForMutation(poNumber);

@@ -18,6 +18,7 @@
     "test:requisitions": "tsx scripts/test-requisitions.ts",
     "test:procurement-flow": "tsx scripts/test-procurement-flow.ts",
     "test:master-data-propagation": "tsx scripts/test-master-data-propagation.ts",
+    "test:master-data-integration": "tsx scripts/test-master-data-integration.ts",
     "test:ap-workflow": "tsx scripts/test-ap-workflow.ts",
     "test:ap-controls": "tsx scripts/test-ap-controls.ts",
     "test:supplier-portal": "tsx scripts/test-supplier-portal.ts",

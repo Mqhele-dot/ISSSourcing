@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, requestJson } from "@/lib/queryClient";
+import { invalidateInventoryDomain } from "@/lib/domain-invalidation";
 import { type Category, type InventoryItem, type InventoryItemForm, inventoryItemFormSchema } from "@shared/schema";
 
 const ITEM_FORM_FIELD_KEYS = ["name", "description", "quantity", "sku", "categoryId", "lowStockThreshold", "price", "cost", "location", "barcode", "defaultWarehouseId", "status", "reorderPoint"] as const;
@@ -89,9 +90,7 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
       }
     },
     onSuccess: async () => {
-      // Invalidate and refetch
-      await queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
+      await invalidateInventoryDomain(queryClient);
       
       // Close modal and show success toast
       setOpen(false);

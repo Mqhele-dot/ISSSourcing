@@ -26,6 +26,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { fetchInventory } from "@/api/client";
+import { inventoryCatalogQueryKey } from "@/lib/query-keys";
+import { invalidateInventoryDomain } from "@/lib/domain-invalidation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 
@@ -106,7 +108,7 @@ export default function WarehouseOperationsPage() {
     error: inventoryErr,
     refetch: refetchInventory,
   } = useQuery({
-    queryKey: ["/api/inventory", "warehouse-ops"],
+    queryKey: [...inventoryCatalogQueryKey, "warehouse-ops"],
     queryFn: () => fetchInventory(),
     throwOnError: false,
   });
@@ -224,7 +226,7 @@ export default function WarehouseOperationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory-allocations"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      void invalidateInventoryDomain(queryClient);
       toast({ title: "Allocation created" });
     },
     onError: (e) => {
@@ -245,7 +247,7 @@ export default function WarehouseOperationsPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/warehouse-inventory", putAwayWarehouse] });
-      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      void invalidateInventoryDomain(queryClient);
       toast({ title: "Put-away saved" });
     },
     onError: (e) => {
@@ -274,6 +276,7 @@ export default function WarehouseOperationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory-batches"] });
+      void invalidateInventoryDomain(queryClient);
       toast({ title: "Batch registered" });
       setBatchNumber("");
     },
@@ -298,6 +301,7 @@ export default function WarehouseOperationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory-serials"] });
+      void invalidateInventoryDomain(queryClient);
       toast({ title: "Serial registered" });
       setSerialNumber("");
     },
@@ -319,9 +323,7 @@ export default function WarehouseOperationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory-batches"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/inventory-allocations"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] });
+      void invalidateInventoryDomain(queryClient);
       toast({ title: "Issued from batch", description: "Stock and trace records were updated." });
     },
     onError: (e) => {
@@ -340,9 +342,7 @@ export default function WarehouseOperationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inventory-serials"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/inventory-allocations"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] });
+      void invalidateInventoryDomain(queryClient);
       toast({ title: "Serial issued", description: "Unit marked issued and stock decremented." });
     },
     onError: (e) => {

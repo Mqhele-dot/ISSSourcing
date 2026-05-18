@@ -78,6 +78,26 @@ function logApFinanceEvent(event: string, payload: Record<string, unknown>) {
   console.info(JSON.stringify({ event, organizationId: getActiveOrganizationId(), ...payload }));
 }
 
+/** Maps enforceApprovalPolicy / segregation errors to client-facing HTTP status (not 500). */
+function apPolicyHttpStatus(message: string): { status: 400 | 403; code: string } | null {
+  if (/Approval policy references an invalid approver user/i.test(message)) {
+    return { status: 403, code: "AP_APPROVAL_POLICY_INVALID_APPROVER" };
+  }
+  if (/No active approval policy found/i.test(message)) {
+    return { status: 400, code: "AP_APPROVAL_POLICY_NOT_FOUND" };
+  }
+  if (/This action requires the configured approver user/i.test(message)) {
+    return { status: 403, code: "AP_APPROVAL_WRONG_USER" };
+  }
+  if (/Your role is not allowed by the active approval policy/i.test(message)) {
+    return { status: 403, code: "AP_APPROVAL_ROLE_BLOCKED" };
+  }
+  if (/Approver user is not valid/i.test(message)) {
+    return { status: 403, code: "AP_APPROVAL_ACTOR_INVALID" };
+  }
+  return null;
+}
+
 export function registerApRoutes(app: Express, auth: AuthBundle): void {
   const apRead = [auth.ensureAuthenticated];
   const apWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
@@ -325,7 +345,18 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       recordApprovalFailure();
       console.error("Error approving invoice:", error);
-      return sendError(res, 500, "INVOICE_APPROVE_FAILED", "Failed to approve invoice");
+      const message = error instanceof Error ? error.message : "Failed to approve invoice";
+      const policyErr = apPolicyHttpStatus(message);
+      if (policyErr) {
+        return sendError(res, policyErr.status, policyErr.code, message);
+      }
+      if (/Invoice creator cannot approve their own invoice/i.test(message)) {
+        return sendError(res, 403, "INVOICE_SELF_APPROVAL_BLOCKED", message);
+      }
+      if (/Invoice must be PENDING_APPROVAL/i.test(message)) {
+        return sendError(res, 400, "INVOICE_APPROVE_INVALID_STATE", message);
+      }
+      return sendError(res, 500, "INVOICE_APPROVE_FAILED", message);
     }
   });
 
@@ -345,7 +376,15 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       recordApprovalFailure();
       console.error("Error rejecting invoice:", error);
-      return sendError(res, 500, "INVOICE_REJECT_FAILED", "Failed to reject invoice");
+      const message = error instanceof Error ? error.message : "Failed to reject invoice";
+      const policyErr = apPolicyHttpStatus(message);
+      if (policyErr) {
+        return sendError(res, policyErr.status, policyErr.code, message);
+      }
+      if (/Invoice must be PENDING_APPROVAL/i.test(message)) {
+        return sendError(res, 400, "INVOICE_REJECT_INVALID_STATE", message);
+      }
+      return sendError(res, 500, "INVOICE_REJECT_FAILED", message);
     }
   });
 
@@ -447,6 +486,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
         return sendError(res, 403, "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED", msg, {
           hint: "Use another approver or submit an admin override with overrideReason on this request.",
         });
+      }
+      const policyErr = apPolicyHttpStatus(msg);
+      if (policyErr) {
+        return sendError(res, policyErr.status, policyErr.code, msg);
       }
       return sendError(
         res,

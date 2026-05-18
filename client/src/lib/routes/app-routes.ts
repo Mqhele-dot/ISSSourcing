@@ -41,6 +41,8 @@ export const MASTER_DATA_SECTION_SLUGS = [
   "incoterms",
   "paymentTerms",
   "departments",
+  "warehouses",
+  "carriers",
   "approvalPolicies",
 ] as const;
 

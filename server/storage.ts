@@ -3162,6 +3162,7 @@ export class MemStorage implements IStorage {
       lowStockThreshold: insertItem.lowStockThreshold ?? null,
       minOrderQuantity: insertItem.minOrderQuantity ?? 1,
       unitOfMeasure: insertItem.unitOfMeasure ?? 'each',
+      unitOfMeasureId: insertItem.unitOfMeasureId ?? null,
       supplierPartNumber: insertItem.supplierPartNumber ?? null,
       commodityCodeId: insertItem.commodityCodeId ?? null,
       barcodeType: insertItem.barcodeType ?? 'CODE128',
@@ -3653,6 +3654,7 @@ export class MemStorage implements IStorage {
       paymentTermsId: order.paymentTermsId ?? null,
       incotermId: order.incotermId ?? null,
       currencyCode: order.currencyCode ?? "USD",
+      taxCodeId: order.taxCodeId ?? null,
       totalAmount: order.totalAmount ?? 0,
       orderDate: order.orderDate ?? now,
       expectedDeliveryDate: order.expectedDeliveryDate ?? null,
@@ -3764,7 +3766,10 @@ export class MemStorage implements IStorage {
       id,
       quantity: item.quantity ?? 0,
       notes: item.notes ?? null,
-      receivedQuantity: item.receivedQuantity ?? null
+      receivedQuantity: item.receivedQuantity ?? null,
+      unitOfMeasureId: item.unitOfMeasureId ?? inventoryItem.unitOfMeasureId ?? null,
+      commodityCodeId: item.commodityCodeId ?? inventoryItem.commodityCodeId ?? null,
+      taxCodeId: item.taxCodeId ?? null,
     };
     
     this.purchaseOrderItems.set(id, orderItem);
@@ -4113,6 +4118,7 @@ export class MemStorage implements IStorage {
         dimensions: null,
         weight: null,
         unitOfMeasure: "each",
+        unitOfMeasureId: null,
         supplierPartNumber: null,
         commodityCodeId: null,
         defaultWarehouseId: null,
@@ -4216,6 +4222,7 @@ export class MemStorage implements IStorage {
         dimensions: null,
         weight: null,
         unitOfMeasure: "each",
+        unitOfMeasureId: null,
         supplierPartNumber: null,
         commodityCodeId: null,
         defaultWarehouseId: null,
@@ -4489,7 +4496,11 @@ export class MemStorage implements IStorage {
       endDate: insert.endDate ?? null,
       summary: insert.summary ?? null,
       referenceNumber: insert.referenceNumber ?? null,
-      currency: insert.currency ?? null
+      currency: insert.currency ?? null,
+      paymentTermsId: insert.paymentTermsId ?? null,
+      incotermId: insert.incotermId ?? null,
+      defaultTaxCodeId: insert.defaultTaxCodeId ?? null,
+      defaultWarehouseId: insert.defaultWarehouseId ?? null,
     };
     this.supplierContracts.set(id, contract);
     return contract;

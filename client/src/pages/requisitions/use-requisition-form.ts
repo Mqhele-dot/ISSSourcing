@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
 import type { PurchaseRequisition, PurchaseRequisitionItem, Supplier, InventoryItem } from "@shared/schema";
 import { invalidateRequisitionDomain } from "@/lib/domain-invalidation";
+import { inventoryCatalogQueryKey } from "@/lib/query-keys";
 import type { ReqLineDraft } from "@/pages/requisitions/requisition-lines-editor";
 
 export type RequisitionFieldErrors = Partial<
@@ -60,7 +61,7 @@ export function useRequisitionForm(params: {
   });
 
   const { data: inventoryItems = [] } = useQuery({
-    queryKey: ["/api/inventory"],
+    queryKey: inventoryCatalogQueryKey,
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory");
       return normalizeApiList<InventoryItem>(raw);
@@ -87,6 +88,57 @@ export function useRequisitionForm(params: {
     },
     retry: false,
   });
+
+  const { data: currencies = [] } = useQuery({
+    queryKey: ["/api/currencies"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/currencies");
+      return normalizeApiList<{ code: string; name: string }>(raw);
+    },
+  });
+
+  const { data: contracts = [] } = useQuery({
+    queryKey: ["/api/contracts"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/contracts");
+      return normalizeApiList<{ id: number; title: string; supplierId: number }>(raw);
+    },
+  });
+
+  const { data: paymentTerms = [] } = useQuery({
+    queryKey: ["/api/payment-terms"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/payment-terms");
+      return normalizeApiList<{ id: number; code: string; name: string }>(raw);
+    },
+  });
+
+  const { data: incoterms = [] } = useQuery({
+    queryKey: ["/api/incoterms"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/incoterms");
+      return normalizeApiList<{ id: number; code: string; name: string }>(raw);
+    },
+  });
+
+  const { data: taxCodes = [] } = useQuery({
+    queryKey: ["/api/tax-codes"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/tax-codes");
+      return normalizeApiList<{ id: number; code: string; name: string }>(raw);
+    },
+  });
+
+  const contractsForSupplier = useMemo(() => {
+    if (supplierId === "") return [];
+    return contracts.filter((c) => c.supplierId === supplierId);
+  }, [contracts, supplierId]);
+
+  const departmentLabel = useMemo(() => {
+    if (departmentId === "") return undefined;
+    const d = departments.find((x) => x.id === departmentId);
+    return d ? `${d.code} — ${d.name}` : undefined;
+  }, [departments, departmentId]);
 
   useEffect(() => {
     if (requisition) {
@@ -259,5 +311,11 @@ export function useRequisitionForm(params: {
     isPending,
     isLocked,
     lockedReason,
+    currencies,
+    contractsForSupplier,
+    paymentTerms,
+    incoterms,
+    taxCodes,
+    departmentLabel,
   };
 }

@@ -17,6 +17,9 @@ import {
   Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { DataState } from "@/components/ui/data-state";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -58,7 +61,7 @@ import {
   type ReceiveLineFieldError,
   type ReceivePutawayWarehouse,
 } from "@/features/purchase-orders";
-import { fetchApprovalSuggestions } from "@/api/client";
+import { fetchApprovalSuggestions, fetchShipments } from "@/api/client";
 import type { PurchaseReceiveResult } from "@/api/types";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
@@ -116,9 +119,13 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [contractId, setContractId] = useState<string>("none");
   const [paymentTermsId, setPaymentTermsId] = useState<string>("none");
   const [incotermId, setIncotermId] = useState<string>("none");
+  const [taxCodeId, setTaxCodeId] = useState<string>("none");
   const [currencyCode, setCurrencyCode] = useState("USD");
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [receiveLineIssues, setReceiveLineIssues] = useState<ReceiveLineFieldError[]>([]);
+  const [createShipmentOnSend, setCreateShipmentOnSend] = useState(false);
+  const [sendShipmentCarrier, setSendShipmentCarrier] = useState("");
+  const [receiveShipmentChoice, setReceiveShipmentChoice] = useState<string>("auto");
   const [commercialSaveError, setCommercialSaveError] = useState<string | null>(null);
   const [commercialApplyHint, setCommercialApplyHint] = useState<string | null>(null);
   const purchaseOrderIdRef = useRef<number | null>(null);
@@ -140,6 +147,21 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const refetch = async () => {
     await detailQuery.refetch();
   };
+
+  useEffect(() => {
+    setReceiveShipmentChoice("auto");
+  }, [poNumber]);
+
+  const { data: poShipments = [] } = useQuery({
+    queryKey: ["/api/logistics/shipments", poNumber],
+    enabled: Boolean(poNumber && data),
+    queryFn: () => fetchShipments({ po: poNumber }),
+    throwOnError: false,
+  });
+
+  const shipmentsForReceiveLink = useMemo(() => {
+    return poShipments.filter((s) => String(s.status).toLowerCase() !== "delivered");
+  }, [poShipments]);
 
   useEffect(() => {
     purchaseOrderIdRef.current = data?.id ?? null;
@@ -187,10 +209,20 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const { data: contracts = [], isError: contractsError } = useQuery({
     queryKey: ["/api/contracts"],
     queryFn: () =>
-      requestJson<Array<{ id: number; title: string; supplierId: number; currency?: string | null }>>(
-        "GET",
-        "/api/contracts",
-      ),
+      requestJson<
+        Array<{
+          id: number;
+          title: string;
+          supplierId: number;
+          currency?: string | null;
+          paymentTermsId?: number | null;
+          payment_terms_id?: number | null;
+          incotermId?: number | null;
+          incoterm_id?: number | null;
+          defaultTaxCodeId?: number | null;
+          default_tax_code_id?: number | null;
+        }>
+      >("GET", "/api/contracts"),
   });
   const { data: currenciesList = [], isError: currenciesError } = useQuery({
     queryKey: MASTER_CURRENCIES_QUERY_KEY,
@@ -240,6 +272,19 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     queryKey: ["/api/incoterms"],
     queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/incoterms"),
   });
+
+  const { data: taxCodes = [], isError: taxCodesError } = useQuery({
+    queryKey: ["/api/tax-codes"],
+    queryFn: () =>
+      requestJson<Array<{ id: number; code: string; name: string; active?: boolean | null }>>(
+        "GET",
+        "/api/tax-codes",
+      ),
+  });
+  const activeTaxCodes = useMemo(
+    () => taxCodes.filter((t) => t.active !== false),
+    [taxCodes],
+  );
 
   const { data: warehousesForReceive = [] } = useQuery({
     queryKey: ["/api/warehouses"],
@@ -316,6 +361,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
         contractId: contractId === "none" ? null : Number(contractId),
         paymentTermsId: paymentTermsId === "none" ? null : Number(paymentTermsId),
         incotermId: incotermId === "none" ? null : Number(incotermId),
+        taxCodeId: taxCodeId === "none" ? null : Number(taxCodeId),
         currencyCode: currencyCode.trim().toUpperCase(),
       });
     },
@@ -354,6 +400,9 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     setIncotermId(
       purchaseOrderRecord.incotermId == null ? "none" : String(purchaseOrderRecord.incotermId),
     );
+    setTaxCodeId(
+      purchaseOrderRecord.taxCodeId == null ? "none" : String(purchaseOrderRecord.taxCodeId),
+    );
     const rawCc = purchaseOrderRecord.currencyCode;
     setCurrencyCode(
       typeof rawCc === "string" && /^[A-Za-z]{3}$/.test(rawCc) ? rawCc.toUpperCase() : "USD",
@@ -383,29 +432,37 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   );
 
   const updateStatus = (action: "approve" | "send") => {
-    const mutation = action === "approve" ? approvePurchaseOrderMutation : sendPurchaseOrderMutation;
-    if (mutation.isPending || !poNumber) return;
-    mutation.mutate(undefined, {
-      onError: (statusError) => {
-        const err = statusError as Error & { status?: number };
-        const actionLabel = action === "approve" ? "Approve PO" : "Send PO";
-        toast({
-          title: "Update failed",
-          description: formatMutationError(
-            actionLabel,
-            "POST",
-            action === "approve" ? procurementPoApproveUrl(poNumber) : procurementPoSendUrl(poNumber),
-            err,
-          ),
-          variant: "destructive",
-          action: (
-            <ToastAction altText="Retry" onClick={() => updateStatus(action)}>
-              Retry
-            </ToastAction>
-          ),
-        });
-      },
-    });
+    if (!poNumber) return;
+    const onErr = (statusError: Error) => {
+      const err = statusError as Error & { status?: number };
+      const actionLabel = action === "approve" ? "Approve PO" : "Send PO";
+      toast({
+        title: "Update failed",
+        description: formatMutationError(
+          actionLabel,
+          "POST",
+          action === "approve" ? procurementPoApproveUrl(poNumber) : procurementPoSendUrl(poNumber),
+          err,
+        ),
+        variant: "destructive",
+        action: (
+          <ToastAction altText="Retry" onClick={() => updateStatus(action)}>
+            Retry
+          </ToastAction>
+        ),
+      });
+    };
+
+    if (action === "approve") {
+      if (approvePurchaseOrderMutation.isPending) return;
+      approvePurchaseOrderMutation.mutate(undefined, { onError: onErr });
+      return;
+    }
+    if (sendPurchaseOrderMutation.isPending) return;
+    const sendBody = createShipmentOnSend
+      ? { shipment: { create: true, carrier: sendShipmentCarrier.trim() || "Carrier TBD" } }
+      : undefined;
+    sendPurchaseOrderMutation.mutate(sendBody, { onError: onErr });
   };
 
   const submitReceive = () => {
@@ -446,6 +503,13 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     setReceiveError(null);
     setReceiveLineIssues([]);
 
+    const shipIdParsed =
+      receiveShipmentChoice !== "auto" && receiveShipmentChoice.trim()
+        ? Number(receiveShipmentChoice)
+        : NaN;
+    const shipmentIdOpt =
+      Number.isFinite(shipIdParsed) && shipIdParsed > 0 ? shipIdParsed : undefined;
+
     receivePurchaseOrderMutation.mutate(
       {
         lines: checked.lines,
@@ -456,6 +520,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
           aisle: receivePutaway.aisle.trim() || undefined,
           binCode: receivePutaway.binCode.trim() || undefined,
           receivedAt: new Date().toISOString(),
+          ...(shipmentIdOpt != null ? { shipmentId: shipmentIdOpt } : {}),
         },
       },
       {
@@ -506,6 +571,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
             contractsError ||
             paymentTermsError ||
             incotermsError ||
+            taxCodesError ||
             currenciesError ||
             approvalPoliciesError ||
             approvalSuggestionsError;
@@ -564,14 +630,36 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
               setCurrencyCode(pick);
               if (currencyNote) hintParts.push(currencyNote);
             }
-            if (supplierRow?.paymentTermsId != null) {
+
+            const cPay = contractRow.paymentTermsId ?? contractRow.payment_terms_id;
+            if (cPay != null) {
+              setPaymentTermsId(String(cPay));
+              hintParts.push("Payment terms from contract.");
+            } else if (supplierRow?.paymentTermsId != null) {
               setPaymentTermsId(String(supplierRow.paymentTermsId));
-              hintParts.push("Payment terms from supplier master data (contracts do not store payment terms in this schema).");
+              hintParts.push("Payment terms from supplier (contract had none).");
             }
+
+            const cInc = contractRow.incotermId ?? contractRow.incoterm_id;
+            if (cInc != null) {
+              setIncotermId(String(cInc));
+              hintParts.push("Incoterm from contract.");
+            }
+
+            const cTax = contractRow.defaultTaxCodeId ?? contractRow.default_tax_code_id;
+            if (cTax != null) {
+              if (activeTaxCodes.some((t) => t.id === cTax)) {
+                setTaxCodeId(String(cTax));
+                hintParts.push("Default tax code from contract.");
+              } else {
+                hintParts.push(`Contract default tax #${cTax} is not active in master data — pick manually.`);
+              }
+            }
+
             setCommercialApplyHint(hintParts.length ? hintParts.join(" ") : null);
             toast({
               title: "Defaults applied",
-              description: "Review fields — incoterms are not inherited from the contract. Save terms to persist.",
+              description: "Review commercial fields, then save to persist.",
             });
           };
           const downloadSignedPdf = async () => {
@@ -688,6 +776,33 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                         Approve
                       </Button>
                     </Can>
+                    <div
+                      className="flex min-w-[min(100%,280px)] flex-col gap-2 sm:flex-row sm:items-center"
+                      data-testid="po-send-shipment-options"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="po-send-create-shipment"
+                          checked={createShipmentOnSend}
+                          onCheckedChange={(v) => setCreateShipmentOnSend(v === true)}
+                          disabled={!!sendDisabledMsg}
+                        />
+                        <Label htmlFor="po-send-create-shipment" className="cursor-pointer text-sm font-normal">
+                          Create in-transit shipment on send
+                        </Label>
+                      </div>
+                      {createShipmentOnSend ? (
+                        <Input
+                          id="po-send-carrier"
+                          className="h-9 max-w-[220px]"
+                          placeholder="Carrier name"
+                          value={sendShipmentCarrier}
+                          onChange={(e) => setSendShipmentCarrier(e.target.value)}
+                          disabled={!!sendDisabledMsg}
+                          aria-label="Shipment carrier name"
+                        />
+                      ) : null}
+                    </div>
                     <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
                       <Button
                         variant="outline"
@@ -800,8 +915,20 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       setPaymentTermsId={setPaymentTermsId}
                       incotermId={incotermId}
                       setIncotermId={setIncotermId}
+                      taxCodeId={taxCodeId}
+                      setTaxCodeId={setTaxCodeId}
+                      taxCodes={activeTaxCodes}
                       departments={departments}
-                      contractsForSupplier={contracts.filter((contract) => contract.supplierId === detail.supplierId)}
+                      contractsForSupplier={contracts
+                        .filter((contract) => contract.supplierId === detail.supplierId)
+                        .map((c) => ({
+                          id: c.id,
+                          title: c.title,
+                          supplierId: c.supplierId,
+                          paymentTermsId: c.paymentTermsId ?? c.payment_terms_id ?? null,
+                          incotermId: c.incotermId ?? c.incoterm_id ?? null,
+                          defaultTaxCodeId: c.defaultTaxCodeId ?? c.default_tax_code_id ?? null,
+                        }))}
                       paymentTerms={paymentTerms}
                       incoterms={incoterms}
                       saveCommercialTerms={saveCommercialTerms}
@@ -833,6 +960,9 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     receiveError={receiveError}
                     receiveLineIssues={receiveLineIssues}
                     onSubmitReceive={submitReceive}
+                    shipmentsForReceiveLink={shipmentsForReceiveLink}
+                    receiveShipmentId={receiveShipmentChoice}
+                    onReceiveShipmentIdChange={setReceiveShipmentChoice}
                   />
 
                   {lastChangeSummary ? <PoLastReceiveSummaryCard summary={lastChangeSummary} /> : null}

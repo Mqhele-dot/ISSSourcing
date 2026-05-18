@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { inventoryCatalogQueryKey } from "@/lib/query-keys";
+import { invalidateInventoryDomain } from "@/lib/domain-invalidation";
 import { enqueueOfflineAction } from "@/lib/offline-queue";
 import {
   Table,
@@ -91,7 +93,7 @@ export default function CycleCountsPage() {
     error: inventoryErr,
     refetch: refetchInventory,
   } = useQuery({
-    queryKey: ["/api/inventory"],
+    queryKey: inventoryCatalogQueryKey,
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory");
       return normalizeApiList<{ id: number; sku: string; name: string }>(raw);
@@ -196,7 +198,7 @@ export default function CycleCountsPage() {
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/cycle-counts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/cycle-count-lines", id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      void invalidateInventoryDomain(queryClient);
       toast({ title: "Cycle count posted", description: "Inventory adjusted for variances." });
     },
     onError: async (e, id) => {

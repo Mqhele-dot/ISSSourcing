@@ -19,7 +19,7 @@ import type {
 } from "./analytics-workspace-types";
 
 /** Visual cap for chart density; copy discloses total supplier count when higher. */
-const SPEND_SUPPLIER_CHART_CAP = 12;
+const SPEND_SUPPLIER_CHART_CAP = 40;
 
 type Props = {
   section: AnalyticsSectionSlug;

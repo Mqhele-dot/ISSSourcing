@@ -23,6 +23,21 @@ import type { PoHttpOptions } from "./http-options";
 
 export type { PoHttpOptions } from "./http-options";
 
+/** Body for `POST .../send`; optional `shipment.create` matches operational `tryCreateOperationalShipmentOnSend`. */
+export type PurchaseOrderSendBody = {
+  shipment?: {
+    create?: boolean;
+    carrier?: string;
+    carrierId?: number;
+    transportMode?: string;
+    freightCost?: number;
+    trackingNumber?: string;
+    deliveryNoteRef?: string;
+    vehicle?: string;
+    driver?: string;
+  };
+};
+
 export async function fetchPurchaseOrdersEnvelope(
   params?: {
     status?: string;
@@ -93,10 +108,15 @@ export async function approvePurchaseOrder(po: string, options?: PoHttpOptions):
   return normalizePurchaseOrderDetail(raw);
 }
 
-export async function sendPurchaseOrder(po: string, options?: PoHttpOptions): Promise<PurchaseOrderDetail> {
+export async function sendPurchaseOrder(
+  po: string,
+  body?: PurchaseOrderSendBody,
+  options?: PoHttpOptions,
+): Promise<PurchaseOrderDetail> {
   const poNumber = normalizeOperationalPoParam(po);
   assertPoNumberForMutation(poNumber);
-  const { data: raw } = await invTrackFetch<unknown>("POST", procurementPoSendUrl(poNumber), {}, options);
+  const payload = body && typeof body === "object" && Object.keys(body).length > 0 ? body : {};
+  const { data: raw } = await invTrackFetch<unknown>("POST", procurementPoSendUrl(poNumber), payload, options);
   return normalizePurchaseOrderDetail(raw);
 }
 
@@ -116,12 +136,17 @@ export async function receivePurchaseOrder(
     aisle?: string;
     binCode?: string;
     receivedAt?: string;
+    shipmentId?: number;
   },
   httpOptions?: PoHttpOptions,
 ): Promise<PurchaseReceiveResult> {
   const poNumber = normalizeOperationalPoParam(po);
   assertPoNumberForMutation(poNumber);
   assertNonEmptyReceiveLines(lines);
+  const shipmentId =
+    receiveOptions?.shipmentId != null && Number.isFinite(Number(receiveOptions.shipmentId))
+      ? Number(receiveOptions.shipmentId)
+      : undefined;
   const { data: result } = await invTrackFetch<unknown>(
     "POST",
     procurementPoReceiveUrl(poNumber),
@@ -139,6 +164,7 @@ export async function receivePurchaseOrder(
       aisle: receiveOptions?.aisle,
       bin_code: receiveOptions?.binCode,
       received_at: receiveOptions?.receivedAt,
+      ...(shipmentId != null && shipmentId > 0 ? { shipment_id: shipmentId } : {}),
     },
     httpOptions,
   );

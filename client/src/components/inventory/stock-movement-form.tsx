@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
+import { inventoryCatalogQueryKey } from "@/lib/query-keys";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { invalidateInventoryDomain } from "@/lib/domain-invalidation";
 
 type StockMovementFormProps = {
   open: boolean;
@@ -98,7 +100,7 @@ export function StockMovementForm({ open, onClose, type, itemId, warehouseId }: 
 
   // Fetch inventory items if itemId is not provided
   const { data: items } = useQuery({
-    queryKey: ["/api/inventory"],
+    queryKey: inventoryCatalogQueryKey,
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory");
       return normalizeApiList<InventoryItem>(raw);
@@ -141,8 +143,7 @@ export function StockMovementForm({ open, onClose, type, itemId, warehouseId }: 
       queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] });
       queryClient.invalidateQueries({ queryKey: [`/api/stock-movements/item/${data.itemId}`] });
       queryClient.invalidateQueries({ queryKey: [`/api/stock-movements/warehouse/${data.warehouseId}`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/inventory/${data.itemId}`] });
+      void invalidateInventoryDomain(queryClient);
       queryClient.invalidateQueries({ queryKey: ["/api/warehouse-inventory"] });
       
       // Close the dialog

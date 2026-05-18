@@ -166,13 +166,18 @@ function applyPdfMetadata(pdfDoc: PDFDocument, title: string): void {
   pdfDoc.setModificationDate(now);
 }
 
-function formatPdfCell(value: unknown, opts?: { currency?: boolean; date?: boolean }): string {
+function formatPdfCell(
+  value: unknown,
+  opts?: { currency?: boolean; date?: boolean; /** When set with currency, formats in this ISO 4217 code (invalid codes fall back like reporting currency). */ currencyCode?: string | null },
+): string {
   let out: string;
   if (value === null || value === undefined) out = '—';
   else if (opts?.currency) {
     const n = Number(value);
     if (Number.isNaN(n)) out = '—';
-    else out = formatPdfMoney(n);
+    else if (opts.currencyCode != null && String(opts.currencyCode).trim() !== '') {
+      out = formatReportingAmountPdf(n, opts.currencyCode);
+    } else out = formatPdfMoney(n);
   } else if (opts?.date) {
     if (value instanceof Date) out = format(value, 'MMM d, yyyy');
     else {
@@ -1322,6 +1327,7 @@ export async function generatePurchaseOrdersDocumentPdf(
     y -= 16;
 
     const items = Array.isArray(order.items) ? order.items : [];
+    const poOrderCurrency = (order.currencyCode ?? order.currency_code ?? null) as string | null;
     const headers = ["SKU", "Item", "Qty", "Rcvd", "Unit", "Line total"];
     const colWidths = [72, 180, 44, 44, 72, 100];
     const rows = items.map((line: any) => {
@@ -1331,8 +1337,8 @@ export async function generatePurchaseOrdersDocumentPdf(
         formatPdfCell(inv?.name ?? "—"),
         formatPdfCell(line.quantity),
         formatPdfCell(line.receivedQuantity ?? 0),
-        formatPdfCell(line.unitPrice, { currency: true }),
-        formatPdfCell(line.totalPrice, { currency: true }),
+        formatPdfCell(line.unitPrice, { currency: true, currencyCode: poOrderCurrency }),
+        formatPdfCell(line.totalPrice, { currency: true, currencyCode: poOrderCurrency }),
       ];
     });
     if (!rows.length) {
@@ -1344,7 +1350,7 @@ export async function generatePurchaseOrdersDocumentPdf(
       "",
       "",
       "Total",
-      formatPdfCell(order.totalAmount, { currency: true }),
+      formatPdfCell(order.totalAmount, { currency: true, currencyCode: poOrderCurrency }),
     ]);
 
     drawBorderedTableWrapped(pdfDoc, sectionPages, title, headers, colWidths, rows, font, boldFont, y);

@@ -8,6 +8,7 @@ import { RequisitionLinesEditor } from "@/pages/requisitions/requisition-lines-e
 import { ApprovalHistoryCard } from "@/components/procurement/approval-history-card";
 import { useRequisitionForm } from "@/pages/requisitions/use-requisition-form";
 import { RequisitionHeaderFields } from "@/pages/requisitions/requisition-header-fields";
+import { RequisitionCommercialHintCard } from "@/pages/requisitions/requisition-commercial-hint-card";
 
 export default function RequisitionFormPage() {
   const { id, isNew, listPath } = useRequisitionFormRoute();
@@ -60,6 +61,17 @@ export default function RequisitionFormPage() {
             onRequiredDateChange={f.setRequiredDate}
             onJustificationChange={f.setJustification}
             onNotesChange={f.setNotes}
+          />
+
+          <RequisitionCommercialHintCard
+            supplierId={f.supplierId}
+            suppliers={f.suppliers}
+            departmentLabel={f.departmentLabel}
+            currencies={f.currencies}
+            contractsForSupplier={f.contractsForSupplier}
+            paymentTerms={f.paymentTerms}
+            incoterms={f.incoterms}
+            taxCodes={f.taxCodes}
           />
 
           <RequisitionLinesEditor

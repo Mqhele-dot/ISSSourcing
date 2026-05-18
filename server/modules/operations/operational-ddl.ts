@@ -118,6 +118,30 @@ export const OPERATIONAL_TABLE_DDLS = [
     created_at timestamp NOT NULL DEFAULT now()
   )
   `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS purchase_order_id integer REFERENCES purchase_orders(id)
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS carrier_id integer REFERENCES carriers(id)
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS transport_mode text
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS freight_cost double precision
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS vehicle text
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS driver text
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS delivery_note_ref text
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS grn_number text
+  `,
 ];
 
 /** Apply DDL and seed demo shipments when empty. */

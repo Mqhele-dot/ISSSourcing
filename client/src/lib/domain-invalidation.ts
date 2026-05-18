@@ -25,6 +25,12 @@ export const LEGACY_QUERY_PREFIXES = {
   payments: ["/api/payments"],
   logisticsShipments: ["/api/logistics/shipments"],
   carriers: ["/api/carriers"],
+  warehouses: ["/api/warehouses"],
+  inventoryAllocations: ["/api/inventory-allocations"],
+  inventoryBatches: ["/api/inventory-batches"],
+  inventorySerials: ["/api/inventory-serials"],
+  stockMovements: ["/api/stock-movements"],
+  warehouseInventory: ["/api/warehouse-inventory"],
   controlTowerOverview: ["/api/control-tower/overview"],
   controlTowerDashboard: ["/api/dashboard/control-tower"],
   reportsAnalytics: ["/api/reports/analytics"],
@@ -86,6 +92,8 @@ export type MasterDataDomainKind =
   | "departments"
   | "unitsOfMeasure"
   | "commodityCodes"
+  | "warehouses"
+  | "carriers"
   | "general";
 
 export function masterDataKindForEndpoint(endpoint: string): MasterDataDomainKind {
@@ -104,6 +112,10 @@ export function masterDataKindForEndpoint(endpoint: string): MasterDataDomainKin
       return "unitsOfMeasure";
     case "/api/commodity-codes":
       return "commodityCodes";
+    case "/api/warehouses":
+      return "warehouses";
+    case "/api/carriers":
+      return "carriers";
     default:
       return "general";
   }
@@ -162,6 +174,29 @@ export async function invalidateMasterDataDomain(
     case "commodityCodes":
       tasks.push(invalidateMany(queryClient, inventoryDeps));
       break;
+    case "warehouses":
+      tasks.push(
+        invalidateMany(queryClient, [
+          LEGACY_QUERY_PREFIXES.warehouses,
+          [...qk.inventory],
+          LEGACY_QUERY_PREFIXES.inventory,
+          LEGACY_QUERY_PREFIXES.inventoryLowStock,
+          LEGACY_QUERY_PREFIXES.inventoryStats,
+          ...poLegacyPrefixes,
+          ...dashboardsAndAnalyticsPrefixes,
+        ]),
+      );
+      break;
+    case "carriers":
+      tasks.push(
+        invalidateMany(queryClient, [
+          LEGACY_QUERY_PREFIXES.carriers,
+          LEGACY_QUERY_PREFIXES.logisticsShipments,
+          ...poLegacyPrefixes,
+          ...dashboardsAndAnalyticsPrefixes,
+        ]),
+      );
+      break;
     case "general":
       tasks.push(invalidateMany(queryClient, [...commercialPoDeps, ...inventoryDeps]));
       break;
@@ -191,6 +226,34 @@ export async function invalidateContractDomain(queryClient: QueryClient): Promis
       LEGACY_QUERY_PREFIXES.contracts,
       LEGACY_QUERY_PREFIXES.suppliers,
       ...poLegacyPrefixes,
+      ...dashboardsAndAnalyticsPrefixes,
+    ]),
+  ]);
+}
+
+/** Inventory quantity/item master changes: refresh procurement, logistics, AP, and dashboards (inventory drives PO receive and matching). */
+export async function invalidateInventoryDomain(queryClient: QueryClient): Promise<void> {
+  await Promise.all([
+    invalidateKeyPrefix(queryClient, qk.inventory),
+    invalidateMany(queryClient, [
+      LEGACY_QUERY_PREFIXES.inventory,
+      LEGACY_QUERY_PREFIXES.inventoryLowStock,
+      LEGACY_QUERY_PREFIXES.inventoryStats,
+      ["/api/inventory/out-of-stock"],
+      ["/api/inventory/expiring"],
+      ["/api/categories"],
+      LEGACY_QUERY_PREFIXES.warehouses,
+      LEGACY_QUERY_PREFIXES.inventoryAllocations,
+      LEGACY_QUERY_PREFIXES.inventoryBatches,
+      LEGACY_QUERY_PREFIXES.inventorySerials,
+      LEGACY_QUERY_PREFIXES.stockMovements,
+      LEGACY_QUERY_PREFIXES.warehouseInventory,
+      ...poLegacyPrefixes,
+      LEGACY_QUERY_PREFIXES.requisitions,
+      LEGACY_QUERY_PREFIXES.logisticsShipments,
+      ...AP_WORKSPACE_PREFIXES,
+      LEGACY_QUERY_PREFIXES.invoices,
+      LEGACY_QUERY_PREFIXES.payments,
       ...dashboardsAndAnalyticsPrefixes,
     ]),
   ]);

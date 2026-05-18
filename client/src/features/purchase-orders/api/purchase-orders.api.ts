@@ -6,6 +6,7 @@ export type { ApiEnvelopeResult } from "@/api/client";
 export type { PurchaseOrderDetail, PurchaseOrderListItem, PurchaseReceiveResult } from "@/api/types";
 
 export type { PoHttpOptions } from "./http-options";
+export type { PurchaseOrderSendBody } from "./operational-purchase-orders.api";
 export {
   fetchPurchaseOrders,
   fetchPurchaseOrdersEnvelope,

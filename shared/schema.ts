@@ -499,6 +499,10 @@ export const supplierContracts = pgTable("supplier_contracts", {
   summary: text("summary"),
   status: text("status").notNull().default("active"), // draft, active, expired, terminated
   notes: text("notes"),
+  paymentTermsId: integer("payment_terms_id").references(() => paymentTerms.id),
+  incotermId: integer("incoterm_id").references(() => incoterms.id),
+  defaultTaxCodeId: integer("default_tax_code_id").references(() => taxCodes.id),
+  defaultWarehouseId: integer("default_warehouse_id").references(() => warehouses.id),
   attachments: jsonb("attachments").$type<{ name: string; url: string }[]>().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -547,6 +551,7 @@ export const inventoryItems = pgTable(
     dimensions: text("dimensions"),
     weight: real("weight"),
     unitOfMeasure: text("unit_of_measure").default("each"),
+    unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
     supplierPartNumber: text("supplier_part_number"),
     commodityCodeId: integer("commodity_code_id"),
     defaultWarehouseId: integer("default_warehouse_id"),
@@ -663,6 +668,7 @@ export const purchaseOrders = pgTable(
   incotermId: integer("incoterm_id"),
   /** ISO 4217; must exist in Master Data `currencies`. */
   currencyCode: text("currency_code").notNull().default("USD"),
+  taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
   status: text("status").notNull().default("DRAFT"),
   orderDate: timestamp("order_date").defaultNow().notNull(),
   expectedDeliveryDate: timestamp("expected_delivery_date"),
@@ -698,6 +704,9 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   totalPrice: real("total_price").notNull(),
   receivedQuantity: integer("received_quantity").default(0),
   notes: text("notes"),
+  unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
+  commodityCodeId: integer("commodity_code_id").references(() => commodityCodes.id),
+  taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
 });
 
 export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({
