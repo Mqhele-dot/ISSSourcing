@@ -126,6 +126,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [createShipmentOnSend, setCreateShipmentOnSend] = useState(false);
   const [sendShipmentCarrier, setSendShipmentCarrier] = useState("");
   const [receiveShipmentChoice, setReceiveShipmentChoice] = useState<string>("auto");
+  const [receiveGrn, setReceiveGrn] = useState("");
   const [commercialSaveError, setCommercialSaveError] = useState<string | null>(null);
   const [commercialApplyHint, setCommercialApplyHint] = useState<string | null>(null);
   const purchaseOrderIdRef = useRef<number | null>(null);
@@ -150,6 +151,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
 
   useEffect(() => {
     setReceiveShipmentChoice("auto");
+    setReceiveGrn("");
   }, [poNumber]);
 
   const { data: poShipments = [] } = useQuery({
@@ -160,8 +162,20 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   });
 
   const shipmentsForReceiveLink = useMemo(() => {
-    return poShipments.filter((s) => String(s.status).toLowerCase() !== "delivered");
-  }, [poShipments]);
+    const grnFromDetail = new Map((data?.shipments ?? []).map((x) => [x.id, x.grnNumber ?? null]));
+    return poShipments
+      .filter((s) => String(s.status).toLowerCase() !== "delivered")
+      .map((s) => ({
+        id: s.id,
+        status: s.status,
+        carrier: s.carrier,
+        eta: s.eta != null ? String(s.eta) : null,
+        trackingNumber: s.trackingNumber ?? null,
+        transportMode: s.transportMode ?? null,
+        freightCost: s.freightCost ?? null,
+        grnNumber: (grnFromDetail.get(s.id) as string | null | undefined) ?? null,
+      }));
+  }, [poShipments, data?.shipments]);
 
   useEffect(() => {
     purchaseOrderIdRef.current = data?.id ?? null;
@@ -521,6 +535,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
           binCode: receivePutaway.binCode.trim() || undefined,
           receivedAt: new Date().toISOString(),
           ...(shipmentIdOpt != null ? { shipmentId: shipmentIdOpt } : {}),
+          ...(receiveGrn.trim() ? { grnNumber: receiveGrn.trim() } : {}),
         },
       },
       {
@@ -529,6 +544,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
           setReceiveState({});
           setBatchState({});
           setSerialState({});
+          setReceiveGrn("");
           setReceivePutaway((p) => ({
             warehouseId: p.warehouseId,
             aisle: "",
@@ -963,6 +979,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     shipmentsForReceiveLink={shipmentsForReceiveLink}
                     receiveShipmentId={receiveShipmentChoice}
                     onReceiveShipmentIdChange={setReceiveShipmentChoice}
+                    grnNumber={receiveGrn}
+                    onGrnNumberChange={setReceiveGrn}
                   />
 
                   {lastChangeSummary ? <PoLastReceiveSummaryCard summary={lastChangeSummary} /> : null}

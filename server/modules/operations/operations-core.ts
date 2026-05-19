@@ -11,6 +11,7 @@ import {
   parseInvtrackFromRelatedRefs,
 } from "./operational-exception-context";
 import { getActiveOrganizationId } from "../../organization-context";
+import { normalizePurchaseOrderStatus, OPERATIONAL_PO_TRANSITIONS, type PurchaseOrderNorm } from "@shared/purchase-order-status";
 import { normalizeShipmentFilters } from "@shared/logistics-shipment-filters";
 
 type InventoryFilterInput = {
@@ -863,6 +864,11 @@ type PurchaseOrderShipment = {
   driftMinutes: number;
   updatedAt: Date | null;
   trackingNumber?: string | null;
+  carrierId?: number | null;
+  transportMode?: string | null;
+  freightCost?: number | null;
+  deliveryNoteRef?: string | null;
+  grnNumber?: string | null;
 };
 
 type ReceivePurchaseLineInput = {
@@ -881,13 +887,8 @@ type ReceivePurchaseMetaInput = {
   bin_code?: string | null;
   received_at?: Date | null;
   shipment_id?: number | null;
+  grn_number?: string | null;
 };
-
-import {
-  normalizePurchaseOrderStatus,
-  OPERATIONAL_PO_TRANSITIONS,
-  type PurchaseOrderNorm,
-} from "@shared/purchase-order-status";
 
 const PURCHASE_TRANSITIONS: Record<string, string[]> = Object.fromEntries(
   (Object.entries(OPERATIONAL_PO_TRANSITIONS) as [PurchaseOrderNorm, PurchaseOrderNorm[]][]).map(([from, targets]) => [
@@ -945,6 +946,226 @@ async function resolvePurchaseOrder(poOrId: string) {
   );
 
   return byNumberResult.rows[0] ?? null;
+}
+
+async function resolvePurchaseOrderForOrganization(
+  poNumberRaw: string,
+  organizationId: number,
+): Promise<{ id: number; order_number: string } | null> {
+  const poNumber = poNumberRaw.trim();
+  if (!poNumber) return null;
+  const r = await pool.query<{ id: number; order_number: string }>(
+    `
+    SELECT id, order_number
+    FROM purchase_orders
+    WHERE organization_id = $2 AND (order_number = $1 OR id::text = $1)
+    LIMIT 1
+    `,
+    [poNumber, organizationId],
+  );
+  return r.rows[0] ?? null;
+}
+
+async function resolveCarrierSnapshotForOrg(params: {
+  organizationId: number;
+  carrierId: number | null;
+  carrierTextFallback: string | null;
+}): Promise<{ carrierId: number | null; carrierSnapshot: string }> {
+  if (params.carrierId != null && Number.isFinite(params.carrierId) && params.carrierId > 0) {
+    const r = await pool.query<{ name: string; active: boolean | null }>(
+      `SELECT name, active FROM carriers WHERE id = $1 AND organization_id = $2 LIMIT 1`,
+      [params.carrierId, params.organizationId],
+    );
+    const row = r.rows[0];
+    if (!row) throw new Error("carrier_not_found");
+    if (row.active === false) throw new Error("carrier_inactive");
+    return { carrierId: params.carrierId, carrierSnapshot: row.name };
+  }
+  const snap =
+    params.carrierTextFallback && params.carrierTextFallback.trim()
+      ? params.carrierTextFallback.trim()
+      : "Carrier TBD";
+  return { carrierId: null, carrierSnapshot: snap };
+}
+
+export type OperationalShipmentCreateMode = "logistics_page" | "po_send";
+
+export type OperationalShipmentCreateRow = {
+  id: number;
+  poNumber: string;
+  carrier: string | null;
+  status: string;
+  eta: Date | null;
+  driftMinutes: number;
+  trackingNumber: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  atRisk: boolean;
+  riskBucket: "late" | "no_eta" | "due_soon" | "exception" | "on_time";
+  direction: string;
+  sourceType: string;
+  freightCost: number | null;
+};
+
+export async function createOperationalShipment(input: {
+  poNumber: string;
+  mode: OperationalShipmentCreateMode;
+  carrier?: string | null;
+  carrierId?: number | null;
+  transportMode?: string | null;
+  freightCost?: number | null;
+  trackingNumber?: string | null;
+  deliveryNoteRef?: string | null;
+  vehicle?: string | null;
+  driver?: string | null;
+  eta?: Date | null;
+  purchaseOrder?: { id: number; order_number: string } | null;
+  direction?: string | null;
+  sourceType?: string | null;
+  sourceId?: number | null;
+  sourceRef?: string | null;
+}): Promise<OperationalShipmentCreateRow> {
+  const orgId = getActiveOrganizationId();
+  const order =
+    input.purchaseOrder != null
+      ? input.purchaseOrder
+      : await resolvePurchaseOrderForOrganization(input.poNumber, orgId);
+  if (!order) {
+    throw new Error("po_not_found_for_shipment");
+  }
+
+  const carrierIdNum =
+    input.carrierId != null && Number.isFinite(Number(input.carrierId)) ? Number(input.carrierId) : null;
+  const { carrierId: cid, carrierSnapshot } = await resolveCarrierSnapshotForOrg({
+    organizationId: orgId,
+    carrierId: carrierIdNum,
+    carrierTextFallback: input.carrier ?? null,
+  });
+
+  const transportMode =
+    typeof input.transportMode === "string" && input.transportMode.trim() ? input.transportMode.trim() : null;
+  const freightCost =
+    input.freightCost != null && Number.isFinite(Number(input.freightCost)) ? Number(input.freightCost) : null;
+  const trackingNumber =
+    typeof input.trackingNumber === "string" && input.trackingNumber.trim()
+      ? input.trackingNumber.trim()
+      : null;
+  const deliveryNoteRef =
+    typeof input.deliveryNoteRef === "string" && input.deliveryNoteRef.trim()
+      ? input.deliveryNoteRef.trim()
+      : null;
+  const vehicle = typeof input.vehicle === "string" && input.vehicle.trim() ? input.vehicle.trim() : null;
+  const driver = typeof input.driver === "string" && input.driver.trim() ? input.driver.trim() : null;
+
+  const direction =
+    typeof input.direction === "string" && input.direction.trim()
+      ? input.direction.trim().toLowerCase()
+      : "inbound";
+  const sourceType =
+    typeof input.sourceType === "string" && input.sourceType.trim()
+      ? input.sourceType.trim().toLowerCase()
+      : "purchase_order";
+  const sourceIdRaw = input.sourceId != null ? input.sourceId : order.id;
+  const sourceRef =
+    typeof input.sourceRef === "string" && input.sourceRef.trim()
+      ? input.sourceRef.trim()
+      : order.order_number;
+
+  const initialStatus = input.mode === "po_send" ? "in_transit" : "created";
+  const eta =
+    input.mode === "po_send" ? (input.eta ?? new Date(Date.now() + 3 * 86400000)) : input.eta ?? null;
+
+  const ins = await pool.query<{
+    id: number;
+    po_number: string;
+    carrier: string | null;
+    status: string;
+    eta: Date | null;
+    drift_minutes: number;
+    tracking_number: string | null;
+    created_at: Date | null;
+    updated_at: Date | null;
+  }>(
+    `
+    INSERT INTO shipments (
+      po_number,
+      purchase_order_id,
+      carrier,
+      carrier_id,
+      transport_mode,
+      freight_cost,
+      vehicle,
+      driver,
+      delivery_note_ref,
+      tracking_number,
+      status,
+      eta,
+      direction,
+      source_type,
+      source_id,
+      source_ref,
+      created_at,
+      updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now(), now())
+    RETURNING id, po_number, carrier, status, eta, drift_minutes, tracking_number, created_at, updated_at
+    `,
+    [
+      order.order_number,
+      order.id,
+      carrierSnapshot,
+      cid,
+      transportMode,
+      freightCost,
+      vehicle,
+      driver,
+      deliveryNoteRef || null,
+      trackingNumber || null,
+      initialStatus,
+      eta,
+      direction,
+      sourceType,
+      sourceIdRaw,
+      sourceRef,
+    ],
+  );
+
+  const row = ins.rows[0];
+  if (!row) {
+    throw new Error("shipment_insert_failed");
+  }
+
+  const eventNote =
+    input.mode === "po_send"
+      ? `Created when PO ${order.order_number} was sent`
+      : `Inbound shipment created from logistics (${carrierSnapshot})`;
+
+  await pool.query(`INSERT INTO shipment_events (shipment_id, status, note) VALUES ($1, $2, $3)`, [
+    row.id,
+    initialStatus,
+    eventNote,
+  ]);
+
+  const statusLower = row.status.toLowerCase();
+  const atRisk = Boolean(row.eta && row.eta.getTime() < Date.now() && statusLower !== "delivered");
+  const riskBucket = computeOperationalShipmentRiskBucket({ status: statusLower, eta: row.eta });
+
+  return {
+    id: row.id,
+    poNumber: row.po_number,
+    carrier: row.carrier,
+    status: statusLower,
+    eta: row.eta,
+    driftMinutes: toNumber(row.drift_minutes, 0),
+    trackingNumber: row.tracking_number,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    atRisk,
+    riskBucket,
+    direction,
+    sourceType,
+    freightCost,
+  };
 }
 
 async function getPurchaseOrderLines(orderId: number): Promise<PurchaseOrderLine[]> {
@@ -1034,9 +1255,18 @@ async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrde
     drift_minutes: number;
     updated_at: Date | null;
     tracking_number: string | null;
+    carrier_id: number | null;
+    transport_mode: string | null;
+    freight_cost: number | null;
+    delivery_note_ref: string | null;
+    grn_number: string | null;
+    direction: string | null;
+    source_type: string | null;
   }>(
     `
-    SELECT id, carrier, status, eta, drift_minutes, updated_at, tracking_number
+    SELECT id, carrier, status, eta, drift_minutes, updated_at, tracking_number,
+           carrier_id, transport_mode, freight_cost, delivery_note_ref, grn_number,
+           direction, source_type
     FROM shipments
     WHERE po_number = $1
     ORDER BY updated_at DESC
@@ -1052,6 +1282,13 @@ async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrde
     driftMinutes: toNumber(shipment.drift_minutes, 0),
     updatedAt: shipment.updated_at,
     trackingNumber: shipment.tracking_number,
+    carrierId: shipment.carrier_id,
+    transportMode: shipment.transport_mode,
+    freightCost: shipment.freight_cost,
+    deliveryNoteRef: shipment.delivery_note_ref,
+    grnNumber: shipment.grn_number,
+    direction: (shipment.direction && String(shipment.direction).trim()) || "inbound",
+    sourceType: (shipment.source_type && String(shipment.source_type).trim()) || "purchase_order",
   }));
 }
 
@@ -1294,7 +1531,7 @@ export async function tryCreateOperationalShipmentOnSend(
     return { shipmentId: null };
   }
 
-  const carrierText = typeof s.carrier === "string" && s.carrier.trim() ? s.carrier.trim() : "Carrier TBD";
+  const carrierText = typeof s.carrier === "string" && s.carrier.trim() ? s.carrier.trim() : null;
   const carrierId = s.carrierId != null && Number.isFinite(Number(s.carrierId)) ? Number(s.carrierId) : null;
   const transportMode = typeof s.transportMode === "string" ? s.transportMode.trim() : null;
   const freightCost = s.freightCost != null && Number.isFinite(Number(s.freightCost)) ? Number(s.freightCost) : null;
@@ -1303,48 +1540,20 @@ export async function tryCreateOperationalShipmentOnSend(
   const vehicle = typeof s.vehicle === "string" ? s.vehicle.trim() : null;
   const driver = typeof s.driver === "string" ? s.driver.trim() : null;
 
-  const ins = await pool.query<{ id: number }>(
-    `
-    INSERT INTO shipments (
-      po_number,
-      purchase_order_id,
-      carrier,
-      carrier_id,
-      transport_mode,
-      freight_cost,
-      vehicle,
-      driver,
-      delivery_note_ref,
-      tracking_number,
-      status,
-      eta,
-      created_at,
-      updated_at
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'in_transit', now() + interval '3 days', now(), now())
-    RETURNING id
-    `,
-    [
-      order.order_number,
-      order.id,
-      carrierText,
-      carrierId,
-      transportMode,
-      freightCost,
-      vehicle,
-      driver,
-      deliveryNoteRef || null,
-      trackingNumber || null,
-    ],
-  );
-  const shipmentId = ins.rows[0]?.id ?? null;
-  if (shipmentId != null) {
-    await pool.query(
-      `INSERT INTO shipment_events (shipment_id, status, note) VALUES ($1, 'in_transit', $2)`,
-      [shipmentId, `Created when PO ${order.order_number} was sent`],
-    );
-  }
-  return { shipmentId };
+  const created = await createOperationalShipment({
+    poNumber: order.order_number,
+    mode: "po_send",
+    purchaseOrder: { id: order.id, order_number: order.order_number },
+    carrier: carrierText,
+    carrierId,
+    transportMode,
+    freightCost,
+    trackingNumber,
+    deliveryNoteRef,
+    vehicle,
+    driver,
+  });
+  return { shipmentId: created.id };
 }
 
 type ResolvedReceivePutaway = {
@@ -1735,6 +1944,17 @@ export async function receiveOperationalPurchaseOrder(
     }
   }
 
+  const grnTrim =
+    receiveMeta.grn_number != null && String(receiveMeta.grn_number).trim()
+      ? String(receiveMeta.grn_number).trim()
+      : null;
+  if (grnTrim && targetShipmentId != null) {
+    await pool.query(
+      `UPDATE shipments SET grn_number = $2, updated_at = now() WHERE id = $1 AND po_number = $3`,
+      [targetShipmentId, grnTrim, order.order_number],
+    );
+  }
+
   await pool.query(
     `
     INSERT INTO purchase_order_events (po_number, event_type, note, payload)
@@ -2029,6 +2249,8 @@ export async function listOperationalShipments(filters: {
   etaFrom?: string;
   etaTo?: string;
   tracking?: string;
+  direction?: string;
+  sourceType?: string;
 }) {
   const n = normalizeShipmentFilters(filters);
   const statusPat = n.status;
@@ -2038,6 +2260,8 @@ export async function listOperationalShipments(filters: {
   const trackingPat = n.tracking;
   const etaFrom = n.etaFrom;
   const etaTo = n.etaTo;
+  const directionPat = n.direction;
+  const sourceTypePat = n.sourceType;
 
   const whereClauses: string[] = [];
   const params: unknown[] = [];
@@ -2077,6 +2301,15 @@ export async function listOperationalShipments(filters: {
     whereClauses.push(`position($${params.length} in lower(coalesce(s.tracking_number, ''))) > 0`);
   }
 
+  if (directionPat) {
+    params.push(directionPat);
+    whereClauses.push(`lower(coalesce(nullif(trim(s.direction), ''), 'inbound')) = $${params.length}`);
+  }
+  if (sourceTypePat) {
+    params.push(sourceTypePat);
+    whereClauses.push(`lower(coalesce(nullif(trim(s.source_type), ''), 'purchase_order')) = $${params.length}`);
+  }
+
   if (etaFrom) {
     params.push(etaFrom);
     whereClauses.push(`s.eta IS NOT NULL AND s.eta >= $${params.length}::timestamptz`);
@@ -2103,10 +2336,14 @@ export async function listOperationalShipments(filters: {
     created_at: Date | null;
     updated_at: Date | null;
     tracking_number: string | null;
+    direction: string | null;
+    source_type: string | null;
+    freight_cost: number | null;
+    transport_mode: string | null;
   }>(
     `
     SELECT s.id, s.po_number, s.carrier, s.status, s.eta, s.drift_minutes, s.created_at, s.updated_at,
-           s.tracking_number
+           s.tracking_number, s.direction, s.source_type, s.freight_cost, s.transport_mode
     FROM shipments s
     LEFT JOIN purchase_orders po ON po.order_number = s.po_number
     LEFT JOIN suppliers sup ON sup.id = po.supplier_id
@@ -2143,6 +2380,10 @@ export async function listOperationalShipments(filters: {
       trackingNumber: row.tracking_number,
       atRisk,
       riskBucket,
+      direction: (row.direction && String(row.direction).trim()) || "inbound",
+      sourceType: (row.source_type && String(row.source_type).trim()) || "purchase_order",
+      freightCost: row.freight_cost,
+      transportMode: row.transport_mode,
     };
 
     if (!riskWanted || riskBucket === riskWanted) {
@@ -2172,6 +2413,17 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     purchase_order_id: number | null;
     supplier_id: number | null;
     supplier_name: string | null;
+    carrier_id: number | null;
+    transport_mode: string | null;
+    freight_cost: number | null;
+    vehicle: string | null;
+    driver: string | null;
+    delivery_note_ref: string | null;
+    grn_number: string | null;
+    direction: string | null;
+    source_type: string | null;
+    source_id: number | null;
+    source_ref: string | null;
   }>(
     `
     SELECT
@@ -2186,7 +2438,18 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
       s.tracking_number,
       po.id AS purchase_order_id,
       sup.id AS supplier_id,
-      sup.name AS supplier_name
+      sup.name AS supplier_name,
+      s.carrier_id,
+      s.transport_mode,
+      s.freight_cost,
+      s.vehicle,
+      s.driver,
+      s.delivery_note_ref,
+      s.grn_number,
+      s.direction,
+      s.source_type,
+      s.source_id,
+      s.source_ref
     FROM shipments s
     LEFT JOIN purchase_orders po ON po.order_number = s.po_number
     LEFT JOIN suppliers sup ON sup.id = po.supplier_id
@@ -2255,6 +2518,7 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     id: shipment.id,
     poNumber: shipment.po_number,
     carrier: shipment.carrier,
+    carrierId: shipment.carrier_id,
     status,
     eta: shipment.eta,
     driftMinutes: toNumber(shipment.drift_minutes, 0),
@@ -2266,7 +2530,20 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     supplierId: shipment.supplier_id,
     supplierName: shipment.supplier_name,
     purchaseOrderId: shipment.purchase_order_id,
+    transportMode: shipment.transport_mode,
+    freightCost: shipment.freight_cost,
+    vehicle: shipment.vehicle,
+    driver: shipment.driver,
+    deliveryNoteRef: shipment.delivery_note_ref,
+    grnNumber: shipment.grn_number,
+    direction: (shipment.direction && String(shipment.direction).trim()) || "inbound",
+    sourceType: (shipment.source_type && String(shipment.source_type).trim()) || "purchase_order",
+    sourceId: shipment.source_id,
+    sourceRef: shipment.source_ref,
     relatedException,
+    /** Freight on the shipment is informational for goods-PO context; not auto-posted as carrier AP invoice. */
+    freightApNote:
+      "Shipment freight cost is for visibility and planning only. Carrier payables are not created from this field.",
     updatedAtFormatted:
       updatedAt && !Number.isNaN(new Date(updatedAt).getTime())
         ? new Date(updatedAt).toISOString()
@@ -2291,18 +2568,45 @@ const SHIPMENT_TRANSITIONS: Record<string, string[]> = {
 export async function patchOperationalShipmentMeta(input: {
   shipmentId: string;
   carrier?: string | null;
+  carrierId?: number | null;
   eta?: Date | string | null;
   trackingNumber?: string | null;
+  transportMode?: string | null;
+  freightCost?: number | null;
+  vehicle?: string | null;
+  driver?: string | null;
+  deliveryNoteRef?: string | null;
+  grnNumber?: string | null;
   actor?: string;
 }) {
+  const orgId = getActiveOrganizationId();
   const existing = await getOperationalShipmentDetail(input.shipmentId);
   const sets: string[] = [];
   const vals: unknown[] = [];
   let n = 1;
-  if (input.carrier !== undefined) {
+
+  if (input.carrierId !== undefined) {
+    if (input.carrierId != null && Number.isFinite(Number(input.carrierId)) && Number(input.carrierId) > 0) {
+      const res = await resolveCarrierSnapshotForOrg({
+        organizationId: orgId,
+        carrierId: Number(input.carrierId),
+        carrierTextFallback: input.carrier ?? null,
+      });
+      sets.push(`carrier_id = $${n++}`, `carrier = $${n++}`);
+      vals.push(res.carrierId, res.carrierSnapshot);
+    } else {
+      sets.push(`carrier_id = $${n++}`);
+      vals.push(null);
+      if (input.carrier !== undefined) {
+        sets.push(`carrier = $${n++}`);
+        vals.push(input.carrier);
+      }
+    }
+  } else if (input.carrier !== undefined) {
     sets.push(`carrier = $${n++}`);
     vals.push(input.carrier);
   }
+
   if (input.eta !== undefined) {
     sets.push(`eta = $${n++}`);
     if (input.eta === null) {
@@ -2315,14 +2619,46 @@ export async function patchOperationalShipmentMeta(input: {
     sets.push(`tracking_number = $${n++}`);
     vals.push(input.trackingNumber);
   }
+  if (input.transportMode !== undefined) {
+    const tm =
+      typeof input.transportMode === "string" && input.transportMode.trim() ? input.transportMode.trim() : null;
+    sets.push(`transport_mode = $${n++}`);
+    vals.push(tm);
+  }
+  if (input.freightCost !== undefined) {
+    sets.push(`freight_cost = $${n++}`);
+    vals.push(
+      input.freightCost != null && Number.isFinite(Number(input.freightCost)) ? Number(input.freightCost) : null,
+    );
+  }
+  if (input.vehicle !== undefined) {
+    const v = typeof input.vehicle === "string" && input.vehicle.trim() ? input.vehicle.trim() : null;
+    sets.push(`vehicle = $${n++}`);
+    vals.push(v);
+  }
+  if (input.driver !== undefined) {
+    const d = typeof input.driver === "string" && input.driver.trim() ? input.driver.trim() : null;
+    sets.push(`driver = $${n++}`);
+    vals.push(d);
+  }
+  if (input.deliveryNoteRef !== undefined) {
+    const dr =
+      typeof input.deliveryNoteRef === "string" && input.deliveryNoteRef.trim()
+        ? input.deliveryNoteRef.trim()
+        : null;
+    sets.push(`delivery_note_ref = $${n++}`);
+    vals.push(dr);
+  }
+  if (input.grnNumber !== undefined) {
+    const g = typeof input.grnNumber === "string" && input.grnNumber.trim() ? input.grnNumber.trim() : null;
+    sets.push(`grn_number = $${n++}`);
+    vals.push(g);
+  }
   if (sets.length === 0) {
     return existing;
   }
   vals.push(existing.id);
-  await pool.query(
-    `UPDATE shipments SET ${sets.join(", ")}, updated_at = now() WHERE id = $${n}`,
-    vals,
-  );
+  await pool.query(`UPDATE shipments SET ${sets.join(", ")}, updated_at = now() WHERE id = $${n}`, vals);
   await pool.query(`INSERT INTO shipment_events (shipment_id, status, note) VALUES ($1, $2, $3)`, [
     existing.id,
     existing.status,

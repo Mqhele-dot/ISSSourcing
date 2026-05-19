@@ -125,6 +125,16 @@ async function main() {
   const q = (search: string) => apiJsonRequest(`/logistics/shipments${search}`, { cookie });
 
   try {
+    const badPoCreate = await apiJsonRequest("/logistics/shipments", {
+      method: "POST",
+      body: { poNumber: "PO-NOT-REAL-ZZ-999999" },
+      cookie,
+    });
+    assert.equal(badPoCreate.status, 400, "POST with unknown PO should be 400");
+    const badPoJson = badPoCreate.json as { ok?: boolean; error?: { code?: string } };
+    assert.equal(badPoJson.ok, false);
+    assert.equal(badPoJson.error?.code, "PO_NOT_FOUND_FOR_SHIPMENT");
+
     await post({
       poNumber: poLate,
       carrier: "ZZ-Acme-Test-Carrier",
@@ -177,6 +187,8 @@ async function main() {
       etaFrom: "",
       etaTo: "",
       tracking: "",
+      direction: "",
+      sourceType: "",
     });
     const rMetaShape = await apiJsonRequest(`/logistics/shipments?${qsMeta.toString()}`, { cookie });
     assert.ok(rMetaShape.ok);
@@ -190,6 +202,8 @@ async function main() {
       etaFrom: "",
       etaTo: "",
       tracking: "",
+      direction: "",
+      sourceType: "",
     });
 
     const rPo = await q(`?po=${encodeURIComponent(`${suffix}-late`)}`);
@@ -281,6 +295,12 @@ async function main() {
     const rEta = await q(`?etaFrom=${etaFromEnc}&etaTo=${etaToEnc}`);
     assert.ok(rEta.ok);
     assert.ok((unwrapEnvelope(rEta.json).data as ShipmentRow[]).some((s) => s.poNumber === poEtaRange));
+
+    const rDirIn = await q(`?direction=inbound&po=${encodeURIComponent(String(suffix))}`);
+    assert.ok(rDirIn.ok);
+    const dirInRows = unwrapEnvelope(rDirIn.json).data as ShipmentRow[];
+    assert.ok(dirInRows.length >= 1);
+    assert.ok(dirInRows.some((s) => s.poNumber === poLate));
 
     const rMetaCount = await q("");
     assert.ok(rMetaCount.ok);

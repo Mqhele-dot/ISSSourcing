@@ -159,6 +159,13 @@ export type PurchaseOrderShipment = {
   driftMinutes: number;
   updatedAt: string | null;
   trackingNumber?: string | null;
+  carrierId?: number | null;
+  transportMode?: string | null;
+  freightCost?: number | null;
+  deliveryNoteRef?: string | null;
+  grnNumber?: string | null;
+  direction?: string | null;
+  sourceType?: string | null;
 };
 
 export type PurchaseOrderDetail = {
@@ -232,6 +239,10 @@ export type ShipmentListItem = {
   atRisk: boolean;
   trackingNumber?: string | null;
   riskBucket?: "late" | "no_eta" | "due_soon" | "exception" | "on_time";
+  direction?: string | null;
+  sourceType?: string | null;
+  freightCost?: number | null;
+  transportMode?: string | null;
 };
 
 export type ShipmentTimelineEvent = {
@@ -247,6 +258,17 @@ export type ShipmentDetail = ShipmentListItem & {
   supplierId?: number | null;
   supplierName?: string | null;
   purchaseOrderId?: number | null;
+  carrierId?: number | null;
+  transportMode?: string | null;
+  freightCost?: number | null;
+  vehicle?: string | null;
+  driver?: string | null;
+  deliveryNoteRef?: string | null;
+  grnNumber?: string | null;
+  sourceId?: number | null;
+  sourceRef?: string | null;
+  /** Informational: freight is not auto-posted to carrier AP. */
+  freightApNote?: string;
   relatedException?: { id: number; status: string; title: string; type: string } | null;
   updatedAtFormatted?: string | null;
 };

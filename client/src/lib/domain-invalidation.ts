@@ -311,3 +311,13 @@ export async function invalidateLogisticsDomain(queryClient: QueryClient): Promi
     ]),
   ]);
 }
+
+/** After PO receive: inventory, logistics, AP, and related dashboards refresh together. */
+export async function invalidateAfterOperationalReceive(queryClient: QueryClient): Promise<void> {
+  await Promise.all([invalidateInventoryDomain(queryClient), invalidateLogisticsDomain(queryClient), invalidateInvoiceDomain(queryClient)]);
+}
+
+/** Shipment mutations affect operational PO shipment lists as well as logistics queries. */
+export async function invalidateLogisticsAndPurchaseOrders(queryClient: QueryClient): Promise<void> {
+  await Promise.all([invalidateLogisticsDomain(queryClient), invalidatePurchaseOrderDomain(queryClient)]);
+}

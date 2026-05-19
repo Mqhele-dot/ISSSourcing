@@ -44,18 +44,20 @@ import {
   deleteShipment,
   fetchShipment,
   fetchShipmentsEnvelope,
+  fetchActivityEnvelope,
   patchShipmentMeta,
   updateShipmentStatus,
   type ShipmentDetail,
   type ShipmentListItem,
 } from "@/api/client";
-import type { ShipmentTimelineEvent } from "@/api/types";
+import type { ActivityRecord, ShipmentTimelineEvent } from "@/api/types";
 import type { FallbackKind } from "@/components/ui/data-state";
 import { queryClient, requestJson } from "@/lib/queryClient";
-import { invalidateLogisticsDomain } from "@/lib/domain-invalidation";
+import { invalidateLogisticsAndPurchaseOrders } from "@/lib/domain-invalidation";
 import { downloadFile } from "@/lib/utils";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { normalizeShipmentFilters, type ShipmentListFiltersNormalized } from "@shared/logistics-shipment-filters";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 async function downloadShipmentDeliveryNote(shipmentId: number): Promise<void> {
   const res = await fetch(`/api/logistics/shipments/${shipmentId}/delivery-note.pdf`, {
@@ -114,7 +116,18 @@ function logisticsListFiltersNormalized(q: LogisticsListFiltersState): Logistics
 }
 
 function logisticsListQueryKeyTuple(n: LogisticsListFiltersState): (readonly [string, string])[] {
-  const keys = ["carrier", "etaFrom", "etaTo", "po", "risk", "status", "supplier", "tracking"] as const;
+  const keys = [
+    "carrier",
+    "direction",
+    "etaFrom",
+    "etaTo",
+    "po",
+    "risk",
+    "sourceType",
+    "status",
+    "supplier",
+    "tracking",
+  ] as const;
   return keys.map((k) => [k, n[k]] as const);
 }
 
@@ -122,76 +135,12 @@ function logisticsListHasActiveFilters(n: LogisticsListFiltersState): boolean {
   return Object.values(n).some((v) => v.length > 0);
 }
 
-function ShipmentListView() {
-  const [, setLocation] = useLocation();
+function LogisticsCarriersPanel() {
   const { toast } = useToast();
-  const { queryState, setQueryState } = useQueryState({
-    status: "",
-    po: "",
-    supplier: "",
-    carrier: "",
-    risk: "",
-    etaFrom: "",
-    etaTo: "",
-    tracking: "",
-  });
-
-  const debouncedQuery = useDebouncedValue(queryState, 350);
-  const debouncedNorm = logisticsListFiltersNormalized(debouncedQuery);
-
-  const filterChipEntries = useMemo(() => {
-    const n = debouncedNorm;
-    const entries: { key: keyof LogisticsListFiltersState; label: string; value: string }[] = [];
-    if (n.status) entries.push({ key: "status", label: "Status", value: n.status });
-    if (n.po) entries.push({ key: "po", label: "PO", value: n.po });
-    if (n.supplier) entries.push({ key: "supplier", label: "Supplier", value: n.supplier });
-    if (n.carrier) entries.push({ key: "carrier", label: "Carrier", value: n.carrier });
-    if (n.risk) {
-      const riskLabel = shipmentRiskBucketLabel(n.risk);
-      entries.push({ key: "risk", label: "Risk", value: riskLabel });
-    }
-    if (n.etaFrom) entries.push({ key: "etaFrom", label: "ETA from", value: n.etaFrom });
-    if (n.etaTo) entries.push({ key: "etaTo", label: "ETA to", value: n.etaTo });
-    if (n.tracking) entries.push({ key: "tracking", label: "Tracking", value: n.tracking });
-    return entries;
-  }, [debouncedNorm]);
-
-  const clearLogisticsFilters = useCallback(() => {
-    setQueryState({
-      status: "",
-      po: "",
-      supplier: "",
-      carrier: "",
-      risk: "",
-      etaFrom: "",
-      etaTo: "",
-      tracking: "",
-    });
-  }, [setQueryState]);
-
-  const {
-    data: envelope,
-    isLoading: loading,
-    isError,
-    error: queryError,
-    refetch,
-    isFetching,
-  } = useQuery({
-    queryKey: ["/api/logistics/shipments", ...logisticsListQueryKeyTuple(debouncedNorm)],
-    queryFn: () => fetchShipmentsEnvelope(debouncedNorm),
-    staleTime: 10_000,
-  });
-
-  const error = isError ? (queryError instanceof Error ? queryError : new Error(String(queryError))) : null;
-  const [newPoNumber, setNewPoNumber] = useState("");
-  const [newCarrier, setNewCarrier] = useState("");
-  const [newEta, setNewEta] = useState("");
-  const [newTracking, setNewTracking] = useState("");
   const [carrierCode, setCarrierCode] = useState("");
   const [carrierName, setCarrierName] = useState("");
   const [carrierContact, setCarrierContact] = useState("");
   const [carrierEditId, setCarrierEditId] = useState<number | null>(null);
-  const [shipmentExporting, setShipmentExporting] = useState(false);
   const {
     data: carriers = [],
     error: carriersError,
@@ -218,7 +167,7 @@ function ShipmentListView() {
       setCarrierContact("");
       setCarrierEditId(null);
       await queryClient.invalidateQueries({ queryKey: ["/api/carriers"] });
-      await invalidateLogisticsDomain(queryClient);
+      await invalidateLogisticsAndPurchaseOrders(queryClient);
     },
     onError: (error) => {
       toast({
@@ -232,7 +181,7 @@ function ShipmentListView() {
     mutationFn: (id: number) => requestJson("DELETE", `/api/carriers/${id}`),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/carriers"] });
-      await invalidateLogisticsDomain(queryClient);
+      await invalidateLogisticsAndPurchaseOrders(queryClient);
     },
     onError: (error) => {
       toast({
@@ -241,6 +190,229 @@ function ShipmentListView() {
         variant: "destructive",
       });
     },
+  });
+
+  return (
+    <>
+      {carriersError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Carrier service unavailable</AlertTitle>
+          <AlertDescription>
+            Could not load carriers from <code>/api/carriers</code>.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <Can roles={["manager", "admin"]}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Carriers</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-2 md:grid-cols-4">
+              <Input placeholder="Code" value={carrierCode} onChange={(event) => setCarrierCode(event.target.value)} />
+              <Input placeholder="Name" value={carrierName} onChange={(event) => setCarrierName(event.target.value)} />
+              <Input
+                placeholder="Contact"
+                value={carrierContact}
+                onChange={(event) => setCarrierContact(event.target.value)}
+              />
+              <Button
+                onClick={() => upsertCarrier.mutate()}
+                disabled={upsertCarrier.isPending || !carrierCode.trim() || !carrierName.trim()}
+              >
+                {carrierEditId ? "Update" : "Add"} carrier
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {carriers.map((carrier) => (
+                <div key={carrier.id} className="rounded border p-2 text-sm flex items-center justify-between gap-2">
+                  <div>
+                    <div className="font-medium">
+                      {carrier.code} - {carrier.name}
+                      {carrier.active === false ? (
+                        <span className="ml-2 text-xs text-muted-foreground">(inactive)</span>
+                      ) : null}
+                    </div>
+                    <div className="text-muted-foreground">{carrier.contact || "-"}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setCarrierEditId(carrier.id);
+                        setCarrierCode(carrier.code);
+                        setCarrierName(carrier.name);
+                        setCarrierContact(carrier.contact ?? "");
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => removeCarrier.mutate(carrier.id)}>
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {carriers.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No carriers configured yet.</div>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      </Can>
+    </>
+  );
+}
+
+function LogisticsActivityTab() {
+  const {
+    data: envelope,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["/api/activity", "logistics-page", 100],
+    queryFn: () => fetchActivityEnvelope({ limit: 100 }),
+    staleTime: 15_000,
+  });
+  const rows = envelope?.data ?? [];
+  const err = isError ? (error instanceof Error ? error : new Error(String(error))) : null;
+
+  return (
+    <DataState
+      loading={isLoading}
+      error={err}
+      data={rows}
+      isEmpty={(d) => (Array.isArray(d) ? d : []).length === 0}
+      emptyTitle="No recent activity"
+      emptyDescription="System and user actions will appear here as they are recorded."
+      onRetry={() => void refetch()}
+    >
+      {(activity: ActivityRecord[]) => (
+        <div data-testid="logistics-activity-tab">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>When</TableHead>
+                <TableHead>Actor</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Entity</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {activity.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="whitespace-nowrap text-sm">
+                    {row.createdAt ? formatDate(row.createdAt) : "—"}
+                  </TableCell>
+                  <TableCell className="text-sm">{row.actor || "—"}</TableCell>
+                  <TableCell className="text-sm">{row.action}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {row.entityType} #{row.entityId}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </DataState>
+  );
+}
+
+function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound" }) {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const { queryState, setQueryState } = useQueryState({
+    status: "",
+    po: "",
+    supplier: "",
+    carrier: "",
+    risk: "",
+    etaFrom: "",
+    etaTo: "",
+    tracking: "",
+    direction: "",
+    sourceType: "",
+  });
+
+  const debouncedQuery = useDebouncedValue(queryState, 350);
+  const debouncedNorm = logisticsListFiltersNormalized(debouncedQuery);
+  const effectiveNorm = useMemo((): LogisticsListFiltersState => {
+    if (listScope === "inbound") {
+      return { ...debouncedNorm, direction: "inbound" };
+    }
+    return debouncedNorm;
+  }, [debouncedNorm, listScope]);
+
+  const filterChipEntries = useMemo(() => {
+    const n = effectiveNorm;
+    const entries: { key: keyof LogisticsListFiltersState; label: string; value: string }[] = [];
+    if (n.status) entries.push({ key: "status", label: "Status", value: n.status });
+    if (n.po) entries.push({ key: "po", label: "PO", value: n.po });
+    if (n.supplier) entries.push({ key: "supplier", label: "Supplier", value: n.supplier });
+    if (n.carrier) entries.push({ key: "carrier", label: "Carrier", value: n.carrier });
+    if (n.risk) {
+      const riskLabel = shipmentRiskBucketLabel(n.risk);
+      entries.push({ key: "risk", label: "Risk", value: riskLabel });
+    }
+    if (n.etaFrom) entries.push({ key: "etaFrom", label: "ETA from", value: n.etaFrom });
+    if (n.etaTo) entries.push({ key: "etaTo", label: "ETA to", value: n.etaTo });
+    if (n.tracking) entries.push({ key: "tracking", label: "Tracking", value: n.tracking });
+    if (n.direction) entries.push({ key: "direction", label: "Direction", value: n.direction });
+    if (n.sourceType) entries.push({ key: "sourceType", label: "Source", value: n.sourceType });
+    return entries;
+  }, [effectiveNorm]);
+
+  const clearLogisticsFilters = useCallback(() => {
+    setQueryState({
+      status: "",
+      po: "",
+      supplier: "",
+      carrier: "",
+      risk: "",
+      etaFrom: "",
+      etaTo: "",
+      tracking: "",
+      direction: "",
+      sourceType: "",
+    });
+  }, [setQueryState]);
+
+  const {
+    data: envelope,
+    isLoading: loading,
+    isError,
+    error: queryError,
+    refetch,
+    isFetching,
+  } = useQuery({
+    queryKey: ["/api/logistics/shipments", ...logisticsListQueryKeyTuple(effectiveNorm), listScope],
+    queryFn: () => fetchShipmentsEnvelope(effectiveNorm),
+    staleTime: 10_000,
+  });
+
+  const error = isError ? (queryError instanceof Error ? queryError : new Error(String(queryError))) : null;
+  const [newPoNumber, setNewPoNumber] = useState("");
+  const [newCarrierId, setNewCarrierId] = useState("");
+  const [newCarrierFreeText, setNewCarrierFreeText] = useState("");
+  const [newEta, setNewEta] = useState("");
+  const [newTracking, setNewTracking] = useState("");
+  const [newTransportMode, setNewTransportMode] = useState("");
+  const [newFreightCost, setNewFreightCost] = useState("");
+  const [newDeliveryNoteRef, setNewDeliveryNoteRef] = useState("");
+  const [newVehicle, setNewVehicle] = useState("");
+  const [newDriver, setNewDriver] = useState("");
+  const [shipmentExporting, setShipmentExporting] = useState(false);
+  const {
+    data: carriers = [],
+    error: carriersError,
+  } = useQuery({
+    queryKey: ["/api/carriers"],
+    queryFn: () => requestJson<Carrier[]>("GET", "/api/carriers"),
   });
   const data = envelope?.data ?? null;
   const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
@@ -279,15 +451,21 @@ function ShipmentListView() {
         etaFrom: String(queryState.etaFrom ?? ""),
         etaTo: String(queryState.etaTo ?? ""),
         tracking: String(queryState.tracking ?? ""),
+        direction: String(queryState.direction ?? ""),
+        sourceType: String(queryState.sourceType ?? ""),
       });
-      if (ex.status) qs.set("status", ex.status);
-      if (ex.po) qs.set("po", ex.po);
-      if (ex.supplier) qs.set("supplier", ex.supplier);
-      if (ex.carrier) qs.set("carrier", ex.carrier);
-      if (ex.risk) qs.set("risk", ex.risk);
-      if (ex.etaFrom) qs.set("etaFrom", ex.etaFrom);
-      if (ex.etaTo) qs.set("etaTo", ex.etaTo);
-      if (ex.tracking) qs.set("tracking", ex.tracking);
+      const exEffective =
+        listScope === "inbound" ? { ...ex, direction: "inbound" } : ex;
+      if (exEffective.status) qs.set("status", exEffective.status);
+      if (exEffective.po) qs.set("po", exEffective.po);
+      if (exEffective.supplier) qs.set("supplier", exEffective.supplier);
+      if (exEffective.carrier) qs.set("carrier", exEffective.carrier);
+      if (exEffective.risk) qs.set("risk", exEffective.risk);
+      if (exEffective.etaFrom) qs.set("etaFrom", exEffective.etaFrom);
+      if (exEffective.etaTo) qs.set("etaTo", exEffective.etaTo);
+      if (exEffective.tracking) qs.set("tracking", exEffective.tracking);
+      if (exEffective.direction) qs.set("direction", exEffective.direction);
+      if (exEffective.sourceType) qs.set("sourceType", exEffective.sourceType);
       const q = qs.toString();
       const url = `/api/export/shipments/${format}${q ? `?${q}` : ""}`;
       const response = await fetch(url, { credentials: "include" });
@@ -319,15 +497,19 @@ function ShipmentListView() {
     }
   };
 
-  const shipmentsFilteredEmpty = logisticsListHasActiveFilters(debouncedNorm);
+  const shipmentsFilteredEmpty = logisticsListHasActiveFilters(effectiveNorm);
 
   return (
-    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
-      <PageHeader
-        title="Logistics"
-        subtitle="Shipment tracking and status management"
-        breadcrumb={<span>Operations / Logistics</span>}
-      />
+    <div className="space-y-4">
+      {listScope === "inbound" ? (
+        <Alert>
+          <AlertTitle>Inbound workspace</AlertTitle>
+          <AlertDescription>
+            Results are limited to inbound shipments. Use the Overview tab to see all directions or refine further with
+            the filters below.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div data-tour="shipments-list" className="space-y-4">
       <div
@@ -407,6 +589,61 @@ function ShipmentListView() {
                 <SelectItem value="on_time">On time</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-direction" className="text-xs text-muted-foreground">
+              Direction
+            </Label>
+            <Select
+              value={
+                listScope === "inbound"
+                  ? "inbound"
+                  : String(queryState.direction || "") || "all"
+              }
+              disabled={listScope === "inbound"}
+              onValueChange={(value) => setQueryState({ direction: value === "all" ? "" : value })}
+            >
+              <SelectTrigger id="ship-filter-direction" data-testid="logistics-direction-filter" className="w-full min-w-0">
+                <SelectValue placeholder="Direction" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All directions</SelectItem>
+                <SelectItem value="inbound">Inbound</SelectItem>
+                <SelectItem value="outbound">Outbound</SelectItem>
+                <SelectItem value="transfer">Transfer</SelectItem>
+                <SelectItem value="return">Return</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ship-filter-source" className="text-xs text-muted-foreground">
+              Source type
+            </Label>
+            <Select
+              value={String(queryState.sourceType || "") || "all"}
+              onValueChange={(value) => setQueryState({ sourceType: value === "all" ? "" : value })}
+            >
+              <SelectTrigger id="ship-filter-source" data-testid="logistics-source-filter" className="w-full min-w-0">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sources</SelectItem>
+                <SelectItem value="purchase_order">Purchase order</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <div className="flex h-10 items-end gap-3 text-xs text-muted-foreground">
+              <Link
+                href={APP_ROUTES.operations.exceptions}
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Operational exceptions
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -545,7 +782,7 @@ function ShipmentListView() {
 
         <Can roles={["manager", "admin"]}>
           <div className="space-y-3 border-t border-border pt-4">
-            <p className="text-xs font-medium text-muted-foreground">New shipment</p>
+            <p className="text-xs font-medium text-muted-foreground">New inbound shipment</p>
             <div className="flex flex-wrap items-end gap-2">
               <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
                 <Label htmlFor="ship-new-po" className="text-xs">
@@ -555,39 +792,57 @@ function ShipmentListView() {
                   id="ship-new-po"
                   value={newPoNumber}
                   onChange={(event) => setNewPoNumber(event.target.value)}
-                  placeholder="Required"
+                  placeholder="Required (must exist)"
                   className="min-w-0"
                 />
               </div>
               {carriersError ? (
                 <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
                   <Label htmlFor="ship-new-carrier-txt" className="text-xs">
-                    Carrier
+                    Carrier label
                   </Label>
                   <Input
                     id="ship-new-carrier-txt"
-                    value={newCarrier}
-                    onChange={(event) => setNewCarrier(event.target.value)}
+                    value={newCarrierFreeText}
+                    onChange={(event) => setNewCarrierFreeText(event.target.value)}
                     placeholder="Carrier name"
+                    className="min-w-0"
+                  />
+                </div>
+              ) : carriers.filter((c) => c.active !== false).length === 0 ? (
+                <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
+                  <Label htmlFor="ship-new-carrier-txt" className="text-xs">
+                    Carrier label
+                  </Label>
+                  <Input
+                    id="ship-new-carrier-txt"
+                    value={newCarrierFreeText}
+                    onChange={(event) => setNewCarrierFreeText(event.target.value)}
+                    placeholder="No active carriers — type name"
                     className="min-w-0"
                   />
                 </div>
               ) : (
                 <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
                   <Label htmlFor="ship-new-carrier-sel" className="text-xs">
-                    Carrier
+                    Carrier (master)
                   </Label>
-                  <Select value={newCarrier || "none"} onValueChange={(value) => setNewCarrier(value === "none" ? "" : value)}>
+                  <Select
+                    value={newCarrierId || "none"}
+                    onValueChange={(value) => setNewCarrierId(value === "none" ? "" : value)}
+                  >
                     <SelectTrigger id="ship-new-carrier-sel" className="min-w-0">
                       <SelectValue placeholder="Select carrier" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Select carrier</SelectItem>
-                      {carriers.map((carrier) => (
-                        <SelectItem key={carrier.id} value={carrier.name}>
-                          {carrier.name}
-                        </SelectItem>
-                      ))}
+                      {carriers
+                        .filter((c) => c.active !== false)
+                        .map((carrier) => (
+                          <SelectItem key={carrier.id} value={String(carrier.id)}>
+                            {carrier.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -616,24 +871,105 @@ function ShipmentListView() {
                   className="min-w-0"
                 />
               </div>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="grid w-full min-w-[8rem] max-w-[12rem] flex-1 gap-1.5">
+                <Label htmlFor="ship-new-tm" className="text-xs">
+                  Transport mode
+                </Label>
+                <Input
+                  id="ship-new-tm"
+                  value={newTransportMode}
+                  onChange={(event) => setNewTransportMode(event.target.value)}
+                  placeholder="e.g. LTL"
+                  className="min-w-0"
+                />
+              </div>
+              <div className="grid w-full min-w-[6rem] max-w-[8rem] gap-1.5">
+                <Label htmlFor="ship-new-fr" className="text-xs">
+                  Freight cost
+                </Label>
+                <Input
+                  id="ship-new-fr"
+                  value={newFreightCost}
+                  onChange={(event) => setNewFreightCost(event.target.value)}
+                  placeholder="0"
+                  type="number"
+                  className="min-w-0"
+                />
+              </div>
+              <div className="grid min-w-[10rem] flex-1 gap-1.5 sm:max-w-md">
+                <Label htmlFor="ship-new-dn" className="text-xs">
+                  Delivery note ref
+                </Label>
+                <Input
+                  id="ship-new-dn"
+                  value={newDeliveryNoteRef}
+                  onChange={(event) => setNewDeliveryNoteRef(event.target.value)}
+                  placeholder="Optional"
+                  className="min-w-0"
+                />
+              </div>
+              <div className="grid w-full min-w-[8rem] max-w-[10rem] gap-1.5">
+                <Label htmlFor="ship-new-veh" className="text-xs">
+                  Vehicle
+                </Label>
+                <Input
+                  id="ship-new-veh"
+                  value={newVehicle}
+                  onChange={(event) => setNewVehicle(event.target.value)}
+                  className="min-w-0"
+                />
+              </div>
+              <div className="grid w-full min-w-[8rem] max-w-[10rem] gap-1.5">
+                <Label htmlFor="ship-new-drv" className="text-xs">
+                  Driver
+                </Label>
+                <Input
+                  id="ship-new-drv"
+                  value={newDriver}
+                  onChange={(event) => setNewDriver(event.target.value)}
+                  className="min-w-0"
+                />
+              </div>
               <Button
                 type="button"
                 className="shrink-0"
                 data-testid="logistics-create-shipment-button"
                 onClick={async () => {
                   try {
+                    const freightParsed = Number(newFreightCost);
+                    const freightCost =
+                      newFreightCost.trim() !== "" && Number.isFinite(freightParsed) ? freightParsed : undefined;
+                    const active = carriers.filter((c) => c.active !== false);
+                    const needsId = !carriersError && active.length > 0;
+                    const cid =
+                      needsId && newCarrierId && newCarrierId !== "none" ? Number(newCarrierId) : NaN;
                     await createShipment({
-                      poNumber: newPoNumber,
-                      carrier: newCarrier || undefined,
+                      poNumber: newPoNumber.trim(),
+                      ...(Number.isFinite(cid) && cid > 0
+                        ? { carrierId: cid }
+                        : { carrier: newCarrierFreeText.trim() || undefined }),
                       eta: newEta || undefined,
                       trackingNumber: newTracking.trim() || undefined,
+                      transportMode: newTransportMode.trim() || undefined,
+                      freightCost,
+                      deliveryNoteRef: newDeliveryNoteRef.trim() || undefined,
+                      vehicle: newVehicle.trim() || undefined,
+                      driver: newDriver.trim() || undefined,
                     });
                     setNewPoNumber("");
-                    setNewCarrier("");
+                    setNewCarrierId("");
+                    setNewCarrierFreeText("");
                     setNewEta("");
                     setNewTracking("");
+                    setNewTransportMode("");
+                    setNewFreightCost("");
+                    setNewDeliveryNoteRef("");
+                    setNewVehicle("");
+                    setNewDriver("");
                     await refreshNow();
-                    await invalidateLogisticsDomain(queryClient);
+                    await invalidateLogisticsAndPurchaseOrders(queryClient);
                   } catch (createError) {
                     toast({
                       title: "Create shipment failed",
@@ -642,11 +978,31 @@ function ShipmentListView() {
                     });
                   }
                 }}
-                disabled={!newPoNumber.trim()}
+                disabled={(() => {
+                  const active = carriers.filter((c) => c.active !== false);
+                  const needsFreeText = carriersError || active.length === 0;
+                  const needsId = !carriersError && active.length > 0;
+                  return (
+                    !newPoNumber.trim() ||
+                    (needsId && (!newCarrierId || newCarrierId === "none")) ||
+                    (needsFreeText && !newCarrierFreeText.trim())
+                  );
+                })()}
               >
                 Add shipment
               </Button>
             </div>
+            {!carriersError ? (
+              <p className="text-xs text-muted-foreground">
+                {carriers.filter((c) => c.active !== false).length > 0
+                  ? "Select an active carrier from master data; the server stores a snapshot of the carrier name on the shipment row."
+                  : "No active carriers in master data — enter a carrier label for this shipment."}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Carrier API unavailable — provide a carrier label; link it to master data when the service recovers.
+              </p>
+            )}
           </div>
         </Can>
       </div>
@@ -684,9 +1040,11 @@ function ShipmentListView() {
               <TableRow>
                 <TableHead>ID</TableHead>
                 <TableHead>PO</TableHead>
+                <TableHead>Direction</TableHead>
                 <TableHead>Carrier</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>ETA</TableHead>
+                <TableHead>Freight</TableHead>
                 <TableHead>Tracking</TableHead>
                 <TableHead>Risk</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -702,11 +1060,17 @@ function ShipmentListView() {
                 >
                   <TableCell className="font-medium">{shipment.id}</TableCell>
                   <TableCell>{shipment.poNumber}</TableCell>
+                  <TableCell className="text-sm capitalize">{shipment.direction || "inbound"}</TableCell>
                   <TableCell>{shipment.carrier || "-"}</TableCell>
                   <TableCell>
                     <StatusBadge status={shipment.status} />
                   </TableCell>
                   <TableCell>{formatDate(shipment.eta)}</TableCell>
+                  <TableCell className="tabular-nums text-sm">
+                    {shipment.freightCost != null && Number.isFinite(Number(shipment.freightCost))
+                      ? Number(shipment.freightCost).toLocaleString()
+                      : "—"}
+                  </TableCell>
                   <TableCell className="max-w-[140px] truncate font-mono text-xs">
                     {shipment.trackingNumber?.trim() || "—"}
                   </TableCell>
@@ -749,7 +1113,7 @@ function ShipmentListView() {
                             try {
                               await deleteShipment(shipment.id);
                               await refreshNow();
-                              await invalidateLogisticsDomain(queryClient);
+                              await invalidateLogisticsAndPurchaseOrders(queryClient);
                             } catch (deleteError) {
                               toast({
                                 title: "Delete shipment failed",
@@ -773,70 +1137,6 @@ function ShipmentListView() {
         }}
       </DataState>
       </div>
-
-      {carriersError ? (
-        <Alert variant="destructive">
-          <AlertTitle>Carrier service unavailable</AlertTitle>
-          <AlertDescription>
-            Could not load carriers from <code>/api/carriers</code>. You can still create shipments by typing the carrier name manually.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <Can roles={["manager", "admin"]}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Carriers</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-2 md:grid-cols-4">
-              <Input placeholder="Code" value={carrierCode} onChange={(event) => setCarrierCode(event.target.value)} />
-              <Input placeholder="Name" value={carrierName} onChange={(event) => setCarrierName(event.target.value)} />
-              <Input
-                placeholder="Contact"
-                value={carrierContact}
-                onChange={(event) => setCarrierContact(event.target.value)}
-              />
-              <Button
-                onClick={() => upsertCarrier.mutate()}
-                disabled={upsertCarrier.isPending || !carrierCode.trim() || !carrierName.trim()}
-              >
-                {carrierEditId ? "Update" : "Add"} carrier
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {carriers.map((carrier) => (
-                <div key={carrier.id} className="rounded border p-2 text-sm flex items-center justify-between gap-2">
-                  <div>
-                    <div className="font-medium">{carrier.code} - {carrier.name}</div>
-                    <div className="text-muted-foreground">{carrier.contact || "-"}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setCarrierEditId(carrier.id);
-                        setCarrierCode(carrier.code);
-                        setCarrierName(carrier.name);
-                        setCarrierContact(carrier.contact ?? "");
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => removeCarrier.mutate(carrier.id)}>
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              {carriers.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No carriers configured yet.</div>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-      </Can>
     </div>
   );
 }
@@ -848,8 +1148,15 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
   const [note, setNote] = useState("");
   const [updating, setUpdating] = useState(false);
   const [metaCarrier, setMetaCarrier] = useState("");
+  const [metaCarrierId, setMetaCarrierId] = useState<string>("none");
   const [metaEta, setMetaEta] = useState("");
   const [metaTracking, setMetaTracking] = useState("");
+  const [metaTransportMode, setMetaTransportMode] = useState("");
+  const [metaFreightCost, setMetaFreightCost] = useState("");
+  const [metaVehicle, setMetaVehicle] = useState("");
+  const [metaDriver, setMetaDriver] = useState("");
+  const [metaDeliveryNoteRef, setMetaDeliveryNoteRef] = useState("");
+  const [metaGrnNumber, setMetaGrnNumber] = useState("");
   const [metaSaving, setMetaSaving] = useState(false);
   const [deliveryPdfLoading, setDeliveryPdfLoading] = useState(false);
 
@@ -859,10 +1166,20 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
   );
   const { loading, error, data, refetch } = useAsyncResource(fetcher);
 
+  const { data: carriers = [] } = useQuery({
+    queryKey: ["/api/carriers"],
+    queryFn: () => requestJson<Carrier[]>("GET", "/api/carriers"),
+  });
+
   // Sync form from server when shipment changes or server row updates (e.g. after PATCH refetch).
   useEffect(() => {
     if (!data) return;
     setMetaCarrier(data.carrier ?? "");
+    setMetaCarrierId(
+      data.carrierId != null && Number.isFinite(Number(data.carrierId)) && Number(data.carrierId) > 0
+        ? String(data.carrierId)
+        : "none",
+    );
     setMetaEta(
       data.eta
         ? typeof data.eta === "string"
@@ -871,19 +1188,43 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
         : "",
     );
     setMetaTracking(data.trackingNumber?.trim() ?? "");
+    setMetaTransportMode(data.transportMode?.trim() ?? "");
+    setMetaFreightCost(
+      data.freightCost != null && Number.isFinite(Number(data.freightCost)) ? String(data.freightCost) : "",
+    );
+    setMetaVehicle(data.vehicle?.trim() ?? "");
+    setMetaDriver(data.driver?.trim() ?? "");
+    setMetaDeliveryNoteRef(data.deliveryNoteRef?.trim() ?? "");
+    setMetaGrnNumber(data.grnNumber?.trim() ?? "");
   }, [data]);
 
   const submitMeta = async () => {
     setMetaSaving(true);
     try {
+      const trimmedFr = metaFreightCost.trim();
+      const freightParsed = Number(trimmedFr);
+      const freightCost =
+        trimmedFr === "" ? null : Number.isFinite(freightParsed) ? freightParsed : null;
       await patchShipmentMeta({
         id: shipmentId,
+        carrierId:
+          metaCarrierId === "none" || !metaCarrierId.trim()
+            ? null
+            : Number(metaCarrierId) > 0
+              ? Number(metaCarrierId)
+              : null,
         carrier: metaCarrier.trim() || null,
         eta: metaEta.trim() || null,
         trackingNumber: metaTracking.trim() || null,
+        transportMode: metaTransportMode.trim() || null,
+        freightCost,
+        vehicle: metaVehicle.trim() || null,
+        driver: metaDriver.trim() || null,
+        deliveryNoteRef: metaDeliveryNoteRef.trim() || null,
+        grnNumber: metaGrnNumber.trim() || null,
       });
       await refetch();
-      await invalidateLogisticsDomain(queryClient);
+      await invalidateLogisticsAndPurchaseOrders(queryClient);
       toast({ title: "Shipment details updated" });
     } catch (e) {
       toast({
@@ -906,7 +1247,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
       });
       setNote("");
       await refetch();
-      await invalidateLogisticsDomain(queryClient);
+      await invalidateLogisticsAndPurchaseOrders(queryClient);
       toast({ title: "Status updated" });
     } catch (statusError) {
       const err = statusError as Error & { status?: number };
@@ -986,6 +1327,13 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
               </Alert>
             ) : null}
 
+            {shipment.freightApNote ? (
+              <Alert>
+                <AlertTitle>Freight and accounts payable</AlertTitle>
+                <AlertDescription>{shipment.freightApNote}</AlertDescription>
+              </Alert>
+            ) : null}
+
             <Card data-testid="logistics-detail-summary">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Shipment overview</CardTitle>
@@ -1018,8 +1366,28 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                   )}
                 </div>
                 <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Direction / source</p>
+                  <p className="font-medium">
+                    <span className="capitalize">{shipment.direction || "inbound"}</span>
+                    <span className="text-muted-foreground"> · </span>
+                    <span>{shipment.sourceType || "purchase_order"}</span>
+                  </p>
+                </div>
+                <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Carrier</p>
                   <p className="font-medium">{shipment.carrier?.trim() || "—"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Freight (planning)</p>
+                  <p className="font-medium tabular-nums">
+                    {shipment.freightCost != null && Number.isFinite(Number(shipment.freightCost))
+                      ? Number(shipment.freightCost).toLocaleString()
+                      : "—"}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">GRN</p>
+                  <p className="font-medium font-mono text-sm">{shipment.grnNumber?.trim() || "—"}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Tracking</p>
@@ -1077,17 +1445,35 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
 
             <Card>
               <CardHeader>
-                <CardTitle>Carrier, ETA & tracking</CardTitle>
+                <CardTitle>Shipment metadata</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   <div className="space-y-1">
-                    <Label htmlFor={`sh-carrier-${shipment.id}`}>Carrier</Label>
+                    <Label htmlFor={`sh-carrier-id-${shipment.id}`}>Carrier (master)</Label>
+                    <Select value={metaCarrierId} onValueChange={setMetaCarrierId}>
+                      <SelectTrigger id={`sh-carrier-id-${shipment.id}`}>
+                        <SelectValue placeholder="Carrier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No master link (label only)</SelectItem>
+                        {carriers
+                          .filter((c) => c.active !== false)
+                          .map((c) => (
+                            <SelectItem key={c.id} value={String(c.id)}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-carrier-${shipment.id}`}>Carrier label</Label>
                     <Input
                       id={`sh-carrier-${shipment.id}`}
                       value={metaCarrier}
                       onChange={(e) => setMetaCarrier(e.target.value)}
-                      placeholder="Carrier name"
+                      placeholder="Displayed carrier text"
                     />
                   </div>
                   <div className="space-y-1">
@@ -1108,10 +1494,59 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                       placeholder="PRO…"
                     />
                   </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-tm-${shipment.id}`}>Transport mode</Label>
+                    <Input
+                      id={`sh-tm-${shipment.id}`}
+                      value={metaTransportMode}
+                      onChange={(e) => setMetaTransportMode(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-fr-${shipment.id}`}>Freight cost</Label>
+                    <Input
+                      id={`sh-fr-${shipment.id}`}
+                      type="number"
+                      value={metaFreightCost}
+                      onChange={(e) => setMetaFreightCost(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-veh-${shipment.id}`}>Vehicle</Label>
+                    <Input
+                      id={`sh-veh-${shipment.id}`}
+                      value={metaVehicle}
+                      onChange={(e) => setMetaVehicle(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-drv-${shipment.id}`}>Driver</Label>
+                    <Input
+                      id={`sh-drv-${shipment.id}`}
+                      value={metaDriver}
+                      onChange={(e) => setMetaDriver(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-dn-${shipment.id}`}>Delivery note ref</Label>
+                    <Input
+                      id={`sh-dn-${shipment.id}`}
+                      value={metaDeliveryNoteRef}
+                      onChange={(e) => setMetaDeliveryNoteRef(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`sh-grn-${shipment.id}`}>GRN #</Label>
+                    <Input
+                      id={`sh-grn-${shipment.id}`}
+                      value={metaGrnNumber}
+                      onChange={(e) => setMetaGrnNumber(e.target.value)}
+                    />
+                  </div>
                 </div>
                 <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
                   <Button onClick={() => void submitMeta()} disabled={metaSaving}>
-                    Save carrier / ETA / tracking
+                    Save metadata
                   </Button>
                 </Can>
               </CardContent>
@@ -1193,5 +1628,52 @@ export default function LogisticsPage() {
     return <ShipmentDetailView shipmentId={detailParams.id} />;
   }
 
-  return <ShipmentListView />;
+  return (
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4">
+      <PageHeader
+        title="Logistics"
+        subtitle="Shipment tracking, inbound receive links, carriers, and activity"
+        breadcrumb={<span>Operations / Logistics</span>}
+      />
+
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList className="flex h-auto flex-wrap justify-start">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="inbound">Inbound</TabsTrigger>
+          <TabsTrigger value="outbound">Outbound</TabsTrigger>
+          <TabsTrigger value="carriers">Carriers</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-4">
+          <ShipmentListView listScope="all" />
+        </TabsContent>
+        <TabsContent value="inbound" className="space-y-4">
+          <ShipmentListView listScope="inbound" />
+        </TabsContent>
+        <TabsContent value="outbound" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Outbound dispatch</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                Outbound logistics is not yet tied to inventory issue documents. Use stock movements from inventory
+                operations for ISSUE flows until dispatch documents are linked here.
+              </p>
+              <Button type="button" variant="secondary" disabled data-testid="logistics-outbound-placeholder">
+                Plan outbound dispatch (not available)
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="carriers" className="space-y-4">
+          <LogisticsCarriersPanel />
+        </TabsContent>
+        <TabsContent value="activity" className="space-y-4">
+          <LogisticsActivityTab />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
 }

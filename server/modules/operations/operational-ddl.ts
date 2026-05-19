@@ -142,6 +142,28 @@ export const OPERATIONAL_TABLE_DDLS = [
   `
   ALTER TABLE shipments ADD COLUMN IF NOT EXISTS grn_number text
   `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS direction text DEFAULT 'inbound'
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS source_type text DEFAULT 'purchase_order'
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS source_id integer
+  `,
+  `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS source_ref text
+  `,
+  `
+  UPDATE shipments SET direction = 'inbound' WHERE direction IS NULL
+  `,
+  `
+  UPDATE shipments SET source_type = 'purchase_order' WHERE source_type IS NULL AND po_number IS NOT NULL
+  `,
+  `
+  UPDATE shipments s SET source_id = po.id, source_ref = po.order_number
+  FROM purchase_orders po WHERE s.po_number = po.order_number AND s.source_id IS NULL
+  `,
 ];
 
 /** Apply DDL and seed demo shipments when empty. */

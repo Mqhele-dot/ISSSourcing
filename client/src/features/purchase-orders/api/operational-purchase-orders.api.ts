@@ -137,6 +137,7 @@ export async function receivePurchaseOrder(
     binCode?: string;
     receivedAt?: string;
     shipmentId?: number;
+    grnNumber?: string;
   },
   httpOptions?: PoHttpOptions,
 ): Promise<PurchaseReceiveResult> {
@@ -165,6 +166,9 @@ export async function receivePurchaseOrder(
       bin_code: receiveOptions?.binCode,
       received_at: receiveOptions?.receivedAt,
       ...(shipmentId != null && shipmentId > 0 ? { shipment_id: shipmentId } : {}),
+      ...(receiveOptions?.grnNumber != null && String(receiveOptions.grnNumber).trim()
+        ? { grn_number: String(receiveOptions.grnNumber).trim() }
+        : {}),
     },
     httpOptions,
   );

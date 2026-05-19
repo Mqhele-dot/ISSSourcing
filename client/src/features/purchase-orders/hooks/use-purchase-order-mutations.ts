@@ -15,7 +15,7 @@ import {
 } from "../lib/po-mutation-guards";
 import { normalizeOperationalPoParam } from "../lib/query-keys";
 import { invalidatePurchaseOrderOperationalQueries } from "../lib/invalidate-purchase-order-queries";
-import { invalidatePurchaseOrderDomain } from "@/lib/domain-invalidation";
+import { invalidatePurchaseOrderDomain, invalidateAfterOperationalReceive } from "@/lib/domain-invalidation";
 
 export function useApprovePurchaseOrderMutation(po: string) {
   const queryClient = useQueryClient();
@@ -87,6 +87,7 @@ export function useReceivePurchaseOrderMutation(po: string) {
         binCode?: string;
         receivedAt?: string;
         shipmentId?: number;
+        grnNumber?: string;
       };
     }) => {
       assertPoNumberForMutation(poNumber);
@@ -95,7 +96,7 @@ export function useReceivePurchaseOrderMutation(po: string) {
     },
     onSuccess: async () => {
       await invalidatePurchaseOrderOperationalQueries(queryClient, poNumber);
-      await invalidatePurchaseOrderDomain(queryClient);
+      await invalidateAfterOperationalReceive(queryClient);
     },
   });
 }

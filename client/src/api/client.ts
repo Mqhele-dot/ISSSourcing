@@ -537,6 +537,8 @@ export async function fetchShipments(params?: {
   etaFrom?: string;
   etaTo?: string;
   tracking?: string;
+  direction?: string;
+  sourceType?: string;
 }): Promise<ShipmentListItem[]> {
   const { data } = await fetchShipmentsEnvelope(params);
   return data;
@@ -551,6 +553,8 @@ export async function fetchShipmentsEnvelope(params?: {
   etaFrom?: string;
   etaTo?: string;
   tracking?: string;
+  direction?: string;
+  sourceType?: string;
 }): Promise<ApiEnvelopeResult<ShipmentListItem[]>> {
   const n = normalizeShipmentFilters(params ?? {});
   const search = new URLSearchParams();
@@ -562,6 +566,8 @@ export async function fetchShipmentsEnvelope(params?: {
   if (n.etaFrom) search.set("etaFrom", n.etaFrom);
   if (n.etaTo) search.set("etaTo", n.etaTo);
   if (n.tracking) search.set("tracking", n.tracking);
+  if (n.direction) search.set("direction", n.direction);
+  if (n.sourceType) search.set("sourceType", n.sourceType);
   const url =
     search.size > 0 ? `/api/logistics/shipments?${search.toString()}` : "/api/logistics/shipments";
   return fetchWithMeta<ShipmentListItem[]>(url);
@@ -585,8 +591,16 @@ export async function updateShipmentStatus(input: {
 export async function createShipment(input: {
   poNumber: string;
   carrier?: string;
+  carrierId?: number;
   eta?: string;
   trackingNumber?: string;
+  transportMode?: string;
+  freightCost?: number;
+  deliveryNoteRef?: string;
+  vehicle?: string;
+  driver?: string;
+  direction?: string;
+  sourceType?: string;
 }): Promise<ShipmentListItem> {
   return apiMutate<ShipmentListItem>("POST", "/api/logistics/shipments", input);
 }
@@ -594,13 +608,27 @@ export async function createShipment(input: {
 export async function patchShipmentMeta(input: {
   id: string | number;
   carrier?: string | null;
+  carrierId?: number | null;
   eta?: string | null;
   trackingNumber?: string | null;
+  transportMode?: string | null;
+  freightCost?: number | null;
+  vehicle?: string | null;
+  driver?: string | null;
+  deliveryNoteRef?: string | null;
+  grnNumber?: string | null;
 }): Promise<ShipmentDetail> {
   return apiMutate<ShipmentDetail>("PATCH", `/api/logistics/shipments/${input.id}`, {
     carrier: input.carrier,
+    carrierId: input.carrierId,
     eta: input.eta,
     trackingNumber: input.trackingNumber,
+    transportMode: input.transportMode,
+    freightCost: input.freightCost,
+    vehicle: input.vehicle,
+    driver: input.driver,
+    deliveryNoteRef: input.deliveryNoteRef,
+    grnNumber: input.grnNumber,
   });
 }
 

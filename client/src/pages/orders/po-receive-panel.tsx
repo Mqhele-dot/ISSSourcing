@@ -54,9 +54,20 @@ type PoReceivePanelProps = {
   receiveLineIssues?: ReceiveLineFieldError[];
   onSubmitReceive: () => void | Promise<void>;
   /** When provided, user can tie GRN to a logistics shipment row for this PO. */
-  shipmentsForReceiveLink?: Array<{ id: number; status: string; carrier: string | null }>;
+  shipmentsForReceiveLink?: Array<{
+    id: number;
+    status: string;
+    carrier: string | null;
+    eta?: string | null;
+    trackingNumber?: string | null;
+    transportMode?: string | null;
+    freightCost?: number | null;
+    grnNumber?: string | null;
+  }>;
   receiveShipmentId?: string;
   onReceiveShipmentIdChange?: (value: string) => void;
+  grnNumber?: string;
+  onGrnNumberChange?: (value: string) => void;
 };
 
 /** GRN-style receive grid for a single PO detail view. */
@@ -84,6 +95,8 @@ export function PoReceivePanel({
   shipmentsForReceiveLink,
   receiveShipmentId = "auto",
   onReceiveShipmentIdChange,
+  grnNumber = "",
+  onGrnNumberChange,
 }: PoReceivePanelProps) {
   const issuesFor = (sku: string, field: ReceiveLineFieldError["field"]) =>
     receiveLineIssues.filter((i) => i.sku === sku && i.field === field);
@@ -94,6 +107,10 @@ export function PoReceivePanel({
   const binOptions = normalizePutawayBins(selectedWarehouse, aisleTrimmed);
   const needsAisle = aisles.length > 0;
   const needsBin = binOptions.length > 0;
+  const selectedShipRow =
+    receiveShipmentId !== "auto" && shipmentsForReceiveLink?.length
+      ? shipmentsForReceiveLink.find((s) => String(s.id) === receiveShipmentId)
+      : undefined;
 
   return (
     <Card id={sectionId} className={className} data-testid="po-receive-panel">
@@ -246,26 +263,65 @@ export function PoReceivePanel({
             ) : null}
           </div>
 
-          {shipmentsForReceiveLink && shipmentsForReceiveLink.length > 0 && onReceiveShipmentIdChange ? (
+          {onGrnNumberChange ? (
             <div className="space-y-1 max-w-md">
-              <Label htmlFor="receive-shipment-link">Link to shipment (optional)</Label>
-              <Select value={receiveShipmentId} onValueChange={onReceiveShipmentIdChange}>
-                <SelectTrigger id="receive-shipment-link" aria-label="Shipment to mark delivered on receive">
-                  <SelectValue placeholder="Choose shipment" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Auto (all open shipments for this PO)</SelectItem>
-                  {shipmentsForReceiveLink.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      #{s.id} — {s.status}
-                      {s.carrier ? ` · ${s.carrier}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="receive-grn">GRN number (optional)</Label>
+              <Input
+                id="receive-grn"
+                data-testid="po-receive-grn-input"
+                placeholder="Goods receipt note #"
+                value={grnNumber}
+                onChange={(event) => onGrnNumberChange(event.target.value)}
+                disabled={!canReceive}
+              />
               <p className="text-xs text-muted-foreground">
-                Choosing a specific shipment marks only that row delivered when you post the receipt.
+                When you link a specific shipment, this value is copied to that shipment after receive completes.
               </p>
+            </div>
+          ) : null}
+
+          {shipmentsForReceiveLink && shipmentsForReceiveLink.length > 0 && onReceiveShipmentIdChange ? (
+            <div className="space-y-3 max-w-lg">
+              <div className="space-y-1">
+                <Label htmlFor="receive-shipment-link">Link to shipment (optional)</Label>
+                <Select value={receiveShipmentId} onValueChange={onReceiveShipmentIdChange}>
+                  <SelectTrigger id="receive-shipment-link" aria-label="Shipment to mark delivered on receive">
+                    <SelectValue placeholder="Choose shipment" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto (all open shipments for this PO)</SelectItem>
+                    {shipmentsForReceiveLink.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        #{s.id} — {s.status}
+                        {s.carrier ? ` · ${s.carrier}` : ""}
+                        {s.trackingNumber?.trim() ? ` · ${s.trackingNumber}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Choosing a specific shipment marks only that row delivered when you post the receipt.
+                </p>
+              </div>
+              {selectedShipRow ? (
+                <div
+                  className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1"
+                  data-testid="po-receive-shipment-summary"
+                >
+                  <p className="font-medium text-foreground">Shipment #{selectedShipRow.id}</p>
+                  <p>
+                    ETA: {selectedShipRow.eta ? new Date(selectedShipRow.eta).toLocaleString() : "—"} · Mode:{" "}
+                    {selectedShipRow.transportMode?.trim() || "—"}
+                  </p>
+                  <p>
+                    Freight (planning):{" "}
+                    {selectedShipRow.freightCost != null && Number.isFinite(Number(selectedShipRow.freightCost))
+                      ? Number(selectedShipRow.freightCost).toLocaleString()
+                      : "—"}{" "}
+                    · GRN on file: {selectedShipRow.grnNumber?.trim() || "—"}
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

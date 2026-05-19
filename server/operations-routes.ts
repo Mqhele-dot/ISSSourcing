@@ -3,6 +3,7 @@ import {
   addOperationalExceptionComment,
   adjustOperationalInventory,
   assignOperationalException,
+  createOperationalShipment,
   getOperationalControlTowerOverview,
   getOperationalExceptionDetail,
   getOperationalInventoryDetail,
@@ -277,6 +278,22 @@ function mapShipmentError(error: unknown): never {
   const message = toErrorMessage(error);
   if (message === "shipment_not_found") {
     throw contractError(404, "SHIPMENT_NOT_FOUND", "Shipment not found");
+  }
+  if (message === "po_not_found_for_shipment") {
+    throw contractError(
+      400,
+      "PO_NOT_FOUND_FOR_SHIPMENT",
+      "No purchase order matches this PO number for your organization.",
+    );
+  }
+  if (message === "carrier_not_found") {
+    throw contractError(400, "CARRIER_NOT_FOUND", "Carrier id does not exist for this organization.");
+  }
+  if (message === "carrier_inactive") {
+    throw contractError(400, "CARRIER_INACTIVE", "This carrier is inactive and cannot be used for new shipments.");
+  }
+  if (message === "shipment_insert_failed") {
+    throw contractError(500, "SHIPMENT_CREATE_FAILED", "Could not create shipment.");
   }
   if (message === "invalid_target_status") {
     throw contractError(400, "INVALID_TARGET_STATUS", "toStatus is required");
@@ -760,6 +777,10 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             const n = Number(raw);
             return Number.isFinite(n) && n > 0 ? n : undefined;
           })(),
+          grn_number:
+            typeof (req.body?.grn_number ?? req.body?.grnNumber) === "string"
+              ? String(req.body?.grn_number ?? req.body?.grnNumber).trim()
+              : undefined,
         };
 
         try {
@@ -855,6 +876,13 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const etaFromRaw = typeof req.query.etaFrom === "string" ? req.query.etaFrom : "";
         const etaToRaw = typeof req.query.etaTo === "string" ? req.query.etaTo : "";
         const trackingRaw = typeof req.query.tracking === "string" ? req.query.tracking : "";
+        const directionRaw = typeof req.query.direction === "string" ? req.query.direction : "";
+        const sourceTypeRaw =
+          typeof req.query.sourceType === "string"
+            ? req.query.sourceType
+            : typeof req.query.source_type === "string"
+              ? req.query.source_type
+              : "";
         assertValidLogisticsDateQuery(etaFromRaw, "etaFrom");
         assertValidLogisticsDateQuery(etaToRaw, "etaTo");
         const appliedFilters = normalizeShipmentFilters({
@@ -866,6 +894,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           etaFrom: etaFromRaw,
           etaTo: etaToRaw,
           tracking: trackingRaw,
+          direction: directionRaw,
+          sourceType: sourceTypeRaw,
         });
         const shipments = await withTimeout(
           listOperationalShipments(appliedFilters),
@@ -894,26 +924,88 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     "/api/logistics/shipments",
     auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
-      const poNumber = typeof req.body?.poNumber === "string" ? req.body.poNumber.trim() : "";
-      const carrier = typeof req.body?.carrier === "string" ? req.body.carrier.trim() : null;
-      const eta = typeof req.body?.eta === "string" ? new Date(req.body.eta) : null;
-      const trackingNumber =
-        typeof req.body?.trackingNumber === "string"
-          ? req.body.trackingNumber.trim() || null
-          : typeof req.body?.tracking_number === "string"
-            ? req.body.tracking_number.trim() || null
-            : null;
+      const body = req.body ?? {};
+      const poNumber = typeof body.poNumber === "string" ? body.poNumber.trim() : "";
       if (!poNumber) {
         throw contractError(400, "PO_REQUIRED", "poNumber is required");
       }
-      const inserted = await pool.query(
-        `INSERT INTO shipments (po_number, carrier, status, eta, drift_minutes, tracking_number, created_at, updated_at)
-         VALUES ($1, $2, 'created', $3, 0, $4, now(), now())
-         RETURNING id, po_number AS "poNumber", carrier, status, eta, drift_minutes AS "driftMinutes",
-                   tracking_number AS "trackingNumber", created_at AS "createdAt", updated_at AS "updatedAt"`,
-        [poNumber, carrier, eta, trackingNumber],
-      );
-      respondOk(res, inserted.rows[0], 201);
+      const carrier =
+        typeof body.carrier === "string" && body.carrier.trim() ? body.carrier.trim() : null;
+      const carrierIdRaw = body.carrierId ?? body.carrier_id;
+      const carrierId =
+        carrierIdRaw != null && Number.isFinite(Number(carrierIdRaw)) ? Number(carrierIdRaw) : null;
+      const eta = typeof body.eta === "string" && body.eta.trim() ? new Date(body.eta) : null;
+      const trackingNumber =
+        typeof body.trackingNumber === "string"
+          ? body.trackingNumber.trim() || null
+          : typeof body.tracking_number === "string"
+            ? body.tracking_number.trim() || null
+            : null;
+      const transportMode =
+        typeof body.transportMode === "string"
+          ? body.transportMode.trim()
+          : typeof body.transport_mode === "string"
+            ? body.transport_mode.trim()
+            : null;
+      const freightCostRaw = body.freightCost ?? body.freight_cost;
+      const freightCost =
+        freightCostRaw != null && Number.isFinite(Number(freightCostRaw)) ? Number(freightCostRaw) : null;
+      const deliveryNoteRef =
+        typeof body.deliveryNoteRef === "string"
+          ? body.deliveryNoteRef.trim()
+          : typeof body.delivery_note_ref === "string"
+            ? body.delivery_note_ref.trim()
+            : null;
+      const vehicle = typeof body.vehicle === "string" ? body.vehicle.trim() : null;
+      const driver = typeof body.driver === "string" ? body.driver.trim() : null;
+      const direction =
+        typeof body.direction === "string" && body.direction.trim() ? body.direction.trim() : null;
+      const sourceType =
+        typeof body.sourceType === "string"
+          ? body.sourceType.trim()
+          : typeof body.source_type === "string"
+            ? body.source_type.trim()
+            : null;
+
+      try {
+        const row = await createOperationalShipment({
+          poNumber,
+          mode: "logistics_page",
+          carrier,
+          carrierId: carrierId && carrierId > 0 ? carrierId : null,
+          transportMode,
+          freightCost,
+          trackingNumber,
+          deliveryNoteRef,
+          vehicle,
+          driver,
+          eta,
+          direction,
+          sourceType,
+        });
+        respondOk(
+          res,
+          {
+            id: row.id,
+            poNumber: row.poNumber,
+            carrier: row.carrier,
+            status: row.status,
+            eta: row.eta,
+            driftMinutes: row.driftMinutes,
+            trackingNumber: row.trackingNumber,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            atRisk: row.atRisk,
+            riskBucket: row.riskBucket,
+            direction: row.direction,
+            sourceType: row.sourceType,
+            freightCost: row.freightCost,
+          },
+          201,
+        );
+      } catch (err) {
+        mapShipmentError(err);
+      }
     }),
   );
 
@@ -928,26 +1020,79 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
       }
       try {
+        const body = req.body ?? {};
         const carrier =
-          typeof req.body?.carrier === "string" ? req.body.carrier.trim() || null : undefined;
+          typeof body.carrier === "string" ? body.carrier.trim() || null : undefined;
         const eta =
-          typeof req.body?.eta === "string" && req.body.eta.trim()
-            ? new Date(req.body.eta)
-            : req.body?.eta === null
+          typeof body.eta === "string" && body.eta.trim()
+            ? new Date(body.eta)
+            : body.eta === null
               ? null
               : undefined;
         const trackingNumber =
-          typeof req.body?.trackingNumber === "string"
-            ? req.body.trackingNumber.trim() || null
-            : typeof req.body?.tracking_number === "string"
-              ? req.body.tracking_number.trim() || null
+          typeof body.trackingNumber === "string"
+            ? body.trackingNumber.trim() || null
+            : typeof body.tracking_number === "string"
+              ? body.tracking_number.trim() || null
               : undefined;
+
+        let carrierId: number | null | undefined = undefined;
+        if (body.carrierId !== undefined || body.carrier_id !== undefined) {
+          const raw = body.carrierId ?? body.carrier_id;
+          if (raw === null) carrierId = null;
+          else {
+            const n = Number(raw);
+            if (!Number.isFinite(n) || n <= 0) {
+              throw contractError(400, "INVALID_CARRIER_ID", "carrierId must be a positive number or null");
+            }
+            carrierId = n;
+          }
+        }
+
+        const transportMode =
+          typeof body.transportMode === "string"
+            ? body.transportMode.trim() || null
+            : typeof body.transport_mode === "string"
+              ? body.transport_mode.trim() || null
+              : undefined;
+        let freightCost: number | null | undefined = undefined;
+        if (body.freightCost !== undefined || body.freight_cost !== undefined) {
+          const raw = body.freightCost ?? body.freight_cost;
+          if (raw === null) freightCost = null;
+          else {
+            const n = Number(raw);
+            freightCost = Number.isFinite(n) ? n : null;
+          }
+        }
+        const vehicle =
+          typeof body.vehicle === "string" ? body.vehicle.trim() || null : undefined;
+        const driver = typeof body.driver === "string" ? body.driver.trim() || null : undefined;
+        const deliveryNoteRef =
+          typeof body.deliveryNoteRef === "string"
+            ? body.deliveryNoteRef.trim() || null
+            : typeof body.delivery_note_ref === "string"
+              ? body.delivery_note_ref.trim() || null
+              : undefined;
+        const grnNumber =
+          typeof body.grnNumber === "string"
+            ? body.grnNumber.trim() || null
+            : typeof body.grn_number === "string"
+              ? body.grn_number.trim() || null
+              : undefined;
+
         const detail = await withTimeout(
           patchOperationalShipmentMeta({
             shipmentId: req.params.id,
             carrier,
+            carrierId,
             eta,
             trackingNumber,
+            transportMode,
+            freightCost,
+            vehicle,
+            driver,
+            deliveryNoteRef,
+            grnNumber,
             actor: resolveActor(req),
           }),
           OPERATIONS_QUERY_TIMEOUT_MS,

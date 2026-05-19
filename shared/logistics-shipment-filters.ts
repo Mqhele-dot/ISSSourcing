@@ -13,6 +13,8 @@ export type ShipmentListFiltersNormalized = {
   etaFrom: string;
   etaTo: string;
   tracking: string;
+  direction: string;
+  sourceType: string;
 };
 
 const RISK_BUCKETS = new Set(["late", "no_eta", "due_soon", "exception", "on_time"]);
@@ -29,6 +31,10 @@ export function normalizeShipmentFilters(
   input: Partial<ShipmentListFiltersNormalized> | Record<string, unknown>,
 ): ShipmentListFiltersNormalized {
   const riskRaw = trimStr((input as { risk?: unknown }).risk).toLowerCase();
+  const directionRaw = trimStr((input as { direction?: unknown }).direction).toLowerCase();
+  const sourceTypeRaw = trimStr(
+    (input as { sourceType?: unknown }).sourceType ?? (input as { source_type?: unknown }).source_type,
+  ).toLowerCase();
   return {
     status: trimStr((input as { status?: unknown }).status).toLowerCase(),
     po: trimStr((input as { po?: unknown }).po).toLowerCase(),
@@ -38,5 +44,7 @@ export function normalizeShipmentFilters(
     etaFrom: trimStr((input as { etaFrom?: unknown }).etaFrom),
     etaTo: trimStr((input as { etaTo?: unknown }).etaTo),
     tracking: trimStr((input as { tracking?: unknown }).tracking).toLowerCase(),
+    direction: directionRaw,
+    sourceType: sourceTypeRaw,
   };
 }

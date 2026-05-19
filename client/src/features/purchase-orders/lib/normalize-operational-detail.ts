@@ -50,6 +50,12 @@ function normalizeDetailLine(ln: Record<string, unknown>): PurchaseOrderDetailLi
   };
 }
 
+function pickNumOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function normalizeShipment(s: Record<string, unknown>): PurchaseOrderShipment {
   return {
     id: pickNum(s.id, 0),
@@ -59,6 +65,18 @@ function normalizeShipment(s: Record<string, unknown>): PurchaseOrderShipment {
     driftMinutes: pickNum(s.driftMinutes ?? s.drift_minutes, 0),
     updatedAt: pickNullableStr(s.updatedAt ?? s.updated_at),
     trackingNumber: pickNullableStr(s.trackingNumber ?? s.tracking_number),
+    carrierId: (() => {
+      const raw = s.carrierId ?? s.carrier_id;
+      if (raw == null || raw === "") return undefined;
+      const n = typeof raw === "number" ? raw : Number(raw);
+      return Number.isFinite(n) && n > 0 ? n : undefined;
+    })(),
+    transportMode: pickNullableStr(s.transportMode ?? s.transport_mode),
+    freightCost: pickNumOrNull(s.freightCost ?? s.freight_cost),
+    deliveryNoteRef: pickNullableStr(s.deliveryNoteRef ?? s.delivery_note_ref),
+    grnNumber: pickNullableStr(s.grnNumber ?? s.grn_number),
+    direction: pickNullableStr(s.direction),
+    sourceType: pickNullableStr(s.sourceType ?? s.source_type),
   };
 }
 
