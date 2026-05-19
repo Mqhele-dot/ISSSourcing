@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
-import { AlertTriangle, ArrowLeft, Download, FileDown, Loader2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ChevronDown,
+  Download,
+  FileDown,
+  Loader2,
+  Plus,
+  X,
+} from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataState } from "@/components/ui/data-state";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -32,6 +41,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useQueryState } from "@/hooks/use-query-state";
 import { useAsyncResource } from "@/hooks/use-async-resource";
@@ -407,6 +429,9 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
   const [newVehicle, setNewVehicle] = useState("");
   const [newDriver, setNewDriver] = useState("");
   const [shipmentExporting, setShipmentExporting] = useState(false);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const [createShipmentDialogOpen, setCreateShipmentDialogOpen] = useState(false);
+  const [createShipmentExtrasOpen, setCreateShipmentExtrasOpen] = useState(false);
   const {
     data: carriers = [],
     error: carriersError,
@@ -497,155 +522,163 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
     }
   };
 
+  const submitNewShipment = async () => {
+    try {
+      const trimmedFr = newFreightCost.trim();
+      const freightParsed = Number(trimmedFr);
+      const freightCost =
+        trimmedFr === "" ? undefined : Number.isFinite(freightParsed) ? freightParsed : undefined;
+      const active = carriers.filter((c) => c.active !== false);
+      const needsId = !carriersError && active.length > 0;
+      const cid = needsId && newCarrierId && newCarrierId !== "none" ? Number(newCarrierId) : NaN;
+      await createShipment({
+        poNumber: newPoNumber.trim(),
+        ...(Number.isFinite(cid) && cid > 0
+          ? { carrierId: cid }
+          : { carrier: newCarrierFreeText.trim() || undefined }),
+        eta: newEta || undefined,
+        trackingNumber: newTracking.trim() || undefined,
+        transportMode: newTransportMode.trim() || undefined,
+        freightCost,
+        deliveryNoteRef: newDeliveryNoteRef.trim() || undefined,
+        vehicle: newVehicle.trim() || undefined,
+        driver: newDriver.trim() || undefined,
+      });
+      setNewPoNumber("");
+      setNewCarrierId("");
+      setNewCarrierFreeText("");
+      setNewEta("");
+      setNewTracking("");
+      setNewTransportMode("");
+      setNewFreightCost("");
+      setNewDeliveryNoteRef("");
+      setNewVehicle("");
+      setNewDriver("");
+      setCreateShipmentExtrasOpen(false);
+      setCreateShipmentDialogOpen(false);
+      await refreshNow();
+      await invalidateLogisticsAndPurchaseOrders(queryClient);
+      toast({ title: "Shipment created" });
+    } catch (createError) {
+      toast({
+        title: "Create shipment failed",
+        description: createError instanceof Error ? createError.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const newShipmentDisabled = (() => {
+    const active = carriers.filter((c) => c.active !== false);
+    const needsFreeText = carriersError || active.length === 0;
+    const needsId = !carriersError && active.length > 0;
+    return (
+      !newPoNumber.trim() ||
+      (needsId && (!newCarrierId || newCarrierId === "none")) ||
+      (needsFreeText && !newCarrierFreeText.trim())
+    );
+  })();
+
+  const advancedFiltersActive = Boolean(
+    String(queryState.supplier ?? "").trim() ||
+      String(queryState.etaFrom ?? "").trim() ||
+      String(queryState.etaTo ?? "").trim() ||
+      String(queryState.sourceType ?? "").trim() ||
+      (listScope !== "inbound" && String(queryState.direction ?? "").trim()),
+  );
+
   const shipmentsFilteredEmpty = logisticsListHasActiveFilters(effectiveNorm);
 
   return (
     <div className="space-y-4">
       {listScope === "inbound" ? (
-        <Alert>
-          <AlertTitle>Inbound workspace</AlertTitle>
-          <AlertDescription>
-            Results are limited to inbound shipments. Use the Overview tab to see all directions or refine further with
-            the filters below.
-          </AlertDescription>
-        </Alert>
+        <p className="text-xs text-muted-foreground" data-testid="logistics-inbound-scope-hint">
+          Showing <span className="font-medium text-foreground">inbound</span> only — use the Overview tab for all
+          directions.
+        </p>
       ) : null}
 
-      <div data-tour="shipments-list" className="space-y-4">
-      <div
-        data-tour="logistics-toolbar"
-        className="sticky top-16 z-20 space-y-4 rounded-lg border border-border bg-card p-4 shadow-sm"
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-status" className="text-xs text-muted-foreground">
-              Status contains
-            </Label>
-            <Input
-              id="ship-filter-status"
-              data-testid="logistics-status-filter"
-              value={String(queryState.status || "")}
-              onChange={(event) => setQueryState({ status: event.target.value })}
-              placeholder="e.g. in_transit"
-              className="w-full min-w-0"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-po" className="text-xs text-muted-foreground">
-              PO number
-            </Label>
-            <Input
-              id="ship-filter-po"
-              data-testid="logistics-po-filter"
-              value={String(queryState.po || "")}
-              onChange={(event) => setQueryState({ po: event.target.value })}
-              placeholder="Filter by PO"
-              className="w-full min-w-0"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-supplier" className="text-xs text-muted-foreground">
-              Supplier contains
-            </Label>
-            <Input
-              id="ship-filter-supplier"
-              data-testid="logistics-supplier-filter"
-              value={String(queryState.supplier || "")}
-              onChange={(event) => setQueryState({ supplier: event.target.value })}
-              placeholder="Supplier name"
-              className="w-full min-w-0"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-carrier" className="text-xs text-muted-foreground">
-              Carrier
-            </Label>
-            <Input
-              id="ship-filter-carrier"
-              data-testid="logistics-carrier-filter"
-              value={String(queryState.carrier || "")}
-              onChange={(event) => setQueryState({ carrier: event.target.value })}
-              placeholder="Carrier name"
-              className="w-full min-w-0"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-risk" className="text-xs text-muted-foreground">
-              Risk
-            </Label>
-            <Select
-              value={String(queryState.risk || "") || "all"}
-              onValueChange={(value) => setQueryState({ risk: value === "all" ? "" : value })}
-            >
-              <SelectTrigger id="ship-filter-risk" data-testid="logistics-risk-filter" className="w-full min-w-0">
-                <SelectValue placeholder="Risk" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All risk</SelectItem>
-                <SelectItem value="late">Late (past ETA)</SelectItem>
-                <SelectItem value="due_soon">Due soon</SelectItem>
-                <SelectItem value="no_eta">No ETA</SelectItem>
-                <SelectItem value="exception">Exception / delayed status</SelectItem>
-                <SelectItem value="on_time">On time</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-direction" className="text-xs text-muted-foreground">
-              Direction
-            </Label>
-            <Select
-              value={
-                listScope === "inbound"
-                  ? "inbound"
-                  : String(queryState.direction || "") || "all"
-              }
-              disabled={listScope === "inbound"}
-              onValueChange={(value) => setQueryState({ direction: value === "all" ? "" : value })}
-            >
-              <SelectTrigger id="ship-filter-direction" data-testid="logistics-direction-filter" className="w-full min-w-0">
-                <SelectValue placeholder="Direction" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All directions</SelectItem>
-                <SelectItem value="inbound">Inbound</SelectItem>
-                <SelectItem value="outbound">Outbound</SelectItem>
-                <SelectItem value="transfer">Transfer</SelectItem>
-                <SelectItem value="return">Return</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-source" className="text-xs text-muted-foreground">
-              Source type
-            </Label>
-            <Select
-              value={String(queryState.sourceType || "") || "all"}
-              onValueChange={(value) => setQueryState({ sourceType: value === "all" ? "" : value })}
-            >
-              <SelectTrigger id="ship-filter-source" data-testid="logistics-source-filter" className="w-full min-w-0">
-                <SelectValue placeholder="Source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All sources</SelectItem>
-                <SelectItem value="purchase_order">Purchase order</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <div className="flex h-10 items-end gap-3 text-xs text-muted-foreground">
-              <Link
-                href={APP_ROUTES.operations.exceptions}
-                className="font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Operational exceptions
-              </Link>
+      <div data-tour="shipments-list" className="space-y-3">
+        <Collapsible open={advancedFiltersOpen} onOpenChange={setAdvancedFiltersOpen}>
+          <div
+            data-tour="logistics-toolbar"
+            className="sticky top-16 z-20 space-y-2 rounded-lg border border-border bg-card p-3 shadow-sm"
+          >
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-6">
+              <div className="space-y-1">
+                <Label htmlFor="ship-filter-po" className="text-xs text-muted-foreground">
+                  PO number
+                </Label>
+                <Input
+                  id="ship-filter-po"
+                  data-testid="logistics-po-filter"
+                  value={String(queryState.po || "")}
+                  onChange={(event) => setQueryState({ po: event.target.value })}
+                  placeholder="Filter by PO"
+                  className="h-9 min-w-0"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="ship-filter-status" className="text-xs text-muted-foreground">
+                  Status
+                </Label>
+                <Input
+                  id="ship-filter-status"
+                  data-testid="logistics-status-filter"
+                  value={String(queryState.status || "")}
+                  onChange={(event) => setQueryState({ status: event.target.value })}
+                  placeholder="e.g. in_transit"
+                  className="h-9 min-w-0"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="ship-filter-carrier" className="text-xs text-muted-foreground">
+                  Carrier
+                </Label>
+                <Input
+                  id="ship-filter-carrier"
+                  data-testid="logistics-carrier-filter"
+                  value={String(queryState.carrier || "")}
+                  onChange={(event) => setQueryState({ carrier: event.target.value })}
+                  placeholder="Name contains"
+                  className="h-9 min-w-0"
+                />
+              </div>
+              <div className="space-y-1 lg:col-span-2">
+                <Label htmlFor="ship-filter-tracking" className="text-xs text-muted-foreground">
+                  Tracking #
+                </Label>
+                <Input
+                  id="ship-filter-tracking"
+                  data-testid="logistics-tracking-filter"
+                  value={String(queryState.tracking || "")}
+                  onChange={(event) => setQueryState({ tracking: event.target.value })}
+                  placeholder="Contains…"
+                  className="h-9 min-w-0 font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="ship-filter-risk" className="text-xs text-muted-foreground">
+                  Risk
+                </Label>
+                <Select
+                  value={String(queryState.risk || "") || "all"}
+                  onValueChange={(value) => setQueryState({ risk: value === "all" ? "" : value })}
+                >
+                  <SelectTrigger id="ship-filter-risk" data-testid="logistics-risk-filter" className="h-9 min-w-0">
+                    <SelectValue placeholder="Risk" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="late">Late</SelectItem>
+                    <SelectItem value="due_soon">Due soon</SelectItem>
+                    <SelectItem value="no_eta">No ETA</SelectItem>
+                    <SelectItem value="exception">Exception</SelectItem>
+                    <SelectItem value="on_time">On time</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
-        </div>
 
         {filterChipEntries.length > 0 ? (
           <div
@@ -672,49 +705,105 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-eta-from" className="text-xs text-muted-foreground">
-              ETA from
-            </Label>
-            <Input
-              id="ship-filter-eta-from"
-              data-testid="logistics-eta-from"
-              type="datetime-local"
-              value={String(queryState.etaFrom || "")}
-              onChange={(event) => setQueryState({ etaFrom: event.target.value })}
-              className="w-full min-w-0"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-eta-to" className="text-xs text-muted-foreground">
-              ETA to
-            </Label>
-            <Input
-              id="ship-filter-eta-to"
-              data-testid="logistics-eta-to"
-              type="datetime-local"
-              value={String(queryState.etaTo || "")}
-              onChange={(event) => setQueryState({ etaTo: event.target.value })}
-              className="w-full min-w-0"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-filter-tracking" className="text-xs text-muted-foreground">
-              Tracking contains
-            </Label>
-            <Input
-              id="ship-filter-tracking"
-              data-testid="logistics-tracking-filter"
-              value={String(queryState.tracking || "")}
-              onChange={(event) => setQueryState({ tracking: event.target.value })}
-              placeholder="PRO…"
-              className="w-full min-w-0"
-            />
-          </div>
-        </div>
+            <CollapsibleContent className="space-y-2 border-t border-border pt-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                <div className="space-y-1">
+                  <Label htmlFor="ship-filter-supplier" className="text-xs text-muted-foreground">
+                    Supplier contains
+                  </Label>
+                  <Input
+                    id="ship-filter-supplier"
+                    data-testid="logistics-supplier-filter"
+                    value={String(queryState.supplier || "")}
+                    onChange={(event) => setQueryState({ supplier: event.target.value })}
+                    placeholder="Supplier name"
+                    className="h-9 min-w-0"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="ship-filter-direction" className="text-xs text-muted-foreground">
+                    Direction
+                  </Label>
+                  <Select
+                    value={
+                      listScope === "inbound"
+                        ? "inbound"
+                        : String(queryState.direction || "") || "all"
+                    }
+                    disabled={listScope === "inbound"}
+                    onValueChange={(value) => setQueryState({ direction: value === "all" ? "" : value })}
+                  >
+                    <SelectTrigger
+                      id="ship-filter-direction"
+                      data-testid="logistics-direction-filter"
+                      className="h-9 min-w-0"
+                    >
+                      <SelectValue placeholder="Direction" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All directions</SelectItem>
+                      <SelectItem value="inbound">Inbound</SelectItem>
+                      <SelectItem value="outbound">Outbound</SelectItem>
+                      <SelectItem value="transfer">Transfer</SelectItem>
+                      <SelectItem value="return">Return</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="ship-filter-source" className="text-xs text-muted-foreground">
+                    Source type
+                  </Label>
+                  <Select
+                    value={String(queryState.sourceType || "") || "all"}
+                    onValueChange={(value) => setQueryState({ sourceType: value === "all" ? "" : value })}
+                  >
+                    <SelectTrigger id="ship-filter-source" data-testid="logistics-source-filter" className="h-9 min-w-0">
+                      <SelectValue placeholder="Source" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All sources</SelectItem>
+                      <SelectItem value="purchase_order">Purchase order</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1 xl:col-span-2">
+                  <Label htmlFor="ship-filter-eta-from" className="text-xs text-muted-foreground">
+                    ETA from
+                  </Label>
+                  <Input
+                    id="ship-filter-eta-from"
+                    data-testid="logistics-eta-from"
+                    type="datetime-local"
+                    value={String(queryState.etaFrom || "")}
+                    onChange={(event) => setQueryState({ etaFrom: event.target.value })}
+                    className="h-9 min-w-0"
+                  />
+                </div>
+                <div className="space-y-1 xl:col-span-2">
+                  <Label htmlFor="ship-filter-eta-to" className="text-xs text-muted-foreground">
+                    ETA to
+                  </Label>
+                  <Input
+                    id="ship-filter-eta-to"
+                    data-testid="logistics-eta-to"
+                    type="datetime-local"
+                    value={String(queryState.etaTo || "")}
+                    onChange={(event) => setQueryState({ etaTo: event.target.value })}
+                    className="h-9 min-w-0"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Link
+                  href={APP_ROUTES.operations.exceptions}
+                  className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  Operational exceptions →
+                </Link>
+              </div>
+            </CollapsibleContent>
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -766,6 +855,33 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
           >
             Clear filters
           </Button>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant={advancedFiltersActive ? "secondary" : "outline"}
+              size="sm"
+              className="shrink-0 gap-1"
+              data-testid="logistics-more-filters"
+            >
+              More filters
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`}
+                aria-hidden
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <Can roles={["manager", "admin"]}>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              className="shrink-0 gap-1"
+              onClick={() => setCreateShipmentDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              New shipment
+            </Button>
+          </Can>
           <span className="ml-auto text-xs text-muted-foreground tabular-nums text-right">
             <span className="mr-2 inline-block">
               Results:{" "}
@@ -779,12 +895,19 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
             {isFetching ? " · updating…" : ""}
           </span>
         </div>
+          </div>
+        </Collapsible>
 
-        <Can roles={["manager", "admin"]}>
-          <div className="space-y-3 border-t border-border pt-4">
-            <p className="text-xs font-medium text-muted-foreground">New inbound shipment</p>
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
+        <Dialog open={createShipmentDialogOpen} onOpenChange={setCreateShipmentDialogOpen}>
+          <DialogContent className="max-h-[min(90vh,40rem)] overflow-y-auto sm:max-w-lg" data-testid="logistics-create-shipment-dialog">
+            <DialogHeader>
+              <DialogTitle>New inbound shipment</DialogTitle>
+              <DialogDescription>
+                Requires an existing purchase order number. Carrier is saved as master data selection or label.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3 py-2">
+              <div className="grid gap-1.5">
                 <Label htmlFor="ship-new-po" className="text-xs">
                   PO number
                 </Label>
@@ -797,7 +920,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                 />
               </div>
               {carriersError ? (
-                <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
+                <div className="grid gap-1.5">
                   <Label htmlFor="ship-new-carrier-txt" className="text-xs">
                     Carrier label
                   </Label>
@@ -810,7 +933,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                   />
                 </div>
               ) : carriers.filter((c) => c.active !== false).length === 0 ? (
-                <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
+                <div className="grid gap-1.5">
                   <Label htmlFor="ship-new-carrier-txt" className="text-xs">
                     Carrier label
                   </Label>
@@ -823,7 +946,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                   />
                 </div>
               ) : (
-                <div className="grid w-full min-w-[8rem] max-w-xs flex-1 gap-1.5">
+                <div className="grid gap-1.5">
                   <Label htmlFor="ship-new-carrier-sel" className="text-xs">
                     Carrier (master)
                   </Label>
@@ -847,165 +970,133 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                   </Select>
                 </div>
               )}
-              <div className="grid w-full min-w-[8rem] max-w-[10rem] gap-1.5">
-                <Label htmlFor="ship-new-eta" className="text-xs">
-                  ETA
-                </Label>
-                <Input
-                  id="ship-new-eta"
-                  value={newEta}
-                  onChange={(event) => setNewEta(event.target.value)}
-                  type="date"
-                  className="min-w-0"
-                />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="ship-new-eta" className="text-xs">
+                    ETA
+                  </Label>
+                  <Input
+                    id="ship-new-eta"
+                    value={newEta}
+                    onChange={(event) => setNewEta(event.target.value)}
+                    type="date"
+                    className="min-w-0"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="ship-new-trk" className="text-xs">
+                    Tracking #
+                  </Label>
+                  <Input
+                    id="ship-new-trk"
+                    value={newTracking}
+                    onChange={(event) => setNewTracking(event.target.value)}
+                    placeholder="Optional"
+                    className="min-w-0 font-mono text-xs"
+                  />
+                </div>
               </div>
-              <div className="grid min-w-[10rem] flex-1 gap-1.5 sm:max-w-md">
-                <Label htmlFor="ship-new-trk" className="text-xs">
-                  Tracking #
-                </Label>
-                <Input
-                  id="ship-new-trk"
-                  value={newTracking}
-                  onChange={(event) => setNewTracking(event.target.value)}
-                  placeholder="Optional"
-                  className="min-w-0"
-                />
-              </div>
+              {!carriersError ? (
+                <p className="text-xs text-muted-foreground">
+                  {carriers.filter((c) => c.active !== false).length > 0
+                    ? "Select an active carrier; the server snapshots the name on the shipment."
+                    : "No active carriers in master — enter a label for this shipment."}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Carrier API unavailable — enter a label for this shipment.
+                </p>
+              )}
+              <Collapsible open={createShipmentExtrasOpen} onOpenChange={setCreateShipmentExtrasOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button type="button" variant="outline" size="sm" className="w-fit gap-1">
+                    Extra fields (transport, freight, …)
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${createShipmentExtrasOpen ? "rotate-180" : ""}`}
+                      aria-hidden
+                    />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-3 border-t pt-3 data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ship-new-tm" className="text-xs">
+                        Transport mode
+                      </Label>
+                      <Input
+                        id="ship-new-tm"
+                        value={newTransportMode}
+                        onChange={(event) => setNewTransportMode(event.target.value)}
+                        placeholder="e.g. LTL"
+                        className="min-w-0"
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ship-new-fr" className="text-xs">
+                        Freight cost
+                      </Label>
+                      <Input
+                        id="ship-new-fr"
+                        value={newFreightCost}
+                        onChange={(event) => setNewFreightCost(event.target.value)}
+                        placeholder="0"
+                        type="number"
+                        className="min-w-0"
+                      />
+                    </div>
+                    <div className="grid gap-1.5 sm:col-span-2">
+                      <Label htmlFor="ship-new-dn" className="text-xs">
+                        Delivery note ref
+                      </Label>
+                      <Input
+                        id="ship-new-dn"
+                        value={newDeliveryNoteRef}
+                        onChange={(event) => setNewDeliveryNoteRef(event.target.value)}
+                        placeholder="Optional"
+                        className="min-w-0"
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ship-new-veh" className="text-xs">
+                        Vehicle
+                      </Label>
+                      <Input
+                        id="ship-new-veh"
+                        value={newVehicle}
+                        onChange={(event) => setNewVehicle(event.target.value)}
+                        className="min-w-0"
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ship-new-drv" className="text-xs">
+                        Driver
+                      </Label>
+                      <Input
+                        id="ship-new-drv"
+                        value={newDriver}
+                        onChange={(event) => setNewDriver(event.target.value)}
+                        className="min-w-0"
+                      />
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="grid w-full min-w-[8rem] max-w-[12rem] flex-1 gap-1.5">
-                <Label htmlFor="ship-new-tm" className="text-xs">
-                  Transport mode
-                </Label>
-                <Input
-                  id="ship-new-tm"
-                  value={newTransportMode}
-                  onChange={(event) => setNewTransportMode(event.target.value)}
-                  placeholder="e.g. LTL"
-                  className="min-w-0"
-                />
-              </div>
-              <div className="grid w-full min-w-[6rem] max-w-[8rem] gap-1.5">
-                <Label htmlFor="ship-new-fr" className="text-xs">
-                  Freight cost
-                </Label>
-                <Input
-                  id="ship-new-fr"
-                  value={newFreightCost}
-                  onChange={(event) => setNewFreightCost(event.target.value)}
-                  placeholder="0"
-                  type="number"
-                  className="min-w-0"
-                />
-              </div>
-              <div className="grid min-w-[10rem] flex-1 gap-1.5 sm:max-w-md">
-                <Label htmlFor="ship-new-dn" className="text-xs">
-                  Delivery note ref
-                </Label>
-                <Input
-                  id="ship-new-dn"
-                  value={newDeliveryNoteRef}
-                  onChange={(event) => setNewDeliveryNoteRef(event.target.value)}
-                  placeholder="Optional"
-                  className="min-w-0"
-                />
-              </div>
-              <div className="grid w-full min-w-[8rem] max-w-[10rem] gap-1.5">
-                <Label htmlFor="ship-new-veh" className="text-xs">
-                  Vehicle
-                </Label>
-                <Input
-                  id="ship-new-veh"
-                  value={newVehicle}
-                  onChange={(event) => setNewVehicle(event.target.value)}
-                  className="min-w-0"
-                />
-              </div>
-              <div className="grid w-full min-w-[8rem] max-w-[10rem] gap-1.5">
-                <Label htmlFor="ship-new-drv" className="text-xs">
-                  Driver
-                </Label>
-                <Input
-                  id="ship-new-drv"
-                  value={newDriver}
-                  onChange={(event) => setNewDriver(event.target.value)}
-                  className="min-w-0"
-                />
-              </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={() => setCreateShipmentDialogOpen(false)}>
+                Cancel
+              </Button>
               <Button
                 type="button"
-                className="shrink-0"
                 data-testid="logistics-create-shipment-button"
-                onClick={async () => {
-                  try {
-                    const freightParsed = Number(newFreightCost);
-                    const freightCost =
-                      newFreightCost.trim() !== "" && Number.isFinite(freightParsed) ? freightParsed : undefined;
-                    const active = carriers.filter((c) => c.active !== false);
-                    const needsId = !carriersError && active.length > 0;
-                    const cid =
-                      needsId && newCarrierId && newCarrierId !== "none" ? Number(newCarrierId) : NaN;
-                    await createShipment({
-                      poNumber: newPoNumber.trim(),
-                      ...(Number.isFinite(cid) && cid > 0
-                        ? { carrierId: cid }
-                        : { carrier: newCarrierFreeText.trim() || undefined }),
-                      eta: newEta || undefined,
-                      trackingNumber: newTracking.trim() || undefined,
-                      transportMode: newTransportMode.trim() || undefined,
-                      freightCost,
-                      deliveryNoteRef: newDeliveryNoteRef.trim() || undefined,
-                      vehicle: newVehicle.trim() || undefined,
-                      driver: newDriver.trim() || undefined,
-                    });
-                    setNewPoNumber("");
-                    setNewCarrierId("");
-                    setNewCarrierFreeText("");
-                    setNewEta("");
-                    setNewTracking("");
-                    setNewTransportMode("");
-                    setNewFreightCost("");
-                    setNewDeliveryNoteRef("");
-                    setNewVehicle("");
-                    setNewDriver("");
-                    await refreshNow();
-                    await invalidateLogisticsAndPurchaseOrders(queryClient);
-                  } catch (createError) {
-                    toast({
-                      title: "Create shipment failed",
-                      description: createError instanceof Error ? createError.message : "Unknown error",
-                      variant: "destructive",
-                    });
-                  }
-                }}
-                disabled={(() => {
-                  const active = carriers.filter((c) => c.active !== false);
-                  const needsFreeText = carriersError || active.length === 0;
-                  const needsId = !carriersError && active.length > 0;
-                  return (
-                    !newPoNumber.trim() ||
-                    (needsId && (!newCarrierId || newCarrierId === "none")) ||
-                    (needsFreeText && !newCarrierFreeText.trim())
-                  );
-                })()}
+                disabled={newShipmentDisabled}
+                onClick={() => void submitNewShipment()}
               >
                 Add shipment
               </Button>
-            </div>
-            {!carriersError ? (
-              <p className="text-xs text-muted-foreground">
-                {carriers.filter((c) => c.active !== false).length > 0
-                  ? "Select an active carrier from master data; the server stores a snapshot of the carrier name on the shipment row."
-                  : "No active carriers in master data — enter a carrier label for this shipment."}
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Carrier API unavailable — provide a carrier label; link it to master data when the service recovers.
-              </p>
-            )}
-          </div>
-        </Can>
-      </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
       <DataState
         loading={loading}

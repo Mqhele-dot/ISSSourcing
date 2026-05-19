@@ -12,9 +12,10 @@ test.describe("Logistics workspace", () => {
     await expect(page.getByTestId("logistics-po-filter")).toBeVisible();
     await expect(page.getByTestId("logistics-carrier-filter")).toBeVisible();
     await expect(page.getByTestId("logistics-risk-filter")).toBeVisible();
+    await expect(page.getByTestId("logistics-tracking-filter")).toBeVisible();
+    await page.getByTestId("logistics-more-filters").click();
     await expect(page.getByTestId("logistics-eta-from")).toBeVisible();
     await expect(page.getByTestId("logistics-eta-to")).toBeVisible();
-    await expect(page.getByTestId("logistics-tracking-filter")).toBeVisible();
     await expect(page.getByTestId("logistics-supplier-filter")).toBeVisible();
     await expect(page.getByTestId("logistics-clear-filters")).toBeVisible();
     await expect(page.getByTestId("logistics-results-count")).toBeVisible();
