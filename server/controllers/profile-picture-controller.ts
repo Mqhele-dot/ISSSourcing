@@ -23,7 +23,7 @@ export async function uploadProfilePicture(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: 'No file uploaded' });
     }
     
-    // Get the uploaded file URL from Cloudinary (added by multer-storage-cloudinary)
+    // Response includes Cloudinary secure URL (filled by multer stream storage in cloudinary-service).
     const imageUrl = req.file.path;
     
     // Get the current user's profile picture to check if we need to delete an old one

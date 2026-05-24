@@ -26,8 +26,10 @@ ENV PORT=5000
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 
-# Copy built server bundle and client static assets (vite outputs to dist/public)
-COPY --from=builder /app/dist ./dist
+# Copy built server bundle and client static assets (vite outputs to dist/public); non-root readability
+COPY --from=builder --chown=node:node /app/dist ./dist
+
+USER node
 
 EXPOSE 5000
 

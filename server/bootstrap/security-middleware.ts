@@ -4,6 +4,8 @@ import helmet from "helmet";
 import { appEnv } from "../config/env";
 
 export function registerSecurityMiddleware(app: Express): void {
+  const allowUnsafeInlineScripts = !appEnv.isProduction;
+
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -11,7 +13,9 @@ export function registerSecurityMiddleware(app: Express): void {
         directives: {
           "img-src": ["'self'", "data:", "blob:", "https:"],
           "connect-src": ["'self'", "ws:", "wss:", "https:"],
-          "script-src": ["'self'", "'unsafe-inline'"],
+          "script-src": allowUnsafeInlineScripts
+            ? ["'self'", "'unsafe-inline'"]
+            : ["'self'"],
         },
       },
       referrerPolicy: { policy: "no-referrer" },

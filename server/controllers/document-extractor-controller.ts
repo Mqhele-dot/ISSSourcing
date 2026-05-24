@@ -22,28 +22,7 @@ import {
 } from '../services/document-extractor-service';
 import { storage } from '../storage';
 
-// Configure multer for file uploads
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: function(_req, _file, cb) {
-      // Create temp directory if it doesn't exist
-      const tmpDir = path.join(process.cwd(), 'tmp');
-      if (!fs.existsSync(tmpDir)) {
-        fs.mkdirSync(tmpDir, { recursive: true });
-      }
-      cb(null, tmpDir);
-    },
-    filename: function(_req, file, cb) {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-    }
-  }),
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB file size limit
-  }
-});
-
-// File filter for accepted file types
+// File filter for accepted file types (attach to multer — do not omit or uploads bypass MIME allowlist).
 const fileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const allowedMimeTypes = [
     'application/pdf',                                   // PDF
@@ -62,6 +41,28 @@ const fileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFil
     cb(new Error('Invalid file type. Only PDF, Excel, CSV, and common image formats are allowed.'));
   }
 };
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: function (_req, _file, cb) {
+      // Create temp directory if it doesn't exist
+      const tmpDir = path.join(process.cwd(), "tmp");
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+      cb(null, tmpDir);
+    },
+    filename: function (_req, file, cb) {
+      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+      cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
+    },
+  }),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB file size limit
+  },
+  fileFilter,
+});
 
 /**
  * Register document extractor routes

@@ -1,0 +1,38 @@
+name: Artifact attestation (experimental)
+
+# Non-blocking: OIDC + attest API availability varies by org/plan — see docs/security/artifact-attestation.md
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  attest-sbom:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: npm ci (--ignore-scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Generate CycloneDX SBOM
+        run: npm run security:sbom
+
+      - name: Sign attestation for SBOM file (subject-path)
+        uses: actions/attest@v2
+        with:
+          subject-path: sbom.cdx.json
+          # Predicate kept minimal generic statement; CycloneDX content is hashed as subject.
+          predicate-type: https://cyclonedx.org/schema
+          predicate: "{}"

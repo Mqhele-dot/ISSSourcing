@@ -49,6 +49,12 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 | `npm run test:e2e` | Playwright `e2e/` tests; wrapper ensures `/api/ready` + `/auth` on 127.0.0.1:5000 before Playwright (needs DB). Global setup runs **`seed:functional-qa`** unless `SKIP_E2E_FUNCTIONAL_QA_SEED=1` |
 | `npm run test:e2e:preflight` | With `npm run dev` running: checks `/api/ready` and `/auth` reachability |
 | `npm run playwright:install-deps` | Linux: Playwright OS deps for Chromium, Firefox, WebKit (use `sudo` if apt fails) |
+| `npm run security:lifecycle` | Report dependencies with **`hasInstallScript`** (lockfile-derived; hooks not executed here) |
+| `npm run security:lifecycle:enforce` | Fail if new lockfile installers are outside curated allowlist |
+| `npm run security:audit` | `npm audit --audit-level=high` (**commonly exits 1 pending dependency upgrades**) |
+| `npm run security:audit:signatures` | **`npm audit signatures`** registry signature verification |
+| `npm run security:sbom` | CycloneDX SBOM to `./sbom.cdx.json` (gitignored locally) |
+| `npm run security:supply-chain` | Runs enforce + SBOM + signatures + audit in series (`audit` may exit non‑zero) |
 
 ## Requirements
 
@@ -57,7 +63,18 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 
 ## Documentation
 
-- [`docs/WINDOWS-LOCAL-SETUP.md`](docs/WINDOWS-LOCAL-SETUP.md) — **Windows**
+### Security supply chain / hardening
+
+- [`docs/security/EVIDENCE-2026-05-19.md`](docs/security/EVIDENCE-2026-05-19.md) — baseline evidence capture
+- [`docs/security/npm-registry-policy.md`](docs/security/npm-registry-policy.md) — registry & confusion guidance
+- [`docs/security/ai-code-security-checklist.md`](docs/security/ai-code-security-checklist.md) — AI-assisted change review
+- [`docs/security/github-actions-pinning.md`](docs/security/github-actions-pinning.md) — Action pinning TODO inventory
+- [`docs/security/CSP_AND_FRONTEND_NOTES.md`](docs/security/CSP_AND_FRONTEND_NOTES.md) — Helmet CSP + frontend notes
+- [`docs/security/artifact-attestation.md`](docs/security/artifact-attestation.md) — optional OIDC attestations
+- [`docs/security/SECURITY_VERIFICATION_RESULTS.md`](docs/security/SECURITY_VERIFICATION_RESULTS.md) — CLI verification logs (post-rollout)
+
+### Platform docs
+
 - [`DATABASE_SETUP.md`](DATABASE_SETUP.md) — database & SSL
 - [`docs/ENV-CONFIG.md`](docs/ENV-CONFIG.md) — environment variables
 - [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md) — API shapes

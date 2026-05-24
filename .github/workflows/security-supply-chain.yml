@@ -1,0 +1,79 @@
+# Supply-chain visibility: deterministic install, audits, signatures, SBOM, lifecycle hooks.
+# `npm audit --audit-level=high` stays non-blocking; workflow summary reflects pass/fail for visibility.
+
+name: Security supply chain
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 13 * * 1" # Weekly Monday 13:00 UTC — catches drift between PR merges on default branch paths.
+
+permissions:
+  contents: read
+
+jobs:
+  supply-chain-scan:
+    if: >-
+      github.event_name != 'schedule'
+      || (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write # upload-artifact
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # Deterministic tree; skips lifecycle scripts so native addons do not compile (scan-only job).
+      - name: npm ci (--ignore-scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Verify dependency tree (--depth=0)
+        run: npm ls --omit=peer --omit=optional --depth=0
+
+      - name: Lifecycle audit (lockfile hasInstallScript, enforce)
+        run: npm run security:lifecycle:enforce
+
+      - name: Generate CycloneDX SBOM (package-lock-only)
+        run: npm run security:sbom
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: warn
+
+      - name: npm audit signatures (registry provenance when available)
+        continue-on-error: true
+        run: npm run security:audit:signatures
+
+      - name: npm audit (--audit-level=high)
+        id: npm_audit
+        continue-on-error: true
+        run: npm run security:audit
+
+      - name: npm audit outcome (step summary)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## npm audit (high+) — informational"
+            echo ""
+            if [[ "${{ steps.npm_audit.outcome }}" == "success" ]]; then
+              echo "**Step outcome:** success — npm exited **0** for \`--audit-level=high\`."
+              echo ""
+              echo "::notice::npm audit exited 0 at the configured threshold."
+            else
+              echo "**Step outcome:** failure — see logs; track remediation in \`docs/security/audit-remediation-backlog.md\`."
+              echo ""
+              echo "::warning::npm audit exited non-zero; job remains green (continue-on-error) until backlog clears."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -14,3 +14,10 @@ vite.config.ts.*
 # Playwright (local reports; do not commit)
 playwright-report/
 test-results/
+
+# Locally generated CycloneDX SBOM (`npm run security:sbom`); CI uploads artifact instead.
+sbom.cdx.json
+
+# Local npm audit snapshots (evidence regenerated ad hoc; summarize in docs/security/audit-remediation-backlog.md)
+audit-high*.json
+audit-high*.txt
