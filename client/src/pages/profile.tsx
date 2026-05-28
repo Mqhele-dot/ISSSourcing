@@ -25,6 +25,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { z } from "zod";
 
 // Profile update schema
@@ -51,6 +58,8 @@ export default function ProfilePage() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [removePictureConfirm, setRemovePictureConfirm] = useState(false);
+  const [pictureUrlDialogOpen, setPictureUrlDialogOpen] = useState(false);
+  const [pictureUrl, setPictureUrl] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -71,6 +80,33 @@ export default function ProfilePage() {
     },
     enabled: !!user, // Only run if user is logged in
   });
+
+  const saveProfilePictureUrl = async () => {
+    const url = pictureUrl.trim();
+    if (!url) return;
+    profileForm.setValue("profilePicture", url);
+
+    try {
+      await requestJson("PUT", "/api/profile/picture/url", { url });
+      queryClient.setQueryData(["/api/user"], (oldData: any) => ({
+        ...oldData,
+        profilePicture: url,
+      }));
+
+      toast({
+        title: "Profile Picture Updated",
+        description: "Your profile picture URL has been updated successfully."
+      });
+      setPictureUrlDialogOpen(false);
+      setPictureUrl("");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update profile picture URL",
+        variant: "destructive"
+      });
+    }
+  };
 
   // Set up profile update form
   const profileForm = useForm({
@@ -426,33 +462,9 @@ export default function ProfilePage() {
                                   <Button 
                                     type="button" 
                                     variant="ghost"
-                                    onClick={async () => {
-                                      const url = prompt("Enter the URL to your profile picture");
-                                      if (url) {
-                                        profileForm.setValue("profilePicture", url);
-                                        
-                                        // Update the API to save the URL
-                                        try {
-                                          await requestJson("PUT", "/api/profile/picture/url", { url });
-                                          
-                                          // Update user data in the cache
-                                          queryClient.setQueryData(["/api/user"], (oldData: any) => ({
-                                            ...oldData,
-                                            profilePicture: url,
-                                          }));
-                                          
-                                          toast({
-                                            title: "Profile Picture Updated",
-                                            description: "Your profile picture URL has been updated successfully."
-                                          });
-                                        } catch (error) {
-                                          toast({
-                                            title: "Error",
-                                            description: "Failed to update profile picture URL",
-                                            variant: "destructive"
-                                          });
-                                        }
-                                      }
+                                    onClick={() => {
+                                      setPictureUrl(profileForm.getValues("profilePicture") ?? "");
+                                      setPictureUrlDialogOpen(true);
                                     }}
                                   >
                                     <ImageIcon className="h-4 w-4 mr-2" />
@@ -787,6 +799,32 @@ export default function ProfilePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={pictureUrlDialogOpen} onOpenChange={setPictureUrlDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Use profile picture URL</DialogTitle>
+            <DialogDescription>
+              Paste a direct image URL to use as your profile picture.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              value={pictureUrl}
+              onChange={(event) => setPictureUrl(event.target.value)}
+              placeholder="https://example.com/photo.jpg"
+            />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setPictureUrlDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void saveProfilePictureUrl()}>
+                Save URL
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

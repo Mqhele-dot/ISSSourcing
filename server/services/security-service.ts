@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import csrf from "csurf";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { RateLimiterMemory, type RateLimiterRes } from "rate-limiter-flexible";
 import { sendError } from "../api-response";
 import { appEnv } from "../config/env";
@@ -58,23 +58,58 @@ async function runLimiter(
   }
 }
 
-export const csrfProtection = csrf({
-  cookie: false,
-  ignoreMethods: ["GET", "HEAD", "OPTIONS"],
-  value: (req) => {
-    const candidate =
-      req.get("x-csrf-token") ??
-      req.get("csrf-token") ??
-      (typeof req.body?._csrf === "string" ? req.body._csrf : undefined);
-    return candidate ?? "";
-  },
-});
+function getSessionCsrfToken(req: Request): string {
+  if (!req.session.csrfToken) {
+    req.session.csrfToken = randomBytes(32).toString("base64url");
+  }
+  return req.session.csrfToken;
+}
+
+function readRequestCsrfToken(req: Request): string {
+  return (
+    req.get("x-csrf-token") ??
+    req.get("csrf-token") ??
+    (typeof req.body?._csrf === "string" ? req.body._csrf : "")
+  );
+}
+
+function constantTimeEquals(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+export function issueCsrfToken(req: Request, res: Response): void {
+  if (sendErrorIfSessionUnavailable(req, res)) {
+    return;
+  }
+  res.json({ csrfToken: getSessionCsrfToken(req) });
+}
+
+function sendErrorIfSessionUnavailable(req: Request, res: Response): true | undefined {
+  if (req.session) return undefined;
+  sendError(res, 500, "SESSION_UNAVAILABLE", "Session is not available for CSRF protection.");
+  return true;
+}
 
 export function csrfBypassForReadOnlyMethods(req: Request, res: Response, next: NextFunction) {
   if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
     return next();
   }
-  return csrfProtection(req, res, next);
+
+  if (sendErrorIfSessionUnavailable(req, res)) {
+    return;
+  }
+
+  const expected = getSessionCsrfToken(req);
+  const actual = readRequestCsrfToken(req);
+  if (!actual || !constantTimeEquals(actual, expected)) {
+    return sendError(res, 403, "CSRF_TOKEN_INVALID", "Invalid or expired form submission.", {
+      hint: "Refresh the page and try again.",
+    });
+  }
+
+  return next();
 }
 
 export function handleCSRFError(err: unknown, _req: Request, res: Response, next: NextFunction) {

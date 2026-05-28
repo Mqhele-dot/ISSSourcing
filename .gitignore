@@ -21,3 +21,4 @@ sbom.cdx.json
 # Local npm audit snapshots (evidence regenerated ad hoc; summarize in docs/security/audit-remediation-backlog.md)
 audit-high*.json
 audit-high*.txt
+.npm-cache-audit/

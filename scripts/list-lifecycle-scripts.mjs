@@ -30,7 +30,6 @@ const ALLOW_INSTALL_HOOKS = new Set([
   "core-js",
   "@scarf/scarf",
   // Imaging / DB / OCR native stacks
-  "sharp",
   "sqlite3",
   "tesseract.js",
 ]);

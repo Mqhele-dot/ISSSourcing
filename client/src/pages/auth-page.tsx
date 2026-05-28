@@ -185,8 +185,6 @@ export default function AuthPage() {
                   
                   <TabsContent value="register">
                     <RegisterForm onSuccess={(data) => {
-                      console.log("Registration response:", data);
-                      
                       if (data.requiresEmailVerification) {
                         setActiveTab("login");
                         toast({
@@ -259,6 +257,8 @@ function LoginForm({
   const { toast } = useToast();
   const [loginError, setLoginError] = useState<string | null>(null);
   const [requiresEmailVerification, setRequiresEmailVerification] = useState(false);
+  const [resendDialogOpen, setResendDialogOpen] = useState(false);
+  const [resendEmail, setResendEmail] = useState("");
   
   const form = useForm({
     resolver: zodResolver(userLoginSchema),
@@ -288,13 +288,8 @@ onError: (error: unknown) => {
                 ? String((error as { message: unknown }).message)
                 : "An error occurred during login. Please try again.";
             setLoginError(msg);
-            if (
-              typeof error === "object" &&
-              error !== null &&
-              "response" in error &&
-              typeof (error as { response?: { data?: { requiresEmailVerification?: boolean } } }).response?.data?.requiresEmailVerification === "boolean"
-            ) {
-              setRequiresEmailVerification((error as { response: { data: { requiresEmailVerification: boolean } } }).response.data.requiresEmailVerification);
+            if (msg.includes("verify your email") || msg.includes("requiresEmailVerification")) {
+              setRequiresEmailVerification(true);
             }
           }
       });
@@ -308,6 +303,34 @@ onError: (error: unknown) => {
     { label: "Planner", username: "planner", password: "Admin123!", role: "Planning + execution" },
     { label: "Viewer", username: "viewer", password: "Admin123!", role: "Read-only" },
   ];
+
+  const resendVerificationEmail = async (email: string) => {
+    if (!email || !email.includes("@")) {
+      toast({
+        title: "Invalid email",
+        description: "Please provide a valid email address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await apiRequest("POST", "/api/resend-verification-email", { email });
+      const result = await response.json();
+      toast({
+        title: "Verification email sent",
+        description: result.message || "If your email is registered, you will receive a new verification email.",
+      });
+      setResendDialogOpen(false);
+    } catch (error) {
+      console.error("Error resending verification email:", error);
+      toast({
+        title: "Error",
+        description: "Failed to resend verification email. Please try again later.",
+        variant: "destructive",
+      });
+    }
+  };
   
   return (
     <Card>
@@ -342,55 +365,44 @@ onError: (error: unknown) => {
             <AlertTitle className="text-amber-600">Email Verification Required</AlertTitle>
             <AlertDescription className="text-amber-600">
               Please check your email for the verification link. If you didn't receive an email, you can <Button variant="link" className="p-0 h-auto text-amber-600 font-semibold" onClick={async () => {
-                try {
-                  // Get the email from the form or prompt if not available
-                  let email = "";
-                  
-                  // For login, username might be email or actual username
-                  // Let's add a small form to collect email if needed
-                  const usernameValue = form.getValues("username");
-                  
-                  // Check if username looks like an email
-                  if (usernameValue && usernameValue.includes('@')) {
-                    email = usernameValue;
-                  } else {
-                    // Create a dialog to ask for email
-                    const promptEmail = window.prompt("Please enter your email address to receive a verification link:", "");
-                    if (!promptEmail) return; // User cancelled
-                    email = promptEmail;
-                  }
-                  
-                  if (!email || !email.includes('@')) {
-                    toast({
-                      title: "Invalid Email",
-                      description: "Please provide a valid email address.",
-                      variant: "destructive"
-                    });
-                    return;
-                  }
-                  
-                  // Call the resend verification email API
-                  const response = await apiRequest("POST", "/api/resend-verification-email", { email });
-                  const result = await response.json();
-                  
-                  // Show success message
-                  toast({
-                    title: "Verification Email Sent",
-                    description: result.message || "If your email is registered, you will receive a new verification email.",
-                    variant: "default"
-                  });
-                } catch (error) {
-                  console.error("Error resending verification email:", error);
-                  toast({
-                    title: "Error",
-                    description: "Failed to resend verification email. Please try again later.",
-                    variant: "destructive"
-                  });
+                const usernameValue = form.getValues("username");
+                if (usernameValue && usernameValue.includes("@")) {
+                  await resendVerificationEmail(usernameValue);
+                } else {
+                  setResendEmail("");
+                  setResendDialogOpen(true);
                 }
               }}>click here</Button> to request a new one.
             </AlertDescription>
           </Alert>
         )}
+
+        <Dialog open={resendDialogOpen} onOpenChange={setResendDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Resend verification email</DialogTitle>
+              <DialogDescription>
+                Enter the email address you used when creating your account.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                type="email"
+                value={resendEmail}
+                onChange={(event) => setResendEmail(event.target.value)}
+                placeholder="you@example.com"
+              />
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setResendDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={() => void resendVerificationEmail(resendEmail)}>
+                  Send email
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <div className="mb-4 rounded-md border border-border bg-muted/40 p-3">
           <p className="text-sm font-medium">Demo users</p>

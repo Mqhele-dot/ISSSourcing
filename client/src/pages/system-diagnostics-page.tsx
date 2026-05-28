@@ -10,6 +10,16 @@ import { RefreshCw, Copy, Download, PlayCircle, ShieldCheck, Trash2 } from "luci
 import { useToast } from "@/hooks/use-toast";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   fetchDiagnosticsScan,
   fetchDiagnosticsSnapshot,
   fixDiagnostics,
@@ -78,6 +88,7 @@ export default function SystemDiagnosticsPage() {
   const [snapshot, setSnapshot] = useState<DiagnosticsSnapshotResult | null>(null);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [fixingCategory, setFixingCategory] = useState<string | null>(null);
+  const [pendingFixCategory, setPendingFixCategory] = useState<string | null>(null);
   const {
     phase,
     readinessProbeFailed,
@@ -150,12 +161,7 @@ export default function SystemDiagnosticsPage() {
   };
 
   const runFix = async (category: string) => {
-    const ok = window.confirm(
-      category === "data"
-        ? "This fix may rename duplicate SKUs or reset negative quantities. Continue?"
-        : `Run safe diagnostics fix for ${category}?`,
-    );
-    if (!ok) return;
+    setPendingFixCategory(null);
     setFixingCategory(category);
     try {
       const result = await fixDiagnostics(category);
@@ -212,6 +218,12 @@ export default function SystemDiagnosticsPage() {
     selfChecks,
   };
   const scanCategories: Array<keyof DiagnosticsScanResult> = ["database", "configuration", "data", "system"];
+  const pendingFixDescription =
+    pendingFixCategory === "data"
+      ? "This fix may rename duplicate SKUs or reset negative quantities."
+      : pendingFixCategory
+        ? `Run safe diagnostics guidance for ${pendingFixCategory}.`
+        : "";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6" data-testid="system-diagnostics-page">
@@ -393,7 +405,7 @@ export default function SystemDiagnosticsPage() {
                     className="mt-3"
                     data-testid="diagnostics-fix-button"
                     disabled={fixingCategory === category || !scan}
-                    onClick={() => void runFix(category)}
+                    onClick={() => setPendingFixCategory(category)}
                   >
                     {fixingCategory === category ? "Fixing…" : "Fix / guidance"}
                   </Button>
@@ -615,6 +627,27 @@ export default function SystemDiagnosticsPage() {
         Use this screen when helping a business IT team verify database connectivity, first-run onboarding, and export
         directories without reading server logs.
       </p>
+
+      <AlertDialog open={pendingFixCategory != null} onOpenChange={(open) => !open && setPendingFixCategory(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run diagnostics fix?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingFixDescription} The result will be logged in diagnostics and the scan will refresh afterward.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingFixCategory) void runFix(pendingFixCategory);
+              }}
+            >
+              Run fix
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

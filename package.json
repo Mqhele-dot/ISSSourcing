@@ -10,7 +10,7 @@
     "check": "tsc",
     "lint": "eslint \"client/src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"shared/**/*.ts\"",
     "doctor": "bash scripts/doctor.sh",
-    "docs:validate": "bash scripts/validate-readme.sh",
+    "docs:validate": "node scripts/validate-readme.mjs",
     "test:runtime": "bash scripts/test-runtime.sh",
     "test:contracts": "tsx scripts/test-api-contract.ts",
     "test:login": "tsx scripts/test-login.ts",
@@ -61,6 +61,7 @@
     "playwright:install-deps": "playwright install-deps",
     "verify:changes": "node scripts/verify-recent-changes.js",
     "validate:migrations": "node scripts/validate-migrations.mjs",
+    "verify:package-manifests": "node scripts/verify-package-manifests-clean.mjs",
     "migrate:check": "node scripts/migrate-check.mjs",
     "release:gate": "node scripts/release-gate.mjs",
     "release:gate:delta": "npm run test:rbac && npm run test:requisitions && npm run test:ap-workflow && npm run test:ap-controls && npm run test:exports && npm run test:smoke && npm run test:setup-checkpoint && npm run test:installable-complete",
@@ -82,10 +83,17 @@
     "security:audit": "npm audit --audit-level=high",
     "security:audit:signatures": "npm audit signatures",
     "security:sbom": "npm sbom --sbom-format cyclonedx --package-lock-only > sbom.cdx.json",
-    "security:supply-chain": "npm run security:lifecycle:enforce && npm run security:sbom && npm run security:audit:signatures && npm run security:audit"
+    "security:supply-chain": "npm run security:lifecycle:enforce && npm run security:sbom && npm run security:audit:signatures && npm run security:audit",
+    "security:supply-chain:ci": "npm run verify:package-manifests && npm run security:supply-chain",
+    "build:secure": "npm run check && npm run lint && npm run validate:migrations && npm run security:supply-chain && npm run build"
   },
   "engines": {
     "node": ">=20"
+  },
+  "overrides": {
+    "filelist": "2.0.2",
+    "readdir-glob": "3.0.0",
+    "tmp": "0.2.7"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -133,7 +141,6 @@
     "cmdk": "^1.0.0",
     "concurrently": "^9.1.2",
     "connect-pg-simple": "^10.0.0",
-    "csurf": "^1.10.0",
     "csv-parser": "^3.2.0",
     "csv-writer": "^1.6.0",
     "date-fns": "^3.6.0",
@@ -181,7 +188,6 @@
     "react-resizable-panels": "^2.1.4",
     "react-shepherd": "^6.1.8",
     "recharts": "^2.13.0",
-    "sharp": "^0.33.5",
     "shepherd.js": "^14.5.0",
     "speakeasy": "^2.0.0",
     "sqlite": "^5.1.1",
@@ -204,7 +210,6 @@
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
     "@tailwindcss/typography": "^0.5.15",
     "@types/connect-pg-simple": "^7.0.3",
-    "@types/csurf": "^1.11.5",
     "@types/express": "4.17.21",
     "@types/express-session": "^1.18.0",
     "@types/node": "20.16.11",

@@ -152,6 +152,8 @@ This project does **not** install Linux by itself; something above triggers Micr
 
 ## Scripts that use Bash
 
+`npm run docs:validate` is Windows-safe and uses Node (`scripts/validate-readme.mjs`).
+
 These expect **Git Bash**, **WSL**, or another Unix shell:
 
 - `npm run doctor` → `bash scripts/doctor.sh`

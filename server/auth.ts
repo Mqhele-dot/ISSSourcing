@@ -9,7 +9,7 @@ import type { Request, Response, NextFunction } from "express";
 import {
   applyStateChangingCsrfProtection,
   clearLoginRateLimit,
-  csrfProtection,
+  issueCsrfToken,
   loginRateLimiter,
   registerRateLimiter,
   emailVerificationRateLimiter,
@@ -253,10 +253,7 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
   app.use(organizationContextMiddleware);
-  app.get("/api/csrf-token", csrfProtection, (req, res) => {
-    const token = req.csrfToken();
-    return sendOk(res, { csrfToken: token });
-  });
+  app.get("/api/csrf-token", issueCsrfToken);
   app.use(applyStateChangingCsrfProtection);
 
   // Configure local strategy with options to pass request object
@@ -317,14 +314,12 @@ export function setupAuth(app: Express) {
         }
       }
       
-      // Temporarily bypass email verification for development 
-      // In production, uncomment this check
-      // if (!user.emailVerified) {
-      //   return done(null, false, { 
-      //     message: "Please verify your email address before logging in",
-      //     requiresEmailVerification: true 
-      //   });
-      // }
+      if (appEnv.isProduction && !user.emailVerified) {
+        return done(null, false, {
+          message: "Please verify your email address before logging in",
+          requiresEmailVerification: true,
+        } as { message: string; requiresEmailVerification: boolean });
+      }
 
       // Record successful login attempt
       await storage.recordLoginAttempt(username, true);
@@ -441,18 +436,24 @@ export function setupAuth(app: Express) {
       // Create user data object (without confirmPassword)
       const { confirmPassword, ...userDataWithoutConfirm } = req.body;
       
+      const autoVerifyEmail = !appEnv.isProduction;
       const userData = {
         ...userDataWithoutConfirm,
         password: hashedPassword,
         lastPasswordChange: new Date(),
-        emailVerified: true, // Temporarily set to true for development to bypass email verification
+        emailVerified: autoVerifyEmail,
         twoFactorEnabled: false,
         failedLoginAttempts: 0,
         accountLocked: false
       };
 
-      // Log user data for debugging (excluding password)
-      console.log("Creating user with data:", { 
+      logger.info("Creating user account", {
+        username: userData.username,
+        email: userData.email,
+        role: userData.role,
+        emailVerified: userData.emailVerified,
+      });
+      logger.debug("Creating user with sanitized registration data", { 
         ...userData, 
         password: "[REDACTED]" 
       });
@@ -473,8 +474,10 @@ export function setupAuth(app: Express) {
 
       // Return success - email is automatically verified in development
       res.status(201).json({ 
-        message: "Registration successful! You can now log in with your credentials.",
-        requiresEmailVerification: false
+        message: autoVerifyEmail
+          ? "Registration successful! You can now log in with your credentials."
+          : "Registration successful! Please verify your email before logging in.",
+        requiresEmailVerification: !autoVerifyEmail
       });
     } catch (error) {
       console.error("Registration error:", error);

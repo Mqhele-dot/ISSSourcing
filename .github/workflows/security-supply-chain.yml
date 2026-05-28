@@ -1,5 +1,5 @@
 # Supply-chain visibility: deterministic install, audits, signatures, SBOM, lifecycle hooks.
-# `npm audit --audit-level=high` stays non-blocking; workflow summary reflects pass/fail for visibility.
+# npm audit (--audit-level=high) is blocking when the advisory backlog is clear.
 
 name: Security supply chain
 
@@ -28,12 +28,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
 
       # Deterministic tree; skips lifecycle scripts so native addons do not compile (scan-only job).
       - name: npm ci (--ignore-scripts)
         run: npm ci --ignore-scripts
+
+      - name: Verify package manifest drift
+        run: npm run verify:package-manifests
 
       - name: Verify dependency tree (--depth=0)
         run: npm ls --omit=peer --omit=optional --depth=0
@@ -52,12 +55,10 @@ jobs:
           if-no-files-found: warn
 
       - name: npm audit signatures (registry provenance when available)
-        continue-on-error: true
         run: npm run security:audit:signatures
 
       - name: npm audit (--audit-level=high)
         id: npm_audit
-        continue-on-error: true
         run: npm run security:audit
 
       - name: npm audit outcome (step summary)
@@ -65,7 +66,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## npm audit (high+) — informational"
+            echo "## npm audit (high+)"
             echo ""
             if [[ "${{ steps.npm_audit.outcome }}" == "success" ]]; then
               echo "**Step outcome:** success — npm exited **0** for \`--audit-level=high\`."
@@ -74,6 +75,6 @@ jobs:
             else
               echo "**Step outcome:** failure — see logs; track remediation in \`docs/security/audit-remediation-backlog.md\`."
               echo ""
-              echo "::warning::npm audit exited non-zero; job remains green (continue-on-error) until backlog clears."
+              echo "::error::npm audit exited non-zero at high+ threshold."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

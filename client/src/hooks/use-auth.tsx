@@ -94,8 +94,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return data as RegistrationResponse;
     },
     onSuccess: (response: RegistrationResponse) => {
-      console.log("Registration response:", response);
-      
       if (response.requiresEmailVerification) {
         toast({
           title: "Registration successful",

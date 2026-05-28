@@ -88,6 +88,8 @@ type PurchaseOrderItem = {
   receivedQuantity?: number | null;
 };
 type TaxCode = { id: number; code: string; name: string; rate: number };
+const EMPTY_PURCHASE_ORDERS: PurchaseOrder[] = [];
+const EMPTY_TAX_CODES: TaxCode[] = [];
 
 type MatchResult = {
   matched: boolean;
@@ -293,8 +295,8 @@ export default function InvoicesPage() {
   });
 
   const suppliers = suppliersQuery.data ?? [];
-  const purchaseOrders = purchaseOrdersQuery.data ?? [];
-  const taxCodes = taxCodesQuery.data ?? [];
+  const purchaseOrders = purchaseOrdersQuery.data ?? EMPTY_PURCHASE_ORDERS;
+  const taxCodes = taxCodesQuery.data ?? EMPTY_TAX_CODES;
   const inventoryForLines = inventoryLinesQuery.data ?? [];
   const selectedPoItems = poItemsQuery.data ?? [];
 

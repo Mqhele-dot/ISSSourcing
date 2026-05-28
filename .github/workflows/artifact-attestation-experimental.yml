@@ -1,8 +1,14 @@
 name: Artifact attestation (experimental)
 
-# Non-blocking: OIDC + attest API availability varies by org/plan — see docs/security/artifact-attestation.md
+# Runs after a successful Security supply chain workflow on the default branch, or manually.
+# Non-blocking OIDC attestation step remains continue-on-error — see docs/security/artifact-attestation.md
+
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Security supply chain"]
+    types: [completed]
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -10,29 +16,50 @@ permissions:
   attestations: write
 
 jobs:
-  attest-sbom:
+  attest-build:
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+          && (github.event.workflow_run.head_branch == 'main'
+              || github.event.workflow_run.head_branch == 'master'))
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
 
-      - name: npm ci (--ignore-scripts)
-        run: npm ci --ignore-scripts
+      - name: npm ci
+        run: npm ci
+
+      - name: Verify package manifest drift
+        run: npm run verify:package-manifests
+
+      - name: Build production artifact
+        run: npm run build
 
       - name: Generate CycloneDX SBOM
         run: npm run security:sbom
 
-      - name: Sign attestation for SBOM file (subject-path)
+      - name: Pack dist artifact
+        shell: bash
+        run: tar -czf invtrack-dist.tgz dist sbom.cdx.json
+
+      - name: Sign attestation for dist artifact
+        uses: actions/attest@v2
+        with:
+          subject-path: invtrack-dist.tgz
+
+      - name: Sign attestation for SBOM file
         uses: actions/attest@v2
         with:
           subject-path: sbom.cdx.json
-          # Predicate kept minimal generic statement; CycloneDX content is hashed as subject.
           predicate-type: https://cyclonedx.org/schema
           predicate: "{}"

@@ -132,7 +132,7 @@ export function useAsyncResource<T>(
       cancelled = true;
       controller?.abort();
     };
-  }, [abortable, options?.immediate, isDev, ...(options?.revalidateDeps ?? [fetcher])]);
+  }, [abortable, options?.immediate, isDev, fetcher, options?.revalidateDeps]);
 
   return { loading, error, data, refetch };
 }

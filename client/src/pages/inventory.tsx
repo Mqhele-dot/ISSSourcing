@@ -50,6 +50,7 @@ type Category = {
 };
 
 const EMPTY_CATEGORIES: Category[] = [];
+const EMPTY_WAREHOUSES: Array<{ id: number; name: string }> = [];
 
 type InventorySort = "name-asc" | "sku-asc" | "available-asc" | "available-desc" | "updated-desc" | "updated-asc";
 type InventoryViewMode = "table" | "cards";
@@ -164,7 +165,7 @@ export default function InventoryPage() {
     refetch: refetchWarehouses,
   } = useAsyncResource(warehousesFetcher);
 
-  const warehouses = warehousesData ?? [];
+  const warehouses = warehousesData ?? EMPTY_WAREHOUSES;
 
   const categoriesFetcher = useCallback((): Promise<Category[]> => {
     return requestJson<Category[]>("GET", "/api/categories");

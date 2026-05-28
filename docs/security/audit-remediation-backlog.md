@@ -6,7 +6,7 @@ Related: [**Electron / desktop posture**](./electron-desktop-strategy.md) · [**
 
 ## How to regenerate evidence
 
-Run from repo root (Node/npm current LTS aligns with CI Node 22):
+Run from repo root (CI uses **Node 24**; local dev may use Node 20+ per `engines`):
 
 ```bash
 npm audit --audit-level=high --json > /tmp/npm-audit-high.json   # omit --json for human-readable
@@ -36,7 +36,32 @@ Larger transitive clusters (**tar**, **node-gyp**, **@electron/*** rebuild stack
 
 ---
 
-## Grouping: direct vs transitive (high+, representative)
+## minimatch@5.1.6 (Dependency Review blocker — resolved)
+
+**Root cause (two paths):**
+
+| Path | Chain |
+|------|--------|
+| Electron packaging | `electron-builder` → `app-builder-lib` → `ejs` → `jake` → **`filelist@1.0.4`** → `minimatch@5.1.6` |
+| Excel exports | `exceljs` → `archiver@5` → **`readdir-glob@1.1.3`** → `minimatch@5.1.6` |
+
+**Fix applied:** root [`package.json`](../../package.json) **`overrides`** (no new packages):
+
+```json
+"overrides": {
+  "filelist": "2.0.2",
+  "readdir-glob": "3.0.0",
+  "tmp": "0.2.7"
+}
+```
+
+Both upstream majors declare **`minimatch@^10.2.x`**, clearing **GHSA-3ppc-4f35-3m26**, **GHSA-23c5-xmqv-rm74**, **GHSA-7r86-cg39-jmmj**. Follow-up **`npm audit fix`** cleared remaining high advisories (axios, glob, rollup, etc.) without `--force`.
+
+**Removed unused direct dep:** **`sharp`** (no runtime imports; lifecycle allowlist updated).
+
+**2026-05-27 follow-up:** Removed deprecated `csurf` / `@types/csurf` and replaced it with session-backed CSRF validation in `server/services/security-service.ts`, clearing the `csurf -> cookie` advisory. Added a `tmp@0.2.7` override after npm registry review showed `tmp` latest as `0.2.7`, clearing the high `tmp` path traversal audit chain through Electron packaging and Excel export tooling.
+
+---
 
 Paths are indicative of where code or runtime usually touches the graph.
 
@@ -74,7 +99,9 @@ Update **this section** whenever a remediation wave merges:
 
 | Date | `npm audit --audit-level=high` exit | High+ count (npm metadata) | Notes |
 |------|--------------------------------------|----------------------------|-------|
-| **2026-05-19** (post-wave tree) | **1** (still **10 high**, **0 critical**) | 10 high | Down from **28 high + 1 critical** baseline; remaining items are mostly **transitive** chains (axios / rollup / glob stack, dev-tooling). |
+| **2026-05-27** (update-audit pass) | **0** | **0 high / 0 critical** | Replaced `csurf`; added `tmp@0.2.7` override; **7** moderate remain (dev esbuild/vite chain, nested exceljs uuid). |
+| **2026-05-21** (gap remediation) | **0** | **0 high / 0 critical** | `filelist`/`readdir-glob` overrides + `npm audit fix`; **9** moderate/low remain (csurf/cookie, dev esbuild/vite, exceljs uuid). |
+| **2026-05-19** (post-wave tree) | **1** | 10 high | Before minimatch overrides. |
 | *pre-wave inventory* | — | 28 high + 1 critical | See “Baseline snapshot” above. |
 
 ---

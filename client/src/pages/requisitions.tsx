@@ -66,6 +66,8 @@ interface RequisitionsPageProps {
   basePath?: string;
 }
 
+const EMPTY_REQUISITIONS: PurchaseRequisition[] = [];
+
 export default function RequisitionsPage({ embedded, basePath = "/requisitions" }: RequisitionsPageProps = {}) {
   const productSetupComplete = useProductSetupComplete();
   const { formatMoney } = useReportingMoney();
@@ -124,7 +126,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
       return [];
     },
   });
-  const requisitions = Array.isArray(requisitionsRaw) ? requisitionsRaw : [];
+  const requisitions = Array.isArray(requisitionsRaw) ? requisitionsRaw : EMPTY_REQUISITIONS;
 
   const {
     data: users = [],
