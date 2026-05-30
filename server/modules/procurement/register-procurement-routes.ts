@@ -16,6 +16,7 @@ import {
   approvalHistory,
   purchaseOrderRevisions,
   supplierContracts,
+  suppliers,
   paymentTerms,
   incoterms,
   currencies,
@@ -148,6 +149,88 @@ async function assertPurchaseOrderCurrencyCodeAllowed(
     };
   }
   return { ok: true };
+}
+
+function isCommercialFieldBlank(value: unknown): boolean {
+  return value == null || (typeof value === "string" && value.trim() === "");
+}
+
+async function isActiveCurrencyCode(currencyCode: unknown): Promise<string | null> {
+  if (typeof currencyCode !== "string") return null;
+  const code = currencyCode.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) return null;
+  const [row] = await db
+    .select({ id: currencies.id })
+    .from(currencies)
+    .where(and(eq(currencies.code, code), eq(currencies.active, true)))
+    .limit(1);
+  return row ? code : null;
+}
+
+async function applyPurchaseOrderCommercialDefaults(
+  purchaseOrderInput: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const supplierId = Number(purchaseOrderInput.supplierId);
+  if (!Number.isFinite(supplierId) || supplierId <= 0) return purchaseOrderInput;
+
+  const orgId = getActiveOrganizationId();
+  const [supplier] = await db
+    .select({
+      id: suppliers.id,
+      paymentTermsId: suppliers.paymentTermsId,
+      defaultCurrencyCode: suppliers.defaultCurrencyCode,
+    })
+    .from(suppliers)
+    .where(and(eq(suppliers.id, supplierId), eq(suppliers.organizationId, orgId)))
+    .limit(1);
+
+  if (!supplier) return purchaseOrderInput;
+
+  let contractDefaults:
+    | {
+        paymentTermsId: number | null;
+        incotermId: number | null;
+        currency: string | null;
+        defaultTaxCodeId: number | null;
+      }
+    | undefined;
+
+  const contractId = Number(purchaseOrderInput.contractId);
+  if (Number.isFinite(contractId) && contractId > 0) {
+    [contractDefaults] = await db
+      .select({
+        paymentTermsId: supplierContracts.paymentTermsId,
+        incotermId: supplierContracts.incotermId,
+        currency: supplierContracts.currency,
+        defaultTaxCodeId: supplierContracts.defaultTaxCodeId,
+      })
+      .from(supplierContracts)
+      .where(
+        and(
+          eq(supplierContracts.id, contractId),
+          eq(supplierContracts.organizationId, orgId),
+          eq(supplierContracts.supplierId, supplierId),
+        ),
+      )
+      .limit(1);
+  }
+
+  if (isCommercialFieldBlank(purchaseOrderInput.paymentTermsId)) {
+    purchaseOrderInput.paymentTermsId = contractDefaults?.paymentTermsId ?? supplier.paymentTermsId ?? undefined;
+  }
+  if (isCommercialFieldBlank(purchaseOrderInput.incotermId)) {
+    purchaseOrderInput.incotermId = contractDefaults?.incotermId ?? undefined;
+  }
+  if (isCommercialFieldBlank(purchaseOrderInput.taxCodeId)) {
+    purchaseOrderInput.taxCodeId = contractDefaults?.defaultTaxCodeId ?? undefined;
+  }
+  if (isCommercialFieldBlank(purchaseOrderInput.currencyCode)) {
+    const contractCurrency = await isActiveCurrencyCode(contractDefaults?.currency);
+    const supplierCurrency = await isActiveCurrencyCode(supplier.defaultCurrencyCode);
+    purchaseOrderInput.currencyCode = contractCurrency ?? supplierCurrency ?? purchaseOrderInput.currencyCode;
+  }
+
+  return purchaseOrderInput;
 }
 
 const purchaseOrderCommercialPatchSchema = z
@@ -853,6 +936,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         }
       }
 
+      await applyPurchaseOrderCommercialDefaults(purchaseOrderInput);
       const validatedOrderData = insertPurchaseOrderSchema.parse(purchaseOrderInput);
       const validatedItemsData = req.body.items.map((item: any, index: number) => {
         const qty = Number(item?.quantity);
@@ -881,6 +965,27 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       const projectCheckPo = await validateProjectIdForOrg(validatedOrderData.projectId ?? undefined);
       if (!projectCheckPo.ok) {
         return sendError(res, 400, "INVALID_PROJECT", projectCheckPo.message);
+      }
+      const currencyValidation = await assertPurchaseOrderCurrencyCodeAllowed(validatedOrderData.currencyCode);
+      if (!currencyValidation.ok) {
+        return sendError(res, 400, currencyValidation.code, currencyValidation.message);
+      }
+      const taxValidation = await assertPurchaseOrderTaxCodeAllowed(validatedOrderData.taxCodeId);
+      if (!taxValidation.ok) {
+        return sendError(res, 400, taxValidation.code, taxValidation.message);
+      }
+      const refCheck = await assertPurchaseOrderCommercialReferences({
+        organizationId: getActiveOrganizationId(),
+        supplierId: validatedOrderData.supplierId,
+        patch: {
+          departmentId: validatedOrderData.departmentId,
+          contractId: validatedOrderData.contractId,
+          paymentTermsId: validatedOrderData.paymentTermsId,
+          incotermId: validatedOrderData.incotermId,
+        },
+      });
+      if (!refCheck.ok) {
+        return sendError(res, 400, refCheck.code, refCheck.message);
       }
 
       const newOrder = await storage.createPurchaseOrder(

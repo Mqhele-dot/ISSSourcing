@@ -203,7 +203,24 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       const items = Array.isArray((payload as { items?: unknown[] }).items)
         ? (payload as { items: unknown[] }).items.map((item) => insertApReceiptItemSchema.parse(item))
         : [];
-      return sendOk(res, await createReceiptRecord(receipt, items, actor.userId), 201);
+      const warehouseIdRaw = (payload as { warehouseId?: unknown; warehouse_id?: unknown }).warehouseId ??
+        (payload as { warehouse_id?: unknown }).warehouse_id;
+      const warehouseId =
+        warehouseIdRaw != null && Number.isFinite(Number(warehouseIdRaw)) && Number(warehouseIdRaw) > 0
+          ? Number(warehouseIdRaw)
+          : null;
+      const warehouseLocationRaw =
+        (payload as { warehouseLocation?: unknown; warehouse_location?: unknown }).warehouseLocation ??
+        (payload as { warehouse_location?: unknown }).warehouse_location;
+      const warehouseLocation =
+        typeof warehouseLocationRaw === "string" && warehouseLocationRaw.trim()
+          ? warehouseLocationRaw.trim()
+          : null;
+      return sendOk(
+        res,
+        await createReceiptRecord(receipt, items, actor.userId, { warehouseId, warehouseLocation }),
+        201,
+      );
     } catch (error) {
       if (error instanceof ZodError) {
         return sendError(res, 400, "VALIDATION_ERROR", fromZodError(error).message, {

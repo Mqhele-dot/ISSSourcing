@@ -25,9 +25,11 @@ async function fetchCsrfToken(cookie?: string, baseUrl?: string): Promise<{ toke
     signal: AbortSignal.timeout(TEST_HTTP_TIMEOUT_MS),
   });
   captureCookieFromResponse(response);
-  const payload = await response.json().catch(() => null) as { data?: { csrfToken?: string } } | null;
+  const payload = await response.json().catch(() => null) as
+    | { csrfToken?: string; data?: { csrfToken?: string } }
+    | null;
   return {
-    token: payload?.data?.csrfToken,
+    token: payload?.data?.csrfToken ?? payload?.csrfToken,
     cookie: peekSessionCookie() ?? cookie,
   };
 }

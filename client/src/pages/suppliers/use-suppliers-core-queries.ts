@@ -35,11 +35,17 @@ export function useSuppliersCoreQueries() {
     throwOnError: false,
   });
 
+  const carriersQuery = useQuery<{ id: number; code?: string | null; name: string; active?: boolean | null }[]>({
+    queryKey: ["/api/carriers"],
+    queryFn: () => requestJson("GET", "/api/carriers"),
+    throwOnError: false,
+  });
+
   const performanceQuery = useQuery<SupplierPerformanceRow[]>({
     queryKey: ["/api/suppliers/performance"],
     queryFn: () => requestJson("GET", "/api/suppliers/performance"),
     throwOnError: false,
   });
 
-  return { suppliersQuery, paymentTermsQuery, currenciesQuery, performanceQuery };
+  return { suppliersQuery, paymentTermsQuery, currenciesQuery, carriersQuery, performanceQuery };
 }

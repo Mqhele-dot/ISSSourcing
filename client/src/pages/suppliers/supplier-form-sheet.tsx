@@ -20,6 +20,7 @@ import { emptySupplierFormValues } from "@/pages/suppliers/supplier-form-types";
 
 type PaymentTerm = { id: number; code: string; name: string };
 type Currency = { id: number; code: string; name: string };
+type Carrier = { id: number; code?: string | null; name: string; active?: boolean | null };
 
 const SUPPLIER_FORM_STEPS = ["general", "banking", "compliance", "documents"] as const;
 type SupplierFormStep = (typeof SUPPLIER_FORM_STEPS)[number];
@@ -32,6 +33,7 @@ type SupplierFormSheetProps = {
   form: UseFormReturn<SupplierFormValues>;
   paymentTerms: PaymentTerm[];
   currencies: Currency[];
+  carriers: Carrier[];
   onCreate: (data: SupplierFormValues) => void;
   onUpdate: (data: SupplierFormValues) => void;
   createPending: boolean;
@@ -46,6 +48,7 @@ export function SupplierFormSheet({
   form,
   paymentTerms,
   currencies,
+  carriers,
   onCreate,
   onUpdate,
   createPending,
@@ -311,6 +314,35 @@ export function SupplierFormSheet({
                                   {currency.code} - {currency.name}
                                 </SelectItem>
                               ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="defaultCarrierId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="supplier-default-carrier">Preferred carrier</FormLabel>
+                        <FormControl>
+                          <Select
+                            value={field.value ? String(field.value) : "none"}
+                            onValueChange={(value) => field.onChange(value === "none" ? null : Number(value))}
+                          >
+                            <SelectTrigger id="supplier-default-carrier" aria-label="Supplier preferred carrier">
+                              <SelectValue placeholder="Select preferred carrier" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {carriers
+                                .filter((carrier) => carrier.active !== false)
+                                .map((carrier) => (
+                                  <SelectItem key={carrier.id} value={String(carrier.id)}>
+                                    {carrier.code ? `${carrier.code} - ${carrier.name}` : carrier.name}
+                                  </SelectItem>
+                                ))}
                             </SelectContent>
                           </Select>
                         </FormControl>

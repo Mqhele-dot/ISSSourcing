@@ -52,7 +52,7 @@ export default function SuppliersPage() {
   const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
 
   const productSetupComplete = useProductSetupComplete();
-  const { suppliersQuery, paymentTermsQuery, currenciesQuery, performanceQuery } = useSuppliersCoreQueries();
+  const { suppliersQuery, paymentTermsQuery, currenciesQuery, carriersQuery, performanceQuery } = useSuppliersCoreQueries();
   const { data: suppliers, isLoading, isError, error, refetch } = suppliersQuery;
   const {
     data: paymentTerms = [],
@@ -67,16 +67,23 @@ export default function SuppliersPage() {
     refetch: refetchCurrencies,
   } = currenciesQuery;
   const {
+    data: carriers = [],
+    isError: carriersError,
+    error: carriersErr,
+    refetch: refetchCarriers,
+  } = carriersQuery;
+  const {
     data: performance = [],
     isError: performanceError,
     error: performanceErr,
     refetch: refetchPerformance,
   } = performanceQuery;
 
-  const suppliersAuxError = paymentTermsError || currenciesError || performanceError;
+  const suppliersAuxError = paymentTermsError || currenciesError || carriersError || performanceError;
   const refetchSuppliersAux = () => {
     void refetchPaymentTerms();
     void refetchCurrencies();
+    void refetchCarriers();
     void refetchPerformance();
   };
 
@@ -312,6 +319,7 @@ export default function SuppliersPage() {
       bankSwift: (supplier as { bankSwift?: string | null }).bankSwift || "",
       paymentTermsId: (supplier as { paymentTermsId?: number | null }).paymentTermsId ?? null,
       defaultCurrencyCode: (supplier as { defaultCurrencyCode?: string | null }).defaultCurrencyCode || "",
+      defaultCarrierId: (supplier as { defaultCarrierId?: number | null }).defaultCarrierId ?? null,
       insuranceExpiry: ((supplier as { insuranceExpiry?: Date | string | null }).insuranceExpiry
         ? new Date((supplier as { insuranceExpiry?: Date | string | null }).insuranceExpiry as Date | string)
             .toISOString()
@@ -336,6 +344,7 @@ export default function SuppliersPage() {
     bankSwift: data.bankSwift?.trim() || null,
     paymentTermsId: data.paymentTermsId ?? null,
     defaultCurrencyCode: data.defaultCurrencyCode?.trim() || null,
+    defaultCarrierId: data.defaultCarrierId ?? null,
     insuranceExpiry: data.insuranceExpiry?.trim() || null,
     complianceNotes: data.complianceNotes?.trim() || null,
     notes: data.notes?.trim() || null,
@@ -392,6 +401,7 @@ export default function SuppliersPage() {
   }, [logoDialogOpen, selectedSupplierId, isLogoLoading, isLogoFetching, selectedLogo, logoForm]);
 
   const paymentTermsById = new Map(paymentTerms.map((term) => [term.id, `${term.code} - ${term.name}`]));
+  const carriersById = new Map(carriers.map((carrier) => [carrier.id, carrier.code ? `${carrier.code} - ${carrier.name}` : carrier.name]));
   const performanceBySupplier = new Map(performance.map((row) => [row.supplierId, row]));
 
   return (
@@ -434,6 +444,15 @@ export default function SuppliersPage() {
           />
         </div>
       ) : null}
+      {carriersError ? (
+        <div className="mb-4 px-4 md:px-6">
+          <PanelInlineError
+            title="Carriers failed to load"
+            description={queryErrorDetail(carriersErr)}
+            onRetry={() => void refetchCarriers()}
+          />
+        </div>
+      ) : null}
       {performanceError ? (
         <div className="mb-4 px-4 md:px-6">
           <PanelInlineError
@@ -461,6 +480,7 @@ export default function SuppliersPage() {
           selectedSupplierId={selectedSupplierId}
           selectedLogo={selectedLogo ?? null}
           paymentTermsById={paymentTermsById}
+          carriersById={carriersById}
           performanceBySupplier={performanceBySupplier}
           productSetupComplete={productSetupComplete}
           onAddSupplier={openCreateSupplierSheet}
@@ -478,6 +498,7 @@ export default function SuppliersPage() {
         form={form}
         paymentTerms={paymentTerms}
         currencies={currencies}
+        carriers={carriers}
         onCreate={handleCreateSupplier}
         onUpdate={handleUpdateSupplier}
         createPending={createSupplier.isPending}

@@ -468,6 +468,7 @@ export const suppliers = pgTable("suppliers", {
   bankSwift: text("bank_swift"),
   paymentTermsId: integer("payment_terms_id"),
   defaultCurrencyCode: text("default_currency_code"),
+  defaultCarrierId: integer("default_carrier_id").references(() => carriers.id),
   insuranceExpiry: timestamp("insurance_expiry"),
   complianceNotes: text("compliance_notes"),
   notes: text("notes"),
@@ -2034,6 +2035,8 @@ export const invoices = pgTable(
   notes: text("notes"),
   termsAndConditions: text("terms_and_conditions"),
   purchaseOrderId: integer("purchase_order_id"), // Optional reference to a purchase order
+  paymentTermsId: integer("payment_terms_id"),
+  currencyCode: text("currency_code"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   paidAmount: real("paid_amount").default(0),

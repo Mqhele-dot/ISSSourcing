@@ -966,6 +966,26 @@ async function resolvePurchaseOrderForOrganization(
   return r.rows[0] ?? null;
 }
 
+async function resolveSupplierDefaultCarrierForPo(
+  purchaseOrderId: number,
+  organizationId: number,
+): Promise<number | null> {
+  const r = await pool.query<{ default_carrier_id: number | null }>(
+    `
+    SELECT s.default_carrier_id
+    FROM purchase_orders po
+    JOIN suppliers s
+      ON s.id = po.supplier_id
+     AND s.organization_id = po.organization_id
+    WHERE po.id = $1
+      AND po.organization_id = $2
+    LIMIT 1
+    `,
+    [purchaseOrderId, organizationId],
+  );
+  return r.rows[0]?.default_carrier_id ?? null;
+}
+
 async function resolveCarrierSnapshotForOrg(params: {
   organizationId: number;
   carrierId: number | null;
@@ -1034,12 +1054,17 @@ export async function createOperationalShipment(input: {
     throw new Error("po_not_found_for_shipment");
   }
 
-  const carrierIdNum =
+  const requestedCarrierId =
     input.carrierId != null && Number.isFinite(Number(input.carrierId)) ? Number(input.carrierId) : null;
+  const carrierText = typeof input.carrier === "string" && input.carrier.trim() ? input.carrier.trim() : null;
+  const supplierDefaultCarrierId =
+    requestedCarrierId == null && carrierText == null
+      ? await resolveSupplierDefaultCarrierForPo(order.id, orgId)
+      : null;
   const { carrierId: cid, carrierSnapshot } = await resolveCarrierSnapshotForOrg({
     organizationId: orgId,
-    carrierId: carrierIdNum,
-    carrierTextFallback: input.carrier ?? null,
+    carrierId: requestedCarrierId ?? supplierDefaultCarrierId,
+    carrierTextFallback: carrierText,
   });
 
   const transportMode =
@@ -1631,6 +1656,74 @@ async function resolveReceivePutaway(meta: ReceivePurchaseMetaInput): Promise<Re
   return { warehouseId: wid, locationFromPutaway: row.name };
 }
 
+async function resolveContractDefaultWarehouseForPo(purchaseOrderId: number): Promise<number | null> {
+  const orgId = getActiveOrganizationId();
+  const r = await pool.query<{ default_warehouse_id: number | null }>(
+    `
+    SELECT sc.default_warehouse_id
+    FROM purchase_orders po
+    JOIN supplier_contracts sc
+      ON sc.id = po.contract_id
+     AND sc.organization_id = po.organization_id
+    WHERE po.id = $1
+      AND po.organization_id = $2
+      AND sc.default_warehouse_id IS NOT NULL
+    LIMIT 1
+    `,
+    [purchaseOrderId, orgId],
+  );
+  return r.rows[0]?.default_warehouse_id ?? null;
+}
+
+async function applyWarehouseInventoryReceipt(params: {
+  organizationId: number;
+  itemId: number;
+  warehouseId: number | null;
+  quantity: number;
+  location: string | null;
+}) {
+  if (params.warehouseId == null || params.quantity <= 0) return;
+  const existing = await pool.query<{ id: number; quantity: number }>(
+    `
+    SELECT id, quantity
+    FROM warehouse_inventory
+    WHERE organization_id = $1
+      AND warehouse_id = $2
+      AND item_id = $3
+    LIMIT 1
+    `,
+    [params.organizationId, params.warehouseId, params.itemId],
+  );
+  const row = existing.rows[0];
+  if (row) {
+    await pool.query(
+      `
+      UPDATE warehouse_inventory
+      SET quantity = quantity + $2,
+          location = COALESCE($3, location),
+          updated_at = now()
+      WHERE id = $1
+      `,
+      [row.id, params.quantity, params.location],
+    );
+    return;
+  }
+  await pool.query(
+    `
+    INSERT INTO warehouse_inventory (
+      organization_id,
+      item_id,
+      warehouse_id,
+      quantity,
+      location,
+      updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, now())
+    `,
+    [params.organizationId, params.itemId, params.warehouseId, params.quantity, params.location],
+  );
+}
+
 export async function receiveOperationalPurchaseOrder(
   poOrId: string,
   lines: ReceivePurchaseLineInput[],
@@ -1651,7 +1744,13 @@ export async function receiveOperationalPurchaseOrder(
     throw new Error("lines_required");
   }
 
-  const putaway = await resolveReceivePutaway(receiveMeta);
+  const contractDefaultWarehouseId =
+    receiveMeta.warehouse_id == null ? await resolveContractDefaultWarehouseForPo(order.id) : null;
+  const effectiveReceiveMeta: ReceivePurchaseMetaInput = {
+    ...receiveMeta,
+    warehouse_id: receiveMeta.warehouse_id ?? contractDefaultWarehouseId,
+  };
+  const putaway = await resolveReceivePutaway(effectiveReceiveMeta);
 
   const currentLines = await getPurchaseOrderLines(order.id);
   const lineBySku = new Map(currentLines.map((line) => [line.sku, line]));
@@ -1780,21 +1879,30 @@ export async function receiveOperationalPurchaseOrder(
           timestamp,
           created_at
         )
-        VALUES (1, $1, $10, 'RECEIPT', $2, $3, 'purchase_order', $4, $5, $6, $7, $8, $9, now(), now())
+        VALUES ($11, $1, $10, 'RECEIPT', $2, $3, 'purchase_order', $4, $5, $6, $7, $8, $9, now(), now())
         `,
         [
           line.itemId,
           receiveNow,
           order.id,
           `Received against PO ${order.order_number}`,
-          receiveMeta.receiver_user_id ?? null,
-          receiveMeta.receiver_user_id ?? null,
-          receiveMeta.receiver_name ?? null,
+          effectiveReceiveMeta.receiver_user_id ?? null,
+          effectiveReceiveMeta.receiver_user_id ?? null,
+          effectiveReceiveMeta.receiver_name ?? null,
           movementLocationLabel,
           receivedAt,
           receiveWarehouseId,
+          getActiveOrganizationId(),
         ],
       );
+
+      await applyWarehouseInventoryReceipt({
+        organizationId: getActiveOrganizationId(),
+        itemId: line.itemId,
+        warehouseId: receiveWarehouseId,
+        quantity: receiveNow,
+        location,
+      });
 
       if (batchNumber) {
         const existingBatch = await pool.query<{ id: number }>(

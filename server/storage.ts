@@ -2934,6 +2934,7 @@ export class MemStorage implements IStorage {
       bankSwift: insertSupplier.bankSwift ?? null,
       paymentTermsId: insertSupplier.paymentTermsId ?? null,
       defaultCurrencyCode: insertSupplier.defaultCurrencyCode ?? null,
+      defaultCarrierId: insertSupplier.defaultCarrierId ?? null,
       insuranceExpiry: insertSupplier.insuranceExpiry ?? null,
       complianceNotes: insertSupplier.complianceNotes ?? null,
       notes: insertSupplier.notes || null,
@@ -3990,6 +3991,8 @@ export class MemStorage implements IStorage {
       orderNumber,
       supplierId: requisition.supplierId,
       requisitionId: requisition.id,
+      paymentTermsId: this.suppliers.get(requisition.supplierId)?.paymentTermsId ?? null,
+      currencyCode: this.suppliers.get(requisition.supplierId)?.defaultCurrencyCode ?? "USD",
       status: PurchaseOrderStatus.DRAFT,
       orderDate: new Date(),
       expectedDeliveryDate: requisition.requiredDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // Default to 2 weeks
@@ -5259,7 +5262,9 @@ export class MemStorage implements IStorage {
       termsAndConditions: invoice.termsAndConditions ?? null,
       purchaseOrderId: invoice.purchaseOrderId ?? null,
       customerId: invoice.customerId ?? null,
-      supplierId: invoice.supplierId ?? null
+      supplierId: invoice.supplierId ?? null,
+      paymentTermsId: invoice.paymentTermsId ?? null,
+      currencyCode: invoice.currencyCode ?? null
     };
     
     this.invoices.set(id, newInvoice);

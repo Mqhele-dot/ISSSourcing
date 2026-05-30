@@ -23,10 +23,14 @@ import {
   approvalHistory,
   invoices,
   invoiceItems,
+  inventoryItems,
+  paymentTerms,
   paymentMethodEnum,
   payments,
   purchaseOrders,
   purchaseOrderItems,
+  stockMovements,
+  warehouseInventory,
   type InsertApInvoiceCapture,
   type InsertApPaymentBatch,
   type InsertApReceipt,
@@ -113,6 +117,20 @@ async function invoiceNumberExistsForSupplier(input: {
       ),
     );
   return rows.some((row) => row.id !== input.excludeInvoiceId);
+}
+
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+async function getPaymentTermNetDays(paymentTermsId: number | null | undefined): Promise<number | null> {
+  if (!paymentTermsId || !Number.isFinite(Number(paymentTermsId))) return null;
+  const rows = await db
+    .select({ netDays: paymentTerms.netDays })
+    .from(paymentTerms)
+    .where(eq(paymentTerms.id, Number(paymentTermsId)))
+    .limit(1);
+  return rows[0]?.netDays ?? null;
 }
 
 function normalizeDateOnly(value: Date | null | undefined): string {
@@ -275,10 +293,11 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
   }
 
   const purchaseOrderId = invoiceData.purchaseOrderId == null ? null : toNumber(invoiceData.purchaseOrderId, 0);
+  let purchaseOrder: Awaited<ReturnType<typeof storage.getPurchaseOrder>> | null = null;
   if (purchaseOrderId) {
-    const po = await storage.getPurchaseOrder(purchaseOrderId);
-    if (!po) throw new Error("Purchase order does not exist");
-    if (Number(po.supplierId) !== supplierId) {
+    purchaseOrder = (await storage.getPurchaseOrder(purchaseOrderId)) ?? null;
+    if (!purchaseOrder) throw new Error("Purchase order does not exist");
+    if (Number(purchaseOrder.supplierId) !== supplierId) {
       throw new Error("Invoice supplier must match purchase order supplier");
     }
   }
@@ -293,10 +312,21 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
     }
   }
 
+  const poDefaults = purchaseOrder as { paymentTermsId?: number | null; currencyCode?: string | null } | null;
+  const supplierDefaults = supplier as { paymentTermsId?: number | null; defaultCurrencyCode?: string | null };
+  const explicitPaymentTermsId = invoiceData.paymentTermsId == null ? null : toNumber(invoiceData.paymentTermsId, 0);
+  const paymentTermsId =
+    explicitPaymentTermsId || poDefaults?.paymentTermsId || supplierDefaults.paymentTermsId || null;
+  const explicitCurrency =
+    typeof invoiceData.currencyCode === "string" && invoiceData.currencyCode.trim()
+      ? invoiceData.currencyCode.trim().toUpperCase()
+      : null;
+  const currencyCode = explicitCurrency || poDefaults?.currencyCode || supplierDefaults.defaultCurrencyCode || null;
   const issueDate = toDateOrUndefined(invoiceData.issueDate) ?? new Date();
+  const paymentTermNetDays = await getPaymentTermNetDays(paymentTermsId);
   const dueDate =
     toDateOrUndefined(invoiceData.dueDate) ??
-    new Date(issueDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+    addDays(issueDate, paymentTermNetDays ?? 30);
   const total = toNumber(invoiceData.total ?? invoiceData.totalAmount, 0);
   const subtotal = toNumber(invoiceData.subtotal, total);
   const tax = toNumber(invoiceData.tax ?? invoiceData.totalTax, 0);
@@ -316,6 +346,8 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
       supplierId,
       customerId: invoiceData.customerId == null ? null : toNumber(invoiceData.customerId, 0),
       purchaseOrderId: purchaseOrderId || null,
+      paymentTermsId,
+      currencyCode,
       issueDate,
       dueDate,
       status: String(invoiceData.status ?? "DRAFT") as InsertInvoice["status"],
@@ -660,6 +692,14 @@ export async function listCaptures(status?: string) {
 
 export async function createCapture(input: InsertApInvoiceCapture, userId: number) {
   const orgId = getActiveOrganizationId();
+  const supplier =
+    input.supplierId != null && Number.isFinite(Number(input.supplierId))
+      ? await storage.getSupplier(Number(input.supplierId))
+      : undefined;
+  const supplierDefaults = supplier as { paymentTermsId?: number | null; defaultCurrencyCode?: string | null } | undefined;
+  const issueDate = input.issueDate ?? null;
+  const paymentTermNetDays = await getPaymentTermNetDays(supplierDefaults?.paymentTermsId ?? null);
+  const defaultDueDate = issueDate && paymentTermNetDays != null ? addDays(new Date(issueDate), paymentTermNetDays) : null;
   const duplicateCheckKey = buildDuplicateCheckKey({
     supplierId: input.supplierId ?? null,
     invoiceNumber: input.invoiceNumber ?? null,
@@ -752,9 +792,9 @@ export async function createCapture(input: InsertApInvoiceCapture, userId: numbe
       documentId: input.documentId ?? null,
       supplierId: input.supplierId ?? null,
       invoiceNumber: input.invoiceNumber ?? null,
-      issueDate: input.issueDate ?? null,
-      dueDate: input.dueDate ?? null,
-      currencyCode: input.currencyCode ?? null,
+      issueDate,
+      dueDate: input.dueDate ?? defaultDueDate,
+      currencyCode: input.currencyCode ?? supplierDefaults?.defaultCurrencyCode ?? null,
       subtotalAmount: toNumber(input.subtotalAmount, 0),
       taxAmount: toNumber(input.taxAmount, 0),
       totalAmount: toNumber(input.totalAmount, 0),
@@ -855,6 +895,7 @@ export async function promoteCapture(
       invoiceNumber: capture.invoiceNumber ?? undefined,
       issueDate: capture.issueDate ?? undefined,
       dueDate: capture.dueDate ?? undefined,
+      currencyCode: capture.currencyCode ?? undefined,
       subtotal: capture.subtotalAmount ?? 0,
       tax: capture.taxAmount ?? 0,
       total: capture.totalAmount ?? 0,
@@ -903,6 +944,7 @@ export async function createReceiptRecord(
   receipt: InsertApReceipt,
   items: InsertApReceiptItem[],
   userId: number,
+  options: { warehouseId?: number | null; warehouseLocation?: string | null } = {},
 ) {
   const orgId = getActiveOrganizationId();
   const po = await storage.getPurchaseOrder(Number(receipt.purchaseOrderId));
@@ -978,6 +1020,77 @@ export async function createReceiptRecord(
           receivedQuantity: sql`${purchaseOrderItems.receivedQuantity} + ${acceptedQty}`,
         })
         .where(eq(purchaseOrderItems.id, Number(poLine.id)));
+
+      const warehouseId =
+        options.warehouseId != null && Number.isFinite(Number(options.warehouseId)) && Number(options.warehouseId) > 0
+          ? Number(options.warehouseId)
+          : null;
+      const receiptInventoryQty = Math.round(acceptedQty);
+      if (warehouseId && receiptInventoryQty > 0) {
+        const [itemRow] = await tx
+          .select({ quantity: inventoryItems.quantity })
+          .from(inventoryItems)
+          .where(and(eq(inventoryItems.id, Number(item.itemId)), eq(inventoryItems.organizationId, orgId)))
+          .limit(1);
+        const previousItemQty = toNumber(itemRow?.quantity, 0);
+        await tx
+          .update(inventoryItems)
+          .set({
+            quantity: previousItemQty + receiptInventoryQty,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(inventoryItems.id, Number(item.itemId)), eq(inventoryItems.organizationId, orgId)));
+
+        const [warehouseRow] = await tx
+          .select({ id: warehouseInventory.id, quantity: warehouseInventory.quantity })
+          .from(warehouseInventory)
+          .where(
+            and(
+              eq(warehouseInventory.organizationId, orgId),
+              eq(warehouseInventory.warehouseId, warehouseId),
+              eq(warehouseInventory.itemId, Number(item.itemId)),
+            ),
+          )
+          .limit(1);
+        const previousWarehouseQty = toNumber(warehouseRow?.quantity, 0);
+        if (warehouseRow) {
+          await tx
+            .update(warehouseInventory)
+            .set({
+              quantity: previousWarehouseQty + receiptInventoryQty,
+              location: options.warehouseLocation ?? undefined,
+              updatedAt: new Date(),
+            })
+            .where(eq(warehouseInventory.id, warehouseRow.id));
+        } else {
+          await tx.insert(warehouseInventory).values({
+            organizationId: orgId,
+            warehouseId,
+            itemId: Number(item.itemId),
+            quantity: receiptInventoryQty,
+            location: options.warehouseLocation ?? null,
+            updatedAt: new Date(),
+          });
+        }
+
+        await tx.insert(stockMovements).values({
+          organizationId: orgId,
+          itemId: Number(item.itemId),
+          warehouseId,
+          type: "RECEIPT",
+          quantity: receiptInventoryQty,
+          referenceId: created.id,
+          referenceType: "ap_receipt",
+          notes: `AP receipt ${created.receiptNumber} for PO ${po.orderNumber}`,
+          userId,
+          receiverUserId: userId,
+          warehouseLocation: options.warehouseLocation ?? null,
+          receivedAt: receipt.receivedDate ?? new Date(),
+          previousQuantity: previousWarehouseQty,
+          newQuantity: previousWarehouseQty + receiptInventoryQty,
+          timestamp: new Date(),
+        });
+      }
     }
 
     return created;

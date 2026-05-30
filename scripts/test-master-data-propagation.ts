@@ -75,6 +75,10 @@ async function main() {
   if (!expectStatus("GET /api/payment-terms", 200, payRes.status)) failures++;
   const taxRes = await apiJsonRequest("/tax-codes", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/tax-codes", 200, taxRes.status)) failures++;
+  const carriersRes = await apiJsonRequest("/carriers", { method: "GET", cookie: adminCookie });
+  if (!expectStatus("GET /api/carriers", 200, carriersRes.status)) failures++;
+  const warehousesRes = await apiJsonRequest("/warehouses", { method: "GET", cookie: adminCookie });
+  if (!expectStatus("GET /api/warehouses", 200, warehousesRes.status)) failures++;
   const contractsRes = await apiJsonRequest("/contracts", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/contracts", 200, contractsRes.status)) failures++;
 
@@ -84,15 +88,42 @@ async function main() {
   const invoicesRes = await apiJsonRequest("/invoices", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/invoices", 200, invoicesRes.status)) failures++;
 
-  const suppliersRes = await apiJsonRequest("/suppliers", { method: "GET", cookie: adminCookie });
-  if (!expectStatus("GET /api/suppliers", 200, suppliersRes.status)) failures++;
-  const suppliers = asArray<{ id: number }>(unwrapData<unknown>(suppliersRes.json));
-  const supplierId = Number(suppliers[0]?.id ?? 0);
+  const currencies = asArray<{ code: string }>(unwrapData<unknown>(curRes.json));
+  const firstCurrencyCode =
+    typeof currencies[0]?.code === "string" && /^[A-Za-z]{3}$/.test(currencies[0].code)
+      ? currencies[0].code.toUpperCase()
+      : "USD";
+  const paymentTerms = asArray<{ id: number }>(unwrapData<unknown>(payRes.json));
+  const paymentTermsId = Number(paymentTerms[0]?.id ?? 0) || undefined;
+  const carriers = asArray<{ id: number; name: string; active?: boolean | null }>(unwrapData<unknown>(carriersRes.json));
+  const defaultCarrier = carriers.find((carrier) => carrier.active !== false && Number(carrier.id) > 0);
+  const warehouses = asArray<{ id: number; name: string }>(unwrapData<unknown>(warehousesRes.json));
+  const receiveWarehouse = warehouses.find((warehouse) => Number(warehouse.id) > 0);
+
+  const supplierCreateRes = await apiJsonRequest("/suppliers", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      name: `Propagation Supplier ${Date.now()}`,
+      contactName: "Propagation Test",
+      email: `propagation-${Date.now()}@example.com`,
+      defaultCurrencyCode: firstCurrencyCode,
+      ...(paymentTermsId ? { paymentTermsId } : {}),
+      ...(defaultCarrier ? { defaultCarrierId: Number(defaultCarrier.id) } : {}),
+      notes: "Created by master-data propagation smoke test",
+    },
+  });
+  if (!expectStatus("POST /api/suppliers", 201, supplierCreateRes.status)) failures++;
+  const createdSupplier = asRecord(unwrapData<unknown>(supplierCreateRes.json));
+  const supplierId = Number(createdSupplier.id ?? 0);
   if (!supplierId) {
     console.log("  ✗ Missing suppliers; run npm run db:seed");
     exitTest(1);
     return;
   }
+
+  const suppliersRes = await apiJsonRequest("/suppliers", { method: "GET", cookie: adminCookie });
+  if (!expectStatus("GET /api/suppliers", 200, suppliersRes.status)) failures++;
 
   const contractsRaw = unwrapData<unknown>(contractsRes.json);
   const contracts = asArray<{ id: number; supplierId?: number; currency?: string }>(contractsRaw);
@@ -108,6 +139,126 @@ async function main() {
     return;
   }
   const itemIdForWrites = Number(firstItem.id);
+
+  const directPoRes = await apiJsonRequest("/purchase-orders", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      supplierId,
+      notes: "Master-data propagation direct PO",
+      items: [
+        {
+          itemId: itemIdForWrites,
+          quantity: 1,
+          unitPrice: Number(firstItem.price ?? 10),
+        },
+      ],
+    },
+  });
+  if (!expectStatus("POST /api/purchase-orders (supplier defaults)", 201, directPoRes.status)) failures++;
+  const directPo = asRecord(unwrapData<unknown>(directPoRes.json));
+  if (directPo.currencyCode !== firstCurrencyCode) {
+    failures++;
+    console.log(
+      "  âœ— Direct PO currency default -> expected %s, got %s",
+      firstCurrencyCode,
+      String(directPo.currencyCode),
+    );
+  } else {
+    console.log("  âœ“ Direct PO currency default -> %s", firstCurrencyCode);
+  }
+  if (paymentTermsId && Number(directPo.paymentTermsId ?? 0) !== paymentTermsId) {
+    failures++;
+    console.log(
+      "  âœ— Direct PO payment terms default -> expected %d, got %s",
+      paymentTermsId,
+      String(directPo.paymentTermsId),
+    );
+  } else if (paymentTermsId) {
+    console.log("  âœ“ Direct PO payment terms default -> %d", paymentTermsId);
+  }
+
+  if (defaultCarrier) {
+    const directPoNumber = String(directPo.orderNumber ?? directPo.order_number ?? "");
+    const shipmentRes = await apiJsonRequest("/logistics/shipments", {
+      method: "POST",
+      cookie: adminCookie,
+      body: {
+        poNumber: directPoNumber,
+        trackingNumber: `PROP-${Date.now()}`,
+      },
+    });
+    if (!expectStatus("POST /api/logistics/shipments (supplier carrier default)", 201, shipmentRes.status)) failures++;
+    const shipment = asRecord(unwrapData<unknown>(shipmentRes.json));
+    if (shipment.carrier !== defaultCarrier.name) {
+      failures++;
+      console.log(
+        "  X Shipment carrier default -> expected %s, got %s",
+        defaultCarrier.name,
+        String(shipment.carrier),
+      );
+    } else {
+      console.log("  ok Shipment carrier default -> %s", defaultCarrier.name);
+    }
+  }
+
+  if (receiveWarehouse) {
+    const directPoNumber = String(directPo.orderNumber ?? directPo.order_number ?? "");
+    const approveDirectPo = await apiJsonRequest(`/procurement/purchase-orders/${directPoNumber}/approve`, {
+      method: "POST",
+      cookie: adminCookie,
+      body: {},
+    });
+    if (!expectStatus("POST /api/procurement/purchase-orders/:po/approve", 200, approveDirectPo.status)) failures++;
+
+    const directPoDetailRes = await apiJsonRequest(`/procurement/purchase-orders/${directPoNumber}`, {
+      method: "GET",
+      cookie: adminCookie,
+    });
+    if (!expectStatus("GET /api/procurement/purchase-orders/:po", 200, directPoDetailRes.status)) failures++;
+    const directPoDetail = asRecord(unwrapData<unknown>(directPoDetailRes.json));
+    const directPoLines = asArray<Record<string, unknown>>(directPoDetail.lines);
+    const receiveSku = String(directPoLines[0]?.sku ?? "");
+    if (!receiveSku) {
+      failures++;
+      console.log("  X Direct PO detail missing receive SKU");
+    } else {
+      const beforeWarehouseRes = await apiJsonRequest(`/warehouse-inventory/${receiveWarehouse.id}/${itemIdForWrites}`, {
+        method: "GET",
+        cookie: adminCookie,
+      });
+      const beforeWarehouse = asRecord(unwrapData<unknown>(beforeWarehouseRes.json));
+      const beforeQty = Number(beforeWarehouse.quantity ?? 0);
+      const receiveRes = await apiJsonRequest(`/procurement/purchase-orders/${directPoNumber}/receive`, {
+        method: "POST",
+        cookie: adminCookie,
+        body: {
+          lines: [{ sku: receiveSku, qty_received_now: 1 }],
+          warehouseId: receiveWarehouse.id,
+          receiverName: "Propagation Receiver",
+          receivedAt: new Date().toISOString(),
+        },
+      });
+      if (!expectStatus("POST /api/procurement/purchase-orders/:po/receive", 200, receiveRes.status)) failures++;
+      const afterWarehouseRes = await apiJsonRequest(`/warehouse-inventory/${receiveWarehouse.id}/${itemIdForWrites}`, {
+        method: "GET",
+        cookie: adminCookie,
+      });
+      if (!expectStatus("GET /api/warehouse-inventory/:warehouseId/:itemId", 200, afterWarehouseRes.status)) failures++;
+      const afterWarehouse = asRecord(unwrapData<unknown>(afterWarehouseRes.json));
+      const afterQty = Number(afterWarehouse.quantity ?? 0);
+      if (afterQty < beforeQty + 1) {
+        failures++;
+        console.log(
+          "  X PO receive warehouse inventory -> expected at least %d, got %d",
+          beforeQty + 1,
+          afterQty,
+        );
+      } else {
+        console.log("  ok PO receive warehouse inventory -> %d", afterQty);
+      }
+    }
+  }
 
   let departmentId: number | undefined;
   const deptRes = await apiJsonRequest("/departments", { method: "GET", cookie: adminCookie });
@@ -169,11 +320,26 @@ async function main() {
     return;
   }
 
-  const currencies = asArray<{ code: string }>(unwrapData<unknown>(curRes.json));
-  const firstCurrencyCode =
-    typeof currencies[0]?.code === "string" && /^[A-Za-z]{3}$/.test(currencies[0].code)
-      ? currencies[0].code.toUpperCase()
-      : "USD";
+  if (po.currencyCode !== firstCurrencyCode) {
+    failures++;
+    console.log(
+      "  âœ— Converted PO currency default -> expected %s, got %s",
+      firstCurrencyCode,
+      String(po.currencyCode),
+    );
+  } else {
+    console.log("  âœ“ Converted PO currency default -> %s", firstCurrencyCode);
+  }
+  if (paymentTermsId && Number(po.paymentTermsId ?? 0) !== paymentTermsId) {
+    failures++;
+    console.log(
+      "  âœ— Converted PO payment terms default -> expected %d, got %s",
+      paymentTermsId,
+      String(po.paymentTermsId),
+    );
+  } else if (paymentTermsId) {
+    console.log("  âœ“ Converted PO payment terms default -> %d", paymentTermsId);
+  }
 
   let commercialCurrency = firstCurrencyCode;
   if (

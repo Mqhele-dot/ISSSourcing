@@ -19,6 +19,7 @@ export type SuppliersListCardProps = {
   selectedSupplierId: number | null;
   selectedLogo: { logoUrl: string } | null | undefined;
   paymentTermsById: Map<number, string>;
+  carriersById: Map<number, string>;
   performanceBySupplier: Map<number, SupplierPerformanceRow>;
   /** When false, empty list prompts to finish product setup instead of add-supplier CTA. */
   productSetupComplete?: boolean;
@@ -37,6 +38,7 @@ export function SuppliersListCard({
   selectedSupplierId,
   selectedLogo,
   paymentTermsById,
+  carriersById,
   performanceBySupplier,
   productSetupComplete = true,
   onAddSupplier,
@@ -193,6 +195,15 @@ export function SuppliersListCard({
                         <span className="ml-2">
                           {paymentTermsById.get((supplier as { paymentTermsId: number }).paymentTermsId) ??
                             `Term #${(supplier as { paymentTermsId: number }).paymentTermsId}`}
+                        </span>
+                      </div>
+                    ) : null}
+                    {(supplier as { defaultCarrierId?: number | null }).defaultCarrierId ? (
+                      <div className="flex items-center col-span-2">
+                        <span className="text-muted-foreground text-sm">Preferred carrier:</span>
+                        <span className="ml-2">
+                          {carriersById.get((supplier as { defaultCarrierId: number }).defaultCarrierId) ??
+                            `Carrier #${(supplier as { defaultCarrierId: number }).defaultCarrierId}`}
                         </span>
                       </div>
                     ) : null}
