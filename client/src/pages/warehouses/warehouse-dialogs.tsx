@@ -130,7 +130,7 @@ export function WarehouseDialogs({
       </Dialog>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Warehouse</DialogTitle>
             <DialogDescription>Update the warehouse details.</DialogDescription>

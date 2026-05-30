@@ -17,12 +17,16 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { APP_ROUTES, MASTER_DATA_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageDataState } from "@/components/page-shell";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { WarehouseTable } from "@/pages/warehouses/warehouse-table";
+import { WarehouseDialogs } from "@/pages/warehouses/warehouse-dialogs";
+import { useWarehouseCrud } from "@/pages/warehouses/use-warehouse-crud";
 
 import { invalidateMasterDataDomainForEndpoint } from "@/lib/domain-invalidation";
 
@@ -255,82 +259,9 @@ function MasterTable({
   );
 }
 
-type WarehouseRow = { id: number; name: string; location?: string | null };
-
 function WarehouseMasterPanel() {
-  const endpoint = MASTER_ENDPOINTS.warehouses;
-  const { toast } = useToast();
-  const [name, setName] = useState("");
-  const [location, setLocation] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-
-  const { data = [], isLoading } = useQuery({
-    queryKey: [endpoint],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", endpoint);
-      return normalizeApiList<WarehouseRow>(raw);
-    },
-  });
-
-  const createRecord = useMutation({
-    mutationFn: () =>
-      requestJson("POST", endpoint, {
-        name: name.trim(),
-        location: location.trim() ? location.trim() : null,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [endpoint] });
-      void invalidateMasterDataDomainForEndpoint(queryClient, endpoint);
-      setName("");
-      setLocation("");
-      toast({ title: "Warehouse created" });
-    },
-    onError: (e) => {
-      toast({
-        title: "Failed to create warehouse",
-        description: e instanceof Error ? e.message : String(e),
-        variant: "destructive",
-      });
-    },
-  });
-
-  const updateRecord = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) =>
-      requestJson("PATCH", `${endpoint}/${id}`, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [endpoint] });
-      void invalidateMasterDataDomainForEndpoint(queryClient, endpoint);
-      setEditingId(null);
-      setName("");
-      setLocation("");
-      toast({ title: "Warehouse updated" });
-    },
-    onError: (e) => {
-      toast({
-        title: "Failed to update warehouse",
-        description: e instanceof Error ? e.message : String(e),
-        variant: "destructive",
-      });
-    },
-  });
-
-  const deleteRecord = useMutation({
-    mutationFn: (id: number) => requestJson("DELETE", `${endpoint}/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [endpoint] });
-      void invalidateMasterDataDomainForEndpoint(queryClient, endpoint);
-      toast({ title: "Warehouse removed" });
-    },
-    onError: (e) => {
-      toast({
-        title: "Failed to delete warehouse",
-        description: e instanceof Error ? e.message : String(e),
-        variant: "destructive",
-      });
-    },
-  });
-
-  const sorted = useMemo(() => [...data].sort((a, b) => a.name.localeCompare(b.name)), [data]);
+  const crud = useWarehouseCrud();
+  const [createWarehouseFormVariant, setCreateWarehouseFormVariant] = useState<"quick" | "full">("quick");
 
   return (
     <Card>
@@ -338,104 +269,73 @@ function WarehouseMasterPanel() {
         <CardTitle>Warehouses</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <form
-          className="grid gap-2 md:grid-cols-[1fr_1fr_auto]"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!name.trim()) {
-              toast({ title: "Name is required", variant: "destructive" });
-              return;
-            }
-            const payload = {
-              name: name.trim(),
-              location: location.trim() ? location.trim() : null,
-            };
-            if (editingId != null) {
-              updateRecord.mutate({ id: editingId, payload });
-            } else {
-              createRecord.mutate();
-            }
-          }}
-        >
-          <div className="space-y-1">
-            <Label htmlFor="wh-name">Name</Label>
-            <Input id="wh-name" value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Warehouse setup belongs here: locations, addresses, contacts, aisles, bins, and layout metadata.
+            Movement, storage, receiving, counts, and transfers belong in Warehouse Operations.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                crud.resetForm();
+                setCreateWarehouseFormVariant("quick");
+                crud.setIsCreateDialogOpen(true);
+              }}
+            >
+              Quick add
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                crud.resetForm();
+                setCreateWarehouseFormVariant("full");
+                crud.setIsCreateDialogOpen(true);
+              }}
+            >
+              Add full setup
+            </Button>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="wh-location">Location / site (optional)</Label>
-            <Input id="wh-location" value={location} onChange={(e) => setLocation(e.target.value)} />
-          </div>
-          <div className="flex items-end gap-2">
-            {editingId != null ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setEditingId(null);
-                    setName("");
-                    setLocation("");
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={updateRecord.isPending}>
-                  Save
-                </Button>
-              </>
-            ) : (
-              <Button type="submit" disabled={createRecord.isPending}>
-                Add
-              </Button>
-            )}
-          </div>
-        </form>
-
-        <div className="rounded-md border">
-          {isLoading ? (
-            <div className="p-3 text-sm text-muted-foreground">Loading...</div>
-          ) : sorted.length === 0 ? (
-            <div className="p-3 text-sm text-muted-foreground">No warehouses yet.</div>
-          ) : (
-            <div className="divide-y">
-              {sorted.map((row) => (
-                <div key={row.id} className="flex items-center justify-between gap-2 p-3">
-                  <div>
-                    <div className="text-sm font-medium">{row.name}</div>
-                    <div className="text-xs text-muted-foreground">{row.location ?? "—"}</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setEditingId(row.id);
-                        setName(row.name);
-                        setLocation(row.location ?? "");
-                      }}
-                      disabled={updateRecord.isPending || deleteRecord.isPending}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => deleteRecord.mutate(row.id)}
-                      disabled={deleteRecord.isPending}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
+
+        <PageDataState
+          isLoading={crud.isLoading}
+          error={crud.isError ? (crud.error instanceof Error ? crud.error : new Error(String(crud.error))) : null}
+          isEmpty={!crud.isLoading && !crud.isError && crud.list.length === 0}
+          errorTitle="Failed to load warehouses"
+          onRetry={() => crud.refetch()}
+          emptyView={<div className="rounded-md border p-4 text-sm text-muted-foreground">No warehouses yet.</div>}
+        >
+          <WarehouseTable list={crud.list} onEdit={crud.openEditDialog} onDelete={crud.openDeleteDialog} />
+        </PageDataState>
+
+        <WarehouseDialogs
+          isCreateDialogOpen={crud.isCreateDialogOpen}
+          setIsCreateDialogOpen={crud.setIsCreateDialogOpen}
+          createFormVariant={createWarehouseFormVariant}
+          setCreateFormVariant={setCreateWarehouseFormVariant}
+          isEditDialogOpen={crud.isEditDialogOpen}
+          setIsEditDialogOpen={crud.setIsEditDialogOpen}
+          isDeleteDialogOpen={crud.isDeleteDialogOpen}
+          setIsDeleteDialogOpen={crud.setIsDeleteDialogOpen}
+          formData={crud.formData}
+          setFormData={crud.setFormData}
+          selectedWarehouse={crud.selectedWarehouse}
+          createWarehouse={crud.createWarehouse}
+          updateWarehouse={crud.updateWarehouse}
+          deleteWarehouse={crud.deleteWarehouse}
+          addBin={crud.addBin}
+          updateBin={crud.updateBin}
+          removeBin={crud.removeBin}
+          handleCreateSubmit={crud.handleCreateSubmit}
+          handleEditSubmit={crud.handleEditSubmit}
+          handleDeleteConfirm={crud.handleDeleteConfirm}
+        />
       </CardContent>
     </Card>
   );
 }
-
 function ApprovalPoliciesRedirectCard() {
   return (
     <Card>

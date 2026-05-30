@@ -951,6 +951,14 @@ export class MemStorage implements IStorage {
     if (!user || user.role !== 'custom') {
       return null;
     }
+
+    const directPreferences = user.preferences && typeof user.preferences === "object"
+      ? (user.preferences as { customRoleId?: unknown })
+      : null;
+    const directCustomRoleId = Number(directPreferences?.customRoleId);
+    if (Number.isFinite(directCustomRoleId) && directCustomRoleId > 0) {
+      return directCustomRoleId;
+    }
     
     // Look for a custom role assignment in user preferences (stored in dashboardLayout or notifications)
     const userPrefs = await this.getUserPreferences(userId);

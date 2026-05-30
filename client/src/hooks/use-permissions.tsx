@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, requestJson } from "@/lib/queryClient";
 
 type Permission = {
   id: number;
@@ -19,6 +19,14 @@ type PermissionsByResource = Record<
   }
 >;
 
+function getCustomRoleIdFromUser(user: unknown): number | null {
+  const prefs = user && typeof user === "object" ? (user as { preferences?: unknown }).preferences : null;
+  if (!prefs || typeof prefs !== "object") return null;
+  const customRoleId = (prefs as { customRoleId?: unknown }).customRoleId;
+  const parsed = Number(customRoleId);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export function usePermissions() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -27,13 +35,16 @@ export function usePermissions() {
   // Fetch permissions for the current user's role
   const { data: permissions, isLoading, error } = useQuery<Permission[]>({
     queryKey: ["/api/roles", user?.role ?? "unknown", "permissions"],
-    enabled: !!user,
+    enabled: !!user && user.role !== "custom",
+    queryFn: () => requestJson<Permission[]>("GET", `/api/roles/${user?.role ?? "viewer"}/permissions`),
   });
 
   // For custom roles, fetch the custom role permissions
+  const customRoleId = getCustomRoleIdFromUser(user);
   const { data: customRolePermissions } = useQuery<Permission[]>({
-    queryKey: ["/api/custom-roles", user?.role ?? "unknown", "permissions"],
-    enabled: !!user && user.role === "custom",
+    queryKey: ["/api/custom-roles", customRoleId ?? "none", "permissions"],
+    enabled: !!user && user.role === "custom" && customRoleId != null,
+    queryFn: () => requestJson<Permission[]>("GET", `/api/custom-roles/${customRoleId}/permissions`),
   });
   
   // Organize permissions by resource for easier checking

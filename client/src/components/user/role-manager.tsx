@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Check, X, Plus, ChevronDown } from "lucide-react";
-import { queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, requestJson } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 import {
@@ -53,7 +53,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiRequest } from "@/lib/queryClient";
 
 // Role and permission types
 type UserRole = {
@@ -63,6 +62,15 @@ type UserRole = {
   isActive: boolean | null;
   createdBy: number;
   isSystemRole: boolean | null;
+};
+
+type UserProfile = {
+  id: number;
+  username: string;
+  fullName?: string | null;
+  email?: string | null;
+  role?: string | null;
+  preferences?: { customRoleId?: number | string | null } | null;
 };
 
 type Permission = {
@@ -136,9 +144,10 @@ const createRoleSchema = z.object({
 
 export function RoleManager() {
   const { toast } = useToast();
-  const [selectedTab, setSelectedTab] = useState("system-roles");
+  const [selectedTab, setSelectedTab] = useState("custom-roles");
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [selectedCustomRole, setSelectedCustomRole] = useState<number | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [createRoleOpen, setCreateRoleOpen] = useState(false);
   const [permissionSearch, setPermissionSearch] = useState("");
 
@@ -186,16 +195,22 @@ export function RoleManager() {
     queryKey: ["/api/custom-roles"],
   });
 
+  const { data: users = [] } = useQuery<UserProfile[]>({
+    queryKey: ["/api/users", "role-manager"],
+  });
+
   // Fetch permissions for selected role
   const { data: selectedRolePermissions, isLoading: permissionsLoading } = useQuery<Permission[]>({
     queryKey: ["/api/roles", selectedRole, "permissions"],
     enabled: !!selectedRole,
+    queryFn: () => requestJson<Permission[]>("GET", `/api/roles/${selectedRole}/permissions`),
   });
 
   // Fetch permissions for selected custom role
   const { data: selectedCustomRolePermissions, isLoading: customPermissionsLoading } = useQuery<Permission[]>({
     queryKey: ["/api/custom-roles", selectedCustomRole, "permissions"],
     enabled: !!selectedCustomRole,
+    queryFn: () => requestJson<Permission[]>("GET", `/api/custom-roles/${selectedCustomRole}/permissions`),
   });
   
   // Get permissions based on selected tab and role
@@ -281,6 +296,31 @@ export function RoleManager() {
     },
   });
 
+  const assignCustomRoleMutation = useMutation({
+    mutationFn: async ({ userId, roleId }: { userId: number; roleId: number }) => {
+      const res = await apiRequest("PUT", `/api/users/${userId}`, {
+        role: "custom",
+        preferences: { customRoleId: roleId },
+      });
+      return await res.json();
+    },
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/users", "role-manager"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/users", variables.userId] });
+      toast({
+        title: "Profile access updated",
+        description: "The selected profile now uses this custom role.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to assign custom role",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Handle form submission for creating a new role
   const onCreateRoleSubmit = (data: z.infer<typeof createRoleSchema>) => {
     createRoleMutation.mutate(data);
@@ -320,6 +360,11 @@ export function RoleManager() {
     setSelectedRole(null);
     setSelectedCustomRole(null);
   }, [selectedTab]);
+
+  useEffect(() => {
+    if (selectedTab !== "custom-roles" || selectedCustomRole || !customRoles?.length) return;
+    setSelectedCustomRole(customRoles[0].id);
+  }, [customRoles, selectedCustomRole, selectedTab]);
 
   return (
     <Card className="w-full">
@@ -543,6 +588,48 @@ export function RoleManager() {
               
               {selectedCustomRole && (
                 <div className="mt-4">
+                  <Card className="mb-4">
+                    <CardHeader>
+                      <CardTitle className="text-base">Assign this access to a profile</CardTitle>
+                      <CardDescription>
+                        Select an employee profile and apply this custom access set directly.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3 md:flex-row md:items-end">
+                      <div className="w-full md:max-w-sm">
+                        <Label>Employee profile</Label>
+                        <Select
+                          value={selectedUserId ? String(selectedUserId) : ""}
+                          onValueChange={(value) => setSelectedUserId(Number(value))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a profile" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {users.map((profile) => (
+                              <SelectItem key={profile.id} value={String(profile.id)}>
+                                {profile.fullName || profile.username}
+                                {profile.email ? ` - ${profile.email}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        type="button"
+                        disabled={!selectedUserId || assignCustomRoleMutation.isPending}
+                        onClick={() => {
+                          if (!selectedUserId || !selectedCustomRole) return;
+                          assignCustomRoleMutation.mutate({
+                            userId: selectedUserId,
+                            roleId: selectedCustomRole,
+                          });
+                        }}
+                      >
+                        {assignCustomRoleMutation.isPending ? "Assigning..." : "Assign custom access"}
+                      </Button>
+                    </CardContent>
+                  </Card>
                   <h3 className="text-lg font-semibold mb-2">
                     Permissions for {customRoles?.find(r => r.id === selectedCustomRole)?.name}
                   </h3>

@@ -392,6 +392,17 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getUserCustomRoleId(userId: number): Promise<number | null> {
+    const [user] = await db
+      .select({ role: users.role, preferences: users.preferences })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!user || user.role !== "custom") return null;
+    const prefs = user.preferences && typeof user.preferences === "object"
+      ? (user.preferences as { customRoleId?: unknown })
+      : null;
+    const customRoleId = Number(prefs?.customRoleId);
+    if (Number.isFinite(customRoleId) && customRoleId > 0) return customRoleId;
     return this.memStorage.getUserCustomRoleId(userId);
   }
   

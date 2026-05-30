@@ -72,18 +72,11 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         keywords: "sku stock items",
       },
       {
-        label: "Warehouses",
-        path: APP_ROUTES.inventory.warehouses,
-        icon: "building",
-        description: "Warehouse locations, stock positions, and drilldowns.",
-        keywords: "warehouse bins locations",
-      },
-      {
         label: "Warehouse ops",
         path: APP_ROUTES.inventory.warehouseOperations,
         icon: "package-search",
-        description: "Allocations, put-away, and warehouse execution workflows.",
-        keywords: "warehouse operations allocation",
+        description: "Storage, stock movement, allocations, put-away, and warehouse execution workflows.",
+        keywords: "warehouse operations allocation storage movements",
       },
       {
         label: "Cycle counts",

@@ -217,6 +217,10 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
         "activity_logs",
         "import_export",
         "system",
+        "invoices",
+        "billing",
+        "taxes",
+        "payments",
       ];
 
       const validPermissionTypes = [

@@ -534,9 +534,10 @@ async function ensureReorderRequests(supplierMap: Map<string, number>): Promise<
 }
 
 async function ensureStockMovements(): Promise<void> {
-  const existing = await db.select().from(stockMovements).limit(1);
-  if (existing.length > 0) return;
-  const items = await db.select({ id: inventoryItems.id }).from(inventoryItems).limit(3);
+  const [existing] = await db.select({ count: sql<number>`count(*)::int` }).from(stockMovements);
+  const currentCount = Number(existing?.count ?? 0);
+  if (currentCount >= 12) return;
+  const items = await db.select({ id: inventoryItems.id }).from(inventoryItems).limit(6);
   const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.username, "admin")).limit(1);
   const whs = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
   const userId = admin?.id ?? null;
@@ -561,7 +562,21 @@ async function ensureStockMovements(): Promise<void> {
       newQuantity: 10,
     });
   }
-  for (const m of movements) {
+  for (let i = movements.length; i < 12; i += 1) {
+    const item = items[i % Math.max(items.length, 1)];
+    const isOutbound = i % 3 === 0;
+    movements.push({
+      itemId: item?.id ?? 1,
+      warehouseId: whs[i % Math.max(whs.length, 1)]?.id ?? null,
+      type: isOutbound ? "ISSUE" : i % 3 === 1 ? "RECEIPT" : "ADJUSTMENT",
+      quantity: isOutbound ? 2 + i : 6 + i,
+      userId,
+      notes: `Demo warehouse flow ${i + 1}`,
+      previousQuantity: 30 + i,
+      newQuantity: isOutbound ? 28 : 36 + i,
+    });
+  }
+  for (const m of movements.slice(currentCount)) {
     await db.insert(stockMovements).values(m);
   }
 }
