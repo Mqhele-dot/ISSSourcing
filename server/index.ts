@@ -60,9 +60,9 @@ registerSecurityMiddleware(app);
 
   registerDevTestRoutes(app);
 
-  if (appEnv.isDevelopment) {
+  if (appEnv.isDevelopment && process.env.LOCAL_TEST_API_ONLY !== "1") {
     await setupVite(app, server);
-  } else {
+  } else if (!appEnv.isDevelopment) {
     serveStatic(app);
   }
 
