@@ -1,29 +1,26 @@
 import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Can } from "@/components/auth/can";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
-import type { SupplierFormValues } from "@/pages/suppliers/supplier-form-types";
-import { emptySupplierFormValues } from "@/pages/suppliers/supplier-form-types";
+import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { emptySupplierFormValues, type SupplierFormValues } from "@/pages/suppliers/supplier-form-types";
 
 type PaymentTerm = { id: number; code: string; name: string };
 type Currency = { id: number; code: string; name: string };
 type Carrier = { id: number; code?: string | null; name: string; active?: boolean | null };
+type TaxCode = { id: number; code: string; name: string; active?: boolean | null };
+type Incoterm = { id: number; code: string; name: string };
+type Department = { id: number; code: string; name: string };
+type SupplierContractRef = { id: number; title: string; supplierId: number; status?: string | null };
 
-const SUPPLIER_FORM_STEPS = ["general", "banking", "compliance", "documents"] as const;
-type SupplierFormStep = (typeof SUPPLIER_FORM_STEPS)[number];
+const STEPS = ["profile", "commercial", "sites", "logistics", "risk", "audit"] as const;
+type Step = (typeof STEPS)[number];
 
 type SupplierFormSheetProps = {
   open: boolean;
@@ -34,11 +31,100 @@ type SupplierFormSheetProps = {
   paymentTerms: PaymentTerm[];
   currencies: Currency[];
   carriers: Carrier[];
+  taxCodes: TaxCode[];
+  incoterms: Incoterm[];
+  departments: Department[];
+  contracts: SupplierContractRef[];
   onCreate: (data: SupplierFormValues) => void;
   onUpdate: (data: SupplierFormValues) => void;
   createPending: boolean;
   updatePending: boolean;
 };
+
+function textField(
+  form: UseFormReturn<SupplierFormValues>,
+  name: keyof SupplierFormValues,
+  label: string,
+  options: { type?: string; textarea?: boolean; placeholder?: string } = {},
+) {
+  return (
+    <FormField
+      control={form.control}
+      name={name as any}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            {options.textarea ? (
+              <Textarea placeholder={options.placeholder} {...field} value={(field.value as string | null) || ""} />
+            ) : (
+              <Input type={options.type} placeholder={options.placeholder} {...field} value={(field.value as string | null) || ""} />
+            )}
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+function booleanField(form: UseFormReturn<SupplierFormValues>, name: keyof SupplierFormValues, label: string, defaultChecked = false) {
+  return (
+    <FormField
+      control={form.control}
+      name={name as any}
+      render={({ field }) => (
+        <FormItem className="rounded-md border p-3">
+          <FormLabel className="flex items-center gap-2 text-sm font-normal">
+            <input
+              type="checkbox"
+              checked={field.value == null ? defaultChecked : Boolean(field.value)}
+              onChange={(event) => field.onChange(event.target.checked)}
+            />
+            {label}
+          </FormLabel>
+        </FormItem>
+      )}
+    />
+  );
+}
+
+function numberSelect<T extends { id: number }>(props: {
+  form: UseFormReturn<SupplierFormValues>;
+  name: keyof SupplierFormValues;
+  label: string;
+  rows: T[];
+  renderRow: (row: T) => string;
+  placeholder: string;
+}) {
+  return (
+    <FormField
+      control={props.form.control}
+      name={props.name as any}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{props.label}</FormLabel>
+          <Select
+            value={field.value ? String(field.value) : "none"}
+            onValueChange={(value) => field.onChange(value === "none" ? null : Number(value))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={props.placeholder} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              {props.rows.map((row) => (
+                <SelectItem key={row.id} value={String(row.id)}>
+                  {props.renderRow(row)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormItem>
+      )}
+    />
+  );
+}
 
 export function SupplierFormSheet({
   open,
@@ -49,378 +135,213 @@ export function SupplierFormSheet({
   paymentTerms,
   currencies,
   carriers,
+  taxCodes,
+  incoterms,
+  departments,
+  contracts,
   onCreate,
   onUpdate,
   createPending,
   updatePending,
 }: SupplierFormSheetProps) {
-  const [activeStep, setActiveStep] = useState<SupplierFormStep>("general");
+  const [activeStep, setActiveStep] = useState<Step>("profile");
+  const stepIndex = STEPS.indexOf(activeStep);
+  const visibleContracts = contracts.filter((contract) => !selectedSupplierId || contract.supplierId === selectedSupplierId);
 
   useEffect(() => {
-    if (!open) setActiveStep("general");
+    if (!open) setActiveStep("profile");
   }, [open]);
 
-  const stepIndex = SUPPLIER_FORM_STEPS.indexOf(activeStep);
-  const goPrev = () => {
-    if (stepIndex > 0) setActiveStep(SUPPLIER_FORM_STEPS[stepIndex - 1]);
-  };
-  const goNext = () => {
-    if (stepIndex < SUPPLIER_FORM_STEPS.length - 1) setActiveStep(SUPPLIER_FORM_STEPS[stepIndex + 1]);
+  const closeSheet = (next: boolean) => {
+    onOpenChange(next);
+    if (!next) {
+      setActiveStep("profile");
+      setSelectedSupplierId(null);
+      form.reset(emptySupplierFormValues());
+    }
   };
 
   return (
     <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to add or edit suppliers">
-      <Sheet
-        open={open}
-        onOpenChange={(next) => {
-          onOpenChange(next);
-          if (!next) {
-            setActiveStep("general");
-            setSelectedSupplierId(null);
-            form.reset(emptySupplierFormValues());
-          }
-        }}
-      >
-        <SheetContent side="right" className="w-full sm:max-w-lg md:max-w-xl overflow-y-auto">
+      <Sheet open={open} onOpenChange={closeSheet}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg md:max-w-xl">
           <SheetHeader>
             <SheetTitle>{selectedSupplierId ? "Edit supplier" : "Add supplier"}</SheetTitle>
             <SheetDescription>
-              Step through sections with Next / Previous, or jump using tabs ({stepIndex + 1}/{SUPPLIER_FORM_STEPS.length}).
+              Supplier details are shared by procurement, logistics, accounts payable, analytics, and exports.
             </SheetDescription>
           </SheetHeader>
+
           <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(selectedSupplierId ? onUpdate : onCreate)}
-              className="space-y-4 mt-4"
-              aria-label="Supplier form"
-            >
-              <Tabs value={activeStep} onValueChange={(v) => setActiveStep(v as SupplierFormStep)} className="w-full">
-                <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4 gap-1">
-                  <TabsTrigger value="general">General</TabsTrigger>
-                  <TabsTrigger value="banking">Banking</TabsTrigger>
-                  <TabsTrigger value="compliance">Compliance</TabsTrigger>
-                  <TabsTrigger value="documents">Docs</TabsTrigger>
+            <form onSubmit={form.handleSubmit(selectedSupplierId ? onUpdate : onCreate)} className="mt-4 space-y-4">
+              <Tabs value={activeStep} onValueChange={(value) => setActiveStep(value as Step)}>
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3">
+                  <TabsTrigger value="profile">Profile</TabsTrigger>
+                  <TabsTrigger value="commercial">Commercial</TabsTrigger>
+                  <TabsTrigger value="sites">Contacts</TabsTrigger>
+                  <TabsTrigger value="logistics">Logistics</TabsTrigger>
+                  <TabsTrigger value="risk">Risk</TabsTrigger>
+                  <TabsTrigger value="audit">Audit</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="general" className="space-y-4 pt-4">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-name">Company Name*</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-name" aria-label="Company name" placeholder="Enter company name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="contactName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-contact">Contact Person</FormLabel>
-                        <FormControl>
-                          <Input
-                            id="supplier-contact"
-                            aria-label="Contact person"
-                            placeholder="Enter contact name"
-                            {...field}
-                            value={field.value || ""}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel htmlFor="supplier-email">Email</FormLabel>
-                          <FormControl>
-                            <Input
-                              id="supplier-email"
-                              aria-label="Email"
-                              placeholder="email@example.com"
-                              {...field}
-                              value={field.value || ""}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="phone"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel htmlFor="supplier-phone">Phone</FormLabel>
-                          <FormControl>
-                            <Input
-                              id="supplier-phone"
-                              aria-label="Phone"
-                              placeholder="(555) 123-4567"
-                              {...field}
-                              value={field.value || ""}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
+                <TabsContent value="profile" className="space-y-4 pt-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {textField(form, "supplierCode", "Supplier code")}
+                    {textField(form, "legalName", "Legal name")}
                   </div>
-                  <FormField
-                    control={form.control}
-                    name="address"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-address">Address</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-address" aria-label="Address" placeholder="123 Main St" {...field} value={field.value || ""} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="taxIdentificationNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-taxid">Tax ID / VAT number</FormLabel>
-                        <FormControl>
-                          <Input
-                            id="supplier-taxid"
-                            aria-label="Tax ID or VAT number"
-                            placeholder="Tax registration"
-                            {...field}
-                            value={field.value || ""}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-notes">Notes</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            id="supplier-notes"
-                            aria-label="Supplier notes"
-                            placeholder="Additional information"
-                            className="min-h-[100px]"
-                            {...field}
-                            value={field.value || ""}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </TabsContent>
-
-                <TabsContent value="banking" className="space-y-4 pt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="bankName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel htmlFor="supplier-bank-name">Bank name</FormLabel>
-                          <FormControl>
-                            <Input id="supplier-bank-name" aria-label="Bank name" placeholder="Bank name" {...field} value={field.value || ""} />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="bankAccountNumber"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel htmlFor="supplier-bank-account">Bank account number</FormLabel>
-                          <FormControl>
-                            <Input
-                              id="supplier-bank-account"
-                              aria-label="Bank account number"
-                              placeholder="Account number"
-                              {...field}
-                              value={field.value || ""}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
+                  {textField(form, "name", "Company name*", { placeholder: "Enter company name" })}
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {textField(form, "contactName", "Primary contact")}
+                    {textField(form, "phone", "Phone")}
+                    {textField(form, "email", "Email")}
+                    {textField(form, "taxIdentificationNumber", "Tax ID / VAT number")}
                   </div>
-                  <FormField
-                    control={form.control}
-                    name="bankSwift"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-bank-swift">SWIFT/BIC</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-bank-swift" aria-label="SWIFT/BIC" placeholder="SWIFT/BIC code" {...field} value={field.value || ""} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="paymentTermsId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-payment-terms">Payment terms</FormLabel>
-                        <FormControl>
-                          <Select
-                            value={field.value ? String(field.value) : "none"}
-                            onValueChange={(value) => field.onChange(value === "none" ? null : Number(value))}
-                          >
-                            <SelectTrigger id="supplier-payment-terms" aria-label="Supplier payment terms">
-                              <SelectValue placeholder="Select payment terms" />
-                            </SelectTrigger>
+                  {textField(form, "address", "Address")}
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <Select value={field.value || "active"} onValueChange={field.onChange}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              {paymentTerms.map((term) => (
-                                <SelectItem key={term.id} value={String(term.id)}>
-                                  {term.code} - {term.name}
-                                </SelectItem>
-                              ))}
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="inactive">Inactive</SelectItem>
+                              <SelectItem value="blocked">Blocked</SelectItem>
                             </SelectContent>
                           </Select>
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="defaultCurrencyCode"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-default-currency">Default currency</FormLabel>
-                        <FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="riskStatus"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Risk summary</FormLabel>
+                          <Select value={field.value || "unknown"} onValueChange={field.onChange}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="low">Low</SelectItem>
+                              <SelectItem value="medium">Medium</SelectItem>
+                              <SelectItem value="high">High</SelectItem>
+                              <SelectItem value="unknown">Unknown</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  {textField(form, "notes", "Notes", { textarea: true })}
+                </TabsContent>
+
+                <TabsContent value="commercial" className="space-y-4 pt-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {textField(form, "bankName", "Bank name")}
+                    {textField(form, "bankAccountNumber", "Bank account number")}
+                    {textField(form, "bankSwift", "SWIFT/BIC")}
+                    {numberSelect({ form, name: "paymentTermsId", label: "Payment terms", rows: paymentTerms, renderRow: (row) => `${row.code} - ${row.name}`, placeholder: "Select payment terms" })}
+                    <FormField
+                      control={form.control}
+                      name="defaultCurrencyCode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Default currency</FormLabel>
                           <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
-                            <SelectTrigger id="supplier-default-currency" aria-label="Supplier default currency">
-                              <SelectValue placeholder="Select default currency" />
-                            </SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder="Select currency" /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="none">None</SelectItem>
                               {currencies.map((currency) => (
-                                <SelectItem key={currency.id} value={currency.code}>
-                                  {currency.code} - {currency.name}
-                                </SelectItem>
+                                <SelectItem key={currency.id} value={currency.code}>{currency.code} - {currency.name}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="defaultCarrierId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-default-carrier">Preferred carrier</FormLabel>
-                        <FormControl>
-                          <Select
-                            value={field.value ? String(field.value) : "none"}
-                            onValueChange={(value) => field.onChange(value === "none" ? null : Number(value))}
-                          >
-                            <SelectTrigger id="supplier-default-carrier" aria-label="Supplier preferred carrier">
-                              <SelectValue placeholder="Select preferred carrier" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              {carriers
-                                .filter((carrier) => carrier.active !== false)
-                                .map((carrier) => (
-                                  <SelectItem key={carrier.id} value={String(carrier.id)}>
-                                    {carrier.code ? `${carrier.code} - ${carrier.name}` : carrier.name}
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
+                        </FormItem>
+                      )}
+                    />
+                    {numberSelect({ form, name: "taxCodeId", label: "Default tax code", rows: taxCodes.filter((row) => row.active !== false), renderRow: (row) => `${row.code} - ${row.name}`, placeholder: "Select tax code" })}
+                    {numberSelect({ form, name: "incotermId", label: "Incoterm", rows: incoterms, renderRow: (row) => `${row.code} - ${row.name}`, placeholder: "Select incoterm" })}
+                    {numberSelect({ form, name: "defaultDepartmentId", label: "Default department", rows: departments, renderRow: (row) => `${row.code} - ${row.name}`, placeholder: "Select department" })}
+                    {numberSelect({ form, name: "defaultContractId", label: "Default contract", rows: visibleContracts, renderRow: (row) => row.title, placeholder: "Select contract" })}
+                    {textField(form, "billControlPolicy", "Bill control policy")}
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {booleanField(form, "allowCurrencyOverride", "Allow currency override")}
+                    {booleanField(form, "requireApprovalForOverride", "Require override approval", true)}
+                  </div>
                 </TabsContent>
 
-                <TabsContent value="compliance" className="space-y-4 pt-4">
-                  <FormField
-                    control={form.control}
-                    name="insuranceExpiry"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-insurance-expiry">Insurance expiry</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-insurance-expiry" aria-label="Insurance expiry date" type="date" {...field} value={field.value || ""} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="complianceNotes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-compliance-notes">Compliance notes</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            id="supplier-compliance-notes"
-                            aria-label="Supplier compliance notes"
-                            placeholder="Certifications, insurance notes, compliance remarks"
-                            className="min-h-[80px]"
-                            {...field}
-                            value={field.value || ""}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
+                <TabsContent value="sites" className="space-y-4 pt-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {textField(form, "financeContactName", "Finance contact")}
+                    {textField(form, "logisticsContactName", "Logistics contact")}
+                    {textField(form, "pickupSite", "Pickup site")}
+                    {textField(form, "deliverySite", "Delivery site")}
+                    {textField(form, "billingAddress", "Billing address", { textarea: true })}
+                    {textField(form, "remitToAddress", "Remit-to address", { textarea: true })}
+                  </div>
                 </TabsContent>
 
-                <TabsContent value="documents" className="space-y-4 pt-4">
+                <TabsContent value="logistics" className="space-y-4 pt-4">
+                  <p className="rounded-md border p-3 text-sm text-muted-foreground">
+                    Carriers live in supplier/master data so logistics can reuse the same preferred carrier instead of maintaining a separate carrier setup page.
+                  </p>
+                  {numberSelect({ form, name: "defaultCarrierId", label: "Preferred carrier", rows: carriers.filter((row) => row.active !== false), renderRow: (row) => row.code ? `${row.code} - ${row.name}` : row.name, placeholder: "Select carrier" })}
+                  {textField(form, "defaultTransportMode", "Default transport mode", { placeholder: "road, air, sea, courier" })}
+                </TabsContent>
+
+                <TabsContent value="risk" className="space-y-4 pt-4">
+                  <FormField
+                    control={form.control}
+                    name="complianceStatus"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Compliance status</FormLabel>
+                        <Select value={field.value || "unknown"} onValueChange={field.onChange}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="compliant">Compliant</SelectItem>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="expired">Expired</SelectItem>
+                            <SelectItem value="blocked">Blocked</SelectItem>
+                            <SelectItem value="unknown">Unknown</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                  {textField(form, "insuranceExpiry", "Insurance expiry", { type: "date" })}
+                  {textField(form, "blockedReason", "Blocked supplier reason", { textarea: true })}
+                  {textField(form, "complianceNotes", "Compliance notes", { textarea: true })}
+                </TabsContent>
+
+                <TabsContent value="audit" className="space-y-4 pt-4">
                   {selectedSupplierId ? (
-                    <EntityDocumentsCard entityType="supplier" entityId={selectedSupplierId} title="Compliance documents" />
+                    <EntityDocumentsCard entityType="supplier" entityId={selectedSupplierId} title="Supplier documents" />
                   ) : (
-                    <p className="text-sm text-muted-foreground">Save the supplier first, then attach compliance documents here.</p>
+                    <p className="rounded-md border p-3 text-sm text-muted-foreground">
+                      Save the supplier first to attach documents and build the audit record.
+                    </p>
                   )}
                 </TabsContent>
               </Tabs>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t">
-                <Button type="button" variant="outline" size="sm" onClick={goPrev} disabled={stepIndex === 0}>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+                <Button type="button" variant="outline" size="sm" onClick={() => setActiveStep(STEPS[Math.max(0, stepIndex - 1)])} disabled={stepIndex === 0}>
                   Previous section
                 </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={goNext}
-                  disabled={stepIndex >= SUPPLIER_FORM_STEPS.length - 1}
-                >
+                <Button type="button" variant="secondary" size="sm" onClick={() => setActiveStep(STEPS[Math.min(STEPS.length - 1, stepIndex + 1)])} disabled={stepIndex >= STEPS.length - 1}>
                   Next section
                 </Button>
               </div>
 
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-4 border-t">
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                  Close
-                </Button>
+              <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={() => closeSheet(false)}>Close</Button>
                 <Button type="submit" disabled={createPending || updatePending}>
-                  {createPending || updatePending ? (
-                    <span>Saving...</span>
-                  ) : selectedSupplierId ? (
-                    <span>Update supplier</span>
-                  ) : (
-                    <span>Add supplier</span>
-                  )}
+                  {createPending || updatePending ? "Saving..." : selectedSupplierId ? "Update supplier" : "Add supplier"}
                 </Button>
               </div>
             </form>
