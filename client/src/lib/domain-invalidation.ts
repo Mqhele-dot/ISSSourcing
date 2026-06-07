@@ -41,6 +41,8 @@ export const LEGACY_QUERY_PREFIXES = {
   apPaymentBatches: ["/api/ap/payment-batches"],
   apInvoices: ["/api/ap/invoices"],
   notifications: ["/api/notifications"],
+  diagnosticsSnapshot: ["/api/diagnostics/snapshot"],
+  diagnosticsScan: ["/api/diagnostics/scan"],
   exceptions: ["/api/exceptions"],
 } as const;
 
@@ -71,7 +73,10 @@ const dashboardsAndAnalyticsPrefixes: readonly (readonly string[])[] = [
   LEGACY_QUERY_PREFIXES.reportsAnalytics,
   LEGACY_QUERY_PREFIXES.apOverview,
   qk.notifications as unknown as readonly string[],
+  qk.diagnostics as unknown as readonly string[],
   LEGACY_QUERY_PREFIXES.notifications,
+  LEGACY_QUERY_PREFIXES.diagnosticsSnapshot,
+  LEGACY_QUERY_PREFIXES.diagnosticsScan,
   LEGACY_QUERY_PREFIXES.exceptions,
 ];
 
@@ -212,6 +217,7 @@ export async function invalidateSupplierDomain(queryClient: QueryClient): Promis
       LEGACY_QUERY_PREFIXES.suppliers,
       LEGACY_QUERY_PREFIXES.contracts,
       LEGACY_QUERY_PREFIXES.requisitions,
+      LEGACY_QUERY_PREFIXES.logisticsShipments,
       ...poLegacyPrefixes,
       ...AP_WORKSPACE_PREFIXES,
       ...dashboardsAndAnalyticsPrefixes,
