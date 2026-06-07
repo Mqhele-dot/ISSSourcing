@@ -4,7 +4,7 @@ export type ServerDiagnosticEvent = {
   id: string;
   timestamp: string;
   severity: ServerDiagnosticSeverity;
-  source: "startup" | "request" | "database" | "schema" | "runtime" | "system";
+  source: "startup" | "request" | "database" | "schema" | "runtime" | "system" | "business-rule" | "integration" | "security";
   title: string;
   message: string;
   route?: string;
