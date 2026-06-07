@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm
+FROM mcr.microsoft.com/devcontainers/javascript-node:24-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
-# All browsers (Chromium, Firefox, WebKit) — single source of truth; bump @1.x.x when upgrading @playwright/test in package-lock.json.
+# All browsers (Chromium, Firefox, WebKit) - single source of truth; bump @1.x.x when upgrading @playwright/test in package-lock.json.
 RUN npx -y playwright@1.58.2 install-deps \
   && rm -rf /var/lib/apt/lists/*
 
