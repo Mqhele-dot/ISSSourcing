@@ -2,11 +2,14 @@ import type { Express, Request, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { storage } from "../../storage";
-import { sendFunctionError } from "../../api-response";
+import { sendError, sendFunctionError } from "../../api-response";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
+import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
+import { getActiveOrganizationId } from "../../organization-context";
 import { createSupplierRepository } from "../../repositories";
 import { createSupplierService } from "../../services/supplier-service";
 import { insertSupplierSchema, insertSupplierLogoSchema, PurchaseOrderStatus } from "@shared/schema";
+import { detectSupplierDocumentMismatches } from "../procurement/supplier-defaults";
 import type { AuthBundle } from "../procurement/types";
 import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
 import { createInvoiceRecord } from "../accounts-payable/service";
@@ -14,13 +17,42 @@ import { createInvoiceRecord } from "../accounts-payable/service";
 const supplierRepo = createSupplierRepository(storage);
 const supplierService = createSupplierService(supplierRepo, storage);
 
+async function recordSupplierConsistencyDiagnostics(orgId: number, supplierId: number): Promise<void> {
+  try {
+    const issues = await detectSupplierDocumentMismatches(orgId, supplierId);
+    if (issues.length === 0) return;
+    recordServerDiagnosticEvent({
+      severity: "warning",
+      source: "business-rule",
+      title: "Supplier consistency warning",
+      message: `${issues.length} downstream supplier document issue(s) detected after supplier change.`,
+      details: { orgId, supplierId, examples: issues.slice(0, 5) },
+    });
+    await emitNotificationToRoles(["admin", "manager"], {
+      type: "supplier_consistency_warning",
+      title: "Supplier defaults need review",
+      body: `${issues.length} supplier-linked document issue(s) need review in diagnostics.`,
+      entityType: "supplier",
+      entityId: supplierId,
+    });
+  } catch (error) {
+    recordServerDiagnosticEvent({
+      severity: "error",
+      source: "business-rule",
+      title: "Supplier consistency check failed",
+      message: error instanceof Error ? error.message : String(error),
+      details: { orgId, supplierId, error },
+    });
+  }
+}
+
 /**
- * Supplier CRUD, supplier portal, logos — org-scoped via repositories/storage.
+ * Supplier CRUD, supplier portal, logos - org-scoped via repositories/storage.
  */
 export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
-  // Supplier endpoints — RBAC: viewer read-only; manager/admin can create/update/delete
+  // Supplier endpoints - RBAC: viewer read-only; manager/admin can create/update/delete
   const supplierRead = [auth.ensureAuthenticated];
-  const supplierWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const supplierWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])] ;
 
   const resolveSupplierIdForUser = async (req: Request): Promise<number | null> => {
     const user = (req as Request & { user?: { id: number; role?: string; email?: string } }).user;
@@ -50,7 +82,16 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       res.json(suppliers);
     } catch (error) {
       console.error("Error fetching suppliers:", error);
-      res.status(200).json([]);
+      recordServerDiagnosticEvent({
+        severity: "error",
+        source: "database",
+        title: "Supplier list failed",
+        message: error instanceof Error ? error.message : String(error),
+        route: "/api/suppliers",
+        method: "GET",
+        details: error,
+      });
+      return sendError(res, 500, "SUPPLIERS_FETCH_FAILED", "Failed to fetch suppliers");
     }
   });
 
@@ -118,13 +159,13 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
-      
+
       const supplier = await supplierRepo.findById(id);
-      
+
       if (!supplier) {
         return res.status(404).json({ message: "Supplier not found" });
       }
-      
+
       res.json(supplier);
     } catch (error) {
       console.error("Error fetching supplier:", error);
@@ -135,15 +176,17 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/suppliers", ...supplierWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertSupplierSchema.parse(req.body);
-      
+
       // Check if supplier with this name already exists
       const existingSupplier = await supplierRepo.findByName(validatedData.name);
       if (existingSupplier) {
         return res.status(400).json({ message: "Supplier with this name already exists" });
       }
-      
+
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      const orgId = getActiveOrganizationId();
       const newSupplier = await supplierService.create(validatedData, userId);
+      void recordSupplierConsistencyDiagnostics(orgId, newSupplier.id);
       res.status(201).json(newSupplier);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -164,10 +207,12 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       }
       const validatedData = insertSupplierSchema.partial().parse(req.body);
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      const orgId = getActiveOrganizationId();
       const updatedSupplier = await supplierService.update(id, validatedData, userId);
       if (!updatedSupplier) {
         return res.status(404).json({ message: "Supplier not found" });
       }
+      void recordSupplierConsistencyDiagnostics(orgId, updatedSupplier.id);
       res.json(updatedSupplier);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -189,14 +234,14 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
-      
+
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
       const success = await supplierService.delete(id, userId);
-      
+
       if (!success) {
         return res.status(404).json({ message: "Supplier not found" });
       }
-      
+
       res.status(204).send();
     } catch (error) {
       const code =
@@ -332,7 +377,7 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
         total,
         paidAmount: 0,
         dueAmount: total,
-        currency: payload?.currency ?? orgCurrency,
+        currencyCode: payload?.currencyCode ?? payload?.currency ?? orgCurrency,
         status: "DRAFT",
         notes: payload?.notes ?? null,
         items: Array.isArray(payload?.items) ? payload.items : [],
@@ -369,6 +414,7 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       return sendFunctionError(res, 500, "getSupplierPortalInvoices", "Failed to fetch supplier invoices", error instanceof Error ? error.message : String(error));
     }
   });
+
   // Supplier Logo endpoints (same RBAC as suppliers)
   app.get("/api/suppliers/:id/logo", ...supplierRead, async (req: Request, res: Response) => {
     try {
@@ -376,12 +422,12 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       if (isNaN(supplierId)) {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
-      
+
       const logo = await storage.getSupplierLogo(supplierId);
       if (!logo) {
         return res.status(404).json({ message: "Supplier logo not found" });
       }
-      
+
       res.json(logo);
     } catch (error) {
       console.error("Error fetching supplier logo:", error);
@@ -395,18 +441,18 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       if (isNaN(supplierId)) {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
-      
+
       // Check if the supplier exists
       const supplier = await storage.getSupplier(supplierId);
       if (!supplier) {
         return res.status(404).json({ message: "Supplier not found" });
       }
-      
+
       const validatedData = insertSupplierLogoSchema.parse({
         ...req.body,
-        supplierId
+        supplierId,
       });
-      
+
       const logo = await storage.createSupplierLogo(validatedData);
       res.status(201).json(logo);
     } catch (error) {
@@ -426,16 +472,16 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       if (isNaN(supplierId)) {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
-      
+
       if (!req.body.logoUrl) {
         return res.status(400).json({ message: "Logo URL is required" });
       }
-      
+
       const updatedLogo = await storage.updateSupplierLogo(supplierId, req.body.logoUrl);
       if (!updatedLogo) {
         return res.status(404).json({ message: "Supplier logo not found" });
       }
-      
+
       res.json(updatedLogo);
     } catch (error) {
       console.error("Error updating supplier logo:", error);
@@ -449,12 +495,12 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       if (isNaN(supplierId)) {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
-      
+
       const success = await storage.deleteSupplierLogo(supplierId);
       if (!success) {
         return res.status(404).json({ message: "Supplier logo not found" });
       }
-      
+
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting supplier logo:", error);
