@@ -2,9 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import {
+  apReceipts,
   currencies,
   incoterms,
+  invoices,
   paymentTerms,
+  purchaseOrderItems,
   purchaseOrders,
   supplierContracts,
   suppliers,
@@ -140,8 +143,32 @@ export async function applySupplierDefaultsToPurchaseOrder<T extends SupplierDef
 }
 
 export async function detectSupplierDocumentMismatches(orgId: number, supplierId?: number): Promise<string[]> {
+  const supplierRows = await db
+    .select({
+      id: suppliers.id,
+      name: suppliers.name,
+      defaultCurrencyCode: suppliers.defaultCurrencyCode,
+    })
+    .from(suppliers)
+    .where(
+      supplierId == null
+        ? eq(suppliers.organizationId, orgId)
+        : and(eq(suppliers.organizationId, orgId), eq(suppliers.id, supplierId)),
+    );
+  const activeCurrencies = new Set(
+    (
+      await db
+        .select({ code: currencies.code })
+        .from(currencies)
+        .where(eq(currencies.active, true))
+    )
+      .map((row) => normalizeCurrency(row.code))
+      .filter((code): code is string => code != null),
+  );
+
   const rows = await db
     .select({
+      purchaseOrderId: purchaseOrders.id,
       supplierName: suppliers.name,
       supplierCurrency: suppliers.defaultCurrencyCode,
       orderNumber: purchaseOrders.orderNumber,
@@ -161,6 +188,17 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
     );
 
   const issues: string[] = [];
+  for (const row of supplierRows) {
+    const code = normalizeCurrency(row.defaultCurrencyCode);
+    if (!code) {
+      issues.push(`Supplier ${row.name} is missing a default currency in Master Data.`);
+      continue;
+    }
+    if (!activeCurrencies.has(code)) {
+      issues.push(`Supplier ${row.name} defaults to inactive or missing currency ${code}.`);
+    }
+  }
+
   for (const row of rows) {
     const supplierCurrency = normalizeCurrency(row.supplierCurrency);
     const poCurrency = normalizeCurrency(row.poCurrency);
@@ -169,6 +207,63 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
       issues.push(
         `${locked ? "Locked" : "Draft/open"} PO ${row.orderNumber} uses ${poCurrency}, but supplier ${row.supplierName} defaults to ${supplierCurrency}.`,
       );
+    }
+  }
+
+  const invoiceRows = await db
+    .select({
+      invoiceNumber: invoices.invoiceNumber,
+      invoiceCurrency: invoices.currencyCode,
+      orderNumber: purchaseOrders.orderNumber,
+      poCurrency: purchaseOrders.currencyCode,
+      supplierId: purchaseOrders.supplierId,
+    })
+    .from(invoices)
+    .innerJoin(purchaseOrders, eq(invoices.purchaseOrderId, purchaseOrders.id))
+    .where(
+      supplierId == null
+        ? and(eq(invoices.organizationId, orgId), eq(purchaseOrders.organizationId, orgId))
+        : and(
+            eq(invoices.organizationId, orgId),
+            eq(purchaseOrders.organizationId, orgId),
+            eq(purchaseOrders.supplierId, supplierId),
+          ),
+    );
+  for (const row of invoiceRows) {
+    const invoiceCurrency = normalizeCurrency(row.invoiceCurrency);
+    const poCurrency = normalizeCurrency(row.poCurrency);
+    if (invoiceCurrency && poCurrency && invoiceCurrency !== poCurrency) {
+      issues.push(
+        `Invoice ${row.invoiceNumber} uses ${invoiceCurrency}, but linked PO ${row.orderNumber} uses ${poCurrency}.`,
+      );
+    }
+  }
+
+  const poIds = rows.map((row) => row.purchaseOrderId);
+  if (poIds.length > 0) {
+    const allPoItems = await db.select().from(purchaseOrderItems);
+    const receivedPoIds = new Set(
+      allPoItems
+        .filter((line) => poIds.includes(line.orderId) && Number(line.receivedQuantity ?? 0) > 0)
+        .map((line) => line.orderId),
+    );
+    const receivedStatusPoIds = new Set(
+      rows
+        .filter((row) =>
+          ["PARTIALLY_RECEIVED", "RECEIVED", "COMPLETED", "CLOSED"].includes(String(row.poStatus ?? "").toUpperCase()),
+        )
+        .map((row) => row.purchaseOrderId),
+    );
+    const postedReceipts = await db
+      .select({ purchaseOrderId: apReceipts.purchaseOrderId })
+      .from(apReceipts)
+      .where(and(eq(apReceipts.organizationId, orgId), eq(apReceipts.status, "POSTED")));
+    const receiptPoIds = new Set(postedReceipts.map((row) => row.purchaseOrderId));
+    for (const row of rows) {
+      const hasReceiveSignal = receivedPoIds.has(row.purchaseOrderId) || receivedStatusPoIds.has(row.purchaseOrderId);
+      if (hasReceiveSignal && !receiptPoIds.has(row.purchaseOrderId)) {
+        issues.push(`PO ${row.orderNumber} has received stock but no posted AP receipt record.`);
+      }
     }
   }
   return issues;
