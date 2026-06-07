@@ -41,11 +41,45 @@ export function useSuppliersCoreQueries() {
     throwOnError: false,
   });
 
+  const taxCodesQuery = useQuery<{ id: number; code: string; name: string; active?: boolean | null }[]>({
+    queryKey: ["/api/tax-codes"],
+    queryFn: () => requestJson("GET", "/api/tax-codes"),
+    throwOnError: false,
+  });
+
+  const incotermsQuery = useQuery<{ id: number; code: string; name: string }[]>({
+    queryKey: ["/api/incoterms"],
+    queryFn: () => requestJson("GET", "/api/incoterms"),
+    throwOnError: false,
+  });
+
+  const departmentsQuery = useQuery<{ id: number; code: string; name: string }[]>({
+    queryKey: ["/api/departments"],
+    queryFn: () => requestJson("GET", "/api/departments"),
+    throwOnError: false,
+  });
+
+  const contractsQuery = useQuery<{ id: number; title: string; supplierId: number; status?: string | null }[]>({
+    queryKey: ["/api/contracts"],
+    queryFn: () => requestJson("GET", "/api/contracts"),
+    throwOnError: false,
+  });
+
   const performanceQuery = useQuery<SupplierPerformanceRow[]>({
     queryKey: ["/api/suppliers/performance"],
     queryFn: () => requestJson("GET", "/api/suppliers/performance"),
     throwOnError: false,
   });
 
-  return { suppliersQuery, paymentTermsQuery, currenciesQuery, carriersQuery, performanceQuery };
+  return {
+    suppliersQuery,
+    paymentTermsQuery,
+    currenciesQuery,
+    carriersQuery,
+    taxCodesQuery,
+    incotermsQuery,
+    departmentsQuery,
+    contractsQuery,
+    performanceQuery,
+  };
 }
