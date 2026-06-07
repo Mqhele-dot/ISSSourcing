@@ -10,6 +10,7 @@
     "check": "tsc",
     "lint": "eslint \"client/src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"shared/**/*.ts\"",
     "doctor": "bash scripts/doctor.sh",
+    "repair:win-install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/repair-windows-install.ps1",
     "docs:validate": "node scripts/validate-readme.mjs",
     "test:runtime": "bash scripts/test-runtime.sh",
     "test:contracts": "tsx scripts/test-api-contract.ts",
@@ -27,6 +28,11 @@
     "test:stabilization-client": "tsx scripts/test-stabilization-client.ts",
     "test:diagnostics": "tsx scripts/test-diagnostics-self-checks.ts",
     "test:route-diagnostics": "tsx scripts/test-route-diagnostics.ts",
+    "test:local": "node scripts/run-local-tests.mjs",
+    "test:local:delta": "node scripts/run-local-tests.mjs --delta",
+    "test:local:no-server": "node scripts/run-local-tests.mjs --no-server",
+    "test:local:browser": "node scripts/run-local-browser-walkthrough.mjs",
+    "test:codespace:browser": "node scripts/run-remote-browser-walkthrough.mjs",
     "test:po-print-html": "tsx scripts/test-po-print-html.ts",
     "test:purchase-order-status": "tsx scripts/test-purchase-order-status.ts",
     "test:purchase-order-endpoints": "tsx scripts/test-purchase-order-endpoints.ts",
@@ -77,6 +83,7 @@
     "codespaces:up": "bash scripts/codespaces-up.sh",
     "codespaces:doctor": "bash scripts/codespaces-doctor.sh",
     "codespaces:ports-public": "bash scripts/codespaces-make-port-public.sh",
+    "codespaces:port:reset": "bash scripts/codespaces-port-reset.sh",
     "doctor:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-doctor.ps1",
     "security:lifecycle": "node scripts/list-lifecycle-scripts.mjs",
     "security:lifecycle:enforce": "node scripts/list-lifecycle-scripts.mjs --enforce",
@@ -88,7 +95,7 @@
     "build:secure": "npm run check && npm run lint && npm run validate:migrations && npm run security:supply-chain && npm run build"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "overrides": {
     "filelist": "2.0.2",
