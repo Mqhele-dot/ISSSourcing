@@ -2,7 +2,7 @@
 
 Pinned **full commit SHAs** for immutable action resolution per GitHub hardening guidance: [security hardening](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions).
 
-**CI Node runtime:** workflows use **`node-version: "24"`** via `actions/setup-node` (local dev may remain Node 20+ per `package.json` `engines`).
+**CI Node runtime:** workflows use **`node-version: "24"`** via `actions/setup-node` (local dev should use Node 22.12+ per `package.json` `engines`).
 
 Dependabot **`package-ecosystem: github-actions`** ([`.github/dependabot.yml`](../../.github/dependabot.yml)) proposes digest bumps weekly; preserve inline semver comments (`# v4`) when merging.
 
@@ -17,6 +17,6 @@ Dependabot **`package-ecosystem: github-actions`** ([`.github/dependabot.yml`](.
 |---------|---------------------|-------|
 | [`artifact-attestation-experimental.yml`](../../.github/workflows/artifact-attestation-experimental.yml) | `actions/attest@v2` | Triggered after successful **Security supply chain** on `main`/`master`, or `workflow_dispatch`; job **`continue-on-error: true`** |
 
-**Dependency Review** requires **dependency graph submission**; private orgs typically need **GitHub Advanced Security** — see [`SECURITY_VERIFICATION_RESULTS.md`](./SECURITY_VERIFICATION_RESULTS.md).
+**Dependency Review** requires **dependency graph submission**; private orgs typically need **GitHub Advanced Security** - see [`SECURITY_VERIFICATION_RESULTS.md`](./SECURITY_VERIFICATION_RESULTS.md).
 
 Standalone **`dependency-review.yml`** was **removed**; PR gate lives in **`ci.yml`** to enforce ordering before **`release-gate`**.
