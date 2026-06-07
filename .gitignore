@@ -10,6 +10,7 @@ vite.config.ts.*
 
 # Local dev: last URL/port written by server on listen (see server/index.ts)
 .local-dev-url
+.codespace-app-url
 
 # Playwright (local reports; do not commit)
 playwright-report/
