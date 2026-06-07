@@ -81,6 +81,7 @@ const dashboardsAndAnalyticsPrefixes: readonly (readonly string[])[] = [
 ];
 
 const poLegacyPrefixes: readonly (readonly string[])[] = [
+  qk.purchaseOrders as unknown as readonly string[],
   LEGACY_QUERY_PREFIXES.purchaseOrderRecords,
   LEGACY_QUERY_PREFIXES.purchaseOrderRecordItems,
   LEGACY_QUERY_PREFIXES.purchaseOrdersOperational,
@@ -138,6 +139,11 @@ export async function invalidateMasterDataDomain(
   const tasks: Promise<unknown>[] = [invalidateKeyPrefix(queryClient, qk.masterData)];
 
   const commercialPoDeps: readonly (readonly string[])[] = [
+    qk.suppliers as unknown as readonly string[],
+    qk.contracts as unknown as readonly string[],
+    qk.requisitions as unknown as readonly string[],
+    qk.invoices as unknown as readonly string[],
+    qk.ap as unknown as readonly string[],
     ...poLegacyPrefixes,
     LEGACY_QUERY_PREFIXES.suppliers,
     LEGACY_QUERY_PREFIXES.requisitions,
@@ -196,6 +202,7 @@ export async function invalidateMasterDataDomain(
       tasks.push(
         invalidateMany(queryClient, [
           LEGACY_QUERY_PREFIXES.carriers,
+          qk.logistics as unknown as readonly string[],
           LEGACY_QUERY_PREFIXES.logisticsShipments,
           ...poLegacyPrefixes,
           ...dashboardsAndAnalyticsPrefixes,
@@ -210,10 +217,29 @@ export async function invalidateMasterDataDomain(
   await Promise.all(tasks);
 }
 
-export async function invalidateSupplierDomain(queryClient: QueryClient): Promise<void> {
+export async function invalidateSupplierDomain(queryClient: QueryClient, supplierId?: number | string | null): Promise<void> {
+  const detailPrefixes: readonly (readonly string[])[] =
+    supplierId == null
+      ? []
+      : [
+          qk.supplierDetail(supplierId) as unknown as readonly string[],
+          qk.supplierDefaults(supplierId) as unknown as readonly string[],
+          qk.purchaseOrdersBySupplier(supplierId) as unknown as readonly string[],
+          qk.invoicesBySupplier(supplierId) as unknown as readonly string[],
+          qk.logisticsBySupplier(supplierId) as unknown as readonly string[],
+          ["/api/suppliers", String(supplierId)],
+        ];
+
   await Promise.all([
     invalidateKeyPrefix(queryClient, qk.suppliers),
     invalidateMany(queryClient, [
+      qk.contracts as unknown as readonly string[],
+      qk.requisitions as unknown as readonly string[],
+      qk.purchaseOrders as unknown as readonly string[],
+      qk.invoices as unknown as readonly string[],
+      qk.ap as unknown as readonly string[],
+      qk.logistics as unknown as readonly string[],
+      ...detailPrefixes,
       LEGACY_QUERY_PREFIXES.suppliers,
       LEGACY_QUERY_PREFIXES.contracts,
       LEGACY_QUERY_PREFIXES.requisitions,
