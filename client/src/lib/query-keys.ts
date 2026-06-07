@@ -16,12 +16,13 @@ export const qk = {
   analytics: ["qk", "analytics"] as const,
   reports: ["qk", "reports"] as const,
   notifications: ["qk", "notifications"] as const,
+  diagnostics: ["qk", "diagnostics"] as const,
 } as const;
 
 /** Inventory catalog list; domain invalidation uses `qk.inventory` prefix (exact: false). */
 export const inventoryCatalogQueryKey = [...qk.inventory, "catalog"] as const;
 
-/** Reports page — canonical keys; legacy `/api/...` roots remain valid via `invalidateMany` / domain helpers. */
+/** Reports page - canonical keys; legacy `/api/...` roots remain valid via `invalidateMany` / domain helpers. */
 export const reportsKeys = {
   procurementPurchaseOrderRecords: [...qk.reports, "procurementPurchaseOrderRecords"] as const,
 } as const;
