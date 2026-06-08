@@ -6,6 +6,7 @@ import type { ReadinessStatus, SetupStatusPayload } from "@/lib/setup-readiness-
 import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
 import { getReadinessClientSnapshot } from "@/lib/readiness-client-snapshot";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RefreshCw, Copy, Download, PlayCircle, ShieldCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
@@ -273,6 +274,51 @@ export default function SystemDiagnosticsPage() {
       />
 
       <ModuleTrainingPanel moduleId="system-diagnostics" />
+
+      <Tabs defaultValue="overview" className="space-y-4" data-testid="diagnostics-tabs">
+        <TabsList className="grid h-auto grid-cols-2 gap-1 md:grid-cols-5">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="user-errors">User-Visible Errors</TabsTrigger>
+          <TabsTrigger value="frontend">Frontend Errors</TabsTrigger>
+          <TabsTrigger value="backend">Backend Errors</TabsTrigger>
+          <TabsTrigger value="business">Business Rules</TabsTrigger>
+          <TabsTrigger value="integrations">Integration Health</TabsTrigger>
+          <TabsTrigger value="consistency">Data Consistency</TabsTrigger>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          <TabsTrigger value="security">Security & Supply Chain</TabsTrigger>
+          <TabsTrigger value="audit">Audit Timeline</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview" className="text-sm text-muted-foreground">
+          Runtime readiness, live diagnostics, scan results, and export tools are shown below.
+        </TabsContent>
+        <TabsContent value="user-errors" className="text-sm text-muted-foreground">
+          User-visible API and mutation failures are collected by the global action error center and toast flow.
+        </TabsContent>
+        <TabsContent value="frontend" className="text-sm text-muted-foreground">
+          React render errors, route issues, API failures, and slow browser requests are captured in live diagnostics.
+        </TabsContent>
+        <TabsContent value="backend" className="text-sm text-muted-foreground">
+          Server request errors, unhandled rejections, uncaught exceptions, readiness failures, and diagnostic scan failures are included in the server snapshot.
+        </TabsContent>
+        <TabsContent value="business" className="text-sm text-muted-foreground">
+          Business-rule failures include supplier currency overrides, blocked supplier transaction attempts, invalid approvals, and PO commercial update locks.
+        </TabsContent>
+        <TabsContent value="integrations" className="text-sm text-muted-foreground">
+          Integration health is represented by readiness probes, email/export checks, and failed API events.
+        </TabsContent>
+        <TabsContent value="consistency" className="text-sm text-muted-foreground">
+          The scan flags supplier currency mismatches against PO documents while preserving locked historical documents.
+        </TabsContent>
+        <TabsContent value="notifications" className="text-sm text-muted-foreground">
+          High-priority supplier consistency findings create admin/manager notifications from the diagnostics scan.
+        </TabsContent>
+        <TabsContent value="security" className="text-sm text-muted-foreground">
+          Security and supply-chain status is surfaced through release-gate output, readiness, and server diagnostics.
+        </TabsContent>
+        <TabsContent value="audit" className="text-sm text-muted-foreground">
+          Audit context is available from activity logs, PO revisions, diagnostics events, and generated support reports.
+        </TabsContent>
+      </Tabs>
 
       <div className="flex flex-wrap gap-2">
         <Badge variant={healthLevel === "Critical" ? "destructive" : healthLevel === "Needs attention" ? "outline" : "secondary"}>

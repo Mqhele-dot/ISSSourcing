@@ -9,6 +9,7 @@ import type { Request, Response, NextFunction } from "express";
 import {
   applyStateChangingCsrfProtection,
   clearLoginRateLimit,
+  detectSuspiciousActivity,
   issueCsrfToken,
   loginRateLimiter,
   registerRateLimiter,
@@ -19,6 +20,7 @@ import {
   sendVerificationEmail,
   sendPasswordResetEmail,
   send2FASetupEmail,
+  sendSuspiciousActivityEmail,
 } from "./services/email-service";
 import {
   verifyToken,
@@ -214,6 +216,48 @@ function ensureTwoFactorAuthenticated(req: Request, res: Response, next: NextFun
   });
 }
 
+const SENSITIVE_ADMIN_UPDATE_KEYS = new Set([
+  "password",
+  "twoFactorSecret",
+  "passwordResetToken",
+  "passwordResetExpires",
+  "session",
+  "token",
+  "apiKey",
+  "secret",
+]);
+
+function redactAuditDetails(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactAuditDetails);
+  if (!value || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = SENSITIVE_ADMIN_UPDATE_KEYS.has(key) || /password|secret|token|api[-_]?key|session/i.test(key)
+      ? "[REDACTED]"
+      : redactAuditDetails(entry);
+  }
+  return out;
+}
+
+async function getEffectivePermissions(user: Express.User): Promise<Array<{ resource: string; permissionType: string }>> {
+  if (user.role === "admin") {
+    const all = await storage.getAllPermissions();
+    return all.map(({ resource, permissionType }) => ({ resource, permissionType }));
+  }
+
+  const rolePermissions = await storage.getRolePermissions(user.role as any);
+  const effective = rolePermissions.map(({ resource, permissionType }) => ({ resource, permissionType }));
+  if (user.role === "custom") {
+    const customRoleId = await storage.getUserCustomRoleId(user.id);
+    if (customRoleId) {
+      const custom = await storage.getCustomRolePermissions(customRoleId);
+      effective.push(...custom.map(({ resource, permissionType }) => ({ resource, permissionType })));
+    }
+  }
+  const unique = new Map(effective.map((permission) => [`${permission.resource}:${permission.permissionType}`, permission]));
+  return [...unique.values()];
+}
+
 /**
  * GitHub Codespaces (and similar) terminate TLS at the edge; Node sees HTTP unless we trust
  * X-Forwarded-Proto. Set both `app.set("trust proxy")` and express-session's `proxy` option so
@@ -314,7 +358,7 @@ export function setupAuth(app: Express) {
         }
       }
       
-      if (appEnv.isProduction && !user.emailVerified) {
+      if (!appEnv.allowUnverifiedEmailLogin && !user.emailVerified) {
         return done(null, false, {
           message: "Please verify your email address before logging in",
           requiresEmailVerification: true,
@@ -332,25 +376,16 @@ export function setupAuth(app: Express) {
         lastLogin: new Date() 
       });
 
-      // Temporarily comment out suspicious activity detection while we fix login issues
-      // const isSuspicious = await detectSuspiciousActivity(
-      //   user.id,
-      //   (typeof req.ip === 'string' ? req.ip : 'unknown'),
-      //   req.headers['user-agent'] || 'unknown'
-      // );
-      
-      // if (isSuspicious) {
-      //   // Send suspicious activity email
-      //   sendSuspiciousActivityEmail(
-      //     user.email,
-      //     user.username,
-      //     (typeof req.ip === 'string' ? req.ip : 'unknown'),
-      //     new Date(),
-      //     req.headers['user-agent'] || 'unknown'
-      //   ).catch(err => {
-      //     console.error('Error sending suspicious activity email:', err);
-      //   });
-      // }
+      if (appEnv.suspiciousLoginAlertsEnabled) {
+        const ip = typeof req.ip === "string" ? req.ip : "unknown";
+        const userAgent = String(req.headers["user-agent"] || "unknown");
+        const isSuspicious = await detectSuspiciousActivity(user.id, ip, userAgent);
+        if (isSuspicious) {
+          sendSuspiciousActivityEmail(user.email, user.username, ip, new Date(), userAgent).catch((err) => {
+            console.error("Error sending suspicious activity email:", err);
+          });
+        }
+      }
 
       // User found and password matches
       return done(null, user);
@@ -408,6 +443,18 @@ export function setupAuth(app: Express) {
     });
   });
 
+  app.get("/api/user/permissions", ensureAuthenticated, async (req, res) => {
+    try {
+      return sendOk(res, {
+        role: req.user!.role,
+        permissions: await getEffectivePermissions(req.user!),
+      });
+    } catch (error) {
+      console.error("Error fetching current user permissions:", error);
+      return sendError(res, 500, "USER_PERMISSIONS_FAILED", "Could not load user permissions.");
+    }
+  });
+
   // Route to register new user with rate limiting
   app.post("/api/register", registerRateLimiter, async (req, res) => {
     try {
@@ -436,7 +483,7 @@ export function setupAuth(app: Express) {
       // Create user data object (without confirmPassword)
       const { confirmPassword, ...userDataWithoutConfirm } = req.body;
       
-      const autoVerifyEmail = !appEnv.isProduction;
+      const autoVerifyEmail = appEnv.allowUnverifiedEmailLogin;
       const userData = {
         ...userDataWithoutConfirm,
         password: hashedPassword,
@@ -1023,7 +1070,7 @@ export function setupAuth(app: Express) {
         userAgent: req.headers['user-agent'] || null,
         details: JSON.stringify({
           targetUserId: userId,
-          changes: req.body
+          changes: redactAuditDetails(req.body)
         })
       });
       

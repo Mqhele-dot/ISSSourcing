@@ -11,16 +11,28 @@ import { registerGlobalErrorHandler } from "./bootstrap/global-error-handler";
 import { attachStartupBannerListener } from "./bootstrap/startup-banner";
 import { registerDevTestRoutes } from "./dev-test-routes";
 import {
+  getServerDiagnosticEvents,
   recordServerDiagnosticEvent,
   registerProcessDiagnosticHandlers,
 } from "./diagnostics/server-diagnostics-store";
+import { readiness, setDbReady, setSchemaReady, setSessionStoreReady, setWebsocketReady } from "./readiness";
 
 const app = express();
+let startupFailure: { message: string; stack?: string; at: string } | null = null;
 
 registerProcessDiagnosticHandlers();
 
 registerRequestContextMiddleware(app);
 registerSecurityMiddleware(app);
+
+app.get(["/startup-diagnostics", "/api/startup-diagnostics"], (_req, res) => {
+  res.status(startupFailure ? 503 : 200).json({
+    ok: !startupFailure,
+    startupFailure,
+    readiness,
+    events: getServerDiagnosticEvents().filter((event) => event.source === "startup").slice(0, 20),
+  });
+});
 
 (async () => {
   try {
@@ -28,6 +40,15 @@ registerSecurityMiddleware(app);
   } catch (err) {
     const { logger } = await import("./lib/logger");
     const message = err instanceof Error ? err.message : String(err);
+    startupFailure = {
+      message,
+      stack: err instanceof Error ? err.stack : undefined,
+      at: new Date().toISOString(),
+    };
+    setDbReady(false);
+    setSchemaReady(false);
+    setSessionStoreReady(false);
+    setWebsocketReady(false);
     recordServerDiagnosticEvent({
       severity: "critical",
       source: "startup",
@@ -46,9 +67,12 @@ registerSecurityMiddleware(app);
       console.error(err.stack);
     }
     console.error(
-      "[FATAL] Check DATABASE_URL / PG* / migrations, then run again. E2E wrapper will fail fast if this exits.\n",
+      "[FATAL] Check DATABASE_URL / PG* / migrations, then run again.\n",
     );
-    process.exit(1);
+    if (!appEnv.isDevelopment && appEnv.deploymentMode !== "test") {
+      process.exit(1);
+    }
+    console.error("[RECOVERY] Development/Codespaces mode: continuing so diagnostics and app shell can be served.\n");
   }
 
   const server = await registerRoutes(app);

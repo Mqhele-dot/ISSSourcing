@@ -37,6 +37,9 @@ const rawEnvSchema = z.object({
   PGPASSWORD: z.string().trim().optional(),
   PGSSLMODE: z.string().trim().optional(),
   SESSION_SECRET: z.string().trim().optional(),
+  INTERNAL_EXPORT_TOKEN: z.string().trim().optional(),
+  ALLOW_UNVERIFIED_EMAIL_LOGIN: z.string().trim().optional(),
+  ENABLE_SUSPICIOUS_LOGIN_ALERTS: z.string().trim().optional(),
   TRUST_PROXY: z.string().trim().optional(),
   CODESPACES: z.string().trim().optional(),
   CODESPACE_NAME: z.string().trim().optional(),
@@ -130,6 +133,22 @@ const rawEnv = rawEnvSchema.parse(process.env);
 const databaseUrl = resolveDatabaseUrl(rawEnv);
 const sessionSecret = resolveSessionSecret(rawEnv);
 
+function resolveInternalExportToken(env: z.infer<typeof rawEnvSchema>): string {
+  const value = env.INTERNAL_EXPORT_TOKEN?.trim();
+  if (value) {
+    if (value === env.SESSION_SECRET?.trim()) {
+      throw new Error("INTERNAL_EXPORT_TOKEN must not match SESSION_SECRET.");
+    }
+    return value;
+  }
+  if (isProductionProfile()) {
+    throw new Error("INTERNAL_EXPORT_TOKEN is required in production and must be separate from SESSION_SECRET.");
+  }
+  return "dev-internal-export-token-change-me";
+}
+
+const internalExportToken = resolveInternalExportToken(rawEnv);
+
 function resolveDeploymentMode(): DeploymentMode {
   const explicit = rawEnv.RUNTIME_DEPLOYMENT;
   if (explicit) return explicit;
@@ -165,6 +184,12 @@ export const appEnv = {
   port: rawEnv.PORT,
   databaseUrl,
   sessionSecret,
+  internalExportToken,
+  allowUnverifiedEmailLogin:
+    runtimeProfile !== "production" &&
+    (rawEnv.ALLOW_UNVERIFIED_EMAIL_LOGIN === "1" || rawEnv.ALLOW_UNVERIFIED_EMAIL_LOGIN === "true"),
+  suspiciousLoginAlertsEnabled:
+    rawEnv.ENABLE_SUSPICIOUS_LOGIN_ALERTS === "1" || rawEnv.ENABLE_SUSPICIOUS_LOGIN_ALERTS === "true",
   useDatabaseSsl,
   trustProxy,
   requestLimits: {

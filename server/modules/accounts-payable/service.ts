@@ -45,6 +45,7 @@ type ApprovalActionContext = {
   actorRole: string;
   overrideExplicit?: boolean;
   overrideReason?: string;
+  comment?: string;
 };
 
 type InvoiceFilters = {
@@ -1745,7 +1746,7 @@ export async function releasePaymentBatch(
       performedBy: userId,
       previousStatus: batch.status,
       newStatus: "RELEASED",
-      comment: context.overrideReason ?? null,
+      comment: context.comment ?? context.overrideReason ?? null,
     }).catch(() => {});
 
     await writeApAuditLog({
@@ -1756,7 +1757,7 @@ export async function releasePaymentBatch(
       entityId: batchId,
       priorState: batch.status,
       nextState: "RELEASED",
-      reason: context.overrideReason ?? null,
+      reason: context.comment ?? context.overrideReason ?? null,
       extra: { releasedItemCount: unreleasedItems.length },
     }).catch(() => {});
 

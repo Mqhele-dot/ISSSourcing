@@ -24,3 +24,4 @@ audit-high*.json
 audit-high*.txt
 .npm-cache-audit/
 .npm-cache-local/
+.npm-cache/

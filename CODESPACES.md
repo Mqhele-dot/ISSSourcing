@@ -8,7 +8,7 @@
 
 This repository includes a devcontainer configuration under **`.devcontainer/`** so it can boot in GitHub Codespaces with the required services:
 
-- Node.js 20
+- Node.js 24
 - PostgreSQL 16
 - Native build dependencies for packages like `canvas`, `sharp`, and `sqlite3`
 
@@ -52,6 +52,17 @@ npm run demo:reset
 ```
 
 ## Full Validation Workflow
+
+## Rebuild Public Port Access
+
+If another app cannot open the Codespaces link, rebuild the forwarded port and public URL:
+
+```bash
+npm run codespaces:port:reset
+cat .codespace-app-url
+```
+
+The reset command verifies the app locally, forwards port 5000, sets it to Public, writes the exact app URL, and checks the public `/health` endpoint. If it reports HTTP 401, the port is still private. If it reports HTTP 502, GitHub's proxy cannot reach the running app yet.
 
 Run this exact sequence in Codespaces to verify the latest branch and ensure exports + procurement flow are healthy:
 

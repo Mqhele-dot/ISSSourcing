@@ -1,9 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import {
-  apReceipts,
   currencies,
+  apReceipts,
   incoterms,
   invoices,
   paymentTerms,
@@ -18,6 +18,7 @@ const LOCKED_PO_STATUSES = new Set(["SENT", "ACKNOWLEDGED", "PARTIALLY_RECEIVED"
 
 export type SupplierDefaultsInput = Record<string, unknown> & {
   supplierId?: unknown;
+  departmentId?: unknown;
   contractId?: unknown;
   currencyCode?: unknown;
   paymentTermsId?: unknown;
@@ -50,7 +51,11 @@ async function activeCurrencyCode(value: unknown): Promise<string | null> {
 
 async function activePaymentTermsId(id: number | null): Promise<number | null> {
   if (id == null) return null;
-  const [row] = await db.select({ id: paymentTerms.id }).from(paymentTerms).where(eq(paymentTerms.id, id)).limit(1);
+  const [row] = await db
+    .select({ id: paymentTerms.id })
+    .from(paymentTerms)
+    .where(and(eq(paymentTerms.id, id), eq(paymentTerms.active, true)))
+    .limit(1);
   return row?.id ?? null;
 }
 
@@ -64,9 +69,13 @@ async function activeTaxCodeId(id: number | null): Promise<number | null> {
   return row?.id ?? null;
 }
 
-async function validIncotermId(id: number | null): Promise<number | null> {
+async function activeIncotermId(id: number | null): Promise<number | null> {
   if (id == null) return null;
-  const [row] = await db.select({ id: incoterms.id }).from(incoterms).where(eq(incoterms.id, id)).limit(1);
+  const [row] = await db
+    .select({ id: incoterms.id })
+    .from(incoterms)
+    .where(and(eq(incoterms.id, id), eq(incoterms.active, true)))
+    .limit(1);
   return row?.id ?? null;
 }
 
@@ -75,8 +84,14 @@ async function resolveSupplierCurrencyAndTerms(orgId: number, supplierId: number
     .select({
       id: suppliers.id,
       name: suppliers.name,
+      defaultDepartmentId: suppliers.defaultDepartmentId,
+      defaultContractId: suppliers.defaultContractId,
       paymentTermsId: suppliers.paymentTermsId,
       defaultCurrencyCode: suppliers.defaultCurrencyCode,
+      allowCurrencyOverride: suppliers.allowCurrencyOverride,
+      requireApprovalForOverride: suppliers.requireApprovalForOverride,
+      taxCodeId: suppliers.taxCodeId,
+      incotermId: suppliers.incotermId,
     })
     .from(suppliers)
     .where(and(eq(suppliers.id, supplierId), eq(suppliers.organizationId, orgId)))
@@ -86,8 +101,10 @@ async function resolveSupplierCurrencyAndTerms(orgId: number, supplierId: number
     throw Object.assign(new Error("Supplier not found in this organization."), { code: "SUPPLIER_NOT_FOUND", status: 400 });
   }
 
+  const supplierDefaultContractId = numberOrNull(supplier.defaultContractId);
+  const effectiveContractId = contractId ?? supplierDefaultContractId;
   const [contract] =
-    contractId != null
+    effectiveContractId != null
       ? await db
           .select({
             id: supplierContracts.id,
@@ -99,7 +116,7 @@ async function resolveSupplierCurrencyAndTerms(orgId: number, supplierId: number
           .from(supplierContracts)
           .where(
             and(
-              eq(supplierContracts.id, contractId),
+              eq(supplierContracts.id, effectiveContractId),
               eq(supplierContracts.organizationId, orgId),
               eq(supplierContracts.supplierId, supplierId),
             ),
@@ -107,14 +124,32 @@ async function resolveSupplierCurrencyAndTerms(orgId: number, supplierId: number
           .limit(1)
       : [];
 
+  if (effectiveContractId != null && !contract) {
+    const requestedDefault = contractId == null;
+    throw Object.assign(
+      new Error(
+        requestedDefault
+          ? `Supplier ${supplier.name} has an invalid default contract. Update supplier master data before creating the PO.`
+          : "Contract not found for this supplier and organization.",
+      ),
+      {
+        code: requestedDefault ? "SUPPLIER_DEFAULT_CONTRACT_INVALID" : "SUPPLIER_CONTRACT_NOT_FOUND",
+        status: 409,
+      },
+    );
+  }
+
   return {
     supplierName: supplier.name,
+    departmentId: numberOrNull(supplier.defaultDepartmentId),
     supplierCurrencyCode: await activeCurrencyCode(supplier.defaultCurrencyCode),
     contractCurrencyCode: await activeCurrencyCode(contract?.currency),
+    allowCurrencyOverride: supplier.allowCurrencyOverride === true,
+    requireApprovalForOverride: supplier.requireApprovalForOverride !== false,
     paymentTermsId: await activePaymentTermsId(contract?.paymentTermsId ?? supplier.paymentTermsId ?? null),
-    taxCodeId: await activeTaxCodeId(contract?.defaultTaxCodeId ?? null),
-    incotermId: await validIncotermId(contract?.incotermId ?? null),
-    contractId: contract?.id ?? contractId,
+    taxCodeId: await activeTaxCodeId(contract?.defaultTaxCodeId ?? supplier.taxCodeId ?? null),
+    incotermId: await activeIncotermId(contract?.incotermId ?? supplier.incotermId ?? null),
+    contractId: contract?.id ?? null,
   };
 }
 
@@ -125,16 +160,34 @@ export async function applySupplierDefaultsToPurchaseOrder<T extends SupplierDef
 
   const defaults = await resolveSupplierCurrencyAndTerms(orgId, supplierId, numberOrNull(input.contractId));
   const requestedCurrency = normalizeCurrency(input.currencyCode);
-  const resolvedCurrency = defaults.contractCurrencyCode ?? defaults.supplierCurrencyCode ?? requestedCurrency;
+  let resolvedCurrency = defaults.contractCurrencyCode ?? defaults.supplierCurrencyCode ?? requestedCurrency;
 
   if (requestedCurrency && resolvedCurrency && requestedCurrency !== resolvedCurrency) {
-    throw Object.assign(
-      new Error(`Supplier currency is ${resolvedCurrency}; override to ${requestedCurrency} is not allowed.`),
-      { code: "SUPPLIER_CURRENCY_OVERRIDE_BLOCKED", status: 409 },
-    );
+    if (defaults.contractCurrencyCode) {
+      throw Object.assign(
+        new Error(
+          `Contract currency is ${defaults.contractCurrencyCode}; override to ${requestedCurrency} is not allowed while that contract is selected.`,
+        ),
+        { code: "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED", status: 409 },
+      );
+    }
+    if (!defaults.allowCurrencyOverride) {
+      throw Object.assign(
+        new Error(`Supplier currency is ${resolvedCurrency}; override to ${requestedCurrency} is not allowed.`),
+        { code: "SUPPLIER_CURRENCY_OVERRIDE_BLOCKED", status: 409 },
+      );
+    }
+    if (defaults.requireApprovalForOverride && input.confirmCurrencyOverride !== true) {
+      throw Object.assign(
+        new Error(`Supplier currency override to ${requestedCurrency} requires confirmation.`),
+        { code: "SUPPLIER_CURRENCY_OVERRIDE_CONFIRMATION_REQUIRED", status: 409 },
+      );
+    }
+    resolvedCurrency = requestedCurrency;
   }
 
   if (resolvedCurrency) input.currencyCode = resolvedCurrency;
+  if (input.departmentId == null && defaults.departmentId != null) input.departmentId = defaults.departmentId;
   if (input.paymentTermsId == null && defaults.paymentTermsId != null) input.paymentTermsId = defaults.paymentTermsId;
   if (input.incotermId == null && defaults.incotermId != null) input.incotermId = defaults.incotermId;
   if (input.taxCodeId == null && defaults.taxCodeId != null) input.taxCodeId = defaults.taxCodeId;
@@ -148,6 +201,7 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
       id: suppliers.id,
       name: suppliers.name,
       defaultCurrencyCode: suppliers.defaultCurrencyCode,
+      defaultContractId: suppliers.defaultContractId,
     })
     .from(suppliers)
     .where(
@@ -160,10 +214,22 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
       await db
         .select({ code: currencies.code })
         .from(currencies)
-        .where(eq(currencies.active, true))
-    )
-      .map((row) => normalizeCurrency(row.code))
+      .where(eq(currencies.active, true))
+    ).map((row) => normalizeCurrency(row.code))
       .filter((code): code is string => code != null),
+  );
+  const supplierDefaultContractIds = supplierRows
+    .map((row) => numberOrNull(row.defaultContractId))
+    .filter((id): id is number => id != null);
+  const validDefaultContractIds = new Set(
+    supplierDefaultContractIds.length === 0
+      ? []
+      : (
+          await db
+            .select({ id: supplierContracts.id })
+            .from(supplierContracts)
+            .where(and(eq(supplierContracts.organizationId, orgId), inArray(supplierContracts.id, supplierDefaultContractIds)))
+        ).map((row) => row.id),
   );
 
   const rows = await db
@@ -190,12 +256,16 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
   const issues: string[] = [];
   for (const row of supplierRows) {
     const code = normalizeCurrency(row.defaultCurrencyCode);
+    const defaultContractId = numberOrNull(row.defaultContractId);
     if (!code) {
       issues.push(`Supplier ${row.name} is missing a default currency in Master Data.`);
       continue;
     }
     if (!activeCurrencies.has(code)) {
       issues.push(`Supplier ${row.name} defaults to inactive or missing currency ${code}.`);
+    }
+    if (defaultContractId != null && !validDefaultContractIds.has(defaultContractId)) {
+      issues.push(`Supplier ${row.name} references missing default contract #${defaultContractId}.`);
     }
   }
 
@@ -241,7 +311,10 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
 
   const poIds = rows.map((row) => row.purchaseOrderId);
   if (poIds.length > 0) {
-    const allPoItems = await db.select().from(purchaseOrderItems);
+    const allPoItems = await db
+      .select()
+      .from(purchaseOrderItems)
+      .where(inArray(purchaseOrderItems.orderId, poIds));
     const receivedPoIds = new Set(
       allPoItems
         .filter((line) => poIds.includes(line.orderId) && Number(line.receivedQuantity ?? 0) > 0)

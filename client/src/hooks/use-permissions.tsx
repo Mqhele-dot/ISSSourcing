@@ -1,14 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, requestJson } from "@/lib/queryClient";
 
 type Permission = {
-  id: number;
-  role: string;
   resource: string;
   permissionType: string;
+};
+
+type CurrentUserPermissionsResponse = {
+  role: string;
+  permissions: Permission[];
 };
 
 type PermissionsByResource = Record<
@@ -19,44 +22,21 @@ type PermissionsByResource = Record<
   }
 >;
 
-function getCustomRoleIdFromUser(user: unknown): number | null {
-  const prefs = user && typeof user === "object" ? (user as { preferences?: unknown }).preferences : null;
-  if (!prefs || typeof prefs !== "object") return null;
-  const customRoleId = (prefs as { customRoleId?: unknown }).customRoleId;
-  const parsed = Number(customRoleId);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
 export function usePermissions() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [permissionsByResource, setPermissionsByResource] = useState<PermissionsByResource>({});
 
-  // Fetch permissions for the current user's role
-  const { data: permissions, isLoading, error } = useQuery<Permission[]>({
-    queryKey: ["/api/roles", user?.role ?? "unknown", "permissions"],
-    enabled: !!user && user.role !== "custom",
-    queryFn: () => requestJson<Permission[]>("GET", `/api/roles/${user?.role ?? "viewer"}/permissions`),
+  const { data, isLoading, error } = useQuery<CurrentUserPermissionsResponse>({
+    queryKey: ["/api/user/permissions"],
+    enabled: !!user,
+    queryFn: () => requestJson<CurrentUserPermissionsResponse>("GET", "/api/user/permissions"),
   });
 
-  // For custom roles, fetch the custom role permissions
-  const customRoleId = getCustomRoleIdFromUser(user);
-  const { data: customRolePermissions } = useQuery<Permission[]>({
-    queryKey: ["/api/custom-roles", customRoleId ?? "none", "permissions"],
-    enabled: !!user && user.role === "custom" && customRoleId != null,
-    queryFn: () => requestJson<Permission[]>("GET", `/api/custom-roles/${customRoleId}/permissions`),
-  });
-  
-  // Organize permissions by resource for easier checking
-  useEffect(() => {
-    if (!permissions && !customRolePermissions) return;
-
-    const rolePermissions: Permission[] = permissions ?? [];
-    const customPermissions: Permission[] = customRolePermissions ?? [];
-    const allPermissions: Permission[] = [...rolePermissions, ...customPermissions];
+  const permissions = data?.permissions ?? [];
+  const permissionsByResource = useMemo(() => {
     const byResource: PermissionsByResource = {};
-    
-    allPermissions.forEach((perm) => {
+
+    permissions.forEach((perm) => {
       if (!byResource[perm.resource]) {
         byResource[perm.resource] = {
           resource: perm.resource,
@@ -66,9 +46,9 @@ export function usePermissions() {
       
       byResource[perm.resource].permissions.push(perm.permissionType);
     });
-    
-    setPermissionsByResource(byResource);
-  }, [permissions, customRolePermissions]);
+
+    return byResource;
+  }, [permissions]);
 
   // Check if user has access to a specific resource and permission type
   const hasPermission = (resource: string, permissionType: string): boolean => {
@@ -92,10 +72,7 @@ export function usePermissions() {
   // Refresh permissions
   const refreshPermissions = () => {
     if (user) {
-      queryClient.invalidateQueries({ queryKey: ["/api/roles", user.role, "permissions"] });
-      if (user.role === "custom") {
-        queryClient.invalidateQueries({ queryKey: ["/api/custom-roles", "permissions"] });
-      }
+      queryClient.invalidateQueries({ queryKey: ["/api/user/permissions"] });
     }
   };
 

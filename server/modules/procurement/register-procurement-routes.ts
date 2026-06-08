@@ -16,7 +16,6 @@ import {
   approvalHistory,
   purchaseOrderRevisions,
   supplierContracts,
-  suppliers,
   paymentTerms,
   incoterms,
   currencies,
@@ -30,6 +29,7 @@ import {
 import { canUpdatePurchaseOrder } from "@shared/purchase-order-status";
 import { getActiveOrganizationId } from "../../organization-context";
 import { getApplicableRequisitionPolicyForOrg, roleMatchesPolicy } from "./service";
+import { applySupplierDefaultsToPurchaseOrder } from "./supplier-defaults";
 import type { AuthBundle } from "./types";
 
 async function validateProjectIdForOrg(
@@ -92,10 +92,10 @@ async function assertPurchaseOrderCommercialReferences(params: {
     const [row] = await db
       .select({ id: paymentTerms.id })
       .from(paymentTerms)
-      .where(eq(paymentTerms.id, patch.paymentTermsId))
+      .where(and(eq(paymentTerms.id, patch.paymentTermsId), eq(paymentTerms.active, true)))
       .limit(1);
     if (!row) {
-      return { ok: false, code: "PO_PAYMENT_TERMS_NOT_FOUND", message: "Payment terms not found." };
+      return { ok: false, code: "PO_PAYMENT_TERMS_NOT_FOUND", message: "Payment terms not found or inactive." };
     }
   }
 
@@ -103,10 +103,10 @@ async function assertPurchaseOrderCommercialReferences(params: {
     const [row] = await db
       .select({ id: incoterms.id })
       .from(incoterms)
-      .where(eq(incoterms.id, patch.incotermId))
+      .where(and(eq(incoterms.id, patch.incotermId), eq(incoterms.active, true)))
       .limit(1);
     if (!row) {
-      return { ok: false, code: "PO_INCOTERM_NOT_FOUND", message: "Incoterm not found." };
+      return { ok: false, code: "PO_INCOTERM_NOT_FOUND", message: "Incoterm not found or inactive." };
     }
   }
 
@@ -151,88 +151,6 @@ async function assertPurchaseOrderCurrencyCodeAllowed(
   return { ok: true };
 }
 
-function isCommercialFieldBlank(value: unknown): boolean {
-  return value == null || (typeof value === "string" && value.trim() === "");
-}
-
-async function isActiveCurrencyCode(currencyCode: unknown): Promise<string | null> {
-  if (typeof currencyCode !== "string") return null;
-  const code = currencyCode.trim().toUpperCase();
-  if (!/^[A-Z]{3}$/.test(code)) return null;
-  const [row] = await db
-    .select({ id: currencies.id })
-    .from(currencies)
-    .where(and(eq(currencies.code, code), eq(currencies.active, true)))
-    .limit(1);
-  return row ? code : null;
-}
-
-async function applyPurchaseOrderCommercialDefaults(
-  purchaseOrderInput: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const supplierId = Number(purchaseOrderInput.supplierId);
-  if (!Number.isFinite(supplierId) || supplierId <= 0) return purchaseOrderInput;
-
-  const orgId = getActiveOrganizationId();
-  const [supplier] = await db
-    .select({
-      id: suppliers.id,
-      paymentTermsId: suppliers.paymentTermsId,
-      defaultCurrencyCode: suppliers.defaultCurrencyCode,
-    })
-    .from(suppliers)
-    .where(and(eq(suppliers.id, supplierId), eq(suppliers.organizationId, orgId)))
-    .limit(1);
-
-  if (!supplier) return purchaseOrderInput;
-
-  let contractDefaults:
-    | {
-        paymentTermsId: number | null;
-        incotermId: number | null;
-        currency: string | null;
-        defaultTaxCodeId: number | null;
-      }
-    | undefined;
-
-  const contractId = Number(purchaseOrderInput.contractId);
-  if (Number.isFinite(contractId) && contractId > 0) {
-    [contractDefaults] = await db
-      .select({
-        paymentTermsId: supplierContracts.paymentTermsId,
-        incotermId: supplierContracts.incotermId,
-        currency: supplierContracts.currency,
-        defaultTaxCodeId: supplierContracts.defaultTaxCodeId,
-      })
-      .from(supplierContracts)
-      .where(
-        and(
-          eq(supplierContracts.id, contractId),
-          eq(supplierContracts.organizationId, orgId),
-          eq(supplierContracts.supplierId, supplierId),
-        ),
-      )
-      .limit(1);
-  }
-
-  if (isCommercialFieldBlank(purchaseOrderInput.paymentTermsId)) {
-    purchaseOrderInput.paymentTermsId = contractDefaults?.paymentTermsId ?? supplier.paymentTermsId ?? undefined;
-  }
-  if (isCommercialFieldBlank(purchaseOrderInput.incotermId)) {
-    purchaseOrderInput.incotermId = contractDefaults?.incotermId ?? undefined;
-  }
-  if (isCommercialFieldBlank(purchaseOrderInput.taxCodeId)) {
-    purchaseOrderInput.taxCodeId = contractDefaults?.defaultTaxCodeId ?? undefined;
-  }
-  if (isCommercialFieldBlank(purchaseOrderInput.currencyCode)) {
-    const contractCurrency = await isActiveCurrencyCode(contractDefaults?.currency);
-    const supplierCurrency = await isActiveCurrencyCode(supplier.defaultCurrencyCode);
-    purchaseOrderInput.currencyCode = contractCurrency ?? supplierCurrency ?? purchaseOrderInput.currencyCode;
-  }
-
-  return purchaseOrderInput;
-}
-
 const purchaseOrderCommercialPatchSchema = z
   .object({
     departmentId: z.union([z.number().int().positive(), z.null()]).optional(),
@@ -246,6 +164,7 @@ const purchaseOrderCommercialPatchSchema = z
       .transform((c) => c.toUpperCase())
       .optional(),
     taxCodeId: z.union([z.number().int().positive(), z.null()]).optional(),
+    confirmCurrencyOverride: z.boolean().optional(),
   })
   .strict();
 
@@ -936,7 +855,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         }
       }
 
-      await applyPurchaseOrderCommercialDefaults(purchaseOrderInput);
+      await applySupplierDefaultsToPurchaseOrder(purchaseOrderInput);
       const validatedOrderData = insertPurchaseOrderSchema.parse(purchaseOrderInput);
       const validatedItemsData = req.body.items.map((item: any, index: number) => {
         const qty = Number(item?.quantity);
@@ -1010,6 +929,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         const validationError = fromZodError(error);
         return sendError(res, 400, "VALIDATION_ERROR", validationError.message);
       } else {
+        const e = error as { code?: string; status?: number; message?: string };
+        if (e?.code && e?.status) {
+          return sendError(res, e.status, e.code, e.message || "Supplier defaults could not be applied.");
+        }
         console.error("Error creating purchase order:", error);
         return sendError(res, 500, "CREATE_PURCHASE_ORDER_FAILED", "Failed to create purchase order");
       }
@@ -1057,6 +980,17 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         );
       }
 
+      const defaultedPatch = await applySupplierDefaultsToPurchaseOrder({
+        supplierId: existing.supplierId,
+        contractId: patchPayload.contractId ?? existing.contractId,
+        departmentId: patchPayload.departmentId ?? existing.departmentId,
+        paymentTermsId: patchPayload.paymentTermsId ?? existing.paymentTermsId,
+        incotermId: patchPayload.incotermId ?? existing.incotermId,
+        currencyCode: patchPayload.currencyCode ?? existing.currencyCode,
+        taxCodeId: patchPayload.taxCodeId ?? existing.taxCodeId,
+        confirmCurrencyOverride: patchPayload.confirmCurrencyOverride,
+      });
+
       const validatedData: Partial<InsertPurchaseOrder> = {};
       (
         [
@@ -1068,8 +1002,9 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           "taxCodeId",
         ] as const
       ).forEach((key) => {
-        if (patchPayload[key] !== undefined) {
-          validatedData[key] = patchPayload[key] as never;
+        const value = defaultedPatch[key];
+        if (value !== undefined) {
+          validatedData[key] = value as never;
         }
       });
 
@@ -1116,6 +1051,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       } as any);
       return sendOk(res, updatedOrder);
     } catch (error) {
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Supplier defaults could not be applied.");
+      }
       console.error("Error updating purchase order:", error);
       return sendError(res, 500, "UPDATE_PURCHASE_ORDER_FAILED", "Failed to update purchase order");
     }

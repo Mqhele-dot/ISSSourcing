@@ -75,6 +75,10 @@ async function main() {
   if (!expectStatus("GET /api/payment-terms", 200, payRes.status)) failures++;
   const taxRes = await apiJsonRequest("/tax-codes", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/tax-codes", 200, taxRes.status)) failures++;
+  const incotermsRes = await apiJsonRequest("/incoterms", { method: "GET", cookie: adminCookie });
+  if (!expectStatus("GET /api/incoterms", 200, incotermsRes.status)) failures++;
+  const deptRes = await apiJsonRequest("/departments", { method: "GET", cookie: adminCookie });
+  if (!expectStatus("GET /api/departments", 200, deptRes.status)) failures++;
   const carriersRes = await apiJsonRequest("/carriers", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/carriers", 200, carriersRes.status)) failures++;
   const warehousesRes = await apiJsonRequest("/warehouses", { method: "GET", cookie: adminCookie });
@@ -95,6 +99,12 @@ async function main() {
       : "USD";
   const paymentTerms = asArray<{ id: number }>(unwrapData<unknown>(payRes.json));
   const paymentTermsId = Number(paymentTerms[0]?.id ?? 0) || undefined;
+  const taxCodes = asArray<{ id: number; active?: boolean | null }>(unwrapData<unknown>(taxRes.json));
+  const defaultTaxCodeId = Number(taxCodes.find((taxCode) => taxCode.active !== false)?.id ?? 0) || undefined;
+  const incoterms = asArray<{ id: number }>(unwrapData<unknown>(incotermsRes.json));
+  const defaultIncotermId = Number(incoterms[0]?.id ?? 0) || undefined;
+  const departments = asArray<{ id: number }>(unwrapData<unknown>(deptRes.json));
+  const defaultDepartmentId = Number(departments[0]?.id ?? 0) || undefined;
   const carriers = asArray<{ id: number; name: string; active?: boolean | null }>(unwrapData<unknown>(carriersRes.json));
   const defaultCarrier = carriers.find((carrier) => carrier.active !== false && Number(carrier.id) > 0);
   const warehouses = asArray<{ id: number; name: string }>(unwrapData<unknown>(warehousesRes.json));
@@ -109,6 +119,9 @@ async function main() {
       email: `propagation-${Date.now()}@example.com`,
       defaultCurrencyCode: firstCurrencyCode,
       ...(paymentTermsId ? { paymentTermsId } : {}),
+      ...(defaultTaxCodeId ? { taxCodeId: defaultTaxCodeId } : {}),
+      ...(defaultIncotermId ? { incotermId: defaultIncotermId } : {}),
+      ...(defaultDepartmentId ? { defaultDepartmentId } : {}),
       ...(defaultCarrier ? { defaultCarrierId: Number(defaultCarrier.id) } : {}),
       notes: "Created by master-data propagation smoke test",
     },
@@ -176,6 +189,60 @@ async function main() {
     );
   } else if (paymentTermsId) {
     console.log("  âœ“ Direct PO payment terms default -> %d", paymentTermsId);
+  }
+
+  if (defaultTaxCodeId && Number(directPo.taxCodeId ?? 0) !== defaultTaxCodeId) {
+    failures++;
+    console.log(
+      "  X Direct PO tax code default -> expected %d, got %s",
+      defaultTaxCodeId,
+      String(directPo.taxCodeId),
+    );
+  } else if (defaultTaxCodeId) {
+    console.log("  ok Direct PO tax code default -> %d", defaultTaxCodeId);
+  }
+  if (defaultIncotermId && Number(directPo.incotermId ?? 0) !== defaultIncotermId) {
+    failures++;
+    console.log(
+      "  X Direct PO incoterm default -> expected %d, got %s",
+      defaultIncotermId,
+      String(directPo.incotermId),
+    );
+  } else if (defaultIncotermId) {
+    console.log("  ok Direct PO incoterm default -> %d", defaultIncotermId);
+  }
+  if (defaultDepartmentId && Number(directPo.departmentId ?? 0) !== defaultDepartmentId) {
+    failures++;
+    console.log(
+      "  X Direct PO department default -> expected %d, got %s",
+      defaultDepartmentId,
+      String(directPo.departmentId),
+    );
+  } else if (defaultDepartmentId) {
+    console.log("  ok Direct PO department default -> %d", defaultDepartmentId);
+  }
+
+  const alternateCurrency = currencies.find((currency) => currency.code !== firstCurrencyCode)?.code;
+  if (alternateCurrency) {
+    const blockedOverrideRes = await apiJsonRequest("/purchase-orders", {
+      method: "POST",
+      cookie: adminCookie,
+      body: {
+        supplierId,
+        currencyCode: alternateCurrency,
+        notes: "Supplier currency override should be blocked",
+        items: [
+          {
+            itemId: itemIdForWrites,
+            quantity: 1,
+            unitPrice: Number(firstItem.price ?? 10),
+          },
+        ],
+      },
+    });
+    if (!expectStatus("POST /api/purchase-orders supplier currency override blocked", 409, blockedOverrideRes.status)) {
+      failures++;
+    }
   }
 
   if (defaultCarrier) {
@@ -260,21 +327,12 @@ async function main() {
     }
   }
 
-  let departmentId: number | undefined;
-  const deptRes = await apiJsonRequest("/departments", { method: "GET", cookie: adminCookie });
-  if (deptRes.status === 200) {
-    const departments = asArray<{ id: number }>(unwrapData<unknown>(deptRes.json));
-    const d0 = Number(departments[0]?.id ?? 0);
-    if (d0 > 0) departmentId = d0;
-  }
-
   const requiredDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const requisitionRes = await apiJsonRequest("/purchase-requisitions", {
     method: "POST",
     cookie: adminCookie,
     body: {
       supplierId,
-      ...(departmentId ? { departmentId } : {}),
       requiredDate,
       notes: "Master-data propagation test requisition",
       items: [
@@ -339,6 +397,37 @@ async function main() {
     );
   } else if (paymentTermsId) {
     console.log("  âœ“ Converted PO payment terms default -> %d", paymentTermsId);
+  }
+
+  if (defaultTaxCodeId && Number(po.taxCodeId ?? 0) !== defaultTaxCodeId) {
+    failures++;
+    console.log(
+      "  X Converted PO tax code default -> expected %d, got %s",
+      defaultTaxCodeId,
+      String(po.taxCodeId),
+    );
+  } else if (defaultTaxCodeId) {
+    console.log("  ok Converted PO tax code default -> %d", defaultTaxCodeId);
+  }
+  if (defaultIncotermId && Number(po.incotermId ?? 0) !== defaultIncotermId) {
+    failures++;
+    console.log(
+      "  X Converted PO incoterm default -> expected %d, got %s",
+      defaultIncotermId,
+      String(po.incotermId),
+    );
+  } else if (defaultIncotermId) {
+    console.log("  ok Converted PO incoterm default -> %d", defaultIncotermId);
+  }
+  if (defaultDepartmentId && Number(po.departmentId ?? 0) !== defaultDepartmentId) {
+    failures++;
+    console.log(
+      "  X Converted PO department default -> expected %d, got %s",
+      defaultDepartmentId,
+      String(po.departmentId),
+    );
+  } else if (defaultDepartmentId) {
+    console.log("  ok Converted PO department default -> %d", defaultDepartmentId);
   }
 
   let commercialCurrency = firstCurrencyCode;

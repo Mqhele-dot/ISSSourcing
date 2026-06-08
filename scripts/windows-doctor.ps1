@@ -17,10 +17,8 @@ try {
   $nodeV = node -v 2>$null
   if ($nodeV) {
     Write-Ok "Node $nodeV"
-    $parts = $nodeV.TrimStart("v").Split(".")
-    $major = [int]$parts[0]
-    $minor = if ($parts.Length -gt 1) { [int]$parts[1] } else { 0 }
-    if ($major -lt 22 -or ($major -eq 22 -and $minor -lt 12)) {
+    $major = [int]($nodeV.TrimStart("v").Split(".")[0])
+    if ($major -lt 22) {
       Write-Warn "Node 22.12+ recommended (see package.json engines)."
     }
   } else { throw "no node" }

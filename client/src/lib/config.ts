@@ -24,7 +24,7 @@ const isDevelopment =
   hostname === '0.0.0.0' ||
   hostname.includes('replit.dev') ||
   isCodespacesHost;
-const enableRealtimeByDefault = isElectronEnvironment() || !isDevelopment || isCodespacesHost;
+const enableRealtimeByDefault = isElectronEnvironment() || (!isDevelopment && !isCodespacesHost);
 
 /**
  * Default feature flags
@@ -35,10 +35,10 @@ const enableRealtimeByDefault = isElectronEnvironment() || !isDevelopment || isC
  * - Enabled by default in production web environment
  */
 const defaultFeatureFlags: FeatureFlags = {
-  // Enable real-time features in Electron, production, and Codespaces.
+  // Enable real-time features in Electron and production. Codespaces can enable them manually.
   enableWebSockets: enableRealtimeByDefault,
   
-  // Enable real-time sync in Electron, production, and Codespaces.
+  // Enable real-time sync in Electron and production. Codespaces can enable it manually.
   enableRealTimeSync: enableRealtimeByDefault,
   
   // Enable offline mode in Electron only by default

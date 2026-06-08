@@ -1,10 +1,16 @@
 import type { Express } from "express";
 import express from "express";
 import helmet from "helmet";
+import { randomBytes } from "node:crypto";
 import { appEnv } from "../config/env";
 
 export function registerSecurityMiddleware(app: Express): void {
   const allowUnsafeInlineScripts = !appEnv.isProduction;
+
+  app.use((_req, res, next) => {
+    res.locals.cspNonce = randomBytes(16).toString("base64");
+    next();
+  });
 
   app.use(
     helmet({
@@ -15,7 +21,7 @@ export function registerSecurityMiddleware(app: Express): void {
           "connect-src": ["'self'", "ws:", "wss:", "https:"],
           "script-src": allowUnsafeInlineScripts
             ? ["'self'", "'unsafe-inline'"]
-            : ["'self'"],
+            : ["'self'", (_req, res) => `'nonce-${String(res.locals.cspNonce ?? "")}'`],
         },
       },
       referrerPolicy: { policy: "no-referrer" },

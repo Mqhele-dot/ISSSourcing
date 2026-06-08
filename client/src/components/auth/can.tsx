@@ -1,5 +1,6 @@
 import { cloneElement, type MouseEvent, type ReactElement } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
 import {
   Tooltip,
   TooltipContent,
@@ -8,7 +9,9 @@ import {
 } from "@/components/ui/tooltip";
 
 type CanProps = {
-  roles: string[];
+  roles?: string[];
+  resource?: string;
+  permissionType?: string;
   reason?: string;
   children: ReactElement;
 };
@@ -31,14 +34,19 @@ function expandRoleAliases(roles: string[]): string[] {
 }
 
 export function Can({
-  roles,
+  roles = [],
+  resource,
+  permissionType,
   reason = "Requires Planner/Admin",
   children,
 }: CanProps) {
   const { user } = useAuth();
+  const { hasPermission } = usePermissions();
   const role = normalizeRole(user?.role ?? "");
   const allowedRoles = expandRoleAliases(roles);
-  const allowed = role.length > 0 && allowedRoles.includes(role);
+  const allowedByPermission = resource && permissionType ? hasPermission(resource, permissionType) : false;
+  const allowedByRole = roles.length > 0 && role.length > 0 && allowedRoles.includes(role);
+  const allowed = allowedByPermission || allowedByRole;
 
   if (allowed) {
     return children;

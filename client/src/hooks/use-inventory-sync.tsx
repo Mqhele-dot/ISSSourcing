@@ -49,7 +49,7 @@ export function useInventorySync(options: InventorySyncOptions = {}): InventoryS
   const getWebSocketUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    return `${protocol}//${host}/ws-inventory`;
+    return `${protocol}//${host}/ws`;
   }, []);
 
   // Send a message to the WebSocket server

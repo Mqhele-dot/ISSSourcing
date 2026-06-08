@@ -38,8 +38,8 @@ Captured **2026-05-21** after security gap remediation (minimatch overrides, CI 
 
 | Command | Reason |
 |---------|--------|
-| **`npm run verify:release`** | Needs seeded Postgres, long-lived **`npm run dev`**, and Playwright - run in CI **`release-gate`** job (after security merge gate). |
-| **`npm run release:gate:delta`** | Requires API on **`127.0.0.1:5000`** - same CI job. |
+| **`npm run verify:release`** | Needs seeded Postgres, long-lived **`npm run dev`**, and Playwright — run in CI **`release-gate`** job (after security merge gate). |
+| **`npm run release:gate:delta`** | Requires API on **`127.0.0.1:5000`** — same CI job. |
 
 **Dependency Review** (PR-only in [`ci.yml`](../../.github/workflows/ci.yml)) requires **dependency graph submission**; private orgs may need [**GitHub Advanced Security**](https://docs.github.com/en/code-security/getting-started/quickstart-for-github-advanced-security).
 
@@ -57,6 +57,6 @@ Captured **2026-05-21** after security gap remediation (minimatch overrides, CI 
 
 ## Remaining systemic risks
 
-- **Moderate tail:** dev **`esbuild`/`vite`** and nested **`exceljs`/`uuid`** - documented in [`audit-remediation-backlog.md`](./audit-remediation-backlog.md); below `--audit-level=high` threshold.
-- **Electron + sqlite3** - validate desktop packaging on release OS before tagging.
+- **Moderate tail:** dev **`esbuild`/`vite`** and nested **`exceljs`/`uuid`** — documented in [`audit-remediation-backlog.md`](./audit-remediation-backlog.md); below `--audit-level=high` threshold.
+- **Electron + sqlite3** — validate desktop packaging on release OS before tagging.
 - **Codespaces devcontainer** now uses **Node 24** image; CI also enforces **Node 24**.

@@ -966,13 +966,13 @@ async function resolvePurchaseOrderForOrganization(
   return r.rows[0] ?? null;
 }
 
-async function resolveSupplierDefaultCarrierForPo(
+async function resolveSupplierDefaultsForPo(
   purchaseOrderId: number,
   organizationId: number,
-): Promise<number | null> {
-  const r = await pool.query<{ default_carrier_id: number | null }>(
+): Promise<{ carrierId: number | null; transportMode: string | null }> {
+  const r = await pool.query<{ default_carrier_id: number | null; default_transport_mode: string | null }>(
     `
-    SELECT s.default_carrier_id
+    SELECT s.default_carrier_id, s.default_transport_mode
     FROM purchase_orders po
     JOIN suppliers s
       ON s.id = po.supplier_id
@@ -983,7 +983,10 @@ async function resolveSupplierDefaultCarrierForPo(
     `,
     [purchaseOrderId, organizationId],
   );
-  return r.rows[0]?.default_carrier_id ?? null;
+  return {
+    carrierId: r.rows[0]?.default_carrier_id ?? null,
+    transportMode: r.rows[0]?.default_transport_mode ?? null,
+  };
 }
 
 async function resolveCarrierSnapshotForOrg(params: {
@@ -1057,18 +1060,20 @@ export async function createOperationalShipment(input: {
   const requestedCarrierId =
     input.carrierId != null && Number.isFinite(Number(input.carrierId)) ? Number(input.carrierId) : null;
   const carrierText = typeof input.carrier === "string" && input.carrier.trim() ? input.carrier.trim() : null;
-  const supplierDefaultCarrierId =
+  const supplierDefaults =
     requestedCarrierId == null && carrierText == null
-      ? await resolveSupplierDefaultCarrierForPo(order.id, orgId)
+      ? await resolveSupplierDefaultsForPo(order.id, orgId)
       : null;
   const { carrierId: cid, carrierSnapshot } = await resolveCarrierSnapshotForOrg({
     organizationId: orgId,
-    carrierId: requestedCarrierId ?? supplierDefaultCarrierId,
+    carrierId: requestedCarrierId ?? supplierDefaults?.carrierId ?? null,
     carrierTextFallback: carrierText,
   });
 
   const transportMode =
-    typeof input.transportMode === "string" && input.transportMode.trim() ? input.transportMode.trim() : null;
+    typeof input.transportMode === "string" && input.transportMode.trim()
+      ? input.transportMode.trim()
+      : supplierDefaults?.transportMode ?? null;
   const freightCost =
     input.freightCost != null && Number.isFinite(Number(input.freightCost)) ? Number(input.freightCost) : null;
   const trackingNumber =

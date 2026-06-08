@@ -96,9 +96,10 @@ import { getReportingCurrencyCode } from "./lib/org-reporting-money";
 import { allowDevOnlyRoutes } from "./lib/deployment-behavior";
 import { analyticsRateLimiter, exportRateLimiter, uploadRateLimiter } from "./services/security-service";
 import { getServerDiagnosticEvents, recordServerDiagnosticEvent } from "./diagnostics/server-diagnostics-store";
+import { detectSupplierDocumentMismatches } from "./modules/procurement/supplier-defaults";
 
 function isInternalExportRequest(req: Request): boolean {
-  return req.get("x-internal-export-key") === appEnv.sessionSecret;
+  return Boolean(appEnv.internalExportToken) && req.get("x-internal-export-key") === appEnv.internalExportToken;
 }
 
 function pathStatus(targetPath: string) {
@@ -1047,6 +1048,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (negativeCount > 0) {
           result.data.push(`${negativeCount} item(s) with negative stock`);
         }
+      }
+
+      const supplierMismatches = await detectSupplierDocumentMismatches(getActiveOrganizationId());
+      if (supplierMismatches.length > 0) {
+        result.data.push(...supplierMismatches.slice(0, 10));
+        recordServerDiagnosticEvent({
+          severity: "warning",
+          source: "business-rule",
+          title: "Supplier document mismatch",
+          message: `${supplierMismatches.length} supplier/master-data consistency issue(s) detected.`,
+          details: { examples: supplierMismatches.slice(0, 5) },
+        });
+        await emitNotificationToRoles(["admin", "manager"], {
+          type: "diagnostic_supplier_mismatch",
+          title: "Supplier consistency issues detected",
+          body: `${supplierMismatches.length} supplier-linked default, PO, invoice, or receipt issue(s) need review in System Diagnostics.`,
+          entityType: "diagnostics",
+        });
       }
 
       const filtered: Record<string, string[]> = {};

@@ -45,7 +45,7 @@ echo "== GitHub auth check =="
 if ! gh auth status >/dev/null 2>&1; then
   echo "GitHub CLI is not authenticated." >&2
   echo "Run: gh auth login" >&2
-  echo "Then rerun: npm run codespaces:ports-public" >&2
+  echo "Then rerun: npm run codespaces:port:reset" >&2
   exit 1
 fi
 echo "gh is authenticated."

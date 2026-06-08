@@ -301,6 +301,18 @@ fi
 echo "✅ In-container app shell warm-up passed at http://127.0.0.1:${PORT}/"
 
 if [[ -n "${FORWARDED_HOST}" ]]; then
+  if [[ "${CODESPACES_AUTO_PUBLIC_PORT:-true}" == "true" ]]; then
+    echo "Rebuilding Codespaces public port forwarding..."
+    if bash "${SCRIPT_DIR}/codespaces-port-reset.sh" "${PORT}"; then
+      APP_URL_FROM_FILE="$(grep -E '^APP_URL=' .codespace-app-url 2>/dev/null | head -n 1 | cut -d= -f2- || true)"
+      if [[ -n "${APP_URL_FROM_FILE}" ]]; then
+        APP_URL="${APP_URL_FROM_FILE}"
+      fi
+    else
+      echo "Codespaces public port reset failed; continuing with legacy visibility diagnostics." >&2
+    fi
+  fi
+
   ensure_codespaces_port_public() {
     local source_port="$1"
     local cs_name="$2"

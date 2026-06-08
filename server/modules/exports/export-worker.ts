@@ -37,7 +37,7 @@ async function processOneJob(): Promise<void> {
     const response = await fetch(buildExportUrl(job.dataset, job.format, job.filters), {
       method: "GET",
       headers: {
-        "X-Internal-Export-Key": appEnv.sessionSecret,
+        "X-Internal-Export-Key": appEnv.internalExportToken,
       },
     });
 

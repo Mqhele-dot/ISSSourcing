@@ -38,6 +38,24 @@ export const apPromoteCaptureBodySchema = z
   })
   .strict();
 
+/** Shared AP approval/release actions with explicit override audit context. */
+export const apApprovalActionBodySchema = z
+  .object({
+    adminOverride: z.boolean().optional(),
+    overrideReason: z.string().trim().max(4000).optional(),
+    comment: z.string().trim().max(4000).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.adminOverride && !value.overrideReason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "overrideReason is required when adminOverride is true.",
+        path: ["overrideReason"],
+      });
+    }
+  });
+
 /** POST /api/ap/payment-batches */
 export const apPaymentBatchCreateSchema = z.object({
   batchNumber: z.string().optional(),

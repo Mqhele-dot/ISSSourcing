@@ -20,5 +20,6 @@ export function parseApprovalContext(req: Request, actorRole: string) {
     actorRole,
     overrideExplicit: Boolean(req.body?.adminOverride),
     overrideReason: typeof req.body?.overrideReason === "string" ? req.body.overrideReason : undefined,
+    comment: typeof req.body?.comment === "string" ? req.body.comment : undefined,
   };
 }

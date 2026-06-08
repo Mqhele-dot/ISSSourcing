@@ -7,7 +7,7 @@ Use this guide when developing **on your PC** (not GitHub Codespaces). Codespace
 | Requirement | Notes |
 |-------------|--------|
 | **Windows 10/11** | 64-bit |
-| **Node.js 20+** | [nodejs.org](https://nodejs.org/) LTS — verify: `node -v` |
+| **Node.js 22.12+** | [nodejs.org](https://nodejs.org/) LTS - verify: `node -v` |
 | **npm** | Bundled with Node — verify: `npm -v` |
 | **PostgreSQL 14+** | Local install or Docker — app expects Postgres, not SQLite, for full features |
 | **Build tools (if `npm install` fails)** | **Visual Studio Build Tools** with “Desktop development with C++” — needed for native modules (`canvas`, `sharp`, `sqlite3`, `bufferutil`) |

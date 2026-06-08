@@ -50,6 +50,7 @@ import {
 } from "./service";
 import { trySendDbConstraintError } from "./ap-db-errors";
 import {
+  apApprovalActionBodySchema,
   apInvoiceMatchBodySchema,
   apPaymentBatchCreateSchema,
   apPromoteCaptureBodySchema,
@@ -61,6 +62,7 @@ import {
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
   ensureRole: (roles: string[]) => RequestHandler;
+  ensureTwoFactorAuthenticated: RequestHandler;
 };
 
 function requestActor(req: Request) {
@@ -99,10 +101,29 @@ function apPolicyHttpStatus(message: string): { status: 400 | 403; code: string 
   return null;
 }
 
+function paymentBatchReleaseHttpStatus(message: string): { status: 400 | 403 | 409; code: string } | null {
+  const policyErr = apPolicyHttpStatus(message);
+  if (policyErr) return policyErr;
+  if (/Batch creator cannot approve or release their own batch/i.test(message)) {
+    return { status: 403, code: "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED" };
+  }
+  if (/Batch releaser cannot release a batch containing only invoices they approved/i.test(message)) {
+    return { status: 403, code: "PAYMENT_BATCH_RELEASE_SEGREGATION_BLOCKED" };
+  }
+  if (/Illegal payment batch transition from .* to RELEASED\./i.test(message)) {
+    return { status: 409, code: "PAYMENT_BATCH_RELEASE_INVALID_STATE" };
+  }
+  if (/no due balance remaining|exceeds remaining due|is no longer payable|no longer exists in active organization/i.test(message)) {
+    return { status: 400, code: "PAYMENT_BATCH_RELEASE_INVOICE_INVALID" };
+  }
+  return null;
+}
+
 export function registerApRoutes(app: Express, auth: AuthBundle): void {
   const apRead = [auth.ensureAuthenticated];
   const apWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
-  const apInvoiceApprovalWrite = [auth.ensureAuthenticated, auth.ensureRole(["admin"])];
+  const apHighRiskWrite = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"])];
+  const apHighRiskManagerWrite = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["manager", "admin"])];
 
   app.get("/api/ap/overview", ...apRead, async (_req: Request, res: Response) => {
     try {
@@ -328,7 +349,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/invoices/:id/submit-approval", ...apInvoiceApprovalWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/invoices/:id/submit-approval", ...apHighRiskWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "invoice ID");
@@ -347,15 +368,17 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/invoices/:id/approve", ...apInvoiceApprovalWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/invoices/:id/approve", ...apHighRiskWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "invoice ID");
       if (id === null) return;
+      const body = apApprovalActionBodySchema.parse(req.body ?? {});
+      req.body = body;
       const invoice = await approveInvoice(
         id,
         actor.userId,
-        typeof req.body?.comment === "string" ? req.body.comment : undefined,
+        body.comment,
         parseApprovalContext(req, actor.role),
       );
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
@@ -363,6 +386,9 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       recordApprovalFailure();
       console.error("Error approving invoice:", error);
+      if (error instanceof ZodError) {
+        return sendError(res, 400, "VALIDATION_ERROR", fromZodError(error).message, { details: error.flatten() });
+      }
       const message = error instanceof Error ? error.message : "Failed to approve invoice";
       const policyErr = apPolicyHttpStatus(message);
       if (policyErr) {
@@ -378,15 +404,17 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/invoices/:id/reject", ...apInvoiceApprovalWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/invoices/:id/reject", ...apHighRiskWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "invoice ID");
       if (id === null) return;
+      const body = apApprovalActionBodySchema.parse(req.body ?? {});
+      req.body = body;
       const invoice = await rejectInvoice(
         id,
         actor.userId,
-        typeof req.body?.comment === "string" ? req.body.comment : undefined,
+        body.comment,
         parseApprovalContext(req, actor.role),
       );
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
@@ -394,6 +422,9 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       recordApprovalFailure();
       console.error("Error rejecting invoice:", error);
+      if (error instanceof ZodError) {
+        return sendError(res, 400, "VALIDATION_ERROR", fromZodError(error).message, { details: error.flatten() });
+      }
       const message = error instanceof Error ? error.message : "Failed to reject invoice";
       const policyErr = apPolicyHttpStatus(message);
       if (policyErr) {
@@ -406,7 +437,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/invoices/:id/withdraw-approval", ...apInvoiceApprovalWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/invoices/:id/withdraw-approval", ...apHighRiskWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "invoice ID");
@@ -482,15 +513,17 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/payment-batches/:id/approve", ...apWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/payment-batches/:id/approve", ...apHighRiskManagerWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "batch ID");
       if (id === null) return;
+      const body = apApprovalActionBodySchema.parse(req.body ?? {});
+      req.body = body;
       const batch = await approvePaymentBatch(
         id,
         actor.userId,
-        typeof req.body?.comment === "string" ? req.body.comment : undefined,
+        body.comment,
         parseApprovalContext(req, actor.role),
       );
       if (!batch) return sendError(res, 404, "PAYMENT_BATCH_NOT_FOUND", "Payment batch not found");
@@ -499,6 +532,9 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       recordApprovalFailure();
       console.error("Error approving payment batch:", error);
+      if (error instanceof ZodError) {
+        return sendError(res, 400, "VALIDATION_ERROR", fromZodError(error).message, { details: error.flatten() });
+      }
       const msg = error instanceof Error ? error.message : String(error);
       if (msg.includes("Batch creator cannot approve or release their own batch")) {
         return sendError(res, 403, "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED", msg, {
@@ -518,11 +554,13 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/payment-batches/:id/release", ...apWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/payment-batches/:id/release", ...apHighRiskManagerWrite, async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "batch ID");
       if (id === null) return;
+      const body = apApprovalActionBodySchema.parse(req.body ?? {});
+      req.body = body;
       const batch = await releasePaymentBatch(id, actor.userId, parseApprovalContext(req, actor.role));
       if (!batch) return sendError(res, 404, "PAYMENT_BATCH_NOT_FOUND", "Payment batch not found");
       logApFinanceEvent("ap.payment_batch.released", { batchId: batch.id, userId: actor.userId });
@@ -530,16 +568,19 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       recordReleaseFailure();
       console.error("Error releasing payment batch:", error);
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("Batch creator cannot approve or release their own batch")) {
-        return sendError(res, 403, "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED", msg, {
-          hint: "Use another approver or submit an admin override with overrideReason on this request.",
-        });
+      if (error instanceof ZodError) {
+        return sendError(res, 400, "VALIDATION_ERROR", fromZodError(error).message, { details: error.flatten() });
       }
-      if (msg.includes("Batch releaser cannot release a batch containing only invoices they approved")) {
-        return sendError(res, 403, "PAYMENT_BATCH_RELEASE_SEGREGATION_BLOCKED", msg, {
-          hint: "Segregation of duties requires a different releaser or an explicit admin override.",
-        });
+      const msg = error instanceof Error ? error.message : String(error);
+      const mapped = paymentBatchReleaseHttpStatus(msg);
+      if (mapped) {
+        const hint =
+          mapped.code === "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED"
+            ? "Use another approver or submit an admin override with overrideReason on this request."
+            : mapped.code === "PAYMENT_BATCH_RELEASE_SEGREGATION_BLOCKED"
+              ? "Segregation of duties requires a different releaser or an explicit admin override."
+              : undefined;
+        return sendError(res, mapped.status, mapped.code, msg, hint ? { hint } : undefined);
       }
       return sendError(res, 400, "PAYMENT_BATCH_RELEASE_FAILED", msg || "Failed to release payment batch");
     }

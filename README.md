@@ -58,7 +58,7 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 
 ## Requirements
 
-- **Node.js 20+** ([`package.json`](package.json) `engines`)
+- **Node.js 22.12+** ([`package.json`](package.json) `engines`)
 - **PostgreSQL** for full functionality
 
 ## Documentation

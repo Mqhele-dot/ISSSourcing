@@ -2678,8 +2678,32 @@ export class DatabaseStorage implements IStorage {
         .from(suppliers)
         .where(and(eq(suppliers.id, requisition.supplierId!), eq(suppliers.organizationId, orgId)))
         .limit(1);
+      if (!supplierRow) {
+        throw new Error("Supplier not found in this organization");
+      }
 
-      const defaultCurRaw = String(supplierRow?.defaultCurrencyCode ?? "").trim().toUpperCase();
+      const [defaultContract] =
+        supplierRow.defaultContractId != null
+          ? await tx
+              .select({
+                id: supplierContracts.id,
+                currency: supplierContracts.currency,
+                paymentTermsId: supplierContracts.paymentTermsId,
+                incotermId: supplierContracts.incotermId,
+                defaultTaxCodeId: supplierContracts.defaultTaxCodeId,
+              })
+              .from(supplierContracts)
+              .where(
+                and(
+                  eq(supplierContracts.id, supplierRow.defaultContractId),
+                  eq(supplierContracts.organizationId, orgId),
+                  eq(supplierContracts.supplierId, requisition.supplierId!),
+                ),
+              )
+              .limit(1)
+          : [];
+
+      const defaultCurRaw = String(defaultContract?.currency ?? supplierRow.defaultCurrencyCode ?? "").trim().toUpperCase();
       let currencyCode = "USD";
       if (/^[A-Z]{3}$/.test(defaultCurRaw)) {
         try {
@@ -2701,9 +2725,12 @@ export class DatabaseStorage implements IStorage {
           orderNumber,
           supplierId: requisition.supplierId,
           requisitionId: requisition.id,
-          departmentId: requisition.departmentId ?? null,
-          paymentTermsId: supplierRow?.paymentTermsId ?? null,
+          departmentId: requisition.departmentId ?? supplierRow.defaultDepartmentId ?? null,
+          contractId: defaultContract?.id ?? null,
+          paymentTermsId: defaultContract?.paymentTermsId ?? supplierRow.paymentTermsId ?? null,
+          incotermId: defaultContract?.incotermId ?? supplierRow.incotermId ?? null,
           currencyCode,
+          taxCodeId: defaultContract?.defaultTaxCodeId ?? supplierRow.taxCodeId ?? null,
           projectId: requisition.projectId ?? null,
           status: PurchaseOrderStatus.DRAFT,
           orderDate: new Date(),
