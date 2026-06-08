@@ -37,7 +37,11 @@ import {
   generateShipmentDeliveryNotePdf,
 } from "./services/document-generator-service";
 import { getReportingCurrencyCode } from "./lib/org-reporting-money";
-import { normalizeShipmentFilters } from "@shared/logistics-shipment-filters";
+import {
+  normalizeShipmentDirection,
+  normalizeShipmentFilters,
+  normalizeShipmentSourceType,
+} from "@shared/logistics-shipment-filters";
 
 type AuthGuards = {
   ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => void;
@@ -134,6 +138,24 @@ function assertValidLogisticsDateQuery(value: string, fieldLabel: string): void 
       fieldLabel,
     );
   }
+}
+
+function assertValidShipmentDirectionInput(value: string | null): string | null {
+  if (!value?.trim()) return null;
+  const normalized = normalizeShipmentDirection(value);
+  if (!normalized) {
+    throw contractError(400, "SHIPMENT_DIRECTION_INVALID", "direction is not supported for shipments.");
+  }
+  return normalized;
+}
+
+function assertValidShipmentSourceTypeInput(value: string | null): string | null {
+  if (!value?.trim()) return null;
+  const normalized = normalizeShipmentSourceType(value);
+  if (!normalized) {
+    throw contractError(400, "SHIPMENT_SOURCE_TYPE_INVALID", "sourceType is not supported for shipments.");
+  }
+  return normalized;
 }
 
 function mapAdjustInventoryError(error: unknown): never {
@@ -291,6 +313,15 @@ function mapShipmentError(error: unknown): never {
   }
   if (message === "carrier_inactive") {
     throw contractError(400, "CARRIER_INACTIVE", "This carrier is inactive and cannot be used for new shipments.");
+  }
+  if (message === "shipment_freight_cost_invalid") {
+    throw contractError(400, "SHIPMENT_FREIGHT_COST_INVALID", "freightCost must be zero or greater.");
+  }
+  if (message === "shipment_direction_invalid") {
+    throw contractError(400, "SHIPMENT_DIRECTION_INVALID", "direction is not supported for shipments.");
+  }
+  if (message === "shipment_source_type_invalid") {
+    throw contractError(400, "SHIPMENT_SOURCE_TYPE_INVALID", "sourceType is not supported for shipments.");
   }
   if (message === "shipment_insert_failed") {
     throw contractError(500, "SHIPMENT_CREATE_FAILED", "Could not create shipment.");
@@ -958,14 +989,16 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             : null;
       const vehicle = typeof body.vehicle === "string" ? body.vehicle.trim() : null;
       const driver = typeof body.driver === "string" ? body.driver.trim() : null;
-      const direction =
-        typeof body.direction === "string" && body.direction.trim() ? body.direction.trim() : null;
-      const sourceType =
+      const direction = assertValidShipmentDirectionInput(
+        typeof body.direction === "string" ? body.direction : null,
+      );
+      const sourceType = assertValidShipmentSourceTypeInput(
         typeof body.sourceType === "string"
-          ? body.sourceType.trim()
+          ? body.sourceType
           : typeof body.source_type === "string"
-            ? body.source_type.trim()
-            : null;
+            ? body.source_type
+            : null,
+      );
 
       try {
         const row = await createOperationalShipment({

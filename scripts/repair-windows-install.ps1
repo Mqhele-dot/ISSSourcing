@@ -1,7 +1,3 @@
-param(
-  [string]$NpmVersion = "10.9.2"
-)
-
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -25,10 +21,16 @@ if (Test-Path $localCache) {
 
 $env:npm_config_cache = $localCache
 
-Write-Host "Installing dependencies with npm@$NpmVersion..."
-npx -y "npm@$NpmVersion" ci --no-audit --no-fund
+Write-Host "Installing dependencies with the local npm command..."
+npm.cmd ci --no-audit --no-fund
+
+$tscCmd = Join-Path $RepoRoot "node_modules\.bin\tsc.cmd"
+$tsxCmd = Join-Path $RepoRoot "node_modules\.bin\tsx.cmd"
+if (!(Test-Path $tscCmd) -or !(Test-Path $tsxCmd)) {
+  throw "Dependency install did not create required TypeScript command shims."
+}
 
 Write-Host "Verifying install..."
-npm run check
+npm.cmd run check
 
 Write-Host "Dependency repair complete."

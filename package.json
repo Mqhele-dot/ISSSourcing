@@ -39,6 +39,7 @@
     "test:purchase-order-endpoints": "tsx scripts/test-purchase-order-endpoints.ts",
     "test:dashboard-data": "tsx scripts/test-dashboard-data.ts",
     "test:logistics-filters": "tsx scripts/test-logistics-filters.ts",
+    "test:logistics-write-guards": "node scripts/test-logistics-write-guards.mjs",
     "test:exceptions-workflow": "tsx scripts/test-exceptions-workflow.ts",
     "test:control-tower-dashboard": "tsx scripts/test-control-tower-dashboard.ts",
     "test:purchase-order-actions-e2e": "cross-env PLAYWRIGHT_REUSE_EXISTING_SERVER=1 npx playwright test e2e/purchase-order-actions.spec.ts",

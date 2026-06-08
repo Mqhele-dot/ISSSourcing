@@ -12,7 +12,11 @@ import {
 } from "./operational-exception-context";
 import { getActiveOrganizationId } from "../../organization-context";
 import { normalizePurchaseOrderStatus, OPERATIONAL_PO_TRANSITIONS, type PurchaseOrderNorm } from "@shared/purchase-order-status";
-import { normalizeShipmentFilters } from "@shared/logistics-shipment-filters";
+import {
+  normalizeShipmentDirection,
+  normalizeShipmentFilters,
+  normalizeShipmentSourceType,
+} from "@shared/logistics-shipment-filters";
 
 type InventoryFilterInput = {
   location?: string;
@@ -1076,6 +1080,9 @@ export async function createOperationalShipment(input: {
       : supplierDefaults?.transportMode ?? null;
   const freightCost =
     input.freightCost != null && Number.isFinite(Number(input.freightCost)) ? Number(input.freightCost) : null;
+  if (freightCost != null && freightCost < 0) {
+    throw new Error("shipment_freight_cost_invalid");
+  }
   const trackingNumber =
     typeof input.trackingNumber === "string" && input.trackingNumber.trim()
       ? input.trackingNumber.trim()
@@ -1087,14 +1094,18 @@ export async function createOperationalShipment(input: {
   const vehicle = typeof input.vehicle === "string" && input.vehicle.trim() ? input.vehicle.trim() : null;
   const driver = typeof input.driver === "string" && input.driver.trim() ? input.driver.trim() : null;
 
-  const direction =
-    typeof input.direction === "string" && input.direction.trim()
-      ? input.direction.trim().toLowerCase()
-      : "inbound";
-  const sourceType =
-    typeof input.sourceType === "string" && input.sourceType.trim()
-      ? input.sourceType.trim().toLowerCase()
-      : "purchase_order";
+  const rawDirection = typeof input.direction === "string" ? input.direction : "";
+  const normalizedDirection = normalizeShipmentDirection(rawDirection);
+  if (rawDirection.trim() && !normalizedDirection) {
+    throw new Error("shipment_direction_invalid");
+  }
+  const direction = normalizedDirection || "inbound";
+  const rawSourceType = typeof input.sourceType === "string" ? input.sourceType : "";
+  const normalizedSourceType = normalizeShipmentSourceType(rawSourceType);
+  if (rawSourceType.trim() && !normalizedSourceType) {
+    throw new Error("shipment_source_type_invalid");
+  }
+  const sourceType = normalizedSourceType || "purchase_order";
   const sourceIdRaw = input.sourceId != null ? input.sourceId : order.id;
   const sourceRef =
     typeof input.sourceRef === "string" && input.sourceRef.trim()
@@ -2739,10 +2750,13 @@ export async function patchOperationalShipmentMeta(input: {
     vals.push(tm);
   }
   if (input.freightCost !== undefined) {
+    const freightCost =
+      input.freightCost != null && Number.isFinite(Number(input.freightCost)) ? Number(input.freightCost) : null;
+    if (freightCost != null && freightCost < 0) {
+      throw new Error("shipment_freight_cost_invalid");
+    }
     sets.push(`freight_cost = $${n++}`);
-    vals.push(
-      input.freightCost != null && Number.isFinite(Number(input.freightCost)) ? Number(input.freightCost) : null,
-    );
+    vals.push(freightCost);
   }
   if (input.vehicle !== undefined) {
     const v = typeof input.vehicle === "string" && input.vehicle.trim() ? input.vehicle.trim() : null;
