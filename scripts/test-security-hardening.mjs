@@ -35,6 +35,6 @@ assertContains("server/auth.ts", /redactAuditDetails\(req\.body\)/, "admin audit
 assertContains("server/bootstrap/security-middleware.ts", /nonce-/, "production CSP nonce");
 assertNotContains("server/bootstrap/security-middleware.ts", /:\s*\["'self'",\s*"'unsafe-inline'"\]\s*,\s*\n\s*\}\s*,\s*\n\s*\}\s*,\s*\n\s*referrerPolicy/, "unconditional unsafe-inline CSP");
 assertContains("server/modules/accounts-payable/register-ap-routes.ts", /ensureTwoFactorAuthenticated/, "AP high-risk 2FA");
-assertContains("client/src/hooks/use-permissions.tsx", /\/api\/user\/permissions/, "frontend current user permissions");
+assertContains("client/src/hooks/use-permissions.tsx", /\/api\/permissions\/me/, "frontend current user permissions");
 
 console.log("Security hardening contract checks passed.");
