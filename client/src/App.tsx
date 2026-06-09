@@ -11,6 +11,7 @@ import { AppErrorBoundary } from "@/app/app-error-boundary";
 import { AppProviders } from "@/app/app-providers";
 import { ReadinessBanner } from "@/app/app-readiness-banner";
 import { AppShellLayout } from "@/app/app-shell-layout";
+import { FirstRunOnboardingCoach } from "@/components/onboarding/first-run-onboarding-coach";
 
 function setupElectronApp() {
   if (isElectronEnvironment()) {
@@ -40,6 +41,7 @@ function App() {
             <AppRouter />
           </AppShellLayout>
         </div>
+        <FirstRunOnboardingCoach />
         <TutorialSteps />
         <DiagnosticsStatusIndicator />
         <GlobalActionErrorCenter />
