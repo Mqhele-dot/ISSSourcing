@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { projects } from "@shared/schema";
 import { getActiveOrganizationId } from "../../organization-context";
-import { sendOk } from "../../api-response";
+import { sendError, sendOk } from "../../api-response";
 import { registerTrackedAssetExtensionRoutes } from "../assets/register-asset-routes";
 import { requireExtensionsEnabled } from "./extension-guard";
 import { INDUSTRY_EXTENSION_MODULES } from "./industry-registry";
@@ -46,7 +46,10 @@ export function registerExtensionRoutes(app: Express, auth: Auth): void {
       return sendOk(res, rows);
     } catch (e) {
       console.error("extensions/projects:", e);
-      return sendOk(res, []);
+      return sendError(res, 503, "PROJECTS_EXTENSION_UNAVAILABLE", "Projects and sites could not be loaded.", {
+        hint: "Check the database schema and extension migration status before assigning a requisition to a project.",
+        details: e instanceof Error ? e.message : String(e),
+      });
     }
   });
 
