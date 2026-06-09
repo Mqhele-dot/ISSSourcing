@@ -17,6 +17,7 @@ import {
   normalizeShipmentFilters,
   normalizeShipmentSourceType,
 } from "@shared/logistics-shipment-filters";
+import { assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
 
 type InventoryFilterInput = {
   location?: string;
@@ -973,10 +974,30 @@ async function resolvePurchaseOrderForOrganization(
 async function resolveSupplierDefaultsForPo(
   purchaseOrderId: number,
   organizationId: number,
-): Promise<{ carrierId: number | null; transportMode: string | null }> {
-  const r = await pool.query<{ default_carrier_id: number | null; default_transport_mode: string | null }>(
+): Promise<{
+  supplierName: string | null;
+  supplierStatus: string | null;
+  supplierComplianceStatus: string | null;
+  supplierBlockedReason: string | null;
+  carrierId: number | null;
+  transportMode: string | null;
+}> {
+  const r = await pool.query<{
+    name: string | null;
+    status: string | null;
+    compliance_status: string | null;
+    blocked_reason: string | null;
+    default_carrier_id: number | null;
+    default_transport_mode: string | null;
+  }>(
     `
-    SELECT s.default_carrier_id, s.default_transport_mode
+    SELECT
+      s.name,
+      s.status,
+      s.compliance_status,
+      s.blocked_reason,
+      s.default_carrier_id,
+      s.default_transport_mode
     FROM purchase_orders po
     JOIN suppliers s
       ON s.id = po.supplier_id
@@ -988,6 +1009,10 @@ async function resolveSupplierDefaultsForPo(
     [purchaseOrderId, organizationId],
   );
   return {
+    supplierName: r.rows[0]?.name ?? null,
+    supplierStatus: r.rows[0]?.status ?? null,
+    supplierComplianceStatus: r.rows[0]?.compliance_status ?? null,
+    supplierBlockedReason: r.rows[0]?.blocked_reason ?? null,
     carrierId: r.rows[0]?.default_carrier_id ?? null,
     transportMode: r.rows[0]?.default_transport_mode ?? null,
   };
@@ -1064,10 +1089,16 @@ export async function createOperationalShipment(input: {
   const requestedCarrierId =
     input.carrierId != null && Number.isFinite(Number(input.carrierId)) ? Number(input.carrierId) : null;
   const carrierText = typeof input.carrier === "string" && input.carrier.trim() ? input.carrier.trim() : null;
-  const supplierDefaults =
-    requestedCarrierId == null && carrierText == null
-      ? await resolveSupplierDefaultsForPo(order.id, orgId)
-      : null;
+  const supplierDefaults = await resolveSupplierDefaultsForPo(order.id, orgId);
+  assertSupplierTransactionAllowed(
+    {
+      supplierName: supplierDefaults.supplierName,
+      status: supplierDefaults.supplierStatus,
+      complianceStatus: supplierDefaults.supplierComplianceStatus,
+      blockedReason: supplierDefaults.supplierBlockedReason,
+    },
+    "new inbound shipments",
+  );
   const { carrierId: cid, carrierSnapshot } = await resolveCarrierSnapshotForOrg({
     organizationId: orgId,
     carrierId: requestedCarrierId ?? supplierDefaults?.carrierId ?? null,

@@ -298,6 +298,16 @@ function mapPurchaseReceiveError(error: unknown): never {
 
 function mapShipmentError(error: unknown): never {
   const message = toErrorMessage(error);
+  const taggedError = error as { code?: string; status?: number; message?: string };
+  if (taggedError.status === 409 && taggedError.code === "SUPPLIER_INACTIVE") {
+    throw contractError(409, "SUPPLIER_INACTIVE", taggedError.message ?? "Supplier is inactive for new inbound shipments.");
+  }
+  if (taggedError.status === 409 && taggedError.code === "SUPPLIER_BLOCKED") {
+    throw contractError(409, "SUPPLIER_BLOCKED", taggedError.message ?? "Supplier is blocked for new inbound shipments.");
+  }
+  if (taggedError.status === 400 && taggedError.code === "SUPPLIER_NOT_FOUND") {
+    throw contractError(400, "SUPPLIER_NOT_FOUND", taggedError.message ?? "Supplier was not found for this shipment.");
+  }
   if (message === "shipment_not_found") {
     throw contractError(404, "SHIPMENT_NOT_FOUND", "Shipment not found");
   }

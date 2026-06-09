@@ -60,6 +60,7 @@ import { getActiveOrganizationId } from "./organization-context";
 import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
 import { inventoryLineValue } from "./forecast-service";
+import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed } from "./modules/procurement/supplier-defaults";
 import {
   repoCreateInventoryItem,
   repoGetAllInventoryItems,
@@ -2136,6 +2137,30 @@ export class DatabaseStorage implements IStorage {
   
   async createPurchaseRequisition(requisition: InsertPurchaseRequisition, items: Omit<InsertPurchaseRequisitionItem, "requisitionId">[]): Promise<PurchaseRequisition> {
     const orgId = getActiveOrganizationId();
+    if (requisition.supplierId != null) {
+      const [supplier] = await db
+        .select({
+          name: suppliers.name,
+          status: suppliers.status,
+          complianceStatus: suppliers.complianceStatus,
+          blockedReason: suppliers.blockedReason,
+        })
+        .from(suppliers)
+        .where(and(eq(suppliers.id, requisition.supplierId), eq(suppliers.organizationId, orgId)))
+        .limit(1);
+      if (!supplier) {
+        throw new Error("Supplier does not exist");
+      }
+      assertSupplierTransactionAllowed(
+        {
+          supplierName: supplier.name,
+          status: supplier.status,
+          complianceStatus: supplier.complianceStatus,
+          blockedReason: supplier.blockedReason,
+        },
+        "new requisitions",
+      );
+    }
     const [created] = await db
       .insert(purchaseRequisitions)
       .values({
@@ -2703,20 +2728,18 @@ export class DatabaseStorage implements IStorage {
               .limit(1)
           : [];
 
-      const defaultCurRaw = String(defaultContract?.currency ?? supplierRow.defaultCurrencyCode ?? "").trim().toUpperCase();
-      let currencyCode = "USD";
-      if (/^[A-Z]{3}$/.test(defaultCurRaw)) {
-        try {
-          new Intl.NumberFormat("en-US", { style: "currency", currency: defaultCurRaw }).format(0);
-          currencyCode = defaultCurRaw;
-        } catch {
-          currencyCode = "USD";
-        }
-      }
-
       const orderNumber = `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
       const expectedDeliveryDate =
         requisition.requiredDate ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      const commercialDefaults = await applySupplierDefaultsToPurchaseOrder({
+        supplierId: requisition.supplierId,
+        departmentId: requisition.departmentId ?? supplierRow.defaultDepartmentId ?? null,
+        contractId: defaultContract?.id ?? null,
+        paymentTermsId: defaultContract?.paymentTermsId ?? supplierRow.paymentTermsId ?? null,
+        incotermId: defaultContract?.incotermId ?? supplierRow.incotermId ?? null,
+        currencyCode: defaultContract?.currency ?? supplierRow.defaultCurrencyCode ?? "USD",
+        taxCodeId: defaultContract?.defaultTaxCodeId ?? supplierRow.taxCodeId ?? null,
+      });
 
       const [order] = await tx
         .insert(purchaseOrders)
@@ -2725,12 +2748,14 @@ export class DatabaseStorage implements IStorage {
           orderNumber,
           supplierId: requisition.supplierId,
           requisitionId: requisition.id,
-          departmentId: requisition.departmentId ?? supplierRow.defaultDepartmentId ?? null,
-          contractId: defaultContract?.id ?? null,
-          paymentTermsId: defaultContract?.paymentTermsId ?? supplierRow.paymentTermsId ?? null,
-          incotermId: defaultContract?.incotermId ?? supplierRow.incotermId ?? null,
-          currencyCode,
-          taxCodeId: defaultContract?.defaultTaxCodeId ?? supplierRow.taxCodeId ?? null,
+          departmentId: Number(commercialDefaults.departmentId ?? requisition.departmentId ?? supplierRow.defaultDepartmentId ?? null) || null,
+          contractId: Number(commercialDefaults.contractId ?? defaultContract?.id ?? null) || null,
+          paymentTermsId: Number(commercialDefaults.paymentTermsId ?? defaultContract?.paymentTermsId ?? supplierRow.paymentTermsId ?? null) || null,
+          incotermId: Number(commercialDefaults.incotermId ?? defaultContract?.incotermId ?? supplierRow.incotermId ?? null) || null,
+          currencyCode: String(commercialDefaults.currencyCode ?? defaultContract?.currency ?? supplierRow.defaultCurrencyCode ?? "USD")
+            .trim()
+            .toUpperCase(),
+          taxCodeId: Number(commercialDefaults.taxCodeId ?? defaultContract?.defaultTaxCodeId ?? supplierRow.taxCodeId ?? null) || null,
           projectId: requisition.projectId ?? null,
           status: PurchaseOrderStatus.DRAFT,
           orderDate: new Date(),

@@ -173,6 +173,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
           details: error.flatten(),
         });
       }
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Failed to create AP capture");
+      }
       console.error("Error creating AP capture:", error);
       return sendError(res, 500, "AP_CAPTURE_CREATE_FAILED", error instanceof Error ? error.message : "Failed to create AP capture");
     }
@@ -280,6 +284,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       const actor = requestActor(req);
       return sendOk(res, await createInvoiceRecord(req.body, actor.userId), 201);
     } catch (error) {
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Failed to create invoice");
+      }
       console.error("Error creating AP invoice:", error);
       return sendError(res, 400, "CREATE_INVOICE_FAILED", error instanceof Error ? error.message : "Failed to create invoice");
     }
@@ -609,6 +617,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       const actor = requestActor(req);
       return sendOk(res, await createInvoiceRecord(req.body, actor.userId), 201);
     } catch (error) {
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Failed to create invoice");
+      }
       return sendError(res, 400, "CREATE_INVOICE_FAILED", error instanceof Error ? error.message : "Failed to create invoice");
     }
   });

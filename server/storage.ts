@@ -56,6 +56,7 @@ import memorystore from "memorystore";
 import { db, pool } from "./db";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
 import { inventoryLineValue } from "./forecast-service";
+import { assertSupplierTransactionAllowed } from "./modules/procurement/supplier-defaults";
 
 const MemoryStore = memorystore(session);
 const PostgresSessionStore = connectPgSimple(session);
@@ -3413,6 +3414,21 @@ export class MemStorage implements IStorage {
     requisition: InsertPurchaseRequisition, 
     items: Omit<InsertPurchaseRequisitionItem, "requisitionId">[]
   ): Promise<PurchaseRequisition> {
+    if (requisition.supplierId != null) {
+      const supplier = this.suppliers.get(requisition.supplierId);
+      if (!supplier) {
+        throw new Error("Supplier does not exist");
+      }
+      assertSupplierTransactionAllowed(
+        {
+          supplierName: supplier.name,
+          status: supplier.status,
+          complianceStatus: supplier.complianceStatus,
+          blockedReason: supplier.blockedReason,
+        },
+        "new requisitions",
+      );
+    }
     const id = this.requisitionCurrentId++;
     const now = new Date();
     
@@ -4014,6 +4030,19 @@ export class MemStorage implements IStorage {
     if (requisition.supplierId == null) {
       throw new Error('Requisition must have a supplier to create a purchase order');
     }
+    const supplier = this.suppliers.get(requisition.supplierId);
+    if (!supplier) {
+      throw new Error("Supplier not found");
+    }
+    assertSupplierTransactionAllowed(
+      {
+        supplierName: supplier.name,
+        status: supplier.status,
+        complianceStatus: supplier.complianceStatus,
+        blockedReason: supplier.blockedReason,
+      },
+      "new purchase orders",
+    );
     
     // Generate order number
     const orderNumber = `PO-${new Date().getFullYear()}-${this.orderCurrentId.toString().padStart(3, '0')}`;
@@ -4023,8 +4052,12 @@ export class MemStorage implements IStorage {
       orderNumber,
       supplierId: requisition.supplierId,
       requisitionId: requisition.id,
-      paymentTermsId: this.suppliers.get(requisition.supplierId)?.paymentTermsId ?? null,
-      currencyCode: this.suppliers.get(requisition.supplierId)?.defaultCurrencyCode ?? "USD",
+      departmentId: requisition.departmentId ?? supplier.defaultDepartmentId ?? null,
+      contractId: supplier.defaultContractId ?? null,
+      paymentTermsId: supplier.paymentTermsId ?? null,
+      incotermId: supplier.incotermId ?? null,
+      currencyCode: supplier.defaultCurrencyCode ?? "USD",
+      taxCodeId: supplier.taxCodeId ?? null,
       status: PurchaseOrderStatus.DRAFT,
       orderDate: new Date(),
       expectedDeliveryDate: requisition.requiredDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // Default to 2 weeks

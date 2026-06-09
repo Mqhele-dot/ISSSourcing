@@ -7,6 +7,7 @@ import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { getApprovalSuggestions } from "../../approval-suggestions";
 import { enforceApprovalPolicy } from "./ap-approval-policy";
 import { writeApAuditLog, type ApAuditAction } from "./ap-audit-log";
+import { assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
 import {
   assertBatchReleaseApproverSeparation,
   assertNotSelfBatchApproval,
@@ -292,6 +293,15 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
   if (!supplier) {
     throw new Error("Supplier does not exist");
   }
+  assertSupplierTransactionAllowed(
+    {
+      supplierName: supplier.name,
+      status: supplier.status,
+      complianceStatus: supplier.complianceStatus,
+      blockedReason: supplier.blockedReason,
+    },
+    "new AP invoices",
+  );
 
   const purchaseOrderId = invoiceData.purchaseOrderId == null ? null : toNumber(invoiceData.purchaseOrderId, 0);
   let purchaseOrder: Awaited<ReturnType<typeof storage.getPurchaseOrder>> | null = null;
@@ -697,6 +707,17 @@ export async function createCapture(input: InsertApInvoiceCapture, userId: numbe
     input.supplierId != null && Number.isFinite(Number(input.supplierId))
       ? await storage.getSupplier(Number(input.supplierId))
       : undefined;
+  if (supplier) {
+    assertSupplierTransactionAllowed(
+      {
+        supplierName: supplier.name,
+        status: supplier.status,
+        complianceStatus: supplier.complianceStatus,
+        blockedReason: supplier.blockedReason,
+      },
+      "new AP captures",
+    );
+  }
   const supplierDefaults = supplier as { paymentTermsId?: number | null; defaultCurrencyCode?: string | null } | undefined;
   const issueDate = input.issueDate ?? null;
   const paymentTermNetDays = await getPaymentTermNetDays(supplierDefaults?.paymentTermsId ?? null);

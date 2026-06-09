@@ -29,7 +29,7 @@ import {
 import { canUpdatePurchaseOrder } from "@shared/purchase-order-status";
 import { getActiveOrganizationId } from "../../organization-context";
 import { getApplicableRequisitionPolicyForOrg, roleMatchesPolicy } from "./service";
-import { applySupplierDefaultsToPurchaseOrder } from "./supplier-defaults";
+import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed } from "./supplier-defaults";
 import type { AuthBundle } from "./types";
 
 async function validateProjectIdForOrg(
@@ -324,6 +324,15 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (!supplier) {
         return sendFunctionError(res, 400, "createPurchaseRequisition", "Supplier does not exist");
       }
+      assertSupplierTransactionAllowed(
+        {
+          supplierName: supplier.name,
+          status: supplier.status,
+          complianceStatus: supplier.complianceStatus,
+          blockedReason: supplier.blockedReason,
+        },
+        "new requisitions",
+      );
       if (validatedReqData.departmentId) {
         const deptRows = await db
           .select({ id: departments.id })
@@ -349,16 +358,19 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
         return sendFunctionError(res, 400, "createPurchaseRequisition", validationError.message);
-      } else {
-        console.error("Error creating purchase requisition:", error);
-        return sendFunctionError(
-          res,
-          500,
-          "createPurchaseRequisition",
-          "Failed to create purchase requisition",
-          error instanceof Error ? error.message : String(error),
-        );
       }
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Failed to create purchase requisition");
+      }
+      console.error("Error creating purchase requisition:", error);
+      return sendFunctionError(
+        res,
+        500,
+        "createPurchaseRequisition",
+        "Failed to create purchase requisition",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   });
 
@@ -395,6 +407,15 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         if (!supplier) {
           return sendFunctionError(res, 400, "updatePurchaseRequisition", "Supplier does not exist");
         }
+        assertSupplierTransactionAllowed(
+          {
+            supplierName: supplier.name,
+            status: supplier.status,
+            complianceStatus: supplier.complianceStatus,
+            blockedReason: supplier.blockedReason,
+          },
+          "updated requisitions",
+        );
       }
       if (validatedData.departmentId != null) {
         const deptRows = await db
@@ -473,6 +494,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
         return sendFunctionError(res, 400, "updatePurchaseRequisition", validationError.message);
+      }
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Failed to update purchase requisition");
       }
       console.error("Error updating purchase requisition:", error);
       return sendFunctionError(
@@ -670,6 +695,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
 
       return sendOk(res, purchaseOrder, 201);
     } catch (error) {
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Failed to convert requisition to purchase order");
+      }
       console.error("Error converting requisition to purchase order:", error);
       return sendFunctionError(
         res,
