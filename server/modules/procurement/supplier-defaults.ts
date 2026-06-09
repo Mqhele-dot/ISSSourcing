@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import {
@@ -27,6 +27,13 @@ export type SupplierDefaultsInput = Record<string, unknown> & {
   confirmCurrencyOverride?: unknown;
 };
 
+type SupplierTransactionGuardInput = {
+  supplierName?: string | null;
+  status?: string | null;
+  complianceStatus?: string | null;
+  blockedReason?: string | null;
+};
+
 function numberOrNull(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -36,6 +43,35 @@ function normalizeCurrency(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const code = value.trim().toUpperCase();
   return /^[A-Z]{3}$/.test(code) ? code : null;
+}
+
+function normalizeSupplierState(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+export function assertSupplierTransactionAllowed(
+  supplier: SupplierTransactionGuardInput,
+  transactionLabel = "new transactions",
+): void {
+  const supplierName = supplier.supplierName?.trim() || "This supplier";
+  const status = normalizeSupplierState(supplier.status);
+  const complianceStatus = normalizeSupplierState(supplier.complianceStatus);
+  const blockedReason = supplier.blockedReason?.trim() || "";
+
+  if (status === "inactive") {
+    throw Object.assign(
+      new Error(`${supplierName} is inactive and cannot be used for ${transactionLabel}.`),
+      { code: "SUPPLIER_INACTIVE", status: 409 },
+    );
+  }
+
+  if (status === "blocked" || complianceStatus === "blocked") {
+    const suffix = blockedReason ? ` Reason: ${blockedReason}` : "";
+    throw Object.assign(
+      new Error(`${supplierName} is blocked and cannot be used for ${transactionLabel}.${suffix}`),
+      { code: "SUPPLIER_BLOCKED", status: 409 },
+    );
+  }
 }
 
 async function activeCurrencyCode(value: unknown): Promise<string | null> {
@@ -84,6 +120,9 @@ async function resolveSupplierCurrencyAndTerms(orgId: number, supplierId: number
     .select({
       id: suppliers.id,
       name: suppliers.name,
+      status: suppliers.status,
+      complianceStatus: suppliers.complianceStatus,
+      blockedReason: suppliers.blockedReason,
       defaultDepartmentId: suppliers.defaultDepartmentId,
       defaultContractId: suppliers.defaultContractId,
       paymentTermsId: suppliers.paymentTermsId,
@@ -100,6 +139,16 @@ async function resolveSupplierCurrencyAndTerms(orgId: number, supplierId: number
   if (!supplier) {
     throw Object.assign(new Error("Supplier not found in this organization."), { code: "SUPPLIER_NOT_FOUND", status: 400 });
   }
+
+  assertSupplierTransactionAllowed(
+    {
+      supplierName: supplier.name,
+      status: supplier.status,
+      complianceStatus: supplier.complianceStatus,
+      blockedReason: supplier.blockedReason,
+    },
+    "new purchase orders",
+  );
 
   const supplierDefaultContractId = numberOrNull(supplier.defaultContractId);
   const effectiveContractId = contractId ?? supplierDefaultContractId;
@@ -202,6 +251,8 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
       name: suppliers.name,
       defaultCurrencyCode: suppliers.defaultCurrencyCode,
       defaultContractId: suppliers.defaultContractId,
+      defaultCarrierId: suppliers.defaultCarrierId,
+      defaultTransportMode: suppliers.defaultTransportMode,
     })
     .from(suppliers)
     .where(
@@ -250,13 +301,64 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
             eq(purchaseOrders.organizationId, orgId),
             eq(suppliers.organizationId, orgId),
             eq(suppliers.id, supplierId),
-          ),
+        ),
     );
+
+  const shipmentRows = await db.execute(sql`
+    SELECT
+      po.supplier_id AS supplier_id,
+      s.id AS shipment_id,
+      s.po_number AS po_number,
+      s.carrier_id AS carrier_id,
+      s.transport_mode AS transport_mode,
+      COALESCE(s.direction, 'inbound') AS direction
+    FROM shipments s
+    INNER JOIN purchase_orders po
+      ON po.order_number = s.po_number
+     AND po.organization_id = ${orgId}
+    WHERE po.organization_id = ${orgId}
+      ${supplierId == null ? sql`` : sql`AND po.supplier_id = ${supplierId}`}
+  `);
+  const inboundShipmentsBySupplier = new Map<
+    number,
+    Array<{
+      shipmentId: number;
+      poNumber: string;
+      carrierId: number | null;
+      transportMode: string | null;
+    }>
+  >();
+  for (const raw of shipmentRows.rows) {
+    const supplierKey = numberOrNull((raw as { supplier_id?: unknown }).supplier_id);
+    const shipmentId = Number((raw as { shipment_id?: unknown }).shipment_id ?? 0);
+    const poNumber = String((raw as { po_number?: unknown }).po_number ?? "").trim();
+    const direction =
+      typeof (raw as { direction?: unknown }).direction === "string"
+        ? String((raw as { direction?: unknown }).direction).trim().toLowerCase() || null
+        : null;
+    if (supplierKey == null || shipmentId <= 0 || !poNumber || (direction ?? "inbound") !== "inbound") {
+      continue;
+    }
+    const existing = inboundShipmentsBySupplier.get(supplierKey) ?? [];
+    existing.push({
+      shipmentId,
+      poNumber,
+      carrierId: numberOrNull((raw as { carrier_id?: unknown }).carrier_id),
+      transportMode:
+        typeof (raw as { transport_mode?: unknown }).transport_mode === "string"
+          ? String((raw as { transport_mode?: unknown }).transport_mode).trim() || null
+          : null,
+    });
+    inboundShipmentsBySupplier.set(supplierKey, existing);
+  }
 
   const issues: string[] = [];
   for (const row of supplierRows) {
     const code = normalizeCurrency(row.defaultCurrencyCode);
     const defaultContractId = numberOrNull(row.defaultContractId);
+    const defaultCarrierId = numberOrNull(row.defaultCarrierId);
+    const defaultTransportMode =
+      typeof row.defaultTransportMode === "string" ? row.defaultTransportMode.trim().toLowerCase() : "";
     if (!code) {
       issues.push(`Supplier ${row.name} is missing a default currency in Master Data.`);
       continue;
@@ -266,6 +368,39 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
     }
     if (defaultContractId != null && !validDefaultContractIds.has(defaultContractId)) {
       issues.push(`Supplier ${row.name} references missing default contract #${defaultContractId}.`);
+    }
+    const inboundShipments = inboundShipmentsBySupplier.get(row.id) ?? [];
+
+    if (defaultCarrierId != null) {
+      for (const shipment of inboundShipments) {
+        if (shipment.carrierId == null) {
+          issues.push(
+            `Inbound shipment ${shipment.shipmentId} for PO ${shipment.poNumber} is missing carrierId, but supplier ${row.name} defaults to carrier #${defaultCarrierId}.`,
+          );
+          continue;
+        }
+        if (shipment.carrierId !== defaultCarrierId) {
+          issues.push(
+            `Inbound shipment ${shipment.shipmentId} for PO ${shipment.poNumber} uses carrier #${shipment.carrierId}, but supplier ${row.name} defaults to carrier #${defaultCarrierId}.`,
+          );
+        }
+      }
+    }
+
+    if (defaultTransportMode) {
+      for (const shipment of inboundShipments) {
+        if (!shipment.transportMode) {
+          issues.push(
+            `Inbound shipment ${shipment.shipmentId} for PO ${shipment.poNumber} is missing transport mode, but supplier ${row.name} defaults to ${defaultTransportMode}.`,
+          );
+          continue;
+        }
+        if (shipment.transportMode.trim().toLowerCase() !== defaultTransportMode) {
+          issues.push(
+            `Inbound shipment ${shipment.shipmentId} for PO ${shipment.poNumber} uses transport mode ${shipment.transportMode}, but supplier ${row.name} defaults to ${defaultTransportMode}.`,
+          );
+        }
+      }
     }
   }
 
