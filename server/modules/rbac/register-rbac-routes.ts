@@ -2,6 +2,7 @@ import type { Express, Request, RequestHandler, Response } from "express";
 import { storage } from "../../storage";
 import type { UserRole, Resource, PermissionType } from "@shared/schema";
 import { getPermissionCatalogPayload } from "../../rbac/permission-catalog";
+import { sendError, sendOk } from "../../api-response";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -12,6 +13,55 @@ type AuthBundle = {
  * System roles, custom roles, and permission checks — extracted from `routes.ts` orchestrator.
  */
 export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
+  app.get("/api/permissions/me", auth.ensureAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return sendError(res, 401, "UNAUTHORIZED", "Unauthorized");
+      }
+
+      const catalog = getPermissionCatalogPayload();
+      const resources = catalog.categories.flatMap((category) => category.resources);
+      const permissionTypes = catalog.permissionTypes.map((permission) => permission.value);
+      const permissions: Record<string, Record<string, boolean>> = {};
+      let customRoleId: number | undefined;
+
+      if (user.role === "custom") {
+        customRoleId = await storage.getUserCustomRoleId(user.id);
+      }
+
+      for (const resource of resources) {
+        permissions[resource] = {};
+        for (const permissionType of permissionTypes) {
+          const hasSystemPermission =
+            user.role === "admin" ||
+            (await storage.checkPermission(user.role as string, resource, permissionType));
+          const hasCustomPermission =
+            !hasSystemPermission && customRoleId
+              ? await storage.checkCustomRolePermission(
+                  customRoleId,
+                  resource as Resource,
+                  permissionType as PermissionType,
+                )
+              : false;
+          permissions[resource][permissionType] = Boolean(hasSystemPermission || hasCustomPermission);
+        }
+      }
+
+      return sendOk(res, {
+        userId: user.id,
+        role: user.role,
+        customRoleId: customRoleId ?? null,
+        permissions,
+      });
+    } catch (error) {
+      console.error("Error fetching current user permissions:", error);
+      return sendError(res, 500, "PERMISSIONS_ME_FAILED", "Failed to load current user permissions", {
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   app.get("/api/rbac/permission-catalog", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
     try {
       res.json(getPermissionCatalogPayload());
