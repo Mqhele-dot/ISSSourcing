@@ -1,7 +1,7 @@
 import type { Express, Request, RequestHandler, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { and, eq, isNull, lte } from "drizzle-orm";
+import { and, eq, isNull, lte, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { storage } from "../../storage";
 import { sendError, sendOk } from "../../api-response";
@@ -33,11 +33,17 @@ import {
   departments,
   documents,
   incoterms,
+  inventoryItems,
   inventoryAllocations,
   inventoryBatches,
   inventorySerials,
   paymentTerms,
+  purchaseOrders,
+  purchaseOrderItems,
+  purchaseRequisitions,
   retentionPolicies,
+  supplierContracts,
+  suppliers,
   taxCodes,
   unitsOfMeasure,
 } from "@shared/schema";
@@ -53,6 +59,60 @@ function pgErrorCode(error: unknown): string | undefined {
     return typeof c === "string" ? c : undefined;
   }
   return undefined;
+}
+
+type MasterDataDependency = {
+  label: string;
+  table: any;
+  column: any;
+};
+
+const masterDataDeleteDependencies: Record<string, MasterDataDependency[]> = {
+  "/api/units-of-measure": [
+    { label: "inventory items", table: inventoryItems, column: inventoryItems.unitOfMeasureId },
+  ],
+  "/api/tax-codes": [
+    { label: "suppliers", table: suppliers, column: suppliers.taxCodeId },
+    { label: "purchase orders", table: purchaseOrders, column: purchaseOrders.taxCodeId },
+  ],
+  "/api/commodity-codes": [
+    { label: "purchase order items", table: purchaseOrderItems, column: purchaseOrderItems.commodityCodeId },
+  ],
+  "/api/incoterms": [
+    { label: "suppliers", table: suppliers, column: suppliers.incotermId },
+    { label: "supplier contracts", table: supplierContracts, column: supplierContracts.incotermId },
+    { label: "purchase orders", table: purchaseOrders, column: purchaseOrders.incotermId },
+  ],
+  "/api/payment-terms": [
+    { label: "suppliers", table: suppliers, column: suppliers.paymentTermsId },
+    { label: "supplier contracts", table: supplierContracts, column: supplierContracts.paymentTermsId },
+    { label: "purchase orders", table: purchaseOrders, column: purchaseOrders.paymentTermsId },
+  ],
+  "/api/departments": [
+    { label: "suppliers", table: suppliers, column: suppliers.defaultDepartmentId },
+    { label: "purchase requisitions", table: purchaseRequisitions, column: purchaseRequisitions.departmentId },
+    { label: "purchase orders", table: purchaseOrders, column: purchaseOrders.departmentId },
+  ],
+  "/api/carriers": [
+    { label: "suppliers", table: suppliers, column: suppliers.defaultCarrierId },
+  ],
+  "/api/inventory-batches": [
+    { label: "inventory allocations", table: inventoryAllocations, column: inventoryAllocations.batchId },
+  ],
+};
+
+async function getDeleteDependencies(basePath: string, id: number) {
+  const checks = masterDataDeleteDependencies[basePath] ?? [];
+  const results = [];
+  for (const check of checks) {
+    const rows = (await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(check.table)
+      .where(eq(check.column, id))) as Array<{ count: number }>;
+    const count = Number(rows[0]?.count ?? 0);
+    if (count > 0) results.push({ label: check.label, count });
+  }
+  return results;
 }
 
 /**
@@ -84,6 +144,19 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         const rows = (await db.select().from(table).where(eq(table.id, id))) as any[];
         const row = rows[0];
         if (!row) return sendError(res, 404, "NOT_FOUND", "Record not found");
+        if (req.query.deleteCheck === "true") {
+          const dependencies = await getDeleteDependencies(basePath, id);
+          return sendOk(res, {
+            record: row,
+            canDelete: dependencies.length === 0,
+            requiresConfirmation: dependencies.length > 0,
+            dependencies,
+            message:
+              dependencies.length > 0
+                ? "This master-data record is used by other parts of the app. Review dependencies before deleting it."
+                : "No known dependencies were found for this master-data record.",
+          });
+        }
         return sendOk(res, row);
       } catch (error) {
         console.error(`Error fetching ${basePath} item:`, error);
