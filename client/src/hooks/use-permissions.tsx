@@ -10,8 +10,10 @@ type Permission = {
 };
 
 type CurrentUserPermissionsResponse = {
+  userId?: number;
   role: string;
-  permissions: Permission[];
+  customRoleId?: number | null;
+  permissions: Permission[] | Record<string, Record<string, boolean>>;
 };
 
 type PermissionsByResource = Record<
@@ -27,12 +29,22 @@ export function usePermissions() {
   const { toast } = useToast();
 
   const { data, isLoading, error } = useQuery<CurrentUserPermissionsResponse>({
-    queryKey: ["/api/user/permissions"],
+    queryKey: ["/api/permissions/me"],
     enabled: !!user,
-    queryFn: () => requestJson<CurrentUserPermissionsResponse>("GET", "/api/user/permissions"),
+    queryFn: () => requestJson<CurrentUserPermissionsResponse>("GET", "/api/permissions/me"),
   });
 
-  const permissions = data?.permissions ?? [];
+  const permissions = useMemo<Permission[]>(() => {
+    const raw = data?.permissions;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+
+    return Object.entries(raw).flatMap(([resource, actions]) =>
+      Object.entries(actions)
+        .filter(([, allowed]) => allowed)
+        .map(([permissionType]) => ({ resource, permissionType })),
+    );
+  }, [data?.permissions]);
   const permissionsByResource = useMemo(() => {
     const byResource: PermissionsByResource = {};
 
@@ -72,7 +84,7 @@ export function usePermissions() {
   // Refresh permissions
   const refreshPermissions = () => {
     if (user) {
-      queryClient.invalidateQueries({ queryKey: ["/api/user/permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/permissions/me"] });
     }
   };
 
