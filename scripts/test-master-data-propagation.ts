@@ -83,9 +83,6 @@ async function main() {
   if (!expectStatus("GET /api/carriers", 200, carriersRes.status)) failures++;
   const warehousesRes = await apiJsonRequest("/warehouses", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/warehouses", 200, warehousesRes.status)) failures++;
-  const contractsRes = await apiJsonRequest("/contracts", { method: "GET", cookie: adminCookie });
-  if (!expectStatus("GET /api/contracts", 200, contractsRes.status)) failures++;
-
   const apOverviewRes = await apiJsonRequest("/ap/overview", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/ap/overview", 200, apOverviewRes.status)) failures++;
 
@@ -138,9 +135,52 @@ async function main() {
   const suppliersRes = await apiJsonRequest("/suppliers", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/suppliers", 200, suppliersRes.status)) failures++;
 
-  const contractsRaw = unwrapData<unknown>(contractsRes.json);
+  const contractsForSupplierRes = await apiJsonRequest(`/contracts?supplierId=${supplierId}`, {
+    method: "GET",
+    cookie: adminCookie,
+  });
+  if (!expectStatus("GET /api/contracts?supplierId=…", 200, contractsForSupplierRes.status)) failures++;
+  const contractsRaw = unwrapData<unknown>(contractsForSupplierRes.json);
   const contracts = asArray<{ id: number; supplierId?: number; currency?: string }>(contractsRaw);
-  const contractForSupplier = contracts.find((c) => Number(c.supplierId) === supplierId) ?? null;
+  let contractForSupplier = contracts.find((c) => Number(c.supplierId) === supplierId) ?? null;
+  if (!contractForSupplier) {
+    const createContractRes = await apiJsonRequest("/contracts", {
+      method: "POST",
+      cookie: adminCookie,
+      body: {
+        supplierId,
+        title: `Propagation contract ${Date.now().toString().slice(-6)}`,
+        contractType: "master",
+        startDate: new Date().toISOString(),
+        status: "active",
+        currency: firstCurrencyCode,
+      },
+    });
+    if (!expectStatus("POST /api/contracts", 201, createContractRes.status)) failures++;
+    contractForSupplier = asRecord(createContractRes.json) as { id: number; supplierId?: number; currency?: string };
+  }
+  const contractId = Number(contractForSupplier?.id ?? 0) || undefined;
+  if (contractId) {
+    const patchContractRes = await apiJsonRequest(`/contracts/${contractId}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: {
+        ...(paymentTermsId ? { paymentTermsId } : {}),
+        ...(defaultTaxCodeId ? { defaultTaxCodeId } : {}),
+        ...(defaultIncotermId ? { incotermId: defaultIncotermId } : {}),
+      },
+    });
+    if (!expectStatus("PATCH /api/contracts/:id", 200, patchContractRes.status)) failures++;
+
+    const patchSupplierDefaultsRes = await apiJsonRequest(`/suppliers/${supplierId}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: {
+        defaultContractId: contractId,
+      },
+    });
+    if (!expectStatus("PATCH /api/suppliers/:id defaultContractId", 200, patchSupplierDefaultsRes.status)) failures++;
+  }
 
   const itemsRes = await apiJsonRequest("/inventory", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/inventory", 200, itemsRes.status)) failures++;
@@ -397,6 +437,17 @@ async function main() {
     );
   } else if (paymentTermsId) {
     console.log("  âœ“ Converted PO payment terms default -> %d", paymentTermsId);
+  }
+
+  if (contractId && Number(po.contractId ?? 0) !== contractId) {
+    failures++;
+    console.log(
+      "  X Converted PO contract default -> expected %d, got %s",
+      contractId,
+      String(po.contractId),
+    );
+  } else if (contractId) {
+    console.log("  ok Converted PO contract default -> %d", contractId);
   }
 
   if (defaultTaxCodeId && Number(po.taxCodeId ?? 0) !== defaultTaxCodeId) {

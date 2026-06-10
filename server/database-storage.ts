@@ -2698,47 +2698,12 @@ export class DatabaseStorage implements IStorage {
         throw new Error("Requisition has no line items to convert");
       }
 
-      const [supplierRow] = await tx
-        .select()
-        .from(suppliers)
-        .where(and(eq(suppliers.id, requisition.supplierId!), eq(suppliers.organizationId, orgId)))
-        .limit(1);
-      if (!supplierRow) {
-        throw new Error("Supplier not found in this organization");
-      }
-
-      const [defaultContract] =
-        supplierRow.defaultContractId != null
-          ? await tx
-              .select({
-                id: supplierContracts.id,
-                currency: supplierContracts.currency,
-                paymentTermsId: supplierContracts.paymentTermsId,
-                incotermId: supplierContracts.incotermId,
-                defaultTaxCodeId: supplierContracts.defaultTaxCodeId,
-              })
-              .from(supplierContracts)
-              .where(
-                and(
-                  eq(supplierContracts.id, supplierRow.defaultContractId),
-                  eq(supplierContracts.organizationId, orgId),
-                  eq(supplierContracts.supplierId, requisition.supplierId!),
-                ),
-              )
-              .limit(1)
-          : [];
-
       const orderNumber = `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
       const expectedDeliveryDate =
         requisition.requiredDate ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const commercialDefaults = await applySupplierDefaultsToPurchaseOrder({
         supplierId: requisition.supplierId,
-        departmentId: requisition.departmentId ?? supplierRow.defaultDepartmentId ?? null,
-        contractId: defaultContract?.id ?? null,
-        paymentTermsId: defaultContract?.paymentTermsId ?? supplierRow.paymentTermsId ?? null,
-        incotermId: defaultContract?.incotermId ?? supplierRow.incotermId ?? null,
-        currencyCode: defaultContract?.currency ?? supplierRow.defaultCurrencyCode ?? "USD",
-        taxCodeId: defaultContract?.defaultTaxCodeId ?? supplierRow.taxCodeId ?? null,
+        departmentId: requisition.departmentId ?? null,
       });
 
       const [order] = await tx
@@ -2748,14 +2713,12 @@ export class DatabaseStorage implements IStorage {
           orderNumber,
           supplierId: requisition.supplierId,
           requisitionId: requisition.id,
-          departmentId: Number(commercialDefaults.departmentId ?? requisition.departmentId ?? supplierRow.defaultDepartmentId ?? null) || null,
-          contractId: Number(commercialDefaults.contractId ?? defaultContract?.id ?? null) || null,
-          paymentTermsId: Number(commercialDefaults.paymentTermsId ?? defaultContract?.paymentTermsId ?? supplierRow.paymentTermsId ?? null) || null,
-          incotermId: Number(commercialDefaults.incotermId ?? defaultContract?.incotermId ?? supplierRow.incotermId ?? null) || null,
-          currencyCode: String(commercialDefaults.currencyCode ?? defaultContract?.currency ?? supplierRow.defaultCurrencyCode ?? "USD")
-            .trim()
-            .toUpperCase(),
-          taxCodeId: Number(commercialDefaults.taxCodeId ?? defaultContract?.defaultTaxCodeId ?? supplierRow.taxCodeId ?? null) || null,
+          departmentId: Number(commercialDefaults.departmentId ?? requisition.departmentId ?? null) || null,
+          contractId: Number(commercialDefaults.contractId ?? null) || null,
+          paymentTermsId: Number(commercialDefaults.paymentTermsId ?? null) || null,
+          incotermId: Number(commercialDefaults.incotermId ?? null) || null,
+          currencyCode: String(commercialDefaults.currencyCode ?? "USD").trim().toUpperCase(),
+          taxCodeId: Number(commercialDefaults.taxCodeId ?? null) || null,
           projectId: requisition.projectId ?? null,
           status: PurchaseOrderStatus.DRAFT,
           orderDate: new Date(),
