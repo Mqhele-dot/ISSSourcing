@@ -115,7 +115,25 @@ async function activeIncotermId(id: number | null): Promise<number | null> {
   return row?.id ?? null;
 }
 
-async function resolveSupplierCurrencyAndTerms(orgId: number, supplierId: number, contractId: number | null) {
+export type SupplierCommercialDefaults = {
+  supplierName: string;
+  departmentId: number | null;
+  supplierCurrencyCode: string | null;
+  contractCurrencyCode: string | null;
+  allowCurrencyOverride: boolean;
+  requireApprovalForOverride: boolean;
+  paymentTermsId: number | null;
+  taxCodeId: number | null;
+  incotermId: number | null;
+  contractId: number | null;
+};
+
+async function resolveSupplierCommercialDefaultsForOrg(
+  orgId: number,
+  supplierId: number,
+  contractId: number | null,
+  transactionLabel: string,
+): Promise<SupplierCommercialDefaults> {
   const [supplier] = await db
     .select({
       id: suppliers.id,
@@ -147,7 +165,7 @@ async function resolveSupplierCurrencyAndTerms(orgId: number, supplierId: number
       complianceStatus: supplier.complianceStatus,
       blockedReason: supplier.blockedReason,
     },
-    "new purchase orders",
+    transactionLabel,
   );
 
   const supplierDefaultContractId = numberOrNull(supplier.defaultContractId);
@@ -202,12 +220,31 @@ async function resolveSupplierCurrencyAndTerms(orgId: number, supplierId: number
   };
 }
 
-export async function applySupplierDefaultsToPurchaseOrder<T extends SupplierDefaultsInput>(input: T): Promise<T> {
-  const orgId = getActiveOrganizationId();
-  const supplierId = numberOrNull(input.supplierId);
-  if (supplierId == null) return input;
+export async function resolveSupplierCommercialDefaults(
+  supplierId: unknown,
+  options?: {
+    contractId?: unknown;
+    transactionLabel?: string;
+  },
+): Promise<SupplierCommercialDefaults | null> {
+  const resolvedSupplierId = numberOrNull(supplierId);
+  if (resolvedSupplierId == null) return null;
 
-  const defaults = await resolveSupplierCurrencyAndTerms(orgId, supplierId, numberOrNull(input.contractId));
+  const orgId = getActiveOrganizationId();
+  return resolveSupplierCommercialDefaultsForOrg(
+    orgId,
+    resolvedSupplierId,
+    numberOrNull(options?.contractId),
+    options?.transactionLabel ?? "new purchase orders",
+  );
+}
+
+export async function applySupplierDefaultsToPurchaseOrder<T extends SupplierDefaultsInput>(input: T): Promise<T> {
+  const defaults = await resolveSupplierCommercialDefaults(input.supplierId, {
+    contractId: input.contractId,
+    transactionLabel: "new purchase orders",
+  });
+  if (!defaults) return input;
   const requestedCurrency = normalizeCurrency(input.currencyCode);
   let resolvedCurrency = defaults.contractCurrencyCode ?? defaults.supplierCurrencyCode ?? requestedCurrency;
 

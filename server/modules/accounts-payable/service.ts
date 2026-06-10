@@ -7,7 +7,7 @@ import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { getApprovalSuggestions } from "../../approval-suggestions";
 import { enforceApprovalPolicy } from "./ap-approval-policy";
 import { writeApAuditLog, type ApAuditAction } from "./ap-audit-log";
-import { assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
+import { resolveSupplierCommercialDefaults } from "../procurement/supplier-defaults";
 import {
   assertBatchReleaseApproverSeparation,
   assertNotSelfBatchApproval,
@@ -293,15 +293,9 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
   if (!supplier) {
     throw new Error("Supplier does not exist");
   }
-  assertSupplierTransactionAllowed(
-    {
-      supplierName: supplier.name,
-      status: supplier.status,
-      complianceStatus: supplier.complianceStatus,
-      blockedReason: supplier.blockedReason,
-    },
-    "new AP invoices",
-  );
+  const supplierCommercialDefaults = await resolveSupplierCommercialDefaults(supplierId, {
+    transactionLabel: "new AP invoices",
+  });
 
   const purchaseOrderId = invoiceData.purchaseOrderId == null ? null : toNumber(invoiceData.purchaseOrderId, 0);
   let purchaseOrder: Awaited<ReturnType<typeof storage.getPurchaseOrder>> | null = null;
@@ -324,15 +318,14 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
   }
 
   const poDefaults = purchaseOrder as { paymentTermsId?: number | null; currencyCode?: string | null } | null;
-  const supplierDefaults = supplier as { paymentTermsId?: number | null; defaultCurrencyCode?: string | null };
   const explicitPaymentTermsId = invoiceData.paymentTermsId == null ? null : toNumber(invoiceData.paymentTermsId, 0);
   const paymentTermsId =
-    explicitPaymentTermsId || poDefaults?.paymentTermsId || supplierDefaults.paymentTermsId || null;
+    explicitPaymentTermsId || poDefaults?.paymentTermsId || supplierCommercialDefaults?.paymentTermsId || null;
   const explicitCurrency =
     typeof invoiceData.currencyCode === "string" && invoiceData.currencyCode.trim()
       ? invoiceData.currencyCode.trim().toUpperCase()
       : null;
-  const currencyCode = explicitCurrency || poDefaults?.currencyCode || supplierDefaults.defaultCurrencyCode || null;
+  const currencyCode = explicitCurrency || poDefaults?.currencyCode || supplierCommercialDefaults?.supplierCurrencyCode || null;
   const issueDate = toDateOrUndefined(invoiceData.issueDate) ?? new Date();
   const paymentTermNetDays = await getPaymentTermNetDays(paymentTermsId);
   const dueDate =
@@ -703,24 +696,11 @@ export async function listCaptures(status?: string) {
 
 export async function createCapture(input: InsertApInvoiceCapture, userId: number) {
   const orgId = getActiveOrganizationId();
-  const supplier =
-    input.supplierId != null && Number.isFinite(Number(input.supplierId))
-      ? await storage.getSupplier(Number(input.supplierId))
-      : undefined;
-  if (supplier) {
-    assertSupplierTransactionAllowed(
-      {
-        supplierName: supplier.name,
-        status: supplier.status,
-        complianceStatus: supplier.complianceStatus,
-        blockedReason: supplier.blockedReason,
-      },
-      "new AP captures",
-    );
-  }
-  const supplierDefaults = supplier as { paymentTermsId?: number | null; defaultCurrencyCode?: string | null } | undefined;
+  const supplierCommercialDefaults = await resolveSupplierCommercialDefaults(input.supplierId, {
+    transactionLabel: "new AP captures",
+  });
   const issueDate = input.issueDate ?? null;
-  const paymentTermNetDays = await getPaymentTermNetDays(supplierDefaults?.paymentTermsId ?? null);
+  const paymentTermNetDays = await getPaymentTermNetDays(supplierCommercialDefaults?.paymentTermsId ?? null);
   const defaultDueDate = issueDate && paymentTermNetDays != null ? addDays(new Date(issueDate), paymentTermNetDays) : null;
   const duplicateCheckKey = buildDuplicateCheckKey({
     supplierId: input.supplierId ?? null,
@@ -816,7 +796,7 @@ export async function createCapture(input: InsertApInvoiceCapture, userId: numbe
       invoiceNumber: input.invoiceNumber ?? null,
       issueDate,
       dueDate: input.dueDate ?? defaultDueDate,
-      currencyCode: input.currencyCode ?? supplierDefaults?.defaultCurrencyCode ?? null,
+      currencyCode: input.currencyCode ?? supplierCommercialDefaults?.supplierCurrencyCode ?? null,
       subtotalAmount: toNumber(input.subtotalAmount, 0),
       taxAmount: toNumber(input.taxAmount, 0),
       totalAmount: toNumber(input.totalAmount, 0),

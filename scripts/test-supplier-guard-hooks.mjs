@@ -41,13 +41,13 @@ assert.match(
 );
 assert.match(
   apService,
-  /assertSupplierTransactionAllowed\([\s\S]*"new AP invoices"/,
-  "AP invoice creation should block inactive suppliers",
+  /resolveSupplierCommercialDefaults\(supplierId,\s*\{[\s\S]*transactionLabel:\s*"new AP invoices"/,
+  "AP invoice creation should reuse the centralized supplier commercial default resolver",
 );
 assert.match(
   apService,
-  /assertSupplierTransactionAllowed\([\s\S]*"new AP captures"/,
-  "AP capture creation should block inactive suppliers",
+  /resolveSupplierCommercialDefaults\(input\.supplierId,\s*\{[\s\S]*transactionLabel:\s*"new AP captures"/,
+  "AP capture creation should reuse the centralized supplier commercial default resolver",
 );
 assert.match(
   apRoutes,
