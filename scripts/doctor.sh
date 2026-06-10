@@ -32,7 +32,6 @@ required_scripts=(
   "$ROOT_DIR/scripts/codespaces-up.sh"
   "$ROOT_DIR/scripts/doctor.sh"
   "$ROOT_DIR/scripts/test-runtime.sh"
-  "$ROOT_DIR/scripts/validate-readme.mjs"
 )
 
 for script in "${required_scripts[@]}"; do
@@ -45,8 +44,14 @@ for script in "${required_scripts[@]}"; do
     exit 1
   fi
 done
-echo "Required scripts exist and are executable"
 
-node "$ROOT_DIR/scripts/validate-readme.mjs"
+validate_readme="$ROOT_DIR/scripts/validate-readme.mjs"
+if [[ ! -f "$validate_readme" ]]; then
+  echo "Missing required script: $validate_readme"
+  exit 1
+fi
+echo "Required shell scripts exist and are executable"
+
+node "$validate_readme"
 
 echo "Doctor checks passed"

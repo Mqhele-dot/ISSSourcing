@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Response } from "express";
 import express from "express";
 import helmet from "helmet";
 import { randomBytes } from "node:crypto";
@@ -21,7 +21,7 @@ export function registerSecurityMiddleware(app: Express): void {
           "connect-src": ["'self'", "ws:", "wss:", "https:"],
           "script-src": allowUnsafeInlineScripts
             ? ["'self'", "'unsafe-inline'"]
-            : ["'self'", (_req, res) => `'nonce-${String(res.locals.cspNonce ?? "")}'`],
+            : ["'self'", (_req, res) => `'nonce-${String((res as Response).locals?.cspNonce ?? "")}'`],
         },
       },
       referrerPolicy: { policy: "no-referrer" },

@@ -2704,6 +2704,11 @@ export class DatabaseStorage implements IStorage {
       const commercialDefaults = await applySupplierDefaultsToPurchaseOrder({
         supplierId: requisition.supplierId,
         departmentId: requisition.departmentId ?? null,
+        contractId: null,
+        paymentTermsId: null,
+        incotermId: null,
+        currencyCode: null,
+        taxCodeId: null,
       });
 
       const [order] = await tx

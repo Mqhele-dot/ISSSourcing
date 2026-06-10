@@ -7,7 +7,7 @@ import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
 import { getReadinessClientSnapshot } from "@/lib/readiness-client-snapshot";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RefreshCw, Copy, Download, PlayCircle, ShieldCheck, Trash2 } from "lucide-react";
+import { RefreshCw, Copy, Download, ExternalLink, PlayCircle, ShieldCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import {
@@ -40,9 +40,78 @@ import {
   copyDiagnosticsSummary,
   downloadDiagnosticsJson,
   downloadDiagnosticsMarkdown,
-  type DiagnosticsReportContext,
+type DiagnosticsReportContext,
 } from "@/lib/diagnostics/diagnostics-report";
 import { runDiagnosticsSelfChecks } from "@shared/diagnostics/self-checks";
+
+type ScanCategory = keyof DiagnosticsScanResult;
+
+type DiagnosticsGuidance = {
+  title: string;
+  description: string;
+  automatic: string[];
+  manual: string[];
+  links: Array<{ label: string; href: string }>;
+};
+
+const DIAGNOSTICS_GUIDANCE: Record<ScanCategory, DiagnosticsGuidance> = {
+  database: {
+    title: "Database repair guidance",
+    description: "Checks the app settings record and core inventory indexes used by the live inventory screens.",
+    automatic: ["Initialize missing app settings.", "Create safe inventory indexes when PostgreSQL allows it."],
+    manual: ["If this still reports issues, confirm DATABASE_URL and run the migration/check scripts in Codespaces."],
+    links: [
+      { label: "Open setup", href: "/admin/settings" },
+      { label: "Open diagnostics", href: "/admin/system-diagnostics" },
+    ],
+  },
+  configuration: {
+    title: "Configuration guidance",
+    description: "Shows hosted-service settings that cannot be safely invented by the app.",
+    automatic: ["Records the guidance result so the issue is visible in diagnostics history."],
+    manual: [
+      "Set Stripe and email environment variables in the hosting environment.",
+      "Restart the Codespace/app after changing environment variables.",
+    ],
+    links: [
+      { label: "Open settings", href: "/admin/settings" },
+      { label: "Open integrations", href: "/admin/integrations" },
+    ],
+  },
+  data: {
+    title: "Data consistency repair guidance",
+    description:
+      "Repairs safe setup drift first, then leaves locked commercial documents unchanged for review.",
+    automatic: [
+      "Rename duplicate SKUs and reset negative stock when negative inventory is disabled.",
+      "Set missing supplier default currencies from the active Master Data currency list.",
+      "Apply supplier default carriers to active inbound shipments that do not already have a carrier.",
+    ],
+    manual: [
+      "Review supplier currency mismatches on locked POs, invoices, and receipts before changing historical records.",
+      "Use Master Data for currencies/carriers and Suppliers for supplier-specific defaults.",
+    ],
+    links: [
+      { label: "Open suppliers", href: "/procurement/suppliers" },
+      { label: "Open currencies", href: "/admin/master-data/currencies" },
+      { label: "Open carriers", href: "/admin/master-data/carriers" },
+      { label: "Open warehouse ops", href: "/inventory/warehouse-operations" },
+    ],
+  },
+  system: {
+    title: "System guidance",
+    description: "Covers browser/device permissions and local storage issues that need operator action.",
+    automatic: ["Records the guidance result so support can see the attempted remediation."],
+    manual: [
+      "Grant browser camera permissions for barcode scanning.",
+      "Clear stale site storage if the UI state is stuck after a deployment.",
+    ],
+    links: [
+      { label: "Open barcode scanner", href: "/inventory/barcodes" },
+      { label: "Open profile", href: "/profile" },
+    ],
+  },
+};
 
 function JsonBlock({ value }: { value: unknown }) {
   return (
@@ -218,10 +287,13 @@ export default function SystemDiagnosticsPage() {
     serverSnapshot: snapshot,
     selfChecks,
   };
-  const scanCategories: Array<keyof DiagnosticsScanResult> = ["database", "configuration", "data", "system"];
+  const scanCategories: ScanCategory[] = ["database", "configuration", "data", "system"];
+  const pendingCategory = pendingFixCategory as ScanCategory | null;
+  const pendingGuidance = pendingCategory ? DIAGNOSTICS_GUIDANCE[pendingCategory] : null;
+  const pendingIssues = pendingCategory ? scan?.[pendingCategory] ?? [] : [];
   const pendingFixDescription =
     pendingFixCategory === "data"
-      ? "This fix may rename duplicate SKUs or reset negative quantities."
+      ? "This safe repair can clean inventory drift, supplier default currencies, and active inbound shipment carrier defaults."
       : pendingFixCategory
         ? `Run safe diagnostics guidance for ${pendingFixCategory}.`
         : "";
@@ -675,13 +747,61 @@ export default function SystemDiagnosticsPage() {
       </p>
 
       <AlertDialog open={pendingFixCategory != null} onOpenChange={(open) => !open && setPendingFixCategory(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto">
           <AlertDialogHeader>
-            <AlertDialogTitle>Run diagnostics fix?</AlertDialogTitle>
+            <AlertDialogTitle>{pendingGuidance?.title ?? "Run diagnostics fix?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingFixDescription} The result will be logged in diagnostics and the scan will refresh afterward.
+              {pendingGuidance?.description ?? pendingFixDescription} The result will be logged in diagnostics and the scan will refresh afterward.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {pendingGuidance ? (
+            <div className="space-y-4 text-sm">
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <h3 className="font-medium text-foreground">Current findings</h3>
+                {pendingIssues.length > 0 ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {pendingIssues.slice(0, 8).map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-muted-foreground">No active findings in this category right now.</p>
+                )}
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border p-3">
+                  <h3 className="font-medium text-foreground">Automatic repair</h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {pendingGuidance.automatic.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <h3 className="font-medium text-foreground">Manual follow-up</h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {pendingGuidance.manual.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {pendingGuidance.links.map((link) => (
+                  <Button
+                    key={link.href}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.location.assign(link.href)}
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    {link.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction

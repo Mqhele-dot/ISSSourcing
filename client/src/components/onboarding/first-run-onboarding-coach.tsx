@@ -130,7 +130,7 @@ export function FirstRunOnboardingCoach() {
   const key = storageKey(user?.id);
   const pathBase = pathWithoutQuery(path);
   const availableSteps = useMemo(
-    () => SETUP_STEPS.filter((step) => userCanUseStep(user?.role, step)),
+    () => SETUP_STEPS.filter((step) => userCanUseStep(user?.role ?? undefined, step)),
     [user?.role],
   );
   const activeStep = availableSteps[Math.min(activeIndex, availableSteps.length - 1)];

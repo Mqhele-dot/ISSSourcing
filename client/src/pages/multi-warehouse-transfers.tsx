@@ -32,7 +32,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { requestJson } from "@/lib/queryClient";
-import { formatDate } from "@/lib/date-utils";
+import { formatDate } from "@/lib/utils";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 
 interface WarehouseTransfer {

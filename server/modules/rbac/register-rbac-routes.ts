@@ -27,7 +27,7 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
       let customRoleId: number | undefined;
 
       if (user.role === "custom") {
-        customRoleId = await storage.getUserCustomRoleId(user.id);
+        customRoleId = (await storage.getUserCustomRoleId(user.id)) ?? undefined;
       }
 
       for (const resource of resources) {

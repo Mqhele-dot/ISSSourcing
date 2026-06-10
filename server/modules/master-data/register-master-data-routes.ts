@@ -96,9 +96,7 @@ const masterDataDeleteDependencies: Record<string, MasterDataDependency[]> = {
   "/api/carriers": [
     { label: "suppliers", table: suppliers, column: suppliers.defaultCarrierId },
   ],
-  "/api/inventory-batches": [
-    { label: "inventory allocations", table: inventoryAllocations, column: inventoryAllocations.batchId },
-  ],
+  "/api/inventory-batches": [],
 };
 
 async function getDeleteDependencies(basePath: string, id: number) {

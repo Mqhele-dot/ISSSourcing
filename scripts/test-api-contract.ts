@@ -100,9 +100,9 @@ async function main() {
         cookie = csrfSetCookie.split(";")[0];
       }
       const csrfPayload = (await csrfResponse.json().catch(() => null)) as
-        | { data?: { csrfToken?: string } }
+        | { csrfToken?: string; data?: { csrfToken?: string } }
         | null;
-      csrfToken = csrfPayload?.data?.csrfToken ?? "";
+      csrfToken = csrfPayload?.data?.csrfToken ?? csrfPayload?.csrfToken ?? "";
     }
 
     const response = await fetch(url, {

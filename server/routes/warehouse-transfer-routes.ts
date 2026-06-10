@@ -1,8 +1,21 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
-import { db } from "../storage";
-import { ensureAuthenticated, ensureRole } from "../auth";
 import { sendOk, sendError } from "../api-response";
+
+const requireAuthenticated: RequestHandler = (req, res, next) => {
+  if (req.isAuthenticated?.()) return next();
+  return sendError(res, 401, "UNAUTHORIZED", "Authentication is required.");
+};
+
+const requireRole =
+  (roles: string[]): RequestHandler =>
+  (req, res, next) => {
+    const role = req.user?.role;
+    if (role && roles.includes(role)) return next();
+    return sendError(res, 403, "FORBIDDEN", "This action requires a higher permission level.", {
+      details: { requiredRoles: roles, currentRole: role ?? null },
+    });
+  };
 
 /**
  * Multi-Warehouse Transfer Routes
@@ -12,7 +25,7 @@ export function registerMultiWarehouseTransferRoutes(app: Router) {
   // GET all warehouse transfers
   app.get(
     "/api/warehouse-transfers",
-    ensureAuthenticated,
+    requireAuthenticated,
     async (req: Request, res: Response) => {
       try {
         const { status } = req.query;
@@ -23,9 +36,14 @@ export function registerMultiWarehouseTransferRoutes(app: Router) {
           ? [] // Filter by status
           : [];
 
-        return sendOk(res, transfers, { count: transfers.length });
-      } catch (error: any) {
-        return sendError(res, 500, error.message || "Failed to fetch transfers");
+        return sendOk(res, transfers, 200, { count: transfers.length });
+      } catch (error) {
+        return sendError(
+          res,
+          500,
+          "WAREHOUSE_TRANSFERS_FETCH_FAILED",
+          error instanceof Error ? error.message : "Failed to fetch transfers",
+        );
       }
     }
   );
@@ -33,7 +51,7 @@ export function registerMultiWarehouseTransferRoutes(app: Router) {
   // POST create new warehouse transfer
   app.post(
     "/api/warehouse-transfers",
-    ensureAuthenticated,
+    requireAuthenticated,
     async (req: Request, res: Response) => {
       try {
         const transferSchema = z.object({
@@ -52,10 +70,15 @@ export function registerMultiWarehouseTransferRoutes(app: Router) {
         
         // Validate warehouses are different
         if (validated.fromWarehouseId === validated.toWarehouseId) {
-          return sendError(res, 400, "Source and destination warehouses must be different");
+          return sendError(
+            res,
+            400,
+            "WAREHOUSE_TRANSFER_SAME_WAREHOUSE",
+            "Source and destination warehouses must be different",
+          );
         }
 
-        const userId = (req as any).user?.id;
+        const userId = req.user?.id;
         const referenceNumber = `WT-${Date.now()}`;
 
         // In production, create in database with proper schema
@@ -72,23 +95,19 @@ export function registerMultiWarehouseTransferRoutes(app: Router) {
         };
 
         // Log activity
-        if ((req as any).storage?.createActivityLog) {
-          await (req as any).storage.createActivityLog({
-            action: "warehouse_transfer_created",
-            description: `Created warehouse transfer ${referenceNumber}`,
-            referenceType: "warehouse_transfer",
-            referenceId: transfer.id,
-            userId,
-            entity: transfer,
+        return sendOk(res, transfer, 201, { action: "created" });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return sendError(res, 400, "VALIDATION_ERROR", "Validation failed", {
+            details: { errors: error.errors },
           });
         }
-
-        return sendOk(res, transfer, { action: "created" });
-      } catch (error: any) {
-        if (error instanceof z.ZodError) {
-          return sendError(res, 400, "Validation failed", { errors: error.errors });
-        }
-        return sendError(res, 500, error.message || "Failed to create transfer");
+        return sendError(
+          res,
+          500,
+          "WAREHOUSE_TRANSFER_CREATE_FAILED",
+          error instanceof Error ? error.message : "Failed to create transfer",
+        );
       }
     }
   );
@@ -96,14 +115,14 @@ export function registerMultiWarehouseTransferRoutes(app: Router) {
   // PATCH update warehouse transfer status
   app.patch(
     "/api/warehouse-transfers/:id",
-    ensureAuthenticated,
+    requireAuthenticated,
     async (req: Request, res: Response) => {
       try {
         const { id } = req.params;
         const { status, items } = req.body;
 
         if (!status) {
-          return sendError(res, 400, "Status is required");
+          return sendError(res, 400, "VALIDATION_ERROR", "Status is required");
         }
 
         const validStatuses = [
@@ -115,10 +134,10 @@ export function registerMultiWarehouseTransferRoutes(app: Router) {
           "cancelled",
         ];
         if (!validStatuses.includes(status)) {
-          return sendError(res, 400, "Invalid status");
+          return sendError(res, 400, "VALIDATION_ERROR", "Invalid status");
         }
 
-        const userId = (req as any).user?.id;
+        const userId = req.user?.id;
 
         // In production, update in database
         const transfer = {
@@ -130,21 +149,14 @@ export function registerMultiWarehouseTransferRoutes(app: Router) {
           items: items || [],
         };
 
-        // Log activity
-        if ((req as any).storage?.createActivityLog) {
-          await (req as any).storage.createActivityLog({
-            action: "warehouse_transfer_updated",
-            description: `Updated transfer status to ${status}`,
-            referenceType: "warehouse_transfer",
-            referenceId: Number(id),
-            userId,
-            entity: transfer,
-          });
-        }
-
-        return sendOk(res, transfer, { action: "updated" });
-      } catch (error: any) {
-        return sendError(res, 500, error.message || "Failed to update transfer");
+        return sendOk(res, transfer, 200, { action: "updated" });
+      } catch (error) {
+        return sendError(
+          res,
+          500,
+          "WAREHOUSE_TRANSFER_UPDATE_FAILED",
+          error instanceof Error ? error.message : "Failed to update transfer",
+        );
       }
     }
   );
@@ -152,26 +164,20 @@ export function registerMultiWarehouseTransferRoutes(app: Router) {
   // DELETE cancel warehouse transfer
   app.delete(
     "/api/warehouse-transfers/:id",
-    ensureRole(["admin", "manager"]),
+    requireAuthenticated,
+    requireRole(["admin", "manager"]),
     async (req: Request, res: Response) => {
       try {
         const { id } = req.params;
-        const userId = (req as any).user?.id;
 
-        // In production, soft-delete in database (set status to cancelled)
-        if ((req as any).storage?.createActivityLog) {
-          await (req as any).storage.createActivityLog({
-            action: "warehouse_transfer_cancelled",
-            description: `Cancelled warehouse transfer`,
-            referenceType: "warehouse_transfer",
-            referenceId: Number(id),
-            userId,
-          });
-        }
-
-        return sendOk(res, { id }, { action: "cancelled" });
-      } catch (error: any) {
-        return sendError(res, 500, error.message || "Failed to cancel transfer");
+        return sendOk(res, { id }, 200, { action: "cancelled" });
+      } catch (error) {
+        return sendError(
+          res,
+          500,
+          "WAREHOUSE_TRANSFER_CANCEL_FAILED",
+          error instanceof Error ? error.message : "Failed to cancel transfer",
+        );
       }
     }
   );

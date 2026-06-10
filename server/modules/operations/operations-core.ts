@@ -3204,6 +3204,7 @@ export async function listOperationalActivity(filters: ActivityListFilters = {})
 }
 
 export async function getOperationalControlTowerOverview() {
+  const orgId = getActiveOrganizationId();
   const openExceptionsResult = await pool.query<{
     severity: string;
     count: number;
@@ -3219,19 +3220,25 @@ export async function getOperationalControlTowerOverview() {
   const lateShipmentsResult = await pool.query<{ count: number }>(
     `
     SELECT count(*)::int AS count
-    FROM shipments
-    WHERE eta IS NOT NULL
-      AND eta < now()
-      AND status <> 'delivered'
+    FROM shipments s
+    INNER JOIN purchase_orders po
+      ON po.order_number = s.po_number
+     AND po.organization_id = $1
+    WHERE s.eta IS NOT NULL
+      AND s.eta < now()
+      AND lower(s.status) <> 'delivered'
     `,
+    [orgId],
   );
 
   const poAwaitingActionResult = await pool.query<{ count: number }>(
     `
     SELECT count(*)::int AS count
     FROM purchase_orders
-    WHERE lower(status) = 'approved'
+    WHERE organization_id = $1
+      AND lower(status) = 'approved'
     `,
+    [orgId],
   );
 
   const lowStockResult = await pool.query<{ count: number }>(
@@ -3244,11 +3251,15 @@ export async function getOperationalControlTowerOverview() {
         COALESCE(SUM(p.allocated), 0) AS allocated,
         COALESCE(i.low_stock_threshold, 0) AS threshold
       FROM inventory_items i
-      LEFT JOIN inventory_positions p ON p.sku = i.sku
+      LEFT JOIN inventory_positions p
+        ON p.sku = i.sku
+       AND p.organization_id = i.organization_id
+      WHERE i.organization_id = $1
       GROUP BY i.id
     ) stock
     WHERE (stock.on_hand - stock.allocated) <= stock.threshold
     `,
+    [orgId],
   );
 
   const activity = await listOperationalActivity({ limit: 20 });
@@ -3265,7 +3276,8 @@ export async function getOperationalControlTowerOverview() {
   let overdueInvoices = 0;
   try {
     const pr = await pool.query<{ count: number }>(
-      `SELECT count(*)::int AS count FROM purchase_requisitions WHERE status IN ('PENDING','DRAFT')`,
+      `SELECT count(*)::int AS count FROM purchase_requisitions WHERE organization_id = $1 AND status IN ('PENDING','DRAFT')`,
+      [orgId],
     );
     pendingRequisitions = toNumber(pr.rows[0]?.count, 0);
   } catch {
@@ -3273,7 +3285,15 @@ export async function getOperationalControlTowerOverview() {
   }
   try {
     const sh = await pool.query<{ count: number }>(
-      `SELECT count(*)::int AS count FROM shipments WHERE lower(status) IN ('created','in_transit','delayed')`,
+      `
+      SELECT count(*)::int AS count
+      FROM shipments s
+      INNER JOIN purchase_orders po
+        ON po.order_number = s.po_number
+       AND po.organization_id = $1
+      WHERE lower(s.status) IN ('created','in_transit','delayed')
+      `,
+      [orgId],
     );
     inTransitShipments = toNumber(sh.rows[0]?.count, 0);
   } catch {
@@ -3281,7 +3301,8 @@ export async function getOperationalControlTowerOverview() {
   }
   try {
     const inv = await pool.query<{ count: number }>(
-      `SELECT count(*)::int AS count FROM invoices WHERE status = 'OVERDUE'`,
+      `SELECT count(*)::int AS count FROM invoices WHERE organization_id = $1 AND status = 'OVERDUE'`,
+      [orgId],
     );
     overdueInvoices = toNumber(inv.rows[0]?.count, 0);
   } catch {
@@ -3323,6 +3344,7 @@ export async function getOperationalControlTowerOverview() {
 }
 
 export async function runOperationalDemoWalkthrough(actor: string) {
+  const orgId = getActiveOrganizationId();
   const steps: Array<{ id: string; label: string; completed: boolean; details?: string }> = [];
 
   const resetSummary = await resetAndSeedDemoData();
@@ -3365,9 +3387,11 @@ export async function runOperationalDemoWalkthrough(actor: string) {
     `
     SELECT id
     FROM suppliers
+    WHERE organization_id = $1
     ORDER BY id ASC
     LIMIT 1
     `,
+    [orgId],
   );
   const supplierId = supplierResult.rows[0]?.id;
   if (!supplierId) {
@@ -3378,10 +3402,11 @@ export async function runOperationalDemoWalkthrough(actor: string) {
     `
     SELECT id, price
     FROM inventory_items
-    WHERE sku = $1
+    WHERE organization_id = $1
+      AND sku = $2
     LIMIT 1
     `,
-    [firstInventoryItem.sku],
+    [orgId, firstInventoryItem.sku],
   );
   const itemId = itemLookup.rows[0]?.id;
   const itemPrice = toNumber(itemLookup.rows[0]?.price, 10);
@@ -3407,10 +3432,10 @@ export async function runOperationalDemoWalkthrough(actor: string) {
       created_at,
       updated_at
     )
-    VALUES (1, $1, $2, 'sent', now(), $3, now(), now())
+    VALUES ($1, $2, $3, 'sent', now(), $4, now(), now())
     RETURNING id, order_number
     `,
-    [poNumber, supplierId, lineTotal],
+    [orgId, poNumber, supplierId, lineTotal],
   );
   const poId = poInsert.rows[0].id;
 

@@ -24,7 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { requestJson } from "@/lib/queryClient";
-import { Can } from "@/components/can";
+import { Can } from "@/components/auth/can";
 
 interface SecurityPolicy {
   passwordMinLength: number;

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
@@ -6,7 +6,7 @@ interface PageHeaderProps {
   title: string;
   subtitle?: string;
   description?: string;
-  icon?: ReactNode;
+  icon?: ReactNode | ComponentType<{ className?: string }>;
   breadcrumb?: ReactNode;
   actions?: ReactNode;
   action?: {
@@ -37,13 +37,21 @@ export function PageHeader({
   titleTestId,
 }: PageHeaderProps) {
   const hasLegacyActions = action || secondaryAction;
+  const renderIcon = () => {
+    if (!icon) return null;
+    if (typeof icon === "function") {
+      const IconComponent = icon as ComponentType<{ className?: string }>;
+      return <IconComponent className="h-8 w-8" />;
+    }
+    return icon as ReactNode;
+  };
 
   return (
     <div className="space-y-4">
       {breadcrumb ? <div className="text-xs text-muted-foreground">{breadcrumb}</div> : null}
       <div className="flex flex-col sm:flex-row justify-between gap-4">
         <div className="flex items-center gap-3">
-          {icon && <div className="h-8 w-8">{icon}</div>}
+          {icon ? <div className="h-8 w-8">{renderIcon()}</div> : null}
           <div>
             <h1 className="text-2xl font-bold tracking-tight" data-testid={titleTestId ?? undefined}>
               {title}

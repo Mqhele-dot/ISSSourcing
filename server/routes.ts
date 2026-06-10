@@ -1060,12 +1060,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: `${supplierMismatches.length} supplier/master-data consistency issue(s) detected.`,
           details: { examples: supplierMismatches.slice(0, 5) },
         });
-        await emitNotificationToRoles(["admin", "manager"], {
-          type: "diagnostic_supplier_mismatch",
-          title: "Supplier consistency issues detected",
-          body: `${supplierMismatches.length} supplier-linked default, PO, invoice, or receipt issue(s) need review in System Diagnostics.`,
-          entityType: "diagnostics",
-        });
+        const recentSupplierDiagnosticNotification = await pool.query<{ exists: boolean }>(
+          `
+          SELECT EXISTS (
+            SELECT 1
+            FROM notifications
+            WHERE organization_id = $1
+              AND type = 'diagnostic_supplier_mismatch'
+              AND created_at > now() - interval '2 hours'
+          ) AS exists
+          `,
+          [getActiveOrganizationId()],
+        );
+        if (!recentSupplierDiagnosticNotification.rows[0]?.exists) {
+          await emitNotificationToRoles(["admin", "manager"], {
+            type: "diagnostic_supplier_mismatch",
+            title: "Supplier consistency issues detected",
+            body: `${supplierMismatches.length} supplier-linked default, PO, invoice, or receipt issue(s) need review in System Diagnostics.`,
+            entityType: "diagnostics",
+          });
+        }
       }
 
       const filtered: Record<string, string[]> = {};
@@ -1149,8 +1163,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
         }
+        const orgId = getActiveOrganizationId();
+        const defaultCurrency = await pool.query<{ code: string }>(
+          `
+          SELECT code
+          FROM currencies
+          WHERE active = true
+          ORDER BY CASE WHEN upper(code) = 'USD' THEN 0 ELSE 1 END, code ASC
+          LIMIT 1
+          `,
+        );
+        const fallbackCurrencyCode = defaultCurrency.rows[0]?.code?.trim();
+        if (fallbackCurrencyCode) {
+          const supplierCurrencyRepairs = await pool.query<{ id: number; name: string; default_currency_code: string }>(
+            `
+            UPDATE suppliers
+            SET default_currency_code = $2,
+                updated_at = now()
+            WHERE organization_id = $1
+              AND (default_currency_code IS NULL OR trim(default_currency_code) = '')
+            RETURNING id, name, default_currency_code
+            `,
+            [orgId, fallbackCurrencyCode],
+          );
+          for (const supplier of supplierCurrencyRepairs.rows) {
+            fixed.push(
+              `Set supplier ${supplier.name} default currency to ${supplier.default_currency_code} from active Master Data currency.`,
+            );
+          }
+        } else {
+          fixed.push("No active Master Data currency found; supplier default currencies need manual setup.");
+        }
+
+        const shipmentCarrierRepairs = await pool.query<{ id: number; po_number: string; carrier_id: number }>(
+          `
+          UPDATE shipments AS shipment
+          SET carrier_id = supplier.default_carrier_id,
+              carrier = COALESCE(carrier.name, shipment.carrier),
+              updated_at = now()
+          FROM purchase_orders AS po
+          INNER JOIN suppliers AS supplier
+            ON supplier.id = po.supplier_id
+           AND supplier.organization_id = po.organization_id
+          LEFT JOIN carriers AS carrier
+            ON carrier.id = supplier.default_carrier_id
+          WHERE po.organization_id = $1
+            AND po.order_number = shipment.po_number
+            AND COALESCE(shipment.direction, 'inbound') = 'inbound'
+            AND shipment.carrier_id IS NULL
+            AND supplier.default_carrier_id IS NOT NULL
+            AND lower(COALESCE(shipment.status, '')) NOT IN ('delivered', 'received', 'cancelled', 'canceled', 'closed')
+          RETURNING shipment.id, shipment.po_number, shipment.carrier_id
+          `,
+          [orgId],
+        );
+        for (const shipment of shipmentCarrierRepairs.rows) {
+          fixed.push(
+            `Set inbound shipment ${shipment.id} for PO ${shipment.po_number} to supplier default carrier #${shipment.carrier_id}.`,
+          );
+        }
         result.success = fixed.length > 0;
         result.fixed = fixed;
+        if (!result.success) {
+          result.message =
+            "No automatic data repair was available. Use Master Data to add currencies/carriers, then rerun diagnostics.";
+        }
         return res.json(result);
       }
 
