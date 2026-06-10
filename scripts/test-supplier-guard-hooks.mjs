@@ -46,8 +46,23 @@ assert.match(
 );
 assert.match(
   apService,
+  /const supplierDefaultCurrencyCode =[\s\S]*contractCurrencyCode \?\? supplierCommercialDefaults\?\.supplierCurrencyCode \?\? null;/,
+  "AP flows should prefer contract currency before supplier currency when defaulting",
+);
+assert.match(
+  apService,
+  /const currencyCode = explicitCurrency \|\| poDefaults\?\.currencyCode \|\| supplierDefaultCurrencyCode;/,
+  "AP invoice creation should fall back to centralized supplier or contract currency defaults",
+);
+assert.match(
+  apService,
   /resolveSupplierCommercialDefaults\(input\.supplierId,\s*\{[\s\S]*transactionLabel:\s*"new AP captures"/,
   "AP capture creation should reuse the centralized supplier commercial default resolver",
+);
+assert.match(
+  apService,
+  /currencyCode: input\.currencyCode \?\? supplierDefaultCurrencyCode,/,
+  "AP capture creation should fall back to centralized supplier or contract currency defaults",
 );
 assert.match(
   apRoutes,

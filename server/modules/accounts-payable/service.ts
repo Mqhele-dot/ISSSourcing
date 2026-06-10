@@ -321,11 +321,13 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
   const explicitPaymentTermsId = invoiceData.paymentTermsId == null ? null : toNumber(invoiceData.paymentTermsId, 0);
   const paymentTermsId =
     explicitPaymentTermsId || poDefaults?.paymentTermsId || supplierCommercialDefaults?.paymentTermsId || null;
+  const supplierDefaultCurrencyCode =
+    supplierCommercialDefaults?.contractCurrencyCode ?? supplierCommercialDefaults?.supplierCurrencyCode ?? null;
   const explicitCurrency =
     typeof invoiceData.currencyCode === "string" && invoiceData.currencyCode.trim()
       ? invoiceData.currencyCode.trim().toUpperCase()
       : null;
-  const currencyCode = explicitCurrency || poDefaults?.currencyCode || supplierCommercialDefaults?.supplierCurrencyCode || null;
+  const currencyCode = explicitCurrency || poDefaults?.currencyCode || supplierDefaultCurrencyCode;
   const issueDate = toDateOrUndefined(invoiceData.issueDate) ?? new Date();
   const paymentTermNetDays = await getPaymentTermNetDays(paymentTermsId);
   const dueDate =
@@ -699,6 +701,8 @@ export async function createCapture(input: InsertApInvoiceCapture, userId: numbe
   const supplierCommercialDefaults = await resolveSupplierCommercialDefaults(input.supplierId, {
     transactionLabel: "new AP captures",
   });
+  const supplierDefaultCurrencyCode =
+    supplierCommercialDefaults?.contractCurrencyCode ?? supplierCommercialDefaults?.supplierCurrencyCode ?? null;
   const issueDate = input.issueDate ?? null;
   const paymentTermNetDays = await getPaymentTermNetDays(supplierCommercialDefaults?.paymentTermsId ?? null);
   const defaultDueDate = issueDate && paymentTermNetDays != null ? addDays(new Date(issueDate), paymentTermNetDays) : null;
@@ -796,7 +800,7 @@ export async function createCapture(input: InsertApInvoiceCapture, userId: numbe
       invoiceNumber: input.invoiceNumber ?? null,
       issueDate,
       dueDate: input.dueDate ?? defaultDueDate,
-      currencyCode: input.currencyCode ?? supplierCommercialDefaults?.supplierCurrencyCode ?? null,
+      currencyCode: input.currencyCode ?? supplierDefaultCurrencyCode,
       subtotalAmount: toNumber(input.subtotalAmount, 0),
       taxAmount: toNumber(input.taxAmount, 0),
       totalAmount: toNumber(input.totalAmount, 0),
