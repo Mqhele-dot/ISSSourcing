@@ -39,17 +39,17 @@ assert.match(
 
 assert.match(
   operationsCore,
-  /assertSupplierTransactionAllowed\([\s\S]*"new inbound shipments"/,
-  "shipment creation should block inactive or blocked suppliers",
+  /resolveSupplierCommercialDefaults\(poDefaults\.supplierId,\s*\{[\s\S]*transactionLabel:\s*"new inbound shipments"/,
+  "shipment creation should resolve inbound shipment supplier defaults through the shared procurement module",
 );
 assert.match(
   operationsCore,
-  /carrierId:\s*requestedCarrierId \?\? supplierDefaults\?\.carrierId \?\? null/,
+  /carrierId:\s*requestedCarrierId \?\? supplierDefaults\.carrierId \?\? null/,
   "shipment creation should default carrier from supplier defaults",
 );
 assert.match(
   operationsCore,
-  /supplierDefaults\?\.transportMode \?\? null/,
+  /supplierDefaults\.transportMode \?\? null/,
   "shipment creation should default transport mode from supplier defaults",
 );
 

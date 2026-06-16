@@ -117,6 +117,9 @@ async function activeIncotermId(id: number | null): Promise<number | null> {
 
 export type SupplierCommercialDefaults = {
   supplierName: string;
+  supplierStatus: string | null;
+  supplierComplianceStatus: string | null;
+  supplierBlockedReason: string | null;
   departmentId: number | null;
   supplierCurrencyCode: string | null;
   contractCurrencyCode: string | null;
@@ -126,6 +129,8 @@ export type SupplierCommercialDefaults = {
   taxCodeId: number | null;
   incotermId: number | null;
   contractId: number | null;
+  carrierId: number | null;
+  transportMode: string | null;
 };
 
 async function resolveSupplierCommercialDefaultsForOrg(
@@ -143,6 +148,8 @@ async function resolveSupplierCommercialDefaultsForOrg(
       blockedReason: suppliers.blockedReason,
       defaultDepartmentId: suppliers.defaultDepartmentId,
       defaultContractId: suppliers.defaultContractId,
+      defaultCarrierId: suppliers.defaultCarrierId,
+      defaultTransportMode: suppliers.defaultTransportMode,
       paymentTermsId: suppliers.paymentTermsId,
       defaultCurrencyCode: suppliers.defaultCurrencyCode,
       allowCurrencyOverride: suppliers.allowCurrencyOverride,
@@ -208,6 +215,9 @@ async function resolveSupplierCommercialDefaultsForOrg(
 
   return {
     supplierName: supplier.name,
+    supplierStatus: supplier.status,
+    supplierComplianceStatus: supplier.complianceStatus,
+    supplierBlockedReason: supplier.blockedReason ?? null,
     departmentId: numberOrNull(supplier.defaultDepartmentId),
     supplierCurrencyCode: await activeCurrencyCode(supplier.defaultCurrencyCode),
     contractCurrencyCode: await activeCurrencyCode(contract?.currency),
@@ -217,6 +227,9 @@ async function resolveSupplierCommercialDefaultsForOrg(
     taxCodeId: await activeTaxCodeId(contract?.defaultTaxCodeId ?? supplier.taxCodeId ?? null),
     incotermId: await activeIncotermId(contract?.incotermId ?? supplier.incotermId ?? null),
     contractId: contract?.id ?? null,
+    carrierId: numberOrNull(supplier.defaultCarrierId),
+    transportMode:
+      typeof supplier.defaultTransportMode === "string" ? supplier.defaultTransportMode.trim() || null : null,
   };
 }
 

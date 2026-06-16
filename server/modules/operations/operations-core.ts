@@ -17,7 +17,7 @@ import {
   normalizeShipmentFilters,
   normalizeShipmentSourceType,
 } from "@shared/logistics-shipment-filters";
-import { assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
+import { resolveSupplierCommercialDefaults } from "../procurement/supplier-defaults";
 
 type InventoryFilterInput = {
   location?: string;
@@ -975,33 +975,18 @@ async function resolveSupplierDefaultsForPo(
   purchaseOrderId: number,
   organizationId: number,
 ): Promise<{
-  supplierName: string | null;
-  supplierStatus: string | null;
-  supplierComplianceStatus: string | null;
-  supplierBlockedReason: string | null;
-  carrierId: number | null;
-  transportMode: string | null;
+  supplierId: number | null;
+  contractId: number | null;
 }> {
   const r = await pool.query<{
-    name: string | null;
-    status: string | null;
-    compliance_status: string | null;
-    blocked_reason: string | null;
-    default_carrier_id: number | null;
-    default_transport_mode: string | null;
+    supplier_id: number | null;
+    contract_id: number | null;
   }>(
     `
     SELECT
-      s.name,
-      s.status,
-      s.compliance_status,
-      s.blocked_reason,
-      s.default_carrier_id,
-      s.default_transport_mode
+      po.supplier_id,
+      po.contract_id
     FROM purchase_orders po
-    JOIN suppliers s
-      ON s.id = po.supplier_id
-     AND s.organization_id = po.organization_id
     WHERE po.id = $1
       AND po.organization_id = $2
     LIMIT 1
@@ -1009,12 +994,8 @@ async function resolveSupplierDefaultsForPo(
     [purchaseOrderId, organizationId],
   );
   return {
-    supplierName: r.rows[0]?.name ?? null,
-    supplierStatus: r.rows[0]?.status ?? null,
-    supplierComplianceStatus: r.rows[0]?.compliance_status ?? null,
-    supplierBlockedReason: r.rows[0]?.blocked_reason ?? null,
-    carrierId: r.rows[0]?.default_carrier_id ?? null,
-    transportMode: r.rows[0]?.default_transport_mode ?? null,
+    supplierId: r.rows[0]?.supplier_id ?? null,
+    contractId: r.rows[0]?.contract_id ?? null,
   };
 }
 
@@ -1089,26 +1070,24 @@ export async function createOperationalShipment(input: {
   const requestedCarrierId =
     input.carrierId != null && Number.isFinite(Number(input.carrierId)) ? Number(input.carrierId) : null;
   const carrierText = typeof input.carrier === "string" && input.carrier.trim() ? input.carrier.trim() : null;
-  const supplierDefaults = await resolveSupplierDefaultsForPo(order.id, orgId);
-  assertSupplierTransactionAllowed(
-    {
-      supplierName: supplierDefaults.supplierName,
-      status: supplierDefaults.supplierStatus,
-      complianceStatus: supplierDefaults.supplierComplianceStatus,
-      blockedReason: supplierDefaults.supplierBlockedReason,
-    },
-    "new inbound shipments",
-  );
+  const poDefaults = await resolveSupplierDefaultsForPo(order.id, orgId);
+  const supplierDefaults = await resolveSupplierCommercialDefaults(poDefaults.supplierId, {
+    contractId: poDefaults.contractId,
+    transactionLabel: "new inbound shipments",
+  });
+  if (!supplierDefaults) {
+    throw new Error("supplier_not_found_for_shipment");
+  }
   const { carrierId: cid, carrierSnapshot } = await resolveCarrierSnapshotForOrg({
     organizationId: orgId,
-    carrierId: requestedCarrierId ?? supplierDefaults?.carrierId ?? null,
+    carrierId: requestedCarrierId ?? supplierDefaults.carrierId ?? null,
     carrierTextFallback: carrierText,
   });
 
   const transportMode =
     typeof input.transportMode === "string" && input.transportMode.trim()
       ? input.transportMode.trim()
-      : supplierDefaults?.transportMode ?? null;
+      : supplierDefaults.transportMode ?? null;
   const freightCost =
     input.freightCost != null && Number.isFinite(Number(input.freightCost)) ? Number(input.freightCost) : null;
   if (freightCost != null && freightCost < 0) {
