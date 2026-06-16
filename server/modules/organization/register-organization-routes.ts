@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { organizationSettings, organizations } from "@shared/schema";
 import { getActiveOrganizationId } from "../../organization-context";
+import { getOrgSubscriptionForActiveOrg } from "../../org-features";
 
 type Auth = {
   ensureAuthenticated: RequestHandler;
@@ -19,10 +20,12 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
         .from(organizationSettings)
         .where(eq(organizationSettings.organizationId, orgId))
         .limit(1);
+      const subscription = await getOrgSubscriptionForActiveOrg();
       res.json({
         organizationId: orgId,
         organization: org ?? null,
         settings: settings ?? null,
+        subscription,
       });
     } catch (e) {
       console.error("GET /api/organization/settings:", e);

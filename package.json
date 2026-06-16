@@ -64,6 +64,7 @@
     "test:deeplinks": "tsx scripts/test-kpi-deeplinks.ts",
     "test:org-isolation": "tsx scripts/test-org-isolation.ts",
     "test:org-api": "tsx scripts/test-org-api-isolation.ts",
+    "test:org-feature-plans": "node --experimental-strip-types scripts/test-org-feature-plans.ts",
     "test:inventory-port": "tsx scripts/test-inventory-port.ts",
     "test:csv": "tsx server/services/document-generator-service.test.ts",
     "test:e2e": "node scripts/run-playwright-e2e.mjs",
