@@ -22,6 +22,7 @@
     "test:master-data-integration": "tsx scripts/test-master-data-integration.ts",
     "test:ap-workflow": "tsx scripts/test-ap-workflow.ts",
     "test:ap-controls": "tsx scripts/test-ap-controls.ts",
+    "test:ap-invoice-update-hardening": "node scripts/test-ap-invoice-update-hardening.mjs",
     "test:supplier-portal": "tsx scripts/test-supplier-portal.ts",
     "test:exports": "tsx scripts/test-exports.ts",
     "test:smoke": "tsx scripts/test-smoke.ts",

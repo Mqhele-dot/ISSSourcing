@@ -302,6 +302,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, invoice);
     } catch (error) {
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Failed to update invoice");
+      }
       console.error("Error updating AP invoice:", error);
       return sendError(res, 500, "UPDATE_INVOICE_FAILED", error instanceof Error ? error.message : "Failed to update invoice");
     }
@@ -634,6 +638,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!updated) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, updated);
     } catch (error) {
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Failed to update invoice");
+      }
       return sendError(res, 500, "UPDATE_INVOICE_FAILED", error instanceof Error ? error.message : "Failed to update invoice");
     }
   });

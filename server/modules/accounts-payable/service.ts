@@ -397,10 +397,137 @@ export async function updateInvoiceRecord(
   const existing = await storage.getInvoice(invoiceId);
   if (!existing) return undefined;
 
-  const nextIssueDate = toDateOrUndefined(patch.issueDate);
-  const nextDueDate = toDateOrUndefined(patch.dueDate);
+  const nextStatus = String(patch.status ?? existing.status ?? "DRAFT") as NonNullable<InsertInvoice["status"]>;
+  const allowsCommercialRelink = ["DRAFT", "PENDING_APPROVAL"].includes(String(existing.status ?? "").toUpperCase());
+  const supplierIdPatched = Object.prototype.hasOwnProperty.call(patch, "supplierId");
+  const purchaseOrderIdPatched = Object.prototype.hasOwnProperty.call(patch, "purchaseOrderId");
+  const commercialRelinkRequested = supplierIdPatched || purchaseOrderIdPatched;
+
+  if (commercialRelinkRequested && !allowsCommercialRelink) {
+    throw Object.assign(
+      new Error("Supplier and purchase-order links can only be changed while the invoice is in draft or pending approval."),
+      { code: "AP_INVOICE_COMMERCIAL_RELINK_LOCKED", status: 409 },
+    );
+  }
+
+  const nextSupplierId = supplierIdPatched ? toNumber(patch.supplierId, 0) : toNumber(existing.supplierId, 0);
+  if (!nextSupplierId) {
+    throw Object.assign(new Error("Supplier is required"), { code: "AP_INVOICE_SUPPLIER_REQUIRED", status: 400 });
+  }
+
+  const supplier = await storage.getSupplier(nextSupplierId);
+  if (!supplier) {
+    throw Object.assign(new Error("Supplier does not exist"), { code: "AP_INVOICE_SUPPLIER_NOT_FOUND", status: 400 });
+  }
+
+  const supplierCommercialDefaults = await resolveSupplierCommercialDefaults(nextSupplierId, {
+    transactionLabel: "updated AP invoices",
+  });
+
+  const nextPurchaseOrderId =
+    purchaseOrderIdPatched
+      ? patch.purchaseOrderId == null
+        ? null
+        : toNumber(patch.purchaseOrderId, 0)
+      : existing.purchaseOrderId == null
+        ? null
+        : toNumber(existing.purchaseOrderId, 0);
+  let purchaseOrder: Awaited<ReturnType<typeof storage.getPurchaseOrder>> | null = null;
+  if (nextPurchaseOrderId) {
+    purchaseOrder = (await storage.getPurchaseOrder(nextPurchaseOrderId)) ?? null;
+    if (!purchaseOrder) {
+      throw Object.assign(new Error("Purchase order does not exist"), {
+        code: "AP_INVOICE_PURCHASE_ORDER_NOT_FOUND",
+        status: 400,
+      });
+    }
+    if (Number(purchaseOrder.supplierId) !== nextSupplierId) {
+      throw Object.assign(new Error("Invoice supplier must match purchase order supplier"), {
+        code: "AP_INVOICE_SUPPLIER_PO_MISMATCH",
+        status: 409,
+      });
+    }
+  }
+
+  const nextInvoiceNumber =
+    typeof patch.invoiceNumber === "string"
+      ? patch.invoiceNumber.trim()
+      : typeof existing.invoiceNumber === "string"
+        ? existing.invoiceNumber.trim()
+        : "";
+  if (!nextInvoiceNumber) {
+    throw Object.assign(new Error("Invoice number is required"), {
+      code: "AP_INVOICE_NUMBER_REQUIRED",
+      status: 400,
+    });
+  }
+
+  if (
+    nextSupplierId !== Number(existing.supplierId ?? 0) ||
+    nextInvoiceNumber !== String(existing.invoiceNumber ?? "").trim()
+  ) {
+    if (
+      await invoiceNumberExistsForSupplier({
+        orgId: getActiveOrganizationId(),
+        supplierId: nextSupplierId,
+        invoiceNumber: nextInvoiceNumber,
+        excludeInvoiceId: invoiceId,
+      })
+    ) {
+      throw Object.assign(new Error("Duplicate supplier invoice number detected for this supplier."), {
+        code: "AP_INVOICE_DUPLICATE_SUPPLIER_NUMBER",
+        status: 409,
+      });
+    }
+  }
+
+  const issueDateProvided = Object.prototype.hasOwnProperty.call(patch, "issueDate");
+  const dueDateProvided = Object.prototype.hasOwnProperty.call(patch, "dueDate");
+  const nextIssueDate = issueDateProvided ? toDateOrUndefined(patch.issueDate) : toDateOrUndefined(existing.issueDate);
+  const paymentTermsExplicit =
+    Object.prototype.hasOwnProperty.call(patch, "paymentTermsId")
+      ? patch.paymentTermsId == null
+        ? null
+        : toNumber(patch.paymentTermsId, 0)
+      : undefined;
+  const explicitCurrency =
+    Object.prototype.hasOwnProperty.call(patch, "currencyCode")
+      ? typeof patch.currencyCode === "string" && patch.currencyCode.trim()
+        ? patch.currencyCode.trim().toUpperCase()
+        : null
+      : undefined;
+  const poDefaults = purchaseOrder as { paymentTermsId?: number | null; currencyCode?: string | null } | null;
+  const supplierDefaultCurrencyCode =
+    supplierCommercialDefaults?.contractCurrencyCode ?? supplierCommercialDefaults?.supplierCurrencyCode ?? null;
+  const shouldRedefaultCommercials =
+    allowsCommercialRelink &&
+    (commercialRelinkRequested || paymentTermsExplicit !== undefined || explicitCurrency !== undefined);
+  const paymentTermsId =
+    paymentTermsExplicit !== undefined
+      ? paymentTermsExplicit
+      : shouldRedefaultCommercials
+        ? poDefaults?.paymentTermsId || supplierCommercialDefaults?.paymentTermsId || existing.paymentTermsId || null
+        : existing.paymentTermsId || null;
+  const currencyCode =
+    explicitCurrency !== undefined
+      ? explicitCurrency
+      : shouldRedefaultCommercials
+        ? poDefaults?.currencyCode || supplierDefaultCurrencyCode || existing.currencyCode || null
+        : existing.currencyCode || null;
+  const paymentTermNetDays = await getPaymentTermNetDays(paymentTermsId);
+  const nextDueDate = dueDateProvided
+    ? toDateOrUndefined(patch.dueDate)
+    : shouldRedefaultCommercials || issueDateProvided
+      ? addDays(nextIssueDate ?? new Date(), paymentTermNetDays ?? 30)
+      : toDateOrUndefined(existing.dueDate);
   const updated = await storage.updateInvoice(invoiceId, {
     ...patch,
+    supplierId: nextSupplierId,
+    purchaseOrderId: nextPurchaseOrderId,
+    invoiceNumber: nextInvoiceNumber,
+    status: nextStatus,
+    paymentTermsId,
+    currencyCode,
     issueDate: nextIssueDate ?? undefined,
     dueDate: nextDueDate ?? undefined,
   });
