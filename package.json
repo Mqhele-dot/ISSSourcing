@@ -212,6 +212,7 @@
     "tailwind-merge": "^2.5.4",
     "tailwindcss-animate": "^1.0.7",
     "tesseract.js": "^6.0.0",
+    "tsx": "^4.19.1",
     "uuid": "^11.1.0",
     "vaul": "^1.1.0",
     "wait-on": "^8.0.3",
@@ -247,7 +248,6 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
-    "tsx": "^4.19.1",
     "typescript": "5.6.3",
     "vite": "^5.4.14"
   }
