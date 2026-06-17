@@ -613,6 +613,7 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS contract_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS incoterm_id INTEGER;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS currency_code TEXT NOT NULL DEFAULT 'USD';
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS tax_code_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS project_id INTEGER;
       ALTER TABLE supplier_contracts ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;
