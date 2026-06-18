@@ -1,6 +1,9 @@
 import { createServer } from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { parse } from 'url';
+import type { RawData } from 'ws';
+
+type StreamingRequestInit = RequestInit & { duplex?: 'half' };
 
 // Simple proxy to forward HTTP requests from port 5000 to port 3000
 const httpProxy = createServer(async (req, res) => {
@@ -8,12 +11,16 @@ const httpProxy = createServer(async (req, res) => {
   console.log(`Forwarding request from port 5000 to ${targetUrl}`);
   
   try {
-    const targetReq = await fetch(targetUrl, {
-      method: req.method,
+    const method = req.method?.toUpperCase() ?? 'GET';
+    const canHaveBody = !['GET', 'HEAD'].includes(method);
+    const requestInit: StreamingRequestInit = {
+      method,
       headers: req.headers as HeadersInit,
-      body: undefined,
+      body: canHaveBody ? (req as unknown as BodyInit) : undefined,
+      duplex: canHaveBody ? 'half' : undefined,
       redirect: 'manual',
-    });
+    };
+    const targetReq = await fetch(targetUrl, requestInit);
     
     // Copy status and headers
     res.statusCode = targetReq.status;
@@ -45,14 +52,14 @@ httpProxy.on('upgrade', (request, socket, head) => {
       const targetWs = new WebSocket('ws://localhost:3000/ws');
       
       // Forward messages from client to target
-      ws.on('message', (message) => {
+      ws.on('message', (message: RawData) => {
         if (targetWs.readyState === WebSocket.OPEN) {
           targetWs.send(typeof message === 'string' ? message : Buffer.isBuffer(message) ? message : String(message));
         }
       });
       
       // Forward messages from target to client
-      targetWs.on('message', (message) => {
+      targetWs.on('message', (message: RawData) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(typeof message === 'string' ? message : Buffer.isBuffer(message) ? message : String(message));
         }
@@ -72,11 +79,11 @@ httpProxy.on('upgrade', (request, socket, head) => {
       });
       
       // Handle errors
-      ws.on('error', (error) => {
+      ws.on('error', (error: Error) => {
         console.error('WebSocket proxy client error:', error);
       });
       
-      targetWs.on('error', (error) => {
+      targetWs.on('error', (error: Error) => {
         console.error('WebSocket proxy target error:', error);
       });
     });

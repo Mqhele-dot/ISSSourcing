@@ -88,11 +88,13 @@ export function respondErr(
   return res.status(status).json(payload);
 }
 
+export type ApiRouteHandlerResult = void | Response | undefined | Promise<void | Response | undefined>;
+
 export type ApiRouteHandler = (
   req: Request,
   res: Response,
   next: NextFunction,
-) => Promise<void | Response> | void;
+) => ApiRouteHandlerResult;
 
 export function withApiContract(handler: ApiRouteHandler): ApiRouteHandler {
   return async (req, res, next) => {

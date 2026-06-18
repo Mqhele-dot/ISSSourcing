@@ -8,6 +8,7 @@ import { promisify } from 'util';
 // Promisify zlib methods
 const gzipAsync = promisify(zlib.gzip);
 const gunzipAsync = promisify(zlib.gunzip);
+const DEFAULT_UNITS = ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"] as const;
 
 // Types of real-time messages
 export enum SyncMessageType {
@@ -46,6 +47,10 @@ interface SyncClient {
     appVersion?: string;
     networkType?: string;
   };
+}
+
+function normalizeUnits(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 // Global WebSocket server instance
@@ -331,13 +336,13 @@ async function handleSyncRequest(client: SyncClient, payload: any): Promise<void
           // Get units from app settings instead of a dedicated units table
           try {
             const settings = await storage.getSettings();
-            data = Array.isArray(settings?.availableUnits) ? settings.availableUnits : [];
+            data = normalizeUnits(settings?.availableUnits);
             if (data.length === 0) {
-              data = ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"];
+              data = [...DEFAULT_UNITS];
             }
           } catch (error) {
             console.error("Error getting units from settings:", error);
-            data = ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"];
+            data = [...DEFAULT_UNITS];
           }
           break;
         default:
@@ -505,7 +510,7 @@ function broadcastDataChange(originClientId: string, entity: string, action: str
   syncClients.forEach((client, clientId) => {
     // Don't send back to the originator
     if (clientId !== originClientId && client.socket.readyState === WebSocket.OPEN) {
-      sendSyncMessage(client.socket, message, client);
+      void sendSyncMessage(client.socket, message, client);
     }
   });
 }
