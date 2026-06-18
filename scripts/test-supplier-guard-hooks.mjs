@@ -69,5 +69,10 @@ assert.match(
   /if \(e\?\.code && e\?\.status\) \{[\s\S]*sendError\(res, e\.status, e\.code/,
   "AP routes should surface supplier guard error codes to clients",
 );
+assert.match(
+  apRoutes,
+  /app\.post\("\/api\/ap\/captures\/:id\/promote"[\s\S]*if \(e\?\.code && e\?\.status\) \{[\s\S]*sendError\(res, e\.status, e\.code/,
+  "AP capture promotion should preserve structured supplier guard responses",
+);
 
 console.log("test-supplier-guard-hooks: all checks passed.");

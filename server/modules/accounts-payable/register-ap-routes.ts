@@ -206,6 +206,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!promoted) return sendError(res, 404, "AP_CAPTURE_NOT_FOUND", "AP capture not found");
       return sendOk(res, promoted);
     } catch (error) {
+      const e = error as { code?: string; status?: number; message?: string };
+      if (e?.code && e?.status) {
+        return sendError(res, e.status, e.code, e.message || "Failed to promote AP capture");
+      }
       console.error("Error promoting AP capture:", error);
       return sendError(res, 500, "AP_CAPTURE_PROMOTE_FAILED", error instanceof Error ? error.message : "Failed to promote AP capture");
     }

@@ -118,6 +118,36 @@ async function main() {
   });
   if (!expectStatus("POST /api/purchase-requisitions/:id/approve", 200, approveReqRes.status)) failures++;
 
+  const captureBeforeBlockRes = await apiJsonRequest("/ap/captures", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      supplierId,
+      invoiceNumber: `CAP-PROMOTE-GUARD-${Date.now().toString().slice(-6)}`,
+      issueDate: new Date().toISOString(),
+      totalAmount: itemPrice,
+      currencyCode,
+      source: "manual_upload",
+      status: "READY_TO_PROMOTE",
+      extractedLines: [
+        {
+          itemId,
+          quantity: 1,
+          unitPrice: itemPrice,
+          totalPrice: itemPrice,
+        },
+      ],
+    },
+  });
+  if (!expectStatus("POST /api/ap/captures (active supplier)", 201, captureBeforeBlockRes.status)) failures++;
+  const captureBeforeBlock = asRecord(unwrapData(captureBeforeBlockRes.json));
+  const captureBeforeBlockId = Number(captureBeforeBlock.id ?? 0);
+  if (!captureBeforeBlockId) {
+    console.log("  X Capture creation did not return id before supplier block.");
+    exitTest(1);
+    return;
+  }
+
   const blockSupplierRes = await apiJsonRequest(`/suppliers/${supplierId}`, {
     method: "PATCH",
     cookie: adminCookie,
@@ -211,6 +241,15 @@ async function main() {
     },
   });
   if (!expectStatus("POST /api/ap/captures blocks inactive supplier", 409, blockedCaptureRes.status)) failures++;
+
+  const blockedCapturePromoteRes = await apiJsonRequest(`/ap/captures/${captureBeforeBlockId}/promote`, {
+    method: "POST",
+    cookie: adminCookie,
+    body: {},
+  });
+  if (!expectStatus("POST /api/ap/captures/:id/promote blocks inactive supplier", 409, blockedCapturePromoteRes.status)) {
+    failures++;
+  }
 
   console.log("\nSupplier transaction guard result: %d failure(s)", failures);
   exitTest(failures > 0 ? 1 : 0);
