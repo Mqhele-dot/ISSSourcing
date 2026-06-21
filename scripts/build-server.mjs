@@ -1,14 +1,15 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { build, formatMessages } from "esbuild";
 import ts from "typescript";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
 const distDir = path.resolve(projectRoot, "dist");
 const runtimeDir = path.resolve(distDir, "runtime");
-const serverEntryPoint = path.resolve(projectRoot, "server", "index.ts");
+const MIRRORABLE_BUILD_INPUTS = ["package.json", "tsconfig.json", "server", "shared"];
 
 const isSandboxPathFailure = (error) =>
   error instanceof Error &&
@@ -53,6 +54,15 @@ async function fileExists(targetPath) {
   try {
     const stat = await fs.stat(targetPath);
     return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
   } catch {
     return false;
   }
@@ -200,23 +210,99 @@ async function writeRuntimeFallback() {
   );
 }
 
-try {
-  await build({
-    absWorkingDir: projectRoot,
-    entryPoints: [serverEntryPoint],
+function createBuildOptions(rootDir, outputDir) {
+  return {
+    absWorkingDir: rootDir,
+    entryPoints: ["./server/index.ts"],
     platform: "node",
     packages: "external",
     bundle: true,
     format: "esm",
-    outdir: distDir,
-  });
+    outdir: outputDir,
+    logLevel: "silent",
+  };
+}
+
+async function runEsbuild(rootDir, outputDir) {
+  return build(createBuildOptions(rootDir, outputDir));
+}
+
+async function reportBuildFailure(error) {
+  if (error && typeof error === "object" && Array.isArray(error.errors)) {
+    const messages = await formatMessages(error.errors, {
+      kind: "error",
+      color: true,
+    });
+    for (const message of messages) {
+      console.error(message);
+    }
+    return;
+  }
+
+  throw error;
+}
+
+async function createMirroredBuildWorkspace() {
+  const mirrorRoot = await fs.mkdtemp(path.join(os.tmpdir(), "invtrack-build-"));
+
+  for (const entry of MIRRORABLE_BUILD_INPUTS) {
+    const sourcePath = path.resolve(projectRoot, entry);
+    if (!(await pathExists(sourcePath))) {
+      continue;
+    }
+    const targetPath = path.resolve(mirrorRoot, entry);
+    await fs.cp(sourcePath, targetPath, { recursive: true });
+  }
+
+  return mirrorRoot;
+}
+
+async function copyBuildOutput(sourceDir, targetDir) {
+  await fs.mkdir(targetDir, { recursive: true });
+  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const targetPath = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      await fs.cp(sourcePath, targetPath, { recursive: true, force: true });
+    } else {
+      await fs.copyFile(sourcePath, targetPath);
+    }
+  }
+}
+
+async function buildServerBundleWithMirrorRetry() {
+  try {
+    await runEsbuild(projectRoot, distDir);
+    return;
+  } catch (error) {
+    if (!isSandboxPathFailure(error)) {
+      await reportBuildFailure(error);
+      throw error;
+    }
+  }
+
+  const mirrorRoot = await createMirroredBuildWorkspace();
+  const mirrorDistDir = path.resolve(mirrorRoot, "dist");
+
+  try {
+    await runEsbuild(mirrorRoot, mirrorDistDir);
+    await copyBuildOutput(mirrorDistDir, distDir);
+  } finally {
+    await fs.rm(mirrorRoot, { recursive: true, force: true });
+  }
+}
+
+try {
+  await buildServerBundleWithMirrorRetry();
 } catch (error) {
   if (!isSandboxPathFailure(error)) {
     throw error;
   }
 
   console.warn(
-    "[build-server] esbuild could not traverse the current Windows workspace path; writing a transpiled runtime fallback instead.",
+    "[build-server] esbuild could not traverse the current Windows workspace path or mirrored workspace; writing a transpiled runtime fallback instead.",
   );
   await writeRuntimeFallback();
 }

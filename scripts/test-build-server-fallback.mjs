@@ -6,6 +6,11 @@ const buildServerScript = readFileSync(new URL("../scripts/build-server.mjs", im
 
 assert.match(
   buildServerScript,
+  /createMirroredBuildWorkspace/,
+  "build-server should retry bundling from a mirrored temp workspace before falling back",
+);
+assert.match(
+  buildServerScript,
   /import ts from "typescript";/,
   "build-server fallback should transpile TypeScript instead of depending on tsx runtime import",
 );
