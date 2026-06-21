@@ -82,6 +82,12 @@ function toNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizeCurrencyCode(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const code = value.trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(code) ? code : null;
+}
+
 function clampPct(value: unknown): number {
   const parsed = toNumber(value, 0);
   return parsed < 0 ? 0 : parsed;
@@ -830,6 +836,7 @@ export async function createCapture(input: InsertApInvoiceCapture, userId: numbe
   });
   const supplierDefaultCurrencyCode =
     supplierCommercialDefaults?.contractCurrencyCode ?? supplierCommercialDefaults?.supplierCurrencyCode ?? null;
+  const captureCurrencyCode = normalizeCurrencyCode(input.currencyCode) ?? supplierDefaultCurrencyCode;
   const issueDate = input.issueDate ?? null;
   const paymentTermNetDays = await getPaymentTermNetDays(supplierCommercialDefaults?.paymentTermsId ?? null);
   const defaultDueDate = issueDate && paymentTermNetDays != null ? addDays(new Date(issueDate), paymentTermNetDays) : null;
@@ -927,7 +934,7 @@ export async function createCapture(input: InsertApInvoiceCapture, userId: numbe
       invoiceNumber: input.invoiceNumber ?? null,
       issueDate,
       dueDate: input.dueDate ?? defaultDueDate,
-      currencyCode: input.currencyCode ?? supplierDefaultCurrencyCode,
+      currencyCode: captureCurrencyCode,
       subtotalAmount: toNumber(input.subtotalAmount, 0),
       taxAmount: toNumber(input.taxAmount, 0),
       totalAmount: toNumber(input.totalAmount, 0),

@@ -47,6 +47,11 @@ function truncatedJsonSnippet(value: unknown, max = 480): string {
   }
 }
 
+function dateOnly(value: unknown): string {
+  const parsed = value instanceof Date ? value : new Date(String(value ?? ""));
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
+
 function expectStatus(name: string, expected: number, actual: number): boolean {
   if (actual === expected) {
     console.log("  ✓ %s -> %d", name, actual);
@@ -94,8 +99,10 @@ async function main() {
     typeof currencies[0]?.code === "string" && /^[A-Za-z]{3}$/.test(currencies[0].code)
       ? currencies[0].code.toUpperCase()
       : "USD";
-  const paymentTerms = asArray<{ id: number }>(unwrapData<unknown>(payRes.json));
-  const paymentTermsId = Number(paymentTerms[0]?.id ?? 0) || undefined;
+  const paymentTerms = asArray<{ id: number; netDays?: number | null }>(unwrapData<unknown>(payRes.json));
+  const selectedPaymentTerms = paymentTerms[0];
+  const paymentTermsId = Number(selectedPaymentTerms?.id ?? 0) || undefined;
+  const paymentTermsNetDays = Number(selectedPaymentTerms?.netDays ?? 30) || 30;
   const taxCodes = asArray<{ id: number; active?: boolean | null }>(unwrapData<unknown>(taxRes.json));
   const defaultTaxCodeId = Number(taxCodes.find((taxCode) => taxCode.active !== false)?.id ?? 0) || undefined;
   const incoterms = asArray<{ id: number }>(unwrapData<unknown>(incotermsRes.json));
@@ -260,6 +267,127 @@ async function main() {
     );
   } else if (defaultDepartmentId) {
     console.log("  ok Direct PO department default -> %d", defaultDepartmentId);
+  }
+
+  const apInvoiceIssueDate = new Date().toISOString();
+  const apInvoiceRes = await apiJsonRequest("/ap/invoices", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      supplierId,
+      issueDate: apInvoiceIssueDate,
+      total: Number(firstItem.price ?? 10),
+      items: [
+        {
+          itemId: itemIdForWrites,
+          quantity: 1,
+          unitPrice: Number(firstItem.price ?? 10),
+        },
+      ],
+    },
+  });
+  if (!expectStatus("POST /api/ap/invoices (supplier defaults)", 201, apInvoiceRes.status)) failures++;
+  const apInvoice = asRecord(unwrapData<unknown>(apInvoiceRes.json));
+  if (paymentTermsId && Number(apInvoice.paymentTermsId ?? 0) !== paymentTermsId) {
+    failures++;
+    console.log(
+      "  X AP invoice payment terms default -> expected %d, got %s",
+      paymentTermsId,
+      String(apInvoice.paymentTermsId),
+    );
+  } else if (paymentTermsId) {
+    console.log("  ok AP invoice payment terms default -> %d", paymentTermsId);
+  }
+  if (String(apInvoice.currencyCode ?? "").toUpperCase() !== firstCurrencyCode) {
+    failures++;
+    console.log(
+      "  X AP invoice currency default -> expected %s, got %s",
+      firstCurrencyCode,
+      String(apInvoice.currencyCode),
+    );
+  } else {
+    console.log("  ok AP invoice currency default -> %s", firstCurrencyCode);
+  }
+
+  const captureIssueDate = new Date().toISOString();
+  const expectedCaptureDueDate =
+    paymentTermsId != null
+      ? dateOnly(new Date(new Date(captureIssueDate).getTime() + paymentTermsNetDays * 24 * 60 * 60 * 1000))
+      : "";
+  const captureRes = await apiJsonRequest("/ap/captures", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      supplierId,
+      source: "manual_upload",
+      invoiceNumber: `AP-PROP-${Date.now().toString().slice(-6)}`,
+      issueDate: captureIssueDate,
+      currencyCode: firstCurrencyCode.toLowerCase(),
+      totalAmount: Number(firstItem.price ?? 10),
+      extractedLines: [
+        {
+          itemId: itemIdForWrites,
+          quantity: 1,
+          unitPrice: Number(firstItem.price ?? 10),
+          totalPrice: Number(firstItem.price ?? 10),
+        },
+      ],
+    },
+  });
+  if (!expectStatus("POST /api/ap/captures (normalized supplier defaults)", 201, captureRes.status)) failures++;
+  const capture = asRecord(unwrapData<unknown>(captureRes.json));
+  const captureId = Number(capture.id ?? 0);
+  if (String(capture.currencyCode ?? "").toUpperCase() !== firstCurrencyCode) {
+    failures++;
+    console.log(
+      "  X AP capture currency normalization -> expected %s, got %s",
+      firstCurrencyCode,
+      String(capture.currencyCode),
+    );
+  } else {
+    console.log("  ok AP capture currency normalization -> %s", firstCurrencyCode);
+  }
+  if (paymentTermsId != null && dateOnly(capture.dueDate) !== expectedCaptureDueDate) {
+    failures++;
+    console.log(
+      "  X AP capture due date default -> expected %s, got %s",
+      expectedCaptureDueDate,
+      String(capture.dueDate),
+    );
+  } else if (paymentTermsId != null) {
+    console.log("  ok AP capture due date default -> %s", expectedCaptureDueDate);
+  }
+
+  if (captureId) {
+    const promotedCaptureRes = await apiJsonRequest(`/ap/captures/${captureId}/promote`, {
+      method: "POST",
+      cookie: adminCookie,
+      body: {},
+    });
+    if (!expectStatus("POST /api/ap/captures/:id/promote (preserves defaults)", 200, promotedCaptureRes.status)) {
+      failures++;
+    }
+    const promotedInvoice = asRecord(unwrapData<unknown>(promotedCaptureRes.json));
+    if (paymentTermsId && Number(promotedInvoice.paymentTermsId ?? 0) !== paymentTermsId) {
+      failures++;
+      console.log(
+        "  X Promoted AP invoice payment terms default -> expected %d, got %s",
+        paymentTermsId,
+        String(promotedInvoice.paymentTermsId),
+      );
+    } else if (paymentTermsId) {
+      console.log("  ok Promoted AP invoice payment terms default -> %d", paymentTermsId);
+    }
+    if (String(promotedInvoice.currencyCode ?? "").toUpperCase() !== firstCurrencyCode) {
+      failures++;
+      console.log(
+        "  X Promoted AP invoice currency default -> expected %s, got %s",
+        firstCurrencyCode,
+        String(promotedInvoice.currencyCode),
+      );
+    } else {
+      console.log("  ok Promoted AP invoice currency default -> %s", firstCurrencyCode);
+    }
   }
 
   const alternateCurrency = currencies.find((currency) => currency.code !== firstCurrencyCode)?.code;

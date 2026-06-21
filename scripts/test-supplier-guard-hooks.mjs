@@ -61,8 +61,8 @@ assert.match(
 );
 assert.match(
   apService,
-  /currencyCode: input\.currencyCode \?\? supplierDefaultCurrencyCode,/,
-  "AP capture creation should fall back to centralized supplier or contract currency defaults",
+  /const captureCurrencyCode = normalizeCurrencyCode\(input\.currencyCode\) \?\? supplierDefaultCurrencyCode;[\s\S]*currencyCode: captureCurrencyCode,/,
+  "AP capture creation should normalize explicit currency codes before falling back to centralized supplier or contract currency defaults",
 );
 assert.match(
   apRoutes,
