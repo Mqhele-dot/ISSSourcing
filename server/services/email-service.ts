@@ -1,46 +1,60 @@
 import nodemailer from 'nodemailer';
 
-// Create a test account if no email credentials are provided
 let transporter: nodemailer.Transporter;
+let transporterInitialized = false;
 
 async function initializeTransporter() {
-  // If there are no email settings in the environment, create a test account
+  if (transporterInitialized) return;
+
   if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.log('No email credentials found, creating a test account with Ethereal');
-    
-    const testAccount = await nodemailer.createTestAccount();
-    
-    transporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false,
-      auth: {
+    if (process.env.ALLOW_ETHEREAL_TEST_ACCOUNT === 'true') {
+      console.log('No email credentials found, creating a test account with Ethereal');
+
+      const testAccount = await nodemailer.createTestAccount();
+
+      transporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass
+        }
+      });
+
+      console.log('Test email account created:', {
         user: testAccount.user,
-        pass: testAccount.pass
-      }
-    });
-    
-    console.log('Test email account created:', {
-      user: testAccount.user,
-      pass: testAccount.pass,
-      previewUrl: 'https://ethereal.email'
-    });
-  } else {
-    // Use the credentials from environment variables
+        pass: testAccount.pass,
+        previewUrl: 'https://ethereal.email'
+      });
+      transporterInitialized = true;
+      return;
+    }
+
     transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: parseInt(process.env.EMAIL_PORT || '587'),
-      secure: process.env.EMAIL_SECURE === 'true',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
+      jsonTransport: true
     });
+    transporterInitialized = true;
+    console.log('No email credentials found; using local JSON email transport.');
+    return;
   }
+
+  transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port: parseInt(process.env.EMAIL_PORT || '587'),
+    secure: process.env.EMAIL_SECURE === 'true',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+  transporterInitialized = true;
 }
 
 // Initialize the email transporter
-initializeTransporter();
+initializeTransporter().catch((error) => {
+  console.error('Email transporter initialization failed:', error);
+});
 
 interface EmailOptions {
   to: string;
