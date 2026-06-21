@@ -8,6 +8,24 @@ Supply-chain and inventory management app: **Express** API, **PostgreSQL**, **Re
 
 Follow **[`docs/WINDOWS-LOCAL-SETUP.md`](docs/WINDOWS-LOCAL-SETUP.md)** — PostgreSQL, `.env`, `npm install`, `npm run db:push`, `npm run dev`.
 
+Fast local loop for app/browser testing:
+
+```powershell
+npm ci
+npm run local:doctor
+npm run local:up
+```
+
+Then, in another terminal:
+
+```powershell
+npm run test:local:browser
+```
+
+`local:up` creates safe development defaults in `.env` when missing, enables dev-only test login, writes `.local-dev-url`, and starts the app at `http://127.0.0.1:5000` unless `PORT` is overridden.
+
+For automated browser testing on Windows/OneDrive, `npm run test:local:browser` starts `npm run local:serve`, which serves the built client through Express and avoids Vite dependency-scan permission issues.
+
 Quick sequence:
 
 ```powershell

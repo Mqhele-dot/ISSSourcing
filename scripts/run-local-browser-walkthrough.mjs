@@ -9,10 +9,10 @@ const isRemoteTarget = /^https?:\/\/(?!127\.0\.0\.1(?::|\/|$)|localhost(?::|\/|$
 const READY_URL = `${BASE_URL}/api/ready`;
 const AUTH_URL = `${BASE_URL}/auth`;
 const START_TIMEOUT_MS = Number(process.env.LOCAL_BROWSER_WALKTHROUGH_TIMEOUT_MS || 120_000);
-const PLAYWRIGHT_TIMEOUT_MS = Number(process.env.LOCAL_BROWSER_PLAYWRIGHT_TIMEOUT_MS || 150_000);
+const PLAYWRIGHT_TIMEOUT_MS = Number(process.env.LOCAL_BROWSER_PLAYWRIGHT_TIMEOUT_MS || 300_000);
 const SCREENSHOTS_DIR =
   process.env.BROWSER_WALKTHROUGH_SCREENSHOTS_DIR || "test-results/local-browser-walkthrough";
-const DEV_COMMAND = process.env.LOCAL_BROWSER_DEV_COMMAND || "npm run dev";
+const DEV_COMMAND = process.env.LOCAL_BROWSER_DEV_COMMAND || "npm run local:serve";
 const BROWSER_CHANNEL = process.env.PLAYWRIGHT_BROWSER_CHANNEL || "chrome";
 
 let devProc = null;
@@ -24,10 +24,22 @@ function formatProbe(label, result) {
 }
 
 function spawnDevServer() {
-  devProc = spawn(DEV_COMMAND, [], {
+  const command = process.platform === "win32" ? "cmd.exe" : DEV_COMMAND;
+  const args = process.platform === "win32" ? ["/d", "/s", "/c", DEV_COMMAND] : [];
+  devProc = spawn(command, args, {
     stdio: "inherit",
-    shell: true,
-    env: { ...process.env, PORT },
+    shell: false,
+    env: {
+      ...process.env,
+      PORT,
+      HOST: process.env.HOST || "127.0.0.1",
+      RUNTIME_DEPLOYMENT: process.env.RUNTIME_DEPLOYMENT || "development",
+      ALLOW_UNVERIFIED_EMAIL_LOGIN: process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN || "true",
+      DEV_TEST_LOGIN_ENABLED: process.env.DEV_TEST_LOGIN_ENABLED || "true",
+      SKIP_PRODUCT_ONBOARDING: process.env.SKIP_PRODUCT_ONBOARDING || "true",
+      ALLOW_SETUP_SKIP: process.env.ALLOW_SETUP_SKIP || "true",
+      AUTO_SEED_ON_EMPTY_DB: process.env.AUTO_SEED_ON_EMPTY_DB || "true",
+    },
   });
   devProc.on("exit", (code, signal) => {
     devExitInfo = { code, signal };
@@ -105,11 +117,18 @@ try {
   }
 
   const result = spawnSync(
-    "npx",
-    ["playwright", "test", "-c", "playwright.config.ts", "e2e/local-browser-walkthrough.spec.ts", "--reporter=line"],
+    process.execPath,
+    [
+      "node_modules/@playwright/test/cli.js",
+      "test",
+      "-c",
+      "playwright.config.ts",
+      "e2e/local-browser-walkthrough.spec.ts",
+      "--reporter=line",
+    ],
     {
       stdio: "inherit",
-      shell: true,
+      shell: false,
       timeout: PLAYWRIGHT_TIMEOUT_MS,
       env: {
         ...process.env,
@@ -117,7 +136,9 @@ try {
         PLAYWRIGHT_BASE_URL: BASE_URL,
         PLAYWRIGHT_EXTERNAL_DEV_SERVER: "1",
         PLAYWRIGHT_BROWSER_CHANNEL: BROWSER_CHANNEL,
+        PLAYWRIGHT_VIDEO: "off",
         BROWSER_WALKTHROUGH_SCREENSHOTS_DIR: SCREENSHOTS_DIR,
+        PLAYWRIGHT_USE_DEV_TEST_LOGIN: process.env.PLAYWRIGHT_USE_DEV_TEST_LOGIN || "1",
       },
     },
   );

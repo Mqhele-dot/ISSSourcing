@@ -29,7 +29,7 @@ export default defineConfig({
     baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5000",
     trace: "on-first-retry",
     /** Helpful when debugging boot/auth flakes locally; keep headless for CI. */
-    video: process.env.CI ? "off" : "retain-on-failure",
+    video: process.env.PLAYWRIGHT_VIDEO === "off" || process.env.CI ? "off" : "retain-on-failure",
     headless: true,
     ...(browserChannel ? { channel: browserChannel } : {}),
     launchOptions: {

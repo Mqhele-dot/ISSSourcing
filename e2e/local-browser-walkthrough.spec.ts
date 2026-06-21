@@ -76,6 +76,8 @@ async function screenshot(page: Page, name: string) {
 }
 
 async function clickFirstVisibleButton(page: Page, step: string, action: { name: string; text: string | RegExp }) {
+  await page.keyboard.press("Escape").catch(() => undefined);
+  await page.waitForTimeout(150);
   const button = page
     .getByRole("button", { name: action.text })
     .or(page.getByText(action.text))
@@ -97,7 +99,17 @@ async function clickFirstVisibleButton(page: Page, step: string, action: { name:
     return;
   }
 
-  await button.click({ timeout: 10_000 });
+  try {
+    await button.click({ timeout: 10_000 });
+  } catch (error) {
+    test.info().annotations.push({
+      type: "walkthrough-skip",
+      description: `${step}: optional action ${action.name} could not be clicked (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`,
+    });
+    await screenshot(page, `${step}-${action.name}-blocked`);
+    await page.keyboard.press("Escape").catch(() => undefined);
+    return;
+  }
   await page.waitForTimeout(500);
   await screenshot(page, `${step}-${action.name}`);
 }

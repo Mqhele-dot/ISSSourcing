@@ -107,6 +107,31 @@ When the server is ready, the terminal prints a **banner** with the exact **brow
 
 Open **http://127.0.0.1:5000** (or whatever `PORT` you set).
 
+### One-command local app runner
+
+For local browser testing, use:
+
+```powershell
+npm run local:doctor
+npm run local:up
+```
+
+`local:up` creates a safe development `.env` if one does not exist, enables dev-only test login, writes `.local-dev-url`, and starts the same Express + Vite app as `npm run dev`. It does not weaken production behavior because the flags are development-only.
+
+With `local:up` running, test the app and capture screenshots from another terminal:
+
+```powershell
+npm run test:local:browser
+```
+
+If Vite reports `Cannot read directory "../../../.."` or cannot resolve packages from `node_modules`, use the static local runner:
+
+```powershell
+npm run local:serve
+```
+
+`local:serve` builds the app if needed, then serves `dist/public` through the development Express server with dev-only test login enabled. This is the preferred mode for Codex/Playwright browser testing on Windows workspaces under OneDrive.
+
 - **Port in use:** change `PORT` in `.env` (e.g. `5001`) and restart.
 - **Firewall:** allow Node on private networks if prompted.
 

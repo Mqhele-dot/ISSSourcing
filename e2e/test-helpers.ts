@@ -1,6 +1,13 @@
 import { expect, type Page } from "@playwright/test";
 
 export async function loginAsAdmin(page: Page) {
+  if (process.env.PLAYWRIGHT_USE_DEV_TEST_LOGIN !== "0") {
+    await page.goto("/dev-test-login?redirect=/operations/control-tower", { waitUntil: "load" });
+    if (!page.url().includes("/auth") && !page.url().includes("/dev-test-login")) {
+      return;
+    }
+  }
+
   await page.goto("/auth", { waitUntil: "load" });
   await page.waitForTimeout(800);
 

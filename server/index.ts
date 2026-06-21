@@ -84,7 +84,9 @@ app.get(["/startup-diagnostics", "/api/startup-diagnostics"], (_req, res) => {
 
   registerDevTestRoutes(app);
 
-  if (appEnv.isDevelopment && process.env.LOCAL_TEST_API_ONLY !== "1") {
+  if (appEnv.isDevelopment && process.env.LOCAL_DEV_STATIC === "1") {
+    serveStatic(app);
+  } else if (appEnv.isDevelopment && process.env.LOCAL_TEST_API_ONLY !== "1") {
     await setupVite(app, server);
   } else if (!appEnv.isDevelopment) {
     serveStatic(app);
