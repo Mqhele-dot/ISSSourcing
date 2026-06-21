@@ -30,6 +30,7 @@ import { sendError, sendOk } from "./api-response";
 import { organizationContextMiddleware } from "./middleware/organization-context";
 import { appEnv } from "./config/env";
 import { logger } from "./lib/logger";
+import { ensurePlanLimitAllowsCreate } from "./plan-limit-service";
 
 import type { User as SchemaUser } from "@shared/schema";
 declare global {
@@ -476,6 +477,9 @@ export function setupAuth(app: Express) {
       if (passwordPolicyError) {
         return res.status(400).json({ message: passwordPolicyError });
       }
+
+      const existingUsers = await storage.getAllUsers();
+      if (!(await ensurePlanLimitAllowsCreate(res, "users", existingUsers.length))) return;
 
       // Create new user with hashed password
       const hashedPassword = await hashPassword(req.body.password);

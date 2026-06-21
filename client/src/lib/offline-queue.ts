@@ -133,12 +133,16 @@ export async function flushOfflineQueueToServer(): Promise<{ ok: boolean; status
         })),
       }),
     });
-    if (res.ok) {
+    const payload = (await res.json().catch(() => null)) as
+      | { data?: { failed?: Array<{ idempotencyKey: string; message?: string }>; results?: Array<{ status: string }> } }
+      | null;
+    const failedCount = payload?.data?.failed?.length ?? payload?.data?.results?.filter((row) => row.status === "failed").length ?? 0;
+    if (res.ok && failedCount === 0) {
       await clearOfflineQueue();
       notifyQueueChanged(0, { lastSyncAt: new Date().toISOString() });
       return { ok: true, status: res.status };
     }
-    notifyQueueChanged(items.length, { failed: items.length });
+    notifyQueueChanged(items.length, { failed: failedCount || items.length });
     return { ok: false, status: res.status };
   } catch {
     notifyQueueChanged(items.length, { failed: items.length });

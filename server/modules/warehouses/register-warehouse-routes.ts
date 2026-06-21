@@ -5,6 +5,7 @@ import { storage } from "../../storage";
 import { createWarehouseRepository } from "../../repositories";
 import { insertWarehouseSchema, insertWarehouseInventorySchema } from "@shared/schema";
 import type { AuthBundle } from "../procurement/types";
+import { ensurePlanLimitAllowsCreate } from "../../plan-limit-service";
 
 const warehouseRepo = createWarehouseRepository(storage);
 
@@ -59,6 +60,8 @@ export function registerWarehouseRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/warehouses", ...warehouseWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertWarehouseSchema.parse(req.body);
+      const existingWarehouses = await warehouseRepo.findAll();
+      if (!(await ensurePlanLimitAllowsCreate(res, "warehouses", existingWarehouses.length))) return;
       const newWarehouse = await warehouseRepo.create(validatedData);
       res.status(201).json(newWarehouse);
     } catch (error) {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, ClipboardList, RefreshCw, ScanLine, Wifi, WifiOff } from "lucide-react";
@@ -40,6 +40,8 @@ type CountLine = {
   itemId: number;
   countedQty: number;
   scanValue: string | null;
+  locationId: string | null;
+  binCode: string | null;
   createdAt: string;
 };
 
@@ -52,6 +54,12 @@ type CountVariance = {
 };
 
 type InventoryItem = { id: number; sku: string; name: string; quantity?: number; defaultWarehouseId?: number | null };
+type ScanResolution = {
+  value: string;
+  status: "empty" | "not_found" | "resolved" | "ambiguous";
+  item?: { id: number; sku: string; name: string; barcode?: string | null } | null;
+  candidates: Array<{ id: number; sku: string; name: string; barcode?: string | null }>;
+};
 
 function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -88,6 +96,10 @@ export default function MobileCountsPage() {
   const [selectedItemId, setSelectedItemId] = useState("none");
   const [countedQty, setCountedQty] = useState("0");
   const [scanValue, setScanValue] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [binCode, setBinCode] = useState("");
+  const [resolvedItem, setResolvedItem] = useState<ScanResolution["item"]>(null);
+  const [scanMessage, setScanMessage] = useState("");
   const [warehouseId, setWarehouseId] = useState("1");
   const [mode, setMode] = useState<"blind" | "guided" | "spot" | "recount">("guided");
 
@@ -130,6 +142,33 @@ export default function MobileCountsPage() {
     [inventory.data, selectedItemId],
   );
 
+  const matchingTarget = useMemo(
+    () => detail.data?.targets.find((target) => String(target.itemId) === selectedItemId || target.itemId === resolvedItem?.id),
+    [detail.data?.targets, resolvedItem?.id, selectedItemId],
+  );
+
+  useEffect(() => {
+    if (!locationId && matchingTarget?.locationId) setLocationId(matchingTarget.locationId);
+  }, [locationId, matchingTarget?.locationId]);
+
+  async function resolveScan(value = scanValue.trim()) {
+    if (!value) {
+      setResolvedItem(null);
+      setScanMessage("");
+      return null;
+    }
+    const result = await requestJson<ScanResolution>("GET", `/api/mobile/scan/resolve?value=${encodeURIComponent(value)}`);
+    if (result.status === "resolved" && result.item) {
+      setResolvedItem(result.item);
+      setSelectedItemId(String(result.item.id));
+      setScanMessage(`${result.item.sku} - ${result.item.name}`);
+      return result.item;
+    }
+    setResolvedItem(null);
+    setScanMessage(result.status === "ambiguous" ? "Multiple items matched. Select the correct item." : "No item matched this scan.");
+    return null;
+  }
+
   const createSession = useMutation({
     mutationFn: async (asSpot: boolean) => {
       const firstItem = inventory.data?.[0];
@@ -168,11 +207,15 @@ export default function MobileCountsPage() {
   const addLine = useMutation({
     mutationFn: async () => {
       if (!sessionId) throw new Error("Open a count session first.");
-      if (selectedItemId === "none") throw new Error("Select an item to count.");
+      const scannedItem = selectedItemId === "none" && scanValue.trim() && online ? await resolveScan() : null;
+      const resolvedItemId = selectedItemId !== "none" ? Number(selectedItemId) : scannedItem?.id ?? resolvedItem?.id ?? null;
+      if (!resolvedItemId && !scanValue.trim()) throw new Error("Scan an item or select one manually.");
       const body = {
-        itemId: Number(selectedItemId),
+        ...(resolvedItemId ? { itemId: resolvedItemId } : {}),
         countedQty: Number(countedQty),
-        scanValue: scanValue.trim() || selectedItem?.sku || null,
+        scanValue: scanValue.trim() || selectedItem?.sku || resolvedItem?.sku || null,
+        locationId: locationId.trim() || null,
+        binCode: binCode.trim() || null,
         deviceClockAt: new Date().toISOString(),
         syncStatus: online ? "synced" : "queued",
       };
@@ -186,17 +229,21 @@ export default function MobileCountsPage() {
     onSuccess: () => {
       setCountedQty("0");
       setScanValue("");
+      setResolvedItem(null);
+      setScanMessage("");
       queryClient.invalidateQueries({ queryKey: ["/api/mobile/counts", sessionId] });
       queryClient.invalidateQueries({ queryKey: ["offline-queue-peek", loc] });
       toast({ title: online ? "Count line saved" : "Count line queued offline" });
     },
     onError: async (error) => {
-      if (sessionId && selectedItemId !== "none") {
+      if (sessionId && (selectedItemId !== "none" || scanValue.trim())) {
         await enqueueOfflineAction("mobile_count_line", {
           sessionId,
-          itemId: Number(selectedItemId),
+          ...(selectedItemId !== "none" ? { itemId: Number(selectedItemId) } : {}),
           countedQty: Number(countedQty),
           scanValue,
+          locationId: locationId.trim() || null,
+          binCode: binCode.trim() || null,
           deviceId: "browser-mobile",
         });
       }
@@ -358,7 +405,7 @@ export default function MobileCountsPage() {
                 </div>
               )}
               <div>
-                <Label>Item</Label>
+                <Label>Item fallback</Label>
                 <Select value={selectedItemId} onValueChange={setSelectedItemId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select item" />
@@ -379,8 +426,26 @@ export default function MobileCountsPage() {
                   autoFocus
                   value={scanValue}
                   onChange={(event) => setScanValue(event.target.value)}
+                  onBlur={() => void resolveScan()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void resolveScan();
+                    }
+                  }}
                   placeholder="Scan barcode or type SKU"
                 />
+                {scanMessage && <p className="mt-1 text-xs text-muted-foreground">{scanMessage}</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Location</Label>
+                  <Input value={locationId} onChange={(event) => setLocationId(event.target.value)} placeholder="Aisle / zone" />
+                </div>
+                <div>
+                  <Label>Bin</Label>
+                  <Input value={binCode} onChange={(event) => setBinCode(event.target.value)} placeholder="Bin code" />
+                </div>
               </div>
               <div>
                 <Label>Counted quantity</Label>
@@ -403,6 +468,7 @@ export default function MobileCountsPage() {
                 {lines.map((line) => (
                   <div key={line.id} className="rounded-md border p-3 text-sm">
                     Item #{line.itemId}: {line.countedQty} {line.scanValue ? `· ${line.scanValue}` : ""}
+                    {line.locationId || line.binCode ? ` · ${line.locationId ?? ""}${line.binCode ? `/${line.binCode}` : ""}` : ""}
                   </div>
                 ))}
               </div>

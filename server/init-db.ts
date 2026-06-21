@@ -595,6 +595,8 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         count_seq INTEGER DEFAULT 1 NOT NULL,
         counted_qty INTEGER NOT NULL,
         scan_value TEXT,
+        location_id TEXT,
+        bin_code TEXT,
         counted_by TEXT,
         count_user_id INTEGER,
         idempotency_key TEXT NOT NULL,
@@ -638,7 +640,10 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         event_type TEXT NOT NULL,
         body JSONB DEFAULT '{}'::jsonb NOT NULL,
         idempotency_key TEXT NOT NULL,
+        status TEXT DEFAULT 'accepted' NOT NULL,
+        failure_reason TEXT,
         acked_at TIMESTAMP,
+        applied_at TIMESTAMP,
         failed_at TIMESTAMP,
         retry_count INTEGER DEFAULT 0 NOT NULL,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
@@ -805,6 +810,11 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS approver_amount_limit REAL;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS work_persona TEXT;
+      ALTER TABLE stock_count_lines ADD COLUMN IF NOT EXISTS location_id TEXT;
+      ALTER TABLE stock_count_lines ADD COLUMN IF NOT EXISTS bin_code TEXT;
+      ALTER TABLE mobile_sync_events ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'accepted' NOT NULL;
+      ALTER TABLE mobile_sync_events ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+      ALTER TABLE mobile_sync_events ADD COLUMN IF NOT EXISTS applied_at TIMESTAMP;
     `);
     await pool.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS stock_count_lines_org_idempotency_uidx

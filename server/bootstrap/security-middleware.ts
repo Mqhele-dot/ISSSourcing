@@ -36,7 +36,12 @@ export function registerSecurityMiddleware(app: Express): void {
     }),
   );
   app.disable("x-powered-by");
-  app.use(express.json({ limit: appEnv.requestLimits.json }));
+  app.use(express.json({
+    limit: appEnv.requestLimits.json,
+    verify: (req, _res, buf) => {
+      (req as typeof req & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+    },
+  }));
   app.use(express.urlencoded({ extended: false, limit: appEnv.requestLimits.form }));
   app.use(express.text({ type: "text/*", limit: appEnv.requestLimits.text }));
 }

@@ -3,13 +3,20 @@ import { readFileSync } from "node:fs";
 const files = {
   schema: readFileSync("shared/schema.ts", "utf8"),
   mobileRoutes: readFileSync("server/modules/mobile-counts/register-mobile-count-routes.ts", "utf8"),
+  mobileService: readFileSync("server/modules/mobile-counts/mobile-count-service.ts", "utf8"),
+  syncRoutes: readFileSync("server/modules/sync/register-sync-routes.ts", "utf8"),
   orgRoutes: readFileSync("server/modules/organization/register-organization-routes.ts", "utf8"),
+  securityMiddleware: readFileSync("server/bootstrap/security-middleware.ts", "utf8"),
+  planLimits: readFileSync("server/plan-limit-service.ts", "utf8"),
+  inventoryRoutes: readFileSync("server/modules/inventory/register-inventory-routes.ts", "utf8"),
+  warehouseRoutes: readFileSync("server/modules/warehouses/register-warehouse-routes.ts", "utf8"),
   registry: readFileSync("server/org-feature-registry.ts", "utf8"),
   configRegistry: readFileSync("server/company-configuration-registry.ts", "utf8"),
   router: readFileSync("client/src/router.tsx", "utf8"),
   appRoutes: readFileSync("client/src/lib/routes/app-routes.ts", "utf8"),
   mobilePage: readFileSync("client/src/pages/mobile-counts.tsx", "utf8"),
   serviceWorker: readFileSync("client/public/sw.js", "utf8"),
+  offlineQueue: readFileSync("client/src/lib/offline-queue.ts", "utf8"),
   syncValidators: readFileSync("server/modules/sync/validators.ts", "utf8"),
   packageJson: readFileSync("package.json", "utf8"),
 };
@@ -30,6 +37,8 @@ const checks = [
       files.schema.includes("mobileSyncEvents") &&
       files.schema.includes("deviceId") &&
       files.schema.includes("idempotencyKey") &&
+      files.schema.includes("failureReason") &&
+      files.schema.includes("appliedAt") &&
       files.syncValidators.includes("mobile_count_line"),
   },
   {
@@ -56,6 +65,26 @@ const checks = [
       files.mobilePage.includes('data-testid="mobile-counts-page"'),
   },
   {
+    name: "mobile counts are scan-first with location capture",
+    ok:
+      files.mobileRoutes.includes('"/api/mobile/scan/resolve"') &&
+      files.mobileService.includes("resolveMobileCountScanValue") &&
+      files.mobileService.includes("SCAN_VALUE_AMBIGUOUS") &&
+      files.mobileService.includes("COUNT_LOCATION_REQUIRED") &&
+      files.mobilePage.includes("Item fallback") &&
+      files.mobilePage.includes("binCode"),
+  },
+  {
+    name: "offline sync replays count mutations and preserves failures",
+    ok:
+      files.syncRoutes.includes("addMobileCountLine") &&
+      files.syncRoutes.includes("submitMobileCountSession") &&
+      files.syncRoutes.includes("mobile_count_spot") &&
+      files.syncRoutes.includes("status: \"failed\"") &&
+      files.syncRoutes.includes("results") &&
+      files.offlineQueue.includes("failedCount === 0"),
+  },
+  {
     name: "subscription feature catalog and limits include research tiers",
     ok:
       files.registry.includes("mobile_stock_counts") &&
@@ -72,10 +101,31 @@ const checks = [
       files.orgRoutes.includes('"/api/subscription/usage"'),
   },
   {
+    name: "plan limits are enforced on backend writes",
+    ok:
+      files.planLimits.includes("PLAN_LIMIT_EXCEEDED") &&
+      files.inventoryRoutes.includes("ensurePlanLimitAllowsCreate") &&
+      files.warehouseRoutes.includes("ensurePlanLimitAllowsCreate") &&
+      files.registry.includes("starter: { users: 3, warehouses: 1, skus: 5000 }"),
+  },
+  {
+    name: "Stripe webhooks verify signatures before entitlement processing",
+    ok:
+      files.securityMiddleware.includes("rawBody") &&
+      files.orgRoutes.includes("stripe.webhooks.constructEvent") &&
+      files.orgRoutes.includes("signatureState = \"verified\"") &&
+      files.orgRoutes.includes("billingSubscriptions") &&
+      files.orgRoutes.includes("checkout.sessions.create") &&
+      files.orgRoutes.includes("billingPortal.sessions.create"),
+  },
+  {
     name: "company configuration center is registry-backed and plan-aware",
     ok:
       files.configRegistry.includes("COMPANY_CONFIGURATION_REGISTRY") &&
       files.configRegistry.includes("inventory.count.blindMode") &&
+      files.configRegistry.includes("inventory.count.locationRequired") &&
+      files.configRegistry.includes("inventory.variance.thresholdValue") &&
+      files.mobileService.includes("inventory.variance.thresholdPct") &&
       files.configRegistry.includes("getConfigurationDefinitionsForPlan") &&
       files.orgRoutes.includes('"/api/company-configuration"'),
   },

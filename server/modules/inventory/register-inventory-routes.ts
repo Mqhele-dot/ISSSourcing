@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { storage } from "../../storage";
 import { insertInventoryItemSchema } from "@shared/schema";
+import { ensurePlanLimitAllowsCreate } from "../../plan-limit-service";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -121,6 +122,8 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
   app.post("/api/inventory", ...invWrite, async (req: Request, res: Response) => {
     try {
       const validatedData = insertInventoryItemSchema.parse(req.body);
+      const existingItems = await storage.getAllInventoryItems();
+      if (!(await ensurePlanLimitAllowsCreate(res, "skus", existingItems.length))) return;
 
       const existingItem = await storage.getInventoryItemBySku(validatedData.sku);
       if (existingItem) {
