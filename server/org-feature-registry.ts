@@ -8,6 +8,12 @@ export type OrgFeatureCatalogEntry = {
   upgradeHint: string;
 };
 
+export type OrgPlanLimit = {
+  users: number | null;
+  warehouses: number | null;
+  skus: number | null;
+};
+
 const PLAN_TIER_ALIASES: Record<string, OrgPlanTier> = {
   starter: "starter",
   basic: "starter",
@@ -28,7 +34,19 @@ const PLAN_TIER_RANK: Record<OrgPlanTier, number> = {
   enterprise: 3,
 };
 
+export const ORG_PLAN_LIMITS: Record<OrgPlanTier, OrgPlanLimit> = {
+  starter: { users: 3, warehouses: 1, skus: 5000 },
+  standard: { users: 10, warehouses: 3, skus: 25000 },
+  growth: { users: 50, warehouses: 10, skus: 100000 },
+  enterprise: { users: null, warehouses: null, skus: null },
+};
+
 export const ORG_FEATURE_CATALOG: Record<string, OrgFeatureCatalogEntry> = {
+  mobile_stock_counts: {
+    label: "Mobile stock counts",
+    minimumPlan: "starter",
+    upgradeHint: "Mobile stock counts are included in every plan.",
+  },
   exports: {
     label: "Exports",
     minimumPlan: "standard",
@@ -63,6 +81,41 @@ export const ORG_FEATURE_CATALOG: Record<string, OrgFeatureCatalogEntry> = {
     label: "Light manufacturing",
     minimumPlan: "standard",
     upgradeHint: "Upgrade to Standard or higher to enable manufacturing workflows.",
+  },
+  advanced_variance_approvals: {
+    label: "Advanced variance approvals",
+    minimumPlan: "standard",
+    upgradeHint: "Upgrade to Standard or higher to route count variances for approval.",
+  },
+  analytics: {
+    label: "Advanced analytics",
+    minimumPlan: "growth",
+    upgradeHint: "Upgrade to Growth or higher to unlock advanced analytics.",
+  },
+  api_access: {
+    label: "API access",
+    minimumPlan: "growth",
+    upgradeHint: "Upgrade to Growth or higher to use API access.",
+  },
+  document_branding: {
+    label: "Document branding",
+    minimumPlan: "growth",
+    upgradeHint: "Upgrade to Growth or higher to customize branded documents.",
+  },
+  integration_runs: {
+    label: "Integration runs",
+    minimumPlan: "growth",
+    upgradeHint: "Upgrade to Growth or higher to run managed integrations.",
+  },
+  sso: {
+    label: "Single sign-on",
+    minimumPlan: "enterprise",
+    upgradeHint: "Contact sales to enable Enterprise single sign-on.",
+  },
+  warehouse_limit_overrides: {
+    label: "Warehouse limit overrides",
+    minimumPlan: "enterprise",
+    upgradeHint: "Contact sales for Enterprise warehouse limits.",
   },
 };
 
@@ -127,4 +180,8 @@ export function buildOrgFeatureAvailability(input?: {
 
 export function getOrgFeatureUpgradeHint(feature: string): string {
   return ORG_FEATURE_CATALOG[feature]?.upgradeHint ?? "Update organization feature flags for this plan.";
+}
+
+export function getOrgPlanLimits(planTier: unknown): OrgPlanLimit {
+  return ORG_PLAN_LIMITS[normalizeOrgPlanTier(planTier)];
 }

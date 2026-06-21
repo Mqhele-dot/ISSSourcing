@@ -1,11 +1,11 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { Home, ListTodo, QrCode, CheckSquare, Menu } from "lucide-react";
+import { Home, ClipboardList, QrCode, CheckSquare, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/m/home", label: "Home", icon: Home },
-  { href: "/m/tasks", label: "Tasks", icon: ListTodo },
+  { href: "/m/counts", label: "Count", icon: ClipboardList },
   { href: "/m/scan", label: "Scan", icon: QrCode },
   { href: "/m/approvals", label: "Approvals", icon: CheckSquare },
   { href: "/m/more", label: "More", icon: Menu },

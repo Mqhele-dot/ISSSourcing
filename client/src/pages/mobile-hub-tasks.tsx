@@ -10,9 +10,9 @@ export default function MobileHubTasksPage() {
       <PageHeader title="Task list" description="Operational shortcuts" />
       <div className="flex flex-col gap-2">
         <Button asChild variant="outline" className="h-auto justify-start gap-3 py-4">
-          <Link href={APP_ROUTES.inventory.cycleCounts}>
+          <Link href={APP_ROUTES.operations.mobileCounts}>
             <ClipboardList className="h-5 w-5" />
-            <span>Cycle counts</span>
+            <span>Mobile stock counts</span>
           </Link>
         </Button>
         <Button asChild variant="outline" className="h-auto justify-start gap-3 py-4">

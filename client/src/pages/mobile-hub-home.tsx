@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Link } from "wouter";
-import { AlertTriangle, PackageCheck, QrCode, Truck } from "lucide-react";
+import { AlertTriangle, ClipboardList, PackageCheck, QrCode, Truck } from "lucide-react";
 import { flushOfflineQueueToServer } from "@/lib/offline-queue";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
@@ -8,6 +8,7 @@ import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { Button } from "@/components/ui/button";
 
 const tiles = [
+  { href: APP_ROUTES.operations.mobileCounts, title: "Counts", desc: "Blind / spot count", icon: ClipboardList },
   { href: APP_ROUTES.operations.exceptions, title: "Exceptions", desc: "Open issues", icon: AlertTriangle },
   { href: APP_ROUTES.operations.mobileReceive, title: "Receive", desc: "Goods receipt", icon: PackageCheck },
   { href: APP_ROUTES.operations.mobileScan, title: "Scan", desc: "Barcode / QR", icon: QrCode },

@@ -30,6 +30,7 @@ import { SecuritySettingsForm } from "@/components/settings/security-settings-fo
 import { ForecastingSettingsForm } from "@/components/settings/forecasting-settings-form";
 import { TaxSettingsForm } from "@/components/settings/tax-settings-form";
 import { BillingSettingsForm } from "@/components/settings/billing-settings-form";
+import { CompanyConfigurationCenter } from "@/components/settings/company-configuration-center";
 import {
   Settings,
   UserCircle,
@@ -41,6 +42,7 @@ import {
   Shield,
   BarChart3,
   Receipt,
+  SlidersHorizontal,
   Loader2,
   RotateCcw,
 } from "lucide-react";
@@ -241,7 +243,7 @@ export default function SettingsPage() {
         onValueChange={(value) => setLocation(APP_ROUTES.admin.settingsSection(value as typeof activeSection))}
         className="space-y-6"
       >
-        <TabsList className="grid h-auto grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-9">
+        <TabsList className="grid h-auto grid-cols-2 gap-2 md:grid-cols-5 lg:grid-cols-10">
           <TabsTrigger value="general" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <UserCircle className="h-4 w-4" />
             <span>General</span>
@@ -269,6 +271,10 @@ export default function SettingsPage() {
           <TabsTrigger value="billing" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <CreditCard className="h-4 w-4" />
             <span>Billing</span>
+          </TabsTrigger>
+          <TabsTrigger value="configuration" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
+            <SlidersHorizontal className="h-4 w-4" />
+            <span>Configuration</span>
           </TabsTrigger>
           <TabsTrigger value="warehouses" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
             <Building className="h-4 w-4" />
@@ -306,6 +312,10 @@ export default function SettingsPage() {
 
         <TabsContent value="billing" className="space-y-4">
           <BillingSettingsForm />
+        </TabsContent>
+
+        <TabsContent value="configuration" className="space-y-4">
+          <CompanyConfigurationCenter />
         </TabsContent>
 
         <TabsContent value="warehouses" className="space-y-4">

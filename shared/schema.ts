@@ -1499,6 +1499,253 @@ export const cycleCountLines = pgTable("cycle_count_lines", {
   variance: integer("variance").notNull().default(0),
 });
 
+export const stockCountSessions = pgTable(
+  "stock_count_sessions",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    warehouseId: integer("warehouse_id").notNull(),
+    mode: text("mode").notNull().default("guided"),
+    status: text("status").notNull().default("assigned"),
+    assignedUserId: integer("assigned_user_id"),
+    startedAt: timestamp("started_at"),
+    submittedAt: timestamp("submitted_at"),
+    approvedAt: timestamp("approved_at"),
+    postedAt: timestamp("posted_at"),
+    variancePolicyId: integer("variance_policy_id"),
+    source: text("source").notNull().default("mobile"),
+    deviceId: text("device_id"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("stock_count_sessions_org_id_uidx").on(t.organizationId, t.id)],
+);
+
+export const stockCountTargets = pgTable("stock_count_targets", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
+  sessionId: integer("session_id").notNull(),
+  warehouseId: integer("warehouse_id").notNull(),
+  itemId: integer("item_id").notNull(),
+  locationId: text("location_id"),
+  lotId: integer("lot_id"),
+  serialId: integer("serial_id"),
+  systemQtySnapshot: integer("system_qty_snapshot").notNull().default(0),
+  blindMode: boolean("blind_mode").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const stockCountLines = pgTable(
+  "stock_count_lines",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    sessionId: integer("session_id").notNull(),
+    targetId: integer("target_id"),
+    itemId: integer("item_id").notNull(),
+    countSeq: integer("count_seq").notNull().default(1),
+    countedQty: integer("counted_qty").notNull(),
+    scanValue: text("scan_value"),
+    countedBy: text("counted_by"),
+    countUserId: integer("count_user_id"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    deviceClockAt: timestamp("device_clock_at"),
+    syncStatus: text("sync_status").notNull().default("synced"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("stock_count_lines_org_idempotency_uidx").on(t.organizationId, t.idempotencyKey)],
+);
+
+export const stockCountVariances = pgTable("stock_count_variances", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
+  sessionId: integer("session_id").notNull(),
+  targetId: integer("target_id"),
+  itemId: integer("item_id").notNull(),
+  deltaQty: integer("delta_qty").notNull().default(0),
+  deltaValue: real("delta_value").notNull().default(0),
+  thresholdRuleId: integer("threshold_rule_id"),
+  requiresApproval: boolean("requires_approval").default(false).notNull(),
+  reviewerId: integer("reviewer_id"),
+  disposition: text("disposition").notNull().default("pending"),
+  reasonCode: text("reason_code"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const inventoryAdjustments = pgTable("inventory_adjustments", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .default(1)
+    .references(() => organizations.id),
+  sessionId: integer("session_id").notNull(),
+  warehouseId: integer("warehouse_id").notNull(),
+  targetId: integer("target_id"),
+  itemId: integer("item_id").notNull(),
+  deltaQty: integer("delta_qty").notNull(),
+  movementId: integer("movement_id"),
+  postedBy: integer("posted_by"),
+  postedAt: timestamp("posted_at").defaultNow().notNull(),
+});
+
+export const mobileSyncEvents = pgTable(
+  "mobile_sync_events",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .default(1)
+      .references(() => organizations.id),
+    deviceId: text("device_id").notNull(),
+    eventType: text("event_type").notNull(),
+    body: jsonb("body").$type<Record<string, unknown>>().notNull().default({}),
+    idempotencyKey: text("idempotency_key").notNull(),
+    ackedAt: timestamp("acked_at"),
+    failedAt: timestamp("failed_at"),
+    retryCount: integer("retry_count").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mobile_sync_events_org_key_uidx").on(t.organizationId, t.idempotencyKey)],
+);
+
+export const planDefinitions = pgTable(
+  "plan_definitions",
+  {
+    id: serial("id").primaryKey(),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    version: integer("version").notNull().default(1),
+    featureMap: jsonb("feature_map").$type<Record<string, boolean>>().notNull().default({}),
+    limits: jsonb("limits").$type<Record<string, number | null>>().notNull().default({}),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("plan_definitions_key_version_uidx").on(t.key, t.version)],
+);
+
+export const billingCustomers = pgTable(
+  "billing_customers",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("stripe"),
+    providerCustomerId: text("provider_customer_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("billing_customers_provider_customer_uidx").on(t.provider, t.providerCustomerId)],
+);
+
+export const billingSubscriptions = pgTable(
+  "billing_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("stripe"),
+    providerSubscriptionId: text("provider_subscription_id").notNull(),
+    status: text("status").notNull().default("incomplete"),
+    planTier: text("plan_tier").notNull().default("starter"),
+    priceId: text("price_id"),
+    currentPeriodEnd: timestamp("current_period_end"),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("billing_subscriptions_provider_sub_uidx").on(t.provider, t.providerSubscriptionId)],
+);
+
+export const entitlementOverrides = pgTable("entitlement_overrides", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  featureKey: text("feature_key").notNull(),
+  enabled: boolean("enabled").notNull(),
+  reason: text("reason"),
+  expiresAt: timestamp("expires_at"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const usageCounters = pgTable(
+  "usage_counters",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    counterKey: text("counter_key").notNull(),
+    periodStart: timestamp("period_start").notNull(),
+    periodEnd: timestamp("period_end").notNull(),
+    value: integer("value").notNull().default(0),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("usage_counters_org_key_period_uidx").on(t.organizationId, t.counterKey, t.periodStart)],
+);
+
+export const billingWebhookEvents = pgTable(
+  "billing_webhook_events",
+  {
+    id: serial("id").primaryKey(),
+    provider: text("provider").notNull().default("stripe"),
+    providerEventId: text("provider_event_id").notNull(),
+    signatureState: text("signature_state").notNull().default("unverified"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    processedAt: timestamp("processed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("billing_webhook_events_provider_event_uidx").on(t.provider, t.providerEventId)],
+);
+
+export const planChangeAudit = pgTable("plan_change_audit", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  fromPlan: text("from_plan"),
+  toPlan: text("to_plan").notNull(),
+  reason: text("reason"),
+  changedBy: integer("changed_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const companyConfigurationSettings = pgTable(
+  "company_configuration_settings",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    scope: text("scope").notNull().default("organization"),
+    scopeId: text("scope_id"),
+    value: jsonb("value").$type<unknown>().notNull(),
+    updatedBy: integer("updated_by"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("company_config_org_key_scope_uidx").on(t.organizationId, t.key, t.scope, t.scopeId)],
+);
+
 export const insertInventoryBatchSchema = createInsertSchema(inventoryBatches)
   .omit({
     id: true,
@@ -1576,6 +1823,66 @@ export const insertCycleCountSchema = createInsertSchema(cycleCounts).omit({
 });
 export const insertCycleCountLineSchema = createInsertSchema(cycleCountLines).omit({
   id: true,
+});
+export const insertStockCountSessionSchema = createInsertSchema(stockCountSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertStockCountTargetSchema = createInsertSchema(stockCountTargets).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertStockCountLineSchema = createInsertSchema(stockCountLines).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertStockCountVarianceSchema = createInsertSchema(stockCountVariances).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertInventoryAdjustmentSchema = createInsertSchema(inventoryAdjustments).omit({
+  id: true,
+});
+export const insertMobileSyncEventSchema = createInsertSchema(mobileSyncEvents).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertPlanDefinitionSchema = createInsertSchema(planDefinitions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertBillingCustomerSchema = createInsertSchema(billingCustomers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertBillingSubscriptionSchema = createInsertSchema(billingSubscriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertEntitlementOverrideSchema = createInsertSchema(entitlementOverrides).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertUsageCounterSchema = createInsertSchema(usageCounters).omit({
+  id: true,
+  updatedAt: true,
+});
+export const insertBillingWebhookEventSchema = createInsertSchema(billingWebhookEvents).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertPlanChangeAuditSchema = createInsertSchema(planChangeAudit).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertCompanyConfigurationSettingSchema = createInsertSchema(companyConfigurationSettings).omit({
+  id: true,
+  updatedAt: true,
 });
 
 // Barcode schema for product identification
@@ -1930,6 +2237,34 @@ export type CycleCount = typeof cycleCounts.$inferSelect;
 export type InsertCycleCount = z.infer<typeof insertCycleCountSchema>;
 export type CycleCountLine = typeof cycleCountLines.$inferSelect;
 export type InsertCycleCountLine = z.infer<typeof insertCycleCountLineSchema>;
+export type StockCountSession = typeof stockCountSessions.$inferSelect;
+export type InsertStockCountSession = z.infer<typeof insertStockCountSessionSchema>;
+export type StockCountTarget = typeof stockCountTargets.$inferSelect;
+export type InsertStockCountTarget = z.infer<typeof insertStockCountTargetSchema>;
+export type StockCountLine = typeof stockCountLines.$inferSelect;
+export type InsertStockCountLine = z.infer<typeof insertStockCountLineSchema>;
+export type StockCountVariance = typeof stockCountVariances.$inferSelect;
+export type InsertStockCountVariance = z.infer<typeof insertStockCountVarianceSchema>;
+export type InventoryAdjustment = typeof inventoryAdjustments.$inferSelect;
+export type InsertInventoryAdjustment = z.infer<typeof insertInventoryAdjustmentSchema>;
+export type MobileSyncEvent = typeof mobileSyncEvents.$inferSelect;
+export type InsertMobileSyncEvent = z.infer<typeof insertMobileSyncEventSchema>;
+export type PlanDefinition = typeof planDefinitions.$inferSelect;
+export type InsertPlanDefinition = z.infer<typeof insertPlanDefinitionSchema>;
+export type BillingCustomer = typeof billingCustomers.$inferSelect;
+export type InsertBillingCustomer = z.infer<typeof insertBillingCustomerSchema>;
+export type BillingSubscription = typeof billingSubscriptions.$inferSelect;
+export type InsertBillingSubscription = z.infer<typeof insertBillingSubscriptionSchema>;
+export type EntitlementOverride = typeof entitlementOverrides.$inferSelect;
+export type InsertEntitlementOverride = z.infer<typeof insertEntitlementOverrideSchema>;
+export type UsageCounter = typeof usageCounters.$inferSelect;
+export type InsertUsageCounter = z.infer<typeof insertUsageCounterSchema>;
+export type BillingWebhookEvent = typeof billingWebhookEvents.$inferSelect;
+export type InsertBillingWebhookEvent = z.infer<typeof insertBillingWebhookEventSchema>;
+export type PlanChangeAudit = typeof planChangeAudit.$inferSelect;
+export type InsertPlanChangeAudit = z.infer<typeof insertPlanChangeAuditSchema>;
+export type CompanyConfigurationSetting = typeof companyConfigurationSettings.$inferSelect;
+export type InsertCompanyConfigurationSetting = z.infer<typeof insertCompanyConfigurationSettingSchema>;
 export type Carrier = typeof carriers.$inferSelect;
 export type InsertCarrier = z.infer<typeof insertCarrierSchema>;
 

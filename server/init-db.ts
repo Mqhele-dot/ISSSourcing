@@ -555,6 +555,173 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         counted_quantity INTEGER DEFAULT 0 NOT NULL,
         variance INTEGER DEFAULT 0 NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS stock_count_sessions (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER DEFAULT 1 NOT NULL,
+        warehouse_id INTEGER NOT NULL,
+        mode TEXT DEFAULT 'guided' NOT NULL,
+        status TEXT DEFAULT 'assigned' NOT NULL,
+        assigned_user_id INTEGER,
+        started_at TIMESTAMP,
+        submitted_at TIMESTAMP,
+        approved_at TIMESTAMP,
+        posted_at TIMESTAMP,
+        variance_policy_id INTEGER,
+        source TEXT DEFAULT 'mobile' NOT NULL,
+        device_id TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS stock_count_targets (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER DEFAULT 1 NOT NULL,
+        session_id INTEGER NOT NULL,
+        warehouse_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        location_id TEXT,
+        lot_id INTEGER,
+        serial_id INTEGER,
+        system_qty_snapshot INTEGER DEFAULT 0 NOT NULL,
+        blind_mode BOOLEAN DEFAULT FALSE NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS stock_count_lines (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER DEFAULT 1 NOT NULL,
+        session_id INTEGER NOT NULL,
+        target_id INTEGER,
+        item_id INTEGER NOT NULL,
+        count_seq INTEGER DEFAULT 1 NOT NULL,
+        counted_qty INTEGER NOT NULL,
+        scan_value TEXT,
+        counted_by TEXT,
+        count_user_id INTEGER,
+        idempotency_key TEXT NOT NULL,
+        device_clock_at TIMESTAMP,
+        sync_status TEXT DEFAULT 'synced' NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS stock_count_variances (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER DEFAULT 1 NOT NULL,
+        session_id INTEGER NOT NULL,
+        target_id INTEGER,
+        item_id INTEGER NOT NULL,
+        delta_qty INTEGER DEFAULT 0 NOT NULL,
+        delta_value REAL DEFAULT 0 NOT NULL,
+        threshold_rule_id INTEGER,
+        requires_approval BOOLEAN DEFAULT FALSE NOT NULL,
+        reviewer_id INTEGER,
+        disposition TEXT DEFAULT 'pending' NOT NULL,
+        reason_code TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS inventory_adjustments (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER DEFAULT 1 NOT NULL,
+        session_id INTEGER NOT NULL,
+        warehouse_id INTEGER NOT NULL,
+        target_id INTEGER,
+        item_id INTEGER NOT NULL,
+        delta_qty INTEGER NOT NULL,
+        movement_id INTEGER,
+        posted_by INTEGER,
+        posted_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mobile_sync_events (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER DEFAULT 1 NOT NULL,
+        device_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        body JSONB DEFAULT '{}'::jsonb NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        acked_at TIMESTAMP,
+        failed_at TIMESTAMP,
+        retry_count INTEGER DEFAULT 0 NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS plan_definitions (
+        id SERIAL PRIMARY KEY,
+        key TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version INTEGER DEFAULT 1 NOT NULL,
+        feature_map JSONB DEFAULT '{}'::jsonb NOT NULL,
+        limits JSONB DEFAULT '{}'::jsonb NOT NULL,
+        active BOOLEAN DEFAULT TRUE NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS billing_customers (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL,
+        provider TEXT DEFAULT 'stripe' NOT NULL,
+        provider_customer_id TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS billing_subscriptions (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL,
+        provider TEXT DEFAULT 'stripe' NOT NULL,
+        provider_subscription_id TEXT NOT NULL,
+        status TEXT DEFAULT 'incomplete' NOT NULL,
+        plan_tier TEXT DEFAULT 'starter' NOT NULL,
+        price_id TEXT,
+        current_period_end TIMESTAMP,
+        cancel_at_period_end BOOLEAN DEFAULT FALSE NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS entitlement_overrides (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL,
+        feature_key TEXT NOT NULL,
+        enabled BOOLEAN NOT NULL,
+        reason TEXT,
+        expires_at TIMESTAMP,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS usage_counters (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL,
+        counter_key TEXT NOT NULL,
+        period_start TIMESTAMP NOT NULL,
+        period_end TIMESTAMP NOT NULL,
+        value INTEGER DEFAULT 0 NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS billing_webhook_events (
+        id SERIAL PRIMARY KEY,
+        provider TEXT DEFAULT 'stripe' NOT NULL,
+        provider_event_id TEXT NOT NULL,
+        signature_state TEXT DEFAULT 'unverified' NOT NULL,
+        payload JSONB DEFAULT '{}'::jsonb NOT NULL,
+        processed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS plan_change_audit (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL,
+        from_plan TEXT,
+        to_plan TEXT NOT NULL,
+        reason TEXT,
+        changed_by INTEGER,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS company_configuration_settings (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL,
+        key TEXT NOT NULL,
+        scope TEXT DEFAULT 'organization' NOT NULL,
+        scope_id TEXT,
+        value JSONB NOT NULL,
+        updated_by INTEGER,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
     `);
 
     await pool.query(`
@@ -606,6 +773,8 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS images JSONB;
       ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS tags TEXT[];
       ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS custom_fields JSONB;
+      ALTER TABLE cycle_counts ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1 NOT NULL;
+      ALTER TABLE cycle_count_lines ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1 NOT NULL;
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS department_id INTEGER;
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS justification TEXT;
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS project_id INTEGER;
@@ -636,6 +805,16 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS approver_amount_limit REAL;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS work_persona TEXT;
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS stock_count_lines_org_idempotency_uidx
+        ON stock_count_lines (organization_id, idempotency_key);
+      CREATE UNIQUE INDEX IF NOT EXISTS mobile_sync_events_org_key_uidx
+        ON mobile_sync_events (organization_id, idempotency_key);
+      CREATE UNIQUE INDEX IF NOT EXISTS billing_webhook_events_provider_event_uidx
+        ON billing_webhook_events (provider, provider_event_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS company_config_org_key_scope_uidx
+        ON company_configuration_settings (organization_id, key, scope, COALESCE(scope_id, ''));
     `);
     console.log('Professional supply chain tables and columns ready');
   } catch (err) {

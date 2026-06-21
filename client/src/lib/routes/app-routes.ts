@@ -29,6 +29,7 @@ export const SETTINGS_SECTION_SLUGS = [
   "forecasting",
   "tax",
   "billing",
+  "configuration",
   "warehouses",
   "security",
 ] as const;
@@ -78,6 +79,10 @@ export const APP_ROUTES = {
     exceptions: "/operations/exceptions",
     mobileHub: "/m/home",
     mobileTasks: "/m/tasks",
+    mobileCounts: "/m/counts",
+    mobileCount: (id: string | number) => `/m/counts/${encodeURIComponent(String(id))}`,
+    mobileCountReview: (id: string | number) => `/m/counts/${encodeURIComponent(String(id))}/review`,
+    mobileCountSpot: "/m/counts/spot",
     mobileScan: "/m/scan",
     mobileApprovals: "/m/approvals",
     mobileMore: "/m/more",

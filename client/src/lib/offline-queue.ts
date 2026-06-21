@@ -6,9 +6,20 @@ import { buildRequestHeaders } from "./queryClient";
 
 export type OfflineQueuedAction = {
   id: string;
-  type: "scan" | "adjustment" | "receive_note" | "generic";
+  type:
+    | "scan"
+    | "adjustment"
+    | "receive_note"
+    | "generic"
+    | "mobile_count_line"
+    | "mobile_count_submit"
+    | "mobile_count_recount"
+    | "mobile_count_spot";
   payload: Record<string, unknown>;
   createdAt: string;
+  retryCount?: number;
+  failedAt?: string;
+  ackedAt?: string;
 };
 
 const DB_NAME = "invtrack-offline";
@@ -16,6 +27,16 @@ const STORE = "queue";
 const DB_VERSION = 1;
 
 const memoryQueue: OfflineQueuedAction[] = [];
+
+function notifyQueueChanged(pending: number, extra?: { failed?: number; lastSyncAt?: string | null }) {
+  if (typeof navigator === "undefined" || !navigator.serviceWorker?.controller) return;
+  navigator.serviceWorker.controller.postMessage({
+    type: "INVTRACK_OFFLINE_QUEUE_CHANGED",
+    pending,
+    failed: extra?.failed ?? 0,
+    lastSyncAt: extra?.lastSyncAt ?? null,
+  });
+}
 
 function openDb(): Promise<IDBDatabase | null> {
   if (typeof indexedDB === "undefined") return Promise.resolve(null);
@@ -46,6 +67,7 @@ export async function enqueueOfflineAction(
   const db = await openDb();
   if (!db) {
     memoryQueue.push(item);
+    notifyQueueChanged(memoryQueue.length);
     return item;
   }
 
@@ -57,6 +79,8 @@ export async function enqueueOfflineAction(
     req.onerror = () => reject(req.error);
   });
 
+  const pending = await peekOfflineQueue();
+  notifyQueueChanged(pending.length);
   return item;
 }
 
@@ -111,10 +135,13 @@ export async function flushOfflineQueueToServer(): Promise<{ ok: boolean; status
     });
     if (res.ok) {
       await clearOfflineQueue();
+      notifyQueueChanged(0, { lastSyncAt: new Date().toISOString() });
       return { ok: true, status: res.status };
     }
+    notifyQueueChanged(items.length, { failed: items.length });
     return { ok: false, status: res.status };
   } catch {
+    notifyQueueChanged(items.length, { failed: items.length });
     return { ok: false };
   }
 }

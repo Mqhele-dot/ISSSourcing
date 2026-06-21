@@ -16,6 +16,7 @@ import { registerReorderRequestRoutes } from "./reorder/register-reorder-routes"
 import { registerGasRoutes } from "./gas/register-gas-routes";
 import { registerApRoutes } from "./accounts-payable/register-ap-routes";
 import { registerExportCenterRoutes } from "./exports/register-export-center-routes";
+import { registerMobileCountRoutes } from "./mobile-counts/register-mobile-count-routes";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -33,6 +34,7 @@ export function registerDomainModules(app: Express, auth: AuthBundle): void {
   registerInventoryCrudRoutes(app, auth);
   registerStockMovementRoutes(app, auth);
   registerBarcodeRoutes(app, auth);
+  registerMobileCountRoutes(app, auth);
   registerNotificationRoutes(app, auth);
   registerDocumentRoutes(app, auth);
   registerContractRoutes(app, auth);

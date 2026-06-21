@@ -6,6 +6,7 @@ import type { Response } from "express";
 import { sendError } from "./api-response";
 import {
   buildOrgFeatureAvailability,
+  getOrgPlanLimits,
   getOrgFeatureUpgradeHint,
   normalizeOrgPlanTier,
   resolveOrgFeatureFlags,
@@ -50,14 +51,21 @@ export async function getOrgSubscriptionForActiveOrg(): Promise<{
     upgradeHint: string;
     overridden: boolean;
   }>;
+  limits: {
+    users: number | null;
+    warehouses: number | null;
+    skus: number | null;
+  };
 }> {
   const config = await getActiveOrgFeatureConfig();
+  const normalizedPlanTier = normalizeOrgPlanTier(config.planTier);
   return {
     rawPlanTier: config.planTier,
-    normalizedPlanTier: normalizeOrgPlanTier(config.planTier),
+    normalizedPlanTier,
     featureFlags: config.featureFlags,
     effectiveFeatureFlags: resolveOrgFeatureFlags(config),
     featureCatalog: buildOrgFeatureAvailability(config),
+    limits: getOrgPlanLimits(normalizedPlanTier),
   };
 }
 

@@ -1,6 +1,6 @@
 import type { Express, Request, RequestHandler, Response } from "express";
 import { db } from "../../db";
-import { activityLogs } from "@shared/schema";
+import { activityLogs, mobileSyncEvents } from "@shared/schema";
 import { getActiveOrganizationId } from "../../organization-context";
 import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisabled } from "../../org-features";
 import { sendOk } from "../../api-response";
@@ -51,6 +51,18 @@ export function registerSyncRoutes(app: Express, auth: Auth): void {
             idempotencyKey: action.idempotencyKey,
             ...action.payload,
           }).slice(0, 1900);
+          await db
+            .insert(mobileSyncEvents)
+            .values({
+              organizationId: orgId,
+              deviceId: String(action.payload.deviceId ?? "unknown-device"),
+              eventType: action.type,
+              body: action.payload,
+              idempotencyKey: action.idempotencyKey,
+              ackedAt: new Date(),
+              retryCount: Number(action.payload.retryCount ?? 0),
+            })
+            .onConflictDoNothing();
           await db.insert(activityLogs).values({
             organizationId: orgId,
             action: `offline_sync:${action.type}`,

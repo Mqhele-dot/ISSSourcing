@@ -55,6 +55,7 @@ const ProductSetupPage = lazy(() => import("@/pages/product-setup-page"));
 const SystemDiagnosticsPage = lazy(() => import("@/pages/system-diagnostics-page"));
 const MobileReceivePage = lazy(() => import("@/pages/mobile-receive"));
 const MobilePickPage = lazy(() => import("@/pages/mobile-pick"));
+const MobileCountsPage = lazy(() => import("@/pages/mobile-counts"));
 const MobileHubHome = lazy(() => import("@/pages/mobile-hub-home"));
 const MobileHubTasks = lazy(() => import("@/pages/mobile-hub-tasks"));
 const MobileHubMore = lazy(() => import("@/pages/mobile-hub-more"));
@@ -72,6 +73,10 @@ export function AppRouter() {
       <Switch>
         <ProtectedRoute path={APP_ROUTES.operations.mobileHub} component={MobileHubHome} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileTasks} component={MobileHubTasks} />
+        <ProtectedRoute path={APP_ROUTES.operations.mobileCountSpot} component={MobileCountsPage} />
+        <ProtectedRoute path="/m/counts/:id/review" component={MobileCountsPage} />
+        <ProtectedRoute path="/m/counts/:id" component={MobileCountsPage} />
+        <ProtectedRoute path={APP_ROUTES.operations.mobileCounts} component={MobileCountsPage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileScan} component={BarcodeScannerPage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileApprovals} component={PurchasePage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileMore} component={MobileHubMore} />
