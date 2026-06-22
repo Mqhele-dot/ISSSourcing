@@ -1,0 +1,172 @@
+/**
+ * Seeds operational workflow tables so Purchase Orders, Shipments, Exceptions,
+ * Integrations, and Control Tower have visible demo data.
+ * Run after main seed (or demo:reset). Safe to run multiple times; only inserts when empty.
+ *
+ * Usage: npx tsx server/seed-operational.ts
+ */
+import { pool } from "./db";
+import { initializeOperationalData } from "./operations-core";
+
+async function count(table: string): Promise<number> {
+  const r = await pool.query<{ count: string }>(`SELECT count(*)::text AS count FROM ${table}`);
+  return Number(r.rows[0]?.count ?? "0");
+}
+
+async function ensureMinOpsActivity(targetCount: number): Promise<void> {
+  const current = await count("ops_activity");
+  if (current >= targetCount) return;
+
+  for (let i = current; i < targetCount; i++) {
+    const eventType = i % 4 === 0 ? "created" : i % 4 === 1 ? "status_change" : i % 4 === 2 ? "received" : "exception_created";
+    await pool.query(
+      `INSERT INTO ops_activity (created_at, actor, entity_type, entity_id, action, summary_json)
+       VALUES (now() - ($1::int * interval '15 minutes'), 'system', 'demo', $2, $3, $4::jsonb)`,
+      [i, String((i % 10) + 1), eventType, JSON.stringify({ title: `Demo activity ${i + 1}`, details: "Operational seed expansion" })],
+    );
+  }
+}
+
+export async function seedOperationalIfEmpty(): Promise<{
+  purchaseOrders: number;
+  shipments: number;
+  exceptions: number;
+  integrationRuns: number;
+  activity: number;
+}> {
+  await initializeOperationalData();
+
+  const poCount = await count("purchase_orders");
+  const shipmentCount = await count("shipments");
+  const exceptionCount = await count("operational_exceptions");
+  const runsCount = await count("integration_runs");
+  const activityCount = await count("ops_activity");
+
+  if (poCount === 0) {
+    const [supplier] = (await pool.query<{ id: number }>("SELECT id FROM suppliers ORDER BY id LIMIT 1")).rows;
+    const items = (await pool.query<{ id: number; sku: string; price: number }>(
+      "SELECT id, sku, price FROM inventory_items ORDER BY id LIMIT 5",
+    )).rows;
+    if (supplier && items.length >= 2) {
+      const now = Date.now();
+      for (let i = 0; i < 3; i++) {
+        const orderNumber = `PO-DEMO-${now}-${i + 1}`;
+        const status = i === 0 ? "approved" : i === 1 ? "sent" : "received";
+        const total = items.slice(0, 2).reduce((sum, it) => sum + (Number(it.price) || 10) * 5, 0);
+        const poInsert = await pool.query<{ id: number }>(
+          `INSERT INTO purchase_orders (organization_id, order_number, supplier_id, status, order_date, total_amount, created_at, updated_at)
+           VALUES (1, $1, $2, $3, now(), $4, now(), now())
+           RETURNING id`,
+          [orderNumber, supplier.id, status, total],
+        );
+        const orderId = poInsert.rows[0]?.id;
+        if (orderId) {
+          for (const it of items.slice(0, 2)) {
+            const qty = 5;
+            const unitPrice = Number(it.price) || 10;
+            await pool.query(
+              `INSERT INTO purchase_order_items (order_id, item_id, quantity, unit_price, total_price, received_quantity)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [orderId, it.id, qty, unitPrice, qty * unitPrice, status === "received" ? qty : 0],
+            );
+          }
+        }
+      }
+    }
+  }
+
+  const currentShipmentCount = await count("shipments");
+  if (currentShipmentCount < 12) {
+    const pos = (await pool.query<{ order_number: string }>("SELECT order_number FROM purchase_orders ORDER BY id LIMIT 12")).rows;
+    for (const [index, row] of pos.entries()) {
+      await pool.query(
+        `INSERT INTO shipments (po_number, carrier, status, eta, created_at, updated_at)
+         VALUES ($1, $2, $3, now() + interval '2 days', now() - ($4::int * interval '45 minutes'), now())`,
+        [
+          row.order_number,
+          index % 2 === 0 ? "Demo Carrier" : "Global Freight",
+          index % 3 === 0 ? "delivered" : "in_transit",
+          index,
+        ],
+      );
+    }
+  }
+
+  if (exceptionCount < 8) {
+    await pool.query(
+      `INSERT INTO operational_exceptions (type, severity, status, title, description, related_refs, sla_hours)
+       VALUES
+         ('shortage', 'medium', 'open', 'Low stock alert', 'Demo open exception', '{"po":"PO-DEMO-1"}'::jsonb, 24),
+         ('mismatch', 'low', 'resolved', 'Receive quantity mismatch', 'Demo resolved', '{}'::jsonb, 48),
+         ('delay', 'high', 'open', 'Delayed shipment', 'Carrier ETA missed for inbound shipment', '{"shipmentId":2}'::jsonb, 12),
+         ('quality', 'medium', 'open', 'Quality hold', 'Inspection flagged damaged cartons', '{"po":"PO-DEMO-2"}'::jsonb, 24)`,
+    );
+  }
+
+  if (runsCount < 6) {
+    await pool.query(
+      `INSERT INTO integration_runs (connector, status, started_at, finished_at, message)
+       VALUES
+         ('erp', 'success', now() - interval '1 hour', now(), 'Sync completed'),
+         ('wms', 'success', now() - interval '2 hours', now() - interval '1 hour', 'OK'),
+         ('supplier_portal', 'success', now() - interval '3 hours', now() - interval '2 hours', 'Invoices synchronized'),
+         ('analytics', 'success', now() - interval '4 hours', now() - interval '3 hours', 'Metrics refresh complete')`,
+    );
+  }
+
+  if (activityCount === 0) {
+    const actions = [
+      { event_type: "created", title: "Purchase order created", details: "PO-DEMO" },
+      { event_type: "received", title: "Shipment received", details: "Partial receive" },
+      { event_type: "exception_created", title: "Exception created", details: "Shortage" },
+      { event_type: "created", title: "PO approved", details: "Approval" },
+      { event_type: "status_change", title: "Shipment in transit", details: "Carrier" },
+      { event_type: "resolved", title: "Exception resolved", details: "Mismatch" },
+      { event_type: "created", title: "Integration run", details: "ERP sync" },
+      { event_type: "received", title: "Stock receipt", details: "Warehouse" },
+      { event_type: "exception_created", title: "Low stock", details: "Alert" },
+      { event_type: "status_change", title: "PO sent", details: "Supplier" },
+    ];
+    for (const a of actions) {
+      await pool.query(
+        `INSERT INTO ops_activity (created_at, actor, entity_type, entity_id, action, summary_json)
+         VALUES (now(), 'system', 'demo', '1', $1, $2::jsonb)`,
+        [a.event_type, JSON.stringify({ title: a.title, details: a.details })],
+      );
+    }
+  }
+
+  await ensureMinOpsActivity(30);
+
+  return {
+    purchaseOrders: await count("purchase_orders"),
+    shipments: await count("shipments"),
+    exceptions: await count("operational_exceptions"),
+    integrationRuns: await count("integration_runs"),
+    activity: await count("ops_activity"),
+  };
+}
+
+async function run() {
+  try {
+    const summary = await seedOperationalIfEmpty();
+    console.log("Operational seed complete:", summary);
+  } catch (err) {
+    console.error("Operational seed failed:", err);
+    process.exit(1);
+  } finally {
+    await pool.end();
+  }
+}
+
+// Only run CLI (and pool.end()) when this file was explicitly executed (e.g. npx tsx server/seed-operational.ts).
+// When imported by the server we must never call pool.end() or the shared pool becomes unusable.
+const entryScript = typeof process.argv[1] === "string" ? process.argv[1] : "";
+const isDirectRun = entryScript.includes("seed-operational");
+
+if (isDirectRun) {
+  run().catch((err) => {
+    console.error("Operational seed failed:", err);
+    process.exit(1);
+  });
+}

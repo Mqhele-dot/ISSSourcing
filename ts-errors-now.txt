@@ -1,0 +1,240 @@
+﻿
+> rest-express@1.0.0 check
+> tsc
+
+server/database-storage.ts(410,18): error TS2741: Property 'limit' is missing in type 'Omit<import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/query-builders/select").PgSelectBase<"user_access_logs", { id: import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/columns/common").PgColumn<{ name: "id"; tableNa...' but required in type 'Omit<import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/query-builders/select").PgSelectBase<"user_access_logs", { id: import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/columns/common").PgColumn<{ name: "id"; tableNa...'.
+server/database-storage.ts(411,12): error TS2741: Property 'limit' is missing in type 'Omit<import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/query-builders/select").PgSelectBase<"user_access_logs", { id: import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/columns/common").PgColumn<{ name: "id"; tableNa...' but required in type 'Omit<import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/query-builders/select").PgSelectBase<"user_access_logs", { id: import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/columns/common").PgColumn<{ name: "id"; tableNa...'.
+server/database-storage.ts(416,56): error TS2554: Expected 1 arguments, but got 2.
+server/database-storage.ts(1230,28): error TS2339: Property 'checkIpAllowed' does not exist on type 'MemStorage'.
+server/database-storage.ts(1234,28): error TS2339: Property 'checkTimeAllowed' does not exist on type 'MemStorage'.
+server/database-storage.ts(1238,28): error TS2339: Property 'checkGeoAllowed' does not exist on type 'MemStorage'.
+server/database-storage.ts(1242,28): error TS2339: Property 'recordUserPerformance' does not exist on type 'MemStorage'.
+server/database-storage.ts(1246,28): error TS2551: Property 'getUserPerformanceMetrics' does not exist on type 'MemStorage'. Did you mean 'getUserPerformanceMetric'?
+server/database-storage.ts(1250,28): error TS2551: Property 'getTimeRestrictions' does not exist on type 'MemStorage'. Did you mean 'getTimeRestriction'?
+server/database-storage.ts(1254,28): error TS2551: Property 'addTimeRestriction' does not exist on type 'MemStorage'. Did you mean 'getTimeRestriction'?
+server/database-storage.ts(1437,100): error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type '{ itemId: number; warehouseId: number; quantity?: number | undefined; location?: string | null | undefined; aisle?: string | null | undefined; bin?: string | null | undefined; }'.
+server/database-storage.ts(1876,9): error TS2741: Property 'where' is missing in type 'Omit<import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/query-builders/select").PgSelectBase<"user_access_logs", { id: import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/columns/common").PgColumn<{ name: "id"; tableNa...' but required in type 'Omit<import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/query-builders/select").PgSelectBase<"user_access_logs", { id: import("C:/Users/USER-PC/OneDrive/Documents/GITHUB REPO/ISSSourcing/node_modules/drizzle-orm/pg-core/columns/common").PgColumn<{ name: "id"; tableNa...'.
+server/operations-routes.ts(235,21): error TS2345: Argument of type '(req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>' is not assignable to parameter of type 'ApiRouteHandler'.
+  Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'void | Promise<void>'.
+    Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'Promise<void>'.
+      Type 'Response<any, Record<string, any>> | undefined' is not assignable to type 'void'.
+        Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+server/operations-routes.ts(353,21): error TS2345: Argument of type '(req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>' is not assignable to parameter of type 'ApiRouteHandler'.
+  Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'void | Promise<void>'.
+    Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'Promise<void>'.
+      Type 'Response<any, Record<string, any>> | undefined' is not assignable to type 'void'.
+        Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+server/operations-routes.ts(553,21): error TS2345: Argument of type '(req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>' is not assignable to parameter of type 'ApiRouteHandler'.
+  Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'void | Promise<void>'.
+    Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'Promise<void>'.
+      Type 'Response<any, Record<string, any>> | undefined' is not assignable to type 'void'.
+        Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+server/operations-routes.ts(641,21): error TS2345: Argument of type '(req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>' is not assignable to parameter of type 'ApiRouteHandler'.
+  Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'void | Promise<void>'.
+    Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'Promise<void>'.
+      Type 'Response<any, Record<string, any>> | undefined' is not assignable to type 'void'.
+        Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+server/operations-routes.ts(814,21): error TS2345: Argument of type '(req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>' is not assignable to parameter of type 'ApiRouteHandler'.
+  Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'void | Promise<void>'.
+    Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'Promise<void>'.
+      Type 'Response<any, Record<string, any>> | undefined' is not assignable to type 'void'.
+        Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+server/operations-routes.ts(844,21): error TS2345: Argument of type '(req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>' is not assignable to parameter of type 'ApiRouteHandler'.
+  Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'void | Promise<void>'.
+    Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'Promise<void>'.
+      Type 'Response<any, Record<string, any>> | undefined' is not assignable to type 'void'.
+        Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+server/operations-routes.ts(903,21): error TS2345: Argument of type '(req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>' is not assignable to parameter of type 'ApiRouteHandler'.
+  Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'void | Promise<void>'.
+    Type 'Promise<Response<any, Record<string, any>> | undefined>' is not assignable to type 'Promise<void>'.
+      Type 'Response<any, Record<string, any>> | undefined' is not assignable to type 'void'.
+        Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+server/proxy.ts(14,7): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(input: string | URL | Request, init?: RequestInit | undefined): Promise<Response>', gave the following error.
+    Type 'IncomingMessage | undefined' is not assignable to type 'BodyInit | null | undefined'.
+      Type 'IncomingMessage' is not assignable to type 'BodyInit | null | undefined'.
+        Type 'IncomingMessage' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 8 more.
+  Overload 2 of 2, '(input: URL | RequestInfo, init?: RequestInit | undefined): Promise<Response>', gave the following error.
+    Type 'IncomingMessage | undefined' is not assignable to type 'BodyInit | null | undefined'.
+      Type 'IncomingMessage' is not assignable to type 'BodyInit | null | undefined'.
+        Type 'IncomingMessage' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 8 more.
+server/proxy.ts(55,31): error TS7006: Parameter 'message' implicitly has an 'any' type.
+server/proxy.ts(79,29): error TS7006: Parameter 'error' implicitly has an 'any' type.
+server/real-time-sync-service.ts(334,13): error TS2740: Type '{}' is missing the following properties from type 'any[]': length, pop, push, concat, and 35 more.
+server/real-time-sync-service.ts(627,11): error TS2801: This condition will always return true since this 'Promise<boolean>' is always defined.
+server/routes.ts(374,13): error TS2345: Argument of type 'string' is not assignable to parameter of type '"INVENTORY" | "PURCHASES" | "SUPPLIERS" | "CATEGORIES" | "WAREHOUSES" | "REPORTS" | "USERS" | "SETTINGS" | "REORDER_REQUESTS" | "STOCK_MOVEMENTS" | "INVOICES" | "BILLING" | "TAXES" | "PAYMENTS"'.
+server/routes.ts(1605,24): error TS2551: Property 'fromWarehouseId' does not exist on type '{ notes: string | null; type: "RECEIPT" | "ISSUE" | "TRANSFER" | "ADJUSTMENT" | "RECOUNT" | "PURCHASE" | "SALE" | "RETURN" | "DAMAGE" | "EXPIRE"; id: number; itemId: number; quantity: number; ... 10 more ...; newQuantity: number | null; }'. Did you mean 'warehouseId'?
+server/routes.ts(1605,75): error TS2551: Property 'toWarehouseId' does not exist on type '{ notes: string | null; type: "RECEIPT" | "ISSUE" | "TRANSFER" | "ADJUSTMENT" | "RECOUNT" | "PURCHASE" | "SALE" | "RETURN" | "DAMAGE" | "EXPIRE"; id: number; itemId: number; quantity: number; ... 10 more ...; newQuantity: number | null; }'. Did you mean 'warehouseId'?
+server/routes.ts(2257,48): error TS2554: Expected 1 arguments, but got 0.
+server/routes.ts(3436,30): error TS2693: 'UserRole' only refers to a type, but is being used as a value here.
+server/routes.ts(3448,26): error TS2693: 'UserRole' only refers to a type, but is being used as a value here.
+server/routes.ts(3935,9): error TS2353: Object literal may only specify known properties, and 'sentDate' does not exist in type 'Partial<{ customerId: number; dueDate: Date; createdBy: number; status?: "DRAFT" | "SENT" | "PAID" | "PARTIALLY_PAID" | "OVERDUE" | "CANCELLED" | "VOID" | undefined; notes?: string | null | undefined; ... 9 more ...; paidAmount?: number | ... 1 more ... | undefined; }>'.
+server/routes.ts(4494,7): error TS2322: Type 'SchemaStatus' is not assignable to type '{ ok: boolean; status: "schema_incomplete"; missingTables: string[]; }'.
+  Types of property 'status' are incompatible.
+    Type '"schema_ok" | "schema_incomplete"' is not assignable to type '"schema_incomplete"'.
+      Type '"schema_ok"' is not assignable to type '"schema_incomplete"'.
+server/seed.ts(401,45): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { itemId: number | SQL<unknown> | Placeholder<string, any>; requestNumber: string | SQL<unknown> | Placeholder<string, any>; status?: string | SQL<unknown> | Placeholder<...> | undefined; ... 14 more ...; requisitionId?: number | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Argument of type '{ itemId: number; status?: string | undefined; notes?: string | null | undefined; quantity?: number | undefined; supplierId?: number | null | undefined; warehouseId?: number | null | undefined; ... 7 more ...; requisitionId?: number | ... 1 more ... | undefined; }' is not assignable to parameter of type '{ itemId: number | SQL<unknown> | Placeholder<string, any>; requestNumber: string | SQL<unknown> | Placeholder<string, any>; status?: string | SQL<unknown> | Placeholder<...> | undefined; ... 14 more ...; requisitionId?: number | ... 3 more ... | undefined; }'.
+      Types of property 'requestNumber' are incompatible.
+        Type 'string | undefined' is not assignable to type 'string | SQL<unknown> | Placeholder<string, any>'.
+          Type 'undefined' is not assignable to type 'string | SQL<unknown> | Placeholder<string, any>'.
+  Overload 2 of 2, '(values: { itemId: number | SQL<unknown> | Placeholder<string, any>; requestNumber: string | SQL<unknown> | Placeholder<string, any>; status?: string | SQL<unknown> | Placeholder<...> | undefined; ... 14 more ...; requisitionId?: number | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Argument of type '{ itemId: number; status?: string | undefined; notes?: string | null | undefined; quantity?: number | undefined; supplierId?: number | null | undefined; warehouseId?: number | null | undefined; ... 7 more ...; requisitionId?: number | ... 1 more ... | undefined; }' is not assignable to parameter of type '{ itemId: number | SQL<unknown> | Placeholder<string, any>; requestNumber: string | SQL<unknown> | Placeholder<string, any>; status?: string | SQL<unknown> | Placeholder<...> | undefined; ... 14 more ...; requisitionId?: number | ... 3 more ... | undefined; }[]'.
+      Type '{ itemId: number; status?: string | undefined; notes?: string | null | undefined; quantity?: number | undefined; supplierId?: number | null | undefined; warehouseId?: number | null | undefined; ... 7 more ...; requisitionId?: number | ... 1 more ... | undefined; }' is missing the following properties from type '{ itemId: number | SQL<unknown> | Placeholder<string, any>; requestNumber: string | SQL<unknown> | Placeholder<string, any>; status?: string | SQL<unknown> | Placeholder<...> | undefined; ... 14 more ...; requisitionId?: number | ... 3 more ... | undefined; }[]': length, pop, push, concat, and 35 more.
+server/services/document-extractor-service.ts(358,29): error TS2339: Property 'text' does not exist on type 'CellErrorValue | CellRichTextValue | CellHyperlinkValue | CellFormulaValue | CellSharedFormulaValue'.
+  Property 'text' does not exist on type 'CellErrorValue'.
+server/services/document-extractor-service.ts(464,18): error TS2339: Property 'loadLanguage' does not exist on type 'Worker'.
+server/services/document-extractor-service.ts(465,18): error TS2551: Property 'initialize' does not exist on type 'Worker'. Did you mean 'reinitialize'?
+server/services/document-extractor-service.ts(818,11): error TS2722: Cannot invoke an object which is possibly 'undefined'.
+server/services/document-generator-service.ts(75,20): error TS2344: Type 'PDFFont' does not satisfy the constraint '(...args: any) => any'.
+  Type 'PDFFont' provides no match for the signature '(...args: any): any'.
+server/services/document-generator-service.ts(76,24): error TS2344: Type 'PDFFont' does not satisfy the constraint '(...args: any) => any'.
+  Type 'PDFFont' provides no match for the signature '(...args: any): any'.
+server/services/document-generator-service.ts(116,20): error TS2344: Type 'PDFFont' does not satisfy the constraint '(...args: any) => any'.
+  Type 'PDFFont' provides no match for the signature '(...args: any): any'.
+server/services/document-generator-service.ts(146,20): error TS2344: Type 'PDFFont' does not satisfy the constraint '(...args: any) => any'.
+  Type 'PDFFont' provides no match for the signature '(...args: any): any'.
+server/services/document-generator-service.ts(147,24): error TS2344: Type 'PDFFont' does not satisfy the constraint '(...args: any) => any'.
+  Type 'PDFFont' provides no match for the signature '(...args: any): any'.
+server/services/openai-service.ts(119,71): error TS18046: 'e2' is of type 'unknown'.
+server/services/openai-service.ts(228,42): error TS2339: Property 'name' does not exist on type 'Promise<{ id: number; description: string | null; name: string; } | undefined>'.
+server/services/openai-service.ts(229,73): error TS2339: Property 'name' does not exist on type 'Promise<{ id: number; description: string | null; name: string; } | undefined>'.
+server/services/security-service.ts(152,48): error TS2551: Property 'getRecentFailedLoginAttempts' does not exist on type 'DatabaseStorage'. Did you mean 'getFailedLoginAttempts'?
+server/services/security-service.ts(164,7): error TS2353: Object literal may only specify known properties, and 'isSuccessful' does not exist in type '{ action: string; userId: number; details?: Json | undefined; userAgent?: string | null | undefined; geolocation?: string | null | undefined; ipAddress?: string | null | undefined; sessionId?: string | ... 1 more ... | undefined; }'.
+server/services/two-factor-service.ts(50,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+server/services/two-factor-service.ts(55,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+server/storage.ts(757,54): error TS2339: Property 'id' does not exist on type 'Promise<{ notes: string | null; id: number; address: string | null; name: string; email: string | null; createdAt: Date; updatedAt: Date; contactName: string | null; phone: string | null; }>'.
+server/storage.ts(849,7): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+server/storage.ts(944,32): error TS2339: Property 'preferences' does not exist on type '{ id: number; updatedAt: Date; theme: string | null; notifications: unknown; userId: number; dashboardLayout: unknown; language: string | null; }'.
+server/storage.ts(944,64): error TS2339: Property 'preferences' does not exist on type '{ id: number; updatedAt: Date; theme: string | null; notifications: unknown; userId: number; dashboardLayout: unknown; language: string | null; }'.
+server/storage.ts(945,31): error TS2339: Property 'preferences' does not exist on type '{ id: number; updatedAt: Date; theme: string | null; notifications: unknown; userId: number; dashboardLayout: unknown; language: string | null; }'.
+server/storage.ts(961,31): error TS2304: Cannot find name 'UserRole'.
+server/storage.ts(961,51): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(961,77): error TS2552: Cannot find name 'PermissionType'. Did you mean 'PermissionTypeEnum'?
+server/storage.ts(977,34): error TS2304: Cannot find name 'UserRole'.
+server/storage.ts(1120,59): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(1120,85): error TS2552: Cannot find name 'PermissionType'. Did you mean 'PermissionTypeEnum'?
+server/storage.ts(1186,14): error TS2367: This comparison appears to be unintentional because the types '"categories" | "system" | "users" | "warehouses" | "custom_roles" | "inventory" | "suppliers" | "stock_movements" | "purchases" | "reorder_requests" | "settings" | "reports" | ... 7 more ... | "user_profiles"' and '"INVENTORY" | "PURCHASES" | "SUPPLIERS" | "CATEGORIES" | "WAREHOUSES" | "REPORTS" | "USERS" | "SETTINGS" | "REORDER_REQUESTS" | "STOCK_MOVEMENTS" | "INVOICES" | "BILLING" | "TAXES" | "PAYMENTS"' have no overlap.
+server/storage.ts(1186,41): error TS2367: This comparison appears to be unintentional because the types '"download" | "update" | "create" | "execute" | "admin" | "manage" | "import" | "delete" | "read" | "approve" | "export" | "assign" | "scan" | "transfer" | "print" | "view_reports" | ... 4 more ... | "verify"' and '"DELETE" | "CREATE" | "READ" | "UPDATE" | "APPROVE" | "EXPORT" | "IMPORT" | "ASSIGN"' have no overlap.
+server/storage.ts(1193,9): error TS2416: Property 'logUserAccess' in type 'MemStorage' is not assignable to the same property in base type 'IStorage'.
+  Type '(log: { action: string; userId: number; details?: Json | undefined; userAgent?: string | null | undefined; geolocation?: string | null | undefined; ipAddress?: string | null | undefined; sessionId?: string | ... 1 more ... | undefined; }) => Promise<...>' is not assignable to type '{ (log: { action: string; userId: number; details?: Json | undefined; userAgent?: string | null | undefined; geolocation?: string | null | undefined; ipAddress?: string | null | undefined; sessionId?: string | ... 1 more ... | undefined; }): Promise<...>; (userId: number, action: string, details?: any, ip?: string |...'.
+    Types of parameters 'log' and 'userId' are incompatible.
+      Type 'number' is not assignable to type '{ action: string; userId: number; details?: Json | undefined; userAgent?: string | null | undefined; geolocation?: string | null | undefined; ipAddress?: string | null | undefined; sessionId?: string | ... 1 more ... | undefined; }'.
+server/storage.ts(1195,11): error TS2322: Type '{ id: number; timestamp: Date; action: string; userId: number; details?: Json | undefined; userAgent?: string | null | undefined; geolocation?: string | null | undefined; ipAddress?: string | ... 1 more ... | undefined; sessionId?: string | ... 1 more ... | undefined; }' is not assignable to type '{ id: number; details: unknown; action: string; timestamp: Date; userAgent: string | null; userId: number; geolocation: string | null; ipAddress: string | null; sessionId: string | null; }'.
+  Property 'details' is optional in type '{ id: number; timestamp: Date; action: string; userId: number; details?: Json | undefined; userAgent?: string | null | undefined; geolocation?: string | null | undefined; ipAddress?: string | ... 1 more ... | undefined; sessionId?: string | ... 1 more ... | undefined; }' but required in type '{ id: number; details: unknown; action: string; timestamp: Date; userAgent: string | null; userId: number; geolocation: string | null; ipAddress: string | null; sessionId: string | null; }'.
+server/storage.ts(1712,7): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+server/storage.ts(1820,46): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(1820,72): error TS2304: Cannot find name 'PermissionType'.
+server/storage.ts(1886,48): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(1886,74): error TS2304: Cannot find name 'PermissionType'.
+server/storage.ts(1939,55): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(1939,81): error TS2304: Cannot find name 'PermissionType'.
+server/storage.ts(1966,47): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(1966,73): error TS2304: Cannot find name 'PermissionType'.
+server/storage.ts(1995,50): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(1995,76): error TS2304: Cannot find name 'PermissionType'.
+server/storage.ts(2016,48): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(2016,74): error TS2304: Cannot find name 'PermissionType'.
+server/storage.ts(2049,49): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(2049,75): error TS2304: Cannot find name 'PermissionType'.
+server/storage.ts(2157,36): error TS2304: Cannot find name 'UserRole'.
+server/storage.ts(2162,44): error TS2304: Cannot find name 'Resource'.
+server/storage.ts(3076,11): error TS2322: Type '{ id: number; createdAt: Date; updatedAt: Date; name: string; sku: string; price: number; status?: string | null | undefined; description?: string | null | undefined; quantity?: number | undefined; ... 20 more ...; customFields?: Json | undefined; }' is not assignable to type '{ status: string | null; id: number; description: string | null; quantity: number; name: string; createdAt: Date; updatedAt: Date; sku: string; categoryId: number | null; price: number; ... 19 more ...; customFields: unknown; }'.
+  Types of property 'status' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+server/storage.ts(3146,45): error TS18047: 'item.lowStockThreshold' is possibly 'null'.
+server/storage.ts(3300,11): error TS2322: Type '{ id: number; createdAt: Date; updatedAt: Date; requisitionNumber: string; status?: string | undefined; notes?: string | null | undefined; supplierId?: number | null | undefined; ... 5 more ...; totalAmount?: number | undefined; }' is not assignable to type '{ status: string; notes: string | null; id: number; createdAt: Date; updatedAt: Date; supplierId: number | null; requestorId: number | null; approverId: number | null; approvalDate: Date | null; rejectionReason: string | null; requisitionNumber: string; requiredDate: Date | null; totalAmount: number; }'.
+  Types of property 'status' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/storage.ts(3401,11): error TS2322: Type '{ id: number; itemId: number; unitPrice: number; totalPrice: number; requisitionId: number; notes?: string | null | undefined; quantity?: number | undefined; }' is not assignable to type '{ notes: string | null; id: number; itemId: number; quantity: number; unitPrice: number; totalPrice: number; requisitionId: number; }'.
+  Types of property 'notes' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+server/storage.ts(3541,11): error TS2322: Type '{ id: number; createdAt: Date; updatedAt: Date; supplierId: number; orderNumber: string; status?: string | undefined; notes?: string | null | undefined; paymentDate?: Date | null | undefined; ... 8 more ...; emailSentDate?: Date | ... 1 more ... | undefined; }' is not assignable to type '{ status: string; notes: string | null; id: number; createdAt: Date; updatedAt: Date; paymentDate: Date | null; supplierId: number; requisitionId: number | null; totalAmount: number; ... 7 more ...; emailSentDate: Date | null; }'.
+  Types of property 'status' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/storage.ts(3642,11): error TS2322: Type '{ id: number; itemId: number; unitPrice: number; totalPrice: number; orderId: number; notes?: string | null | undefined; quantity?: number | undefined; receivedQuantity?: number | null | undefined; }' is not assignable to type '{ notes: string | null; id: number; itemId: number; quantity: number; unitPrice: number; totalPrice: number; orderId: number; receivedQuantity: number | null; }'.
+  Types of property 'notes' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+server/storage.ts(3785,25): error TS18047: 'poItem.receivedQuantity' is possibly 'null'.
+server/storage.ts(3802,57): error TS18047: 'item.receivedQuantity' is possibly 'null'.
+server/storage.ts(3809,58): error TS18047: 'item.receivedQuantity' is possibly 'null'.
+server/storage.ts(3844,7): error TS2322: Type 'number | null' is not assignable to type 'number'.
+  Type 'null' is not assignable to type 'number'.
+server/storage.ts(3930,14): error TS2551: Property 'supplier' does not exist on type '{ status: string | null; id: number; description: string | null; quantity: number; name: string; createdAt: Date; updatedAt: Date; sku: string; categoryId: number | null; price: number; ... 19 more ...; customFields: unknown; }'. Did you mean 'supplierId'?
+server/storage.ts(3934,14): error TS2551: Property 'category' does not exist on type '{ status: string | null; id: number; description: string | null; quantity: number; name: string; createdAt: Date; updatedAt: Date; sku: string; categoryId: number | null; price: number; ... 19 more ...; customFields: unknown; }'. Did you mean 'categoryId'?
+server/storage.ts(3953,5): error TS2322: Type '{ item: { status: string | null; id: number; description: string | null; quantity: number; name: string; createdAt: Date; updatedAt: Date; sku: string; categoryId: number | null; ... 20 more ...; customFields: unknown; }; ... 6 more ...; requisitionId: number; }[]' is not assignable to type 'never[]'.
+  Type '{ item: { status: string | null; id: number; description: string | null; quantity: number; name: string; createdAt: Date; updatedAt: Date; sku: string; categoryId: number | null; ... 20 more ...; customFields: unknown; }; ... 6 more ...; requisitionId: number; }' is not assignable to type 'never'.
+server/storage.ts(3963,14): error TS2551: Property 'requestor' does not exist on type '{ items: never[]; status: string; notes: string | null; id: number; createdAt: Date; updatedAt: Date; supplierId: number | null; requestorId: number | null; approverId: number | null; ... 4 more ...; totalAmount: number; }'. Did you mean 'requestorId'?
+server/storage.ts(3968,14): error TS2551: Property 'approver' does not exist on type '{ items: never[]; status: string; notes: string | null; id: number; createdAt: Date; updatedAt: Date; supplierId: number | null; requestorId: number | null; approverId: number | null; ... 4 more ...; totalAmount: number; }'. Did you mean 'approverId'?
+server/storage.ts(3973,14): error TS2551: Property 'supplier' does not exist on type '{ items: never[]; status: string; notes: string | null; id: number; createdAt: Date; updatedAt: Date; supplierId: number | null; requestorId: number | null; approverId: number | null; ... 4 more ...; totalAmount: number; }'. Did you mean 'supplierId'?
+server/storage.ts(4000,5): error TS2322: Type '{ item: { status: string | null; id: number; description: string | null; quantity: number; name: string; createdAt: Date; updatedAt: Date; sku: string; categoryId: number | null; ... 20 more ...; customFields: unknown; }; ... 7 more ...; receivedQuantity: number | null; }[]' is not assignable to type 'never[]'.
+  Type '{ item: { status: string | null; id: number; description: string | null; quantity: number; name: string; createdAt: Date; updatedAt: Date; sku: string; categoryId: number | null; ... 20 more ...; customFields: unknown; }; ... 7 more ...; receivedQuantity: number | null; }' is not assignable to type 'never'.
+server/storage.ts(4010,14): error TS2551: Property 'requisition' does not exist on type '{ items: never[]; supplier: { notes: string | null; id: number; address: string | null; name: string; email: string | null; createdAt: Date; updatedAt: Date; contactName: string | null; phone: string | null; }; ... 16 more ...; emailSentDate: Date | null; }'. Did you mean 'requisitionId'?
+server/storage.ts(4075,13): error TS2740: Type '{ id: number; companyName: string; companyLogo: string | null; primaryColor: string; dateFormat: string; timeFormat: string; currencySymbol: string; lowStockDefaultThreshold: number; allowNegativeInventory: boolean; enableVat: boolean; defaultVatCountry: string; showPricesWithVat: true; updatedAt: Date; }' is missing the following properties from type '{ id: number; updatedAt: Date; defaultWarehouseId: number | null; companyName: string; companyLogo: string | null; primaryColor: string | null; dateFormat: string | null; timeFormat: string | null; ... 18 more ...; databaseSettings: unknown; }': defaultWarehouseId, availableUnits, defaultUnit, enableCustomTags, and 10 more.
+server/storage.ts(4193,11): error TS2322: Type '{ id: number; attachments: { name: string; url: string; }[]; createdAt: Date; updatedAt: Date; title: string; supplierId: number; startDate: Date; status?: string | undefined; ... 6 more ...; referenceNumber?: string | ... 1 more ... | undefined; }' is not assignable to type '{ status: string; notes: string | null; value: number | null; id: number; summary: string | null; title: string; createdAt: Date; updatedAt: Date; supplierId: number; currency: string | null; ... 4 more ...; attachments: { ...; }[] | null; }'.
+  Types of property 'status' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/storage.ts(4244,11): error TS2322: Type '{ id: number; requestNumber: string; createdAt: Date; updatedAt: Date; status: string; notes: string | null; requestorId: number | null; approverId: number | null; approvalDate: any; ... 8 more ...; quantity?: number | undefined; }' is not assignable to type '{ status: string; notes: string | null; id: number; itemId: number; quantity: number; createdAt: Date; updatedAt: Date; supplierId: number | null; warehouseId: number | null; ... 8 more ...; requisitionId: number | null; }'.
+  Types of property 'quantity' are incompatible.
+    Type 'number | undefined' is not assignable to type 'number'.
+      Type 'undefined' is not assignable to type 'number'.
+server/storage.ts(4254,35): error TS2339: Property 'approvalDate' does not exist on type '{ itemId: number; status?: string | undefined; notes?: string | null | undefined; quantity?: number | undefined; supplierId?: number | null | undefined; warehouseId?: number | null | undefined; ... 7 more ...; requisitionId?: number | ... 1 more ... | undefined; }'.
+server/storage.ts(4489,11): error TS2322: Type '{ id: number; updatedAt: Date; countryCode: string; countryName: string; standardRate: number; active?: boolean | null | undefined; reducedRate?: number | null | undefined; superReducedRate?: number | ... 1 more ... | undefined; }' is not assignable to type '{ id: number; updatedAt: Date; active: boolean | null; countryCode: string; countryName: string; standardRate: number; reducedRate: number | null; superReducedRate: number | null; }'.
+  Types of property 'active' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean | null'.
+      Type 'undefined' is not assignable to type 'boolean | null'.
+server/storage.ts(4588,7): error TS2322: Type '"INVENTORY" | "PURCHASES" | "SUPPLIERS" | "CATEGORIES" | "WAREHOUSES" | "REPORTS" | "USERS" | "SETTINGS" | "REORDER_REQUESTS" | "STOCK_MOVEMENTS" | "INVOICES" | "BILLING" | "TAXES" | "PAYMENTS"' is not assignable to type '"categories" | "system" | "users" | "warehouses" | "custom_roles" | "inventory" | "suppliers" | "stock_movements" | "purchases" | "reorder_requests" | "settings" | "reports" | ... 7 more ... | "user_profiles"'.
+  Type '"INVENTORY"' is not assignable to type '"categories" | "system" | "users" | "warehouses" | "custom_roles" | "inventory" | "suppliers" | "stock_movements" | "purchases" | "reorder_requests" | "settings" | "reports" | ... 7 more ... | "user_profiles"'. Did you mean '"inventory"'?
+server/storage.ts(4589,7): error TS2322: Type '"DELETE" | "CREATE" | "READ" | "UPDATE" | "APPROVE" | "EXPORT" | "IMPORT" | "ASSIGN"' is not assignable to type '"download" | "update" | "create" | "execute" | "admin" | "manage" | "import" | "delete" | "read" | "approve" | "export" | "assign" | "scan" | "transfer" | "print" | "view_reports" | ... 4 more ... | "verify"'.
+  Type '"DELETE"' is not assignable to type '"download" | "update" | "create" | "execute" | "admin" | "manage" | "import" | "delete" | "read" | "approve" | "export" | "assign" | "scan" | "transfer" | "print" | "view_reports" | ... 4 more ... | "verify"'. Did you mean '"delete"'?
+server/storage.ts(4598,35): error TS2367: This comparison appears to be unintentional because the types '"categories" | "system" | "users" | "warehouses" | "custom_roles" | "inventory" | "suppliers" | "stock_movements" | "purchases" | "reorder_requests" | "settings" | "reports" | ... 7 more ... | "user_profiles"' and '"INVENTORY" | "PURCHASES" | "SUPPLIERS" | "CATEGORIES" | "WAREHOUSES" | "REPORTS" | "USERS" | "SETTINGS" | "REORDER_REQUESTS" | "STOCK_MOVEMENTS" | "INVOICES" | "BILLING" | "TAXES" | "PAYMENTS"' have no overlap.
+server/storage.ts(4598,62): error TS2367: This comparison appears to be unintentional because the types '"download" | "update" | "create" | "execute" | "admin" | "manage" | "import" | "delete" | "read" | "approve" | "export" | "assign" | "scan" | "transfer" | "print" | "view_reports" | ... 4 more ... | "verify"' and '"DELETE" | "CREATE" | "READ" | "UPDATE" | "APPROVE" | "EXPORT" | "IMPORT" | "ASSIGN"' have no overlap.
+server/storage.ts(4621,7): error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type '{ id: number; resource: "categories" | "system" | "users" | "warehouses" | "custom_roles" | "inventory" | "suppliers" | "stock_movements" | "purchases" | "reorder_requests" | "settings" | ... 8 more ... | "user_profiles"; createdAt: Date; roleId: number; permissionType: "download" | ... 19 more ... | "verify"; }'.
+server/storage.ts(4637,7): error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type '{ id: number; resource: "categories" | "system" | "users" | "warehouses" | "custom_roles" | "inventory" | "suppliers" | "stock_movements" | "purchases" | "reorder_requests" | "settings" | ... 8 more ... | "user_profiles"; createdAt: Date; roleId: number; permissionType: "download" | ... 19 more ... | "verify"; }'.
+server/storage.ts(4668,7): error TS2353: Object literal may only specify known properties, and 'createdAt' does not exist in type '{ id: number; details: unknown; action: string; timestamp: Date; userAgent: string | null; userId: number; geolocation: string | null; ipAddress: string | null; sessionId: string | null; }'.
+server/storage.ts(4693,7): error TS2353: Object literal may only specify known properties, and 'createdAt' does not exist in type '{ id: number; updatedAt: Date; state: string | null; country: string | null; userId: number; phoneWork: string | null; phoneMobile: string | null; phoneHome: string | null; addressLine1: string | null; ... 4 more ...; emergencyPhone: string | null; }'.
+server/storage.ts(4733,7): error TS2353: Object literal may only specify known properties, and 'createdAt' does not exist in type '{ id: number; updatedAt: Date; userId: number; allowedIpAddresses: string[] | null; allowedTimeWindows: unknown; allowedGeolocations: string[] | null; securityQuestions: unknown; securityAnswers: unknown; biometricEnabled: boolean | null; biometricType: string | null; ssoEnabled: boolean | null; ssoProvider: string ...'.
+server/storage.ts(4774,7): error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type '{ notes: string | null; value: number; id: number; createdAt: Date; userId: number; startDate: Date; endDate: Date; metricType: string; }'.
+server/storage.ts(4790,7): error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type '{ notes: string | null; value: number; id: number; createdAt: Date; userId: number; startDate: Date; endDate: Date; metricType: string; }'.
+server/storage.ts(4817,11): error TS2322: Type '{ startTime: string; userId: number; dayOfWeek: number; endTime: string; isActive?: boolean | null | undefined; id: number; createdAt: Date; updatedAt: Date; }' is not assignable to type '{ id: number; createdAt: Date; updatedAt: Date; isActive: boolean | null; startTime: string; userId: number; dayOfWeek: number; endTime: string; }'.
+  Types of property 'isActive' are incompatible.
+    Type 'boolean | null | undefined' is not assignable to type 'boolean | null'.
+      Type 'undefined' is not assignable to type 'boolean | null'.
+server/storage.ts(4886,7): error TS2322: Type 'number | undefined' is not assignable to type 'number | null'.
+  Type 'undefined' is not assignable to type 'number | null'.
+server/storage.ts(4888,25): error TS2339: Property 'sentDate' does not exist on type '{ customerId: number; dueDate: Date; createdBy: number; status?: "DRAFT" | "SENT" | "PAID" | "PARTIALLY_PAID" | "OVERDUE" | "CANCELLED" | "VOID" | undefined; notes?: string | null | undefined; ... 9 more ...; paidAmount?: number | ... 1 more ... | undefined; }'.
+server/storage.ts(4889,25): error TS2339: Property 'paidDate' does not exist on type '{ customerId: number; dueDate: Date; createdBy: number; status?: "DRAFT" | "SENT" | "PAID" | "PARTIALLY_PAID" | "OVERDUE" | "CANCELLED" | "VOID" | undefined; notes?: string | null | undefined; ... 9 more ...; paidAmount?: number | ... 1 more ... | undefined; }'.
+server/storage.ts(5043,11): error TS2322: Type '{ id: number; createdAt: Date; updatedAt: Date; itemId: number; unitPrice: number; totalPrice: number; invoiceId: number; taxAmount?: number | null | undefined; description?: string | undefined; quantity?: number | undefined; discount?: number | ... 1 more ... | undefined; taxRate?: number | ... 1 more ... | undefin...' is not assignable to type '{ taxAmount: number | null; id: number; itemId: number; description: string; quantity: number; unitPrice: number; discount: number | null; taxRate: number | null; totalPrice: number; createdAt: Date; updatedAt: Date; invoiceId: number; }'.
+  Types of property 'taxAmount' are incompatible.
+    Type 'number | null | undefined' is not assignable to type 'number | null'.
+      Type 'undefined' is not assignable to type 'number | null'.
+server/storage.ts(5134,11): error TS2322: Type '{ id: number; createdAt: Date; updatedAt: Date; paymentDate: Date; invoiceId: number; amount: number; receivedBy: number; notes?: string | null | undefined; method?: "CASH" | ... 6 more ... | undefined; transactionReference?: string | ... 1 more ... | undefined; }' is not assignable to type '{ notes: string | null; id: number; method: "CASH" | "CREDIT_CARD" | "DEBIT_CARD" | "BANK_TRANSFER" | "CHECK" | "PAYPAL" | "OTHER"; createdAt: Date; updatedAt: Date; invoiceId: number; amount: number; transactionReference: string | null; paymentDate: Date; receivedBy: number; }'.
+  Types of property 'notes' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+server/storage.ts(5160,9): error TS2322: Type 'string' is not assignable to type '"DRAFT" | "SENT" | "PAID" | "PARTIALLY_PAID" | "OVERDUE" | "CANCELLED" | "VOID" | undefined'.
+server/storage.ts(5208,11): error TS2322: Type 'string' is not assignable to type '"DRAFT" | "SENT" | "PAID" | "PARTIALLY_PAID" | "OVERDUE" | "CANCELLED" | "VOID" | undefined'.
+server/storage.ts(5241,9): error TS2322: Type 'string' is not assignable to type '"DRAFT" | "SENT" | "PAID" | "PARTIALLY_PAID" | "OVERDUE" | "CANCELLED" | "VOID" | undefined'.
+server/storage.ts(5354,11): error TS2322: Type '{ id: number; createdAt: Date; updatedAt: Date; isActive: boolean | null; isDefault: boolean | null; name: string; rate: number; description?: string | null | undefined; }' is not assignable to type '{ id: number; description: string | null; name: string; createdAt: Date; updatedAt: Date; isActive: boolean | null; isDefault: boolean | null; rate: number; }'.
+  Types of property 'description' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+server/storage.ts(5487,11): error TS2322: Type '{ id: number; createdAt: Date; updatedAt: Date; isActive: boolean | null; value: number; name: string; type?: string | undefined; description?: string | null | undefined; startDate?: Date | ... 1 more ... | undefined; endDate?: Date | ... 1 more ... | undefined; }' is not assignable to type '{ value: number; type: string; id: number; description: string | null; name: string; createdAt: Date; updatedAt: Date; isActive: boolean | null; startDate: Date | null; endDate: Date | null; }'.
+  Types of property 'type' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/storage.ts(5565,11): error TS2322: Type '{ id: number; createdAt: Date; sentDate: Date; invoiceId: number; reminderType: string; sentTo: string; status?: string | undefined; sentMethod?: string | undefined; messageContent?: string | ... 1 more ... | undefined; }' is not assignable to type '{ status: string; id: number; createdAt: Date; sentDate: Date; invoiceId: number; reminderType: string; sentTo: string; sentMethod: string; messageContent: string | null; }'.
+  Types of property 'status' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.

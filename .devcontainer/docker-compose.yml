@@ -1,0 +1,45 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspace:cached
+    command: sleep infinity
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/inventory_dev
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: inventory_dev
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      NODE_ENV: development
+      CHOKIDAR_USEPOLLING: "true"
+      # Pass through from the Codespaces host so Express trusts X-Forwarded-Proto and sets Secure cookies.
+      CODESPACES: ${CODESPACES:-}
+      CODESPACE_NAME: ${CODESPACE_NAME:-}
+      GITHUB_CODESPACES: ${GITHUB_CODESPACES:-}
+      GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: ${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}
+
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inventory_dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d inventory_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

@@ -1,0 +1,465 @@
+import type { Dispatch, SetStateAction } from "react";
+import { Truck } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Can } from "@/components/auth/can";
+import type { PurchaseOrderDetail } from "@/api/types";
+import {
+  normalizeReceiveQtyInput,
+  normalizePutawayBins,
+  type ReceiveLineFieldError,
+  type ReceivePutawayState,
+  type ReceivePutawayWarehouse,
+} from "@/features/purchase-orders";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+type PoReceivePanelProps = {
+  /** Anchor id for in-page navigation (e.g. po-receive). */
+  sectionId?: string;
+  className?: string;
+  detail: PurchaseOrderDetail;
+  canReceive: boolean;
+  receiveState: Record<string, number>;
+  setReceiveState: Dispatch<SetStateAction<Record<string, number>>>;
+  batchState: Record<string, string>;
+  setBatchState: Dispatch<SetStateAction<Record<string, string>>>;
+  serialState: Record<string, string>;
+  setSerialState: Dispatch<SetStateAction<Record<string, string>>>;
+  receiverName: string;
+  setReceiverName: (v: string) => void;
+  warehouses: ReceivePutawayWarehouse[];
+  receivePutaway: ReceivePutawayState;
+  setReceivePutaway: Dispatch<SetStateAction<ReceivePutawayState>>;
+  userId?: number;
+  receiving: boolean;
+  receiveError?: string | null;
+  /** Validation issues to show next to the affected line controls (submit-time only). */
+  receiveLineIssues?: ReceiveLineFieldError[];
+  onSubmitReceive: () => void | Promise<void>;
+  /** When provided, user can tie GRN to a logistics shipment row for this PO. */
+  shipmentsForReceiveLink?: Array<{
+    id: number;
+    status: string;
+    carrier: string | null;
+    eta?: string | null;
+    trackingNumber?: string | null;
+    transportMode?: string | null;
+    freightCost?: number | null;
+    grnNumber?: string | null;
+  }>;
+  receiveShipmentId?: string;
+  onReceiveShipmentIdChange?: (value: string) => void;
+  grnNumber?: string;
+  onGrnNumberChange?: (value: string) => void;
+};
+
+/** GRN-style receive grid for a single PO detail view. */
+export function PoReceivePanel({
+  sectionId,
+  className,
+  detail,
+  canReceive,
+  receiveState,
+  setReceiveState,
+  batchState,
+  setBatchState,
+  serialState,
+  setSerialState,
+  receiverName,
+  setReceiverName,
+  warehouses,
+  receivePutaway,
+  setReceivePutaway,
+  userId,
+  receiving,
+  receiveError,
+  receiveLineIssues = [],
+  onSubmitReceive,
+  shipmentsForReceiveLink,
+  receiveShipmentId = "auto",
+  onReceiveShipmentIdChange,
+  grnNumber = "",
+  onGrnNumberChange,
+}: PoReceivePanelProps) {
+  const issuesFor = (sku: string, field: ReceiveLineFieldError["field"]) =>
+    receiveLineIssues.filter((i) => i.sku === sku && i.field === field);
+  const globalLineIssues = receiveLineIssues.filter((i) => i.field === "_line");
+  const selectedWarehouse = warehouses.find((w) => w.id === receivePutaway.warehouseId);
+  const aisles = Array.isArray(selectedWarehouse?.aisles) ? selectedWarehouse!.aisles! : [];
+  const aisleTrimmed = receivePutaway.aisle.trim();
+  const binOptions = normalizePutawayBins(selectedWarehouse, aisleTrimmed);
+  const needsAisle = aisles.length > 0;
+  const needsBin = binOptions.length > 0;
+  const selectedShipRow =
+    receiveShipmentId !== "auto" && shipmentsForReceiveLink?.length
+      ? shipmentsForReceiveLink.find((s) => String(s.id) === receiveShipmentId)
+      : undefined;
+
+  return (
+    <Card id={sectionId} className={className} data-testid="po-receive-panel">
+      <CardHeader>
+        <CardTitle>Receive panel</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {globalLineIssues.length > 0 ? (
+          <div
+            role="alert"
+            aria-live="assertive"
+            data-testid="po-receive-global-line-errors"
+            className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {globalLineIssues.map((iss, idx) => (
+              <p key={`${iss.message}-${idx}`}>{iss.message}</p>
+            ))}
+          </div>
+        ) : null}
+
+        <Table>
+          <TableCaption className="sr-only">
+            Goods receipt lines for this purchase order. Enter batch, serial, and quantities to receive.
+          </TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col">SKU</TableHead>
+              <TableHead scope="col">Item</TableHead>
+              <TableHead scope="col">Supplier part #</TableHead>
+              <TableHead scope="col">Commodity</TableHead>
+              <TableHead scope="col" className="text-right">
+                Ordered
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Received
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Remaining
+              </TableHead>
+              <TableHead scope="col">Batch</TableHead>
+              <TableHead scope="col">Serial numbers</TableHead>
+              <TableHead scope="col" className="text-right">
+                Receive now
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {detail.lines.map((line) => (
+              <TableRow key={line.id}>
+                <TableCell className="font-medium">{line.sku}</TableCell>
+                <TableCell>{line.itemName}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {line.supplierPartNumber?.trim() ? line.supplierPartNumber : "—"}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-xs">
+                  {line.commodityCode
+                    ? `${line.commodityCode}${line.commodityDescription ? ` — ${line.commodityDescription}` : ""}`
+                    : "—"}
+                </TableCell>
+                <TableCell className="text-right">{line.qtyOrdered}</TableCell>
+                <TableCell className="text-right">{line.qtyReceived}</TableCell>
+                <TableCell className="text-right">{line.expectedRemaining}</TableCell>
+                <TableCell>
+                  <Input
+                    aria-label={`Batch number for ${line.sku}`}
+                    placeholder="Batch #"
+                    value={batchState[line.sku] ?? ""}
+                    onChange={(event) =>
+                      setBatchState((current) => ({
+                        ...current,
+                        [line.sku]: event.target.value,
+                      }))
+                    }
+                    disabled={!canReceive}
+                  />
+                  {issuesFor(line.sku, "batchNumber").map((iss, idx) => (
+                    <p key={idx} className="mt-1 text-xs text-destructive">
+                      {iss.message}
+                    </p>
+                  ))}
+                </TableCell>
+                <TableCell>
+                  <Input
+                    aria-label={`Serial numbers for ${line.sku}, comma separated`}
+                    placeholder="Serials CSV"
+                    value={serialState[line.sku] ?? ""}
+                    onChange={(event) =>
+                      setSerialState((current) => ({
+                        ...current,
+                        [line.sku]: event.target.value,
+                      }))
+                    }
+                    disabled={!canReceive}
+                  />
+                  {issuesFor(line.sku, "serialNumbers").map((iss, idx) => (
+                    <p key={idx} className="mt-1 text-xs text-destructive">
+                      {iss.message}
+                    </p>
+                  ))}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Input
+                    aria-label={`Quantity to receive now for ${line.sku}`}
+                    data-testid={`po-receive-qty-${line.sku}`}
+                    className="ml-auto w-28 text-right"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={receiveState[line.sku] ?? 0}
+                    onChange={(event) => {
+                      const raw = normalizeReceiveQtyInput(event.target.value);
+                      const next = Number.isFinite(raw) ? Math.trunc(raw) : 0;
+                      setReceiveState((current) => ({
+                        ...current,
+                        [line.sku]: next,
+                      }));
+                    }}
+                    disabled={!canReceive}
+                  />
+                  {issuesFor(line.sku, "qtyReceivedNow").map((iss, idx) => (
+                    <p key={idx} className="mt-1 text-xs text-destructive">
+                      {iss.message}
+                    </p>
+                  ))}
+                  {issuesFor(line.sku, "sku").map((iss, idx) => (
+                    <p key={idx} className="mt-1 text-xs text-destructive">
+                      {iss.message}
+                    </p>
+                  ))}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        <div className="space-y-4">
+          <div className="space-y-1 max-w-md">
+            <Label htmlFor="receive-receiver-name">Receiver name</Label>
+            <Input
+              id="receive-receiver-name"
+              placeholder="Who received this?"
+              value={receiverName}
+              onChange={(event) => setReceiverName(event.target.value)}
+            />
+            {typeof userId === "number" ? (
+              <p className="text-xs text-muted-foreground">
+                Signed-in user #{userId} is recorded as <span className="font-medium">receiverUserId</span> on the GRN /
+                stock movement.
+              </p>
+            ) : null}
+          </div>
+
+          {onGrnNumberChange ? (
+            <div className="space-y-1 max-w-md">
+              <Label htmlFor="receive-grn">GRN number (optional)</Label>
+              <Input
+                id="receive-grn"
+                data-testid="po-receive-grn-input"
+                placeholder="Goods receipt note #"
+                value={grnNumber}
+                onChange={(event) => onGrnNumberChange(event.target.value)}
+                disabled={!canReceive}
+              />
+              <p className="text-xs text-muted-foreground">
+                When you link a specific shipment, this value is copied to that shipment after receive completes.
+              </p>
+            </div>
+          ) : null}
+
+          {shipmentsForReceiveLink && shipmentsForReceiveLink.length > 0 && onReceiveShipmentIdChange ? (
+            <div className="space-y-3 max-w-lg">
+              <div className="space-y-1">
+                <Label htmlFor="receive-shipment-link">Link to shipment (optional)</Label>
+                <Select value={receiveShipmentId} onValueChange={onReceiveShipmentIdChange}>
+                  <SelectTrigger id="receive-shipment-link" aria-label="Shipment to mark delivered on receive">
+                    <SelectValue placeholder="Choose shipment" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto (all open shipments for this PO)</SelectItem>
+                    {shipmentsForReceiveLink.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        #{s.id} — {s.status}
+                        {s.carrier ? ` · ${s.carrier}` : ""}
+                        {s.trackingNumber?.trim() ? ` · ${s.trackingNumber}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Choosing a specific shipment marks only that row delivered when you post the receipt.
+                </p>
+              </div>
+              {selectedShipRow ? (
+                <div
+                  className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1"
+                  data-testid="po-receive-shipment-summary"
+                >
+                  <p className="font-medium text-foreground">Shipment #{selectedShipRow.id}</p>
+                  <p>
+                    ETA: {selectedShipRow.eta ? new Date(selectedShipRow.eta).toLocaleString() : "—"} · Mode:{" "}
+                    {selectedShipRow.transportMode?.trim() || "—"}
+                  </p>
+                  <p>
+                    Freight (planning):{" "}
+                    {selectedShipRow.freightCost != null && Number.isFinite(Number(selectedShipRow.freightCost))
+                      ? Number(selectedShipRow.freightCost).toLocaleString()
+                      : "—"}{" "}
+                    · GRN on file: {selectedShipRow.grnNumber?.trim() || "—"}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Receive into (warehouse layout)</div>
+            <p className="text-xs text-muted-foreground">
+              Aisles and bins come from the selected warehouse&apos;s master data. Pick a warehouse, then choose from
+              its configured aisles and bins.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label>Warehouse</Label>
+                <Select
+                  value={receivePutaway.warehouseId != null ? String(receivePutaway.warehouseId) : undefined}
+                  onValueChange={(v) => {
+                    const id = v ? Number(v) : NaN;
+                    setReceivePutaway({
+                      warehouseId: Number.isFinite(id) ? id : null,
+                      aisle: "",
+                      binCode: "",
+                    });
+                  }}
+                  disabled={warehouses.length === 0}
+                >
+                  <SelectTrigger aria-label="Receive warehouse">
+                    <SelectValue placeholder={warehouses.length ? "Select warehouse" : "No warehouses loaded"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses.map((w) => (
+                      <SelectItem key={w.id} value={String(w.id)}>
+                        {w.name}
+                        {w.isDefault ? " (default)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Aisle</Label>
+                {!selectedWarehouse ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    Select warehouse first
+                  </div>
+                ) : !needsAisle ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    No aisles on this warehouse
+                  </div>
+                ) : (
+                  <Select
+                    value={receivePutaway.aisle || undefined}
+                    onValueChange={(v) =>
+                      setReceivePutaway((p) => ({
+                        ...p,
+                        aisle: v,
+                        binCode: "",
+                      }))
+                    }
+                  >
+                    <SelectTrigger aria-label="Receive aisle">
+                      <SelectValue placeholder="Select aisle" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {aisles.map((a) => (
+                        <SelectItem key={a} value={a}>
+                          {a}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <Label>Bin</Label>
+                {!selectedWarehouse ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    Select warehouse first
+                  </div>
+                ) : needsAisle && !aisleTrimmed ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    Select aisle first
+                  </div>
+                ) : !needsBin ? (
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                    No bins on this warehouse
+                  </div>
+                ) : (
+                  <Select
+                    value={receivePutaway.binCode || undefined}
+                    onValueChange={(v) =>
+                      setReceivePutaway((p) => ({
+                        ...p,
+                        binCode: v,
+                      }))
+                    }
+                  >
+                    <SelectTrigger aria-label="Receive bin">
+                      <SelectValue placeholder="Select bin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {binOptions.map((b) => (
+                        <SelectItem key={b.code} value={b.code}>
+                          {b.code}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {receiveError ? (
+          <div
+            role="alert"
+            aria-live="assertive"
+            data-testid="po-receive-error"
+            className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {receiveError}
+          </div>
+        ) : null}
+
+        <div className="flex justify-end">
+          <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
+            <Button
+              data-testid="po-receive-submit-button"
+              onClick={onSubmitReceive}
+              disabled={!canReceive || receiving}
+            >
+              <Truck className="mr-2 h-4 w-4" />
+              Receive selected
+            </Button>
+          </Can>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

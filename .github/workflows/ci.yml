@@ -1,0 +1,344 @@
+# CI: lint, type-check, build, security gates, and release verification on push/PR
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify package manifest drift
+        run: npm run verify:package-manifests
+
+      - name: Verify dependency tree (--depth=0)
+        run: npm ls --omit=peer --omit=optional --depth=0
+
+      - name: Type check
+        run: npm run check
+
+      - name: Lint
+        run: npm run lint
+
+  security-supply-chain-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: npm ci (--ignore-scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Verify package manifest drift
+        run: npm run verify:package-manifests
+
+      - name: Lifecycle audit (enforce)
+        run: npm run security:lifecycle:enforce
+
+      - name: npm audit signatures (blocking)
+        run: npm run security:audit:signatures
+
+      - name: Capture npm audit JSON
+        if: always()
+        run: |
+          mkdir -p artifacts
+          npm audit --audit-level=high --json > artifacts/npm-audit.json || true
+
+      - name: npm audit (--audit-level=high, blocking)
+        run: npm run security:audit
+
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-audit-evidence
+          path: artifacts/npm-audit.json
+          retention-days: 1
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+
+  pr-security-merge-gate:
+    runs-on: ubuntu-latest
+    needs: [security-supply-chain-gate, dependency-review]
+    if: always()
+    steps:
+      - name: Verify security gates before release jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ needs.security-supply-chain-gate.result }}" != "success" ]]; then
+            echo "::error::security-supply-chain-gate did not succeed (${{ needs.security-supply-chain-gate.result }})"
+            exit 1
+          fi
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            dr="${{ needs.dependency-review.result }}"
+            if [[ "$dr" != "success" ]]; then
+              echo "::error::dependency-review did not succeed ($dr)"
+              exit 1
+            fi
+          fi
+          echo "Security gates OK"
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint-and-check, pr-security-merge-gate]
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify package manifest drift
+        run: npm run verify:package-manifests
+
+      - name: Verify dependency tree (--depth=0)
+        run: npm ls --omit=peer --omit=optional --depth=0
+
+      - name: Build
+        run: npm run build
+
+      - name: Generate build SBOM
+        run: npm run security:sbom
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: |
+            dist/
+            sbom.cdx.json
+          retention-days: 1
+
+  org-api-isolation:
+    runs-on: ubuntu-latest
+    needs: lint-and-check
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: invtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/invtest
+      NODE_ENV: development
+      BASE_URL: http://127.0.0.1:5000
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify package manifest drift
+        run: npm run verify:package-manifests
+
+      - name: Verify dependency tree (--depth=0)
+        run: npm ls --omit=peer --omit=optional --depth=0
+
+      # migrate:check validates schema in a temporary database; db:push:force prepares the live CI database before seed.
+      - name: Check migrations
+        run: npm run migrate:check
+
+      - name: Apply schema to CI database
+        run: npm run db:push:force
+
+      - name: Seed demo data
+        run: npm run db:seed
+
+      - name: Start API server
+        run: |
+          npm run dev &
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:5000/health >/dev/null; then
+              echo "Server ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server failed to become healthy"
+          exit 1
+
+      - name: Org API isolation tests
+        run: npm run test:org-api
+
+      - name: API contract + procurement flow (live server)
+        run: npm run test:contracts && npm run test:procurement-flow
+
+  release-gate:
+    runs-on: ubuntu-latest
+    needs:
+      - lint-and-check
+      - build
+      - org-api-isolation
+      - pr-security-merge-gate
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: invtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/invtest
+      SESSION_SECRET: ci-release-gate-secret
+      NODE_ENV: development
+      BASE_URL: http://127.0.0.1:5000
+      PLAYWRIGHT_REUSE_EXISTING_SERVER: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify package manifest drift
+        run: npm run verify:package-manifests
+
+      - name: Verify dependency tree (--depth=0)
+        run: npm ls --omit=peer --omit=optional --depth=0
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # migrate:check validates schema in a temporary database; db:push:force prepares the live CI database before seed.
+      - name: Check migrations
+        run: npm run migrate:check
+
+      - name: Apply schema to CI database
+        run: npm run db:push:force
+
+      - name: Seed demo data
+        run: npm run db:seed
+
+      - name: Start API server
+        run: |
+          npm run dev &
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:5000/health >/dev/null; then
+              echo "Server ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server failed to become healthy"
+          exit 1
+
+      - name: Purchase order endpoint tests
+        run: npm run test:purchase-order-endpoints
+
+      - name: Logistics filter tests
+        run: npm run test:logistics-filters
+
+      - name: Verify release
+        run: npm run verify:release
+
+      - name: Release gate (delta — scripts not covered by verify:release or parallel org-api job)
+        run: npm run release:gate:delta
+
+  security-release-status:
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - lint-and-check
+      - security-supply-chain-gate
+      - dependency-review
+      - pr-security-merge-gate
+      - build
+      - org-api-isolation
+      - release-gate
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Write machine-readable security/release status
+        env:
+          SECURITY_STATUS_PACKAGE_MANIFESTS: success
+          SECURITY_STATUS_LIFECYCLE: ${{ needs.security-supply-chain-gate.result }}
+          SECURITY_STATUS_AUDIT_SIGNATURES: ${{ needs.security-supply-chain-gate.result }}
+          SECURITY_STATUS_AUDIT_HIGH: ${{ needs.security-supply-chain-gate.result }}
+          SECURITY_STATUS_DEPENDENCY_REVIEW: ${{ needs.dependency-review.result }}
+          SECURITY_STATUS_PR_SECURITY_GATE: ${{ needs.pr-security-merge-gate.result }}
+          SECURITY_STATUS_BUILD: ${{ needs.build.result }}
+          SECURITY_STATUS_ORG_API_ISOLATION: ${{ needs.org-api-isolation.result }}
+          SECURITY_STATUS_PLAYWRIGHT: ${{ needs.release-gate.result }}
+          SECURITY_STATUS_RELEASE_GATE: ${{ needs.release-gate.result }}
+          SECURITY_STATUS_NOTES: CI gate summary emitted from workflow job results.
+        run: node scripts/write-security-release-status.mjs
+
+      - name: Upload security/release status artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-release-status
+          path: artifacts/security-release-status.json
+          retention-days: 1
