@@ -8,10 +8,9 @@ const port = process.env.PORT || "5000";
 const url = `http://127.0.0.1:${port}`;
 
 function runNpm(args) {
-  const useShell = process.platform === "win32";
-  const result = spawnSync(useShell ? [npmCmd, ...args].join(" ") : npmCmd, useShell ? [] : args, {
+  const result = spawnSync(process.platform === "win32" ? "cmd.exe" : npmCmd, process.platform === "win32" ? ["/d", "/s", "/c", [npmCmd, ...args].join(" ")] : args, {
     stdio: "inherit",
-    shell: useShell,
+    shell: false,
     env: process.env,
   });
   if (result.status !== 0) process.exit(result.status ?? 1);

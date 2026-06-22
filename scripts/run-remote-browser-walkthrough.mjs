@@ -68,18 +68,20 @@ if (!ready.ok || !auth.ok) {
 }
 
 const result = spawnSync(
-  "npx",
-  [
-    "playwright",
-    "test",
-    "-c",
-    "playwright.browser.config.ts",
-    "e2e/local-browser-walkthrough.spec.ts",
-    "--reporter=line",
-  ],
+  process.platform === "win32" ? "cmd.exe" : "npx",
+  process.platform === "win32"
+    ? ["/d", "/s", "/c", "npx playwright test -c playwright.browser.config.ts e2e/local-browser-walkthrough.spec.ts --reporter=line"]
+    : [
+        "playwright",
+        "test",
+        "-c",
+        "playwright.browser.config.ts",
+        "e2e/local-browser-walkthrough.spec.ts",
+        "--reporter=line",
+      ],
   {
     stdio: "inherit",
-    shell: true,
+    shell: false,
     timeout: PLAYWRIGHT_TIMEOUT_MS,
     env: {
       ...process.env,

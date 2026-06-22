@@ -113,9 +113,9 @@ try {
     console.log(`[E2E] Command: ${DEV_COMMAND}`);
     console.log("[E2E] (stdio from dev server follows)\n");
 
-    devProc = spawn(DEV_COMMAND, [], {
+    devProc = spawn(process.platform === "win32" ? "cmd.exe" : DEV_COMMAND, process.platform === "win32" ? ["/d", "/s", "/c", DEV_COMMAND] : [], {
       stdio: "inherit",
-      shell: true,
+      shell: false,
       env: process.env,
     });
 
@@ -143,9 +143,9 @@ try {
   }
 
   console.log("[E2E] Running npm run test:purchase-order-endpoints (server is up)...\n");
-  const poEndpoints = spawnSync("npm", ["run", "test:purchase-order-endpoints"], {
+  const poEndpoints = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", "npm run test:purchase-order-endpoints"] : ["run", "test:purchase-order-endpoints"], {
     stdio: "inherit",
-    shell: true,
+    shell: false,
     env: process.env,
   });
   if (poEndpoints.status !== 0) {
@@ -153,9 +153,9 @@ try {
   }
 
   console.log("[E2E] Running npm run test:dashboard-data (server is up)...\n");
-  const dashData = spawnSync("npm", ["run", "test:dashboard-data"], {
+  const dashData = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", "npm run test:dashboard-data"] : ["run", "test:dashboard-data"], {
     stdio: "inherit",
-    shell: true,
+    shell: false,
     env: process.env,
   });
   if (dashData.status !== 0) {
@@ -164,9 +164,9 @@ try {
 
   for (const label of ["test:logistics-filters", "test:control-tower-dashboard", "test:exceptions-workflow"]) {
     console.log(`[E2E] Running npm run ${label} (server is up)...\n`);
-    const sub = spawnSync("npm", ["run", label], {
+    const sub = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", `npm run ${label}`] : ["run", label], {
       stdio: "inherit",
-      shell: true,
+      shell: false,
       env: process.env,
     });
     if (sub.status !== 0) {
@@ -175,11 +175,13 @@ try {
   }
 
   const testResult = spawnSync(
-    "npx",
-    ["playwright", "test", "-c", "playwright.config.ts", ...process.argv.slice(2)],
+    process.platform === "win32" ? "cmd.exe" : "npx",
+    process.platform === "win32"
+      ? ["/d", "/s", "/c", `npx playwright test -c playwright.config.ts ${process.argv.slice(2).join(" ")}`.trim()]
+      : ["playwright", "test", "-c", "playwright.config.ts", ...process.argv.slice(2)],
     {
       stdio: "inherit",
-      shell: true,
+      shell: false,
       env: {
         ...process.env,
         PLAYWRIGHT_EXTERNAL_DEV_SERVER: "1",

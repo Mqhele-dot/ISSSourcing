@@ -36,11 +36,10 @@ function suiteName() {
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const useShell = process.platform === "win32";
-    const child = spawn(useShell ? [command, ...args].join(" ") : command, useShell ? [] : args, {
+    const child = spawn(process.platform === "win32" ? "cmd.exe" : command, process.platform === "win32" ? ["/d", "/s", "/c", [command, ...args].join(" ")] : args, {
       cwd: process.cwd(),
       env: { ...process.env, BASE_URL, PORT, ...options.env },
-      shell: useShell,
+      shell: false,
       stdio: options.stdio || "inherit",
     });
     child.on("error", reject);
@@ -66,11 +65,10 @@ async function waitForReady(timeoutMs = 60_000) {
 }
 
 function startServer() {
-  const useShell = process.platform === "win32";
-  const child = spawn(useShell ? `${npmCmd} run dev` : npmCmd, useShell ? [] : ["run", "dev"], {
+  const child = spawn(process.platform === "win32" ? "cmd.exe" : npmCmd, process.platform === "win32" ? ["/d", "/s", "/c", `${npmCmd} run dev`] : ["run", "dev"], {
     cwd: process.cwd(),
     env: { ...process.env, PORT, LOCAL_TEST_API_ONLY: "1" },
-    shell: useShell,
+    shell: false,
     stdio: "inherit",
   });
   child.on("exit", (code) => {

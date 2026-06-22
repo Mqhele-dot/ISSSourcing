@@ -10,10 +10,9 @@ const port = process.env.PORT || "5000";
 const baseUrl = process.env.BASE_URL || `http://127.0.0.1:${port}`;
 
 function run(label, command, args) {
-  const useShell = process.platform === "win32";
-  const result = spawnSync(useShell ? [command, ...args].join(" ") : command, useShell ? [] : args, {
+  const result = spawnSync(process.platform === "win32" ? "cmd.exe" : command, process.platform === "win32" ? ["/d", "/s", "/c", [command, ...args].join(" ")] : args, {
     encoding: "utf8",
-    shell: useShell,
+    shell: false,
   });
   const ok = result.status === 0;
   console.log(`${ok ? "ok" : "FAIL"} ${label}${ok ? "" : ` (${result.stderr || result.stdout || "failed"})`}`);

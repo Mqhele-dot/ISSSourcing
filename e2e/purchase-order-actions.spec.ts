@@ -29,10 +29,10 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeAll(() => {
   // Idempotent; global E2E setup also seeds — rerun here so this file alone always gets fresh PO-FQA-* rows.
-  const seed = spawnSync("npm", ["run", "seed:functional-qa"], {
+  const seed = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", "npm run seed:functional-qa"] : ["run", "seed:functional-qa"], {
     cwd: repoRoot,
     stdio: "inherit",
-    shell: true,
+    shell: false,
     env: { ...process.env },
   });
   if (seed.status !== 0) {

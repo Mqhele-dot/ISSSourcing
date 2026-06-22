@@ -13,10 +13,10 @@ export default function globalSetup() {
   const repoRoot = path.resolve(__dirname, "..");
   const env = { ...process.env };
 
-  const prep = spawnSync("npm", ["run", "e2e:prep"], {
+  const prep = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", "npm run e2e:prep"] : ["run", "e2e:prep"], {
     cwd: repoRoot,
     stdio: "inherit",
-    shell: true,
+    shell: false,
     env,
   });
   if (prep.status !== 0) {
@@ -28,10 +28,10 @@ export default function globalSetup() {
     return;
   }
 
-  const seed = spawnSync("npm", ["run", "seed:functional-qa"], {
+  const seed = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", "npm run seed:functional-qa"] : ["run", "seed:functional-qa"], {
     cwd: repoRoot,
     stdio: "inherit",
-    shell: true,
+    shell: false,
     env,
   });
   if (seed.status !== 0) {
