@@ -301,6 +301,9 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
       name: suppliers.name,
       defaultCurrencyCode: suppliers.defaultCurrencyCode,
       defaultContractId: suppliers.defaultContractId,
+      paymentTermsId: suppliers.paymentTermsId,
+      taxCodeId: suppliers.taxCodeId,
+      incotermId: suppliers.incotermId,
       defaultCarrierId: suppliers.defaultCarrierId,
       defaultTransportMode: suppliers.defaultTransportMode,
     })
@@ -336,10 +339,15 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
   const rows = await db
     .select({
       purchaseOrderId: purchaseOrders.id,
+      supplierId: purchaseOrders.supplierId,
+      contractId: purchaseOrders.contractId,
       supplierName: suppliers.name,
       supplierCurrency: suppliers.defaultCurrencyCode,
       orderNumber: purchaseOrders.orderNumber,
       poCurrency: purchaseOrders.currencyCode,
+      poPaymentTermsId: purchaseOrders.paymentTermsId,
+      poTaxCodeId: purchaseOrders.taxCodeId,
+      poIncotermId: purchaseOrders.incotermId,
       poStatus: purchaseOrders.status,
     })
     .from(purchaseOrders)
@@ -406,6 +414,9 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
   for (const row of supplierRows) {
     const code = normalizeCurrency(row.defaultCurrencyCode);
     const defaultContractId = numberOrNull(row.defaultContractId);
+    const paymentTermsId = numberOrNull(row.paymentTermsId);
+    const taxCodeId = numberOrNull(row.taxCodeId);
+    const incotermId = numberOrNull(row.incotermId);
     const defaultCarrierId = numberOrNull(row.defaultCarrierId);
     const defaultTransportMode =
       typeof row.defaultTransportMode === "string" ? row.defaultTransportMode.trim().toLowerCase() : "";
@@ -418,6 +429,15 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
     }
     if (defaultContractId != null && !validDefaultContractIds.has(defaultContractId)) {
       issues.push(`Supplier ${row.name} references missing default contract #${defaultContractId}.`);
+    }
+    if (paymentTermsId == null) {
+      issues.push(`Supplier ${row.name} is missing default payment terms in Master Data.`);
+    }
+    if (taxCodeId == null) {
+      issues.push(`Supplier ${row.name} is missing a default tax code in Master Data.`);
+    }
+    if (incotermId == null) {
+      issues.push(`Supplier ${row.name} is missing a default incoterm in Master Data.`);
     }
     const inboundShipments = inboundShipmentsBySupplier.get(row.id) ?? [];
 
@@ -454,13 +474,56 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
     }
   }
 
+  const poCommercialDefaults = new Map<string, SupplierCommercialDefaults | null>();
+  const loadPoCommercialDefaults = async (row: (typeof rows)[number]) => {
+    const contractId = numberOrNull(row.contractId);
+    const key = `${row.supplierId}:${contractId ?? 0}`;
+    if (!poCommercialDefaults.has(key)) {
+      try {
+        poCommercialDefaults.set(
+          key,
+          await resolveSupplierCommercialDefaultsForOrg(
+            orgId,
+            Number(row.supplierId),
+            contractId,
+            "existing purchase-order diagnostics",
+          ),
+        );
+      } catch {
+        poCommercialDefaults.set(key, null);
+      }
+    }
+    return poCommercialDefaults.get(key) ?? null;
+  };
+
   for (const row of rows) {
-    const supplierCurrency = normalizeCurrency(row.supplierCurrency);
+    const defaults = await loadPoCommercialDefaults(row);
+    const supplierCurrency = normalizeCurrency(
+      defaults?.contractCurrencyCode ?? defaults?.supplierCurrencyCode ?? row.supplierCurrency,
+    );
     const poCurrency = normalizeCurrency(row.poCurrency);
     if (supplierCurrency && poCurrency && supplierCurrency !== poCurrency) {
       const locked = LOCKED_PO_STATUSES.has(String(row.poStatus ?? "").toUpperCase());
       issues.push(
         `${locked ? "Locked" : "Draft/open"} PO ${row.orderNumber} uses ${poCurrency}, but supplier ${row.supplierName} defaults to ${supplierCurrency}.`,
+      );
+    }
+    const poPaymentTermsId = numberOrNull(row.poPaymentTermsId);
+    if (defaults?.paymentTermsId != null && poPaymentTermsId !== defaults.paymentTermsId) {
+      issues.push(
+        `PO ${row.orderNumber} uses payment terms #${poPaymentTermsId ?? "none"}, but supplier ${row.supplierName} defaults to #${defaults.paymentTermsId}.`,
+      );
+    }
+    const poTaxCodeId = numberOrNull(row.poTaxCodeId);
+    if (defaults?.taxCodeId != null && poTaxCodeId !== defaults.taxCodeId) {
+      issues.push(
+        `PO ${row.orderNumber} uses tax code #${poTaxCodeId ?? "none"}, but supplier ${row.supplierName} defaults to #${defaults.taxCodeId}.`,
+      );
+    }
+    const poIncotermId = numberOrNull(row.poIncotermId);
+    if (defaults?.incotermId != null && poIncotermId !== defaults.incotermId) {
+      issues.push(
+        `PO ${row.orderNumber} uses incoterm #${poIncotermId ?? "none"}, but supplier ${row.supplierName} defaults to #${defaults.incotermId}.`,
       );
     }
   }
@@ -469,8 +532,10 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
     .select({
       invoiceNumber: invoices.invoiceNumber,
       invoiceCurrency: invoices.currencyCode,
+      invoicePaymentTermsId: invoices.paymentTermsId,
       orderNumber: purchaseOrders.orderNumber,
       poCurrency: purchaseOrders.currencyCode,
+      poPaymentTermsId: purchaseOrders.paymentTermsId,
       supplierId: purchaseOrders.supplierId,
     })
     .from(invoices)
@@ -490,6 +555,13 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
     if (invoiceCurrency && poCurrency && invoiceCurrency !== poCurrency) {
       issues.push(
         `Invoice ${row.invoiceNumber} uses ${invoiceCurrency}, but linked PO ${row.orderNumber} uses ${poCurrency}.`,
+      );
+    }
+    const invoicePaymentTermsId = numberOrNull(row.invoicePaymentTermsId);
+    const poPaymentTermsId = numberOrNull(row.poPaymentTermsId);
+    if (poPaymentTermsId != null && invoicePaymentTermsId !== poPaymentTermsId) {
+      issues.push(
+        `Invoice ${row.invoiceNumber} uses payment terms #${invoicePaymentTermsId ?? "none"}, but linked PO ${row.orderNumber} uses #${poPaymentTermsId}.`,
       );
     }
   }

@@ -27,6 +27,14 @@ assertContains(/defaults\.requireApprovalForOverride && input\.confirmCurrencyOv
 assertContains(/eq\(paymentTerms\.active,\s*true\)/, "active payment terms guard");
 assertContains(/eq\(incoterms\.active,\s*true\)/, "active incoterm guard");
 assertContains(/references missing default contract/, "diagnostics for missing supplier default contract");
+assertContains(/is missing default payment terms in Master Data/, "diagnostics for missing supplier payment terms");
+assertContains(/is missing a default tax code in Master Data/, "diagnostics for missing supplier tax code");
+assertContains(/is missing a default incoterm in Master Data/, "diagnostics for missing supplier incoterm");
+assertContains(/resolveSupplierCommercialDefaultsForOrg\([\s\S]*"existing purchase-order diagnostics"/, "PO diagnostics should reuse centralized supplier commercial defaults");
+assertContains(/PO \$\{row\.orderNumber\} uses payment terms #\$\{poPaymentTermsId \?\? "none"\}, but supplier \$\{row\.supplierName\} defaults to #\$\{defaults\.paymentTermsId\}\./, "PO payment terms drift diagnostics");
+assertContains(/PO \$\{row\.orderNumber\} uses tax code #\$\{poTaxCodeId \?\? "none"\}, but supplier \$\{row\.supplierName\} defaults to #\$\{defaults\.taxCodeId\}\./, "PO tax code drift diagnostics");
+assertContains(/PO \$\{row\.orderNumber\} uses incoterm #\$\{poIncotermId \?\? "none"\}, but supplier \$\{row\.supplierName\} defaults to #\$\{defaults\.incotermId\}\./, "PO incoterm drift diagnostics");
+assertContains(/Invoice \$\{row\.invoiceNumber\} uses payment terms #\$\{invoicePaymentTermsId \?\? "none"\}, but linked PO \$\{row\.orderNumber\} uses #\$\{poPaymentTermsId\}\./, "invoice payment terms drift diagnostics");
 assertContains(/inArray\(purchaseOrderItems\.orderId,\s*poIds\)/, "filtered PO line diagnostics query");
 assertNotContains(/contract\?\.id\s*\?\?\s*effectiveContractId/, "invalid contract id fallback");
 
