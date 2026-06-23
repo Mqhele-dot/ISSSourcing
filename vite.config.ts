@@ -10,6 +10,37 @@ const __dirname = dirname(__filename);
 
 /** Replit-only: the runtime error modal can trigger full page reloads in other hosts (e.g. Codespaces). */
 const isReplit = process.env.REPL_ID !== undefined;
+const vendorChunks = {
+  output: {
+    codeSplitting: {
+      groups: [
+        {
+          name: "vendor-react",
+          test: /node_modules[\\/](react|react-dom|scheduler|wouter)[\\/]/,
+          priority: 30,
+        },
+        {
+          name: "vendor-query",
+          test: /node_modules[\\/]@tanstack[\\/]react-query[\\/]/,
+          priority: 20,
+        },
+        {
+          name: "vendor-charts",
+          test: /node_modules[\\/](recharts|d3-|victory-vendor)[\\/]/,
+          priority: 20,
+        },
+        {
+          name(moduleId: string) {
+            const match = moduleId.match(/[\\/]node_modules[\\/](@[^\\/]+[\\/][^\\/]+|[^\\/]+)/);
+            if (!match) return null;
+            return `vendor-${match[1].replace("@", "").replace(/[\\/]/g, "-")}`;
+          },
+          priority: 1,
+        },
+      ],
+    },
+  },
+};
 
 export default defineConfig({
   /**
@@ -49,5 +80,6 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
+    rolldownOptions: vendorChunks,
   },
 });

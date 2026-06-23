@@ -25,3 +25,9 @@ audit-high*.txt
 .npm-cache-audit/
 .npm-cache-local/
 .npm-cache/
+
+# Local runtime artifacts from diagnostics, smoke tests, and generated exports.
+.control-tower-*.log
+output/
+tmp/
+uploads/exports/

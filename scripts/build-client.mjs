@@ -9,6 +9,37 @@ const projectRoot = path.resolve(scriptDir, "..");
 const isReplit = process.env.REPL_ID !== undefined;
 
 const plugins = [react(), themePlugin({ themeJsonPath: path.resolve(projectRoot, "theme.json") })];
+const vendorChunks = {
+  output: {
+    codeSplitting: {
+      groups: [
+        {
+          name: "vendor-react",
+          test: /node_modules[\\/](react|react-dom|scheduler|wouter)[\\/]/,
+          priority: 30,
+        },
+        {
+          name: "vendor-query",
+          test: /node_modules[\\/]@tanstack[\\/]react-query[\\/]/,
+          priority: 20,
+        },
+        {
+          name: "vendor-charts",
+          test: /node_modules[\\/](recharts|d3-|victory-vendor)[\\/]/,
+          priority: 20,
+        },
+        {
+          name(moduleId) {
+            const match = moduleId.match(/[\\/]node_modules[\\/](@[^\\/]+[\\/][^\\/]+|[^\\/]+)/);
+            if (!match) return null;
+            return `vendor-${match[1].replace("@", "").replace(/[\\/]/g, "-")}`;
+          },
+          priority: 1,
+        },
+      ],
+    },
+  },
+};
 
 if (process.env.NODE_ENV !== "production" && isReplit) {
   const { cartographer } = await import("@replit/vite-plugin-cartographer");
@@ -38,6 +69,7 @@ await build(
     build: {
       outDir: path.resolve(projectRoot, "dist/public"),
       emptyOutDir: true,
+      rolldownOptions: vendorChunks,
     },
   }),
 );

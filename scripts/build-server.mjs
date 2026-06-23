@@ -10,6 +10,9 @@ const projectRoot = path.resolve(scriptDir, "..");
 const distDir = path.resolve(projectRoot, "dist");
 const runtimeDir = path.resolve(distDir, "runtime");
 const MIRRORABLE_BUILD_INPUTS = ["package.json", "tsconfig.json", "server", "shared"];
+const forceRuntimeFallback = process.env.BUILD_SERVER_FORCE_TRANSPILE === "1";
+const isWindowsOneDriveWorkspace =
+  process.platform === "win32" && projectRoot.toLowerCase().includes(`${path.sep}onedrive${path.sep}`);
 
 const isSandboxPathFailure = (error) =>
   error instanceof Error &&
@@ -273,6 +276,13 @@ async function copyBuildOutput(sourceDir, targetDir) {
 }
 
 async function buildServerBundleWithMirrorRetry() {
+  if (forceRuntimeFallback || isWindowsOneDriveWorkspace) {
+    const reason = forceRuntimeFallback ? "BUILD_SERVER_FORCE_TRANSPILE=1" : "Windows OneDrive workspace";
+    console.log(`[build-server] using transpiled runtime fallback for ${reason}.`);
+    await writeRuntimeFallback();
+    return;
+  }
+
   try {
     await runEsbuild(projectRoot, distDir);
     return;
