@@ -209,9 +209,6 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
   
   // Create payment with Stripe
   const processPaymentWithStripe = () => {
-    const values = form.getValues();
-    const _invoice = invoices.find((inv: PaymentInvoiceOption) => inv.id === values.invoiceId);
-    
     // Check if we have Stripe keys configured
     if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
       toast({
@@ -221,14 +218,12 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
       });
       return;
     }
-    
+
     toast({
-      title: "Stripe integration",
-      description: "Stripe payment processing would be initiated here with proper setup. For now, recording as a manual payment.",
+      title: "Hosted card payment not available here",
+      description: "Stripe readiness is managed through billing settings. Record this payment only after it has been processed externally, or use the hosted checkout flow when it is wired.",
+      variant: "destructive",
     });
-    
-    // Submit the form with the current values
-    form.handleSubmit(onSubmit)();
   };
   
   // Form submission

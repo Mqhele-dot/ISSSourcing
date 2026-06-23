@@ -1,15 +1,20 @@
+import { useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, RotateCcw } from "lucide-react";
+import { Download, Eye, RotateCcw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { SectionNav } from "@/components/section-nav";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { requestJson } from "@/lib/queryClient";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { PanelInlineError } from "@/components/panel-inline-error";
+import { useToast } from "@/hooks/use-toast";
 
 type ExportHistoryRow = {
   id: number;
@@ -24,6 +29,25 @@ type ExportHistoryRow = {
   downloadUrl: string | null;
   canRetry: boolean;
   lastError?: string | null;
+};
+
+type ExportDataset = {
+  key: string;
+  label: string;
+  section: string;
+  formats: string[];
+  previewable?: boolean;
+  columns: Array<{ key: string; label: string; type?: string }>;
+  joinHints?: string[];
+};
+
+type CustomPreview = {
+  dataset: string;
+  label: string;
+  columns: Array<{ key: string; label: string; type?: string }>;
+  rows: Array<Record<string, unknown>>;
+  rowCount: number;
+  previewLimit: number;
 };
 
 const ANALYTICS_NAV = [
@@ -45,8 +69,27 @@ function formatBytes(value: number | null): string {
 }
 
 export default function ExportCenterPage() {
+  const { toast } = useToast();
   const productSetupComplete = useProductSetupComplete();
   const queryClient = useQueryClient();
+  const [customDataset, setCustomDataset] = useState("po_delivery_comparison");
+  const [customColumns, setCustomColumns] = useState("");
+  const [customReportName, setCustomReportName] = useState("PO delivery comparison");
+  const [customPreview, setCustomPreview] = useState<CustomPreview | null>(null);
+
+  const datasetsQuery = useQuery({
+    queryKey: ["/api/export-center/datasets"],
+    queryFn: () => requestJson<ExportDataset[]>("GET", "/api/export-center/datasets"),
+    throwOnError: false,
+  });
+  const datasets = datasetsQuery.data ?? [];
+  const selectedDataset = datasets.find((dataset) => dataset.key === customDataset);
+  const selectedColumnKeys =
+    customColumns
+      .split(",")
+      .map((column) => column.trim())
+      .filter(Boolean);
+
   const historyQuery = useQuery({
     queryKey: ["/api/export-center/history"],
     queryFn: () => requestJson<ExportHistoryRow[]>("GET", "/api/export-center/history"),
@@ -56,6 +99,56 @@ export default function ExportCenterPage() {
   const retryMutation = useMutation({
     mutationFn: (id: number) => requestJson("POST", `/api/export-jobs/${id}/retry`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/export-center/history"] }),
+  });
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      requestJson<CustomPreview>("POST", "/api/export-center/custom-preview", {
+        dataset: customDataset,
+        columns: selectedColumnKeys,
+        limit: 25,
+      }),
+    onSuccess: (data) => setCustomPreview(data),
+    onError: (error) =>
+      toast({
+        title: "Preview failed",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+  const exportCustomMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/export-center/custom-export", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportName: customReportName,
+          dataset: customDataset,
+          columns: selectedColumnKeys,
+          format: "csv",
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Export failed (${response.status})`);
+      }
+      const blob = await response.blob();
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = `${customReportName.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-") || "custom-report"}.csv.gz`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+    },
+    onSuccess: () => toast({ title: "Compressed export downloaded", description: "The custom report was saved as CSV.GZ." }),
+    onError: (error) =>
+      toast({
+        title: "Export failed",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
   });
 
   return (
@@ -84,6 +177,122 @@ export default function ExportCenterPage() {
           onRetry={() => void historyQuery.refetch()}
         />
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Custom report builder</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-[1.1fr_1.4fr_1fr_auto_auto] md:items-end">
+            <div className="space-y-2">
+              <Label>Dataset</Label>
+              <Select
+                value={customDataset}
+                onValueChange={(value) => {
+                  setCustomDataset(value);
+                  setCustomColumns("");
+                  setCustomPreview(null);
+                }}
+              >
+                <SelectTrigger data-testid="custom-report-dataset">
+                  <SelectValue placeholder="Select dataset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {datasets.filter((dataset) => dataset.previewable).map((dataset) => (
+                    <SelectItem key={dataset.key} value={dataset.key}>
+                      {dataset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="custom-report-columns">Columns</Label>
+              <Input
+                id="custom-report-columns"
+                value={customColumns}
+                onChange={(event) => setCustomColumns(event.target.value)}
+                placeholder={selectedDataset?.columns.map((column) => column.key).join(",") || "Default columns"}
+                data-testid="custom-report-columns"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="custom-report-name">Export name</Label>
+              <Input
+                id="custom-report-name"
+                value={customReportName}
+                onChange={(event) => setCustomReportName(event.target.value)}
+                data-testid="custom-report-name"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => previewMutation.mutate()}
+              disabled={!customDataset || previewMutation.isPending}
+              data-testid="custom-report-preview"
+            >
+              <Eye className="mr-2 h-4 w-4" />
+              Preview
+            </Button>
+            <Button
+              type="button"
+              onClick={() => exportCustomMutation.mutate()}
+              disabled={!customDataset || exportCustomMutation.isPending}
+              data-testid="custom-report-export"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export .gz
+            </Button>
+          </div>
+          {selectedDataset ? (
+            <div className="text-xs text-muted-foreground">
+              Available columns: {selectedDataset.columns.map((column) => `${column.key} (${column.label})`).join(", ")}
+              {selectedDataset.joinHints?.length ? ` - Connects with: ${selectedDataset.joinHints.join(", ")}` : ""}
+            </div>
+          ) : datasetsQuery.isError ? (
+            <PanelInlineError
+              title="Could not load report datasets"
+              description={datasetsQuery.error instanceof Error ? datasetsQuery.error.message : "Dataset registry failed to load."}
+              onRetry={() => void datasetsQuery.refetch()}
+            />
+          ) : null}
+          {customPreview ? (
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="w-full min-w-[48rem] text-sm">
+                <thead className="bg-muted/60 text-left">
+                  <tr>
+                    {customPreview.columns.map((column) => (
+                      <th key={column.key} className="px-3 py-2 font-medium">
+                        {column.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {customPreview.rows.length === 0 ? (
+                    <tr>
+                      <td className="px-3 py-4 text-muted-foreground" colSpan={customPreview.columns.length}>
+                        No preview rows returned.
+                      </td>
+                    </tr>
+                  ) : (
+                    customPreview.rows.map((row, index) => (
+                      <tr key={index} className="border-t">
+                        {customPreview.columns.map((column) => (
+                          <td key={column.key} className="px-3 py-2">
+                            {String(row[column.key] ?? "")}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -1,11 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
+import { gzipSync } from "node:zlib";
 import type { Express, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
 import { pool } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import { getExportDatasetRegistry } from "../../services/export-registry";
 import { sendError, sendOk } from "../../api-response";
+import { storage } from "../../storage";
 import { createExportJob, getScopedExportJob, listExportJobs, requeueExportJob } from "./export-jobs";
 import { removeExportFile } from "./export-file-store";
 import { exportRateLimiter } from "../../services/security-service";
@@ -27,6 +29,18 @@ const createExportJobSchema = z.object({
   reason: z.string().trim().max(200).optional(),
 });
 
+const customPreviewSchema = z.object({
+  dataset: z.string().trim().min(1),
+  columns: z.array(z.string().trim().min(1)).max(30).optional(),
+  filters: z.record(z.unknown()).default({}),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+const customExportSchema = customPreviewSchema.extend({
+  reportName: z.string().trim().min(1).max(120).default("custom-report"),
+  format: z.enum(["csv"]).default("csv"),
+});
+
 function currentUserId(req: Request): number | null {
   const userId = Number((req as Request & { user?: { id?: number } }).user?.id);
   return Number.isFinite(userId) && userId > 0 ? userId : null;
@@ -44,6 +58,138 @@ function withDownloadUrl(row: Awaited<ReturnType<typeof listExportJobs>>[number]
   };
 }
 
+function csvEscape(value: unknown): string {
+  if (value == null) return "";
+  const raw = value instanceof Date ? value.toISOString() : String(value);
+  return /[",\r\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
+}
+
+function toCsv(columns: string[], rows: Array<Record<string, unknown>>): Buffer {
+  const lines = [
+    columns.map(csvEscape).join(","),
+    ...rows.map((row) => columns.map((column) => csvEscape(row[column])).join(",")),
+  ];
+  return Buffer.from(lines.join("\r\n") + "\r\n", "utf8");
+}
+
+function safeFileStem(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "export";
+}
+
+async function buildCustomDatasetRows(dataset: string, limit: number): Promise<Array<Record<string, unknown>>> {
+  const orgId = getActiveOrganizationId();
+  if (dataset === "inventory") {
+    const categories = await storage.getAllCategories();
+    const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+    return (await storage.getAllInventoryItems()).slice(0, limit).map((item) => ({
+      ...item,
+      categoryName: item.categoryId != null ? categoryById.get(item.categoryId) ?? "" : "",
+    }));
+  }
+  if (dataset === "suppliers") {
+    return (await storage.getAllSuppliers()).slice(0, limit);
+  }
+  if (dataset === "purchase_orders") {
+    const suppliers = await storage.getAllSuppliers();
+    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
+    return (await storage.getAllPurchaseOrders()).slice(0, limit).map((order) => ({
+      ...order,
+      supplierName: supplierById.get(order.supplierId) ?? "",
+    }));
+  }
+  if (dataset === "purchase_requisitions") {
+    const suppliers = await storage.getAllSuppliers();
+    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
+    return (await storage.getAllPurchaseRequisitions()).slice(0, limit).map((requisition) => ({
+      ...requisition,
+      supplierName: requisition.supplierId != null ? supplierById.get(requisition.supplierId) ?? "" : "",
+    }));
+  }
+  if (dataset === "reorder_requests") {
+    const items = await storage.getAllInventoryItems();
+    const itemById = new Map(items.map((item) => [item.id, item.name]));
+    const suppliers = await storage.getAllSuppliers();
+    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
+    const warehouses = await storage.getAllWarehouses();
+    const warehouseById = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse.name]));
+    return (await storage.getAllReorderRequests()).slice(0, limit).map((request) => ({
+      ...request,
+      itemName: itemById.get(request.itemId) ?? "",
+      supplierName: request.supplierId != null ? supplierById.get(request.supplierId) ?? "" : "",
+      warehouseName: request.warehouseId != null ? warehouseById.get(request.warehouseId) ?? "" : "",
+    }));
+  }
+  if (dataset === "invoices") {
+    const suppliers = await storage.getAllSuppliers();
+    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
+    return (await storage.getAllInvoices()).slice(0, limit).map((invoice) => ({
+      ...invoice,
+      supplierName: invoice.supplierId != null ? supplierById.get(invoice.supplierId) ?? "" : "",
+    }));
+  }
+  if (dataset === "activity_logs") {
+    const users = await storage.getAllUsers();
+    const userById = new Map(users.map((user) => [user.id, user.fullName || user.username || `User #${user.id}`]));
+    return (await storage.getAllActivityLogs()).slice(0, limit).map((log) => ({
+      ...log,
+      userName: log.userId != null ? userById.get(log.userId) ?? "" : "",
+    }));
+  }
+  if (dataset === "shipments") {
+    const result = await pool.query(
+      `
+        SELECT
+          shipment.po_number AS "poNumber",
+          shipment.carrier AS "carrier",
+          shipment.status AS "status",
+          shipment.eta AS "eta",
+          COALESCE(shipment.tracking_number, '') AS "trackingNumber",
+          CASE WHEN shipment.eta IS NOT NULL AND shipment.eta < NOW() AND shipment.status NOT IN ('delivered', 'received') THEN 'Yes' ELSE 'No' END AS "lateRisk"
+        FROM shipments shipment
+        LEFT JOIN purchase_orders po
+          ON po.order_number = shipment.po_number
+        WHERE po.organization_id = $1
+        ORDER BY shipment.updated_at DESC NULLS LAST
+        LIMIT $2
+      `,
+      [orgId, limit],
+    );
+    return result.rows;
+  }
+  if (dataset === "po_delivery_comparison") {
+    const result = await pool.query(
+      `
+        SELECT
+          po.order_number AS "poNumber",
+          COALESCE(supplier.name, '') AS "supplierName",
+          po.status AS "poStatus",
+          COALESCE(shipment.status, 'NO_DELIVERY') AS "shipmentStatus",
+          shipment.eta AS "eta",
+          COALESCE(shipment.tracking_number, '') AS "trackingNumber",
+          CASE
+            WHEN shipment.id IS NULL THEN 'No delivery record'
+            WHEN shipment.status IN ('delivered', 'received') THEN 'Delivered'
+            WHEN shipment.eta IS NULL THEN 'Delivery has no ETA'
+            WHEN shipment.eta < NOW() THEN 'Delivery late'
+            ELSE 'Delivery pending'
+          END AS "deliveryGap"
+        FROM purchase_orders po
+        LEFT JOIN suppliers supplier
+          ON supplier.id = po.supplier_id
+         AND supplier.organization_id = po.organization_id
+        LEFT JOIN shipments shipment
+          ON shipment.po_number = po.order_number
+        WHERE po.organization_id = $1
+        ORDER BY po.created_at DESC, shipment.updated_at DESC NULLS LAST
+        LIMIT $2
+      `,
+      [orgId, limit],
+    );
+    return result.rows;
+  }
+  throw new Error(`Unsupported custom preview dataset: ${dataset}`);
+}
+
 export function registerExportCenterRoutes(
   app: Express,
   auth: {
@@ -55,6 +201,69 @@ export function registerExportCenterRoutes(
 
   app.get("/api/export-center/datasets", ...exportAccess, (_req: Request, res: Response) => {
     sendOk(res, getExportDatasetRegistry());
+  });
+
+  app.post("/api/export-center/custom-preview", ...exportAccess, async (req: Request, res: Response) => {
+    try {
+      const parsed = customPreviewSchema.parse(req.body);
+      const registry = getExportDatasetRegistry();
+      const entry = registry.find((item) => item.key === parsed.dataset);
+      if (!entry?.previewable) {
+        return sendError(res, 400, "REPORT_DATASET_NOT_PREVIEWABLE", "This dataset cannot be previewed.");
+      }
+      const defaultColumns = entry.columns.map((column) => column.key);
+      const requestedColumns = parsed.columns?.length ? parsed.columns : defaultColumns;
+      const allowed = new Set(defaultColumns);
+      const columns = requestedColumns.filter((column) => allowed.has(column));
+      if (columns.length === 0) {
+        return sendError(res, 400, "REPORT_COLUMNS_INVALID", "Select at least one valid column.");
+      }
+      const rows = await buildCustomDatasetRows(parsed.dataset, parsed.limit);
+      sendOk(res, {
+        dataset: parsed.dataset,
+        label: entry.label,
+        columns: entry.columns.filter((column) => columns.includes(column.key)),
+        rows: rows.map((row) => Object.fromEntries(columns.map((column) => [column, row[column] ?? ""]))),
+        rowCount: rows.length,
+        previewLimit: parsed.limit,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to preview custom report.";
+      sendError(res, 400, "CUSTOM_REPORT_PREVIEW_FAILED", message);
+    }
+  });
+
+  app.post("/api/export-center/custom-export", ...exportAccess, exportRateLimiter, async (req: Request, res: Response) => {
+    try {
+      const parsed = customExportSchema.parse(req.body);
+      const registry = getExportDatasetRegistry();
+      const entry = registry.find((item) => item.key === parsed.dataset);
+      if (!entry?.previewable) {
+        return sendError(res, 400, "REPORT_DATASET_NOT_EXPORTABLE", "This dataset cannot be exported.");
+      }
+      const defaultColumns = entry.columns.map((column) => column.key);
+      const requestedColumns = parsed.columns?.length ? parsed.columns : defaultColumns;
+      const allowed = new Set(defaultColumns);
+      const columns = requestedColumns.filter((column) => allowed.has(column));
+      if (columns.length === 0) {
+        return sendError(res, 400, "REPORT_COLUMNS_INVALID", "Select at least one valid column.");
+      }
+      const rows = await buildCustomDatasetRows(parsed.dataset, 10_000);
+      const visibleRows = rows.map((row) => Object.fromEntries(columns.map((column) => [column, row[column] ?? ""])));
+      const csv = toCsv(columns, visibleRows);
+      const compressed = gzipSync(csv, { level: 9 });
+      const fileName = `${safeFileStem(parsed.reportName)}.csv.gz`;
+      res.setHeader("Content-Type", "application/gzip");
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+      res.setHeader("X-Export-Format", "csv.gz");
+      res.setHeader("X-Export-Row-Count", String(visibleRows.length));
+      res.setHeader("X-Export-Uncompressed-Bytes", String(csv.length));
+      res.setHeader("X-Export-Compressed-Bytes", String(compressed.length));
+      res.send(compressed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to export custom report.";
+      sendError(res, 400, "CUSTOM_REPORT_EXPORT_FAILED", message);
+    }
   });
 
   app.get("/api/export-center/history", ...exportAccess, async (_req: Request, res: Response) => {
@@ -183,6 +392,9 @@ export function registerExportCenterRoutes(
       return sendError(res, 404, "EXPORT_FILE_MISSING", "Export file could not be found.");
     }
     res.setHeader("Content-Type", job.mimeType ?? "application/octet-stream");
+    if (job.fileName?.endsWith(".gz") || job.mimeType === "application/gzip") {
+      res.setHeader("X-Export-Compressed", "true");
+    }
     res.setHeader("Content-Disposition", `attachment; filename="${job.fileName ?? `export-${job.id}`}"`);
     res.sendFile(absolutePath);
   });

@@ -43,10 +43,8 @@ import {
   CreditCard, 
   FileText,
   Save,
-  AlertTriangle,
   ArrowRight,
   Globe,
-  Lock,
   Wallet
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -64,10 +62,6 @@ const billingSettingsSchema = z.object({
   // Payment processor settings
   paymentProcessorEnabled: z.boolean().default(false),
   paymentProcessor: z.string().optional(),
-  stripePublicKey: z.string().optional(),
-  stripeSecretKey: z.string().optional(),
-  paypalClientId: z.string().optional(),
-  paypalClientSecret: z.string().optional(),
   
   // Invoice settings
   invoicePrefix: z.string().max(5).optional(),
@@ -97,6 +91,52 @@ const billingSettingsSchema = z.object({
 
 type BillingSettingsValues = z.infer<typeof billingSettingsSchema>;
 
+type BillingProviderReadiness = {
+  activeProvider?: string;
+  stripe?: {
+    configured?: boolean;
+    publicKeyConfigured?: boolean;
+    secretKeyConfigured?: boolean;
+    checkoutReady?: boolean;
+    portalReady?: boolean;
+    webhookConfigured?: boolean;
+    priceMappingsConfigured?: number;
+  };
+  paypal?: {
+    supported?: boolean;
+    configured?: boolean;
+    reason?: string;
+  };
+};
+
+type SubscriptionSnapshot = {
+  billingProviders?: BillingProviderReadiness;
+  normalizedPlanTier?: string;
+  access?: {
+    code?: string;
+    label?: string;
+    message?: string;
+    restricted?: boolean;
+  };
+  usageStatus?: {
+    code?: string;
+    message?: string;
+    withinLimits?: boolean;
+    overLimitKeys?: string[];
+    atLimitKeys?: string[];
+  };
+  usageLimits?: Array<{
+    key: string;
+    label: string;
+    current: number;
+    limit: number | null;
+    remaining: number | null;
+    atLimit: boolean;
+    overLimit: boolean;
+  }>;
+  upgradeHints?: string[];
+};
+
 export function BillingSettingsForm() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("payment-processors");
@@ -118,10 +158,6 @@ export function BillingSettingsForm() {
       // Payment processor settings
       paymentProcessorEnabled: false,
       paymentProcessor: "stripe",
-      stripePublicKey: "",
-      stripeSecretKey: "",
-      paypalClientId: "",
-      paypalClientSecret: "",
       
       // Invoice settings
       invoicePrefix: "INV",
@@ -152,9 +188,19 @@ export function BillingSettingsForm() {
     values: (settings as BillingSettingsValues | undefined) || undefined,
   });
   
-  // Update payment processor fields when payment processor changes
   const selectedPaymentProcessor = form.watch("paymentProcessor");
   const paymentProcessorEnabled = form.watch("paymentProcessorEnabled");
+  const { data: subscriptionSnapshot } = useQuery<SubscriptionSnapshot>({
+    queryKey: ["/api/subscription/current"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+  const billingProviders = subscriptionSnapshot?.billingProviders;
+  const stripeReadiness = billingProviders?.stripe;
+  const paypalReadiness = billingProviders?.paypal;
+  const accessState = subscriptionSnapshot?.access;
+  const usageStatus = subscriptionSnapshot?.usageStatus;
+  const usageLimits = subscriptionSnapshot?.usageLimits ?? [];
+  const usageHighlights = usageLimits.filter((entry) => entry.atLimit || entry.overLimit);
   
   // Save settings mutation
   const saveSettingsMutation = useMutation({
@@ -183,10 +229,6 @@ export function BillingSettingsForm() {
   const onSubmit = (data: BillingSettingsValues) => {
     saveSettingsMutation.mutate(data);
   };
-  
-  // Check for Stripe keys in environment
-  const hasStripePublicKey = Boolean(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
-  const hasStripeSecretKey = false; // This would be checked on the server
   
   return (
     <div className="space-y-6">
@@ -235,6 +277,68 @@ export function BillingSettingsForm() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {subscriptionSnapshot && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="rounded-lg border p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-medium">Plan access</p>
+                              <p className="text-sm text-muted-foreground">
+                                {accessState?.message ?? "Subscription access state is not available."}
+                              </p>
+                            </div>
+                            <Badge variant={accessState?.restricted ? "destructive" : "default"}>
+                              {accessState?.label ?? "Unknown"}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="rounded-lg border p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-medium">Plan tier</p>
+                              <p className="text-sm text-muted-foreground">
+                                Backend-enforced SaaS tier for this organization.
+                              </p>
+                            </div>
+                            <Badge variant="outline">
+                              {(subscriptionSnapshot.normalizedPlanTier ?? "standard").toUpperCase()}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+
+                      {usageStatus && (
+                        <Alert variant={usageStatus.withinLimits ? "default" : "destructive"}>
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertTitle>{usageStatus.code === "USAGE_LIMIT_REACHED" ? "Usage limit reached" : "Usage status"}</AlertTitle>
+                          <AlertDescription>{usageStatus.message}</AlertDescription>
+                        </Alert>
+                      )}
+
+                      {usageHighlights.length > 0 && (
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                          {usageHighlights.map((entry) => (
+                            <div key={entry.key} className="rounded-lg border p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="font-medium">{entry.label}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {entry.current} used
+                                    {entry.limit != null ? ` of ${entry.limit}` : ""}
+                                  </p>
+                                </div>
+                                <Badge variant={entry.overLimit ? "destructive" : "secondary"}>
+                                  {entry.overLimit ? "Over" : "At limit"}
+                                </Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <FormField
                     control={form.control}
                     name="paymentProcessorEnabled"
@@ -275,7 +379,7 @@ export function BillingSettingsForm() {
                               </FormControl>
                               <SelectContent>
                                 <SelectItem value="stripe">
-                                  Stripe {hasStripePublicKey && <Badge className="ml-2">Configured</Badge>}
+                                  Stripe {stripeReadiness?.configured && <Badge className="ml-2">Configured</Badge>}
                                 </SelectItem>
                                 <SelectItem value="paypal">PayPal</SelectItem>
                                 <SelectItem value="other">Other (Manual Configuration)</SelectItem>
@@ -295,80 +399,63 @@ export function BillingSettingsForm() {
                             <AlertCircle className="h-4 w-4" />
                             <AlertTitle>Stripe Integration</AlertTitle>
                             <AlertDescription>
-                              To use Stripe, you need to add your API keys to the environment variables.
-                              The public key will be used by the client to create payment forms, while the
-                              secret key will be used by the server to process payments.
+                              Stripe credentials are configured by environment variables, not stored in
+                              company settings. This keeps secret keys out of browser forms and audit logs.
                             </AlertDescription>
                           </Alert>
-                          
+
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <FormField
-                              control={form.control}
-                              name="stripePublicKey"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Stripe Public Key</FormLabel>
-                                  <FormControl>
-                                    <div className="relative">
-                                      <Input
-                                        placeholder="pk_test_..."
-                                        {...field}
-                                        type="password"
-                                        disabled={hasStripePublicKey}
-                                        value={hasStripePublicKey ? "••••••••••••••••••••••••••••••" : field.value}
-                                      />
-                                      <Lock className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                    </div>
-                                  </FormControl>
-                                  <FormDescription>
-                                    {hasStripePublicKey 
-                                      ? "Stripe public key is configured in the environment variables." 
-                                      : "Your Stripe public key (starts with pk_)."}
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            
-                            <FormField
-                              control={form.control}
-                              name="stripeSecretKey"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Stripe Secret Key</FormLabel>
-                                  <FormControl>
-                                    <div className="relative">
-                                      <Input
-                                        placeholder="sk_test_..."
-                                        {...field}
-                                        type="password"
-                                        disabled={hasStripeSecretKey}
-                                        value={hasStripeSecretKey ? "••••••••••••••••••••••••••••••" : field.value}
-                                      />
-                                      <Lock className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                    </div>
-                                  </FormControl>
-                                  <FormDescription>
-                                    {hasStripeSecretKey 
-                                      ? "Stripe secret key is configured on the server." 
-                                      : "Your Stripe secret key (starts with sk_)."}
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
+                            <div className="rounded-lg border p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="font-medium">Public key</p>
+                                  <p className="text-sm text-muted-foreground">Client payment form readiness.</p>
+                                </div>
+                                <Badge variant={stripeReadiness?.publicKeyConfigured ? "default" : "secondary"}>
+                                  {stripeReadiness?.publicKeyConfigured ? "Configured" : "Missing"}
+                                </Badge>
+                              </div>
+                            </div>
+
+                            <div className="rounded-lg border p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="font-medium">Secret key</p>
+                                  <p className="text-sm text-muted-foreground">Server checkout and portal readiness.</p>
+                                </div>
+                                <Badge variant={stripeReadiness?.secretKeyConfigured ? "default" : "secondary"}>
+                                  {stripeReadiness?.secretKeyConfigured ? "Configured" : "Missing"}
+                                </Badge>
+                              </div>
+                            </div>
+
+                            <div className="rounded-lg border p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="font-medium">Checkout prices</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {stripeReadiness?.priceMappingsConfigured ?? 0} plan price mapping(s) detected.
+                                  </p>
+                                </div>
+                                <Badge variant={stripeReadiness?.checkoutReady ? "default" : "secondary"}>
+                                  {stripeReadiness?.checkoutReady ? "Ready" : "Setup needed"}
+                                </Badge>
+                              </div>
+                            </div>
+
+                            <div className="rounded-lg border p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="font-medium">Webhook signing</p>
+                                  <p className="text-sm text-muted-foreground">Required for trusted subscription updates.</p>
+                                </div>
+                                <Badge variant={stripeReadiness?.webhookConfigured ? "default" : "secondary"}>
+                                  {stripeReadiness?.webhookConfigured ? "Configured" : "Missing"}
+                                </Badge>
+                              </div>
+                            </div>
                           </div>
-                          
-                          <Alert className="bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-900">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>Important Security Note</AlertTitle>
-                            <AlertDescription>
-                              The Stripe secret key should ideally be added to your server environment
-                              variables and not stored in these settings. This field is provided for
-                              development and testing purposes only.
-                            </AlertDescription>
-                          </Alert>
-                          
+
                           <div className="flex justify-end">
                             <Button
                               type="button"
@@ -382,79 +469,43 @@ export function BillingSettingsForm() {
                               <ArrowRight className="ml-2 h-4 w-4" />
                             </Button>
                           </div>
+
+                          {subscriptionSnapshot?.upgradeHints?.length ? (
+                            <div className="rounded-lg border border-dashed p-4">
+                              <p className="font-medium">Upgrade guidance</p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {subscriptionSnapshot.upgradeHints.join(" ")}
+                              </p>
+                            </div>
+                          ) : null}
                         </div>
                       )}
-                      
+
                       {selectedPaymentProcessor === "paypal" && (
                         <div className="space-y-4">
                           <Alert>
                             <AlertCircle className="h-4 w-4" />
                             <AlertTitle>PayPal Integration</AlertTitle>
                             <AlertDescription>
-                              To use PayPal, you need to add your API credentials to the environment variables.
+                              PayPal is not active in this build. The app reports this honestly instead of
+                              accepting credentials that runtime billing will not use.
                             </AlertDescription>
                           </Alert>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <FormField
-                              control={form.control}
-                              name="paypalClientId"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>PayPal Client ID</FormLabel>
-                                  <FormControl>
-                                    <div className="relative">
-                                      <Input
-                                        placeholder="Client ID"
-                                        {...field}
-                                        type="password"
-                                      />
-                                      <Lock className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                    </div>
-                                  </FormControl>
-                                  <FormDescription>
-                                    Your PayPal client ID from the PayPal Developer Dashboard.
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            
-                            <FormField
-                              control={form.control}
-                              name="paypalClientSecret"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>PayPal Client Secret</FormLabel>
-                                  <FormControl>
-                                    <div className="relative">
-                                      <Input
-                                        placeholder="Client Secret"
-                                        {...field}
-                                        type="password"
-                                      />
-                                      <Lock className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                    </div>
-                                  </FormControl>
-                                  <FormDescription>
-                                    Your PayPal client secret from the PayPal Developer Dashboard.
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
+
+                          <div className="rounded-lg border p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="font-medium">Provider status</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {paypalReadiness?.reason ?? "PayPal is planned for a later billing provider integration."}
+                                </p>
+                              </div>
+                              <Badge variant={paypalReadiness?.configured ? "default" : "secondary"}>
+                                {paypalReadiness?.supported ? "Supported" : "Planned"}
+                              </Badge>
+                            </div>
                           </div>
-                          
-                          <Alert className="bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-900">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>Important Security Note</AlertTitle>
-                            <AlertDescription>
-                              The PayPal client secret should ideally be added to your server environment
-                              variables and not stored in these settings. This field is provided for
-                              development and testing purposes only.
-                            </AlertDescription>
-                          </Alert>
-                          
+
                           <div className="flex justify-end">
                             <Button
                               type="button"

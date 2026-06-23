@@ -9,6 +9,7 @@ import {
   getOrgPlanLimits,
   getOrgFeatureUpgradeHint,
   normalizeOrgPlanTier,
+  type OrgPlanTier,
   resolveOrgFeatureFlags,
 } from "./org-feature-registry";
 
@@ -40,14 +41,14 @@ export async function getFeatureFlagsForActiveOrg(): Promise<Record<string, bool
 
 export async function getOrgSubscriptionForActiveOrg(): Promise<{
   rawPlanTier: string | null;
-  normalizedPlanTier: string;
+  normalizedPlanTier: OrgPlanTier;
   featureFlags: Record<string, boolean>;
   effectiveFeatureFlags: Record<string, boolean>;
   featureCatalog: Array<{
     key: string;
     label: string;
     enabled: boolean;
-    minimumPlan: string;
+    minimumPlan: OrgPlanTier;
     upgradeHint: string;
     overridden: boolean;
   }>;

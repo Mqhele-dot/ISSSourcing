@@ -21,6 +21,7 @@ import { getOrgSubscriptionForActiveOrg } from "../../org-features";
 import { sendError, sendOk } from "../../api-response";
 import { getConfigurationDefinitionsForPlan } from "../../company-configuration-registry";
 import { normalizeOrgPlanTier, type OrgPlanTier } from "../../org-feature-registry";
+import { buildSubscriptionDiagnostics } from "../../subscription-enforcement";
 
 type Auth = {
   ensureAuthenticated: RequestHandler;
@@ -57,6 +58,33 @@ const STRIPE_PRICE_ENV: Record<OrgPlanTier, string> = {
 
 function stripeClient(): Stripe | null {
   return process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+}
+
+function billingProviderReadiness() {
+  const stripePriceIds = Object.values(STRIPE_PRICE_ENV)
+    .map((envName) => process.env[envName])
+    .filter(Boolean);
+  const stripeSecretConfigured = Boolean(process.env.STRIPE_SECRET_KEY);
+  const stripePublicConfigured = Boolean(process.env.VITE_STRIPE_PUBLIC_KEY || process.env.STRIPE_PUBLIC_KEY);
+  const stripeWebhookConfigured = Boolean(process.env.STRIPE_WEBHOOK_SECRET);
+
+  return {
+    activeProvider: "stripe",
+    stripe: {
+      configured: stripeSecretConfigured,
+      publicKeyConfigured: stripePublicConfigured,
+      secretKeyConfigured: stripeSecretConfigured,
+      checkoutReady: stripeSecretConfigured && stripePriceIds.length > 0,
+      portalReady: stripeSecretConfigured,
+      webhookConfigured: stripeWebhookConfigured,
+      priceMappingsConfigured: stripePriceIds.length,
+    },
+    paypal: {
+      supported: false,
+      configured: false,
+      reason: "PayPal is planned but not implemented. Use Stripe for hosted billing in this build.",
+    },
+  };
 }
 
 function planTierFromStripePrice(priceId: string | null | undefined, metadataPlan?: unknown): OrgPlanTier {
@@ -120,6 +148,18 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
         db.select().from(warehouses).where(eq(warehouses.organizationId, orgId)),
         db.select().from(inventoryItems).where(eq(inventoryItems.organizationId, orgId)),
       ]);
+      const usage = {
+        users: memberCount.length,
+        warehouses: warehouseCount.length,
+        skus: skuCount.length,
+      };
+      const diagnostics = buildSubscriptionDiagnostics({
+        planTier: subscription.normalizedPlanTier,
+        limits: subscription.limits,
+        usage,
+        stripeStatus: billingSubscription?.status ?? "active",
+        currentPeriodEnd: billingSubscription?.currentPeriodEnd ?? null,
+      });
 
       return sendOk(res, {
         organizationId: orgId,
@@ -127,12 +167,13 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
         sourceOfTruth: "local_entitlements",
         status: billingSubscription?.status ?? "active",
         billingSubscription: billingSubscription ?? null,
+        billingProviders: billingProviderReadiness(),
         ...subscription,
-        usage: {
-          users: memberCount.length,
-          warehouses: warehouseCount.length,
-          skus: skuCount.length,
-        },
+        usage,
+        access: diagnostics.access,
+        usageLimits: diagnostics.usageLimits,
+        usageStatus: diagnostics.usageStatus,
+        upgradeHints: diagnostics.upgradeHints,
       });
     } catch (error) {
       console.error("GET /api/subscription/current:", error);

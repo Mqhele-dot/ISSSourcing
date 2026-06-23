@@ -25,6 +25,18 @@ const STEPS: WalkthroughStep[] = [
     ],
   },
   {
+    name: "operations-exceptions",
+    path: "/operations/exceptions",
+    readyText: /exception/i,
+    actions: [{ name: "refresh-or-filter", text: /refresh|filter|all statuses/i }],
+  },
+  {
+    name: "cycle-counts",
+    path: "/inventory/cycle-counts",
+    readyText: /cycle count|count/i,
+    actions: [{ name: "search-or-filter", text: /search|filter|all statuses/i }],
+  },
+  {
     name: "master-data-warehouses",
     path: "/admin/master-data/warehouses",
     readyText: /warehouse/i,

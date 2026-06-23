@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Boxes, Download, ExternalLink, Eye, LayoutGrid, List, RefreshCw, Search, X } from "lucide-react";
+import { Boxes, Download, ExternalLink, Eye, LayoutGrid, List, Plus, RefreshCw, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -54,6 +55,29 @@ const EMPTY_WAREHOUSES: Array<{ id: number; name: string }> = [];
 
 type InventorySort = "name-asc" | "sku-asc" | "available-asc" | "available-desc" | "updated-desc" | "updated-asc";
 type InventoryViewMode = "table" | "cards";
+type CreateInventoryForm = {
+  name: string;
+  sku: string;
+  quantity: string;
+  price: string;
+  cost: string;
+  lowStockThreshold: string;
+  categoryId: string;
+  location: string;
+  unitOfMeasure: string;
+};
+
+const emptyCreateInventoryForm = (): CreateInventoryForm => ({
+  name: "",
+  sku: "",
+  quantity: "0",
+  price: "0",
+  cost: "",
+  lowStockThreshold: "10",
+  categoryId: "",
+  location: "",
+  unitOfMeasure: "each",
+});
 
 function isLowFilterEnabled(value: string): boolean {
   const normalized = value.trim().toLowerCase();
@@ -107,6 +131,10 @@ export default function InventoryPage() {
   const [sortBy, setSortBy] = useState<InventorySort>("name-asc");
   const [viewMode, setViewMode] = useState<InventoryViewMode>("table");
   const [previewItem, setPreviewItem] = useState<InventoryListItem | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateInventoryForm>(() => emptyCreateInventoryForm());
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creatingItem, setCreatingItem] = useState(false);
 
   const [searchInput, setSearchInput] = useState(String(queryState.q ?? ""));
   useEffect(() => {
@@ -358,6 +386,40 @@ export default function InventoryPage() {
   const openFullItem = (sku: string) => {
     setLocation(APP_ROUTES.inventory.item(sku));
   };
+  const updateCreateForm = (field: keyof CreateInventoryForm, value: string) => {
+    setCreateForm((current) => ({ ...current, [field]: value }));
+    setCreateError(null);
+  };
+  const createInventoryItem = () => {
+    void (async () => {
+      setCreatingItem(true);
+      setCreateError(null);
+      try {
+        const payload = {
+          name: createForm.name.trim(),
+          sku: createForm.sku.trim(),
+          quantity: createForm.quantity,
+          price: createForm.price,
+          cost: createForm.cost.trim() ? createForm.cost : undefined,
+          lowStockThreshold: createForm.lowStockThreshold,
+          categoryId: createForm.categoryId ? Number(createForm.categoryId) : undefined,
+          location: createForm.location.trim() || undefined,
+          unitOfMeasure: createForm.unitOfMeasure.trim() || "each",
+        };
+        await requestJson<InventoryListItem>("POST", "/api/inventory", payload);
+        setCreateForm(emptyCreateInventoryForm());
+        setCreateOpen(false);
+        await refetchInventory();
+        toast({ title: "Inventory item created", description: `${payload.sku} is now available in inventory.` });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to create inventory item";
+        setCreateError(message);
+        toast({ title: "Create item failed", description: message, variant: "destructive" });
+      } finally {
+        setCreatingItem(false);
+      }
+    })();
+  };
 
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-4" data-testid="inventory-page">
@@ -370,6 +432,15 @@ export default function InventoryPage() {
         breadcrumb={<span>Inventory / Overview</span>}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="gap-2"
+              data-testid="inventory-create-item-button"
+            >
+              <Plus className="h-4 w-4" />
+              Add item
+            </Button>
             <Button
               variant="outline"
               onClick={handleExportCsv}
@@ -653,9 +724,12 @@ export default function InventoryPage() {
         emptyAction={
           <div className="space-y-3">
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Inventory item creation is not available from this screen yet. Use Master Data, imports, or setup tools.
+              Create the first item here, import a catalog, or use setup tools to seed demo stock.
             </p>
             <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="default" size="sm" onClick={() => setCreateOpen(true)}>
+              Add inventory item
+            </Button>
             {hasActiveFilters ? (
               <Button type="button" variant="default" size="sm" onClick={clearFilters}>
                 Clear filters
@@ -847,6 +921,152 @@ export default function InventoryPage() {
           )
         )}
       </DataState>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent data-testid="inventory-create-item-dialog" className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add inventory item</DialogTitle>
+            <DialogDescription>
+              Create the item master record used by stock counts, requisitions, purchase orders, receiving, reports, and analytics.
+            </DialogDescription>
+          </DialogHeader>
+          {createError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Item could not be created</AlertTitle>
+              <AlertDescription>{createError}</AlertDescription>
+            </Alert>
+          ) : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="inventory-create-name">Item name</Label>
+              <Input
+                id="inventory-create-name"
+                value={createForm.name}
+                onChange={(event) => updateCreateForm("name", event.target.value)}
+                placeholder="Blue nitrile gloves"
+                data-testid="inventory-create-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inventory-create-sku">SKU</Label>
+              <Input
+                id="inventory-create-sku"
+                value={createForm.sku}
+                onChange={(event) => updateCreateForm("sku", event.target.value)}
+                placeholder="GLV-NIT-BLUE-M"
+                data-testid="inventory-create-sku"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inventory-create-quantity">Opening quantity</Label>
+              <Input
+                id="inventory-create-quantity"
+                type="number"
+                min="0"
+                step="1"
+                value={createForm.quantity}
+                onChange={(event) => updateCreateForm("quantity", event.target.value)}
+                data-testid="inventory-create-quantity"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inventory-create-price">Sales/reporting price</Label>
+              <Input
+                id="inventory-create-price"
+                type="number"
+                min="0"
+                step="0.01"
+                value={createForm.price}
+                onChange={(event) => updateCreateForm("price", event.target.value)}
+                data-testid="inventory-create-price"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inventory-create-cost">Cost</Label>
+              <Input
+                id="inventory-create-cost"
+                type="number"
+                min="0"
+                step="0.01"
+                value={createForm.cost}
+                onChange={(event) => updateCreateForm("cost", event.target.value)}
+                placeholder="Optional"
+                data-testid="inventory-create-cost"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inventory-create-threshold">Low stock threshold</Label>
+              <Input
+                id="inventory-create-threshold"
+                type="number"
+                min="0"
+                step="1"
+                value={createForm.lowStockThreshold}
+                onChange={(event) => updateCreateForm("lowStockThreshold", event.target.value)}
+                data-testid="inventory-create-low-stock-threshold"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select
+                value={createForm.categoryId || "none"}
+                onValueChange={(value) => updateCreateForm("categoryId", value === "none" ? "" : value)}
+              >
+                <SelectTrigger data-testid="inventory-create-category">
+                  <SelectValue placeholder="Optional category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No category</SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={String(category.id)}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inventory-create-location">Location</Label>
+              <Input
+                id="inventory-create-location"
+                value={createForm.location}
+                onChange={(event) => updateCreateForm("location", event.target.value)}
+                placeholder="Main Warehouse / Aisle 1"
+                list="inventory-create-locations"
+                data-testid="inventory-create-location"
+              />
+              <datalist id="inventory-create-locations">
+                {knownLocations.map((location) => (
+                  <option key={location} value={location} />
+                ))}
+              </datalist>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inventory-create-uom">Unit of measure</Label>
+              <Input
+                id="inventory-create-uom"
+                value={createForm.unitOfMeasure}
+                onChange={(event) => updateCreateForm("unitOfMeasure", event.target.value)}
+                placeholder="each"
+                data-testid="inventory-create-unit-of-measure"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={creatingItem}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={createInventoryItem}
+              disabled={creatingItem || !createForm.name.trim() || !createForm.sku.trim()}
+              data-testid="inventory-create-submit"
+            >
+              {creatingItem ? "Creating..." : "Create item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(previewItem)} onOpenChange={(open) => !open && setPreviewItem(null)}>
         <DialogContent data-testid="inventory-item-preview" className="sm:max-w-2xl">

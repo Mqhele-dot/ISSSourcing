@@ -3,17 +3,148 @@ export type ExportDatasetRegistryEntry = {
   label: string;
   section: "inventory" | "procurement" | "finance" | "logistics" | "admin";
   formats: Array<"csv" | "excel" | "pdf" | "docx">;
+  columns: Array<{ key: string; label: string; type?: "text" | "number" | "date" | "money" | "status" }>;
+  joinHints?: string[];
+  previewable?: boolean;
 };
 
 export const EXPORT_DATASET_REGISTRY: ExportDatasetRegistryEntry[] = [
-  { key: "inventory", label: "Inventory", section: "inventory", formats: ["csv", "excel", "pdf", "docx"] },
-  { key: "suppliers", label: "Suppliers", section: "procurement", formats: ["csv", "excel", "pdf", "docx"] },
-  { key: "purchase_orders", label: "Purchase orders", section: "procurement", formats: ["csv", "excel", "pdf", "docx"] },
-  { key: "purchase_requisitions", label: "Purchase requisitions", section: "procurement", formats: ["csv", "excel", "pdf", "docx"] },
-  { key: "reorder_requests", label: "Reorder requests", section: "inventory", formats: ["csv", "excel", "pdf", "docx"] },
-  { key: "invoices", label: "Invoices", section: "finance", formats: ["csv", "excel", "pdf", "docx"] },
-  { key: "shipments", label: "Shipments", section: "logistics", formats: ["csv", "excel", "pdf", "docx"] },
-  { key: "activity_logs", label: "Activity logs", section: "admin", formats: ["csv", "excel", "pdf", "docx"] },
+  {
+    key: "inventory",
+    label: "Inventory",
+    section: "inventory",
+    formats: ["csv", "excel", "pdf", "docx"],
+    previewable: true,
+    columns: [
+      { key: "sku", label: "SKU", type: "text" },
+      { key: "name", label: "Item", type: "text" },
+      { key: "categoryName", label: "Category", type: "text" },
+      { key: "quantity", label: "On hand", type: "number" },
+      { key: "price", label: "Price", type: "money" },
+      { key: "location", label: "Location", type: "text" },
+      { key: "status", label: "Status", type: "status" },
+    ],
+  },
+  {
+    key: "suppliers",
+    label: "Suppliers",
+    section: "procurement",
+    formats: ["csv", "excel", "pdf", "docx"],
+    previewable: true,
+    columns: [
+      { key: "name", label: "Supplier", type: "text" },
+      { key: "email", label: "Email", type: "text" },
+      { key: "phone", label: "Phone", type: "text" },
+      { key: "defaultCurrencyCode", label: "Currency", type: "text" },
+      { key: "status", label: "Status", type: "status" },
+    ],
+  },
+  {
+    key: "purchase_orders",
+    label: "Purchase orders",
+    section: "procurement",
+    formats: ["csv", "excel", "pdf", "docx"],
+    previewable: true,
+    joinHints: ["suppliers", "shipments", "invoices", "receipts"],
+    columns: [
+      { key: "orderNumber", label: "PO", type: "text" },
+      { key: "supplierName", label: "Supplier", type: "text" },
+      { key: "status", label: "Status", type: "status" },
+      { key: "currencyCode", label: "Currency", type: "text" },
+      { key: "totalAmount", label: "Total", type: "money" },
+      { key: "expectedDeliveryDate", label: "Expected delivery", type: "date" },
+    ],
+  },
+  {
+    key: "purchase_requisitions",
+    label: "Purchase requisitions",
+    section: "procurement",
+    formats: ["csv", "excel", "pdf", "docx"],
+    previewable: true,
+    columns: [
+      { key: "requisitionNumber", label: "Requisition", type: "text" },
+      { key: "supplierName", label: "Supplier", type: "text" },
+      { key: "status", label: "Status", type: "status" },
+      { key: "totalAmount", label: "Total", type: "money" },
+      { key: "requiredDate", label: "Required date", type: "date" },
+    ],
+  },
+  {
+    key: "reorder_requests",
+    label: "Reorder requests",
+    section: "inventory",
+    formats: ["csv", "excel", "pdf", "docx"],
+    previewable: true,
+    columns: [
+      { key: "itemName", label: "Item", type: "text" },
+      { key: "status", label: "Status", type: "status" },
+      { key: "requestedQuantity", label: "Requested qty", type: "number" },
+      { key: "supplierName", label: "Supplier", type: "text" },
+      { key: "warehouseName", label: "Warehouse", type: "text" },
+    ],
+  },
+  {
+    key: "invoices",
+    label: "Invoices",
+    section: "finance",
+    formats: ["csv", "excel", "pdf", "docx"],
+    previewable: true,
+    joinHints: ["suppliers", "purchase_orders", "payments"],
+    columns: [
+      { key: "invoiceNumber", label: "Invoice", type: "text" },
+      { key: "supplierName", label: "Supplier", type: "text" },
+      { key: "status", label: "Status", type: "status" },
+      { key: "total", label: "Total", type: "money" },
+      { key: "dueAmount", label: "Due", type: "money" },
+      { key: "dueDate", label: "Due date", type: "date" },
+    ],
+  },
+  {
+    key: "shipments",
+    label: "Shipments",
+    section: "logistics",
+    formats: ["csv", "excel", "pdf", "docx"],
+    previewable: true,
+    joinHints: ["purchase_orders", "suppliers", "carriers"],
+    columns: [
+      { key: "poNumber", label: "PO", type: "text" },
+      { key: "carrier", label: "Carrier", type: "text" },
+      { key: "status", label: "Status", type: "status" },
+      { key: "eta", label: "ETA", type: "date" },
+      { key: "trackingNumber", label: "Tracking", type: "text" },
+      { key: "lateRisk", label: "Late risk", type: "status" },
+    ],
+  },
+  {
+    key: "po_delivery_comparison",
+    label: "PO vs deliveries",
+    section: "logistics",
+    formats: ["csv"],
+    previewable: true,
+    joinHints: ["purchase_orders", "shipments", "suppliers"],
+    columns: [
+      { key: "poNumber", label: "PO", type: "text" },
+      { key: "supplierName", label: "Supplier", type: "text" },
+      { key: "poStatus", label: "PO status", type: "status" },
+      { key: "shipmentStatus", label: "Delivery status", type: "status" },
+      { key: "eta", label: "ETA", type: "date" },
+      { key: "trackingNumber", label: "Tracking", type: "text" },
+      { key: "deliveryGap", label: "Delivery gap", type: "text" },
+    ],
+  },
+  {
+    key: "activity_logs",
+    label: "Activity logs",
+    section: "admin",
+    formats: ["csv", "excel", "pdf", "docx"],
+    previewable: true,
+    columns: [
+      { key: "action", label: "Action", type: "text" },
+      { key: "description", label: "Description", type: "text" },
+      { key: "userName", label: "User", type: "text" },
+      { key: "timestamp", label: "Timestamp", type: "date" },
+    ],
+  },
 ];
 
 export function getExportDatasetRegistry(): ExportDatasetRegistryEntry[] {

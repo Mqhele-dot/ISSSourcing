@@ -140,18 +140,27 @@ export function serveStatic(app: Express) {
     path.resolve(__dirname, "public"),
     path.resolve(process.cwd(), "dist", "public"),
   ];
-  const distPath = candidates.find((candidate) => fs.existsSync(candidate));
+  const distPath = candidates.find((candidate) => fs.existsSync(path.resolve(candidate, "index.html")));
 
   if (!distPath) {
     throw new Error(
-      `Could not find the build directory. Checked: ${candidates.join(", ")}. Make sure to build the client first.`,
+      `Could not find built client index.html. Checked: ${candidates.map((candidate) => path.resolve(candidate, "index.html")).join(", ")}. Make sure to build the client first.`,
     );
   }
+
+  const indexPath = path.resolve(distPath, "index.html");
 
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+    if (!fs.existsSync(indexPath)) {
+      res
+        .status(503)
+        .type("text/plain")
+        .send(`Built client index.html is missing at ${indexPath}. Run npm run build or npm run local:serve again.`);
+      return;
+    }
+    res.sendFile(indexPath);
   });
 }

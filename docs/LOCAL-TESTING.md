@@ -51,6 +51,15 @@ This opens the full local app, signs in as the admin demo user, visits the main 
 
 The walkthrough uses local Chrome by default. If the full UI cannot compile because local dependencies are cloud-placeholder files, refresh the local install once with `npm ci`, then rerun `npm run test:local:browser`.
 
+## Test One Local App Route
+
+```powershell
+$env:LOCAL_BROWSER_TEST_PATH="/inventory/cycle-counts"
+npm run test:local:url
+```
+
+This signs in, opens one route, verifies the app did not fall back to `/auth` or a server error, and saves a screenshot to `test-results/local-url-smoke`. Use this when Codex Browser or Computer Use cannot attach to the visible tab but the local app still needs a real browser check.
+
 If npm or OneDrive leaves `node_modules` in a placeholder or partial state, run:
 
 ```powershell

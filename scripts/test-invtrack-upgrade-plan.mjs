@@ -18,6 +18,9 @@ const files = {
   serviceWorker: readFileSync("client/public/sw.js", "utf8"),
   offlineQueue: readFileSync("client/src/lib/offline-queue.ts", "utf8"),
   syncValidators: readFileSync("server/modules/sync/validators.ts", "utf8"),
+  warehouseTransferRoutes: readFileSync("server/routes/warehouse-transfer-routes.ts", "utf8"),
+  warehouseTransferPage: readFileSync("client/src/pages/multi-warehouse-transfers.tsx", "utf8"),
+  paymentDialog: readFileSync("client/src/components/billing/payment-dialog.tsx", "utf8"),
   packageJson: readFileSync("package.json", "utf8"),
 };
 
@@ -103,10 +106,18 @@ const checks = [
   {
     name: "plan limits are enforced on backend writes",
     ok:
-      files.planLimits.includes("PLAN_LIMIT_EXCEEDED") &&
+      files.planLimits.includes("USAGE_LIMIT_REACHED") &&
       files.inventoryRoutes.includes("ensurePlanLimitAllowsCreate") &&
       files.warehouseRoutes.includes("ensurePlanLimitAllowsCreate") &&
       files.registry.includes("starter: { users: 3, warehouses: 1, skus: 5000 }"),
+  },
+  {
+    name: "subscription snapshot exposes access and usage diagnostics",
+    ok:
+      files.orgRoutes.includes("usageStatus") &&
+      files.orgRoutes.includes("usageLimits") &&
+      files.orgRoutes.includes("upgradeHints") &&
+      files.orgRoutes.includes("access: diagnostics.access"),
   },
   {
     name: "Stripe webhooks verify signatures before entitlement processing",
@@ -136,6 +147,24 @@ const checks = [
   {
     name: "package exposes upgrade regression test",
     ok: files.packageJson.includes('"test:invtrack-upgrade-plan"'),
+  },
+  {
+    name: "warehouse transfers do not fabricate persistence",
+    ok:
+      files.warehouseTransferRoutes.includes("sendWarehouseTransfersUnavailable") &&
+      files.warehouseTransferRoutes.includes("FEATURE_DISABLED") &&
+      !files.warehouseTransferRoutes.includes("Math.random") &&
+      !files.warehouseTransferRoutes.includes("For now, return empty array") &&
+      files.warehouseTransferPage.includes("Warehouse transfers are planned") &&
+      files.warehouseTransferPage.includes("disabled={transfersUnavailable}"),
+  },
+  {
+    name: "card payment dialog does not fake Stripe processing",
+    ok:
+      files.paymentDialog.includes("Hosted card payment not available here") &&
+      files.paymentDialog.includes("processed externally") &&
+      !files.paymentDialog.includes("would be initiated here") &&
+      !files.paymentDialog.includes("recording as a manual payment"),
   },
 ];
 

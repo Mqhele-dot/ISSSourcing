@@ -3232,7 +3232,6 @@ export async function getOperationalControlTowerOverview() {
       FROM inventory_items i
       LEFT JOIN inventory_positions p
         ON p.sku = i.sku
-       AND p.organization_id = i.organization_id
       WHERE i.organization_id = $1
       GROUP BY i.id
     ) stock

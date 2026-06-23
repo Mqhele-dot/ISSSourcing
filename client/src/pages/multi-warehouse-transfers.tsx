@@ -107,7 +107,11 @@ export default function MultiWarehouseTransferPage() {
   });
 
   // Fetch transfers
-  const { data: transfers = [] } = useQuery({
+  const {
+    data: transfers = [],
+    error: transfersError,
+    isError: transfersUnavailable,
+  } = useQuery({
     queryKey: ["/api/warehouse-transfers", statusFilter],
     queryFn: () =>
       requestJson<WarehouseTransfer[]>(
@@ -292,6 +296,26 @@ export default function MultiWarehouseTransferPage() {
       />
 
       <div className="space-y-6">
+        {transfersUnavailable ? (
+          <Card className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700 dark:text-amber-300" />
+                <div className="space-y-1">
+                  <p className="font-medium text-amber-900 dark:text-amber-100">Warehouse transfers are planned</p>
+                  <p className="text-sm text-amber-800 dark:text-amber-200">
+                    This workflow is disabled until transfer persistence, approvals, and stock movement settlement are wired.
+                    Use Warehouse Operations for current movement workflows.
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {transfersError instanceof Error ? transfersError.message : "Feature is not enabled in this build."}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
@@ -352,7 +376,7 @@ export default function MultiWarehouseTransferPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
+          <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2" disabled={transfersUnavailable}>
             <Plus className="h-4 w-4" />
             New Transfer
           </Button>

@@ -12,6 +12,7 @@ import {
 import { pool } from "./db";
 
 const ORG_ID = 1;
+const FQA_SEED_ADVISORY_LOCK_KEY = 51_005_001;
 
 async function ensureAdminUserId(): Promise<number> {
   const r = await pool.query<{ id: number }>("SELECT id FROM users ORDER BY id LIMIT 1");
@@ -98,164 +99,165 @@ async function upsertItemWithPosition(payload: {
 }
 
 export async function seedFunctionalQA(): Promise<void> {
-  await ensureAdminUserId();
-  const catElec = await upsertCategory("Electronics");
-  const catCons = await upsertCategory("Consumables");
-  await upsertWarehouseCity("Johannesburg");
-  await upsertWarehouseCity("Cape Town");
-  await upsertWarehouseCity("Durban");
+  const lockClient = await pool.connect();
+  try {
+    await lockClient.query("SELECT pg_advisory_lock($1)", [FQA_SEED_ADVISORY_LOCK_KEY]);
 
-  await upsertItemWithPosition({
-    sku: "SKU-A",
-    name: "QA Item A",
-    categoryId: catElec,
-    defaultLocation: "Johannesburg",
-    lowStockThreshold: 5,
-    onHand: 10,
-    allocated: 3,
-  });
-  await upsertItemWithPosition({
-    sku: "SKU-B",
-    name: "QA Item B",
-    categoryId: catElec,
-    defaultLocation: "Cape Town",
-    lowStockThreshold: 5,
-    onHand: 4,
-    allocated: 1,
-  });
-  await upsertItemWithPosition({
-    sku: "SKU-C",
-    name: "QA Item C",
-    categoryId: catCons,
-    defaultLocation: "Durban",
-    lowStockThreshold: 5,
-    onHand: 20,
-    allocated: 0,
-  });
-  await upsertItemWithPosition({
-    sku: "SKU-D",
-    name: "QA Item D",
-    categoryId: catCons,
-    defaultLocation: "Johannesburg",
-    lowStockThreshold: 1,
-    onHand: 0,
-    allocated: 2,
-  });
+    await ensureAdminUserId();
+    const catElec = await upsertCategory("Electronics");
+    const catCons = await upsertCategory("Consumables");
+    await upsertWarehouseCity("Johannesburg");
+    await upsertWarehouseCity("Cape Town");
+    await upsertWarehouseCity("Durban");
 
-  const supplierId = await ensureFqaSupplierId();
-  for (const row of [
-    { num: "PO-FQA-001", status: "open", total: FQA_PO_001_HEADER_TOTAL },
-    { num: "PO-FQA-002", status: "approved", total: 2500 },
-    { num: "PO-FQA-003", status: "received", total: 500 },
-  ] as const) {
-    await pool.query(
-      `INSERT INTO purchase_orders (organization_id, order_number, supplier_id, status, order_date, total_amount, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, now(), $5, now(), now())
-       ON CONFLICT (organization_id, order_number) DO UPDATE SET
-         status = EXCLUDED.status,
-         total_amount = EXCLUDED.total_amount,
-         supplier_id = EXCLUDED.supplier_id,
-         updated_at = now()`,
-      [ORG_ID, row.num, supplierId, row.status, row.total],
-    );
-  }
+    await upsertItemWithPosition({
+      sku: "SKU-A",
+      name: "QA Item A",
+      categoryId: catElec,
+      defaultLocation: "Johannesburg",
+      lowStockThreshold: 5,
+      onHand: 10,
+      allocated: 3,
+    });
+    await upsertItemWithPosition({
+      sku: "SKU-B",
+      name: "QA Item B",
+      categoryId: catElec,
+      defaultLocation: "Cape Town",
+      lowStockThreshold: 5,
+      onHand: 4,
+      allocated: 1,
+    });
+    await upsertItemWithPosition({
+      sku: "SKU-C",
+      name: "QA Item C",
+      categoryId: catCons,
+      defaultLocation: "Durban",
+      lowStockThreshold: 5,
+      onHand: 20,
+      allocated: 0,
+    });
+    await upsertItemWithPosition({
+      sku: "SKU-D",
+      name: "QA Item D",
+      categoryId: catCons,
+      defaultLocation: "Johannesburg",
+      lowStockThreshold: 1,
+      onHand: 0,
+      allocated: 2,
+    });
 
-  const itemA = await pool.query<{ id: number }>(
-    "SELECT id FROM inventory_items WHERE organization_id = $1 AND sku = 'SKU-A' LIMIT 1",
-    [ORG_ID],
-  );
-  const itemId = itemA.rows[0]?.id;
-  if (itemId) {
-    await pool.query(
-      `DELETE FROM purchase_order_items
-       WHERE order_id IN (
-         SELECT id FROM purchase_orders WHERE organization_id = $1 AND order_number LIKE 'PO-FQA%'
-       )`,
-      [ORG_ID],
-    );
-
-    const poRows = await pool.query<{ id: number; order_number: string }>(
-      `SELECT id, order_number FROM purchase_orders WHERE organization_id = $1 AND order_number LIKE 'PO-FQA%' ORDER BY order_number`,
-      [ORG_ID],
-    );
-    const byNum = new Map(poRows.rows.map((r) => [r.order_number, r.id]));
-
-    const insLine = async (orderNumber: string, qty: number, unit: number, received: number) => {
-      const oid = byNum.get(orderNumber);
-      if (!oid) return;
-      const total = qty * unit;
+    const supplierId = await ensureFqaSupplierId();
+    for (const row of [
+      { num: "PO-FQA-001", status: "open", total: FQA_PO_001_HEADER_TOTAL },
+      { num: "PO-FQA-002", status: "approved", total: 2500 },
+      { num: "PO-FQA-003", status: "received", total: 500 },
+    ] as const) {
       await pool.query(
-        `INSERT INTO purchase_order_items (order_id, item_id, quantity, unit_price, total_price, received_quantity)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [oid, itemId, qty, unit, total, received],
+        `INSERT INTO purchase_orders (organization_id, order_number, supplier_id, status, order_date, total_amount, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, now(), $5, now(), now())
+         ON CONFLICT (organization_id, order_number) DO UPDATE SET
+           status = EXCLUDED.status,
+           total_amount = EXCLUDED.total_amount,
+           supplier_id = EXCLUDED.supplier_id,
+           updated_at = now()`,
+        [ORG_ID, row.num, supplierId, row.status, row.total],
       );
-    };
-
-    for (const line of FQA_PO_001_LINES) {
-      await insLine("PO-FQA-001", line.quantity, line.unitPrice, 0);
     }
-    await insLine("PO-FQA-002", 15, 100, 0);
-    await insLine("PO-FQA-002", 10, 100, 0);
-    await insLine("PO-FQA-003", 5, 100, 5);
-  }
 
-  const adminForReq = await ensureAdminUserId();
-  const reqExisting = await pool.query<{ id: number }>(
-    "SELECT id FROM purchase_requisitions WHERE organization_id = $1 AND requisition_number = $2",
-    [ORG_ID, FQA_REQUISITION_NUMBER],
-  );
-  if (reqExisting.rows[0]?.id) {
-    await pool.query(
-      `UPDATE purchase_requisitions SET
-         status = $1, requestor_id = $2, notes = $3, updated_at = now()
-       WHERE id = $4`,
-      [FQA_REQUISITION_STATUS, adminForReq, "Functional QA seed", reqExisting.rows[0].id],
+    const itemA = await pool.query<{ id: number }>(
+      "SELECT id FROM inventory_items WHERE organization_id = $1 AND sku = 'SKU-A' LIMIT 1",
+      [ORG_ID],
     );
-  } else {
+    const itemId = itemA.rows[0]?.id;
+    if (itemId) {
+      await pool.query(
+        `DELETE FROM purchase_order_items
+         WHERE order_id IN (
+           SELECT id FROM purchase_orders WHERE organization_id = $1 AND order_number LIKE 'PO-FQA%'
+         )`,
+        [ORG_ID],
+      );
+
+      const poRows = await pool.query<{ id: number; order_number: string }>(
+        `SELECT id, order_number FROM purchase_orders WHERE organization_id = $1 AND order_number LIKE 'PO-FQA%' ORDER BY order_number`,
+        [ORG_ID],
+      );
+      const byNum = new Map(poRows.rows.map((r) => [r.order_number, r.id]));
+
+      const insLine = async (orderNumber: string, qty: number, unit: number, received: number) => {
+        const oid = byNum.get(orderNumber);
+        if (!oid) return;
+        const total = qty * unit;
+        await pool.query(
+          `INSERT INTO purchase_order_items (order_id, item_id, quantity, unit_price, total_price, received_quantity)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [oid, itemId, qty, unit, total, received],
+        );
+      };
+
+      for (const line of FQA_PO_001_LINES) {
+        await insLine("PO-FQA-001", line.quantity, line.unitPrice, 0);
+      }
+      await insLine("PO-FQA-002", 15, 100, 0);
+      await insLine("PO-FQA-002", 10, 100, 0);
+      await insLine("PO-FQA-003", 5, 100, 5);
+    }
+
+    const adminForReq = await ensureAdminUserId();
     await pool.query(
       `INSERT INTO purchase_requisitions (
          organization_id, requisition_number, requestor_id, status, total_amount, notes, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, now(), now())`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+       ON CONFLICT (organization_id, requisition_number) DO UPDATE SET
+         requestor_id = EXCLUDED.requestor_id,
+         status = EXCLUDED.status,
+         total_amount = EXCLUDED.total_amount,
+         notes = EXCLUDED.notes,
+         updated_at = now()`,
       [ORG_ID, FQA_REQUISITION_NUMBER, adminForReq, FQA_REQUISITION_STATUS, 0, "Functional QA seed"],
     );
-  }
 
-  const adminId = await ensureAdminUserId();
-  const due = new Date();
-  due.setDate(due.getDate() + 30);
-  for (const inv of [
-    { num: "INV-FQA-001", total: 1000, due: 1000 as number | null },
-    { num: "INV-FQA-002", total: 500, due: 250 as number | null },
-    { num: "INV-FQA-003", total: 300, due: null as number | null },
-  ]) {
-    const existing = await pool.query<{ id: number }>(
-      "SELECT id FROM invoices WHERE organization_id = $1 AND invoice_number = $2",
-      [ORG_ID, inv.num],
-    );
-    if (existing.rows[0]?.id) {
-      await pool.query(
-        `UPDATE invoices SET
-           supplier_id = COALESCE($1, supplier_id),
-           status = 'APPROVED',
-           issue_date = now(),
-           due_date = $2,
-           subtotal = $3,
-           total = $3,
-           paid_amount = 0,
-           due_amount = $4,
-           updated_at = now()
-         WHERE id = $5`,
-        [supplierId ?? null, due, inv.total, inv.due, existing.rows[0].id],
+    const adminId = await ensureAdminUserId();
+    const due = new Date();
+    due.setDate(due.getDate() + 30);
+    for (const inv of [
+      { num: "INV-FQA-001", total: 1000, due: 1000 as number | null },
+      { num: "INV-FQA-002", total: 500, due: 250 as number | null },
+      { num: "INV-FQA-003", total: 300, due: null as number | null },
+    ]) {
+      const existing = await pool.query<{ id: number }>(
+        "SELECT id FROM invoices WHERE organization_id = $1 AND invoice_number = $2",
+        [ORG_ID, inv.num],
       );
-    } else {
-      await pool.query(
-        `INSERT INTO invoices (
-           organization_id, invoice_number, supplier_id, status, issue_date, due_date,
-           subtotal, total, paid_amount, due_amount, created_by, created_at, updated_at
-         ) VALUES ($1, $2, $3, 'APPROVED', now(), $4, $5, $5, 0, $6, $7, now(), now())`,
-        [ORG_ID, inv.num, supplierId ?? null, due, inv.total, inv.due, adminId],
-      );
+      if (existing.rows[0]?.id) {
+        await pool.query(
+          `UPDATE invoices SET
+             supplier_id = COALESCE($1, supplier_id),
+             status = 'APPROVED',
+             issue_date = now(),
+             due_date = $2,
+             subtotal = $3,
+             total = $3,
+             paid_amount = 0,
+             due_amount = $4,
+             updated_at = now()
+           WHERE id = $5`,
+          [supplierId ?? null, due, inv.total, inv.due, existing.rows[0].id],
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO invoices (
+             organization_id, invoice_number, supplier_id, status, issue_date, due_date,
+             subtotal, total, paid_amount, due_amount, created_by, created_at, updated_at
+           ) VALUES ($1, $2, $3, 'APPROVED', now(), $4, $5, $5, 0, $6, $7, now(), now())`,
+          [ORG_ID, inv.num, supplierId ?? null, due, inv.total, inv.due, adminId],
+        );
+      }
     }
+  } finally {
+    await lockClient.query("SELECT pg_advisory_unlock($1)", [FQA_SEED_ADVISORY_LOCK_KEY]).catch(() => {});
+    lockClient.release();
   }
 }
 

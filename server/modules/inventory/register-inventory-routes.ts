@@ -2,7 +2,7 @@ import type { Express, Request, RequestHandler, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { storage } from "../../storage";
-import { insertInventoryItemSchema } from "@shared/schema";
+import { insertInventoryItemSchema, inventoryItemFormSchema } from "@shared/schema";
 import { ensurePlanLimitAllowsCreate } from "../../plan-limit-service";
 
 type AuthBundle = {
@@ -17,6 +17,7 @@ type AuthBundle = {
  */
 export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): void {
   const invRead = [auth.ensureAuthenticated];
+  const invCreate = [auth.ensureAuthenticated, auth.ensurePermission("inventory", "create")];
   const invWrite = [auth.ensureAuthenticated, auth.ensurePermission("inventory", "update")];
 
   /** List/search GET `/api/inventory` stays in `operations-routes` when registered before this module. */
@@ -119,15 +120,23 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
     }
   });
 
-  app.post("/api/inventory", ...invWrite, async (req: Request, res: Response) => {
+  app.post("/api/inventory", ...invCreate, async (req: Request, res: Response) => {
     try {
-      const validatedData = insertInventoryItemSchema.parse(req.body);
+      const validatedData = inventoryItemFormSchema.parse({
+        ...req.body,
+        sku: typeof req.body?.sku === "string" ? req.body.sku.trim() : req.body?.sku,
+        name: typeof req.body?.name === "string" ? req.body.name.trim() : req.body?.name,
+      });
       const existingItems = await storage.getAllInventoryItems();
       if (!(await ensurePlanLimitAllowsCreate(res, "skus", existingItems.length))) return;
 
       const existingItem = await storage.getInventoryItemBySku(validatedData.sku);
       if (existingItem) {
-        return res.status(400).json({ message: "Item with this SKU already exists" });
+        return res.status(409).json({
+          code: "INVENTORY_SKU_EXISTS",
+          message: "Item with this SKU already exists",
+          details: { sku: validatedData.sku },
+        });
       }
 
       const newItem = await storage.createInventoryItem(validatedData);
@@ -135,7 +144,14 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
     } catch (error) {
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
+        res.status(400).json({
+          code: "INVENTORY_ITEM_VALIDATION_FAILED",
+          message: validationError.message,
+          issues: error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        });
       } else {
         console.error("Error creating inventory item:", error);
         res.status(500).json({ message: "Failed to create inventory item" });

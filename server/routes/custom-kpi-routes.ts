@@ -1,4 +1,4 @@
-import { Router, Request, RequestHandler, Response } from "express";
+import type { Router, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
 import { sendOk, sendError } from "../api-response";
 

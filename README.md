@@ -26,6 +26,13 @@ npm run test:local:browser
 
 For automated browser testing on Windows/OneDrive, `npm run test:local:browser` starts `npm run local:serve`, which serves the built client through Express and avoids Vite dependency-scan permission issues.
 
+To test one local app route in a real browser:
+
+```powershell
+$env:LOCAL_BROWSER_TEST_PATH="/inventory/cycle-counts"
+npm run test:local:url
+```
+
 Quick sequence:
 
 ```powershell
@@ -69,9 +76,9 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 | `npm run playwright:install-deps` | Linux: Playwright OS deps for Chromium, Firefox, WebKit (use `sudo` if apt fails) |
 | `npm run security:lifecycle` | Report dependencies with **`hasInstallScript`** (lockfile-derived; hooks not executed here) |
 | `npm run security:lifecycle:enforce` | Fail if new lockfile installers are outside curated allowlist |
-| `npm run security:audit` | `npm audit --audit-level=high` (**commonly exits 1 pending dependency upgrades**) |
-| `npm run security:audit:signatures` | **`npm audit signatures`** registry signature verification |
-| `npm run security:sbom` | CycloneDX SBOM to `./sbom.cdx.json` (gitignored locally) |
+| `npm run security:audit` | `npm audit --audit-level=high` via a workspace-local npm cache (**commonly exits 1 pending dependency upgrades**) |
+| `npm run security:audit:signatures` | **`npm audit signatures`** registry signature verification via a workspace-local npm cache (avoids Windows `%LocalAppData%` EPERM failures) |
+| `npm run security:sbom` | CycloneDX SBOM to `./sbom.cdx.json` (gitignored locally) via a workspace-local npm cache |
 | `npm run security:supply-chain` | Runs enforce + SBOM + signatures + audit in series (`audit` may exit non‑zero) |
 
 ## Requirements

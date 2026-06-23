@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { gzipSync } from "node:zlib";
 import { appEnv } from "../../config/env";
 import { logger } from "../../lib/logger";
 import { incrementMetric } from "../../observability/metrics";
@@ -48,11 +49,13 @@ async function processOneJob(): Promise<void> {
       return;
     }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const fileName =
+    const rawBuffer = Buffer.from(await response.arrayBuffer());
+    const rawFileName =
       response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ??
       `${job.dataset}.${job.format === "excel" ? "xlsx" : job.format}`;
-    const mimeType = response.headers.get("content-type") ?? "application/octet-stream";
+    const buffer = gzipSync(rawBuffer, { level: 9 });
+    const fileName = rawFileName.endsWith(".gz") ? rawFileName : `${rawFileName}.gz`;
+    const mimeType = "application/gzip";
     const rowCount = Number(response.headers.get("x-export-row-count") ?? 0);
     const { absolutePath, relativePath } = buildExportFilePath(job.organizationId, job.id, fileName);
     fs.writeFileSync(absolutePath, buffer);
