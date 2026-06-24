@@ -781,6 +781,35 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL,
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS mdm_supplier_contacts (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        supplier_id INTEGER NOT NULL,
+        contact_type TEXT DEFAULT 'primary' NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT,
+        phone TEXT,
+        role_title TEXT,
+        is_primary BOOLEAN DEFAULT FALSE,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_supplier_bank_accounts (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        supplier_id INTEGER NOT NULL,
+        bank_name TEXT NOT NULL,
+        account_number_masked TEXT,
+        swift_code TEXT,
+        currency_code TEXT DEFAULT 'ZAR',
+        payment_method TEXT DEFAULT 'bank_transfer',
+        verification_status TEXT DEFAULT 'unverified',
+        is_default BOOLEAN DEFAULT FALSE,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS mdm_supplier_items (
         id SERIAL PRIMARY KEY,
         organization_id INTEGER NOT NULL DEFAULT 1,
@@ -1061,6 +1090,8 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       CREATE UNIQUE INDEX IF NOT EXISTS mdm_legal_entities_org_code_uidx ON mdm_legal_entities (organization_id, code);
       CREATE UNIQUE INDEX IF NOT EXISTS mdm_sites_org_code_uidx ON mdm_sites (organization_id, code);
       CREATE UNIQUE INDEX IF NOT EXISTS mdm_cost_centres_org_code_uidx ON mdm_cost_centres (organization_id, code);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_supplier_contacts_org_supplier_type_uidx ON mdm_supplier_contacts (organization_id, supplier_id, contact_type, COALESCE(email, ''));
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_supplier_bank_org_supplier_bank_uidx ON mdm_supplier_bank_accounts (organization_id, supplier_id, bank_name, COALESCE(account_number_masked, ''));
       CREATE UNIQUE INDEX IF NOT EXISTS mdm_supplier_items_org_supplier_item_uidx ON mdm_supplier_items (organization_id, supplier_id, item_id);
       CREATE UNIQUE INDEX IF NOT EXISTS mdm_item_categories_org_code_uidx ON mdm_item_categories (organization_id, code);
       CREATE UNIQUE INDEX IF NOT EXISTS mdm_uom_classes_org_code_uidx ON mdm_uom_classes (organization_id, code);
@@ -1070,6 +1101,134 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       CREATE UNIQUE INDEX IF NOT EXISTS mdm_document_sequences_org_doc_uidx ON mdm_document_sequences (organization_id, document_type, prefix);
       CREATE UNIQUE INDEX IF NOT EXISTS mdm_gl_mappings_org_source_uidx ON mdm_gl_mappings (organization_id, mapping_type, source_type, source_id);
       CREATE UNIQUE INDEX IF NOT EXISTS mdm_dq_org_code_entity_uidx ON mdm_data_quality_issues (organization_id, issue_code, COALESCE(affected_entity_type, ''), COALESCE(affected_entity_id, 0));
+    `);
+
+    await pool.query(`
+      INSERT INTO mdm_legal_entities (organization_id, code, name, default_currency_code, country_code)
+      SELECT id, UPPER(COALESCE(NULLIF(slug, ''), 'DEFAULT')), name, 'ZAR', 'ZA'
+      FROM organizations
+      ON CONFLICT (organization_id, code) DO UPDATE SET
+        name = EXCLUDED.name,
+        default_currency_code = EXCLUDED.default_currency_code,
+        updated_at = NOW();
+
+      INSERT INTO mdm_sites (organization_id, legal_entity_id, code, name, site_type, address, default_warehouse_id)
+      SELECT w.organization_id, le.id, UPPER(REGEXP_REPLACE(w.name, '[^A-Za-z0-9]+', '-', 'g')), w.name, 'warehouse', w.address, w.id
+      FROM warehouses w
+      LEFT JOIN mdm_legal_entities le ON le.organization_id = w.organization_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM mdm_sites s WHERE s.organization_id = w.organization_id AND s.default_warehouse_id = w.id
+      )
+      ON CONFLICT (organization_id, code) DO NOTHING;
+
+      INSERT INTO mdm_cost_centres (organization_id, code, name, department_id, gl_account_code)
+      SELECT d.organization_id, COALESCE(NULLIF(d.cost_center_id, ''), d.code), d.name, d.id, NULLIF(d.cost_center_id, '')
+      FROM departments d
+      ON CONFLICT (organization_id, code) DO UPDATE SET
+        name = EXCLUDED.name,
+        department_id = EXCLUDED.department_id,
+        updated_at = NOW();
+
+      INSERT INTO mdm_item_categories (organization_id, code, name)
+      SELECT c.organization_id, UPPER(REGEXP_REPLACE(c.name, '[^A-Za-z0-9]+', '-', 'g')), c.name
+      FROM categories c
+      ON CONFLICT (organization_id, code) DO UPDATE SET
+        name = EXCLUDED.name,
+        updated_at = NOW();
+
+      INSERT INTO mdm_exchange_rates (organization_id, from_currency_code, to_currency_code, rate, source, effective_date, manual_override_allowed)
+      SELECT 1, c.code, 'ZAR', COALESCE(NULLIF(c.exchange_rate_to_zar, 0), CASE WHEN c.code = 'ZAR' THEN 1 ELSE 1 END), 'currency-master', DATE_TRUNC('day', NOW()), TRUE
+      FROM currencies c
+      WHERE COALESCE(c.active, TRUE) = TRUE
+      ON CONFLICT (organization_id, from_currency_code, to_currency_code, effective_date) DO NOTHING;
+
+      INSERT INTO mdm_supplier_contacts (organization_id, supplier_id, contact_type, name, email, phone, role_title, is_primary)
+      SELECT s.organization_id, s.id, 'primary', COALESCE(NULLIF(s.contact_name, ''), s.name), s.email, s.phone, 'Primary contact', TRUE
+      FROM suppliers s
+      WHERE COALESCE(NULLIF(s.contact_name, ''), s.email, s.phone) IS NOT NULL
+      ON CONFLICT (organization_id, supplier_id, contact_type, COALESCE(email, '')) DO UPDATE SET
+        name = EXCLUDED.name,
+        phone = EXCLUDED.phone,
+        active = TRUE,
+        updated_at = NOW();
+
+      INSERT INTO mdm_supplier_bank_accounts (
+        organization_id, supplier_id, bank_name, account_number_masked, swift_code, currency_code, is_default
+      )
+      SELECT
+        s.organization_id,
+        s.id,
+        s.bank_name,
+        CASE
+          WHEN s.bank_account_number IS NULL OR LENGTH(s.bank_account_number) <= 4 THEN s.bank_account_number
+          ELSE CONCAT(REPEAT('*', GREATEST(LENGTH(s.bank_account_number) - 4, 0)), RIGHT(s.bank_account_number, 4))
+        END,
+        s.bank_swift,
+        COALESCE(NULLIF(s.default_currency_code, ''), 'ZAR'),
+        TRUE
+      FROM suppliers s
+      WHERE s.bank_name IS NOT NULL AND s.bank_name <> ''
+      ON CONFLICT (organization_id, supplier_id, bank_name, COALESCE(account_number_masked, '')) DO UPDATE SET
+        swift_code = EXCLUDED.swift_code,
+        currency_code = EXCLUDED.currency_code,
+        active = TRUE,
+        updated_at = NOW();
+
+      INSERT INTO mdm_supplier_items (
+        organization_id, supplier_id, item_id, supplier_item_code, preferred, lead_time_days, min_order_quantity, default_price, currency_code
+      )
+      SELECT
+        i.organization_id,
+        i.supplier_id,
+        i.id,
+        i.supplier_part_number,
+        TRUE,
+        i.lead_time,
+        COALESCE(i.min_order_quantity, 1),
+        COALESCE(i.cost, i.price),
+        COALESCE(s.default_currency_code, 'ZAR')
+      FROM inventory_items i
+      LEFT JOIN suppliers s ON s.id = i.supplier_id
+      WHERE i.supplier_id IS NOT NULL
+      ON CONFLICT (organization_id, supplier_id, item_id) DO UPDATE SET
+        supplier_item_code = EXCLUDED.supplier_item_code,
+        lead_time_days = EXCLUDED.lead_time_days,
+        min_order_quantity = EXCLUDED.min_order_quantity,
+        default_price = EXCLUDED.default_price,
+        currency_code = EXCLUDED.currency_code,
+        updated_at = NOW();
+
+      INSERT INTO mdm_procurement_policies (organization_id, code, name, policy_type, config)
+      VALUES
+        (1, 'REQ-CATALOGUE-DEFAULT', 'Catalogue-first requisitions', 'requisition', '{"onceOffRequiresReason":true,"requiresDepartment":true,"requiresCostCentre":true,"requiresTaxCode":true}'::jsonb),
+        (1, 'PO-MATCH-STANDARD', 'Standard PO and invoice matching', 'purchase_order', '{"grnRequired":true,"quantityTolerancePct":5,"priceTolerancePct":3,"lockExchangeRateOnSend":true}'::jsonb)
+      ON CONFLICT (organization_id, code) DO NOTHING;
+
+      INSERT INTO mdm_document_sequences (organization_id, document_type, prefix, year, next_number, padding)
+      VALUES
+        (1, 'REQUISITION', CONCAT('REQ-', EXTRACT(YEAR FROM NOW())::int, '-'), EXTRACT(YEAR FROM NOW())::int, 1, 6),
+        (1, 'PURCHASE_ORDER', CONCAT('PO-', EXTRACT(YEAR FROM NOW())::int, '-'), EXTRACT(YEAR FROM NOW())::int, 1, 6),
+        (1, 'GRN', CONCAT('GRN-', EXTRACT(YEAR FROM NOW())::int, '-'), EXTRACT(YEAR FROM NOW())::int, 1, 6),
+        (1, 'INVOICE_BATCH', CONCAT('APB-', EXTRACT(YEAR FROM NOW())::int, '-'), EXTRACT(YEAR FROM NOW())::int, 1, 6)
+      ON CONFLICT (organization_id, document_type, prefix) DO NOTHING;
+
+      INSERT INTO mdm_document_templates (organization_id, document_type, name, terms_text, footer_text)
+      VALUES
+        (1, 'PURCHASE_ORDER', 'Default purchase order template', 'Supplier terms are governed by the selected payment terms and incoterms.', 'Generated from InvTrack Master Data & Control Centre.'),
+        (1, 'GRN', 'Default goods receipt template', 'Receipt quantities are subject to warehouse inspection and tolerance policy.', 'Generated from InvTrack Master Data & Control Centre.')
+      ON CONFLICT DO NOTHING;
+
+      INSERT INTO mdm_approval_rules (organization_id, code, name, entity_type, min_local_value, max_local_value, approver_role, approval_level)
+      SELECT organization_id, CONCAT('POLICY-', id), name, entity_type, amount_min, amount_max, approver_role, approval_level
+      FROM approval_policies
+      WHERE COALESCE(is_active, TRUE) = TRUE
+      ON CONFLICT (organization_id, code) DO UPDATE SET
+        name = EXCLUDED.name,
+        min_local_value = EXCLUDED.min_local_value,
+        max_local_value = EXCLUDED.max_local_value,
+        approver_role = EXCLUDED.approver_role,
+        approval_level = EXCLUDED.approval_level,
+        updated_at = NOW();
     `);
     console.log('Professional supply chain tables and columns ready');
   } catch (err) {

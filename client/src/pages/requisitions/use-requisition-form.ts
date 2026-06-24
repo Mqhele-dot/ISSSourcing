@@ -11,6 +11,32 @@ export type RequisitionFieldErrors = Partial<
   Record<"supplierId" | "departmentId" | "requiredDate" | "items" | "projectId" | "currencyCode", string>
 >;
 
+type MdmRequisitionContext = {
+  defaultCurrencyCode: string;
+  currencies: Array<{
+    code: string;
+    name: string;
+    symbol?: string | null;
+    exchangeRateToZar?: number | null;
+    active?: boolean | null;
+  }>;
+  departments: Array<{ id: number; code: string; name: string; active?: boolean | null }>;
+  costCentres: Array<{ id: number; code: string; name: string; departmentId?: number | null; active?: boolean | null }>;
+  taxCodes: Array<{ id: number; code: string; name: string; active?: boolean | null }>;
+  unitsOfMeasure: Array<{ id: number; code: string; name: string; symbol?: string | null; active?: boolean | null }>;
+  suppliers: Supplier[];
+  items: InventoryItem[];
+  approvalRules: Array<{ id: number; code: string; name: string; minLocalValue?: number | null; approverRole?: string | null }>;
+  rules: {
+    requiresDepartment: boolean;
+    requiresCostCentre: boolean;
+    requiresTaxCode: boolean;
+    requiresCurrency: boolean;
+    onceOffItemRequiresReason: boolean;
+    approvalValueCurrency: string;
+  };
+};
+
 const LOCKED_REQUISITION_STATUSES = new Set(["APPROVED", "CONVERTED", "CLOSED", "CANCELLED"]);
 
 function lockedReasonForStatus(status: unknown): string {
@@ -69,6 +95,13 @@ export function useRequisitionForm(params: {
     },
   });
 
+  const { data: mdmContext } = useQuery({
+    queryKey: ["/api/mdm/defaults/requisition-context"],
+    queryFn: () => requestJson<MdmRequisitionContext>("GET", "/api/mdm/defaults/requisition-context"),
+    retry: false,
+    staleTime: 60_000,
+  });
+
   const { data: departments = [] } = useQuery({
     queryKey: ["/api/departments"],
     queryFn: async () => {
@@ -107,14 +140,34 @@ export function useRequisitionForm(params: {
     },
   });
 
+  const effectiveSuppliers = useMemo(
+    () => (mdmContext?.suppliers?.length ? mdmContext.suppliers : suppliers),
+    [mdmContext?.suppliers, suppliers],
+  );
+
+  const effectiveInventoryItems = useMemo(
+    () => (mdmContext?.items?.length ? mdmContext.items : inventoryItems),
+    [inventoryItems, mdmContext?.items],
+  );
+
+  const effectiveDepartments = useMemo(
+    () => (mdmContext?.departments?.length ? mdmContext.departments.filter((department) => department.active !== false) : departments),
+    [departments, mdmContext?.departments],
+  );
+
+  const effectiveCurrencies = useMemo(
+    () => (mdmContext?.currencies?.length ? mdmContext.currencies.filter((currency) => currency.active !== false) : currencies),
+    [currencies, mdmContext?.currencies],
+  );
+
   const selectedSupplier = useMemo(
-    () => (supplierId === "" ? undefined : suppliers.find((supplier) => supplier.id === supplierId)),
-    [supplierId, suppliers],
+    () => (supplierId === "" ? undefined : effectiveSuppliers.find((supplier) => supplier.id === supplierId)),
+    [effectiveSuppliers, supplierId],
   );
 
   const selectedCurrency = useMemo(
-    () => currencies.find((currency) => currency.code === currencyCode),
-    [currencies, currencyCode],
+    () => effectiveCurrencies.find((currency) => currency.code === currencyCode),
+    [effectiveCurrencies, currencyCode],
   );
 
   const exchangeRateToZar = Number(selectedCurrency?.exchangeRateToZar ?? (currencyCode === "ZAR" ? 1 : 0));
@@ -137,10 +190,10 @@ export function useRequisitionForm(params: {
       .trim()
       .toUpperCase();
     if (!supplierCurrency || supplierCurrency === currencyCode) return;
-    if (currencies.some((currency) => currency.code === supplierCurrency)) {
+    if (effectiveCurrencies.some((currency) => currency.code === supplierCurrency)) {
       setCurrencyCode(supplierCurrency);
     }
-  }, [currencies, currencyCode, isNew, selectedSupplier]);
+  }, [effectiveCurrencies, currencyCode, isNew, selectedSupplier]);
 
   const { data: contracts = [] } = useQuery({
     queryKey: ["/api/contracts"],
@@ -181,9 +234,9 @@ export function useRequisitionForm(params: {
 
   const departmentLabel = useMemo(() => {
     if (departmentId === "") return undefined;
-    const d = departments.find((x) => x.id === departmentId);
+    const d = effectiveDepartments.find((x) => x.id === departmentId);
     return d ? `${d.code} — ${d.name}` : undefined;
-  }, [departments, departmentId]);
+  }, [departmentId, effectiveDepartments]);
 
   useEffect(() => {
     if (requisition) {
@@ -361,9 +414,9 @@ export function useRequisitionForm(params: {
   return {
     requisition,
     isLoading,
-    suppliers,
-    inventoryItems,
-    departments,
+    suppliers: effectiveSuppliers,
+    inventoryItems: effectiveInventoryItems,
+    departments: effectiveDepartments,
     extensionProjects,
     projectId,
     setProjectId,
@@ -394,7 +447,8 @@ export function useRequisitionForm(params: {
     isPending,
     isLocked,
     lockedReason,
-    currencies,
+    currencies: effectiveCurrencies,
+    mdmContext,
     contractsForSupplier,
     paymentTerms,
     incoterms,

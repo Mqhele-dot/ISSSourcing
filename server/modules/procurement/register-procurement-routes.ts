@@ -30,6 +30,7 @@ import { canUpdatePurchaseOrder } from "@shared/purchase-order-status";
 import { getActiveOrganizationId } from "../../organization-context";
 import { getApplicableRequisitionPolicyForOrg, roleMatchesPolicy } from "./service";
 import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed } from "./supplier-defaults";
+import { validateMdmTransaction } from "../master-data/mdm-control-centre";
 import type { AuthBundle } from "./types";
 
 async function validateProjectIdForOrg(
@@ -376,6 +377,21 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         if (deptRows.length === 0) {
           return sendFunctionError(res, 400, "createPurchaseRequisition", "Department does not exist");
         }
+      }
+      const mdmValidation = await validateMdmTransaction(getActiveOrganizationId(), {
+        transactionType: "requisition",
+        supplierId: validatedReqData.supplierId,
+        itemIds: validatedItemsData.map((item: InsertPurchaseOrderItem | { itemId: number }) => item.itemId),
+        currencyCode: validatedReqData.currencyCode,
+      });
+      if (!mdmValidation.valid) {
+        return sendError(
+          res,
+          400,
+          "REQUISITION_MDM_VALIDATION_FAILED",
+          "Master Data validation blocked this requisition.",
+          { details: mdmValidation },
+        );
       }
       const projectCheck = await validateProjectIdForOrg(validatedReqData.projectId ?? undefined);
       if (!projectCheck.ok) {

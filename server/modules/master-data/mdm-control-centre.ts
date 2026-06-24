@@ -5,6 +5,8 @@ export type MdmDomain =
   | "sites"
   | "cost-centres"
   | "supplier-documents"
+  | "supplier-contacts"
+  | "supplier-bank-accounts"
   | "supplier-items"
   | "item-categories"
   | "uom-classes"
@@ -69,6 +71,26 @@ const mdmDomains = {
     table: "mdm_supplier_documents",
     searchable: ["document_type", "status"],
     allowedColumns: ["supplier_id", "document_type", "document_id", "status", "expiry_date", "required_for_po"],
+  },
+  "supplier-contacts": {
+    table: "mdm_supplier_contacts",
+    searchable: ["contact_type", "name", "email", "phone", "role_title"],
+    allowedColumns: ["supplier_id", "contact_type", "name", "email", "phone", "role_title", "is_primary", "active"],
+  },
+  "supplier-bank-accounts": {
+    table: "mdm_supplier_bank_accounts",
+    searchable: ["bank_name", "account_number_masked", "swift_code", "currency_code", "verification_status"],
+    allowedColumns: [
+      "supplier_id",
+      "bank_name",
+      "account_number_masked",
+      "swift_code",
+      "currency_code",
+      "payment_method",
+      "verification_status",
+      "is_default",
+      "active",
+    ],
   },
   "supplier-items": {
     table: "mdm_supplier_items",

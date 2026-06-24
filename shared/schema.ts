@@ -481,6 +481,37 @@ export const mdmSupplierDocuments = pgTable("mdm_supplier_documents", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const mdmSupplierContacts = pgTable("mdm_supplier_contacts", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+  supplierId: integer("supplier_id").notNull(),
+  contactType: text("contact_type").notNull().default("primary"),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  roleTitle: text("role_title"),
+  isPrimary: boolean("is_primary").default(false),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const mdmSupplierBankAccounts = pgTable("mdm_supplier_bank_accounts", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+  supplierId: integer("supplier_id").notNull(),
+  bankName: text("bank_name").notNull(),
+  accountNumberMasked: text("account_number_masked"),
+  swiftCode: text("swift_code"),
+  currencyCode: text("currency_code").default("ZAR"),
+  paymentMethod: text("payment_method").default("bank_transfer"),
+  verificationStatus: text("verification_status").default("unverified"),
+  isDefault: boolean("is_default").default(false),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const mdmSupplierItems = pgTable(
   "mdm_supplier_items",
   {
@@ -756,6 +787,16 @@ export const insertMdmCostCentreSchema = createInsertSchema(mdmCostCentres).omit
   updatedAt: true,
 });
 export const insertMdmSupplierDocumentSchema = createInsertSchema(mdmSupplierDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmSupplierContactSchema = createInsertSchema(mdmSupplierContacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmSupplierBankAccountSchema = createInsertSchema(mdmSupplierBankAccounts).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -3441,7 +3482,11 @@ export type MdmLegalEntity = typeof mdmLegalEntities.$inferSelect;
 export type MdmSite = typeof mdmSites.$inferSelect;
 export type MdmCostCentre = typeof mdmCostCentres.$inferSelect;
 export type MdmSupplierDocument = typeof mdmSupplierDocuments.$inferSelect;
+export type MdmSupplierContact = typeof mdmSupplierContacts.$inferSelect;
+export type MdmSupplierBankAccount = typeof mdmSupplierBankAccounts.$inferSelect;
 export type MdmSupplierItem = typeof mdmSupplierItems.$inferSelect;
+export type MdmSupplier = typeof suppliers.$inferSelect;
+export type MdmItem = typeof inventoryItems.$inferSelect;
 export type MdmItemCategory = typeof mdmItemCategories.$inferSelect;
 export type MdmUom = typeof unitsOfMeasure.$inferSelect;
 export type MdmUomClass = typeof mdmUomClasses.$inferSelect;
