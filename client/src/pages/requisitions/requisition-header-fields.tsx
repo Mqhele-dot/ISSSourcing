@@ -1,6 +1,9 @@
+import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -12,12 +15,25 @@ import type { Supplier } from "@shared/schema";
 import type { RequisitionFieldErrors } from "@/pages/requisitions/use-requisition-form";
 
 type Dept = { id: number; code: string; name: string };
+type CurrencyOption = {
+  code: string;
+  name: string;
+  symbol?: string | null;
+  regionCode?: string | null;
+  regionName?: string | null;
+  isMainForRegion?: boolean | null;
+  exchangeRateToZar?: number | null;
+};
 
 export function RequisitionHeaderFields({
   suppliers,
   departments,
   projects = [],
   supplierId,
+  currencyCode,
+  currencies,
+  exchangeRateToZar,
+  requisitionTotals,
   departmentId,
   projectId,
   requiredDate,
@@ -26,6 +42,8 @@ export function RequisitionHeaderFields({
   fieldErrors,
   readOnly = false,
   onSupplierChange,
+  onCurrencyChange,
+  onCreateSupplier,
   onDepartmentChange,
   onProjectChange,
   onRequiredDateChange,
@@ -34,9 +52,13 @@ export function RequisitionHeaderFields({
 }: {
   suppliers: Supplier[];
   departments: Dept[];
+  currencies: CurrencyOption[];
   /** From `/api/extensions/projects` when extensions are enabled */
   projects?: { id: number; code: string; name: string }[];
   supplierId: number | "";
+  currencyCode: string;
+  exchangeRateToZar: number;
+  requisitionTotals: { orderTotal: number; zarTotal: number };
   departmentId: number | "";
   projectId: number | "";
   requiredDate: string;
@@ -45,31 +67,146 @@ export function RequisitionHeaderFields({
   fieldErrors: RequisitionFieldErrors;
   readOnly?: boolean;
   onSupplierChange: (v: number | "") => void;
+  onCurrencyChange: (v: string) => void;
+  onCreateSupplier: (payload: { name: string; email?: string; phone?: string }) => void;
   onDepartmentChange: (v: number | "") => void;
   onProjectChange: (v: number | "") => void;
   onRequiredDateChange: (v: string) => void;
   onJustificationChange: (v: string) => void;
   onNotesChange: (v: string) => void;
 }) {
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [showSupplierCreate, setShowSupplierCreate] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierEmail, setNewSupplierEmail] = useState("");
+  const [newSupplierPhone, setNewSupplierPhone] = useState("");
+  const selectedCurrency = currencies.find((currency) => currency.code === currencyCode);
+  const filteredSuppliers = useMemo(() => {
+    const term = supplierSearch.trim().toLowerCase();
+    if (!term) return suppliers;
+    return suppliers.filter((supplier) =>
+      [
+        supplier.name,
+        (supplier as Supplier & { supplierCode?: string | null }).supplierCode,
+        supplier.email,
+        supplier.phone,
+        (supplier as Supplier & { defaultCurrencyCode?: string | null }).defaultCurrencyCode,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [supplierSearch, suppliers]);
+
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="rounded-md border bg-muted/20 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Commercial setup</h2>
+            <p className="text-sm text-muted-foreground">
+              Supplier, region currency, and exchange rate come from Master Data and flow into approvals and purchase orders.
+            </p>
+          </div>
+          {selectedCurrency ? (
+            <Badge variant="secondary">
+              {selectedCurrency.regionCode ?? "ZA"} · {selectedCurrency.code} @ {Number(exchangeRateToZar || 0).toFixed(4)} ZAR
+            </Badge>
+          ) : null}
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="req-supplier">Supplier *</Label>
+          <Input
+            value={supplierSearch}
+            onChange={(event) => setSupplierSearch(event.target.value)}
+            placeholder="Search supplier, code, email, or currency..."
+            disabled={readOnly}
+            aria-label="Search suppliers"
+          />
           <Select value={String(supplierId)} onValueChange={(v) => onSupplierChange(v ? Number(v) : "")} disabled={readOnly}>
             <SelectTrigger id="req-supplier" aria-label="Select supplier">
               <SelectValue placeholder="Select supplier..." />
             </SelectTrigger>
             <SelectContent>
-              {suppliers.map((s) => (
+              {filteredSuppliers.map((s) => (
                 <SelectItem key={s.id} value={String(s.id)}>
                   {s.name}
+                  {(s as Supplier & { defaultCurrencyCode?: string | null }).defaultCurrencyCode
+                    ? ` · ${(s as Supplier & { defaultCurrencyCode?: string | null }).defaultCurrencyCode}`
+                    : ""}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          {!readOnly ? (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">{filteredSuppliers.length} supplier(s) match.</p>
+              <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => setShowSupplierCreate((open) => !open)}>
+                {showSupplierCreate ? "Hide new supplier" : "Add supplier here"}
+              </Button>
+            </div>
+          ) : null}
           {fieldErrors.supplierId ? <p className="text-xs text-destructive">{fieldErrors.supplierId}</p> : null}
         </div>
+        <div className="space-y-2">
+          <Label htmlFor="req-currency">Request currency *</Label>
+          <Select value={currencyCode} onValueChange={onCurrencyChange} disabled={readOnly}>
+            <SelectTrigger id="req-currency" aria-label="Select requisition currency">
+              <SelectValue placeholder="Select currency..." />
+            </SelectTrigger>
+            <SelectContent>
+              {currencies.map((currency) => (
+                <SelectItem key={currency.code} value={currency.code}>
+                  {currency.code} - {currency.name}
+                  {currency.isMainForRegion ? " · main" : ""} · {currency.regionCode ?? "ZA"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {currencyCode === "ZAR"
+              ? "ZAR is the main test/reporting currency."
+              : `1 ${currencyCode} = ${Number(exchangeRateToZar || 0).toFixed(4)} ZAR from Master Data.`}
+          </p>
+          {fieldErrors.currencyCode ? <p className="text-xs text-destructive">{fieldErrors.currencyCode}</p> : null}
+        </div>
+        {showSupplierCreate ? (
+          <div className="rounded-md border bg-background p-3 sm:col-span-2">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label htmlFor="req-new-supplier-name">New supplier name</Label>
+                <Input id="req-new-supplier-name" value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="req-new-supplier-email">Email</Label>
+                <Input id="req-new-supplier-email" value={newSupplierEmail} onChange={(event) => setNewSupplierEmail(event.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="req-new-supplier-phone">Phone</Label>
+                <Input id="req-new-supplier-phone" value={newSupplierPhone} onChange={(event) => setNewSupplierPhone(event.target.value)} />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">This creates an onboarded supplier shell with {currencyCode} as its default currency.</p>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!newSupplierName.trim()}
+                onClick={() => {
+                  onCreateSupplier({ name: newSupplierName.trim(), email: newSupplierEmail.trim(), phone: newSupplierPhone.trim() });
+                  setNewSupplierName("");
+                  setNewSupplierEmail("");
+                  setNewSupplierPhone("");
+                  setShowSupplierCreate(false);
+                }}
+              >
+                Add supplier
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <div className="space-y-2">
           <Label htmlFor="req-department">Department</Label>
           <Select value={String(departmentId)} onValueChange={(v) => onDepartmentChange(v ? Number(v) : "")} disabled={readOnly}>
@@ -98,6 +235,22 @@ export function RequisitionHeaderFields({
           />
           {fieldErrors.requiredDate ? <p className="text-xs text-destructive">{fieldErrors.requiredDate}</p> : null}
         </div>
+        <div className="rounded-md border bg-background p-3 sm:col-span-2">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Requested total</p>
+              <p className="text-lg font-semibold tabular-nums">{currencyCode} {requisitionTotals.orderTotal.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Converted reporting value</p>
+              <p className="text-lg font-semibold tabular-nums">ZAR {requisitionTotals.zarTotal.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Exchange source</p>
+              <p className="text-sm">{selectedCurrency?.regionName ?? "Master Data"} currency setup</p>
+            </div>
+          </div>
+        </div>
         {projects.length > 0 ? (
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="req-project">Project (optional)</Label>
@@ -121,6 +274,7 @@ export function RequisitionHeaderFields({
             {fieldErrors.projectId ? <p className="text-xs text-destructive">{fieldErrors.projectId}</p> : null}
           </div>
         ) : null}
+        </div>
       </div>
 
       <div className="space-y-2">

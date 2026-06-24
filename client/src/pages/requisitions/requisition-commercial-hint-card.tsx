@@ -32,7 +32,7 @@ export function RequisitionCommercialHintCard({
   const code = String(supplier.defaultCurrencyCode ?? "").trim().toUpperCase();
   const currencyName = code && /^[A-Z]{3}$/.test(code) ? currencies.find((c) => c.code === code)?.name : undefined;
   const currencyDisplay =
-    code && /^[A-Z]{3}$/.test(code) ? `${code}${currencyName ? ` — ${currencyName}` : ""}` : "USD (supplier default not set; PO will use USD)";
+    code && /^[A-Z]{3}$/.test(code) ? `${code}${currencyName ? ` — ${currencyName}` : ""}` : "ZAR (supplier default not set; PO will use requisition/reporting currency)";
 
   return (
     <Card data-testid="requisition-commercial-hint">

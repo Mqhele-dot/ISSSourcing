@@ -67,6 +67,10 @@ type BaseMasterRecord = {
   contact?: string | null;
   system?: string | null;
   decimalPlaces?: number | null;
+  regionCode?: string | null;
+  regionName?: string | null;
+  isMainForRegion?: boolean | null;
+  exchangeRateToZar?: number | null;
 };
 
 const MASTER_ENDPOINTS = {
@@ -87,7 +91,7 @@ type MasterExtraField = {
   key: keyof BaseMasterRecord;
   label: string;
   placeholder?: string;
-  type?: "text" | "number";
+  type?: "text" | "number" | "boolean";
 };
 
 type MasterSectionConfig = {
@@ -126,10 +130,14 @@ const MASTER_SECTIONS: MasterSectionConfig[] = [
     icon: Coins,
     group: "Finance",
     description: "Approved transaction currencies for suppliers, contracts, purchase orders, invoices, and reports.",
-    usedBy: ["Suppliers", "Contracts", "POs", "AP"],
-    risk: "Missing currency controls cause supplier, PO, and invoice mismatches.",
+    usedBy: ["Regions", "Suppliers", "Requisitions", "POs", "AP", "Reports"],
+    risk: "Missing region defaults or exchange rates cause requisitions, POs, invoices, and reporting to disagree.",
     extraFields: [
       { key: "symbol", label: "Symbol", placeholder: "$" },
+      { key: "regionCode", label: "Region code", placeholder: "ZA" },
+      { key: "regionName", label: "Region name", placeholder: "South Africa" },
+      { key: "isMainForRegion", label: "Main for region", type: "boolean" },
+      { key: "exchangeRateToZar", label: "ZAR rate", type: "number", placeholder: "1" },
       { key: "decimalPlaces", label: "Decimals", type: "number", placeholder: "2" },
     ],
   },
@@ -256,6 +264,9 @@ function fieldValue(record: BaseMasterRecord, field: keyof BaseMasterRecord): st
 function parseFieldValue(field: MasterExtraField, value: string): string | number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
+  if (field.type === "boolean") {
+    return ["true", "yes", "1", "main", "primary"].includes(trimmed.toLowerCase()) ? "true" : "false";
+  }
   if (field.type === "number") {
     const n = Number(trimmed);
     return Number.isFinite(n) ? n : null;
@@ -376,6 +387,8 @@ function MasterTable({
           row.symbol,
           row.type,
           row.countryCode,
+          row.regionCode,
+          row.regionName,
           row.costCenterId,
           row.contact,
         ]
@@ -388,6 +401,7 @@ function MasterTable({
   }, [data, search, statusFilter]);
 
   const extraFields = config.extraFields ?? [];
+  const visibleExtraFields = extraFields.slice(0, config.slug === "currencies" ? 6 : 3);
   const nameLabel = config.primaryNameField === "description" ? "Description" : "Name";
 
   function resetForm() {
@@ -405,11 +419,14 @@ function MasterTable({
 
     for (const field of extraFields) {
       const parsed = parseFieldValue(field, extraValues[String(field.key)] ?? "");
-      if (parsed != null) payload[field.key] = parsed;
+      if (parsed != null) payload[field.key] = field.type === "boolean" ? parsed === "true" : parsed;
     }
 
     if (config.slug === "currencies") {
       payload.symbol = String(payload.symbol ?? "").trim() || code.trim().slice(0, 3) || "$";
+      payload.regionCode = String(payload.regionCode ?? "ZA").trim().toUpperCase() || "ZA";
+      payload.regionName = String(payload.regionName ?? "South Africa").trim() || "South Africa";
+      payload.exchangeRateToZar = Number(payload.exchangeRateToZar ?? 1);
       payload.decimalPlaces = Number(payload.decimalPlaces ?? 2);
     }
     if (config.slug === "taxCodes") {
@@ -513,7 +530,7 @@ function MasterTable({
                 <Label htmlFor={`${endpoint}-${String(field.key)}`}>{field.label}</Label>
                 <Input
                   id={`${endpoint}-${String(field.key)}`}
-                  type={field.type ?? "text"}
+                  type={field.type === "number" ? "number" : "text"}
                   value={extraValues[String(field.key)] ?? ""}
                   onChange={(e) => setExtraValues((current) => ({ ...current, [String(field.key)]: e.target.value }))}
                   placeholder={field.placeholder}
@@ -580,7 +597,7 @@ function MasterTable({
                 <TableRow>
                   <TableHead className="w-[10rem]">Code</TableHead>
                   <TableHead>{nameLabel}</TableHead>
-                  {extraFields.slice(0, 3).map((field) => (
+                  {visibleExtraFields.map((field) => (
                     <TableHead key={String(field.key)}>{field.label}</TableHead>
                   ))}
                   <TableHead>Status</TableHead>
@@ -599,7 +616,7 @@ function MasterTable({
                         ) : null}
                       </div>
                     </TableCell>
-                    {extraFields.slice(0, 3).map((field) => (
+                    {visibleExtraFields.map((field) => (
                       <TableCell key={String(field.key)}>{fieldValue(row, field.key)}</TableCell>
                     ))}
                     <TableCell>

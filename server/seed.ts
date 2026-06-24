@@ -220,11 +220,20 @@ async function ensureMasterData(): Promise<void> {
   ]).onConflictDoNothing({ target: unitsOfMeasure.code });
 
   await db.insert(currencies).values([
-    { code: "USD", name: "US Dollar", symbol: "$", decimalPlaces: 2, active: true },
-    { code: "EUR", name: "Euro", symbol: "€", decimalPlaces: 2, active: true },
-    { code: "GBP", name: "British Pound", symbol: "£", decimalPlaces: 2, active: true },
-    { code: "ZAR", name: "South African Rand", symbol: "R", decimalPlaces: 2, active: true },
+    { code: "ZAR", name: "South African Rand", symbol: "R", regionCode: "ZA", regionName: "South Africa", isMainForRegion: true, exchangeRateToZar: 1, decimalPlaces: 2, active: true },
+    { code: "USD", name: "US Dollar", symbol: "$", regionCode: "US", regionName: "United States", isMainForRegion: true, exchangeRateToZar: 18.5, decimalPlaces: 2, active: true },
+    { code: "EUR", name: "Euro", symbol: "EUR", regionCode: "EU", regionName: "European Union", isMainForRegion: true, exchangeRateToZar: 20.1, decimalPlaces: 2, active: true },
+    { code: "GBP", name: "British Pound", symbol: "GBP", regionCode: "GB", regionName: "United Kingdom", isMainForRegion: true, exchangeRateToZar: 23.7, decimalPlaces: 2, active: true },
   ]).onConflictDoNothing({ target: currencies.code });
+  await db.execute(sql`
+    UPDATE currencies
+    SET
+      region_code = CASE code WHEN 'ZAR' THEN 'ZA' WHEN 'USD' THEN 'US' WHEN 'EUR' THEN 'EU' WHEN 'GBP' THEN 'GB' ELSE COALESCE(region_code, 'ZA') END,
+      region_name = CASE code WHEN 'ZAR' THEN 'South Africa' WHEN 'USD' THEN 'United States' WHEN 'EUR' THEN 'European Union' WHEN 'GBP' THEN 'United Kingdom' ELSE COALESCE(region_name, 'South Africa') END,
+      is_main_for_region = CASE WHEN code IN ('ZAR', 'USD', 'EUR', 'GBP') THEN TRUE ELSE COALESCE(is_main_for_region, FALSE) END,
+      exchange_rate_to_zar = CASE code WHEN 'ZAR' THEN 1 WHEN 'USD' THEN 18.5 WHEN 'EUR' THEN 20.1 WHEN 'GBP' THEN 23.7 ELSE COALESCE(exchange_rate_to_zar, 1) END
+    WHERE code IN ('ZAR', 'USD', 'EUR', 'GBP')
+  `);
 
   await db.insert(taxCodes).values([
     { code: "VAT15", name: "Standard VAT 15%", rate: 15, type: "vat", countryCode: "ZA", active: true },
@@ -274,17 +283,17 @@ async function ensureSettings(): Promise<void> {
     primaryColor: "#4f46e5",
     dateFormat: "YYYY-MM-DD",
     timeFormat: "HH:mm",
-    currencySymbol: "$",
-    currencyCode: "USD",
+    currencySymbol: "R",
+    currencyCode: "ZAR",
     lowStockDefaultThreshold: 10,
     allowNegativeInventory: false,
     realTimeUpdatesEnabled: true,
     lowStockAlertFrequency: 30,
     autoReorderEnabled: false,
     enableVat: false,
-    defaultVatCountry: "US",
+    defaultVatCountry: "ZA",
     showPricesWithVat: true,
-    businessCountryCode: "US",
+    businessCountryCode: "ZA",
     taxMode: "none",
     productOnboardingCompletedAt: new Date(),
     productOnboardingState: null,
@@ -1121,3 +1130,4 @@ if (isSeedCli) {
     process.exit(1);
   });
 }
+

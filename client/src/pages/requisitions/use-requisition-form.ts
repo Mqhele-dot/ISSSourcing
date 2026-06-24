@@ -8,7 +8,7 @@ import { inventoryCatalogQueryKey } from "@/lib/query-keys";
 import type { ReqLineDraft } from "@/pages/requisitions/requisition-lines-editor";
 
 export type RequisitionFieldErrors = Partial<
-  Record<"supplierId" | "departmentId" | "requiredDate" | "items" | "projectId", string>
+  Record<"supplierId" | "departmentId" | "requiredDate" | "items" | "projectId" | "currencyCode", string>
 >;
 
 const LOCKED_REQUISITION_STATUSES = new Set(["APPROVED", "CONVERTED", "CLOSED", "CANCELLED"]);
@@ -38,6 +38,7 @@ export function useRequisitionForm(params: {
   const [justification, setJustification] = useState("");
   const [requiredDate, setRequiredDate] = useState("");
   const [projectId, setProjectId] = useState<number | "">("");
+  const [currencyCode, setCurrencyCode] = useState("ZAR");
   const [items, setItems] = useState<ReqLineDraft[]>([{ itemId: 0, quantity: 1, unitPrice: 0 }]);
   const [fieldErrors, setFieldErrors] = useState<RequisitionFieldErrors>({});
 
@@ -93,9 +94,53 @@ export function useRequisitionForm(params: {
     queryKey: ["/api/currencies"],
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/currencies");
-      return normalizeApiList<{ code: string; name: string }>(raw);
+      return normalizeApiList<{
+        code: string;
+        name: string;
+        symbol?: string | null;
+        regionCode?: string | null;
+        regionName?: string | null;
+        isMainForRegion?: boolean | null;
+        exchangeRateToZar?: number | null;
+        active?: boolean | null;
+      }>(raw).filter((currency) => currency.active !== false);
     },
   });
+
+  const selectedSupplier = useMemo(
+    () => (supplierId === "" ? undefined : suppliers.find((supplier) => supplier.id === supplierId)),
+    [supplierId, suppliers],
+  );
+
+  const selectedCurrency = useMemo(
+    () => currencies.find((currency) => currency.code === currencyCode),
+    [currencies, currencyCode],
+  );
+
+  const exchangeRateToZar = Number(selectedCurrency?.exchangeRateToZar ?? (currencyCode === "ZAR" ? 1 : 0));
+
+  const requisitionTotals = useMemo(() => {
+    const orderTotal = items.reduce((sum, item) => {
+      const qty = Number(item.quantity);
+      const unitPrice = Number(item.unitPrice);
+      return Number.isFinite(qty) && Number.isFinite(unitPrice) ? sum + qty * unitPrice : sum;
+    }, 0);
+    return {
+      orderTotal,
+      zarTotal: orderTotal * (Number.isFinite(exchangeRateToZar) && exchangeRateToZar > 0 ? exchangeRateToZar : 0),
+    };
+  }, [exchangeRateToZar, items]);
+
+  useEffect(() => {
+    if (!isNew || !selectedSupplier) return;
+    const supplierCurrency = String((selectedSupplier as Supplier & { defaultCurrencyCode?: string | null }).defaultCurrencyCode ?? "")
+      .trim()
+      .toUpperCase();
+    if (!supplierCurrency || supplierCurrency === currencyCode) return;
+    if (currencies.some((currency) => currency.code === supplierCurrency)) {
+      setCurrencyCode(supplierCurrency);
+    }
+  }, [currencies, currencyCode, isNew, selectedSupplier]);
 
   const { data: contracts = [] } = useQuery({
     queryKey: ["/api/contracts"],
@@ -144,6 +189,7 @@ export function useRequisitionForm(params: {
     if (requisition) {
       setNotes(requisition.notes ?? "");
       setSupplierId(requisition.supplierId ?? "");
+      setCurrencyCode(((requisition as PurchaseRequisition & { currencyCode?: string | null }).currencyCode ?? "ZAR").toUpperCase());
       setDepartmentId((requisition as PurchaseRequisition & { departmentId?: number | null }).departmentId ?? "");
       setJustification((requisition as PurchaseRequisition & { justification?: string | null }).justification ?? "");
       setRequiredDate(requisition.requiredDate ? new Date(requisition.requiredDate).toISOString().slice(0, 10) : "");
@@ -167,6 +213,8 @@ export function useRequisitionForm(params: {
       const body = {
         notes: notes || undefined,
         supplierId: supplierId || undefined,
+        currencyCode,
+        exchangeRateToZar,
         departmentId: departmentId || undefined,
         justification: justification || undefined,
         requiredDate: requiredDate ? new Date(requiredDate).toISOString() : undefined,
@@ -194,6 +242,27 @@ export function useRequisitionForm(params: {
     },
   });
 
+  const createSupplierMutation = useMutation({
+    mutationFn: async (payload: { name: string; email?: string; phone?: string }) => {
+      const res = await apiRequest("POST", "/api/suppliers", {
+        name: payload.name,
+        email: payload.email || undefined,
+        phone: payload.phone || undefined,
+        status: "active",
+        defaultCurrencyCode: currencyCode,
+      });
+      return res.json() as Promise<Supplier>;
+    },
+    onSuccess: async (supplier) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      setSupplierId(supplier.id);
+      toast({ title: "Supplier added", description: `${supplier.name} is now selected for this requisition.` });
+    },
+    onError: (e) => {
+      toast({ title: "Supplier create failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+    },
+  });
+
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (isLocked) {
@@ -211,6 +280,8 @@ export function useRequisitionForm(params: {
       const body = {
         notes: notes || undefined,
         supplierId: supplierId || undefined,
+        currencyCode,
+        exchangeRateToZar,
         departmentId: departmentId || undefined,
         justification: justification || undefined,
         requiredDate: requiredDate ? new Date(requiredDate).toISOString() : undefined,
@@ -251,6 +322,10 @@ export function useRequisitionForm(params: {
     }
     const nextErrors: RequisitionFieldErrors = {};
     if (!supplierId) nextErrors.supplierId = "Supplier is required";
+    if (!currencyCode) nextErrors.currencyCode = "Currency is required";
+    if (!Number.isFinite(exchangeRateToZar) || exchangeRateToZar <= 0) {
+      nextErrors.currencyCode = "Selected currency needs a positive ZAR exchange rate in Master Data";
+    }
     if (!departmentId) nextErrors.departmentId = "Department is required";
     if (!requiredDate) nextErrors.requiredDate = "Required date is required";
     const validItems = items.filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0);
@@ -279,7 +354,7 @@ export function useRequisitionForm(params: {
     }
     if (isNew) createMutation.mutate();
     else updateMutation.mutate();
-  }, [supplierId, departmentId, requiredDate, items, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
+  }, [supplierId, currencyCode, exchangeRateToZar, departmentId, requiredDate, items, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
@@ -296,6 +371,14 @@ export function useRequisitionForm(params: {
     setNotes,
     supplierId,
     setSupplierId,
+    createSupplier: createSupplierMutation.mutate,
+    isCreatingSupplier: createSupplierMutation.isPending,
+    selectedSupplier,
+    currencyCode,
+    setCurrencyCode,
+    selectedCurrency,
+    exchangeRateToZar,
+    requisitionTotals,
     departmentId,
     setDepartmentId,
     justification,

@@ -5,7 +5,7 @@ import type { IStorage } from "../storage";
  * Fallback when `app_settings` is missing or `currency_code` is unset/invalid (bootstrap, legacy rows).
  * Keep in sync with `normalizeReportingCurrencyCode` fallbacks in document generation.
  */
-export const REPORTING_CURRENCY_FALLBACK_CODE = "USD";
+export const REPORTING_CURRENCY_FALLBACK_CODE = "ZAR";
 
 function isValidIso4217(code: string): boolean {
   if (!/^[A-Z]{3}$/.test(code)) return false;

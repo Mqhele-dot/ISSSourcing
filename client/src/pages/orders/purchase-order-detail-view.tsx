@@ -120,7 +120,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [paymentTermsId, setPaymentTermsId] = useState<string>("none");
   const [incotermId, setIncotermId] = useState<string>("none");
   const [taxCodeId, setTaxCodeId] = useState<string>("none");
-  const [currencyCode, setCurrencyCode] = useState("USD");
+  const [currencyCode, setCurrencyCode] = useState("ZAR");
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [receiveLineIssues, setReceiveLineIssues] = useState<ReceiveLineFieldError[]>([]);
   const [createShipmentOnSend, setCreateShipmentOnSend] = useState(false);
@@ -419,7 +419,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     );
     const rawCc = purchaseOrderRecord.currencyCode;
     setCurrencyCode(
-      typeof rawCc === "string" && /^[A-Za-z]{3}$/.test(rawCc) ? rawCc.toUpperCase() : "USD",
+      typeof rawCc === "string" && /^[A-Za-z]{3}$/.test(rawCc) ? rawCc.toUpperCase() : "ZAR",
     );
   }, [purchaseOrderRecord]);
 

@@ -151,6 +151,34 @@ async function assertPurchaseOrderCurrencyCodeAllowed(
   return { ok: true };
 }
 
+async function resolveActiveCurrencyForRequisition(
+  currencyCode: unknown,
+): Promise<{ ok: true; currencyCode: string; exchangeRateToZar: number } | { ok: false; code: string; message: string }> {
+  const requested = String(currencyCode ?? "ZAR").trim().toUpperCase() || "ZAR";
+  const rows = await db
+    .select({ code: currencies.code, exchangeRateToZar: currencies.exchangeRateToZar })
+    .from(currencies)
+    .where(and(eq(currencies.code, requested), eq(currencies.active, true)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    return {
+      ok: false,
+      code: "REQUISITION_CURRENCY_NOT_ACTIVE",
+      message: `Currency ${requested} is not active in Master Data.`,
+    };
+  }
+  const rate = Number(row.exchangeRateToZar ?? 0);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return {
+      ok: false,
+      code: "REQUISITION_EXCHANGE_RATE_INVALID",
+      message: `Currency ${requested} needs a positive ZAR exchange rate in Master Data.`,
+    };
+  }
+  return { ok: true, currencyCode: row.code, exchangeRateToZar: rate };
+}
+
 const purchaseOrderCommercialPatchSchema = z
   .object({
     departmentId: z.union([z.number().int().positive(), z.null()]).optional(),
@@ -291,6 +319,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           requisitionInput.requiredDate = parsedRequiredDate;
         }
       }
+      const requisitionCurrency = await resolveActiveCurrencyForRequisition(requisitionInput.currencyCode);
+      if (!requisitionCurrency.ok) {
+        return sendError(res, 400, requisitionCurrency.code, requisitionCurrency.message);
+      }
+      requisitionInput.currencyCode = requisitionCurrency.currencyCode;
+      requisitionInput.exchangeRateToZar = requisitionCurrency.exchangeRateToZar;
 
       const validatedReqData = insertPurchaseRequisitionSchema.parse(requisitionInput);
       const validatedItemsData = req.body.items.map((item: any, index: number) => {
@@ -400,6 +434,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           }
           requisitionPatch.requiredDate = parsedRequiredDate;
         }
+      }
+      if (Object.prototype.hasOwnProperty.call(requisitionPatch, "currencyCode")) {
+        const requisitionCurrency = await resolveActiveCurrencyForRequisition(requisitionPatch.currencyCode);
+        if (!requisitionCurrency.ok) {
+          return sendError(res, 400, requisitionCurrency.code, requisitionCurrency.message);
+        }
+        requisitionPatch.currencyCode = requisitionCurrency.currencyCode;
+        requisitionPatch.exchangeRateToZar = requisitionCurrency.exchangeRateToZar;
       }
       const validatedData = insertPurchaseRequisitionSchema.partial().parse(requisitionPatch);
       if (validatedData.supplierId != null) {

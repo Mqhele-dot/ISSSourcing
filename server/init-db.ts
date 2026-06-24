@@ -358,6 +358,10 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         code TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
         symbol TEXT NOT NULL,
+        region_code TEXT DEFAULT 'ZA',
+        region_name TEXT DEFAULT 'South Africa',
+        is_main_for_region BOOLEAN DEFAULT FALSE,
+        exchange_rate_to_zar REAL DEFAULT 1 NOT NULL,
         decimal_places INTEGER DEFAULT 2 NOT NULL,
         active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL,
@@ -757,6 +761,10 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS bill_control_policy TEXT DEFAULT 'standard';
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS allow_currency_override BOOLEAN DEFAULT FALSE;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS require_approval_for_override BOOLEAN DEFAULT TRUE;
+      ALTER TABLE currencies ADD COLUMN IF NOT EXISTS region_code TEXT DEFAULT 'ZA';
+      ALTER TABLE currencies ADD COLUMN IF NOT EXISTS region_name TEXT DEFAULT 'South Africa';
+      ALTER TABLE currencies ADD COLUMN IF NOT EXISTS is_main_for_region BOOLEAN DEFAULT FALSE;
+      ALTER TABLE currencies ADD COLUMN IF NOT EXISTS exchange_rate_to_zar REAL DEFAULT 1 NOT NULL;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS risk_status TEXT DEFAULT 'unknown';
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS compliance_status TEXT DEFAULT 'unknown';
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS blocked_reason TEXT;
@@ -783,11 +791,13 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS department_id INTEGER;
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS justification TEXT;
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS project_id INTEGER;
+      ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS currency_code TEXT NOT NULL DEFAULT 'ZAR';
+      ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS exchange_rate_to_zar REAL DEFAULT 1 NOT NULL;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS department_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS contract_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS incoterm_id INTEGER;
-      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS currency_code TEXT NOT NULL DEFAULT 'USD';
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS currency_code TEXT NOT NULL DEFAULT 'ZAR';
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS tax_code_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS project_id INTEGER;
       ALTER TABLE supplier_contracts ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;

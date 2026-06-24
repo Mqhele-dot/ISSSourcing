@@ -323,6 +323,10 @@ export const currencies = pgTable("currencies", {
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
   symbol: text("symbol").notNull(),
+  regionCode: text("region_code").default("ZA"),
+  regionName: text("region_name").default("South Africa"),
+  isMainForRegion: boolean("is_main_for_region").default(false),
+  exchangeRateToZar: real("exchange_rate_to_zar").default(1).notNull(),
   decimalPlaces: integer("decimal_places").default(2).notNull(),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -630,6 +634,8 @@ export const purchaseRequisitions = pgTable(
   departmentId: integer("department_id"),
   justification: text("justification"),
   supplierId: integer("supplier_id"),
+  currencyCode: text("currency_code").notNull().default("ZAR"),
+  exchangeRateToZar: real("exchange_rate_to_zar").notNull().default(1),
   totalAmount: real("total_amount").notNull().default(0),
   sharedWithUserIds: jsonb("shared_with_user_ids").$type<number[]>().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -692,7 +698,7 @@ export const purchaseOrders = pgTable(
   paymentTermsId: integer("payment_terms_id"),
   incotermId: integer("incoterm_id"),
   /** ISO 4217; must exist in Master Data `currencies`. */
-  currencyCode: text("currency_code").notNull().default("USD"),
+  currencyCode: text("currency_code").notNull().default("ZAR"),
   taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
   status: text("status").notNull().default("DRAFT"),
   orderDate: timestamp("order_date").defaultNow().notNull(),
@@ -1146,7 +1152,7 @@ export const appSettings = pgTable(
   timeFormat: text("time_format").default("HH:mm"),
   currencySymbol: text("currency_symbol").default("$"),
   /** ISO 4217 code for Intl currency formatting and reporting (e.g. USD, EUR). */
-  currencyCode: text("currency_code").notNull().default("USD"),
+  currencyCode: text("currency_code").notNull().default("ZAR"),
   // Inventory settings
   lowStockDefaultThreshold: integer("low_stock_default_threshold").default(10),
   allowNegativeInventory: boolean("allow_negative_inventory").default(false),

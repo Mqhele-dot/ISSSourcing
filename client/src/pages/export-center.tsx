@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, RotateCcw } from "lucide-react";
+import { Download, Eye, RotateCcw, Wand2 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { SectionNav } from "@/components/section-nav";
@@ -59,6 +59,27 @@ const ANALYTICS_NAV = [
   { label: "Reports", href: APP_ROUTES.analytics.reports },
   { label: "Saved reports", href: APP_ROUTES.analytics.savedReports },
   { label: "Export center", href: APP_ROUTES.analytics.exportCenter },
+] as const;
+
+const REPORT_TEMPLATES = [
+  {
+    name: "PO vs deliveries",
+    description: "Compare ordered value and receipt progress by supplier and purchase order.",
+    dataset: "po_delivery_comparison",
+    columns: ["poNumber", "supplierName", "poStatus", "shipmentStatus", "eta", "trackingNumber", "deliveryGap"],
+  },
+  {
+    name: "Delivery export",
+    description: "Shipment and delivery list for logistics review.",
+    dataset: "shipments",
+    columns: ["poNumber", "carrier", "status", "eta", "trackingNumber", "lateRisk"],
+  },
+  {
+    name: "Supplier currency audit",
+    description: "Supplier defaults for currency, terms, and operational setup.",
+    dataset: "suppliers",
+    columns: ["name", "email", "phone", "defaultCurrencyCode", "status"],
+  },
 ] as const;
 
 function formatBytes(value: number | null): string {
@@ -183,6 +204,27 @@ export default function ExportCenterPage() {
           <CardTitle>Custom report builder</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            {REPORT_TEMPLATES.map((template) => (
+              <button
+                key={template.name}
+                type="button"
+                className="rounded-md border bg-background p-3 text-left transition hover:border-primary hover:bg-primary/5"
+                onClick={() => {
+                  setCustomDataset(template.dataset);
+                  setCustomColumns(template.columns.join(","));
+                  setCustomReportName(template.name);
+                  setCustomPreview(null);
+                }}
+              >
+                <div className="flex items-center gap-2 font-medium">
+                  <Wand2 className="h-4 w-4 text-primary" />
+                  {template.name}
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{template.description}</p>
+              </button>
+            ))}
+          </div>
           <div className="grid gap-3 md:grid-cols-[1.1fr_1.4fr_1fr_auto_auto] md:items-end">
             <div className="space-y-2">
               <Label>Dataset</Label>

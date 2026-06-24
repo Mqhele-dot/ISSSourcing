@@ -46,8 +46,12 @@ export default function RequisitionFormPage() {
           <RequisitionHeaderFields
             suppliers={f.suppliers}
             departments={f.departments}
+            currencies={f.currencies}
             projects={f.extensionProjects}
             supplierId={f.supplierId}
+            currencyCode={f.currencyCode}
+            exchangeRateToZar={f.exchangeRateToZar}
+            requisitionTotals={f.requisitionTotals}
             departmentId={f.departmentId}
             projectId={f.projectId}
             requiredDate={f.requiredDate}
@@ -56,6 +60,8 @@ export default function RequisitionFormPage() {
             fieldErrors={f.fieldErrors}
             readOnly={f.isLocked}
             onSupplierChange={f.setSupplierId}
+            onCurrencyChange={f.setCurrencyCode}
+            onCreateSupplier={f.createSupplier}
             onDepartmentChange={f.setDepartmentId}
             onProjectChange={f.setProjectId}
             onRequiredDateChange={f.setRequiredDate}
@@ -77,6 +83,8 @@ export default function RequisitionFormPage() {
           <RequisitionLinesEditor
             items={f.items}
             inventoryItems={f.inventoryItems}
+            currencyCode={f.currencyCode}
+            exchangeRateToZar={f.exchangeRateToZar}
             fieldError={f.fieldErrors.items}
             onAddRow={f.addItem}
             onRemoveRow={f.removeItem}

@@ -15,6 +15,7 @@ const files = {
   router: readFileSync("client/src/router.tsx", "utf8"),
   appRoutes: readFileSync("client/src/lib/routes/app-routes.ts", "utf8"),
   mobilePage: readFileSync("client/src/pages/mobile-counts.tsx", "utf8"),
+  securitySettingsForm: readFileSync("client/src/components/settings/security-settings-form.tsx", "utf8"),
   serviceWorker: readFileSync("client/public/sw.js", "utf8"),
   offlineQueue: readFileSync("client/src/lib/offline-queue.ts", "utf8"),
   syncValidators: readFileSync("server/modules/sync/validators.ts", "utf8"),
@@ -139,6 +140,15 @@ const checks = [
       files.mobileService.includes("inventory.variance.thresholdPct") &&
       files.configRegistry.includes("getConfigurationDefinitionsForPlan") &&
       files.orgRoutes.includes('"/api/company-configuration"'),
+  },
+  {
+    name: "security settings form uses persisted policy instead of fake save",
+    ok:
+      files.securitySettingsForm.includes('"/api/company-configuration"') &&
+      files.securitySettingsForm.includes("security.requireTwoFactor") &&
+      files.securitySettingsForm.includes("Organization Security Policy") &&
+      !files.securitySettingsForm.includes('console.log("Security settings submitted:') &&
+      !files.securitySettingsForm.includes("In a real implementation"),
   },
   {
     name: "service worker caches mobile count shell",

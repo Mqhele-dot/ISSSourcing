@@ -1,247 +1,164 @@
-import React from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import * as z from "zod";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { useMemo } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { AlertTriangle, ExternalLink, Loader2, Shield, ShieldCheck } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Shield, Lock, Key, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useSettings } from "@/hooks/use-settings";
-// Define schema for form validation
-const securitySettingsSchema = z.object({
-  enableTwoFactor: z.boolean().default(false),
-  passwordExpiryDays: z.coerce.number().int().min(0, "Minimum is 0 (never expire)").max(365, "Maximum is 365 days"),
-  maxLoginAttempts: z.coerce.number().int().min(1, "Minimum is 1 attempt").max(10, "Maximum is 10 attempts"),
-  sessionTimeoutMinutes: z.coerce.number().int().min(5, "Minimum is 5 minutes").max(1440, "Maximum is 24 hours (1440 minutes)"),
-  requireStrongPasswords: z.boolean().default(true),
-  logActivityEnabled: z.boolean().default(true),
-  accessTokenExpiryHours: z.coerce.number().int().min(1, "Minimum is 1 hour").max(720, "Maximum is 30 days (720 hours)"),
-});
+import { queryClient, requestJson } from "@/lib/queryClient";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
-// Type for form data
-type SecuritySettingsFormType = z.infer<typeof securitySettingsSchema>;
+type ConfigDefinition = {
+  key: string;
+  label: string;
+  category: string;
+  minimumPlan: string;
+  enabled: boolean;
+  value: unknown;
+  defaultValue: unknown;
+  invalidationMode: string;
+  upgradeHint?: string;
+};
+
+type ConfigResponse = {
+  definitions: ConfigDefinition[];
+};
 
 export function SecuritySettingsForm() {
   const { toast } = useToast();
-  const { updateSettings } = useSettings();
+  const configuration = useQuery({
+    queryKey: ["/api/company-configuration"],
+    queryFn: () => requestJson<ConfigResponse>("GET", "/api/company-configuration"),
+  });
 
-  // Create form with default values
-  const form = useForm<SecuritySettingsFormType>({
-    resolver: zodResolver(securitySettingsSchema),
-    defaultValues: {
-      enableTwoFactor: false,
-      passwordExpiryDays: 90,
-      maxLoginAttempts: 5,
-      sessionTimeoutMinutes: 60,
-      requireStrongPasswords: true,
-      logActivityEnabled: true,
-      accessTokenExpiryHours: 24,
+  const requireTwoFactor = useMemo(
+    () => configuration.data?.definitions.find((definition) => definition.key === "security.requireTwoFactor") ?? null,
+    [configuration.data],
+  );
+
+  const updatePolicy = useMutation({
+    mutationFn: async (enabled: boolean) =>
+      requestJson("PUT", "/api/company-configuration/security.requireTwoFactor", {
+        scope: "organization",
+        value: enabled,
+      }),
+    onSuccess: (_data, enabled) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-configuration"] });
+      toast({
+        title: "Security policy updated",
+        description: enabled
+          ? "Organization sign-ins now require each user to complete two-factor setup."
+          : "Two-factor is now optional unless a user enables it on their own profile.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Security policy update failed",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
     },
   });
 
-  // Submit handler
-  function onSubmit(data: SecuritySettingsFormType) {
-    // In a real implementation, this would integrate with the settings API
-    console.log("Security settings submitted:", data);
-    
-    toast({
-      title: "Security settings updated",
-      description: "Your security settings have been saved successfully.",
-    });
+  if (configuration.isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading organization security policy...
+        </CardContent>
+      </Card>
+    );
   }
 
+  if (configuration.isError || !requireTwoFactor) {
+    return (
+      <Card>
+        <CardContent className="space-y-3 p-6">
+          <p className="text-sm text-destructive">Security policy could not be loaded.</p>
+          <Button variant="outline" onClick={() => configuration.refetch()}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const twoFactorRequired = Boolean(requireTwoFactor.value ?? requireTwoFactor.defaultValue);
+  const policyLocked = !requireTwoFactor.enabled || updatePolicy.isPending;
+
   return (
-    <Card>
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-primary" />
-              Security Settings
-            </CardTitle>
-            <CardDescription>
-              Configure authentication and security preferences
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <FormField
-              control={form.control}
-              name="enableTwoFactor"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-base">
-                      <div className="flex items-center">
-                        <Key className="h-4 w-4 mr-2" />
-                        Enable Two-Factor Authentication
-                      </div>
-                    </FormLabel>
-                    <FormDescription>
-                      Require 2FA for all users
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" />
+            Organization Security Policy
+          </CardTitle>
+          <CardDescription>
+            Persisted admin controls for sign-in posture. Unsupported org-wide settings are called out explicitly instead of being silently “saved”.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={requireTwoFactor.enabled ? "outline" : "secondary"}>{requireTwoFactor.minimumPlan}+</Badge>
+            <Badge variant="outline">{requireTwoFactor.invalidationMode}</Badge>
+            <Badge variant={twoFactorRequired ? "default" : "secondary"}>
+              {twoFactorRequired ? "2FA required" : "2FA optional"}
+            </Badge>
+          </div>
 
-            <FormField
-              control={form.control}
-              name="requireStrongPasswords"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-base">
-                      <div className="flex items-center">
-                        <Lock className="h-4 w-4 mr-2" />
-                        Require Strong Passwords
-                      </div>
-                    </FormLabel>
-                    <FormDescription>
-                      Enforce password complexity requirements
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="logActivityEnabled"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-base">Activity Logging</FormLabel>
-                    <FormDescription>
-                      Log user actions for security auditing
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="passwordExpiryDays"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password Expiry (Days)</FormLabel>
-                    <FormControl>
-                      <Input type="number" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      Days until passwords expire (0 = never)
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="maxLoginAttempts"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Max Login Attempts</FormLabel>
-                    <FormControl>
-                      <Input type="number" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      Maximum failed login attempts before lockout
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="sessionTimeoutMinutes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <div className="flex items-center">
-                        <Clock className="h-4 w-4 mr-2" />
-                        Session Timeout (Minutes)
-                      </div>
-                    </FormLabel>
-                    <FormControl>
-                      <Input type="number" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      Inactive session timeout period
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="accessTokenExpiryHours"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Access Token Expiry (Hours)</FormLabel>
-                    <FormControl>
-                      <Input type="number" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      JWT/API token expiration time
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="rounded-md bg-blue-50 p-4 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-400">
-              <p className="font-medium">About Security Features</p>
-              <p className="mt-1">
-                Security settings help protect your data and ensure compliance with 
-                industry standards. Two-factor authentication adds an extra layer of 
-                security by requiring a verification code in addition to passwords.
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-1 pr-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                Require two-factor authentication for all users
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Enforces the existing 2FA challenge flow at sign-in. Users still complete their own authenticator setup from Profile.
               </p>
+              {!requireTwoFactor.enabled && requireTwoFactor.upgradeHint ? (
+                <p className="text-sm text-muted-foreground">{requireTwoFactor.upgradeHint}</p>
+              ) : null}
             </div>
-          </CardContent>
-          <CardFooter className="border-t px-6 py-4">
-            <Button type="submit" disabled={updateSettings.isPending}>
-              {updateSettings.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save Changes
+            <Switch
+              checked={twoFactorRequired}
+              disabled={policyLocked}
+              onCheckedChange={(checked) => updatePolicy.mutate(checked)}
+              aria-label="Require two-factor authentication for the organization"
+            />
+          </div>
+
+          <div className="rounded-md border border-amber-300/70 bg-amber-50/80 p-4 text-sm text-amber-950">
+            <div className="flex items-center gap-2 font-medium">
+              <AlertTriangle className="h-4 w-4" />
+              Honest scope
+            </div>
+            <p className="mt-2">
+              Session timeout, password expiry, login-attempt lockout, and token lifetime are not yet backed by organization-wide enforcement in this screen.
+              They are intentionally not exposed as editable “save” fields here until backend policy storage and enforcement exist.
+            </p>
+          </div>
+        </CardContent>
+        <CardFooter className="flex flex-wrap items-center justify-between gap-3 border-t px-6 py-4">
+          <p className="text-sm text-muted-foreground">
+            Per-user 2FA enrollment and individual session preferences remain under Profile.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href={APP_ROUTES.admin.settingsSection("configuration")}>Open Configuration Center</Link>
             </Button>
-          </CardFooter>
-        </form>
-      </Form>
-    </Card>
+            <Button asChild>
+              <Link href={APP_ROUTES.admin.profile}>
+                Open Profile Security
+                <ExternalLink className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </CardFooter>
+      </Card>
+    </div>
   );
 }

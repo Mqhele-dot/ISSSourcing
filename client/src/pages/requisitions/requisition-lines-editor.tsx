@@ -22,6 +22,8 @@ export interface ReqLineDraft {
 type RequisitionLinesEditorProps = {
   items: ReqLineDraft[];
   inventoryItems: InventoryItem[];
+  currencyCode: string;
+  exchangeRateToZar: number;
   fieldError?: string;
   onAddRow: () => void;
   onRemoveRow: (idx: number) => void;
@@ -33,6 +35,8 @@ type RequisitionLinesEditorProps = {
 export function RequisitionLinesEditor({
   items,
   inventoryItems,
+  currencyCode,
+  exchangeRateToZar,
   fieldError,
   onAddRow,
   onRemoveRow,
@@ -104,7 +108,7 @@ export function RequisitionLinesEditor({
               />
             </div>
             <div className="w-28 space-y-2">
-              <Label htmlFor={"req-unitprice-" + idx}>Unit price *</Label>
+              <Label htmlFor={"req-unitprice-" + idx}>Unit price ({currencyCode}) *</Label>
               <Input
                 id={"req-unitprice-" + idx}
                 aria-label={"Unit price for line " + (idx + 1)}
@@ -116,6 +120,15 @@ export function RequisitionLinesEditor({
                 disabled={readOnly}
                 data-testid={`requisition-line-unit-price-${lineKey}`}
               />
+            </div>
+            <div className="w-36 space-y-2">
+              <Label>Line value</Label>
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm tabular-nums">
+                <div>{currencyCode} {(Number(item.quantity || 0) * Number(item.unitPrice || 0)).toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground">
+                  ZAR {(Number(item.quantity || 0) * Number(item.unitPrice || 0) * Number(exchangeRateToZar || 0)).toFixed(2)}
+                </div>
+              </div>
             </div>
             {!readOnly ? (
               <Button

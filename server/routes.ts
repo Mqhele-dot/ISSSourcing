@@ -1169,7 +1169,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           SELECT code
           FROM currencies
           WHERE active = true
-          ORDER BY CASE WHEN upper(code) = 'USD' THEN 0 ELSE 1 END, code ASC
+          ORDER BY CASE WHEN upper(code) = 'ZAR' THEN 0 ELSE 1 END, code ASC
           LIMIT 1
           `,
         );

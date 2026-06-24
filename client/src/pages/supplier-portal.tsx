@@ -160,7 +160,7 @@ export default function SupplierPortalPage() {
         invoiceNumber: invoiceNumber.trim(),
         total,
         currency:
-          (invoiceCurrency.trim() || portalInvoiceCurrencyOptions[0]?.code || "USD").toUpperCase(),
+          (invoiceCurrency.trim() || portalInvoiceCurrencyOptions[0]?.code || "ZAR").toUpperCase(),
         ...(supplierScopeId ? { supplierId: supplierScopeId } : {}),
       });
       if (invoiceFile) {
