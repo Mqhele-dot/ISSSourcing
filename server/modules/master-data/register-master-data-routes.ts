@@ -47,6 +47,22 @@ import {
   taxCodes,
   unitsOfMeasure,
 } from "@shared/schema";
+import {
+  createImportBatch,
+  createMdmDomainRecord,
+  getImportBatchValidationReport,
+  getMdmAudit,
+  getMdmControlCentreHealth,
+  getMdmDataQualityIssues,
+  getPurchaseOrderContext,
+  getRequisitionContext,
+  isMdmDomain,
+  listMdmDomain,
+  previewDocumentSequence,
+  scanMdmDataQuality,
+  updateMdmDomainRecord,
+  validateMdmTransaction,
+} from "./mdm-control-centre";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -119,6 +135,159 @@ async function getDeleteDependencies(basePath: string, id: number) {
 export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
   const masterRead = [auth.ensureAuthenticated];
   const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
+  function sessionUserId(req: Request): number | undefined {
+    const id = (req as Request & { user?: { id?: unknown } }).user?.id;
+    const n = Number(id);
+    return Number.isFinite(n) ? n : undefined;
+  }
+
+  app.get("/api/mdm/control-centre/health", ...masterRead, async (_req: Request, res: Response) => {
+    try {
+      return sendOk(res, await getMdmControlCentreHealth(getActiveOrganizationId()));
+    } catch (error) {
+      console.error("Error fetching MDM control-centre health:", error);
+      return sendError(res, 500, "MDM_HEALTH_FAILED", "Failed to build Master Data control-centre health");
+    }
+  });
+
+  app.get("/api/mdm/data-quality/issues", ...masterRead, async (_req: Request, res: Response) => {
+    try {
+      return sendOk(res, await getMdmDataQualityIssues(getActiveOrganizationId()));
+    } catch (error) {
+      console.error("Error fetching MDM data-quality issues:", error);
+      return sendError(res, 500, "MDM_DATA_QUALITY_FAILED", "Failed to fetch Master Data quality issues");
+    }
+  });
+
+  app.post("/api/mdm/data-quality/scan", ...masterWrite, async (_req: Request, res: Response) => {
+    try {
+      return sendOk(res, await scanMdmDataQuality(getActiveOrganizationId()));
+    } catch (error) {
+      console.error("Error scanning MDM data quality:", error);
+      return sendError(res, 500, "MDM_DATA_QUALITY_SCAN_FAILED", "Failed to scan Master Data quality");
+    }
+  });
+
+  app.get("/api/mdm/defaults/requisition-context", ...masterRead, async (_req: Request, res: Response) => {
+    try {
+      return sendOk(res, await getRequisitionContext(getActiveOrganizationId()));
+    } catch (error) {
+      console.error("Error fetching MDM requisition context:", error);
+      return sendError(res, 500, "MDM_REQUISITION_CONTEXT_FAILED", "Failed to load requisition Master Data context");
+    }
+  });
+
+  app.get("/api/mdm/defaults/po-context", ...masterRead, async (_req: Request, res: Response) => {
+    try {
+      return sendOk(res, await getPurchaseOrderContext(getActiveOrganizationId()));
+    } catch (error) {
+      console.error("Error fetching MDM PO context:", error);
+      return sendError(res, 500, "MDM_PO_CONTEXT_FAILED", "Failed to load purchase order Master Data context");
+    }
+  });
+
+  app.post("/api/mdm/validate-transaction", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      return sendOk(res, await validateMdmTransaction(getActiveOrganizationId(), req.body ?? {}));
+    } catch (error) {
+      console.error("Error validating MDM transaction:", error);
+      return sendError(res, 500, "MDM_TRANSACTION_VALIDATION_FAILED", "Failed to validate transaction against Master Data");
+    }
+  });
+
+  app.post("/api/mdm/document-sequences/preview", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      return sendOk(res, await previewDocumentSequence(getActiveOrganizationId(), req.body ?? {}));
+    } catch (error) {
+      console.error("Error previewing MDM document sequence:", error);
+      return sendError(res, 500, "MDM_SEQUENCE_PREVIEW_FAILED", "Failed to preview document sequence");
+    }
+  });
+
+  app.post("/api/mdm/import-batches", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      return sendOk(res, await createImportBatch(getActiveOrganizationId(), req.body ?? {}, sessionUserId(req)), 201);
+    } catch (error) {
+      console.error("Error creating MDM import batch:", error);
+      return sendError(res, 500, "MDM_IMPORT_BATCH_FAILED", "Failed to create import validation batch");
+    }
+  });
+
+  app.get("/api/mdm/import-batches/:id/validation-report", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid import batch ID");
+      const report = await getImportBatchValidationReport(getActiveOrganizationId(), id);
+      if (!report) return sendError(res, 404, "NOT_FOUND", "Import batch not found");
+      return sendOk(res, report);
+    } catch (error) {
+      console.error("Error fetching MDM import validation report:", error);
+      return sendError(res, 500, "MDM_IMPORT_REPORT_FAILED", "Failed to fetch import validation report");
+    }
+  });
+
+  app.get("/api/mdm/:domain/:id/audit", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const domain = String(req.params.domain ?? "");
+      if (!isMdmDomain(domain)) return sendError(res, 404, "MDM_DOMAIN_NOT_FOUND", "Unknown MDM domain");
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid MDM record ID");
+      return sendOk(res, await getMdmAudit(domain, getActiveOrganizationId(), id));
+    } catch (error) {
+      console.error("Error fetching MDM audit:", error);
+      return sendError(res, 500, "MDM_AUDIT_FAILED", "Failed to fetch MDM audit history");
+    }
+  });
+
+  app.get("/api/mdm/:domain", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const domain = String(req.params.domain ?? "");
+      if (!isMdmDomain(domain)) return sendError(res, 404, "MDM_DOMAIN_NOT_FOUND", "Unknown MDM domain");
+      return sendOk(res, await listMdmDomain(domain, getActiveOrganizationId(), String(req.query.search ?? "")));
+    } catch (error) {
+      console.error("Error listing MDM domain:", error);
+      return sendError(res, 500, "MDM_LIST_FAILED", "Failed to fetch MDM records");
+    }
+  });
+
+  app.post("/api/mdm/:domain", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const domain = String(req.params.domain ?? "");
+      if (!isMdmDomain(domain)) return sendError(res, 404, "MDM_DOMAIN_NOT_FOUND", "Unknown MDM domain");
+      return sendOk(
+        res,
+        await createMdmDomainRecord(domain, getActiveOrganizationId(), req.body ?? {}, sessionUserId(req)),
+        201,
+      );
+    } catch (error) {
+      console.error("Error creating MDM record:", error);
+      const pgCode = pgErrorCode(error);
+      if (pgCode === "23505") {
+        return sendError(res, 409, "MDM_DUPLICATE_RECORD", "A Master Data record with this key already exists.");
+      }
+      return sendError(res, 500, "MDM_CREATE_FAILED", error instanceof Error ? error.message : "Failed to create MDM record");
+    }
+  });
+
+  app.patch("/api/mdm/:domain/:id", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const domain = String(req.params.domain ?? "");
+      if (!isMdmDomain(domain)) return sendError(res, 404, "MDM_DOMAIN_NOT_FOUND", "Unknown MDM domain");
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid MDM record ID");
+      const updated = await updateMdmDomainRecord(domain, getActiveOrganizationId(), id, req.body ?? {}, sessionUserId(req));
+      if (!updated) return sendError(res, 404, "NOT_FOUND", "MDM record not found");
+      return sendOk(res, updated);
+    } catch (error) {
+      console.error("Error updating MDM record:", error);
+      const pgCode = pgErrorCode(error);
+      if (pgCode === "23505") {
+        return sendError(res, 409, "MDM_DUPLICATE_RECORD", "A Master Data record with this key already exists.");
+      }
+      return sendError(res, 500, "MDM_UPDATE_FAILED", "Failed to update MDM record");
+    }
+  });
 
   const registerMasterDataCrud = <TInsert>(
     basePath: string,

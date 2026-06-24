@@ -413,6 +413,296 @@ export const carriers = pgTable(
   (t) => [uniqueIndex("carriers_org_code_uidx").on(t.organizationId, t.code)],
 );
 
+// Master Data Management / Control Centre typed domains.
+// These tables sit beside the legacy master-data tables while transactions migrate to MDM.
+export const mdmLegalEntities = pgTable(
+  "mdm_legal_entities",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    registrationNumber: text("registration_number"),
+    taxNumber: text("tax_number"),
+    defaultCurrencyCode: text("default_currency_code").default("ZAR"),
+    countryCode: text("country_code").default("ZA"),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_legal_entities_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const mdmSites = pgTable(
+  "mdm_sites",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    legalEntityId: integer("legal_entity_id").references(() => mdmLegalEntities.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    siteType: text("site_type").default("branch"),
+    address: text("address"),
+    defaultWarehouseId: integer("default_warehouse_id"),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_sites_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const mdmCostCentres = pgTable(
+  "mdm_cost_centres",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    departmentId: integer("department_id").references(() => departments.id),
+    glAccountCode: text("gl_account_code"),
+    ownerUserId: integer("owner_user_id").references(() => users.id),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_cost_centres_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const mdmSupplierDocuments = pgTable("mdm_supplier_documents", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+  supplierId: integer("supplier_id").notNull(),
+  documentType: text("document_type").notNull(),
+  documentId: integer("document_id"),
+  status: text("status").default("pending"),
+  expiryDate: timestamp("expiry_date"),
+  requiredForPo: boolean("required_for_po").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const mdmSupplierItems = pgTable(
+  "mdm_supplier_items",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    supplierId: integer("supplier_id").notNull(),
+    itemId: integer("item_id").notNull(),
+    supplierItemCode: text("supplier_item_code"),
+    preferred: boolean("preferred").default(false),
+    leadTimeDays: integer("lead_time_days"),
+    minOrderQuantity: real("min_order_quantity").default(1),
+    defaultPrice: real("default_price"),
+    currencyCode: text("currency_code").default("ZAR"),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_supplier_items_org_supplier_item_uidx").on(t.organizationId, t.supplierId, t.itemId)],
+);
+
+export const mdmItemCategories = pgTable(
+  "mdm_item_categories",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    parentId: integer("parent_id"),
+    defaultGlAccountCode: text("default_gl_account_code"),
+    defaultTaxCodeId: integer("default_tax_code_id").references(() => taxCodes.id),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_item_categories_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const mdmUomClasses = pgTable(
+  "mdm_uom_classes",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    baseUomId: integer("base_uom_id").references(() => unitsOfMeasure.id),
+    precision: integer("precision").default(2),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_uom_classes_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const mdmUomConversions = pgTable("mdm_uom_conversions", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+  fromUomId: integer("from_uom_id").notNull().references(() => unitsOfMeasure.id),
+  toUomId: integer("to_uom_id").notNull().references(() => unitsOfMeasure.id),
+    itemId: integer("item_id"),
+  factor: real("factor").notNull().default(1),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const mdmExchangeRates = pgTable(
+  "mdm_exchange_rates",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    fromCurrencyCode: text("from_currency_code").notNull(),
+    toCurrencyCode: text("to_currency_code").notNull().default("ZAR"),
+    rate: real("rate").notNull(),
+    source: text("source").default("manual"),
+    effectiveDate: timestamp("effective_date").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at"),
+    manualOverrideAllowed: boolean("manual_override_allowed").default(false),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_exchange_rates_org_pair_date_uidx").on(t.organizationId, t.fromCurrencyCode, t.toCurrencyCode, t.effectiveDate)],
+);
+
+export const mdmProcurementPolicies = pgTable(
+  "mdm_procurement_policies",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    policyType: text("policy_type").notNull().default("requisition"),
+    config: jsonb("config").$type<Record<string, unknown>>().default({}),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_procurement_policies_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const mdmApprovalRules = pgTable(
+  "mdm_approval_rules",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    entityType: text("entity_type").notNull(),
+    minLocalValue: real("min_local_value").default(0),
+    maxLocalValue: real("max_local_value"),
+    departmentId: integer("department_id").references(() => departments.id),
+    costCentreId: integer("cost_centre_id").references(() => mdmCostCentres.id),
+    categoryCode: text("category_code"),
+    supplierRisk: text("supplier_risk"),
+    approverRole: text("approver_role"),
+    approvalLevel: integer("approval_level").default(1),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_approval_rules_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const mdmDocumentSequences = pgTable(
+  "mdm_document_sequences",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    documentType: text("document_type").notNull(),
+    prefix: text("prefix").notNull(),
+    legalEntityId: integer("legal_entity_id").references(() => mdmLegalEntities.id),
+    siteId: integer("site_id").references(() => mdmSites.id),
+    year: integer("year"),
+    nextNumber: integer("next_number").default(1).notNull(),
+    padding: integer("padding").default(6).notNull(),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_document_sequences_org_doc_uidx").on(t.organizationId, t.documentType, t.prefix)],
+);
+
+export const mdmDocumentTemplates = pgTable("mdm_document_templates", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+  documentType: text("document_type").notNull(),
+  name: text("name").notNull(),
+  logoUrl: text("logo_url"),
+  termsText: text("terms_text"),
+  footerText: text("footer_text"),
+  bankingDetails: text("banking_details"),
+  registrationDetails: text("registration_details"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const mdmGlMappings = pgTable(
+  "mdm_gl_mappings",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    mappingType: text("mapping_type").notNull(),
+    sourceType: text("source_type").notNull(),
+    sourceId: text("source_id").notNull(),
+    glAccountCode: text("gl_account_code").notNull(),
+    costCentreId: integer("cost_centre_id").references(() => mdmCostCentres.id),
+    active: boolean("active").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("mdm_gl_mappings_org_source_uidx").on(t.organizationId, t.mappingType, t.sourceType, t.sourceId)],
+);
+
+export const mdmAuditLogs = pgTable("mdm_audit_logs", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+  domain: text("domain").notNull(),
+  recordId: integer("record_id"),
+  action: text("action").notNull(),
+  summary: text("summary"),
+  before: jsonb("before").$type<Record<string, unknown> | null>(),
+  after: jsonb("after").$type<Record<string, unknown> | null>(),
+  performedBy: integer("performed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const mdmImportBatches = pgTable("mdm_import_batches", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+  domain: text("domain").notNull(),
+  fileName: text("file_name").notNull(),
+  status: text("status").default("validating"),
+  totalRows: integer("total_rows").default(0),
+  validRows: integer("valid_rows").default(0),
+  invalidRows: integer("invalid_rows").default(0),
+  validationReport: jsonb("validation_report").$type<Record<string, unknown>>().default({}),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const mdmDataQualityIssues = pgTable(
+  "mdm_data_quality_issues",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+    domain: text("domain").notNull(),
+    severity: text("severity").notNull().default("warning"),
+    issueCode: text("issue_code").notNull(),
+    title: text("title").notNull(),
+    message: text("message").notNull(),
+    affectedEntityType: text("affected_entity_type"),
+    affectedEntityId: integer("affected_entity_id"),
+    recommendedAction: text("recommended_action"),
+    status: text("status").default("open"),
+    lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at"),
+  },
+  (t) => [uniqueIndex("mdm_dq_org_code_entity_uidx").on(t.organizationId, t.issueCode, t.affectedEntityType, t.affectedEntityId)],
+);
+
 export const insertUnitOfMeasureSchema = createInsertSchema(unitsOfMeasure).omit({
   id: true,
   createdAt: true,
@@ -452,6 +742,77 @@ export const insertCarrierSchema = createInsertSchema(carriers).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+});
+
+export const insertMdmLegalEntitySchema = createInsertSchema(mdmLegalEntities).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmSiteSchema = createInsertSchema(mdmSites).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMdmCostCentreSchema = createInsertSchema(mdmCostCentres).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmSupplierDocumentSchema = createInsertSchema(mdmSupplierDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmSupplierItemSchema = createInsertSchema(mdmSupplierItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmItemCategorySchema = createInsertSchema(mdmItemCategories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmUomClassSchema = createInsertSchema(mdmUomClasses).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMdmUomConversionSchema = createInsertSchema(mdmUomConversions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmExchangeRateSchema = createInsertSchema(mdmExchangeRates).omit({ id: true, createdAt: true });
+export const insertMdmProcurementPolicySchema = createInsertSchema(mdmProcurementPolicies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmApprovalRuleSchema = createInsertSchema(mdmApprovalRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmDocumentSequenceSchema = createInsertSchema(mdmDocumentSequences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmDocumentTemplateSchema = createInsertSchema(mdmDocumentTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmGlMappingSchema = createInsertSchema(mdmGlMappings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMdmAuditLogSchema = createInsertSchema(mdmAuditLogs).omit({ id: true, createdAt: true });
+export const insertMdmImportBatchSchema = createInsertSchema(mdmImportBatches).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+export const insertMdmDataQualityIssueSchema = createInsertSchema(mdmDataQualityIssues).omit({
+  id: true,
+  createdAt: true,
+  lastSeenAt: true,
+  resolvedAt: true,
 });
 
 // Supplier schema
@@ -3075,3 +3436,21 @@ export type AssetEvent = typeof assetEvents.$inferSelect;
 export type GasAssetProfile = typeof gasAssetProfiles.$inferSelect;
 export type GasProduct = typeof gasProducts.$inferSelect;
 export type GasExchangeTransaction = typeof gasExchangeTransactions.$inferSelect;
+
+export type MdmLegalEntity = typeof mdmLegalEntities.$inferSelect;
+export type MdmSite = typeof mdmSites.$inferSelect;
+export type MdmCostCentre = typeof mdmCostCentres.$inferSelect;
+export type MdmSupplierDocument = typeof mdmSupplierDocuments.$inferSelect;
+export type MdmSupplierItem = typeof mdmSupplierItems.$inferSelect;
+export type MdmItemCategory = typeof mdmItemCategories.$inferSelect;
+export type MdmUom = typeof unitsOfMeasure.$inferSelect;
+export type MdmUomClass = typeof mdmUomClasses.$inferSelect;
+export type MdmUomConversion = typeof mdmUomConversions.$inferSelect;
+export type MdmCurrency = typeof currencies.$inferSelect;
+export type MdmExchangeRate = typeof mdmExchangeRates.$inferSelect;
+export type MdmTaxCode = typeof taxCodes.$inferSelect;
+export type MdmApprovalRule = typeof mdmApprovalRules.$inferSelect;
+export type MdmDocumentSequence = typeof mdmDocumentSequences.$inferSelect;
+export type MdmGlMapping = typeof mdmGlMappings.$inferSelect;
+export type MdmDataQualityIssue = typeof mdmDataQualityIssues.$inferSelect;
+export type MdmImportBatch = typeof mdmImportBatches.$inferSelect;

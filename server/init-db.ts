@@ -731,6 +731,229 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         updated_by INTEGER,
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS mdm_legal_entities (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        registration_number TEXT,
+        tax_number TEXT,
+        default_currency_code TEXT DEFAULT 'ZAR',
+        country_code TEXT DEFAULT 'ZA',
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_sites (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        legal_entity_id INTEGER,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        site_type TEXT DEFAULT 'branch',
+        address TEXT,
+        default_warehouse_id INTEGER,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_cost_centres (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        department_id INTEGER,
+        gl_account_code TEXT,
+        owner_user_id INTEGER,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_supplier_documents (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        supplier_id INTEGER NOT NULL,
+        document_type TEXT NOT NULL,
+        document_id INTEGER,
+        status TEXT DEFAULT 'pending',
+        expiry_date TIMESTAMP,
+        required_for_po BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_supplier_items (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        supplier_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        supplier_item_code TEXT,
+        preferred BOOLEAN DEFAULT FALSE,
+        lead_time_days INTEGER,
+        min_order_quantity REAL DEFAULT 1,
+        default_price REAL,
+        currency_code TEXT DEFAULT 'ZAR',
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_item_categories (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        default_gl_account_code TEXT,
+        default_tax_code_id INTEGER,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_uom_classes (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        base_uom_id INTEGER,
+        precision INTEGER DEFAULT 2,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_uom_conversions (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        from_uom_id INTEGER NOT NULL,
+        to_uom_id INTEGER NOT NULL,
+        item_id INTEGER,
+        factor REAL DEFAULT 1 NOT NULL,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_exchange_rates (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        from_currency_code TEXT NOT NULL,
+        to_currency_code TEXT DEFAULT 'ZAR' NOT NULL,
+        rate REAL NOT NULL,
+        source TEXT DEFAULT 'manual',
+        effective_date TIMESTAMP DEFAULT NOW() NOT NULL,
+        expires_at TIMESTAMP,
+        manual_override_allowed BOOLEAN DEFAULT FALSE,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_procurement_policies (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        policy_type TEXT DEFAULT 'requisition' NOT NULL,
+        config JSONB DEFAULT '{}'::jsonb,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_approval_rules (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        min_local_value REAL DEFAULT 0,
+        max_local_value REAL,
+        department_id INTEGER,
+        cost_centre_id INTEGER,
+        category_code TEXT,
+        supplier_risk TEXT,
+        approver_role TEXT,
+        approval_level INTEGER DEFAULT 1,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_document_sequences (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        document_type TEXT NOT NULL,
+        prefix TEXT NOT NULL,
+        legal_entity_id INTEGER,
+        site_id INTEGER,
+        year INTEGER,
+        next_number INTEGER DEFAULT 1 NOT NULL,
+        padding INTEGER DEFAULT 6 NOT NULL,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_document_templates (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        document_type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        logo_url TEXT,
+        terms_text TEXT,
+        footer_text TEXT,
+        banking_details TEXT,
+        registration_details TEXT,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_gl_mappings (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        mapping_type TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        gl_account_code TEXT NOT NULL,
+        cost_centre_id INTEGER,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_audit_logs (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        domain TEXT NOT NULL,
+        record_id INTEGER,
+        action TEXT NOT NULL,
+        summary TEXT,
+        before JSONB,
+        after JSONB,
+        performed_by INTEGER,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_import_batches (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        domain TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        status TEXT DEFAULT 'validating',
+        total_rows INTEGER DEFAULT 0,
+        valid_rows INTEGER DEFAULT 0,
+        invalid_rows INTEGER DEFAULT 0,
+        validation_report JSONB DEFAULT '{}'::jsonb,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        completed_at TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS mdm_data_quality_issues (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        domain TEXT NOT NULL,
+        severity TEXT DEFAULT 'warning' NOT NULL,
+        issue_code TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        affected_entity_type TEXT,
+        affected_entity_id INTEGER,
+        recommended_action TEXT,
+        status TEXT DEFAULT 'open',
+        last_seen_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        resolved_at TIMESTAMP
+      );
     `);
 
     await pool.query(`
@@ -835,6 +1058,18 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         ON billing_webhook_events (provider, provider_event_id);
       CREATE UNIQUE INDEX IF NOT EXISTS company_config_org_key_scope_uidx
         ON company_configuration_settings (organization_id, key, scope, COALESCE(scope_id, ''));
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_legal_entities_org_code_uidx ON mdm_legal_entities (organization_id, code);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_sites_org_code_uidx ON mdm_sites (organization_id, code);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_cost_centres_org_code_uidx ON mdm_cost_centres (organization_id, code);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_supplier_items_org_supplier_item_uidx ON mdm_supplier_items (organization_id, supplier_id, item_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_item_categories_org_code_uidx ON mdm_item_categories (organization_id, code);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_uom_classes_org_code_uidx ON mdm_uom_classes (organization_id, code);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_exchange_rates_org_pair_date_uidx ON mdm_exchange_rates (organization_id, from_currency_code, to_currency_code, effective_date);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_procurement_policies_org_code_uidx ON mdm_procurement_policies (organization_id, code);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_approval_rules_org_code_uidx ON mdm_approval_rules (organization_id, code);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_document_sequences_org_doc_uidx ON mdm_document_sequences (organization_id, document_type, prefix);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_gl_mappings_org_source_uidx ON mdm_gl_mappings (organization_id, mapping_type, source_type, source_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS mdm_dq_org_code_entity_uidx ON mdm_data_quality_issues (organization_id, issue_code, COALESCE(affected_entity_type, ''), COALESCE(affected_entity_id, 0));
     `);
     console.log('Professional supply chain tables and columns ready');
   } catch (err) {

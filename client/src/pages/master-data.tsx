@@ -87,6 +87,35 @@ const MASTER_ENDPOINTS = {
 
 type MasterEndpoint = (typeof MASTER_ENDPOINTS)[keyof typeof MASTER_ENDPOINTS];
 
+type MdmQualityIssue = {
+  domain: string;
+  severity: "info" | "warning" | "error";
+  issueCode: string;
+  title: string;
+  message: string;
+  affectedEntityType?: string | null;
+  affectedEntityId?: number | null;
+  recommendedAction?: string | null;
+};
+
+type MdmHealthSection = {
+  key: string;
+  label: string;
+  records: number;
+  status: "ready" | "needs_setup" | string;
+  connectedTo: string[];
+};
+
+type MdmControlCentreHealth = {
+  title: string;
+  defaultCurrencyCode: string;
+  healthScore: number;
+  issueCounts: { info: number; warning: number; error: number };
+  metrics: Record<string, number>;
+  sections: MdmHealthSection[];
+  topIssues: MdmQualityIssue[];
+};
+
 type MasterExtraField = {
   key: keyof BaseMasterRecord;
   label: string;
@@ -841,12 +870,102 @@ function ApprovalPoliciesRedirectCard() {
   );
 }
 
+function severityVariant(severity: MdmQualityIssue["severity"]): "default" | "secondary" | "destructive" | "outline" {
+  if (severity === "error") return "destructive";
+  if (severity === "warning") return "secondary";
+  return "outline";
+}
+
+function ControlCentreIssuePanel({
+  issues,
+  onScan,
+  isScanning,
+}: {
+  issues: MdmQualityIssue[];
+  onScan: () => void;
+  isScanning: boolean;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+        <div>
+          <CardTitle className="text-base">Data quality workbench</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            These checks connect setup gaps to the workflows they can break before requisitions, POs, receipts, AP, or
+            reporting fail downstream.
+          </p>
+        </div>
+        <Button type="button" variant="outline" className="gap-2" onClick={onScan} disabled={isScanning}>
+          <RefreshCw className={`h-4 w-4 ${isScanning ? "animate-spin" : ""}`} />
+          Scan controls
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {issues.length === 0 ? (
+          <div className="rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+            No open Master Data quality issues were found. Keep scanning after supplier, item, tax, FX, GL, or warehouse
+            setup changes.
+          </div>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {issues.slice(0, 8).map((issue, index) => (
+              <div key={`${issue.issueCode}-${issue.affectedEntityType ?? "global"}-${issue.affectedEntityId ?? index}`} className="rounded-md border bg-background p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={severityVariant(issue.severity)}>{issue.severity}</Badge>
+                      <Badge variant="outline">{issue.domain}</Badge>
+                    </div>
+                    <div className="mt-2 font-medium">{issue.title}</div>
+                  </div>
+                  <span className="text-xs font-medium text-muted-foreground">{issue.issueCode}</span>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">{issue.message}</p>
+                {issue.recommendedAction ? <p className="mt-2 text-sm">{issue.recommendedAction}</p> : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function MasterDataPage() {
+  const { toast } = useToast();
   const [location, setLocation] = useLocation();
   const isLgUp = useMediaQuery("(min-width: 1024px)");
   const activeSection = asSectionSlug(location.split("/")[3], MASTER_DATA_SECTION_SLUGS, "units");
   const activeConfig = sectionBySlug(activeSection);
   const ActiveIcon = activeConfig.icon;
+
+  const mdmHealth = useQuery({
+    queryKey: ["/api/mdm/control-centre/health"],
+    queryFn: () => requestJson<MdmControlCentreHealth>("GET", "/api/mdm/control-centre/health"),
+    staleTime: 60_000,
+  });
+
+  const dataQualityIssues = useQuery({
+    queryKey: ["/api/mdm/data-quality/issues"],
+    queryFn: () => requestJson<MdmQualityIssue[]>("GET", "/api/mdm/data-quality/issues"),
+    staleTime: 60_000,
+  });
+
+  const scanDataQuality = useMutation({
+    mutationFn: () => requestJson("POST", "/api/mdm/data-quality/scan", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdm/control-centre/health"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdm/data-quality/issues"] });
+      toast({ title: "Master Data controls scanned" });
+    },
+    onError: (e) => {
+      toast({
+        title: "Master Data scan failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    },
+  });
 
   const summaryQueries = useQuery({
     queryKey: ["master-data-summary"],
@@ -874,6 +993,11 @@ export default function MasterDataPage() {
   const totalRecords = summaryRows.reduce((sum, row) => sum + row.total, 0);
   const totalActive = summaryRows.reduce((sum, row) => sum + row.active, 0);
   const setupGaps = summaryRows.filter((row) => row.total === 0).length;
+  const health = mdmHealth.data;
+  const issues = dataQualityIssues.data ?? health?.topIssues ?? [];
+  const issueCount = health
+    ? health.issueCounts.error + health.issueCounts.warning + health.issueCounts.info
+    : issues.length;
 
   useEffect(() => {
     if (!isLgUp) {
@@ -893,16 +1017,16 @@ export default function MasterDataPage() {
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6" data-testid="master-data-page">
       <PageHeader
-        title="Master Data"
-        subtitle="Control shared setup data used by procurement, finance, operations, inventory, reporting, and supplier workflows."
+        title="Master Data & Control Centre"
+        subtitle="The single source of truth for suppliers, items, units, currency, tax, approvals, warehouses, documents, finance mapping, and reports."
       />
       <div className="grid gap-3 md:grid-cols-4">
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
             <Database className="h-8 w-8 text-primary" />
             <div>
-              <div className="text-2xl font-semibold">{summaryQueries.isLoading ? "-" : totalRecords}</div>
-              <div className="text-sm text-muted-foreground">reference records</div>
+              <div className="text-2xl font-semibold">{mdmHealth.isLoading ? "-" : health?.healthScore ?? 0}%</div>
+              <div className="text-sm text-muted-foreground">data health score</div>
             </div>
           </CardContent>
         </Card>
@@ -911,7 +1035,7 @@ export default function MasterDataPage() {
             <CheckCircle2 className="h-8 w-8 text-primary" />
             <div>
               <div className="text-2xl font-semibold">{summaryQueries.isLoading ? "-" : totalActive}</div>
-              <div className="text-sm text-muted-foreground">active values</div>
+              <div className="text-sm text-muted-foreground">active legacy values</div>
             </div>
           </CardContent>
         </Card>
@@ -919,8 +1043,8 @@ export default function MasterDataPage() {
           <CardContent className="flex items-center gap-3 p-4">
             <Layers3 className="h-8 w-8 text-primary" />
             <div>
-              <div className="text-2xl font-semibold">{MASTER_SECTIONS.length}</div>
-              <div className="text-sm text-muted-foreground">setup domains</div>
+              <div className="text-2xl font-semibold">{health?.defaultCurrencyCode ?? "ZAR"}</div>
+              <div className="text-sm text-muted-foreground">company currency</div>
             </div>
           </CardContent>
         </Card>
@@ -928,12 +1052,50 @@ export default function MasterDataPage() {
           <CardContent className="flex items-center gap-3 p-4">
             <AlertTriangle className="h-8 w-8 text-primary" />
             <div>
-              <div className="text-2xl font-semibold">{summaryQueries.isLoading ? "-" : setupGaps}</div>
-              <div className="text-sm text-muted-foreground">empty lists</div>
+              <div className="text-2xl font-semibold">{mdmHealth.isLoading ? "-" : issueCount || setupGaps}</div>
+              <div className="text-sm text-muted-foreground">open control issues</div>
             </div>
           </CardContent>
         </Card>
       </div>
+      {health?.sections?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Control Centre map</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Each setup domain below feeds defaults, validation, approval routing, and reporting dimensions elsewhere in
+              the app.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {health.sections.map((section) => (
+              <div key={section.key} className="rounded-md border bg-background p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{section.label}</div>
+                    <div className="text-sm text-muted-foreground">{section.records} active/control records</div>
+                  </div>
+                  <Badge variant={section.status === "ready" ? "secondary" : "outline"}>
+                    {section.status === "ready" ? "Ready" : "Needs setup"}
+                  </Badge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {section.connectedTo.map((target) => (
+                    <Badge key={target} variant="outline" className="font-normal">
+                      {target}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+      <ControlCentreIssuePanel
+        issues={issues}
+        onScan={() => scanDataQuality.mutate()}
+        isScanning={scanDataQuality.isPending || mdmHealth.isFetching || dataQualityIssues.isFetching}
+      />
       <Tabs
         value={activeSection}
         onValueChange={(value) => setLocation(APP_ROUTES.admin.masterDataSection(value as typeof activeSection))}
