@@ -14,6 +14,7 @@
     "local:serve": "node scripts/local-serve-static.mjs",
     "local:doctor": "node scripts/local-doctor.mjs",
     "audit:professional": "node scripts/audit-professional-readiness.mjs",
+    "audit:production": "node scripts/audit-production-readiness.mjs",
     "repair:win-install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/repair-windows-install.ps1",
     "docs:validate": "node scripts/validate-readme.mjs",
     "test:runtime": "bash scripts/test-runtime.sh",
