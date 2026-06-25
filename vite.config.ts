@@ -46,47 +46,56 @@ export default defineConfig({
       }
     : undefined,
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "client", "src"),
-      "@shared": path.resolve(__dirname, "shared"),
-      "@assets": path.resolve(__dirname, "attached_assets"),
+    alias: [
+      { find: "@", replacement: path.resolve(__dirname, "client", "src") },
+      { find: "@shared", replacement: path.resolve(__dirname, "shared") },
+      { find: "@assets", replacement: path.resolve(__dirname, "attached_assets") },
       ...(isManagedCodexWorktree
-        ? {
-            "date-fns": path.resolve(__dirname, "node_modules", "date-fns", "index.mjs"),
-            "date-fns/locale": path.resolve(__dirname, "node_modules", "date-fns", "locale.mjs"),
-            react: path.resolve(__dirname, "node_modules", "react", "cjs", "react.development.js"),
-            "react/jsx-runtime": path.resolve(
-              __dirname,
-              "node_modules",
-              "react",
-              "cjs",
-              "react-jsx-runtime.development.js",
-            ),
-            "react/jsx-dev-runtime": path.resolve(
-              __dirname,
-              "node_modules",
-              "react",
-              "cjs",
-              "react-jsx-dev-runtime.development.js",
-            ),
-            "react-dom": path.resolve(__dirname, "node_modules", "react-dom", "cjs", "react-dom.development.js"),
-            scheduler: path.resolve(
-              __dirname,
-              "node_modules",
-              "scheduler",
-              "cjs",
-              "scheduler.development.js",
-            ),
-            "react-day-picker": path.resolve(
-              __dirname,
-              "node_modules",
-              "react-day-picker",
-              "dist",
-              "index.esm.js",
-            ),
-          }
-        : {}),
-    },
+        ? [
+            { find: "date-fns", replacement: path.resolve(__dirname, "node_modules", "date-fns", "index.mjs") },
+            {
+              find: "date-fns/locale",
+              replacement: path.resolve(__dirname, "node_modules", "date-fns", "locale.mjs"),
+            },
+            {
+              find: "react/jsx-runtime",
+              replacement: path.resolve(
+                __dirname,
+                "node_modules",
+                "react",
+                "cjs",
+                "react-jsx-runtime.development.js",
+              ),
+            },
+            {
+              find: "react/jsx-dev-runtime",
+              replacement: path.resolve(
+                __dirname,
+                "node_modules",
+                "react",
+                "cjs",
+                "react-jsx-dev-runtime.development.js",
+              ),
+            },
+            {
+              find: /^react$/,
+              replacement: path.resolve(__dirname, "node_modules", "react", "cjs", "react.development.js"),
+            },
+            {
+              find: /^react-dom$/,
+              replacement: path.resolve(__dirname, "node_modules", "react-dom", "cjs", "react-dom.development.js"),
+            },
+            {
+              find: /^scheduler$/,
+              replacement: path.resolve(__dirname, "node_modules", "scheduler", "cjs", "scheduler.development.js"),
+            },
+            {
+              find: "react-day-picker",
+              replacement: path.resolve(__dirname, "node_modules", "react-day-picker", "dist", "index.esm.js"),
+            },
+          ]
+        : []),
+    ],
   },
   root: path.resolve(__dirname, "client"),
   build: {

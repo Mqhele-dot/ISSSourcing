@@ -40,6 +40,9 @@ See **[`CODESPACES.md`](CODESPACES.md)** and `npm run codespaces:up`.
 | `npm run check` | TypeScript (`tsc`) |
 | `npm run verify:core` | `check` + client stabilization + diagnostics self-checks + **`test:functional-audit`** + Playwright E2E (local “core” bar; needs DB) |
 | `npm run release:gate` | Full production-readiness validation gate (includes stabilization + functional audit + E2E in CI) |
+| `npm run local:up` | Start or reuse the local app, wait for `/api/ready` and `/auth`, then hold the dev server open |
+| `npm run local:doctor` | Probe an already running local app and fail fast if `/api/ready` or `/auth` is unhealthy |
+| `npm run test:local:url` | Log in and smoke-test a single route such as `/operations/control-tower` or `/m/counts` |
 | `npm run db:push` | Apply Drizzle schema to Postgres |
 | `npm run db:seed` / `npm run demo:reset` | Seed data |
 | `npm run seed:functional-qa` | Deterministic QA dataset (inventory/AP/PO/reports); used by **`test:functional-audit`** and E2E global setup |

@@ -4,22 +4,25 @@ import process from "node:process";
 import { probeUrl } from "./e2e-http-probe.mjs";
 
 const PORT = process.env.PORT || "5000";
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${PORT}`;
-const isRemoteTarget = /^https?:\/\/(?!127\.0\.0\.1(?::|\/|$)|localhost(?::|\/|$))/i.test(BASE_URL);
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || process.env.BASE_URL || `http://127.0.0.1:${PORT}`;
 const READY_URL = `${BASE_URL}/api/ready`;
 const AUTH_URL = `${BASE_URL}/auth`;
-const START_TIMEOUT_MS = Number(process.env.LOCAL_BROWSER_WALKTHROUGH_TIMEOUT_MS || 120_000);
+const TARGET_PATH = process.env.LOCAL_BROWSER_TEST_PATH || "/operations/control-tower";
+const EXPECT_TEXT = process.env.LOCAL_BROWSER_EXPECT_TEXT || "";
+const START_TIMEOUT_MS = Number(process.env.LOCAL_BROWSER_URL_TIMEOUT_MS || 120_000);
 const PLAYWRIGHT_TIMEOUT_MS = Number(process.env.LOCAL_BROWSER_PLAYWRIGHT_TIMEOUT_MS || 150_000);
-const SCREENSHOTS_DIR =
-  process.env.BROWSER_WALKTHROUGH_SCREENSHOTS_DIR || "test-results/local-browser-walkthrough";
+const SCREENSHOTS_DIR = process.env.BROWSER_WALKTHROUGH_SCREENSHOTS_DIR || "test-results/local-url-smoke";
 const DEV_COMMAND = process.env.LOCAL_BROWSER_DEV_COMMAND || "npm run dev";
 const BROWSER_CHANNEL = process.env.PLAYWRIGHT_BROWSER_CHANNEL;
+const isRemoteTarget = /^https?:\/\/(?!127\.0\.0\.1(?::|\/|$)|localhost(?::|\/|$))/i.test(BASE_URL);
 
 let devProc = null;
 let devExitInfo = null;
 
 function formatProbe(label, result) {
-  if (result.ok) return `${label}: ok status=${result.status} (${result.elapsedMs}ms)`;
+  if (result.ok) {
+    return `${label}: ok status=${result.status} (${result.elapsedMs}ms)`;
+  }
   return `${label}: FAIL error=${result.error ?? "unknown"} (${result.elapsedMs}ms)`;
 }
 
@@ -47,8 +50,11 @@ async function waitForFullApp() {
     }
 
     ready = await probeUrl(READY_URL, { timeoutMs: 5_000 });
-    auth = ready.ok ? await probeUrl(AUTH_URL, { timeoutMs: 15_000 }) : auth;
-    if (ready.ok && auth.ok) return;
+    auth = await probeUrl(AUTH_URL, { timeoutMs: 15_000 });
+
+    if (ready.ok && auth.ok) {
+      return;
+    }
 
     await new Promise((resolve) => setTimeout(resolve, 750));
   }
@@ -80,8 +86,12 @@ async function stopDevServer() {
 let exitCode = 1;
 
 try {
-  console.log("\nLocal browser walkthrough");
+  console.log("\nLocal URL smoke");
   console.log(`Base URL: ${BASE_URL}`);
+  console.log(`Target path: ${TARGET_PATH}`);
+  if (EXPECT_TEXT) {
+    console.log(`Expected text: ${EXPECT_TEXT}`);
+  }
   console.log(`Browser: ${BROWSER_CHANNEL}`);
   console.log(`Screenshots: ${SCREENSHOTS_DIR}\n`);
 
@@ -99,21 +109,14 @@ try {
       ].join("\n"),
     );
   } else {
-    console.log("Starting the full local app for browser testing.");
+    console.log("Starting the full local app for route testing.");
     spawnDevServer();
     await waitForFullApp();
   }
 
   const result = spawnSync(
     "npx",
-    [
-      "playwright",
-      "test",
-      "-c",
-      "playwright.local.config.ts",
-      "e2e/local-browser-walkthrough.spec.ts",
-      "--reporter=line",
-    ],
+    ["playwright", "test", "-c", "playwright.local.config.ts", "e2e/local-url-smoke.spec.ts", "--reporter=line"],
     {
       stdio: "inherit",
       shell: true,
@@ -125,6 +128,8 @@ try {
         PLAYWRIGHT_EXTERNAL_DEV_SERVER: "1",
         PLAYWRIGHT_BROWSER_CHANNEL: BROWSER_CHANNEL,
         BROWSER_WALKTHROUGH_SCREENSHOTS_DIR: SCREENSHOTS_DIR,
+        LOCAL_BROWSER_TEST_PATH: TARGET_PATH,
+        LOCAL_BROWSER_EXPECT_TEXT: EXPECT_TEXT,
       },
     },
   );
@@ -133,7 +138,7 @@ try {
     throw result.error;
   }
   if (result.signal) {
-    throw new Error(`Browser walkthrough stopped before completion (${result.signal}).`);
+    throw new Error(`Local URL smoke stopped before completion (${result.signal}).`);
   }
 
   exitCode = result.status ?? 1;
