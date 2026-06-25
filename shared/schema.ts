@@ -2922,6 +2922,9 @@ export const insertApInvoiceCaptureSchema = createInsertSchema(apInvoiceCaptures
   reviewedAt: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  issueDate: z.coerce.date().optional().nullable(),
+  dueDate: z.coerce.date().optional().nullable(),
 }).partial({
   documentId: true,
   supplierId: true,

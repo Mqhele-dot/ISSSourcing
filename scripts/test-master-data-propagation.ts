@@ -198,7 +198,21 @@ async function main() {
     exitTest(1);
     return;
   }
-  const itemIdForWrites = Number(firstItem.id);
+  let itemIdForWrites = Number(firstItem.id);
+  const itemSku = String(firstItem.sku ?? "");
+  if (itemSku) {
+    const inventoryDetailRes = await apiJsonRequest(`/inventory/${encodeURIComponent(itemSku)}`, {
+      method: "GET",
+      cookie: adminCookie,
+    });
+    if (inventoryDetailRes.status === 200) {
+      const detail = asRecord(unwrapData<unknown>(inventoryDetailRes.json));
+      const detailId = Number(detail.id ?? 0);
+      if (Number.isFinite(detailId) && detailId > 0) {
+        itemIdForWrites = detailId;
+      }
+    }
+  }
 
   const directPoRes = await apiJsonRequest("/purchase-orders", {
     method: "POST",

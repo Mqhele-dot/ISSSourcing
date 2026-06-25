@@ -320,6 +320,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           requisitionInput.requiredDate = parsedRequiredDate;
         }
       }
+      await applySupplierDefaultsToPurchaseOrder(requisitionInput);
       const requisitionCurrency = await resolveActiveCurrencyForRequisition(requisitionInput.currencyCode);
       if (!requisitionCurrency.ok) {
         return sendError(res, 400, requisitionCurrency.code, requisitionCurrency.message);

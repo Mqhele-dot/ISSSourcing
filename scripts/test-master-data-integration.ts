@@ -2,7 +2,7 @@
  * Master data + cross-module integration smoke test.
  *
  * Covers (API-only, against a running server):
- * - Active Master Data currency accepted on PO commercial update + revision snapshot
+ * - Supplier/contract currency mismatch is blocked; allowed commercial fields update + revision snapshot
  * - Supplier contract commercial FKs applied to PO (mirror client "apply contract")
  * - PO send with optional shipment.create; receive targets shipment_id; logistics delivered
  * - Operational receive creates idempotent AP receipt and upgrades invoice match to three_way
@@ -126,6 +126,22 @@ async function main() {
   }
 
   let contractId = 0;
+  const createContractRes = await apiJsonRequest("/contracts", {
+    method: "POST",
+    cookie: adminCookie,
+    body: {
+      supplierId,
+      title: `MDI contract ${Date.now().toString().slice(-6)}`,
+      contractType: "master",
+      startDate: new Date().toISOString(),
+      status: "active",
+      currency: "USD",
+    },
+  });
+  if (!expectStatus("POST /api/contracts", 201, createContractRes.status)) failures++;
+  const createdCt = asRecord(unwrapData<unknown>(createContractRes.json));
+  contractId = Number(createdCt.id ?? 0);
+/*
   const contractsRes = await apiJsonRequest(`/contracts?supplierId=${supplierId}`, {
     method: "GET",
     cookie: adminCookie,
@@ -155,6 +171,7 @@ async function main() {
     const createdCt = asRecord(createContractRes.json);
     contractId = Number(createdCt.id ?? 0);
   }
+*/
 
   if (!contractId) {
     console.log("  ✗ Could not resolve or create supplier contract.");
@@ -172,6 +189,19 @@ async function main() {
     },
   });
   if (!expectStatus("PATCH /api/contracts/:id (commercial FKs)", 200, patchContractRes.status)) failures++;
+
+  const patchSupplierDefaultsRes = await apiJsonRequest(`/suppliers/${supplierId}`, {
+    method: "PATCH",
+    cookie: adminCookie,
+    body: {
+      defaultContractId: contractId,
+      defaultCurrencyCode: "USD",
+      paymentTermsId,
+      incotermId,
+      taxCodeId,
+    },
+  });
+  if (!expectStatus("PATCH /api/suppliers/:id default contract", 200, patchSupplierDefaultsRes.status)) failures++;
 
   const itemsRes = await apiJsonRequest("/inventory", { method: "GET", cookie: adminCookie });
   if (!expectStatus("GET /api/inventory", 200, itemsRes.status)) failures++;
@@ -256,23 +286,28 @@ async function main() {
     taxCodeId,
     currencyCode,
   };
-  const commercialRes = await apiJsonRequest(`/purchase-orders/${poId}`, {
+  const blockedCurrencyRes = await apiJsonRequest(`/purchase-orders/${poId}`, {
     method: "PUT",
     cookie: adminCookie,
     body: commercialBody,
   });
-  if (!expectStatus("PUT /api/purchase-orders/:id commercial", 200, commercialRes.status)) failures++;
-  if (!expectRequestId("PUT /api/purchase-orders/:id commercial", commercialRes.requestId)) failures++;
+  if (!expectStatus("PUT /api/purchase-orders/:id blocks contract currency mismatch", 409, blockedCurrencyRes.status)) failures++;
+  if (!expectRequestId("PUT /api/purchase-orders/:id blocks contract currency mismatch", blockedCurrencyRes.requestId)) failures++;
 
-  const poAfterCommercial = asRecord(unwrapData<unknown>(commercialRes.json));
-  if (String(poAfterCommercial.currencyCode ?? "").toUpperCase() !== currencyCode) {
-    console.log(
-      "  ✗ PO currency after commercial patch expected %s, got %s",
-      currencyCode,
-      String(poAfterCommercial.currencyCode ?? ""),
-    );
-    failures++;
-  }
+  const allowedCommercialRes = await apiJsonRequest(`/purchase-orders/${poId}`, {
+    method: "PUT",
+    cookie: adminCookie,
+    body: {
+      contractId,
+      paymentTermsId,
+      incotermId,
+      taxCodeId,
+    },
+  });
+  if (!expectStatus("PUT /api/purchase-orders/:id commercial fields", 200, allowedCommercialRes.status)) failures++;
+  if (!expectRequestId("PUT /api/purchase-orders/:id commercial fields", allowedCommercialRes.requestId)) failures++;
+
+  const poAfterCommercial = asRecord(unwrapData<unknown>(allowedCommercialRes.json));
   if (Number(poAfterCommercial.taxCodeId ?? 0) !== taxCodeId) {
     console.log("  ✗ PO taxCodeId after commercial patch mismatch.");
     failures++;

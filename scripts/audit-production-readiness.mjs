@@ -623,7 +623,7 @@ const topFixes = [
   ["7", "Expand payment approval and supplier banking permission tests", "Finance/AP", "Sensitive actions need role-specific proof", "Unauthorized users may view or trigger sensitive finance actions", "M"],
   ["8", "Prove mobile offline sync replay with end-to-end count mutation tests", "Mobile Counts", "Module is mostly connected, not fully production-ready", "Offline queues can appear successful without real stock updates", "M"],
   ["9", "Standardize audit service calls with old/new values and reason capture", "Audit/Security", "Audit trail evidence is partial across domains", "Compliance review cannot reconstruct business decisions", "L"],
-  ["10", "Add production smoke that exercises route/API/schema readiness after deploy", "Release Gates", "Audit is generated but not yet part of release gate", "Regressions can ship without route/API proof", "S"],
+  ["10", "Keep production smoke and audit baseline checks in the release gate", "Release Gates", "Audit is generated and should remain wired into the release gate", "Regressions can ship without route/API proof", "S"],
 ];
 
 const md = `# Production Readiness Audit
@@ -641,6 +641,7 @@ Allowed status labels: ${statuses.map((status) => `\`${status}\``).join(", ")}.
 - Schema tables inspected: **${tables.length}**
 - Test/spec files discovered: **${testFiles.length}**
 - Mock/demo/static risk markers found: **${riskRows().length}**
+- Baseline comparison: **Wave 1 baseline**. Future production audits should compare these counts and risk markers so new or worsened production gaps are visible before release.
 
 The app now has a real production foundation across MDM, procurement, inventory, AP, logistics, reporting, diagnostics, subscriptions, and mobile stock counts. The biggest remaining risk is not absence of screens; it is inconsistent production proof in handoffs, degraded fallback behavior, business-rule enforcement, and audit evidence.
 

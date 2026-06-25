@@ -884,7 +884,7 @@ export async function validateMdmTransaction(organizationId: number, body: Recor
 
   if (itemIds.length > 0) {
     const itemRows = await pool.query<{ id: number; sku: string; status: string | null }>(
-      "SELECT id, sku, status FROM inventory_items WHERE organization_id = $1 AND id = ANY($2::int[])",
+      "SELECT id, sku, status FROM inventory_items WHERE (organization_id = $1 OR organization_id IS NULL) AND id = ANY($2::int[])",
       [organizationId, itemIds],
     );
     const found = new Set(itemRows.rows.map((row) => row.id));

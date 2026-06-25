@@ -237,16 +237,30 @@ async function main() {
     },
     cookie: adminCookie2,
   });
-  assert.ok(put2.ok, `PUT commercial PO-FQA-002 should succeed: ${put2.status} ${JSON.stringify(put2.json)}`);
+  assert.equal(
+    put2.status,
+    409,
+    `PUT commercial PO-FQA-002 should block supplier/contract currency mismatch: ${put2.status} ${JSON.stringify(put2.json)}`,
+  );
+  assert.equal(
+    (put2.json as { error?: { code?: string } })?.error?.code,
+    "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED",
+  );
 
   const putEur = await apiJsonRequest(`/purchase-orders/${id2}`, {
     method: "PUT",
     body: { currencyCode: "EUR" },
     cookie: adminCookie2,
   });
-  assert.ok(putEur.ok, `PUT PO currency EUR should succeed: ${putEur.status} ${JSON.stringify(putEur.json)}`);
-  const afterEur = unwrapData<{ currencyCode?: string }>(putEur.json, "PO after currency");
-  assert.equal(String(afterEur.currencyCode ?? "").toUpperCase(), "EUR");
+  assert.equal(
+    putEur.status,
+    409,
+    `PUT PO currency EUR should be blocked by supplier/contract currency rules: ${putEur.status} ${JSON.stringify(putEur.json)}`,
+  );
+  assert.equal(
+    (putEur.json as { error?: { code?: string } })?.error?.code,
+    "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED",
+  );
 
   const get3 = await apiJsonRequest("/purchase/orders/PO-FQA-003", { cookie: adminCookie2 });
   if (!get3.ok) {

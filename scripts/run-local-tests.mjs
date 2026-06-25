@@ -23,6 +23,12 @@ const suites = {
     ["run", "test:ap-workflow"],
     ["run", "release:gate:delta"],
   ],
+  productionSmoke: [
+    ["run", "test:master-data-propagation"],
+    ["run", "test:purchase-order-endpoints"],
+    ["run", "test:ap-workflow"],
+    ["run", "test:diagnostics"],
+  ],
 };
 
 function hasFlag(name) {
@@ -30,6 +36,7 @@ function hasFlag(name) {
 }
 
 function suiteName() {
+  if (hasFlag("--production-smoke")) return "productionSmoke";
   if (hasFlag("--delta")) return "delta";
   return "quick";
 }
@@ -65,9 +72,13 @@ async function waitForReady(timeoutMs = 60_000) {
 }
 
 function startServer() {
+  const serverEnv =
+    selectedSuite === "delta"
+      ? { LOCAL_DEV_STATIC: "1" }
+      : { LOCAL_TEST_API_ONLY: "1" };
   const child = spawn(process.platform === "win32" ? "cmd.exe" : npmCmd, process.platform === "win32" ? ["/d", "/s", "/c", `${npmCmd} run dev`] : ["run", "dev"], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT, LOCAL_TEST_API_ONLY: "1" },
+    env: { ...process.env, PORT, ...serverEnv },
     shell: false,
     stdio: "inherit",
   });

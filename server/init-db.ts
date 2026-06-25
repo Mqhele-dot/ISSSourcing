@@ -1178,7 +1178,7 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         organization_id, supplier_id, item_id, supplier_item_code, preferred, lead_time_days, min_order_quantity, default_price, currency_code
       )
       SELECT
-        i.organization_id,
+        COALESCE(NULLIF(i.organization_id::text, '')::int, 1),
         i.supplier_id,
         i.id,
         i.supplier_part_number,

@@ -7,6 +7,20 @@ import {
   loginForTests,
 } from "./test-http.ts";
 
+async function fetchPageOk(baseUrl: string, path: string, cookie: string): Promise<boolean> {
+  const res = await fetch(`${baseUrl}${path}`, { headers: { Cookie: cookie } });
+  if (res.ok) return true;
+  const body = await res.text().catch(() => "");
+  console.log(
+    "    route %s returned %s %s%s",
+    path,
+    res.status,
+    res.statusText,
+    body ? `: ${body.slice(0, 160).replace(/\s+/g, " ")}` : "",
+  );
+  return false;
+}
+
 async function main() {
   const baseUrl = getTestBaseUrl();
   console.log("Smoke suite (BASE_URL=%s)\n", baseUrl);
@@ -60,11 +74,11 @@ async function main() {
   await check("AP overview API", apiJsonRequest("/ap/invoices", { method: "GET", cookie, baseUrl }).then((res) => res.ok));
   await check(
     "Canonical analytics route",
-    fetch(`${baseUrl}/analytics/export-center`, { headers: { Cookie: cookie } }).then((res) => res.ok),
+    fetchPageOk(baseUrl, "/analytics/export-center", cookie),
   );
   await check(
     "Mobile workflow route",
-    fetch(`${baseUrl}/m/tasks`, { headers: { Cookie: cookie } }).then((res) => res.ok),
+    fetchPageOk(baseUrl, "/m/tasks", cookie),
   );
   await check(
     "Ready payload shape (productBootstrap when db ready)",
