@@ -86,7 +86,9 @@ const checks = [
       files.syncRoutes.includes("mobile_count_spot") &&
       files.syncRoutes.includes("status: \"failed\"") &&
       files.syncRoutes.includes("results") &&
-      files.offlineQueue.includes("failedCount === 0"),
+      files.offlineQueue.includes("failedCount === 0") &&
+      files.mobilePage.includes("mobile_count_submit") &&
+      files.mobilePage.includes("Count submit queued offline"),
   },
   {
     name: "subscription feature catalog and limits include research tiers",

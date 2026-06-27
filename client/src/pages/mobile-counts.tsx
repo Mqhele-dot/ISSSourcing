@@ -255,11 +255,43 @@ export default function MobileCountsPage() {
   });
 
   const submit = useMutation({
-    mutationFn: () =>
-      mutationWithKey(`/api/mobile/counts/${sessionId}/submit`, { deviceId: "browser-mobile" }, idempotencyKey("count-submit")),
-    onSuccess: () => {
+    mutationFn: async () => {
+      if (!sessionId) throw new Error("Open a count session first.");
+      const payload = { sessionId, deviceId: "browser-mobile", retryCount: 0 };
+      const key = idempotencyKey("count-submit");
+      if (!online) {
+        await enqueueOfflineAction("mobile_count_submit", payload);
+        return { offline: true as const };
+      }
+      try {
+        await mutationWithKey(`/api/mobile/counts/${sessionId}/submit`, { deviceId: "browser-mobile" }, key);
+        return { offline: false as const };
+      } catch (error) {
+        await enqueueOfflineAction("mobile_count_submit", payload);
+        return {
+          offline: true as const,
+          message: error instanceof Error ? error.message : "The submit will sync when connectivity returns.",
+        };
+      }
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["offline-queue-peek", loc] });
+      if (result.offline) {
+        toast({
+          title: "Count submit queued offline",
+          description: result.message ?? "Variance review will be ready after offline sync replays the submit.",
+        });
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/mobile/counts", sessionId] });
       toast({ title: "Count submitted", description: "Variance review is ready." });
+    },
+    onError: (error) => {
+      toast({
+        title: "Could not queue count submit",
+        description: error instanceof Error ? error.message : "Try again once offline sync is available.",
+        variant: "destructive",
+      });
     },
   });
 
