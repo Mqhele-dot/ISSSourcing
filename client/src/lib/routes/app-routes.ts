@@ -87,6 +87,7 @@ export const APP_ROUTES = {
     mobileApprovals: "/m/approvals",
     mobileMore: "/m/more",
     mobileReceive: "/m/receive",
+    mobileReceivePo: (po: string | number) => `/m/receive/${encodeURIComponent(String(po))}`,
     mobilePick: "/m/pick",
   },
   inventory: {

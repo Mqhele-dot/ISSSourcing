@@ -131,6 +131,7 @@ function main() {
   assert.equal(`${APP_ROUTES.procurement.orders}/:po`, "/procurement/orders/:po");
   assert.equal(APP_ROUTES.inventory.item(":sku"), "/inventory/%3Asku");
   assert.equal(APP_ROUTES.procurement.order(":po"), "/procurement/orders/%3Apo");
+  assert.equal(APP_ROUTES.operations.mobileReceivePo(":po"), "/m/receive/%3Apo");
   assert.equal(APP_ROUTES.procurement.requisition(":id"), "/procurement/requisitions/:id");
   assert.equal(APP_ROUTES.admin.masterDataSection(":section"), "/admin/master-data/:section");
   assert.equal(APP_ROUTES.admin.settingsSection(":section"), "/admin/settings/:section");

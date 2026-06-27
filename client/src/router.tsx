@@ -80,6 +80,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.operations.mobileScan} component={BarcodeScannerPage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileApprovals} component={PurchasePage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileMore} component={MobileHubMore} />
+        <ProtectedRoute path="/m/receive/:po" component={MobileReceivePage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileReceive} component={MobileReceivePage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobilePick} component={MobilePickPage} />
 
