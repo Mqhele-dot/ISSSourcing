@@ -5,7 +5,7 @@ import {
   categories, type Category, type InsertCategory,
   inventoryItems, type InventoryItem, type InsertInventoryItem,
   suppliers, type Supplier, type InsertSupplier,
-  purchaseRequisitions, type PurchaseRequisition, type InsertPurchaseRequisition,
+  purchaseRequisitions, type PurchaseRequisition, type PurchaseRequisitionListEntry, type InsertPurchaseRequisition,
   purchaseRequisitionItems, type PurchaseRequisitionItem, type InsertPurchaseRequisitionItem,
   purchaseOrders, type PurchaseOrder, type InsertPurchaseOrder,
   purchaseOrderItems,
@@ -55,7 +55,7 @@ import connectPgSimple from "connect-pg-simple";
 import memorystore from "memorystore";
 import * as crypto from "node:crypto";
 import { db, pool } from "./db";
-import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
+import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql, getTableColumns } from "drizzle-orm";
 import { getActiveOrganizationId } from "./organization-context";
 import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
@@ -2101,11 +2101,16 @@ export class DatabaseStorage implements IStorage {
     return this.memStorage.bulkImportInventory(items);
   }
   
-  async getAllPurchaseRequisitions(): Promise<PurchaseRequisition[]> {
+  async getAllPurchaseRequisitions(): Promise<PurchaseRequisitionListEntry[]> {
     return db
-      .select()
+      .select({
+        ...getTableColumns(purchaseRequisitions),
+        lineCount: sql<number>`count(${purchaseRequisitionItems.id})::int`,
+      })
       .from(purchaseRequisitions)
+      .leftJoin(purchaseRequisitionItems, eq(purchaseRequisitionItems.requisitionId, purchaseRequisitions.id))
       .where(eq(purchaseRequisitions.organizationId, getActiveOrganizationId()))
+      .groupBy(purchaseRequisitions.id)
       .orderBy(desc(purchaseRequisitions.createdAt));
   }
   

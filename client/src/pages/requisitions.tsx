@@ -43,7 +43,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { apiRequest, requestJson } from "@/lib/queryClient";
-import type { PurchaseRequisition, PurchaseRequisitionItem, User, Supplier, InventoryItem } from "@shared/schema";
+import type { PurchaseRequisition, PurchaseRequisitionItem, PurchaseRequisitionListEntry, User, Supplier, InventoryItem } from "@shared/schema";
 import { Can } from "@/components/auth/can";
 import { PanelInlineError } from "@/components/panel-inline-error";
 import { fetchApprovalSuggestions } from "@/api/client";
@@ -66,7 +66,7 @@ interface RequisitionsPageProps {
   basePath?: string;
 }
 
-const EMPTY_REQUISITIONS: PurchaseRequisition[] = [];
+const EMPTY_REQUISITIONS: PurchaseRequisitionListEntry[] = [];
 
 export default function RequisitionsPage({ embedded, basePath = "/requisitions" }: RequisitionsPageProps = {}) {
   const productSetupComplete = useProductSetupComplete();
@@ -113,9 +113,9 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     queryKey: ["/api/purchase-requisitions"],
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/purchase-requisitions");
-      if (Array.isArray(raw)) return raw as PurchaseRequisition[];
+      if (Array.isArray(raw)) return raw as PurchaseRequisitionListEntry[];
       if (raw && typeof raw === "object" && "data" in raw && Array.isArray((raw as { data: unknown }).data)) {
-        return (raw as { data: PurchaseRequisition[] }).data;
+        return (raw as { data: PurchaseRequisitionListEntry[] }).data;
       }
       if (raw && typeof raw === "object" && "ok" in raw && (raw as { ok?: boolean }).ok === false) {
         throw new Error("Requisitions request failed");
@@ -208,11 +208,8 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     const department = departments.find((candidate) => candidate.id === departmentId);
     return department ? `${department.code ? `${department.code} - ` : ""}${department.name ?? `Department #${departmentId}`}` : `Department #${departmentId}`;
   };
-  const lineCountFor = (req: PurchaseRequisition) => {
-    const items = (req as { items?: unknown }).items;
-    // TODO: list API does not consistently include requisition line counts; prefer a lineCount field when added server-side.
-    if (Array.isArray(items)) return String(items.length);
-    const lineCount = Number((req as { lineCount?: unknown; linesCount?: unknown }).lineCount ?? (req as { linesCount?: unknown }).linesCount);
+  const lineCountFor = (req: PurchaseRequisitionListEntry) => {
+    const lineCount = Number(req.lineCount);
     return Number.isFinite(lineCount) && lineCount >= 0 ? String(lineCount) : "—";
   };
   const linkedPoFor = (req: PurchaseRequisition) => {

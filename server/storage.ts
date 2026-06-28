@@ -6,7 +6,7 @@ import {
   inventoryItems, type InventoryItem, type InsertInventoryItem,
   suppliers, type Supplier, type InsertSupplier,
   supplierContracts, type SupplierContract, type InsertSupplierContract,
-  purchaseRequisitions, type PurchaseRequisition, type InsertPurchaseRequisition,
+  purchaseRequisitions, type PurchaseRequisition, type PurchaseRequisitionListEntry, type InsertPurchaseRequisition,
   purchaseRequisitionItems, type PurchaseRequisitionItem, type InsertPurchaseRequisitionItem,
   purchaseOrders, type PurchaseOrder, type InsertPurchaseOrder,
   purchaseOrderItems,
@@ -294,7 +294,7 @@ getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined>;
   }>;
   
   // Purchase Requisition methods
-  getAllPurchaseRequisitions(): Promise<PurchaseRequisition[]>;
+  getAllPurchaseRequisitions(): Promise<PurchaseRequisitionListEntry[]>;
   getPurchaseRequisition(id: number): Promise<PurchaseRequisition | undefined>;
   getPurchaseRequisitionByNumber(requisitionNumber: string): Promise<PurchaseRequisition | undefined>;
   createPurchaseRequisition(requisition: InsertPurchaseRequisition, items: Omit<InsertPurchaseRequisitionItem, "requisitionId">[]): Promise<PurchaseRequisition>;
@@ -3396,8 +3396,11 @@ export class MemStorage implements IStorage {
   }
   
   // Purchase Requisition methods
-  async getAllPurchaseRequisitions(): Promise<PurchaseRequisition[]> {
-    return Array.from(this.purchaseRequisitions.values());
+  async getAllPurchaseRequisitions(): Promise<PurchaseRequisitionListEntry[]> {
+    return Array.from(this.purchaseRequisitions.values()).map((requisition) => ({
+      ...requisition,
+      lineCount: Array.from(this.purchaseRequisitionItems.values()).filter((item) => item.requisitionId === requisition.id).length,
+    }));
   }
   
   async getPurchaseRequisition(id: number): Promise<PurchaseRequisition | undefined> {

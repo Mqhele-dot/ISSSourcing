@@ -1394,6 +1394,7 @@ export type SupplierContractForm = z.infer<typeof supplierContractFormSchema>;
 export type PurchaseRequisition = typeof purchaseRequisitions.$inferSelect;
 export type InsertPurchaseRequisition = z.infer<typeof insertPurchaseRequisitionSchema>;
 export type PurchaseRequisitionForm = z.infer<typeof purchaseRequisitionFormSchema>;
+export type PurchaseRequisitionListEntry = PurchaseRequisition & { lineCount: number };
 
 export type PurchaseRequisitionItem = typeof purchaseRequisitionItems.$inferSelect;
 export type InsertPurchaseRequisitionItem = z.infer<typeof insertPurchaseRequisitionItemSchema>;

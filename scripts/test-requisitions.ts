@@ -8,12 +8,21 @@
 import process from "node:process";
 import { exitTest } from "./test-exit.ts";
 import { apiJsonRequest, apiRawRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
+import type { PurchaseRequisitionListEntry } from "@shared/schema";
 
 function getMessage(json: unknown): string {
   if (json && typeof json === "object" && "message" in json && typeof (json as { message: unknown }).message === "string") {
     return (json as { message: string }).message;
   }
   return "";
+}
+
+function getRequisitionList(json: unknown): PurchaseRequisitionListEntry[] {
+  if (Array.isArray(json)) return json as PurchaseRequisitionListEntry[];
+  if (json && typeof json === "object" && "data" in json && Array.isArray((json as { data?: unknown }).data)) {
+    return (json as { data: PurchaseRequisitionListEntry[] }).data;
+  }
+  return [];
 }
 
 async function main() {
@@ -135,6 +144,22 @@ async function main() {
           console.log("    (id=%d, requisitionNumber=%s)", body.id, body.requisitionNumber);
           const getOne = await apiJsonRequest(`/purchase-requisitions/${body.id}`, { method: "GET", cookie: adminCookie });
           expectStatus("Admin GET /api/purchase-requisitions/:id after create (expect 200)", 200, getOne.status);
+
+          const listAfterCreate = await apiJsonRequest("/purchase-requisitions", {
+            method: "GET",
+            cookie: adminCookie,
+          });
+          expectStatus("Admin GET /api/purchase-requisitions after create (expect 200)", 200, listAfterCreate.status);
+          if (listAfterCreate.status === 200) {
+            const createdRequisition = getRequisitionList(listAfterCreate.json).find((requisition) => requisition.id === body.id);
+            if (createdRequisition && createdRequisition.lineCount === 1) {
+              console.log("  ✓ Requisition list returns lineCount=1 for created requisition");
+              passed++;
+            } else {
+              console.log("  ✗ Requisition list missing expected lineCount for created requisition");
+              failed++;
+            }
+          }
 
           const putIsoDate = await apiJsonRequest(`/purchase-requisitions/${body.id}`, {
             method: "PUT",
