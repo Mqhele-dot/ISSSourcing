@@ -314,6 +314,14 @@ function routeTestEvidence(route) {
   });
 }
 
+function routeRuntimeTestEvidence(route) {
+  return routeTestEvidence(route).filter((file) => {
+    const normalized = toPosix(file).toLowerCase();
+    return !normalized.includes("test-production-workflow-proof")
+      && !normalized.includes("test-requisition-line-mdm-propagation");
+  });
+}
+
 function routeRequiredFixes(route, apiUses, text) {
   const fixes = [];
   const hasMock = /\b(mock|demo|sample|stub|fake|coming soon)\b/i.test(text);
@@ -322,6 +330,7 @@ function routeRequiredFixes(route, apiUses, text) {
   const hasError = /isError|error|PanelInlineError|catch|toast/.test(text);
   const hasValidation = /zod|schema|validate|resolver|FormMessage|required/i.test(text);
   const hasPermission = /<Can|useCan|usePermissions|permission|ProtectedRoute/i.test(text);
+  const hasAuditEvidence = /audit|approval[-_]?history|activity|revision|history/i.test(text);
   if (!existsSync(path.join(root, route.file))) fixes.push("component file missing");
   if (hasMock) fixes.push("mock/demo/static markers present");
   if (!hasApi && route.protected) fixes.push("no clear backend data integration");
@@ -329,8 +338,11 @@ function routeRequiredFixes(route, apiUses, text) {
   if (!hasError) fixes.push("error handling not proven");
   if (!hasValidation) fixes.push("validation not proven");
   if (!hasPermission) fixes.push("permission-aware UX not proven");
-  if (isCoreWorkflowRoute(route) && routeTestEvidence(route).length === 0) {
-    fixes.push("core route lacks focused test evidence");
+  if (isCoreWorkflowRoute(route) && routeRuntimeTestEvidence(route).length === 0) {
+    fixes.push("core route lacks runtime workflow test evidence");
+  }
+  if (isCoreWorkflowRoute(route) && !hasAuditEvidence) {
+    fixes.push("audit/reporting evidence not proven");
   }
   return fixes;
 }

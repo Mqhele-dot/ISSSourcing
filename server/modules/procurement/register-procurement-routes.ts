@@ -1033,6 +1033,9 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           Number.isFinite(providedTotal) && providedTotal > 0 ? providedTotal : qty * unit;
         const unitOfMeasureId = Number(item?.unitOfMeasureId);
         const taxCodeId = Number(item?.taxCodeId);
+        const costCentreId = Number(item?.costCentreId);
+        const glAccountCode =
+          typeof item?.glAccountCode === "string" && item.glAccountCode.trim() ? item.glAccountCode.trim() : null;
         return {
           itemId,
           quantity: qty,
@@ -1040,6 +1043,8 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           totalPrice,
           unitOfMeasureId: Number.isFinite(unitOfMeasureId) && unitOfMeasureId > 0 ? unitOfMeasureId : null,
           taxCodeId: Number.isFinite(taxCodeId) && taxCodeId > 0 ? taxCodeId : null,
+          costCentreId: Number.isFinite(costCentreId) && costCentreId > 0 ? costCentreId : null,
+          glAccountCode,
           notes: typeof item?.notes === "string" ? item.notes : null,
         };
       });

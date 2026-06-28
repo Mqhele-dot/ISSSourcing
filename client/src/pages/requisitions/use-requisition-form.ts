@@ -25,8 +25,11 @@ type MdmRequisitionContext = {
   taxCodes: Array<{ id: number; code: string; name: string; active?: boolean | null }>;
   unitsOfMeasure: Array<{ id: number; code: string; name: string; symbol?: string | null; active?: boolean | null }>;
   suppliers: Supplier[];
-  items: InventoryItem[];
+  items: Array<InventoryItem & { defaultTaxCodeId?: number | null; glAccountCode?: string | null }>;
   approvalRules: Array<{ id: number; code: string; name: string; minLocalValue?: number | null; approverRole?: string | null }>;
+  organizationDefaults?: {
+    taxCodeId?: number | null;
+  };
   rules: {
     requiresDepartment: boolean;
     requiresCostCentre: boolean;
@@ -387,12 +390,19 @@ export function useRequisitionForm(params: {
       const current = { ...next[idx], [field]: value };
       if (field === "itemId") {
         const selected = effectiveInventoryItems.find((item) => Number(item.id) === Number(value)) as
-          | (InventoryItem & { supplierPartNumber?: string | null; glAccountCode?: string | null })
+          | (InventoryItem & { supplierPartNumber?: string | null; defaultTaxCodeId?: number | null; glAccountCode?: string | null })
           | undefined;
-        const defaultTaxCode = effectiveTaxCodes.find((taxCode) => taxCode.active !== false);
+        const itemTaxCodeId = Number((selected as { taxCodeId?: number | null } | undefined)?.taxCodeId ?? 0) || null;
+        const categoryTaxCodeId = Number(selected?.defaultTaxCodeId ?? 0) || null;
+        const supplierTaxCodeId =
+          supplierId === ""
+            ? null
+            : Number((effectiveSuppliers.find((supplier) => Number(supplier.id) === Number(supplierId)) as Supplier & { taxCodeId?: number | null } | undefined)?.taxCodeId ?? 0) || null;
+        const organizationTaxCodeId = Number(mdmContext?.organizationDefaults?.taxCodeId ?? 0) || null;
+        const resolvedTaxCodeId = itemTaxCodeId ?? categoryTaxCodeId ?? supplierTaxCodeId ?? organizationTaxCodeId;
         current.unitPrice = Number(selected?.price ?? current.unitPrice ?? 0);
         current.unitOfMeasureId = selected?.unitOfMeasureId ?? current.unitOfMeasureId ?? null;
-        current.taxCodeId = selected?.taxable === false ? null : current.taxCodeId ?? defaultTaxCode?.id ?? null;
+        current.taxCodeId = selected?.taxable === false ? null : current.taxCodeId ?? resolvedTaxCodeId;
         current.supplierItemCode = selected?.supplierPartNumber ?? current.supplierItemCode ?? null;
         current.baseUomId = selected?.unitOfMeasureId ?? current.baseUomId ?? null;
         current.conversionFactor = selected?.unitOfMeasureId ? 1 : current.conversionFactor ?? null;
@@ -402,7 +412,7 @@ export function useRequisitionForm(params: {
       next[idx] = current;
       return next;
     });
-  }, [currencyCode, effectiveInventoryItems, effectiveTaxCodes]);
+  }, [currencyCode, effectiveInventoryItems, effectiveSuppliers, mdmContext?.organizationDefaults?.taxCodeId, supplierId]);
 
   const handleSubmit = useCallback(() => {
     if (isLocked) {

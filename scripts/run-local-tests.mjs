@@ -23,6 +23,8 @@ const suites = {
     ["run", "test:ap-workflow"],
     ["run", "test:production-workflow-proof"],
     ["run", "test:requisition-line-mdm-propagation"],
+    ["run", "test:requisition-line-mdm-flow"],
+    ["run", "test:mdm-dependency-runtime"],
     ["run", "release:gate:delta"],
   ],
   productionSmoke: [
@@ -31,6 +33,8 @@ const suites = {
     ["run", "test:ap-workflow"],
     ["run", "test:production-workflow-proof"],
     ["run", "test:requisition-line-mdm-propagation"],
+    ["run", "test:requisition-line-mdm-flow"],
+    ["run", "test:mdm-dependency-runtime"],
     ["run", "test:diagnostics"],
   ],
 };

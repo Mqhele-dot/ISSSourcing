@@ -1072,6 +1072,8 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_of_measure_id INTEGER;
       ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS commodity_code_id INTEGER;
       ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS tax_code_id INTEGER;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_id INTEGER;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency_code TEXT;

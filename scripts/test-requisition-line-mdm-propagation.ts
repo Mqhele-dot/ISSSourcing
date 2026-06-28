@@ -16,6 +16,7 @@ function assertRegex(text: string, regex: RegExp, label: string): void {
 }
 
 console.log("Requisition line Master Data propagation proof\n");
+console.log("Static guard: verifies required source paths exist. Runtime behavior is covered by test:requisition-line-mdm-flow.\n");
 
 const schema = read("shared/schema.ts");
 const initDb = read("server/init-db.ts");
@@ -35,6 +36,10 @@ for (const column of ["unitOfMeasureId", "taxCodeId", "costCentreId", "glAccount
   assertIncludes(requisitionHook, column, `requisition form payload preserves ${column}`);
   assertIncludes(procurementRoutes, column, `procurement API accepts ${column}`);
 }
+assertIncludes(schema, "costCentreId: integer(\"cost_centre_id\").references(() => mdmCostCentres.id)", "PO line schema persists cost centre");
+assertIncludes(schema, "glAccountCode: text(\"gl_account_code\")", "PO line schema persists GL account");
+assertIncludes(initDb, "purchase_order_items ADD COLUMN IF NOT EXISTS cost_centre_id", "database repair adds PO cost centre");
+assertIncludes(initDb, "purchase_order_items ADD COLUMN IF NOT EXISTS gl_account_code", "database repair adds PO GL account");
 
 assertIncludes(lineEditor, "Purchase UOM", "line editor exposes purchase UOM");
 assertIncludes(lineEditor, "Tax code", "line editor exposes tax code");
@@ -59,8 +64,20 @@ assertRegex(
   /taxCodeId:\s*item\.taxCodeId\s*\?\?/,
   "database conversion carries requisition line tax code",
 );
+assertRegex(
+  databaseStorage,
+  /costCentreId:\s*item\.costCentreId\s*\?\?\s*null/,
+  "database conversion carries requisition line cost centre",
+);
+assertRegex(
+  databaseStorage,
+  /glAccountCode:\s*item\.glAccountCode\s*\?\?\s*null/,
+  "database conversion carries requisition line GL account",
+);
 assertIncludes(memoryStorage, "unitOfMeasureId: reqItem.unitOfMeasureId ?? null", "memory conversion carries line UOM");
 assertIncludes(memoryStorage, "taxCodeId: reqItem.taxCodeId", "memory conversion carries line tax code");
+assertIncludes(memoryStorage, "costCentreId: reqItem.costCentreId ?? null", "memory conversion carries line cost centre");
+assertIncludes(memoryStorage, "glAccountCode: reqItem.glAccountCode ?? null", "memory conversion carries line GL account");
 
 assertIncludes(mdmControlCentre, "class MdmDependencyError", "MDM dependency error exists");
 assertIncludes(mdmControlCentre, "domain === \"uom-conversions\"", "MDM checks UOM conversion deactivation dependencies");

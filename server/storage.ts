@@ -3828,6 +3828,8 @@ export class MemStorage implements IStorage {
       unitOfMeasureId: item.unitOfMeasureId ?? inventoryItem.unitOfMeasureId ?? null,
       commodityCodeId: item.commodityCodeId ?? inventoryItem.commodityCodeId ?? null,
       taxCodeId: item.taxCodeId ?? null,
+      costCentreId: item.costCentreId ?? null,
+      glAccountCode: item.glAccountCode ?? null,
     };
     
     this.purchaseOrderItems.set(id, orderItem);
@@ -4089,6 +4091,8 @@ export class MemStorage implements IStorage {
       receivedQuantity: 0,
       unitOfMeasureId: reqItem.unitOfMeasureId ?? null,
       taxCodeId: reqItem.taxCodeId ?? supplier.taxCodeId ?? null,
+      costCentreId: reqItem.costCentreId ?? null,
+      glAccountCode: reqItem.glAccountCode ?? null,
       notes: reqItem.notes
     }));
     

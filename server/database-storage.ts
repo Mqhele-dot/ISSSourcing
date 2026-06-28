@@ -2382,6 +2382,8 @@ export class DatabaseStorage implements IStorage {
         unitOfMeasureId: item.unitOfMeasureId ?? inv?.unitOfMeasureId ?? null,
         commodityCodeId: item.commodityCodeId ?? inv?.commodityCodeId ?? null,
         taxCodeId: item.taxCodeId ?? null,
+        costCentreId: item.costCentreId ?? null,
+        glAccountCode: item.glAccountCode ?? null,
       });
     }
     if (totalAmount > 0) {
@@ -2457,6 +2459,8 @@ export class DatabaseStorage implements IStorage {
         unitOfMeasureId: item.unitOfMeasureId ?? inv?.unitOfMeasureId ?? null,
         commodityCodeId: item.commodityCodeId ?? inv?.commodityCodeId ?? null,
         taxCodeId: item.taxCodeId ?? null,
+        costCentreId: item.costCentreId ?? null,
+        glAccountCode: item.glAccountCode ?? null,
       })
       .returning();
 
@@ -2760,6 +2764,8 @@ export class DatabaseStorage implements IStorage {
           unitOfMeasureId: item.unitOfMeasureId ?? invRow?.unitOfMeasureId ?? null,
           commodityCodeId: invRow?.commodityCodeId ?? null,
           taxCodeId: item.taxCodeId ?? (Number(commercialDefaults.taxCodeId ?? null) || null),
+          costCentreId: item.costCentreId ?? null,
+          glAccountCode: item.glAccountCode ?? null,
         });
       }
 

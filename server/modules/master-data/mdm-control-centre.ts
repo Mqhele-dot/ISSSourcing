@@ -316,7 +316,7 @@ async function getMdmDisableDependencies(
       `
         SELECT COUNT(*)
         FROM purchase_order_items poi
-        JOIN purchase_orders po ON po.id = poi.purchase_order_id
+        JOIN purchase_orders po ON po.id = poi.order_id
         WHERE po.organization_id = $1
           AND poi.unit_of_measure_id = ANY($2::int[])
           ${poItemFilter}
@@ -350,7 +350,22 @@ async function getMdmDisableDependencies(
       `,
       [organizationId, glAccountCode, row.cost_centre_id ?? null],
     );
-    return openRequisitions > 0 ? [{ label: "open requisition finance mappings", count: openRequisitions }] : [];
+    const openPurchaseOrders = await count(
+      `
+        SELECT COUNT(*)
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON po.id = poi.order_id
+        WHERE po.organization_id = $1
+          AND poi.gl_account_code = $2
+          AND ($3::int IS NULL OR poi.cost_centre_id = $3::int)
+          AND UPPER(COALESCE(po.status, 'DRAFT')) NOT IN ('RECEIVED', 'CLOSED', 'CANCELLED')
+      `,
+      [organizationId, glAccountCode, row.cost_centre_id ?? null],
+    );
+    return [
+      ...(openRequisitions > 0 ? [{ label: "open requisition finance mappings", count: openRequisitions }] : []),
+      ...(openPurchaseOrders > 0 ? [{ label: "open purchase order finance mappings", count: openPurchaseOrders }] : []),
+    ];
   }
 
   return [];
@@ -851,7 +866,7 @@ export async function getMdmControlCentreHealth(organizationId: number) {
 }
 
 export async function getRequisitionContext(organizationId: number) {
-  const [currencies, departments, costCentres, taxCodes, uoms, suppliers, items, approvalRules] = await Promise.all([
+  const [currencies, departments, costCentres, taxCodes, uoms, suppliers, items, approvalRules, organizationTaxDefault] = await Promise.all([
     pool.query("SELECT * FROM currencies WHERE COALESCE(active, TRUE) = TRUE ORDER BY code ASC"),
     pool.query("SELECT * FROM departments WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code ASC", [
       organizationId,
@@ -872,16 +887,41 @@ export async function getRequisitionContext(organizationId: number) {
     ),
     pool.query(
       `
-        SELECT id, sku, name, supplier_id, price, unit_of_measure, unit_of_measure_id, commodity_code_id, taxable, status
-        FROM inventory_items
-        WHERE organization_id = $1 AND COALESCE(status, 'active') = 'active'
-        ORDER BY sku ASC
+        SELECT ii.id, ii.sku, ii.name, ii.supplier_id, ii.price, ii.unit_of_measure, ii.unit_of_measure_id,
+          ii.commodity_code_id, ii.taxable, ii.status,
+          mic.default_tax_code_id,
+          mic.default_gl_account_code AS gl_account_code
+        FROM inventory_items ii
+        LEFT JOIN mdm_item_categories mic
+          ON mic.organization_id = ii.organization_id
+          AND mic.id = ii.category_id
+          AND COALESCE(mic.active, TRUE) = TRUE
+        WHERE ii.organization_id = $1 AND COALESCE(ii.status, 'active') = 'active'
+        ORDER BY ii.sku ASC
         LIMIT 500
       `,
       [organizationId],
     ),
     pool.query(
       "SELECT * FROM mdm_approval_rules WHERE organization_id = $1 AND entity_type = 'requisition' AND COALESCE(active, TRUE) = TRUE ORDER BY min_local_value ASC",
+      [organizationId],
+    ),
+    pool.query(
+      `
+        SELECT tc.id
+        FROM app_settings s
+        JOIN tax_codes tc
+          ON COALESCE(tc.active, TRUE) = TRUE
+          AND (
+            UPPER(COALESCE(tc.country_code, '')) = UPPER(COALESCE(s.default_vat_country, ''))
+            OR tc.country_code IS NULL
+          )
+        WHERE s.organization_id = $1
+        ORDER BY
+          CASE WHEN UPPER(COALESCE(tc.country_code, '')) = UPPER(COALESCE(s.default_vat_country, '')) THEN 0 ELSE 1 END,
+          tc.id ASC
+        LIMIT 1
+      `,
       [organizationId],
     ),
   ]);
@@ -895,6 +935,9 @@ export async function getRequisitionContext(organizationId: number) {
     suppliers: suppliers.rows.map(rowToCamel),
     items: items.rows.map(rowToCamel),
     approvalRules: approvalRules.rows.map(rowToCamel),
+    organizationDefaults: {
+      taxCodeId: Number(organizationTaxDefault.rows[0]?.id ?? 0) || null,
+    },
     rules: {
       requiresDepartment: true,
       requiresCostCentre: true,

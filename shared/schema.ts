@@ -1144,6 +1144,8 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
   commodityCodeId: integer("commodity_code_id").references(() => commodityCodes.id),
   taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
+  costCentreId: integer("cost_centre_id").references(() => mdmCostCentres.id),
+  glAccountCode: text("gl_account_code"),
 });
 
 export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({

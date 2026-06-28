@@ -17,6 +17,7 @@ function assertRegex(text, regex, label) {
 }
 
 console.log("Production workflow proof checks\n");
+console.log("Static guard: verifies required source paths exist. Runtime behavior is covered by API/DB tests.\n");
 
 const procurementRoutes = read("server/modules/procurement/register-procurement-routes.ts");
 const poValidation = read("server/modules/procurement/po-validation.ts");
