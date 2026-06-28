@@ -129,6 +129,15 @@ async function getDeleteDependencies(basePath: string, id: number) {
   return results;
 }
 
+function buildDependencyBlockedErrorMessage(
+  action: "deactivate" | "delete",
+  dependencies: Array<{ label: string; count: number }>,
+) {
+  const dependencySummary = dependencies.map((dependency) => `${dependency.count} ${dependency.label}`).join(", ");
+  const actionLabel = action === "deactivate" ? "deactivate" : "delete";
+  return `Cannot ${actionLabel} this master-data record while it is still referenced by ${dependencySummary}.`;
+}
+
 /**
  * Reference data CRUD, cycle count post, approval policies, retention, supplier portal context.
  */
@@ -386,6 +395,29 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
           }
           patchBody = incoming;
         }
+        const isDeactivationRequest =
+          patchBody &&
+          typeof patchBody === "object" &&
+          "active" in patchBody &&
+          (patchBody as { active?: unknown }).active === false;
+        if (isDeactivationRequest) {
+          const dependencies = await getDeleteDependencies(basePath, id);
+          if (dependencies.length > 0) {
+            return sendError(
+              res,
+              409,
+              "MASTER_DATA_RECORD_IN_USE",
+              buildDependencyBlockedErrorMessage("deactivate", dependencies),
+              {
+                hint: "Reassign or close the dependent records before deactivating this master-data record.",
+                details: {
+                  action: "deactivate",
+                  dependencies,
+                },
+              },
+            );
+          }
+        }
         const payload = (insertSchema as any).partial().parse(patchBody);
         const updatedRows = (await db.update(table).set(payload).where(eq(table.id, id)).returning()) as any[];
         const updated = updatedRows[0];
@@ -406,6 +438,22 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       try {
         const id = Number(req.params.id);
         if (isNaN(id)) return sendError(res, 400, "INVALID_ID", "Invalid ID");
+        const dependencies = await getDeleteDependencies(basePath, id);
+        if (dependencies.length > 0) {
+          return sendError(
+            res,
+            409,
+            "MASTER_DATA_RECORD_IN_USE",
+            buildDependencyBlockedErrorMessage("delete", dependencies),
+            {
+              hint: "Reassign or close the dependent records before deleting this master-data record.",
+              details: {
+                action: "delete",
+                dependencies,
+              },
+            },
+          );
+        }
         const deleted = (await db.delete(table).where(eq(table.id, id)).returning({ id: table.id })) as any[];
         if (deleted.length === 0) return sendError(res, 404, "NOT_FOUND", "Record not found");
         return res.status(204).send();

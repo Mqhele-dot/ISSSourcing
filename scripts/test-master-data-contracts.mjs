@@ -52,4 +52,18 @@ assertRouteContains(/Payment terms not found or inactive\./, "route inactive pay
 assertRouteContains(/eq\(incoterms\.active,\s*true\)/, "route incoterm active validation");
 assertRouteContains(/Incoterm not found or inactive\./, "route inactive incoterm error");
 
+const masterDataRouteFile = "server/modules/master-data/register-master-data-routes.ts";
+const masterDataRouteText = fs.readFileSync(path.join(root, masterDataRouteFile), "utf8");
+
+function assertMasterDataRouteContains(pattern, label) {
+  if (!pattern.test(masterDataRouteText)) {
+    throw new Error(`${label} missing in ${masterDataRouteFile}`);
+  }
+}
+assertMasterDataRouteContains(/buildDependencyBlockedErrorMessage\("deactivate",\s*dependencies\)/, "master-data deactivate dependency guard");
+assertMasterDataRouteContains(/buildDependencyBlockedErrorMessage\("delete",\s*dependencies\)/, "master-data delete dependency guard");
+assertMasterDataRouteContains(/MASTER_DATA_RECORD_IN_USE/, "master-data in-use contract error");
+assertMasterDataRouteContains(/Reassign or close the dependent records before deactivating/, "master-data deactivate guidance");
+assertMasterDataRouteContains(/Reassign or close the dependent records before deleting/, "master-data delete guidance");
+
 console.log("Master-data contract hardening checks passed.");
