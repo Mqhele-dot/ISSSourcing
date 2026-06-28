@@ -27,7 +27,25 @@ type MdmDomainConfig = {
   allowedColumns: string[];
 };
 
-type QueryValue = string | number | boolean | Date | Record<string, unknown> | null;
+type QueryValue = string | number | boolean | Date | Record<string, unknown> | number[] | null;
+
+type MdmDependencyUsage = {
+  label: string;
+  count: number;
+};
+
+export class MdmDependencyError extends Error {
+  readonly status = 409;
+  readonly code = "MDM_RECORD_IN_USE";
+  readonly usage: MdmDependencyUsage[];
+
+  constructor(domain: MdmDomain, usage: MdmDependencyUsage[]) {
+    const summary = usage.map((item) => `${item.count} ${item.label}`).join(", ");
+    super(`Cannot deactivate this ${domain} record while it is used by ${summary}.`);
+    this.name = "MdmDependencyError";
+    this.usage = usage;
+  }
+}
 
 type MdmDataQualityIssueInput = {
   domain: string;
@@ -259,6 +277,85 @@ async function count(sqlText: string, values: QueryValue[] = []): Promise<number
   return Number(result.rows[0]?.count ?? 0);
 }
 
+async function getMdmDisableDependencies(
+  domain: MdmDomain,
+  organizationId: number,
+  id: number,
+): Promise<MdmDependencyUsage[]> {
+  if (domain === "uom-conversions") {
+    const conversion = await pool.query<{
+      from_uom_id: number | null;
+      to_uom_id: number | null;
+      item_id: number | null;
+    }>(
+      "SELECT from_uom_id, to_uom_id, item_id FROM mdm_uom_conversions WHERE organization_id = $1 AND id = $2",
+      [organizationId, id],
+    );
+    const row = conversion.rows[0];
+    if (!row) return [];
+    const uomIds = [row.from_uom_id, row.to_uom_id].filter(
+      (value): value is number => value != null && Number.isFinite(Number(value)),
+    );
+    if (uomIds.length === 0) return [];
+    const itemFilter = row.item_id ? "AND pri.item_id = $3" : "";
+    const values: QueryValue[] = row.item_id ? [organizationId, uomIds, row.item_id] : [organizationId, uomIds];
+    const openRequisitions = await count(
+      `
+        SELECT COUNT(*)
+        FROM purchase_requisition_items pri
+        JOIN purchase_requisitions pr ON pr.id = pri.requisition_id
+        WHERE pr.organization_id = $1
+          AND pri.unit_of_measure_id = ANY($2::int[])
+          ${itemFilter}
+          AND UPPER(COALESCE(pr.status, 'DRAFT')) NOT IN ('CONVERTED', 'CLOSED', 'CANCELLED', 'REJECTED')
+      `,
+      values,
+    );
+    const poItemFilter = row.item_id ? "AND poi.item_id = $3" : "";
+    const openPurchaseOrders = await count(
+      `
+        SELECT COUNT(*)
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON po.id = poi.purchase_order_id
+        WHERE po.organization_id = $1
+          AND poi.unit_of_measure_id = ANY($2::int[])
+          ${poItemFilter}
+          AND UPPER(COALESCE(po.status, 'DRAFT')) NOT IN ('RECEIVED', 'CLOSED', 'CANCELLED')
+      `,
+      values,
+    );
+    return [
+      ...(openRequisitions > 0 ? [{ label: "open requisition lines", count: openRequisitions }] : []),
+      ...(openPurchaseOrders > 0 ? [{ label: "open purchase order lines", count: openPurchaseOrders }] : []),
+    ];
+  }
+
+  if (domain === "gl-mappings") {
+    const mapping = await pool.query<{ gl_account_code: string | null; cost_centre_id: number | null }>(
+      "SELECT gl_account_code, cost_centre_id FROM mdm_gl_mappings WHERE organization_id = $1 AND id = $2",
+      [organizationId, id],
+    );
+    const row = mapping.rows[0];
+    const glAccountCode = String(row?.gl_account_code ?? "").trim();
+    if (!glAccountCode) return [];
+    const openRequisitions = await count(
+      `
+        SELECT COUNT(*)
+        FROM purchase_requisition_items pri
+        JOIN purchase_requisitions pr ON pr.id = pri.requisition_id
+        WHERE pr.organization_id = $1
+          AND pri.gl_account_code = $2
+          AND ($3::int IS NULL OR pri.cost_centre_id = $3::int)
+          AND UPPER(COALESCE(pr.status, 'DRAFT')) NOT IN ('CONVERTED', 'CLOSED', 'CANCELLED', 'REJECTED')
+      `,
+      [organizationId, glAccountCode, row.cost_centre_id ?? null],
+    );
+    return openRequisitions > 0 ? [{ label: "open requisition finance mappings", count: openRequisitions }] : [];
+  }
+
+  return [];
+}
+
 export async function listMdmDomain(domain: MdmDomain, organizationId: number, search = "") {
   const config = mdmDomains[domain];
   const values: QueryValue[] = [organizationId];
@@ -316,6 +413,12 @@ export async function updateMdmDomainRecord(
   if (before.rowCount === 0) return null;
 
   const payload = filterPayload(config, input);
+  if (payload.active === false) {
+    const usage = await getMdmDisableDependencies(domain, organizationId, id);
+    if (usage.length > 0) {
+      throw new MdmDependencyError(domain, usage);
+    }
+  }
   payload.updated_at = new Date();
   const columns = Object.keys(payload);
   const values = Object.values(payload);

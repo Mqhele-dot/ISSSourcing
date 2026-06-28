@@ -1065,6 +1065,10 @@ export const purchaseRequisitionItems = pgTable("purchase_requisition_items", {
   quantity: integer("quantity").notNull().default(1),
   unitPrice: real("unit_price").notNull(),
   totalPrice: real("total_price").notNull(),
+  unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
+  taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
+  costCentreId: integer("cost_centre_id").references(() => mdmCostCentres.id),
+  glAccountCode: text("gl_account_code"),
   notes: text("notes"),
 });
 

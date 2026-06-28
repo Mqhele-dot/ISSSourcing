@@ -140,6 +140,14 @@ export function useRequisitionForm(params: {
     },
   });
 
+  const { data: taxCodes = [] } = useQuery({
+    queryKey: ["/api/tax-codes"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/tax-codes");
+      return normalizeApiList<{ id: number; code: string; name: string; active?: boolean | null }>(raw);
+    },
+  });
+
   const effectiveSuppliers = useMemo(
     () => (mdmContext?.suppliers?.length ? mdmContext.suppliers : suppliers),
     [mdmContext?.suppliers, suppliers],
@@ -158,6 +166,14 @@ export function useRequisitionForm(params: {
   const effectiveCurrencies = useMemo(
     () => (mdmContext?.currencies?.length ? mdmContext.currencies.filter((currency) => currency.active !== false) : currencies),
     [currencies, mdmContext?.currencies],
+  );
+  const effectiveUnitsOfMeasure = useMemo(
+    () => mdmContext?.unitsOfMeasure?.filter((uom) => uom.active !== false) ?? [],
+    [mdmContext?.unitsOfMeasure],
+  );
+  const effectiveCostCentres = useMemo(
+    () => mdmContext?.costCentres?.filter((costCentre) => costCentre.active !== false) ?? [],
+    [mdmContext?.costCentres],
   );
 
   const selectedSupplier = useMemo(
@@ -219,13 +235,10 @@ export function useRequisitionForm(params: {
     },
   });
 
-  const { data: taxCodes = [] } = useQuery({
-    queryKey: ["/api/tax-codes"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/tax-codes");
-      return normalizeApiList<{ id: number; code: string; name: string }>(raw);
-    },
-  });
+  const effectiveTaxCodes = useMemo(
+    () => (mdmContext?.taxCodes?.length ? mdmContext.taxCodes.filter((taxCode) => taxCode.active !== false) : taxCodes),
+    [mdmContext?.taxCodes, taxCodes],
+  );
 
   const contractsForSupplier = useMemo(() => {
     if (supplierId === "") return [];
@@ -254,6 +267,10 @@ export function useRequisitionForm(params: {
             itemId: i.itemId,
             quantity: i.quantity,
             unitPrice: i.unitPrice,
+            unitOfMeasureId: (i as PurchaseRequisitionItem & { unitOfMeasureId?: number | null }).unitOfMeasureId ?? null,
+            taxCodeId: (i as PurchaseRequisitionItem & { taxCodeId?: number | null }).taxCodeId ?? null,
+            costCentreId: (i as PurchaseRequisitionItem & { costCentreId?: number | null }).costCentreId ?? null,
+            glAccountCode: (i as PurchaseRequisitionItem & { glAccountCode?: string | null }).glAccountCode ?? null,
             notes: i.notes ?? undefined,
           })),
         );
@@ -278,6 +295,10 @@ export function useRequisitionForm(params: {
             itemId: i.itemId,
             quantity: i.quantity,
             unitPrice: i.unitPrice,
+            unitOfMeasureId: i.unitOfMeasureId ?? undefined,
+            taxCodeId: i.taxCodeId ?? undefined,
+            costCentreId: i.costCentreId ?? undefined,
+            glAccountCode: i.glAccountCode || undefined,
             notes: i.notes,
           })),
       };
@@ -328,6 +349,10 @@ export function useRequisitionForm(params: {
           itemId: i.itemId,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
+          unitOfMeasureId: i.unitOfMeasureId ?? undefined,
+          taxCodeId: i.taxCodeId ?? undefined,
+          costCentreId: i.costCentreId ?? undefined,
+          glAccountCode: i.glAccountCode || undefined,
           notes: i.notes,
         }));
       const body = {
@@ -354,15 +379,27 @@ export function useRequisitionForm(params: {
     },
   });
 
-  const addItem = useCallback(() => setItems((prev) => [...prev, { itemId: 0, quantity: 1, unitPrice: 0 }]), []);
+  const addItem = useCallback(() => setItems((prev) => [...prev, { itemId: 0, quantity: 1, unitPrice: 0, lineCurrencyCode: currencyCode }]), [currencyCode]);
   const removeItem = useCallback((idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx)), []);
-  const updateItem = useCallback((idx: number, field: keyof ReqLineDraft, value: number | string) => {
+  const updateItem = useCallback((idx: number, field: keyof ReqLineDraft, value: number | string | null) => {
     setItems((prev) => {
       const next = [...prev];
-      next[idx] = { ...next[idx], [field]: value };
+      const current = { ...next[idx], [field]: value };
+      if (field === "itemId") {
+        const selected = effectiveInventoryItems.find((item) => Number(item.id) === Number(value));
+        const defaultTaxCode = effectiveTaxCodes.find((taxCode) => taxCode.active !== false);
+        current.unitPrice = Number(selected?.price ?? current.unitPrice ?? 0);
+        current.unitOfMeasureId = selected?.unitOfMeasureId ?? current.unitOfMeasureId ?? null;
+        current.taxCodeId = selected?.taxable === false ? null : current.taxCodeId ?? defaultTaxCode?.id ?? null;
+        current.supplierItemCode = selected?.supplierPartNumber ?? current.supplierItemCode ?? null;
+        current.baseUomId = selected?.unitOfMeasureId ?? current.baseUomId ?? null;
+        current.conversionFactor = selected?.unitOfMeasureId ? 1 : current.conversionFactor ?? null;
+        current.lineCurrencyCode = currencyCode;
+      }
+      next[idx] = current;
       return next;
     });
-  }, []);
+  }, [currencyCode, effectiveInventoryItems, effectiveTaxCodes]);
 
   const handleSubmit = useCallback(() => {
     if (isLocked) {
@@ -452,7 +489,9 @@ export function useRequisitionForm(params: {
     contractsForSupplier,
     paymentTerms,
     incoterms,
-    taxCodes,
+    taxCodes: effectiveTaxCodes,
+    unitsOfMeasure: effectiveUnitsOfMeasure,
+    costCentres: effectiveCostCentres,
     departmentLabel,
   };
 }

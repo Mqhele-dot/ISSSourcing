@@ -83,6 +83,9 @@ export default function RequisitionFormPage() {
           <RequisitionLinesEditor
             items={f.items}
             inventoryItems={f.inventoryItems}
+            unitsOfMeasure={f.unitsOfMeasure}
+            taxCodes={f.taxCodes}
+            costCentres={f.costCentres}
             currencyCode={f.currencyCode}
             exchangeRateToZar={f.exchangeRateToZar}
             fieldError={f.fieldErrors.items}

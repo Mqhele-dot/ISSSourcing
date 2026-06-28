@@ -23,6 +23,7 @@ import {
   PurchaseRequisitionStatus,
   PurchaseOrderStatus,
   PaymentStatus,
+  type InsertPurchaseRequisitionItem,
   type InsertPurchaseOrder,
   type InsertPurchaseOrderItem,
 } from "@shared/schema";
@@ -213,12 +214,21 @@ function normalizeRequisitionLineInput(item: unknown, index: number) {
     throw new Error(`Line ${index + 1}: unit price must be greater than zero`);
   }
   const id = row.id == null ? null : Number(row.id);
+  const unitOfMeasureId = Number(row.unitOfMeasureId);
+  const taxCodeId = Number(row.taxCodeId);
+  const costCentreId = Number(row.costCentreId);
+  const glAccountCode =
+    typeof row.glAccountCode === "string" && row.glAccountCode.trim() ? row.glAccountCode.trim() : null;
   return {
     id: id !== null && Number.isFinite(id) && id > 0 ? id : undefined,
     itemId,
     quantity: qty,
     unitPrice: unit,
     totalPrice: qty * unit,
+    unitOfMeasureId: Number.isFinite(unitOfMeasureId) && unitOfMeasureId > 0 ? unitOfMeasureId : null,
+    taxCodeId: Number.isFinite(taxCodeId) && taxCodeId > 0 ? taxCodeId : null,
+    costCentreId: Number.isFinite(costCentreId) && costCentreId > 0 ? costCentreId : null,
+    glAccountCode,
     notes: typeof row.notes === "string" && row.notes.trim() ? row.notes.trim() : null,
   };
 }
@@ -330,32 +340,18 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       requisitionInput.exchangeRateToZar = requisitionCurrency.exchangeRateToZar;
 
       const validatedReqData = insertPurchaseRequisitionSchema.parse(requisitionInput);
-      const validatedItemsData: InsertPurchaseOrderItem[] = req.body.items.map((item: any, index: number) => {
-        const qty = Number(item?.quantity);
-        const unit = Number(item?.unitPrice);
-        const itemId = Number(item?.itemId);
-        if (!Number.isFinite(itemId) || itemId <= 0) {
-          throw new Error(`createPurchaseRequisition:item_${index + 1}_itemId_invalid`);
-        }
-        if (!Number.isFinite(qty) || qty <= 0) {
-          throw new Error(`createPurchaseRequisition:item_${index + 1}_quantity_invalid`);
-        }
-        if (!Number.isFinite(unit) || unit <= 0) {
-          throw new Error(`createPurchaseRequisition:item_${index + 1}_unitPrice_invalid`);
-        }
-        const providedTotal = Number(item?.totalPrice);
-        const totalPrice =
-          Number.isFinite(providedTotal) && providedTotal > 0 ? providedTotal : qty * unit;
-        const unitOfMeasureId = Number(item?.unitOfMeasureId);
-        const taxCodeId = Number(item?.taxCodeId);
+      const validatedItemsData: InsertPurchaseRequisitionItem[] = req.body.items.map((item: unknown, index: number) => {
+        const normalized = normalizeRequisitionLineInput(item, index);
         return {
-          itemId,
-          quantity: qty,
-          unitPrice: unit,
-          totalPrice,
-          unitOfMeasureId: Number.isFinite(unitOfMeasureId) && unitOfMeasureId > 0 ? unitOfMeasureId : null,
-          taxCodeId: Number.isFinite(taxCodeId) && taxCodeId > 0 ? taxCodeId : null,
-          notes: typeof item?.notes === "string" ? item.notes : null,
+          itemId: normalized.itemId,
+          quantity: normalized.quantity,
+          unitPrice: normalized.unitPrice,
+          totalPrice: normalized.totalPrice,
+          unitOfMeasureId: normalized.unitOfMeasureId,
+          taxCodeId: normalized.taxCodeId,
+          costCentreId: normalized.costCentreId,
+          glAccountCode: normalized.glAccountCode,
+          notes: normalized.notes,
         };
       });
       if (!validatedReqData.supplierId) {
@@ -387,7 +383,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       const mdmValidation = await validateMdmTransaction(getActiveOrganizationId(), {
         transactionType: "requisition",
         supplierId: validatedReqData.supplierId,
-        itemIds: validatedItemsData.map((item: InsertPurchaseOrderItem | { itemId: number }) => item.itemId),
+        itemIds: validatedItemsData.map((item) => item.itemId),
         currencyCode: validatedReqData.currencyCode,
       });
       if (!mdmValidation.valid) {
@@ -516,6 +512,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
             quantity: line.quantity,
             unitPrice: line.unitPrice,
             totalPrice: line.totalPrice,
+            unitOfMeasureId: line.unitOfMeasureId,
+            taxCodeId: line.taxCodeId,
+            costCentreId: line.costCentreId,
+            glAccountCode: line.glAccountCode,
             notes: line.notes,
           };
           if (line.id && existingById.has(line.id)) {

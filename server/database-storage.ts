@@ -2757,9 +2757,9 @@ export class DatabaseStorage implements IStorage {
           totalPrice: item.totalPrice,
           receivedQuantity: 0,
           notes: item.notes ?? null,
-          unitOfMeasureId: invRow?.unitOfMeasureId ?? null,
+          unitOfMeasureId: item.unitOfMeasureId ?? invRow?.unitOfMeasureId ?? null,
           commodityCodeId: invRow?.commodityCodeId ?? null,
-          taxCodeId: null,
+          taxCodeId: item.taxCodeId ?? (Number(commercialDefaults.taxCodeId ?? null) || null),
         });
       }
 

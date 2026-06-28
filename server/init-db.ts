@@ -329,9 +329,17 @@ export async function ensurePurchaseRequisitionsTables(): Promise<void> {
         quantity INTEGER NOT NULL DEFAULT 1,
         unit_price REAL NOT NULL,
         total_price REAL NOT NULL,
+        unit_of_measure_id INTEGER,
+        tax_code_id INTEGER,
+        cost_centre_id INTEGER,
+        gl_account_code TEXT,
         notes TEXT
       )
     `);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS unit_of_measure_id INTEGER`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS tax_code_id INTEGER`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT`);
     console.log('Purchase requisitions tables ready');
   } catch (err) {
     console.warn('Could not ensure purchase requisitions tables:', err instanceof Error ? err.message : err);
@@ -1045,6 +1053,10 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS project_id INTEGER;
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS currency_code TEXT NOT NULL DEFAULT 'ZAR';
       ALTER TABLE purchase_requisitions ADD COLUMN IF NOT EXISTS exchange_rate_to_zar REAL DEFAULT 1 NOT NULL;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS unit_of_measure_id INTEGER;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS tax_code_id INTEGER;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS department_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS contract_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;

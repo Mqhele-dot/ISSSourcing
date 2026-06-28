@@ -3556,6 +3556,10 @@ export class MemStorage implements IStorage {
       ...item,
       id,
       quantity: item.quantity ?? 0,
+      unitOfMeasureId: item.unitOfMeasureId ?? null,
+      taxCodeId: item.taxCodeId ?? null,
+      costCentreId: item.costCentreId ?? null,
+      glAccountCode: item.glAccountCode ?? null,
       notes: item.notes ?? null
     };
     
@@ -4083,6 +4087,8 @@ export class MemStorage implements IStorage {
       unitPrice: reqItem.unitPrice,
       totalPrice: reqItem.totalPrice,
       receivedQuantity: 0,
+      unitOfMeasureId: reqItem.unitOfMeasureId ?? null,
+      taxCodeId: reqItem.taxCodeId ?? supplier.taxCodeId ?? null,
       notes: reqItem.notes
     }));
     
