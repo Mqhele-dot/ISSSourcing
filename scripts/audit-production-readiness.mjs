@@ -15,6 +15,24 @@ const statuses = [
   "Missing",
 ];
 
+const coreWorkflowRoutePatterns = [
+  /^\/admin\/master-data/,
+  /^\/procurement\/requisitions/,
+  /^\/procurement\/orders/,
+  /^\/procurement\/suppliers/,
+  /^\/procurement\/contracts/,
+  /^\/inventory(\/|$)/,
+  /^\/operations\/logistics/,
+  /^\/operations\/exceptions/,
+  /^\/finance\/accounts-payable/,
+  /^\/finance\/invoices/,
+  /^\/analytics\/reports/,
+  /^\/analytics\/export-center/,
+  /^\/admin\/system-diagnostics/,
+  /^\/admin\/user-roles/,
+  /^\/m\/counts/,
+];
+
 function toPosix(value) {
   return value.split(path.sep).join("/");
 }
@@ -238,17 +256,50 @@ function findApiUseForRoute(route) {
   return [...new Set(matches)];
 }
 
-function routeStatus(route, apiUses, text) {
+function isCoreWorkflowRoute(route) {
+  return coreWorkflowRoutePatterns.some((pattern) => pattern.test(route.route));
+}
+
+function routeTestEvidence(route) {
+  const module = detectModule(`${route.route} ${route.file}`).toLowerCase().split(" ")[0];
+  const routeSlug = route.route
+    .replace(/^\/+/, "")
+    .replace(/\/:.+$/, "")
+    .split("/")[0];
+  return testFiles.filter((file) => {
+    const normalized = toPosix(file).toLowerCase();
+    return normalized.includes(module) || normalized.includes(routeSlug);
+  });
+}
+
+function routeRequiredFixes(route, apiUses, text) {
+  const fixes = [];
   const hasMock = /\b(mock|demo|sample|stub|fake|coming soon)\b/i.test(text);
   const hasApi = apiUses.length || /useQuery|useMutation|apiRequest|fetch\(/.test(text);
   const hasLoading = /isLoading|loading|Skeleton|Loading/.test(text);
   const hasError = /isError|error|PanelInlineError|catch|toast/.test(text);
   const hasValidation = /zod|schema|validate|resolver|FormMessage|required/i.test(text);
   const hasPermission = /<Can|useCan|usePermissions|permission|ProtectedRoute/i.test(text);
+  if (!existsSync(path.join(root, route.file))) fixes.push("component file missing");
+  if (hasMock) fixes.push("mock/demo/static markers present");
+  if (!hasApi && route.protected) fixes.push("no clear backend data integration");
+  if (!hasLoading) fixes.push("loading state not proven");
+  if (!hasError) fixes.push("error handling not proven");
+  if (!hasValidation) fixes.push("validation not proven");
+  if (!hasPermission) fixes.push("permission-aware UX not proven");
+  if (isCoreWorkflowRoute(route) && routeTestEvidence(route).length === 0) {
+    fixes.push("core route lacks focused test evidence");
+  }
+  return fixes;
+}
+
+function routeStatus(route, apiUses, text) {
+  const fixes = routeRequiredFixes(route, apiUses, text);
+  const hasMock = fixes.includes("mock/demo/static markers present");
   if (!existsSync(path.join(root, route.file))) return "Broken";
   if (hasMock) return "Mock/demo only";
-  if (!hasApi && route.protected) return "Cosmetic only";
-  if (!hasLoading || !hasError || !hasValidation || !hasPermission) return "Partially working";
+  if (fixes.includes("no clear backend data integration")) return "Cosmetic only";
+  if (fixes.length > 0) return "Partially working";
   return "Production-ready";
 }
 
@@ -369,6 +420,29 @@ function riskRows() {
   return rows;
 }
 
+function isProductionCodeFile(file) {
+  const normalized = toPosix(file);
+  if (normalized.startsWith("scripts/test-") || normalized.startsWith("e2e/") || normalized.endsWith(".test.ts")) return false;
+  return normalized.startsWith("client/src/") || normalized.startsWith("server/") || normalized.startsWith("shared/");
+}
+
+function riskSeverity(risk) {
+  if (!isProductionCodeFile(risk.file)) return "False positive";
+  const lower = `${risk.file} ${risk.description}`.toLowerCase();
+  const core =
+    /purchase|requisition|supplier|inventory|warehouse|logistics|invoice|payment|accounts-payable|master-data|mdm|export|diagnostic|role|permission/.test(
+      lower,
+    );
+  if (core && /\b(mock|stub|fake|placeholder)\b/i.test(risk.type)) return "Critical";
+  if (core && /\b(demo|todo|fixme|degraded|coming soon)\b/i.test(risk.type)) return "High";
+  if (/\b(localstorage|hardcoded|static|sample)\b/i.test(risk.type)) return core ? "Medium" : "Low";
+  return core ? "High" : "Low";
+}
+
+function riskRowsBySeverity() {
+  return riskRows().map((risk) => ({ ...risk, severity: riskSeverity(risk) }));
+}
+
 const mdmDomains = [
   ["Legal entities", ["mdm_legal_entities"], "registration, tax, default currency, country, active state, sites"],
   ["Sites/branches", ["mdm_sites"], "legal entity, warehouse, address, site type, delivery defaults"],
@@ -479,6 +553,7 @@ function routeRows() {
     const status = routeStatus(route, apiUses, text);
     const module = detectModule(`${route.route} ${route.file}`);
     const dataSource = apiUses.length ? "Backend API" : /localStorage|sessionStorage/.test(text) ? "Browser storage" : "Static/component state";
+    const fixes = routeRequiredFixes(route, apiUses, text);
     const gap =
       status === "Production-ready"
         ? "No major static gap detected"
@@ -486,9 +561,24 @@ function routeRows() {
           ? "Contains mock/demo/static fallback markers"
           : status === "Cosmetic only"
             ? "No clear backend data integration in component"
-            : "Needs stronger loading/error/validation/permission/audit proof";
-    return `| ${esc(route.route)} | ${esc(route.file)} | ${module} | ${dataSource} | ${list(apiUses, 5)} | ${status} | ${gap} | Connect to real data, backend validation, permissions, audit/reporting evidence, and a focused test. |`;
+            : fixes.length
+              ? fixes.join("; ")
+              : "Needs stronger loading/error/validation/permission/audit proof";
+    return `| ${esc(route.route)} | ${esc(route.file)} | ${module} | ${isCoreWorkflowRoute(route) ? "Yes" : "No"} | ${dataSource} | ${list(apiUses, 5)} | ${status} | ${gap} | Connect to real data, backend validation, permissions, audit/reporting evidence, and a focused test. |`;
   });
+}
+
+function coreRouteRows() {
+  return routes
+    .filter(isCoreWorkflowRoute)
+    .map((route) => {
+      const text = fileText(route.file);
+      const apiUses = findApiUseForRoute(route);
+      const status = routeStatus(route, apiUses, text);
+      const fixes = routeRequiredFixes(route, apiUses, text);
+      const tests = routeTestEvidence(route);
+      return `| ${esc(route.route)} | ${esc(route.file)} | ${detectModule(`${route.route} ${route.file}`)} | ${list(apiUses, 4)} | ${list(tests.map(toPosix), 3)} | ${status} | ${fixes.length ? fixes.join("; ") : "No required fixes detected by static audit"} |`;
+    });
 }
 
 function apiRows() {
@@ -531,14 +621,14 @@ function workflowRows() {
 }
 
 function mockRows() {
-  return riskRows()
+  return riskRowsBySeverity()
     .slice(0, 160)
     .map((risk) => {
       const productionRisk =
         /mock|demo|fake|stub|placeholder|TODO|FIXME/.test(risk.type)
           ? "May hide incomplete behavior or disconnected workflow"
           : "May create local-only or static production behavior";
-      return `| ${risk.file}:${risk.line} | ${risk.area} | ${risk.type} | ${esc(risk.description)} | ${productionRisk} | Replace with real backend data, formal demo flag, or tracked backlog item. |`;
+      return `| ${risk.severity} | ${risk.file}:${risk.line} | ${risk.area} | ${risk.type} | ${esc(risk.description)} | ${productionRisk} | Replace with real backend data, formal demo flag, or tracked backlog item. |`;
     });
 }
 
@@ -641,77 +731,95 @@ Allowed status labels: ${statuses.map((status) => `\`${status}\``).join(", ")}.
 - Schema tables inspected: **${tables.length}**
 - Test/spec files discovered: **${testFiles.length}**
 - Mock/demo/static risk markers found: **${riskRows().length}**
+- Core workflow routes inspected: **${routes.filter(isCoreWorkflowRoute).length}**
+- Mock/demo/static severity split: **Critical ${riskRowsBySeverity().filter((risk) => risk.severity === "Critical").length}**, **High ${riskRowsBySeverity().filter((risk) => risk.severity === "High").length}**, **Medium ${riskRowsBySeverity().filter((risk) => risk.severity === "Medium").length}**, **Low ${riskRowsBySeverity().filter((risk) => risk.severity === "Low").length}**, **False positive ${riskRowsBySeverity().filter((risk) => risk.severity === "False positive").length}**
 - Baseline comparison: **Wave 1 baseline**. Future production audits should compare these counts and risk markers so new or worsened production gaps are visible before release.
 
 The app now has a real production foundation across MDM, procurement, inventory, AP, logistics, reporting, diagnostics, subscriptions, and mobile stock counts. The biggest remaining risk is not absence of screens; it is inconsistent production proof in handoffs, degraded fallback behavior, business-rule enforcement, and audit evidence.
 
 ## 1. Route Audit
 
-| Route | Component/File | Module | Data Source | API Used | Status | Main Gap | Required Fix |
-|---|---|---|---|---|---|---|---|
+| Route | Component/File | Module | Core Workflow? | Data Source | API Used | Status | Main Gap | Required Fix |
+|---|---|---|---|---|---|---|---|---|
 ${routeRows().join("\n")}
 
-## 2. API Audit
+## 2. Core Workflow Routes
+
+Core workflow routes are stricter than supporting pages. They cannot be marked \`Production-ready\` unless static analysis finds real data access, validation, permissions, loading/error handling, and focused test evidence.
+
+| Route | Component/File | Module | API Used | Test Evidence | Status | Required Fixes |
+|---|---|---|---|---|---|---|
+${coreRouteRows().join("\n")}
+
+## 3. API Audit
 
 | Method | Endpoint | Handler File | Module | Auth Required | Validation | Tables Used | Frontend Used | Tests | Status | Gap |
 |---|---|---|---|---|---|---|---|---|---|---|
 ${apiRows().join("\n")}
 
-## 3. Database And Schema Audit
+## 4. Database And Schema Audit
 
 | Table | Purpose | Used By | Keys/Relations | Status Fields | Audit Fields | Tenant/Company Field | Main Gap | Required Fix |
 |---|---|---|---|---|---|---|---|---|
 ${schemaRows().join("\n")}
 
-## 4. Workflow Connectivity Audit
+## 5. Workflow Connectivity Audit
 
 | From | To | Data That Should Flow | Currently Flows? | Evidence | Gap | Required Fix |
 |---|---|---|---|---|---|---|
 ${workflowRows().join("\n")}
 
-## 5. Mock, Demo, Placeholder, And Static Data Audit
+## 6. Mock, Demo, Placeholder, And Static Data Audit
 
-| File | Area | Type | Description | Production Risk | Required Fix |
-|---|---|---|---|---|---|
+| Severity | File | Area | Type | Description | Production Risk | Required Fix |
+|---|---|---|---|---|---|---|
 ${mockRows().join("\n")}
 
-## 6. Master Data Audit
+Severity definitions:
+
+- **Critical**: mock/static/placeholder behavior in a core production workflow.
+- **High**: demo/degraded/TODO/FIXME behavior that can affect a core workflow.
+- **Medium**: local-only or hardcoded behavior that may affect production decisions.
+- **Low**: supporting/static behavior outside core transaction paths.
+- **False positive**: test, fixture, script, or non-production context that still contains a marker.
+
+## 7. Master Data Audit
 
 | Domain | Current Fields | Required Fields | Used In Transactions? | Data Quality Checks? | Audit? | Status | Required Fix |
 |---|---|---|---|---|---|---|---|
 ${mdmRows().join("\n")}
 
-## 7. Business Validation Audit
+## 8. Business Validation Audit
 
 | Rule | Frontend Validation? | Backend Validation? | Database Constraint? | Current Risk | Required Fix |
 |---|---|---|---|---|---|
 ${validationRows().join("\n")}
 
-## 8. Permissions And Security Audit
+## 9. Permissions And Security Audit
 
 | Role | Current Access | Required Access | Sensitive Actions Allowed? | Gap | Required Fix |
 |---|---|---|---|---|---|
 ${permissionRows().join("\n")}
 
-## 9. Audit Trail Audit
+## 10. Audit Trail Audit
 
 | Area | Audit Exists? | Old/New Values? | User Captured? | Timestamp Captured? | Reason Captured? | Gap | Required Fix |
 |---|---|---|---|---|---|---|---|
 ${auditTrailRows().join("\n")}
 
-## 10. Diagnostics And Error Handling Audit
+## 11. Diagnostics And Error Handling Audit
 
 | Area | Exists? | Quality | Gap | Required Fix |
 |---|---|---|---|---|
 ${diagnosticsRows().join("\n")}
 
-## 11. Testing And Release Gate Audit
+## 12. Testing And Release Gate Audit
 
 | Script/Test | Exists? | Purpose | Passes? | Gap | Required Fix |
 |---|---|---|---|---|---|
 ${testRows().join("\n")}
 
-## 12. Required Next Build Waves
+## 13. Required Next Build Waves
 
 1. **Stabilise and expose app truth**: fix broken routes/APIs, standardize API errors, make diagnostics authoritative, label demo-only behavior, and keep check/lint/build green.
 2. **Build the real data backbone**: continue the MDM rebuild, domain-specific fields, where-used relationships, data-quality scans, backend validation, and audit history.
@@ -719,7 +827,7 @@ ${testRows().join("\n")}
 4. **Add controls and security**: protect supplier banking, payments, approval rules, tax/GL setup, master-data changes, user roles, and sensitive exports.
 5. **Add production release gates**: route/API/schema readiness, workflow smoke, permission tests, data-quality tests, dependency checks, and deployment evidence.
 
-## 13. Immediate Acceptance Criteria
+## 14. Immediate Acceptance Criteria
 
 - \`docs/production-readiness-audit.md\` exists and is generated by \`npm run audit:production\`.
 - Frontend routes are listed and classified.
@@ -730,13 +838,13 @@ ${testRows().join("\n")}
 - Validation, permission, audit-trail, diagnostics, and release-gate gaps are documented.
 - The top 10 fixes are listed below in priority order.
 
-## 14. Top 10 Fixes
+## 15. Top 10 Fixes
 
 | Priority | Fix | Module | Reason | Risk if Not Fixed | Estimated Size |
 |---|---|---|---|---|---|
 ${topFixes.map((row) => `| ${row.map(esc).join(" | ")} |`).join("\n")}
 
-## 15. Non-Negotiable Standard
+## 16. Non-Negotiable Standard
 
 Do not mark a feature complete because it renders. A production-ready feature must prove that it uses real data, connects to the workflow, has backend validation, respects permissions, records audit history where needed, handles errors, has tests or verification, and does not break existing modules.
 `;

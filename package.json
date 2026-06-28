@@ -89,7 +89,7 @@
     "verify:production-base": "node scripts/verify-production-branch.mjs",
     "verify:core": "npm run check && npm run test:stabilization-client && npm run test:diagnostics && npm run test:route-diagnostics && npm run test:po-print-html && npm run test:purchase-order-status && npm run test:po-receive-qty && npm run test:po-feature-queries && npm run test:functional-audit && npm run test:e2e",
     "verify:e2e": "npm run verify:core && npm run test:purchase-order-actions-e2e",
-    "verify:release": "npm run verify:production-base && npm run build && npm run audit:production && npm run test:local:delta",
+    "verify:release": "npm run verify:production-base && npm run check && npm run lint && npm run build && npm run audit:production && npm run test:local:delta",
     "test:e2e:preflight": "node scripts/e2e-preflight.mjs",
     "playwright:install-deps": "playwright install-deps",
     "verify:changes": "node scripts/verify-recent-changes.js",

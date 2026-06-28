@@ -1,6 +1,6 @@
 # Branch Truth And Production Readiness Audit
 
-Generated: 2026-06-25
+Generated: 2026-06-28
 
 This document answers the branch-truth question before further feature work. It should be read together with [`docs/production-readiness-audit.md`](production-readiness-audit.md), which contains the generated route, API, schema, workflow, MDM, validation, permission, audit-trail, diagnostics, testing, and top-10 production-fix inventories.
 
@@ -8,9 +8,13 @@ This document answers the branch-truth question before further feature work. It 
 
 **Recommended production base branch:** `cursor/project-codespace-compatibility-b14c`
 
+**Release status:** buildable production-base candidate, **not production-approved**. This branch is the correct place to continue stabilisation work, but it must not be treated as production-ready until the full release gate and required GitHub CI checks pass on the release head.
+
 **Why:** PR #4 is the only branch that currently contains the restored full ISSSourcing app snapshot, Codespaces compatibility work, the current MDM/control-centre foundation, AP/procurement/logistics/reporting/mobile/subscription modules, the production readiness audit tooling, and a clean local working tree. GitHub comparison reports it is **266 commits ahead of `main` and 0 commits behind**. `main` is still the empty/deleted-project baseline at `58cd69d`, so it is not the working app.
 
-Do **not** merge PR #3, #7, or #8 blindly. They are useful evidence/backlog inputs, but they target older SHAs and are diverged from the production base.
+Do **not** merge PR #3, #7, or #8 blindly. They are useful evidence/backlog inputs, but they target older SHAs and are diverged from the production base. Any useful patch from those PRs must be reviewed, rebased/cherry-picked intentionally, tested through the release gate, and documented in the stale PR decision log.
+
+Any feature marked **Production-ready** must prove all of the following: real data, backend validation, permissions where needed, clear error handling, and tests or explicit verification evidence. Rendering a page, showing seeded/demo data, or passing a cosmetic UI review is not enough.
 
 ## 1. Branch And PR Truth Audit
 
@@ -54,7 +58,7 @@ Only the chosen production base was executed locally in this workspace. Other ca
 
 | Branch | Install | Typecheck | Lint | Build | Tests | DB/Migration | App Startup | Result | Blocking Errors |
 |---|---|---|---|---|---|---|---|---|---|
-| `cursor/project-codespace-compatibility-b14c` | Existing `node_modules` present from prior `npm ci`; local doctor previously passed TypeScript binary/Postgres reachability | Passed: `npm.cmd run check` | Passed: `npm.cmd run lint` | Passed: `npm.cmd run build` | `npm.cmd run audit:production` passed; full suite not rerun in this pass | Not run in this pass; migration scripts exist: `db:preflight`, `db:push`, `db:push:force` | Not started in this pass; local/Codespaces run scripts exist | **Chosen base is buildable locally** | None from check/lint/build. Full release gate still required before production. |
+| `cursor/project-codespace-compatibility-b14c` | Existing `node_modules` present from prior `npm ci`; local doctor previously passed TypeScript binary/Postgres reachability | Passed: `npm.cmd run check` | Passed: `npm.cmd run lint` | Passed: `npm.cmd run build` | `npm.cmd run audit:production` and `npm.cmd run verify:release` passed on the latest enforcement pass | Migration scripts exist: `db:preflight`, `db:push`, `db:push:force`; release gate starts the local app and waits for `/api/ready` | Release gate starts local app through `scripts/run-local-tests.mjs` | **Chosen base is buildable and release-gated locally, but not production-approved until CI is green on the release head** | No local gate blocker at the latest run. CI remains required before production. |
 | `main` | Not run | Not run | Not run | Not run | Not run | Not run | Not run | Not production candidate | Empty/deleted baseline, not current app. |
 | PR #7 branch | Not run | Not run | Not run | Not run | PR body reports Codespaces bootstrap and smoke checks at time of PR | Not run | Not run | Needs rebase before testing | GitHub says not mergeable; 192 commits behind current base. |
 | PR #8 branch | Not run | Not run | Not run | Not run | PR body says no automated tests run | Not run | Not run | Likely superseded | GitHub says not mergeable; 93 commits behind current base. |
@@ -147,13 +151,14 @@ The diagnostics table is generated in [`docs/production-readiness-audit.md`](pro
 | `npm run check` | Yes | TypeScript validation | Passed locally via `npm.cmd run check` | Needs CI evidence on PR #4 head | Keep in required gate. |
 | `npm run lint` | Yes | ESLint validation | Passed locally via `npm.cmd run lint` | Needs CI evidence on PR #4 head | Keep in required gate. |
 | `npm run build` | Yes | Production build | Passed locally via `npm.cmd run build` | Needs CI evidence on PR #4 head | Keep in required gate. |
-| `npm run test` | No | Generic test alias | Missing | Test discovery is fragmented across many focused scripts | Add `test` alias or document `verify:release` as canonical. |
-| `npm run test:master-data-propagation` | Yes | MDM dependency/invalidation coverage | Not rerun in this pass | Needs fresh evidence | Run before production merge. |
-| `npm run test:purchase-order-endpoints` | Yes | PO endpoint coverage | Not rerun in this pass | Needs fresh evidence | Run before production merge. |
-| `npm run test:ap-workflow` | Yes | AP workflow coverage | Not rerun in this pass | Needs fresh evidence | Run before production merge. |
-| `npm run test:diagnostics` | Yes | Diagnostics checks | Not rerun in this pass | Needs fresh evidence | Run before production merge. |
-| `npm run release:gate:delta` | Yes | Focused release gate | Not rerun in this pass | Needs live/fresh evidence | Run after branch truth is accepted. |
-| `npm run audit:production` | Yes | Production-readiness map | Passed locally | Not part of release gate yet | Add to release/CI after noise is controlled. |
+| `npm run test` | Yes | Generic production-smoke alias | Passed through `npm run test:production-smoke` when run by developers/CI | Requires local app for some downstream focused suites | Keep mapped to production-critical smoke coverage. |
+| `npm run verify:release` | Yes | Canonical release gate | Passed locally in latest enforcement pass | Requires local Postgres/app startup | Blocking before production and before merging production-base PR. |
+| `npm run test:master-data-propagation` | Yes | MDM dependency/invalidation coverage | Passed inside `npm run verify:release` via `test:local:delta` | Needs CI evidence on release head | Keep in required gate. |
+| `npm run test:purchase-order-endpoints` | Yes | PO endpoint coverage | Passed inside `npm run verify:release` via `test:local:delta` | Needs CI evidence on release head | Keep in required gate. |
+| `npm run test:ap-workflow` | Yes | AP workflow coverage | Passed inside `npm run verify:release` via `test:local:delta` | Needs CI evidence on release head | Keep in required gate. |
+| `npm run test:diagnostics` | Yes | Diagnostics checks | Passed inside `npm run verify:release` via `test:local:delta` | Needs CI evidence on release head | Keep in required gate. |
+| `npm run release:gate:delta` | Yes | Focused release gate | Passed inside `npm run verify:release` | Requires local server and seeded demo/admin data | Keep as blocking delta gate. |
+| `npm run audit:production` | Yes | Production-readiness map | Passed locally and is part of `verify:release` | Static audit still has false positives by design | Keep blocking and review generated deltas. |
 
 ## 15. Top 10 Production Fixes
 
@@ -161,8 +166,8 @@ The diagnostics table is generated in [`docs/production-readiness-audit.md`](pro
 |---|---|---|---|---|---|
 | 1 | Declare `cursor/project-codespace-compatibility-b14c` the production base and stop building on `main` | Branch truth | `main` is not the working app; PR #4 is the restored app | Work may keep landing on the wrong branch | S |
 | 2 | Close/rebase stale PRs #3, #7, #8 before new feature work | Repo stability | They are diverged or parallel-scaffold branches | Non-mergeable PRs can reintroduce old code and conflicts | M |
-| 3 | Add a standard `npm run test` or canonical `verify:release` policy | Release gates | Generic test alias is missing | Developers may run incomplete verification | S |
-| 4 | Add `audit:production` to release gate after review | App truth | The audit is useful but not yet enforced | Route/API/schema regressions can ship | S |
+| 3 | Keep `npm run test` and `npm run verify:release` wired to focused production checks | Release gates | Generic and canonical release commands now exist | Developers may run incomplete verification if these drift | S |
+| 4 | Keep `audit:production` in the release gate and review generated deltas | App truth | The audit is now enforced by `verify:release` | Route/API/schema regressions can ship if audit output is ignored | S |
 | 5 | Remove or label degraded/mock/static route behavior | Core app truth | Audit found many risk markers | Users may trust demo or fallback data as real | M |
 | 6 | Finish MDM where-used/dependency checks | Master Data | Disable/delete safeguards are incomplete | Open transactions can reference invalid setup data | M |
 | 7 | Strengthen PO business validation for supplier/item/UOM/tax/GL/FX | Procurement | Production rules need backend proof | Invalid POs can be approved/sent | M |
@@ -177,8 +182,8 @@ The diagnostics table is generated in [`docs/production-readiness-audit.md`](pro
 3. Do not merge PR #3 into the app; close or keep as a separate spike.
 4. Rebase/cherry-pick PR #7 only if a specific missing capability is proven.
 5. Close/recreate PR #8 unless a current diff proves missing invalidation behavior.
-6. Add a standard `npm run test` alias or make `verify:release` the documented canonical release command.
-7. Add `npm run audit:production` to a non-blocking CI job first, then make it blocking after false positives are reduced.
+6. Keep the standard `npm run test` alias and documented `verify:release` command active.
+7. Keep `npm run audit:production` in release/CI and reduce false positives without weakening the gate.
 8. Label all remaining demo/mock/degraded routes or connect them to real APIs.
 9. Add standard API error handling checks to the release gate.
 10. Run the full production gate before merging PR #4 to `main`.
@@ -190,7 +195,7 @@ The diagnostics table is generated in [`docs/production-readiness-audit.md`](pro
 | `docs/branch-truth-and-production-readiness-audit.md` exists | Complete |
 | True production base identified | Complete: `cursor/project-codespace-compatibility-b14c` |
 | Open PRs classified | Complete for PR #3, #4, #7, #8 |
-| Build/test status documented for chosen branch | Complete for check/lint/build/audit; full release gate remains required |
+| Build/test status documented for chosen branch | Complete for check/lint/build/audit/verify:release; CI on release head remains required |
 | Route/API/schema inventory completed | Complete in `docs/production-readiness-audit.md` |
 | Workflow connectivity mapped | Complete |
 | Mock/demo/static features listed | Complete by generated audit |
