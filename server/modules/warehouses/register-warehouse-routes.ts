@@ -6,6 +6,11 @@ import { createWarehouseRepository } from "../../repositories";
 import { insertWarehouseSchema, insertWarehouseInventorySchema } from "@shared/schema";
 import type { AuthBundle } from "../procurement/types";
 import { ensurePlanLimitAllowsCreate } from "../../plan-limit-service";
+import { getActiveOrganizationId } from "../../organization-context";
+import {
+  dependencyBlockedMessage,
+  getWarehouseWhereUsed,
+} from "../master-data/dependency-checks";
 
 const warehouseRepo = createWarehouseRepository(storage);
 
@@ -132,6 +137,24 @@ export function registerWarehouseRoutes(app: Express, auth: AuthBundle): void {
       const id = Number(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid warehouse ID" });
+      }
+
+      const dependencies = await getWarehouseWhereUsed(getActiveOrganizationId(), id);
+      if (dependencies.length > 0) {
+        const userId = (req as Request & { user?: { id?: number } }).user?.id;
+        await storage.createActivityLog({
+          action: "Warehouse Delete Blocked",
+          description: dependencyBlockedMessage("warehouse", "delete", dependencies),
+          referenceType: "warehouse",
+          referenceId: id,
+          userId,
+        }).catch(() => {});
+        return res.status(409).json({
+          code: "MASTER_DATA_RECORD_IN_USE",
+          message: dependencyBlockedMessage("warehouse", "delete", dependencies),
+          hint: "Move stock, close movement history dependencies, and reassign defaults before deleting this warehouse.",
+          details: { action: "delete", dependencies },
+        });
       }
 
       const success = await warehouseRepo.delete(id);

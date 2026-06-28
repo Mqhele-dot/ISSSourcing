@@ -13,6 +13,10 @@ import { detectSupplierDocumentMismatches } from "../procurement/supplier-defaul
 import type { AuthBundle } from "../procurement/types";
 import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
 import { createInvoiceRecord } from "../accounts-payable/service";
+import {
+  dependencyBlockedMessage,
+  getSupplierWhereUsed,
+} from "../master-data/dependency-checks";
 
 const supplierRepo = createSupplierRepository(storage);
 const supplierService = createSupplierService(supplierRepo, storage);
@@ -208,6 +212,25 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       const validatedData = insertSupplierSchema.partial().parse(req.body);
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
       const orgId = getActiveOrganizationId();
+      const status = String((validatedData as { status?: unknown }).status ?? "").toLowerCase();
+      if (["inactive", "blocked", "suspended", "archived"].includes(status)) {
+        const dependencies = await getSupplierWhereUsed(orgId, id);
+        if (dependencies.length > 0) {
+          await storage.createActivityLog({
+            action: "Supplier Disable Blocked",
+            description: dependencyBlockedMessage("supplier", "disable", dependencies),
+            referenceType: "supplier",
+            referenceId: id,
+            userId: userId ?? undefined,
+          }).catch(() => {});
+          return res.status(409).json({
+            code: "MASTER_DATA_RECORD_IN_USE",
+            message: dependencyBlockedMessage("supplier", "disable", dependencies),
+            hint: "Close or reassign open requisitions, POs, contracts, and AP records before disabling this supplier.",
+            details: { action: "disable", dependencies },
+          });
+        }
+      }
       const updatedSupplier = await supplierService.update(id, validatedData, userId);
       if (!updatedSupplier) {
         return res.status(404).json({ message: "Supplier not found" });
@@ -236,6 +259,23 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       }
 
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
+      const orgId = getActiveOrganizationId();
+      const dependencies = await getSupplierWhereUsed(orgId, id);
+      if (dependencies.length > 0) {
+        await storage.createActivityLog({
+          action: "Supplier Delete Blocked",
+          description: dependencyBlockedMessage("supplier", "delete", dependencies),
+          referenceType: "supplier",
+          referenceId: id,
+          userId: userId ?? undefined,
+        }).catch(() => {});
+        return res.status(409).json({
+          code: "MASTER_DATA_RECORD_IN_USE",
+          message: dependencyBlockedMessage("supplier", "delete", dependencies),
+          hint: "Close or reassign dependent procurement and AP records before deleting this supplier.",
+          details: { action: "delete", dependencies },
+        });
+      }
       const success = await supplierService.delete(id, userId);
 
       if (!success) {

@@ -4,6 +4,11 @@ import { fromZodError } from "zod-validation-error";
 import { storage } from "../../storage";
 import { insertInventoryItemSchema, inventoryItemFormSchema } from "@shared/schema";
 import { ensurePlanLimitAllowsCreate } from "../../plan-limit-service";
+import { getActiveOrganizationId } from "../../organization-context";
+import {
+  dependencyBlockedMessage,
+  getInventoryItemWhereUsed,
+} from "../master-data/dependency-checks";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -167,6 +172,26 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
       }
 
       const validatedData = insertInventoryItemSchema.partial().parse(req.body);
+      const status = String((validatedData as { status?: unknown }).status ?? "").toLowerCase();
+      if (["inactive", "blocked", "archived"].includes(status)) {
+        const dependencies = await getInventoryItemWhereUsed(getActiveOrganizationId(), id);
+        if (dependencies.length > 0) {
+          const userId = (req as Request & { user?: { id?: number } }).user?.id;
+          await storage.createActivityLog({
+            action: "Inventory Item Disable Blocked",
+            description: dependencyBlockedMessage("inventory item", "disable", dependencies),
+            referenceType: "inventory_item",
+            referenceId: id,
+            userId,
+          }).catch(() => {});
+          return res.status(409).json({
+            code: "MASTER_DATA_RECORD_IN_USE",
+            message: dependencyBlockedMessage("inventory item", "disable", dependencies),
+            hint: "Close or reassign open requisitions, PO lines, invoice lines, and stock before disabling this item.",
+            details: { action: "disable", dependencies },
+          });
+        }
+      }
       const updatedItem = await storage.updateInventoryItem(id, validatedData);
 
       if (!updatedItem) {
@@ -190,6 +215,24 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
       const id = Number(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid inventory item ID" });
+      }
+
+      const dependencies = await getInventoryItemWhereUsed(getActiveOrganizationId(), id);
+      if (dependencies.length > 0) {
+        const userId = (req as Request & { user?: { id?: number } }).user?.id;
+        await storage.createActivityLog({
+          action: "Inventory Item Delete Blocked",
+          description: dependencyBlockedMessage("inventory item", "delete", dependencies),
+          referenceType: "inventory_item",
+          referenceId: id,
+          userId,
+        }).catch(() => {});
+        return res.status(409).json({
+          code: "MASTER_DATA_RECORD_IN_USE",
+          message: dependencyBlockedMessage("inventory item", "delete", dependencies),
+          hint: "Clear dependent transactions and stock before deleting this item.",
+          details: { action: "delete", dependencies },
+        });
       }
 
       const success = await storage.deleteInventoryItem(id);

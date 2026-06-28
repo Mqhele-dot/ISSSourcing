@@ -21,12 +21,14 @@ const suites = {
     ["run", "test:master-data-integration"],
     ["run", "test:purchase-order-endpoints"],
     ["run", "test:ap-workflow"],
+    ["run", "test:production-workflow-proof"],
     ["run", "release:gate:delta"],
   ],
   productionSmoke: [
     ["run", "test:master-data-propagation"],
     ["run", "test:purchase-order-endpoints"],
     ["run", "test:ap-workflow"],
+    ["run", "test:production-workflow-proof"],
     ["run", "test:diagnostics"],
   ],
 };

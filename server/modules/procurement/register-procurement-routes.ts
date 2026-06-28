@@ -30,6 +30,7 @@ import { canUpdatePurchaseOrder } from "@shared/purchase-order-status";
 import { getActiveOrganizationId } from "../../organization-context";
 import { getApplicableRequisitionPolicyForOrg, roleMatchesPolicy } from "./service";
 import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed } from "./supplier-defaults";
+import { validatePurchaseOrderWorkflowReadiness } from "./po-validation";
 import { validateMdmTransaction } from "../master-data/mdm-control-centre";
 import type { AuthBundle } from "./types";
 
@@ -329,7 +330,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       requisitionInput.exchangeRateToZar = requisitionCurrency.exchangeRateToZar;
 
       const validatedReqData = insertPurchaseRequisitionSchema.parse(requisitionInput);
-      const validatedItemsData = req.body.items.map((item: any, index: number) => {
+      const validatedItemsData: InsertPurchaseOrderItem[] = req.body.items.map((item: any, index: number) => {
         const qty = Number(item?.quantity);
         const unit = Number(item?.unitPrice);
         const itemId = Number(item?.itemId);
@@ -345,11 +346,15 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         const providedTotal = Number(item?.totalPrice);
         const totalPrice =
           Number.isFinite(providedTotal) && providedTotal > 0 ? providedTotal : qty * unit;
+        const unitOfMeasureId = Number(item?.unitOfMeasureId);
+        const taxCodeId = Number(item?.taxCodeId);
         return {
           itemId,
           quantity: qty,
           unitPrice: unit,
           totalPrice,
+          unitOfMeasureId: Number.isFinite(unitOfMeasureId) && unitOfMeasureId > 0 ? unitOfMeasureId : null,
+          taxCodeId: Number.isFinite(taxCodeId) && taxCodeId > 0 ? taxCodeId : null,
           notes: typeof item?.notes === "string" ? item.notes : null,
         };
       });
@@ -945,7 +950,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
 
       await applySupplierDefaultsToPurchaseOrder(purchaseOrderInput);
       const validatedOrderData = insertPurchaseOrderSchema.parse(purchaseOrderInput);
-      const validatedItemsData = req.body.items.map((item: any, index: number) => {
+      const validatedItemsData: InsertPurchaseOrderItem[] = req.body.items.map((item: any, index: number) => {
         const qty = Number(item?.quantity);
         const unit = Number(item?.unitPrice);
         const itemId = Number(item?.itemId);
@@ -961,11 +966,15 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         const providedTotal = Number(item?.totalPrice);
         const totalPrice =
           Number.isFinite(providedTotal) && providedTotal > 0 ? providedTotal : qty * unit;
+        const unitOfMeasureId = Number(item?.unitOfMeasureId);
+        const taxCodeId = Number(item?.taxCodeId);
         return {
           itemId,
           quantity: qty,
           unitPrice: unit,
           totalPrice,
+          unitOfMeasureId: Number.isFinite(unitOfMeasureId) && unitOfMeasureId > 0 ? unitOfMeasureId : null,
+          taxCodeId: Number.isFinite(taxCodeId) && taxCodeId > 0 ? taxCodeId : null,
           notes: typeof item?.notes === "string" ? item.notes : null,
         };
       });
@@ -993,6 +1002,26 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       });
       if (!refCheck.ok) {
         return sendError(res, 400, refCheck.code, refCheck.message);
+      }
+
+      const workflowValidation = await validatePurchaseOrderWorkflowReadiness({
+        organizationId: getActiveOrganizationId(),
+        currencyCode: validatedOrderData.currencyCode,
+        taxCodeId: validatedOrderData.taxCodeId,
+        items: validatedItemsData.map((item) => ({
+          itemId: item.itemId,
+          unitOfMeasureId: item.unitOfMeasureId,
+          taxCodeId: item.taxCodeId,
+        })),
+      });
+      if (!workflowValidation.ok) {
+        return sendError(
+          res,
+          workflowValidation.status,
+          workflowValidation.code,
+          workflowValidation.message,
+          workflowValidation.details,
+        );
       }
 
       const newOrder = await storage.createPurchaseOrder(

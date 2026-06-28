@@ -68,3 +68,6 @@ jobs:
 
       - name: Local delta release gate
         run: npm run test:local:delta
+
+      - name: Security supply-chain gate
+        run: npm run security:supply-chain:ci

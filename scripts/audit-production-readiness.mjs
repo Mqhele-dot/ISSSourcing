@@ -250,8 +250,48 @@ function fileText(relativeFile) {
   return existsSync(path.join(root, relativeFile)) ? read(relativeFile) : "";
 }
 
+function routeEvidenceFiles(route) {
+  const files = new Set([route.file]);
+  const normalized = toPosix(route.file);
+  if (route.route.startsWith("/procurement/requisitions/new") || route.route.startsWith("/procurement/requisitions/:")) {
+    [
+      "client/src/pages/requisition-form.tsx",
+      "client/src/pages/requisitions/use-requisition-form.ts",
+      "client/src/pages/requisitions/requisition-form-header.tsx",
+      "client/src/pages/requisitions/requisition-form-lines.tsx",
+    ].forEach((file) => files.add(file));
+  }
+  if (route.route === "/procurement/requisitions" || normalized.endsWith("purchase-page.tsx")) {
+    [
+      "client/src/pages/purchase-page.tsx",
+      "client/src/pages/requisitions.tsx",
+      "client/src/pages/requisitions/use-requisition-form.ts",
+    ].forEach((file) => files.add(file));
+  }
+  if (route.route.startsWith("/procurement/orders") || normalized.endsWith("orders.tsx")) {
+    [
+      "client/src/pages/orders.tsx",
+      "client/src/pages/orders/purchase-orders-list.tsx",
+      "client/src/pages/orders/purchase-order-detail-view.tsx",
+      "client/src/pages/orders/use-purchase-orders.ts",
+    ].forEach((file) => files.add(file));
+  }
+  if (route.route.startsWith("/admin/master-data")) {
+    [
+      "client/src/pages/master-data.tsx",
+      "client/src/pages/master-data/master-data-table.tsx",
+      "client/src/pages/master-data/use-master-data.ts",
+    ].forEach((file) => files.add(file));
+  }
+  return [...files].filter((file) => existsSync(path.join(root, file)));
+}
+
+function routeEvidenceText(route) {
+  return routeEvidenceFiles(route).map(fileText).join("\n\n");
+}
+
 function findApiUseForRoute(route) {
-  const text = fileText(route.file);
+  const text = routeEvidenceText(route);
   const matches = [...text.matchAll(/["'`]((?:\/api\/)[^"'`? )]+)/g)].map((match) => match[1]);
   return [...new Set(matches)];
 }
@@ -548,7 +588,7 @@ const diagnosticsAreas = [
 
 function routeRows() {
   return routes.map((route) => {
-    const text = fileText(route.file);
+    const text = routeEvidenceText(route);
     const apiUses = findApiUseForRoute(route);
     const status = routeStatus(route, apiUses, text);
     const module = detectModule(`${route.route} ${route.file}`);
@@ -572,7 +612,7 @@ function coreRouteRows() {
   return routes
     .filter(isCoreWorkflowRoute)
     .map((route) => {
-      const text = fileText(route.file);
+      const text = routeEvidenceText(route);
       const apiUses = findApiUseForRoute(route);
       const status = routeStatus(route, apiUses, text);
       const fixes = routeRequiredFixes(route, apiUses, text);

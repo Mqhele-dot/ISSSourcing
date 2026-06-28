@@ -14,6 +14,14 @@ npm run verify:release
 
 `verify:release` runs `verify:production-base`, `check`, `lint`, `build`, `audit:production`, and `test:local:delta`.
 
+Before production merge, run the secure gate:
+
+```bash
+npm run verify:release:secure
+```
+
+`verify:release:secure` runs the full release gate plus package-manifest, lifecycle, SBOM, audit-signature, and high-vulnerability supply-chain checks.
+
 `test:local:delta` starts the local app, waits for `/api/ready`, and then runs the focused workflow checks that require a live server, including master-data propagation, master-data integration, purchase-order endpoints, AP workflow, diagnostics, route diagnostics, and `release:gate:delta`.
 
 ## Gate Matrix
@@ -31,11 +39,12 @@ npm run verify:release
 | Master data propagation | `npm run test:master-data-propagation` | Yes | Prove supplier/master-data defaults flow into PO, AP, logistics, and diagnostics paths. | Passing via delta gate | Requires live server and seeded admin user. |
 | Purchase-order endpoints | `npm run test:purchase-order-endpoints` | Yes | Prove PO endpoint behavior, including supplier/contract currency override blocking. | Passing via delta gate | Tests now expect structured `SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED` failures. |
 | AP workflow | `npm run test:ap-workflow` | Yes | Prove AP invoice/capture/receipt workflow remains connected. | Passing via delta gate | Expected negative-path errors may appear in logs while assertions pass. |
+| Production workflow proof | `npm run test:production-workflow-proof` | Yes | Prove the core Master Data → Requisition → PO → GRN → Inventory → AP chain has route, validation, dependency, receipt, payment, and audit controls wired in source. | Added to delta gate | Source-level proof complements live API tests without depending on the browser bridge. |
 | Diagnostics self-checks | `npm run test:diagnostics` | Yes | Prove diagnostic rules and route contracts behave predictably. | Passing via delta gate | Complements system diagnostics UI checks. |
 | Focused release gate | `npm run release:gate:delta` | Yes | Run RBAC, requisitions, AP controls, exports, smoke, setup, and installable-complete tests. | Passing via delta gate | Requires live local app from `test:local:delta`. |
 | GitHub CI production readiness | `.github/workflows/production-readiness.yml` | Yes before production | Re-run install, typecheck, lint, build, audit, and stable focused tests on GitHub infrastructure. | Workflow exists | CI must pass on the release head before production approval. |
 | Extended browser E2E | `npm run verify:e2e` | Conditional | Run broader Playwright/E2E coverage when the browser environment is stable. | Available | Not the default release gate because local/Codespaces browser bridges have been flaky. |
-| Security supply chain | `npm run security:supply-chain` | Yes where configured by CI/security gate | Enforce lifecycle scripts, SBOM, audit signatures, and high-vulnerability audit. | Available | Run separately when touching dependencies or security-sensitive code. |
+| Security supply chain | `npm run security:supply-chain:ci` | Yes before production merge | Enforce package manifest drift, lifecycle scripts, SBOM, audit signatures, and high-vulnerability audit. | Included in Production Readiness CI and `verify:release:secure` | Do not merge to production if this fails. |
 
 ## Blockers And Equivalents
 
