@@ -22,6 +22,7 @@ const suites = {
     ["run", "test:purchase-order-endpoints"],
     ["run", "test:ap-workflow"],
     ["run", "test:production-workflow-proof"],
+    ["run", "test:requisition-line-mdm-propagation"],
     ["run", "release:gate:delta"],
   ],
   productionSmoke: [
@@ -29,6 +30,7 @@ const suites = {
     ["run", "test:purchase-order-endpoints"],
     ["run", "test:ap-workflow"],
     ["run", "test:production-workflow-proof"],
+    ["run", "test:requisition-line-mdm-propagation"],
     ["run", "test:diagnostics"],
   ],
 };

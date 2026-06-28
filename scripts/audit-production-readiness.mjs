@@ -257,6 +257,7 @@ function routeEvidenceFiles(route) {
     [
       "client/src/pages/requisition-form.tsx",
       "client/src/pages/requisitions/use-requisition-form.ts",
+      "client/src/pages/requisitions/requisition-lines-editor.tsx",
       "client/src/pages/requisitions/requisition-form-header.tsx",
       "client/src/pages/requisitions/requisition-form-lines.tsx",
     ].forEach((file) => files.add(file));
@@ -266,6 +267,7 @@ function routeEvidenceFiles(route) {
       "client/src/pages/purchase-page.tsx",
       "client/src/pages/requisitions.tsx",
       "client/src/pages/requisitions/use-requisition-form.ts",
+      "client/src/pages/requisitions/requisition-lines-editor.tsx",
     ].forEach((file) => files.add(file));
   }
   if (route.route.startsWith("/procurement/orders") || normalized.endsWith("orders.tsx")) {

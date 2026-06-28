@@ -91,7 +91,7 @@ export function useRequisitionForm(params: {
     queryKey: inventoryCatalogQueryKey,
     queryFn: async () => {
       const raw = await requestJson<unknown>("GET", "/api/inventory");
-      return normalizeApiList<InventoryItem>(raw);
+        return normalizeApiList<InventoryItem & { supplierPartNumber?: string | null; glAccountCode?: string | null }>(raw);
     },
   });
 
@@ -386,7 +386,9 @@ export function useRequisitionForm(params: {
       const next = [...prev];
       const current = { ...next[idx], [field]: value };
       if (field === "itemId") {
-        const selected = effectiveInventoryItems.find((item) => Number(item.id) === Number(value));
+        const selected = effectiveInventoryItems.find((item) => Number(item.id) === Number(value)) as
+          | (InventoryItem & { supplierPartNumber?: string | null; glAccountCode?: string | null })
+          | undefined;
         const defaultTaxCode = effectiveTaxCodes.find((taxCode) => taxCode.active !== false);
         current.unitPrice = Number(selected?.price ?? current.unitPrice ?? 0);
         current.unitOfMeasureId = selected?.unitOfMeasureId ?? current.unitOfMeasureId ?? null;
@@ -394,6 +396,7 @@ export function useRequisitionForm(params: {
         current.supplierItemCode = selected?.supplierPartNumber ?? current.supplierItemCode ?? null;
         current.baseUomId = selected?.unitOfMeasureId ?? current.baseUomId ?? null;
         current.conversionFactor = selected?.unitOfMeasureId ? 1 : current.conversionFactor ?? null;
+        current.glAccountCode = selected?.glAccountCode ?? current.glAccountCode ?? null;
         current.lineCurrencyCode = currencyCode;
       }
       next[idx] = current;

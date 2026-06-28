@@ -290,6 +290,18 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, updated);
     } catch (error) {
       console.error("Error updating MDM record:", error);
+      if (error && typeof error === "object" && "code" in error && "status" in error) {
+        const structured = error as { code?: unknown; status?: unknown; message?: unknown; usage?: unknown };
+        const status = Number(structured.status);
+        const code = typeof structured.code === "string" ? structured.code : "MDM_UPDATE_BLOCKED";
+        const message = typeof structured.message === "string" ? structured.message : "Master Data update was blocked.";
+        if (code === "MDM_RECORD_IN_USE" && Number.isFinite(status) && status >= 400 && status < 600) {
+          return sendError(res, status, code, message, { details: { usage: structured.usage } });
+        }
+        if (Number.isFinite(status) && status >= 400 && status < 600) {
+          return sendError(res, status, code, message, { details: { usage: structured.usage } });
+        }
+      }
       const pgCode = pgErrorCode(error);
       if (pgCode === "23505") {
         return sendError(res, 409, "MDM_DUPLICATE_RECORD", "A Master Data record with this key already exists.");

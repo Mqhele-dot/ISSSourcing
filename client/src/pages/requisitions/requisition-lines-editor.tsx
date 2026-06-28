@@ -29,7 +29,9 @@ export interface ReqLineDraft {
 
 type RequisitionLinesEditorProps = {
   items: ReqLineDraft[];
-  inventoryItems: Array<InventoryItem & { supplierPartNumber?: string | null; taxable?: boolean | null }>;
+  inventoryItems: Array<
+    InventoryItem & { supplierPartNumber?: string | null; taxable?: boolean | null; glAccountCode?: string | null }
+  >;
   unitsOfMeasure: Array<{ id: number; code: string; name: string; symbol?: string | null; active?: boolean | null }>;
   taxCodes: Array<{ id: number; code: string; name: string; active?: boolean | null }>;
   costCentres?: Array<{ id: number; code: string; name: string; active?: boolean | null }>;

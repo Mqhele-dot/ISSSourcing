@@ -233,6 +233,51 @@ function normalizeRequisitionLineInput(item: unknown, index: number) {
   };
 }
 
+async function validateRequisitionLineMasterDataPolicy(
+  items: Array<Pick<InsertPurchaseRequisitionItem, "unitOfMeasureId" | "taxCodeId">>,
+): Promise<{ ok: true } | { ok: false; errors: Array<{ code: string; message: string; line: number }> }> {
+  const policies = await pool.query<{ config: Record<string, unknown> | null }>(
+    `
+      SELECT config
+      FROM mdm_procurement_policies
+      WHERE organization_id = $1
+        AND COALESCE(active, TRUE) = TRUE
+        AND LOWER(COALESCE(policy_type, '')) IN ('requisition', 'purchase_order', 'procurement_control')
+      ORDER BY id DESC
+      LIMIT 1
+    `,
+    [getActiveOrganizationId()],
+  );
+  const config = policies.rows[0]?.config ?? {};
+  const requireUom =
+    config.requireUom === true ||
+    config.requireUom === "true" ||
+    config.requireUomConversion === true ||
+    config.requireUomConversion === "true";
+  const requireTaxCode = config.requireTaxCode === true || config.requireTaxCode === "true";
+  const errors: Array<{ code: string; message: string; line: number }> = [];
+
+  items.forEach((item, index) => {
+    const line = index + 1;
+    if (requireUom && !item.unitOfMeasureId) {
+      errors.push({
+        code: "REQUISITION_LINE_UOM_REQUIRED",
+        message: `Line ${line}: purchase UOM is required by procurement policy.`,
+        line,
+      });
+    }
+    if (requireTaxCode && !item.taxCodeId) {
+      errors.push({
+        code: "REQUISITION_LINE_TAX_CODE_REQUIRED",
+        message: `Line ${line}: tax code is required by procurement policy.`,
+        line,
+      });
+    }
+  });
+
+  return errors.length === 0 ? { ok: true } : { ok: false, errors };
+}
+
 /**
  * Domain PO list (`GET /api/purchase-orders` + `GET /api/procurement/purchase-orders/records`).
  * Must register **before** `registerOperationalRoutes` so `/records` is not captured by operational `/:po`.
@@ -356,6 +401,16 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       });
       if (!validatedReqData.supplierId) {
         return sendFunctionError(res, 400, "createPurchaseRequisition", "Supplier is required");
+      }
+      const linePolicyValidation = await validateRequisitionLineMasterDataPolicy(validatedItemsData);
+      if (!linePolicyValidation.ok) {
+        return sendError(
+          res,
+          400,
+          "REQUISITION_LINE_MDM_VALIDATION_FAILED",
+          "Requisition line Master Data validation failed.",
+          { details: { errors: linePolicyValidation.errors } },
+        );
       }
       const supplier = await storage.getSupplier(Number(validatedReqData.supplierId));
       if (!supplier) {
@@ -502,6 +557,16 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           return sendFunctionError(res, 400, "updatePurchaseRequisition", "At least one requisition line is required");
         }
         const normalizedLines = items.map((item, index) => normalizeRequisitionLineInput(item, index));
+        const linePolicyValidation = await validateRequisitionLineMasterDataPolicy(normalizedLines);
+        if (!linePolicyValidation.ok) {
+          return sendError(
+            res,
+            400,
+            "REQUISITION_LINE_MDM_VALIDATION_FAILED",
+            "Requisition line Master Data validation failed.",
+            { details: { errors: linePolicyValidation.errors } },
+          );
+        }
         const existingLines = await storage.getPurchaseRequisitionItems(id);
         const existingById = new Map(existingLines.map((line) => [line.id, line]));
         const keptIds = new Set<number>();

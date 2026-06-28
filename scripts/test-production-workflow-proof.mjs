@@ -28,12 +28,17 @@ const operationsCore = read("server/modules/operations/operations-core.ts");
 const apService = read("server/modules/accounts-payable/service.ts");
 const auditGenerator = read("scripts/audit-production-readiness.mjs");
 const requisitionFormHook = read("client/src/pages/requisitions/use-requisition-form.ts");
+const requisitionLineEditor = read("client/src/pages/requisitions/requisition-lines-editor.tsx");
 const requisitionsPage = read("client/src/pages/requisitions.tsx");
 const poList = read("client/src/pages/orders/purchase-orders-list.tsx");
 const poDetail = read("client/src/pages/orders/purchase-order-detail-view.tsx");
 
 assertIncludes(requisitionFormHook, "/api/mdm/defaults/requisition-context", "new requisitions load MDM context");
 assertIncludes(requisitionFormHook, "/api/purchase-requisitions", "new/edit requisitions write backend API");
+assertIncludes(requisitionFormHook, "unitOfMeasureId", "new/edit requisitions preserve line UOM");
+assertIncludes(requisitionFormHook, "taxCodeId", "new/edit requisitions preserve line tax code");
+assertIncludes(requisitionLineEditor, "Purchase UOM", "new/edit requisitions expose line UOM");
+assertIncludes(requisitionLineEditor, "Tax code", "new/edit requisitions expose line tax code");
 assertIncludes(requisitionsPage, "/api/purchase-requisitions", "requisition list uses backend API");
 assertRegex(requisitionsPage, /isLoading|Loading|Skeleton/, "requisition list has loading state");
 assertRegex(requisitionsPage, /error|catch|toast/i, "requisition list has error handling");
@@ -83,6 +88,7 @@ assertIncludes(apService, "AP_INVOICE_MATCHED", "invoice matching writes audit")
 
 assertIncludes(auditGenerator, "routeEvidenceText", "production audit uses aggregate route evidence");
 assertIncludes(auditGenerator, "client/src/pages/requisitions/use-requisition-form.ts", "audit includes requisition hook evidence");
+assertIncludes(auditGenerator, "client/src/pages/requisitions/requisition-lines-editor.tsx", "audit includes requisition line evidence");
 assertIncludes(auditGenerator, "client/src/pages/orders/purchase-order-detail-view.tsx", "audit includes PO detail evidence");
 
 console.log("\nProduction workflow proof checks passed.");
