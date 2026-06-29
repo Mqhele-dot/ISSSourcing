@@ -75,6 +75,11 @@ export type InventoryListItem = {
   allocated: number;
   available: number;
   location: string | null;
+  warehouseQuantity?: number;
+  positionCount?: number;
+  lastMovementAt?: string | Date | null;
+  lastMovementReason?: string | null;
+  lastReceiptRef?: string | null;
   updatedAt?: string | Date | null;
   expiryDate?: string | Date | null;
   manufacturingDate?: string | Date | null;

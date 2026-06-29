@@ -8,6 +8,14 @@ export type Invoice = {
   total: number | null;
   dueAmount: number | null;
   purchaseOrderId: number | null;
+  latestMatchResult?: {
+    id?: number;
+    status?: string | null;
+    matched?: boolean | null;
+    mismatchSummary?: Array<{ message?: string; type?: string; code?: string }> | null;
+    updatedAt?: string | null;
+    createdAt?: string | null;
+  } | null;
 };
 export type Capture = {
   id: number;

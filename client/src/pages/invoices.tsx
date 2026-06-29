@@ -11,6 +11,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { DataState } from "@/components/ui/data-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -76,6 +77,13 @@ type Invoice = {
   status: string;
   totalAmount: number | null;
   dueDate: string | null;
+  latestMatchResult?: {
+    status?: string | null;
+    matched?: boolean | null;
+    mismatchSummary?: Array<{ message?: string; type?: string; code?: string }> | null;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+  } | null;
 };
 
 type Supplier = { id: number; name: string };
@@ -88,6 +96,7 @@ type PurchaseOrderItem = {
   receivedQuantity?: number | null;
 };
 type TaxCode = { id: number; code: string; name: string; rate: number };
+const EMPTY_SUPPLIERS: Supplier[] = [];
 const EMPTY_PURCHASE_ORDERS: PurchaseOrder[] = [];
 const EMPTY_TAX_CODES: TaxCode[] = [];
 
@@ -96,6 +105,14 @@ type MatchResult = {
   status: string;
   mismatches: Array<{ type: string; itemId: number; message: string }>;
 };
+
+type InvoiceControlState =
+  | "MATCHED"
+  | "EXCEPTION"
+  | "PENDING MATCH"
+  | "APPROVED"
+  | "PAYMENT BLOCKED"
+  | "PAYMENT READY";
 
 async function invalidateAfterInvoiceChange(purchaseOrderId: number | null | undefined) {
   await invalidateInvoiceDomain(queryClient);
@@ -129,6 +146,41 @@ function normalizeInvoiceMatchResult(raw: unknown): MatchResult | null {
     return { type, itemId, message };
   });
   return { matched, status, mismatches };
+}
+
+function latestInvoiceMatch(invoice: Invoice, localMatch?: MatchResult): MatchResult | null {
+  if (localMatch) return localMatch;
+  const latest = invoice.latestMatchResult;
+  if (!latest) return null;
+  const status = String(latest.status ?? (latest.matched ? "MATCHED" : "EXCEPTION")).toUpperCase();
+  const mismatches = Array.isArray(latest.mismatchSummary)
+    ? latest.mismatchSummary.map((entry) => ({
+        type: entry.type ?? entry.code ?? "MISMATCH",
+        itemId: 0,
+        message: entry.message ?? "Invoice does not match PO/receipt evidence.",
+      }))
+    : [];
+  return { matched: Boolean(latest.matched ?? status === "MATCHED"), status, mismatches };
+}
+
+function invoiceControlState(invoice: Invoice, match: MatchResult | null): InvoiceControlState {
+  const invoiceStatus = String(invoice.status ?? "").toUpperCase();
+  const matchStatus = String(match?.status ?? "").toUpperCase();
+  if (matchStatus === "EXCEPTION") return "PAYMENT BLOCKED";
+  if (invoice.purchaseOrderId != null && !match) return "PENDING MATCH";
+  if (matchStatus === "MATCHED") {
+    return ["APPROVED", "PARTIALLY_PAID", "OVERDUE"].includes(invoiceStatus) ? "PAYMENT READY" : "MATCHED";
+  }
+  if (["DISPUTED", "REJECTED", "VOID", "CANCELLED"].includes(invoiceStatus)) return "EXCEPTION";
+  if (invoiceStatus === "APPROVED") return "APPROVED";
+  return "PENDING MATCH";
+}
+
+function invoiceControlVariant(state: InvoiceControlState): "default" | "secondary" | "destructive" | "outline" {
+  if (state === "PAYMENT READY" || state === "MATCHED") return "default";
+  if (state === "PAYMENT BLOCKED" || state === "EXCEPTION") return "destructive";
+  if (state === "APPROVED") return "secondary";
+  return "outline";
 }
 
 type InvoiceLineRow = {
@@ -294,7 +346,7 @@ export default function InvoicesPage() {
     throwOnError: false,
   });
 
-  const suppliers = suppliersQuery.data ?? [];
+  const suppliers = suppliersQuery.data ?? EMPTY_SUPPLIERS;
   const purchaseOrders = purchaseOrdersQuery.data ?? EMPTY_PURCHASE_ORDERS;
   const taxCodes = taxCodesQuery.data ?? EMPTY_TAX_CODES;
   const inventoryForLines = inventoryLinesQuery.data ?? [];
@@ -325,10 +377,16 @@ export default function InvoicesPage() {
     return m;
   }, [purchaseOrders]);
 
+  const supplierById = useMemo(() => {
+    const m = new Map<number, Supplier>();
+    for (const supplier of suppliers) m.set(supplier.id, supplier);
+    return m;
+  }, [suppliers]);
+
   const editSupplier = editInvoice ? suppliers.find((s) => s.id === editInvoice.supplierId) : undefined;
   const editPo =
     editInvoice?.purchaseOrderId != null ? poById.get(editInvoice.purchaseOrderId) ?? null : null;
-  const editMatch = editInvoice ? matchResults[editInvoice.id] : undefined;
+  const editMatch = editInvoice ? latestInvoiceMatch(editInvoice, matchResults[editInvoice.id]) : undefined;
 
   const createInvoice = useMutation({
     mutationFn: () => {
@@ -728,8 +786,8 @@ export default function InvoicesPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Invoice</TableHead>
-                    <TableHead>PO</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Supplier / PO</TableHead>
+                    <TableHead>Match and payment control</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead>Due date</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -737,7 +795,12 @@ export default function InvoicesPage() {
                 </TableHeader>
                 <TableBody>
                   {rows.map((invoice) => {
-                    const match = matchResults[invoice.id];
+                    const match = latestInvoiceMatch(invoice, matchResults[invoice.id]);
+                    const controlState = invoiceControlState(invoice, match);
+                    const supplierLabel =
+                      invoice.supplierId != null
+                        ? supplierById.get(invoice.supplierId)?.name ?? `Supplier #${invoice.supplierId}`
+                        : "No supplier";
                     const poLabel =
                       invoice.purchaseOrderId != null
                         ? poById.get(invoice.purchaseOrderId)?.orderNumber ?? `PO #${invoice.purchaseOrderId}`
@@ -745,8 +808,29 @@ export default function InvoicesPage() {
                     return (
                       <TableRow key={invoice.id}>
                         <TableCell>{invoice.invoiceNumber}</TableCell>
-                        <TableCell>{poLabel}</TableCell>
-                        <TableCell>{match?.status ?? invoice.status}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="font-medium">{supplierLabel}</div>
+                            <div className="text-xs text-muted-foreground">{poLabel}</div>
+                            {invoice.purchaseOrderId != null ? (
+                              <div className="text-xs text-muted-foreground">
+                                Receipt evidence: {match ? "PO/GRN match checked" : "Awaiting PO/GRN match"}
+                              </div>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Badge variant={invoiceControlVariant(controlState)}>{controlState}</Badge>
+                            <div className="text-xs text-muted-foreground">
+                              Invoice: {invoice.status}
+                              {match ? ` · Match: ${match.status}` : invoice.purchaseOrderId ? " · Match: not run" : ""}
+                            </div>
+                            {controlState === "PAYMENT BLOCKED" ? (
+                              <div className="text-xs text-destructive">Cannot enter a payment batch until resolved.</div>
+                            ) : null}
+                          </div>
+                        </TableCell>
                         <TableCell>{formatMoney(Number(invoice.totalAmount ?? 0))}</TableCell>
                         <TableCell>{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "-"}</TableCell>
                         <TableCell className="text-right">

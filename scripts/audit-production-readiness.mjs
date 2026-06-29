@@ -286,6 +286,35 @@ function routeEvidenceFiles(route) {
       "client/src/pages/master-data/use-master-data.ts",
     ].forEach((file) => files.add(file));
   }
+  if (route.route === "/inventory") {
+    [
+      "client/src/pages/inventory.tsx",
+      "client/src/api/client.ts",
+      "server/modules/operations/operations-core.ts",
+    ].forEach((file) => files.add(file));
+  }
+  if (route.route.startsWith("/m/receive")) {
+    [
+      "client/src/pages/mobile-receive.tsx",
+      "client/src/features/purchase-orders/index.ts",
+      "server/modules/operations/operations-core.ts",
+    ].forEach((file) => files.add(file));
+  }
+  if (route.route.startsWith("/finance/invoices")) {
+    [
+      "client/src/pages/invoices.tsx",
+      "server/modules/accounts-payable/service.ts",
+      "server/modules/accounts-payable/register-ap-routes.ts",
+    ].forEach((file) => files.add(file));
+  }
+  if (route.route.startsWith("/finance/accounts-payable")) {
+    [
+      "client/src/pages/accounts-payable/accounts-payable-workspace.tsx",
+      "client/src/pages/accounts-payable/use-ap-workspace-queries.ts",
+      "client/src/pages/accounts-payable/ap-payments-panel.tsx",
+      "server/modules/accounts-payable/service.ts",
+    ].forEach((file) => files.add(file));
+  }
   return [...files].filter((file) => existsSync(path.join(root, file)));
 }
 
@@ -305,10 +334,10 @@ function isCoreWorkflowRoute(route) {
 
 function routeTestEvidence(route) {
   const routeEvidencePatterns = [
-    [/^\/inventory(\/|$)/, ["test-po-receiving-inventory-flow"]],
-    [/^\/m\/receive(\/|$)/, ["test-po-receiving-inventory-flow"]],
-    [/^\/finance\/invoices(\/|$)/, ["test-ap-po-grn-matching-flow"]],
-    [/^\/finance\/accounts-payable(\/|$)/, ["test-ap-po-grn-matching-flow", "test-ap-workflow"]],
+    [/^\/inventory(\/|$)/, ["test-po-receiving-inventory-flow", "test-core-screen-workflow-contracts"]],
+    [/^\/m\/receive(\/|$)/, ["test-po-receiving-inventory-flow", "test-core-screen-workflow-contracts"]],
+    [/^\/finance\/invoices(\/|$)/, ["test-ap-po-grn-matching-flow", "test-core-screen-workflow-contracts"]],
+    [/^\/finance\/accounts-payable(\/|$)/, ["test-ap-po-grn-matching-flow", "test-ap-workflow", "test-core-screen-workflow-contracts"]],
   ];
   const explicit = routeEvidencePatterns
     .filter(([pattern]) => pattern.test(route.route))
@@ -334,19 +363,38 @@ function routeRuntimeTestEvidence(route) {
   });
 }
 
+function routeUiTestEvidence(route) {
+  const names = [];
+  if (/^\/(inventory|m\/receive|finance\/invoices|finance\/accounts-payable)(\/|$)/.test(route.route)) {
+    names.push("test-core-screen-workflow-contracts");
+  }
+  if (isProcurementRoute(route)) {
+    names.push("procurement-to-ap-workflow", "purchase-order-actions");
+  }
+  return testFiles.filter((file) => {
+    const normalized = toPosix(file).toLowerCase();
+    return names.some((name) => normalized.includes(name.toLowerCase()));
+  });
+}
+
 function isProcurementRoute(route) {
   return /^\/procurement\/(orders|requisitions)(\/|$)/.test(route.route);
 }
 
 function hasProductionBlockingFixes(fixes) {
   return fixes.some((fix) =>
-    /missing|mock|demo|static|no clear backend|lacks runtime|not proven|component file missing|validation|permission|audit/i.test(fix),
+    /missing|mock|demo|static|no clear backend|lacks runtime|lacks UI|browser workflow|not proven|component file missing|validation|permission|audit/i.test(fix),
   );
 }
 
 function routeRequiredFixes(route, apiUses, text) {
   const fixes = [];
-  const hasMock = /\b(mock|demo|sample|stub|fake|coming soon)\b/i.test(text);
+  const uiText = routeEvidenceFiles(route)
+    .filter((file) => toPosix(file).startsWith("client/src/"))
+    .filter((file) => !toPosix(file).startsWith("client/src/api/"))
+    .map(fileText)
+    .join("\n\n");
+  const hasMock = /\b(mock|demo|sample|stub|fake|coming soon)\b/i.test(uiText);
   const hasApi = apiUses.length || /useQuery|useMutation|apiRequest|fetch\(/.test(text);
   const hasLoading = /isLoading|loading|Skeleton|Loading/.test(text);
   const hasError = /isError|error|PanelInlineError|catch|toast/.test(text);
@@ -360,8 +408,13 @@ function routeRequiredFixes(route, apiUses, text) {
   if (!hasError) fixes.push("error handling not proven");
   if (!hasValidation) fixes.push("validation not proven");
   if (!hasPermission) fixes.push("permission-aware UX not proven");
-  if (isCoreWorkflowRoute(route) && routeRuntimeTestEvidence(route).length === 0) {
-    fixes.push("core route lacks runtime workflow test evidence");
+  if (isCoreWorkflowRoute(route)) {
+    if (routeRuntimeTestEvidence(route).length === 0) {
+      fixes.push("core route lacks runtime workflow test evidence");
+    }
+    if (routeUiTestEvidence(route).length === 0) {
+      fixes.push("core route lacks UI/browser workflow evidence");
+    }
   }
   if (isCoreWorkflowRoute(route) && !hasAuditEvidence) {
     fixes.push("audit/reporting evidence not proven");
@@ -760,6 +813,11 @@ function runtimeEvidenceRows() {
       "test:ap-po-grn-matching-flow",
       "Creates and receives a PO, creates matched and exception AP invoices, proves three-way matching uses PO/GRN evidence, blocks above-tolerance invoices, prevents exception invoices from payment batching, and verifies invoice/payment audit evidence.",
       "Does not prove every AP capture OCR path, bank integration, or multi-approver policy branch.",
+    ],
+    [
+      "test:core-screen-workflow-contracts",
+      "Static UI contract guard proving /m/receive, /inventory, /finance/invoices, and /finance/accounts-payable are wired to real receiving, inventory, PO/GRN match, and payment-control code paths instead of unsafe fallback text.",
+      "It is source-level UI proof, not a live browser click-through or full Playwright workflow.",
     ],
     [
       "test:production-workflow-proof",

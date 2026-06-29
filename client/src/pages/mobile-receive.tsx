@@ -34,7 +34,6 @@ import {
   type ReceivePutawayWarehouse,
 } from "@/features/purchase-orders";
 import type { PurchaseOrderListItem } from "@/api/types";
-import type { FallbackKind } from "@/components/ui/data-state";
 
 function useReceivePoFromLocation() {
   const [loc] = useLocation();
@@ -57,19 +56,14 @@ function MobileReceiveQueuePage() {
       map.set(order.poNumber, order);
     }
     const merged = Array.from(map.values()).sort((a, b) => b.poNumber.localeCompare(a.poNumber));
-    const fallback = envPartial.meta?.fallback ?? envSent.meta?.fallback ?? envApproved.meta?.fallback;
-    return {
-      data: merged,
-      meta: fallback ? { fallback: fallback as FallbackKind } : undefined,
-    };
+    return { data: merged };
   };
 
   const { loading, error, data: bundle, refetch } = useAsyncResource(fetcher, { abortable: true });
   const rows = bundle?.data ?? [];
-  const fallback = bundle?.meta?.fallback as FallbackKind | undefined;
 
   return (
-    <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl">
+    <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl" data-testid="mobile-receive-queue">
       <PageHeader
         title="Receive on mobile"
         subtitle="Choose a PO, then capture dockside receipts with touch-first quantity, batch, and bin controls."
@@ -86,7 +80,7 @@ function MobileReceiveQueuePage() {
         data={rows}
         isEmpty={(list) => list.length === 0}
         emptyTitle="No POs ready for receipt"
-        emptyDescription="Approve and send purchase orders first, or seed operational demo data."
+        emptyDescription="Approve and send purchase orders first. This queue only shows real purchase orders eligible for receipt."
         emptyAction={
           <Link
             href={APP_ROUTES.procurement.orders}
@@ -95,7 +89,6 @@ function MobileReceiveQueuePage() {
             Go to purchase orders
           </Link>
         }
-        fallback={fallback}
         onRetry={refetch}
       >
         {(list) => (
@@ -281,7 +274,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl">
+    <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl" data-testid="mobile-receive-detail">
       <PageHeader
         title={poNumber}
         subtitle="Capture a real dock receipt without switching back to the desktop purchase detail."
@@ -518,7 +511,10 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
               </Card>
 
               {receiveError ? (
-                <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <div
+                  className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                  data-testid="mobile-receive-error"
+                >
                   {receiveError}
                 </div>
               ) : null}
@@ -530,9 +526,13 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                 </div>
               ) : null}
 
-              <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
+              <Can
+                roles={["warehouse_staff", "manager", "planner", "admin"]}
+                reason="Requires Warehouse Staff, Manager, Planner, or Admin"
+              >
                 <Button
                   className="min-h-12 w-full"
+                  data-testid="mobile-receive-post-button"
                   onClick={submitReceive}
                   disabled={!canPost || receivableLines.length === 0 || receiveMutation.isPending}
                 >

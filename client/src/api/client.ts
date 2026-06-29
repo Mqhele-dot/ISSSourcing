@@ -470,6 +470,34 @@ export async function fetchInventory(params?: {
       allocated,
       available: Number(item.available ?? onHand - allocated),
       location: typeof item.location === "string" ? item.location : null,
+      warehouseQuantity: Number.isFinite(Number(item.warehouseQuantity))
+        ? Number(item.warehouseQuantity)
+        : Number.isFinite(Number(item.warehouse_quantity))
+          ? Number(item.warehouse_quantity)
+          : undefined,
+      positionCount: Number.isFinite(Number(item.positionCount))
+        ? Number(item.positionCount)
+        : Number.isFinite(Number(item.position_count))
+          ? Number(item.position_count)
+          : undefined,
+      lastMovementAt:
+        typeof item.lastMovementAt === "string" || item.lastMovementAt instanceof Date
+          ? item.lastMovementAt
+          : typeof item.last_movement_at === "string" || item.last_movement_at instanceof Date
+            ? item.last_movement_at
+            : null,
+      lastMovementReason:
+        typeof item.lastMovementReason === "string"
+          ? item.lastMovementReason
+          : typeof item.last_movement_reason === "string"
+            ? item.last_movement_reason
+            : null,
+      lastReceiptRef:
+        typeof item.lastReceiptRef === "string"
+          ? item.lastReceiptRef
+          : typeof item.last_receipt_ref === "string"
+            ? item.last_receipt_ref
+            : null,
       updatedAt:
         typeof item.updatedAt === "string" || item.updatedAt instanceof Date
           ? item.updatedAt

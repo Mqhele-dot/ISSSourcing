@@ -27,6 +27,7 @@ const suites = {
     ["run", "test:mdm-dependency-runtime"],
     ["run", "test:po-receiving-inventory-flow"],
     ["run", "test:ap-po-grn-matching-flow"],
+    ["run", "test:core-screen-workflow-contracts"],
     ["run", "release:gate:delta"],
   ],
   productionSmoke: [
@@ -39,6 +40,7 @@ const suites = {
     ["run", "test:mdm-dependency-runtime"],
     ["run", "test:po-receiving-inventory-flow"],
     ["run", "test:ap-po-grn-matching-flow"],
+    ["run", "test:core-screen-workflow-contracts"],
     ["run", "test:diagnostics"],
   ],
 };

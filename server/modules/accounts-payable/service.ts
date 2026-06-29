@@ -252,12 +252,43 @@ async function postInvoiceApprovedSubledger(input: {
 }
 
 export async function listInvoices(filters: InvoiceFilters = {}) {
-  if (filters.overdue) return storage.getOverdueInvoices();
-  if (filters.dueInDays != null) return storage.getInvoiceDueInDays(filters.dueInDays);
-  if (filters.customerId != null) return storage.getInvoicesByCustomerId(filters.customerId);
-  if (filters.status) return storage.getInvoicesByStatus(filters.status);
-  if (filters.fromDate && filters.toDate) return storage.getInvoicesByDateRange(filters.fromDate, filters.toDate);
-  return storage.getAllInvoices();
+  const rows =
+    filters.overdue
+      ? await storage.getOverdueInvoices()
+      : filters.dueInDays != null
+        ? await storage.getInvoiceDueInDays(filters.dueInDays)
+        : filters.customerId != null
+          ? await storage.getInvoicesByCustomerId(filters.customerId)
+          : filters.status
+            ? await storage.getInvoicesByStatus(filters.status)
+            : filters.fromDate && filters.toDate
+              ? await storage.getInvoicesByDateRange(filters.fromDate, filters.toDate)
+              : await storage.getAllInvoices();
+
+  if (rows.length === 0) return rows;
+
+  const latestMatches = await db
+    .select()
+    .from(apInvoiceMatchResults)
+    .where(
+      and(
+        eq(apInvoiceMatchResults.organizationId, getActiveOrganizationId()),
+        inArray(apInvoiceMatchResults.invoiceId, rows.map((row) => row.id)),
+      ),
+    )
+    .orderBy(desc(apInvoiceMatchResults.createdAt));
+
+  const latestByInvoice = new Map<number, (typeof latestMatches)[number]>();
+  for (const match of latestMatches) {
+    if (!latestByInvoice.has(match.invoiceId)) {
+      latestByInvoice.set(match.invoiceId, match);
+    }
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    latestMatchResult: latestByInvoice.get(row.id) ?? null,
+  }));
 }
 
 export async function getInvoiceDetail(invoiceId: number) {

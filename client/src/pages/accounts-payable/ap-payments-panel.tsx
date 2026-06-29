@@ -99,6 +99,11 @@ export function ApPaymentsPanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!invoicesLoadFailed ? (
+            <p className="text-xs text-muted-foreground">
+              PO-linked invoices appear here only after a successful PO/GRN match. Exception or pending-match invoices stay blocked.
+            </p>
+          ) : null}
           {invoicesLoadFailed ? (
             <p className="text-sm text-destructive">
               Payable invoice list did not load. Retry invoices above before creating a batch — an empty table may not
@@ -161,7 +166,14 @@ export function ApPaymentsPanel({
                     </TableCell>
                     <TableCell>{invoice.invoiceNumber}</TableCell>
                     <TableCell>
-                      <Badge variant={invoice.status === "APPROVED" ? "default" : "outline"}>{invoice.status}</Badge>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={invoice.status === "APPROVED" ? "default" : "outline"}>{invoice.status}</Badge>
+                        {invoice.purchaseOrderId != null ? (
+                          <span className="text-xs text-muted-foreground">
+                            Match: {invoice.latestMatchResult?.status ?? "PENDING MATCH"}
+                          </span>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell>{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}</TableCell>
                     <TableCell className="text-right">

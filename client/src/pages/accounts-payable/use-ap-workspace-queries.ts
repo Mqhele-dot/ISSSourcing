@@ -73,9 +73,14 @@ export function useApWorkspaceQueries() {
 
   const readyForBatch = useMemo(() => {
     const list = invoicesQuery.data ?? [];
-    return list.filter((invoice) =>
-      ["APPROVED", "PARTIALLY_PAID", "OVERDUE"].includes(String(invoice.status)),
-    );
+    return list.filter((invoice) => {
+      const status = String(invoice.status).toUpperCase();
+      if (!["APPROVED", "PARTIALLY_PAID", "OVERDUE"].includes(status)) return false;
+      const matchStatus = String(invoice.latestMatchResult?.status ?? "").toUpperCase();
+      if (matchStatus === "EXCEPTION") return false;
+      if (invoice.purchaseOrderId != null && matchStatus !== "MATCHED") return false;
+      return true;
+    });
   }, [invoicesQuery.data]);
 
   return {

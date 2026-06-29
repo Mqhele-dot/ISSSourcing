@@ -42,6 +42,7 @@ type PositionAggregate = {
   sku: string;
   onHand: number;
   allocated: number;
+  positionCount: number;
   updatedAt: Date | null;
 };
 
@@ -399,6 +400,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
 
   const skus = itemsResult.rows.map((row) => row.sku);
   const positionBySku = new Map<string, PositionAggregate>();
+  const movementBySku = new Map<string, { lastMovementAt: Date | null; lastMovementReason: string | null; lastReceiptRef: string | null }>();
 
   if (skus.length > 0) {
     const positionParams: Array<string | string[]> = [skus];
@@ -413,6 +415,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
       sku: string;
       on_hand: number;
       allocated: number;
+      position_count: number;
       updated_at: Date | null;
     }>(
       `
@@ -420,6 +423,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
         p.sku,
         COALESCE(SUM(p.on_hand), 0)::int AS on_hand,
         COALESCE(SUM(p.allocated), 0)::int AS allocated,
+        COUNT(*)::int AS position_count,
         MAX(p.updated_at) AS updated_at
       FROM inventory_positions p
       WHERE p.sku = ANY($1)
@@ -434,7 +438,35 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
         sku: row.sku,
         onHand: toNumber(row.on_hand),
         allocated: toNumber(row.allocated),
+        positionCount: toNumber(row.position_count),
         updatedAt: row.updated_at,
+      });
+    }
+
+    const movementResult = await pool.query<{
+      sku: string;
+      reason: string | null;
+      ref: string | null;
+      created_at: Date | null;
+    }>(
+      `
+      SELECT DISTINCT ON (m.sku)
+        m.sku,
+        m.reason,
+        m.ref,
+        m.created_at
+      FROM inventory_movements m
+      WHERE m.sku = ANY($1)
+      ORDER BY m.sku, m.created_at DESC NULLS LAST, m.id DESC
+      `,
+      [skus],
+    );
+
+    for (const row of movementResult.rows) {
+      movementBySku.set(row.sku, {
+        lastMovementAt: row.created_at,
+        lastMovementReason: row.reason,
+        lastReceiptRef: /receipt|grn|receive/i.test(String(row.reason ?? row.ref ?? "")) ? row.ref : null,
       });
     }
   }
@@ -451,6 +483,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
       const available = onHand - allocated;
       const lowStockThreshold = toNumber(row.low_stock_threshold, 0);
       const location = toString(row.default_location) ?? toString(row.location);
+      const movement = movementBySku.get(row.sku);
 
       return {
         id: row.id,
@@ -464,6 +497,11 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
         onHand,
         allocated,
         available,
+        warehouseQuantity: onHand,
+        positionCount: aggregate?.positionCount ?? 0,
+        lastMovementAt: movement?.lastMovementAt ?? null,
+        lastMovementReason: movement?.lastMovementReason ?? null,
+        lastReceiptRef: movement?.lastReceiptRef ?? null,
         updatedAt: aggregate?.updatedAt ?? row.updated_at,
         expiryDate: row.expiry_date,
         manufacturingDate: row.manufacturing_date,

@@ -724,7 +724,7 @@ export default function InventoryPage() {
         emptyAction={
           <div className="space-y-3">
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Create the first item here, import a catalog, or use setup tools to seed demo stock.
+              Create the first item here, import a catalog, or complete the Master Data setup required for real stock records.
             </p>
             <div className="flex flex-wrap gap-2">
             <Button type="button" variant="default" size="sm" onClick={() => setCreateOpen(true)}>
@@ -775,6 +775,17 @@ export default function InventoryPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Category</span>
                       <span>{categoryNameFor(item)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Warehouse qty</span>
+                      <span className="tabular-nums">{item.warehouseQuantity ?? item.onHand}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Last movement</span>
+                      <span className="text-right text-xs">
+                        {item.lastMovementAt ? formatUpdated(item.lastMovementAt) : "No movements"}
+                        {item.lastReceiptRef ? ` · ${item.lastReceiptRef}` : ""}
+                      </span>
                     </div>
                     <div
                       className="grid grid-cols-3 gap-2 rounded-md border p-3 text-center tabular-nums"
@@ -832,7 +843,7 @@ export default function InventoryPage() {
                 <TableHead className="w-[22%]">Item</TableHead>
                 <TableHead className="w-[13%]">Location</TableHead>
                 <TableHead className="w-[14%]">Category</TableHead>
-                <TableHead className="w-[20%] text-right">
+                <TableHead className="w-[16%] text-right">
                   <span className="inline-flex flex-col items-end gap-0.5 tabular-nums">
                     <span className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
                       Stock position
@@ -840,10 +851,12 @@ export default function InventoryPage() {
                     <span>On hand / Alloc / Avail</span>
                   </span>
                 </TableHead>
-                <TableHead className="w-[10%] text-right">Threshold</TableHead>
+                <TableHead className="w-[12%] text-right">Warehouse qty</TableHead>
+                <TableHead className="w-[12%]">Last movement</TableHead>
+                <TableHead className="w-[8%] text-right">Threshold</TableHead>
                 <TableHead className="w-[10%]">Status</TableHead>
-                <TableHead className="w-[11%] text-right">Updated</TableHead>
-                <TableHead className="w-[10%] text-right">Actions</TableHead>
+                <TableHead className="w-[9%] text-right">Updated</TableHead>
+                <TableHead className="w-[8%] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -873,6 +886,17 @@ export default function InventoryPage() {
                       <span className="text-muted-foreground">/</span>
                       <span>{item.available}</span>
                     </span>
+                  </TableCell>
+                  <TableCell className="text-right align-top tabular-nums">
+                    <div>{item.warehouseQuantity ?? item.onHand}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {item.positionCount ?? 0} position{(item.positionCount ?? 0) === 1 ? "" : "s"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="align-top text-xs text-muted-foreground">
+                    <div>{item.lastMovementAt ? formatUpdated(item.lastMovementAt) : "No movements"}</div>
+                    {item.lastMovementReason ? <div>{item.lastMovementReason}</div> : null}
+                    {item.lastReceiptRef ? <div>Receipt {item.lastReceiptRef}</div> : null}
                   </TableCell>
                   <TableCell className="text-right align-top tabular-nums">{item.lowStockThreshold}</TableCell>
                   <TableCell data-testid={`inventory-status-${item.sku}`}>
