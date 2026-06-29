@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { pool } from "../server/db.ts";
+import { assertProductionSchemaColumns, requisitionAndPoMdmColumns } from "./production-schema-preflight.ts";
 import { exitTest } from "./test-exit.ts";
 import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
 
@@ -21,18 +22,9 @@ function errorCode(json: unknown): string | undefined {
   return (json as ApiEnvelope<unknown>)?.error?.code;
 }
 
-async function ensureSchemaColumns(): Promise<void> {
-  await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS unit_of_measure_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS tax_code_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT`);
-  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT`);
-}
-
 async function createFixture() {
   const suffix = Date.now().toString().slice(-8);
-  await ensureSchemaColumns();
+  await assertProductionSchemaColumns(requisitionAndPoMdmColumns);
 
   await pool.query(
     `

@@ -7,6 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { pool } from "../server/db.ts";
+import { assertProductionSchemaColumns, requisitionAndPoMdmColumns } from "./production-schema-preflight.ts";
 import { exitTest } from "./test-exit.ts";
 import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
 
@@ -18,20 +19,9 @@ function unwrapData<T>(json: unknown, label: string): T {
   throw new Error(`${label}: expected { ok: true, data }, got ${JSON.stringify(json)}`);
 }
 
-async function ensureSchemaColumns(): Promise<void> {
-  await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS unit_of_measure_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS tax_code_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT`);
-  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_of_measure_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS tax_code_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER`);
-  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT`);
-}
-
 async function ensureFixture() {
   const suffix = Date.now().toString().slice(-8);
-  await ensureSchemaColumns();
+  await assertProductionSchemaColumns(requisitionAndPoMdmColumns);
 
   await pool.query(
     `
@@ -204,6 +194,17 @@ async function main(): Promise<void> {
   assert.equal(Number(poLine.costCentreId), fixture.costCentreId);
   assert.equal(String(poLine.glAccountCode), fixture.glAccountCode);
   console.log("  ok converted PO line preserved UOM/tax/finance metadata");
+
+  const updatePoLine = await apiJsonRequest(`/purchase-order-items/${poLine.id}`, {
+    method: "PUT",
+    cookie,
+    body: { notes: "Runtime update keeps finance mapping" },
+  });
+  assert.equal(updatePoLine.status, 200, `update PO item failed: ${updatePoLine.status} ${JSON.stringify(updatePoLine.json)}`);
+  const updatedPoLine = unwrapData<Record<string, unknown>>(updatePoLine.json, "update PO item");
+  assert.equal(Number(updatedPoLine.costCentreId), fixture.costCentreId);
+  assert.equal(String(updatedPoLine.glAccountCode), fixture.glAccountCode);
+  console.log("  ok PO item update preserved finance metadata");
 
   console.log("\nRequisition line MDM runtime flow passed.");
 }

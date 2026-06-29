@@ -2504,6 +2504,8 @@ export class DatabaseStorage implements IStorage {
       commodityCodeId:
         item.commodityCodeId !== undefined ? item.commodityCodeId : existingItem.commodityCodeId,
       taxCodeId: item.taxCodeId !== undefined ? item.taxCodeId : existingItem.taxCodeId,
+      costCentreId: item.costCentreId !== undefined ? item.costCentreId : existingItem.costCentreId,
+      glAccountCode: item.glAccountCode !== undefined ? item.glAccountCode : existingItem.glAccountCode,
     };
 
     const [updatedItem] = await db.update(purchaseOrderItems).set(merged).where(eq(purchaseOrderItems.id, id)).returning();

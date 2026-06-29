@@ -322,6 +322,16 @@ function routeRuntimeTestEvidence(route) {
   });
 }
 
+function isProcurementRoute(route) {
+  return /^\/procurement\/(orders|requisitions)(\/|$)/.test(route.route);
+}
+
+function hasProductionBlockingFixes(fixes) {
+  return fixes.some((fix) =>
+    /missing|mock|demo|static|no clear backend|lacks runtime|not proven|component file missing|validation|permission|audit/i.test(fix),
+  );
+}
+
 function routeRequiredFixes(route, apiUses, text) {
   const fixes = [];
   const hasMock = /\b(mock|demo|sample|stub|fake|coming soon)\b/i.test(text);
@@ -344,6 +354,12 @@ function routeRequiredFixes(route, apiUses, text) {
   if (isCoreWorkflowRoute(route) && !hasAuditEvidence) {
     fixes.push("audit/reporting evidence not proven");
   }
+  if (isProcurementRoute(route)) {
+    if (!hasApi) fixes.push("procurement route lacks real API data evidence");
+    if (routeRuntimeTestEvidence(route).length === 0) fixes.push("procurement route lacks runtime workflow test evidence");
+    if (!hasPermission) fixes.push("procurement route lacks permission evidence");
+    if (!hasAuditEvidence) fixes.push("procurement route lacks audit evidence");
+  }
   return fixes;
 }
 
@@ -353,7 +369,7 @@ function routeStatus(route, apiUses, text) {
   if (!existsSync(path.join(root, route.file))) return "Broken";
   if (hasMock) return "Mock/demo only";
   if (fixes.includes("no clear backend data integration")) return "Cosmetic only";
-  if (fixes.length > 0) return "Partially working";
+  if (fixes.length > 0 || hasProductionBlockingFixes(fixes)) return "Partially working";
   return "Production-ready";
 }
 
@@ -480,9 +496,17 @@ function isProductionCodeFile(file) {
   return normalized.startsWith("client/src/") || normalized.startsWith("server/") || normalized.startsWith("shared/");
 }
 
+function isTestCodeFile(file) {
+  const normalized = toPosix(file);
+  return normalized.startsWith("scripts/test-") || normalized.startsWith("e2e/") || normalized.endsWith(".test.ts");
+}
+
 function riskSeverity(risk) {
   if (!isProductionCodeFile(risk.file)) return "False positive";
   const lower = `${risk.file} ${risk.description}`.toLowerCase();
+  if (risk.type === "placeholder" && /placeholder=|<selectvalue\s+placeholder/.test(lower)) {
+    return "False positive";
+  }
   const core =
     /purchase|requisition|supplier|inventory|warehouse|logistics|invoice|payment|accounts-payable|master-data|mdm|export|diagnostic|role|permission/.test(
       lower,
@@ -495,6 +519,21 @@ function riskSeverity(risk) {
 
 function riskRowsBySeverity() {
   return riskRows().map((risk) => ({ ...risk, severity: riskSeverity(risk) }));
+}
+
+function riskCategory(risk) {
+  if (isTestCodeFile(risk.file)) return "Test-only markers";
+  if (risk.severity === "False positive") return "False positives";
+  if (risk.severity === "Critical" || risk.severity === "High") return "Core blocking risks";
+  return "Core non-blocking risks";
+}
+
+function riskRowsByCategory() {
+  return riskRowsBySeverity().map((risk) => ({ ...risk, category: riskCategory(risk) }));
+}
+
+function riskCategoryCount(category) {
+  return riskRowsByCategory().filter((risk) => risk.category === category).length;
 }
 
 const mdmDomains = [
@@ -675,15 +714,40 @@ function workflowRows() {
 }
 
 function mockRows() {
-  return riskRowsBySeverity()
+  return riskRowsByCategory()
     .slice(0, 160)
     .map((risk) => {
       const productionRisk =
-        /mock|demo|fake|stub|placeholder|TODO|FIXME/.test(risk.type)
-          ? "May hide incomplete behavior or disconnected workflow"
-          : "May create local-only or static production behavior";
-      return `| ${risk.severity} | ${risk.file}:${risk.line} | ${risk.area} | ${risk.type} | ${esc(risk.description)} | ${productionRisk} | Replace with real backend data, formal demo flag, or tracked backlog item. |`;
+        risk.category === "Test-only markers"
+          ? "Test fixture or verification marker; tracked separately from production app risk"
+          : /mock|demo|fake|stub|placeholder|TODO|FIXME/.test(risk.type)
+            ? "May hide incomplete behavior or disconnected workflow"
+            : "May create local-only or static production behavior";
+      return `| ${risk.category} | ${risk.severity} | ${risk.file}:${risk.line} | ${risk.area} | ${risk.type} | ${esc(risk.description)} | ${productionRisk} | Replace with real backend data, formal demo flag, or tracked backlog item. |`;
     });
+}
+
+function runtimeEvidenceRows() {
+  const rows = [
+    [
+      "test:requisition-line-mdm-flow",
+      "Creates a requisition through the API with item, UOM, tax, cost centre, and GL metadata; approves it; converts it to a PO; verifies the PO line keeps the metadata; verifies PO item update preserves finance mapping.",
+      "Does not prove every procurement route screen interaction or every approval policy branch.",
+    ],
+    [
+      "test:mdm-dependency-runtime",
+      "Creates real open requisition usage and proves MDM UOM conversion and GL mapping deactivation return structured 409 dependency responses.",
+      "Does not prove every MDM domain dependency path.",
+    ],
+    [
+      "test:production-workflow-proof",
+      "Static guard that confirms required source wiring exists across requisition, PO, GRN, AP, dependency checks, and audit hooks.",
+      "It is not runtime proof and must not be counted as live API/DB evidence by itself.",
+    ],
+  ];
+  return rows
+    .map(([test, proves, doesNotProve]) => `| npm run ${test} | ${proves} | ${doesNotProve} |`)
+    .join("\n");
 }
 
 function mdmRows() {
@@ -785,11 +849,21 @@ Allowed status labels: ${statuses.map((status) => `\`${status}\``).join(", ")}.
 - Schema tables inspected: **${tables.length}**
 - Test/spec files discovered: **${testFiles.length}**
 - Mock/demo/static risk markers found: **${riskRows().length}**
+- Core blocking risks: **${riskCategoryCount("Core blocking risks")}**
+- Core non-blocking risks: **${riskCategoryCount("Core non-blocking risks")}**
+- False positives: **${riskCategoryCount("False positives")}**
+- Test-only markers: **${riskCategoryCount("Test-only markers")}**
 - Core workflow routes inspected: **${routes.filter(isCoreWorkflowRoute).length}**
 - Mock/demo/static severity split: **Critical ${riskRowsBySeverity().filter((risk) => risk.severity === "Critical").length}**, **High ${riskRowsBySeverity().filter((risk) => risk.severity === "High").length}**, **Medium ${riskRowsBySeverity().filter((risk) => risk.severity === "Medium").length}**, **Low ${riskRowsBySeverity().filter((risk) => risk.severity === "Low").length}**, **False positive ${riskRowsBySeverity().filter((risk) => risk.severity === "False positive").length}**
 - Baseline comparison: **Wave 1 baseline**. Future production audits should compare these counts and risk markers so new or worsened production gaps are visible before release.
 
 The app now has a real production foundation across MDM, procurement, inventory, AP, logistics, reporting, diagnostics, subscriptions, and mobile stock counts. The biggest remaining risk is not absence of screens; it is inconsistent production proof in handoffs, degraded fallback behavior, business-rule enforcement, and audit evidence.
+
+## Runtime Workflow Evidence
+
+| Test | What It Proves | What It Does Not Prove |
+|---|---|---|
+${runtimeEvidenceRows()}
 
 ## 1. Route Audit
 
@@ -825,8 +899,8 @@ ${workflowRows().join("\n")}
 
 ## 6. Mock, Demo, Placeholder, And Static Data Audit
 
-| Severity | File | Area | Type | Description | Production Risk | Required Fix |
-|---|---|---|---|---|---|---|
+| Category | Severity | File | Area | Type | Description | Production Risk | Required Fix |
+|---|---|---|---|---|---|---|---|
 ${mockRows().join("\n")}
 
 Severity definitions:

@@ -38,8 +38,25 @@ for (const column of ["unitOfMeasureId", "taxCodeId", "costCentreId", "glAccount
 }
 assertIncludes(schema, "costCentreId: integer(\"cost_centre_id\").references(() => mdmCostCentres.id)", "PO line schema persists cost centre");
 assertIncludes(schema, "glAccountCode: text(\"gl_account_code\")", "PO line schema persists GL account");
+assertIncludes(initDb, "purchase_order_items ADD COLUMN IF NOT EXISTS unit_of_measure_id", "database repair adds PO UOM");
+assertIncludes(initDb, "purchase_order_items ADD COLUMN IF NOT EXISTS tax_code_id", "database repair adds PO tax code");
 assertIncludes(initDb, "purchase_order_items ADD COLUMN IF NOT EXISTS cost_centre_id", "database repair adds PO cost centre");
 assertIncludes(initDb, "purchase_order_items ADD COLUMN IF NOT EXISTS gl_account_code", "database repair adds PO GL account");
+assertIncludes(
+  read("scripts/production-schema-preflight.ts"),
+  "Required production schema column missing:",
+  "schema preflight fails clearly on missing production column",
+);
+assertIncludes(
+  read("scripts/test-requisition-line-mdm-flow.ts"),
+  "assertProductionSchemaColumns",
+  "runtime flow test uses schema preflight instead of mutation",
+);
+assertIncludes(
+  read("scripts/test-mdm-dependency-runtime.ts"),
+  "assertProductionSchemaColumns",
+  "dependency runtime test uses schema preflight instead of mutation",
+);
 
 assertIncludes(lineEditor, "Purchase UOM", "line editor exposes purchase UOM");
 assertIncludes(lineEditor, "Tax code", "line editor exposes tax code");
@@ -73,6 +90,16 @@ assertRegex(
   databaseStorage,
   /glAccountCode:\s*item\.glAccountCode\s*\?\?\s*null/,
   "database conversion carries requisition line GL account",
+);
+assertRegex(
+  databaseStorage,
+  /costCentreId:\s*item\.costCentreId\s*!==\s*undefined\s*\?\s*item\.costCentreId\s*:\s*existingItem\.costCentreId/,
+  "database update preserves PO line cost centre",
+);
+assertRegex(
+  databaseStorage,
+  /glAccountCode:\s*item\.glAccountCode\s*!==\s*undefined\s*\?\s*item\.glAccountCode\s*:\s*existingItem\.glAccountCode/,
+  "database update preserves PO line GL account",
 );
 assertIncludes(memoryStorage, "unitOfMeasureId: reqItem.unitOfMeasureId ?? null", "memory conversion carries line UOM");
 assertIncludes(memoryStorage, "taxCodeId: reqItem.taxCodeId", "memory conversion carries line tax code");
