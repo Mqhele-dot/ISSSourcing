@@ -25,6 +25,8 @@ const suites = {
     ["run", "test:requisition-line-mdm-propagation"],
     ["run", "test:requisition-line-mdm-flow"],
     ["run", "test:mdm-dependency-runtime"],
+    ["run", "test:po-receiving-inventory-flow"],
+    ["run", "test:ap-po-grn-matching-flow"],
     ["run", "release:gate:delta"],
   ],
   productionSmoke: [
@@ -35,6 +37,8 @@ const suites = {
     ["run", "test:requisition-line-mdm-propagation"],
     ["run", "test:requisition-line-mdm-flow"],
     ["run", "test:mdm-dependency-runtime"],
+    ["run", "test:po-receiving-inventory-flow"],
+    ["run", "test:ap-po-grn-matching-flow"],
     ["run", "test:diagnostics"],
   ],
 };

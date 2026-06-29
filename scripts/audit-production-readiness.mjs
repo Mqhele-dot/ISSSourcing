@@ -31,6 +31,7 @@ const coreWorkflowRoutePatterns = [
   /^\/admin\/system-diagnostics/,
   /^\/admin\/user-roles/,
   /^\/m\/counts/,
+  /^\/m\/receive/,
 ];
 
 function toPosix(value) {
@@ -303,6 +304,17 @@ function isCoreWorkflowRoute(route) {
 }
 
 function routeTestEvidence(route) {
+  const routeEvidencePatterns = [
+    [/^\/inventory(\/|$)/, ["test-po-receiving-inventory-flow"]],
+    [/^\/m\/receive(\/|$)/, ["test-po-receiving-inventory-flow"]],
+    [/^\/finance\/invoices(\/|$)/, ["test-ap-po-grn-matching-flow"]],
+    [/^\/finance\/accounts-payable(\/|$)/, ["test-ap-po-grn-matching-flow", "test-ap-workflow"]],
+  ];
+  const explicit = routeEvidencePatterns
+    .filter(([pattern]) => pattern.test(route.route))
+    .flatMap(([, names]) =>
+      testFiles.filter((file) => names.some((name) => toPosix(file).toLowerCase().includes(String(name).toLowerCase()))),
+    );
   const module = detectModule(`${route.route} ${route.file}`).toLowerCase().split(" ")[0];
   const routeSlug = route.route
     .replace(/^\/+/, "")
@@ -311,7 +323,7 @@ function routeTestEvidence(route) {
   return testFiles.filter((file) => {
     const normalized = toPosix(file).toLowerCase();
     return normalized.includes(module) || normalized.includes(routeSlug);
-  });
+  }).concat(explicit);
 }
 
 function routeRuntimeTestEvidence(route) {
@@ -738,6 +750,16 @@ function runtimeEvidenceRows() {
       "test:mdm-dependency-runtime",
       "Creates real open requisition usage and proves MDM UOM conversion and GL mapping deactivation return structured 409 dependency responses.",
       "Does not prove every MDM domain dependency path.",
+    ],
+    [
+      "test:po-receiving-inventory-flow",
+      "Creates a requisition and PO, receives against the PO through the operational API, verifies GRN/AP receipt evidence, stock movement creation, warehouse inventory increase, PO line received quantity, over-receipt blocking, invalid-state blocking, and receive activity/audit evidence.",
+      "Does not prove every mobile receive screen branch or serial/batch inspection workflow.",
+    ],
+    [
+      "test:ap-po-grn-matching-flow",
+      "Creates and receives a PO, creates matched and exception AP invoices, proves three-way matching uses PO/GRN evidence, blocks above-tolerance invoices, prevents exception invoices from payment batching, and verifies invoice/payment audit evidence.",
+      "Does not prove every AP capture OCR path, bank integration, or multi-approver policy branch.",
     ],
     [
       "test:production-workflow-proof",

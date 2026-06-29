@@ -1605,6 +1605,17 @@ export async function createPaymentBatchRecord(
     throw new Error("No eligible invoices were selected for payment batching.");
   }
 
+  for (const invoice of eligibleInvoices) {
+    if (!invoice.purchaseOrderId) continue;
+    const latestMatch = await getLatestMatchResult(invoice.id, orgId);
+    if (!latestMatch) {
+      throw new Error(`Invoice ${invoice.invoiceNumber} must be matched before payment batching.`);
+    }
+    if (latestMatch.status === "EXCEPTION") {
+      throw new Error(`Invoice ${invoice.invoiceNumber} has unresolved matching exceptions and cannot be paid.`);
+    }
+  }
+
   return db.transaction(async (tx) => {
     const totalAmount = eligibleInvoices.reduce(
       (sum, row) => sum + toNumber(row.dueAmount ?? row.total, 0),

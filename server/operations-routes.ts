@@ -392,7 +392,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       setEndpointHeader(res, req.path);
       if (isOperationsDegraded()) {
         res.setHeader("X-InvTrack-Fallback", "degraded");
-        return respondOk(res, [], 200, { fallback: "degraded" });
+        throw contractError(503, "DB_UNAVAILABLE", "Inventory data is temporarily unavailable");
       }
       try {
         const q =
@@ -417,7 +417,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       } catch (err) {
         logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
-        respondOk(res, [], 200, { fallback: getFallbackValue(err) });
+        throw contractError(503, "DB_UNAVAILABLE", "Inventory data is temporarily unavailable", String(getFallbackValue(err)));
       }
     }),
   );

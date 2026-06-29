@@ -720,13 +720,16 @@ export async function adjustOperationalInventory(input: AdjustInventoryInput) {
     }
   }
 
+  const existingPositions = await getInventoryPositionsForSku(item.sku);
+  const seedOnHand = existingPositions.length === 0 ? toNumber(item.quantity, 0) : 0;
+
   await pool.query(
     `
     INSERT INTO inventory_positions (sku, location, on_hand, allocated, updated_at)
-    VALUES ($1, $2, 0, 0, now())
+    VALUES ($1, $2, $3, 0, now())
     ON CONFLICT (sku, location) DO NOTHING
     `,
-    [item.sku, normalizedLocation],
+    [item.sku, normalizedLocation, seedOnHand],
   );
 
   const updatedPositionResult = await pool.query<{
