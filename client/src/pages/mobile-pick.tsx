@@ -43,7 +43,7 @@ export default function MobilePickPage() {
   }, [bundle?.data]);
 
   return (
-    <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl">
+    <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl" data-testid="mobile-pick-page">
       <PageHeader
         title="Pick / low-stock (mobile)"
         subtitle="Large rows for floor use. Opens SKU detail for location and adjustments."

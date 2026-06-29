@@ -1,4 +1,13 @@
 const ROUTE_MARKERS: Array<{ match: (path: string) => boolean; selectors: string[] }> = [
+  { match: (path) => path === "/m/home", selectors: [`[data-testid="mobile-hub-home-page"]`] },
+  { match: (path) => path === "/m/tasks", selectors: [`[data-testid="mobile-hub-tasks-page"]`] },
+  { match: (path) => path === "/m/counts" || path === "/m/counts/spot", selectors: [`[data-testid="mobile-counts-page"]`] },
+  { match: (path) => /^\/m\/counts\/[^/]+(?:\/review)?$/.test(path), selectors: [`[data-testid="mobile-count-session-page"]`] },
+  { match: (path) => path === "/m/scan", selectors: [`[data-testid="barcode-scanner-page"]`] },
+  { match: (path) => path === "/m/approvals", selectors: [`[data-testid="purchase-orders-page"]`, `[data-testid="po-table"]`] },
+  { match: (path) => path === "/m/more", selectors: [`[data-testid="mobile-hub-more-page"]`] },
+  { match: (path) => path === "/m/receive", selectors: [`[data-testid="mobile-receive-page"]`] },
+  { match: (path) => path === "/m/pick", selectors: [`[data-testid="mobile-pick-page"]`] },
   { match: (path) => path === "/inventory", selectors: [`[data-testid="inventory-page"]`] },
   { match: (path) => path === "/inventory/warehouses" || path === "/warehouses", selectors: [`[data-testid="warehouses-page"]`] },
   { match: (path) => path === "/inventory/warehouse-operations" || path === "/warehouse-operations", selectors: [`[data-testid="warehouse-operations-page"]`] },

@@ -40,7 +40,7 @@ export default function MobileReceivePage() {
   );
 
   return (
-    <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl">
+    <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl" data-testid="mobile-receive-page">
       <PageHeader
         title="Receive on mobile"
         subtitle="Large tap targets for warehouse floor. Pick a PO to enter quantities on the receive panel."

@@ -44,6 +44,16 @@ expectIncludes("procurement orders expects purchase orders page", "/procurement/
 expectIncludes("procurement order detail expects PO detail page", "/procurement/orders/PO-TEST", `[data-testid="po-detail-page"]`);
 expectIncludes("warehouse operations has route marker", "/warehouse-operations", `[data-testid="warehouse-operations-page"]`);
 expectIncludes("master data has route marker", "/admin/master-data", `[data-testid="master-data-page"]`);
+expectIncludes("mobile home has route marker", "/m/home", `[data-testid="mobile-hub-home-page"]`);
+expectIncludes("mobile tasks has route marker", "/m/tasks", `[data-testid="mobile-hub-tasks-page"]`);
+expectIncludes("mobile counts list has route marker", "/m/counts", `[data-testid="mobile-counts-page"]`);
+expectIncludes("mobile count session has route marker", "/m/counts/42", `[data-testid="mobile-count-session-page"]`);
+expectIncludes("mobile count review has route marker", "/m/counts/42/review", `[data-testid="mobile-count-session-page"]`);
+expectIncludes("mobile scan reuses barcode route marker", "/m/scan", `[data-testid="barcode-scanner-page"]`);
+expectIncludes("mobile approvals reuses purchase orders marker", "/m/approvals", `[data-testid="purchase-orders-page"]`);
+expectIncludes("mobile receive has route marker", "/m/receive", `[data-testid="mobile-receive-page"]`);
+expectIncludes("mobile pick has route marker", "/m/pick", `[data-testid="mobile-pick-page"]`);
+expectIncludes("mobile more has route marker", "/m/more", `[data-testid="mobile-hub-more-page"]`);
 expectEmpty("unknown routes return no configured contract", "/unknown-release-cleanup-route");
 
 expectIncludes("system diagnostics has route marker", "/admin/system-diagnostics", `[data-testid="system-diagnostics-page"]`);

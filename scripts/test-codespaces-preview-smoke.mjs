@@ -12,7 +12,13 @@ const paths = [
   "/api/ready",
   "/api/user",
   "/m/home",
+  "/m/tasks",
   "/m/counts",
+  "/m/scan",
+  "/m/approvals",
+  "/m/receive",
+  "/m/pick",
+  "/m/more",
   "/inventory/cycle-counts",
   "/admin/settings",
 ];
@@ -20,7 +26,13 @@ const paths = [
 const allowed = new Map([
   ["/api/user", new Set([200, 401])],
   ["/m/home", new Set([200, 302, 401])],
+  ["/m/tasks", new Set([200, 302, 401])],
   ["/m/counts", new Set([200, 302, 401])],
+  ["/m/scan", new Set([200, 302, 401])],
+  ["/m/approvals", new Set([200, 302, 401])],
+  ["/m/receive", new Set([200, 302, 401])],
+  ["/m/pick", new Set([200, 302, 401])],
+  ["/m/more", new Set([200, 302, 401])],
   ["/inventory/cycle-counts", new Set([200, 302, 401])],
   ["/admin/settings", new Set([200, 302, 401])],
 ]);
