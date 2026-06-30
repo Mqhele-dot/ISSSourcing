@@ -368,7 +368,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                           })
                         }
                       >
-                        <SelectTrigger>
+                        <SelectTrigger data-testid="mobile-receive-warehouse-select">
                           <SelectValue placeholder="Select warehouse" />
                         </SelectTrigger>
                         <SelectContent>
@@ -388,7 +388,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                         onValueChange={(next) => setReceivePutaway((current) => ({ ...current, aisle: next, binCode: "" }))}
                         disabled={aisles.length === 0}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger data-testid="mobile-receive-aisle-select">
                           <SelectValue placeholder={aisles.length ? "Select aisle" : "No aisles"} />
                         </SelectTrigger>
                         <SelectContent>
@@ -407,7 +407,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                         onValueChange={(next) => setReceivePutaway((current) => ({ ...current, binCode: next }))}
                         disabled={binOptions.length === 0}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger data-testid="mobile-receive-bin-select">
                           <SelectValue placeholder={binOptions.length ? "Select bin" : "No bins"} />
                         </SelectTrigger>
                         <SelectContent>
@@ -455,6 +455,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                             <Label htmlFor={`qty-${line.sku}`}>Receive now</Label>
                             <Input
                               id={`qty-${line.sku}`}
+                              data-testid={`mobile-receive-qty-${line.sku}`}
                               inputMode="numeric"
                               type="number"
                               min={0}
@@ -472,6 +473,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                             <Label htmlFor={`batch-${line.sku}`}>Batch</Label>
                             <Input
                               id={`batch-${line.sku}`}
+                              data-testid={`mobile-receive-batch-${line.sku}`}
                               placeholder="Optional batch number"
                               value={batchState[line.sku] ?? ""}
                               onChange={(event) =>
@@ -486,6 +488,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                             <Label htmlFor={`serial-${line.sku}`}>Serial numbers</Label>
                             <Input
                               id={`serial-${line.sku}`}
+                              data-testid={`mobile-receive-serial-${line.sku}`}
                               placeholder={line.serialTrackingRequired ? "Required, comma separated" : "Optional, comma separated"}
                               value={serialState[line.sku] ?? ""}
                               onChange={(event) =>

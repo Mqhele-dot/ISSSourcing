@@ -1,0 +1,157 @@
+import { randomBytes, scrypt } from "node:crypto";
+import { promisify } from "node:util";
+import { expect, test, type Page } from "@playwright/test";
+import { apiJsonRequest, loginForTests } from "../scripts/test-http.ts";
+import { createSentWorkflowPo, ensureWorkflowFixture } from "../scripts/workflow-proof-fixtures.ts";
+import { pool } from "../server/db.ts";
+
+const scryptAsync = promisify(scrypt);
+const TEST_PASSWORD = "Admin123!";
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  const hash = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${hash.toString("hex")}.${salt}`;
+}
+
+async function ensureTestUser(username: string, role: string, workPersona: string): Promise<number> {
+  const password = await hashPassword(TEST_PASSWORD);
+  const email = `${username}@example.com`;
+  const result = await pool.query<{ id: number }>(
+    `
+      INSERT INTO users (
+        username, password, email, full_name, role, work_persona,
+        active, email_verified, default_organization_id, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, TRUE, TRUE, 1, NOW())
+      ON CONFLICT (username) DO UPDATE SET
+        password = EXCLUDED.password,
+        email = EXCLUDED.email,
+        role = EXCLUDED.role,
+        work_persona = EXCLUDED.work_persona,
+        active = TRUE,
+        email_verified = TRUE,
+        default_organization_id = 1,
+        updated_at = NOW()
+      RETURNING id
+    `,
+    [username, password, email, `E2E ${workPersona}`, role, workPersona],
+  );
+
+  await pool.query(
+    `
+      INSERT INTO organization_members (organization_id, user_id, role)
+      VALUES (1, $1, 'member')
+      ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role
+    `,
+    [result.rows[0].id],
+  );
+  return result.rows[0].id;
+}
+
+async function loginAs(page: Page, username: string) {
+  await page.context().clearCookies();
+  await page.goto("about:blank");
+  await page.goto("/auth", { waitUntil: "load" });
+  const usernameInput = page.getByPlaceholder("Enter your username");
+  await expect(usernameInput).toBeVisible({ timeout: 25_000 });
+  await usernameInput.fill(username);
+  await page.getByPlaceholder("Enter your password").fill(TEST_PASSWORD);
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.waitForURL((url) => !url.pathname.startsWith("/auth"), { timeout: 20_000 });
+}
+
+test.describe.configure({ mode: "serial" });
+
+test.describe("core workflow permission controls", () => {
+  let receiverPoNumber: string;
+  let requesterPoNumber: string;
+
+  test.beforeAll(async () => {
+    await ensureTestUser("e2e_receiver", "warehouse_staff", "Warehouse receiver");
+    await ensureTestUser("e2e_requester", "viewer", "Requester");
+    await ensureTestUser("e2e_ap_manager", "manager", "AP user");
+
+    const adminCookie = (await loginForTests("admin", TEST_PASSWORD)) ?? "";
+    expect(adminCookie).toBeTruthy();
+
+    const receiverFixture = await ensureWorkflowFixture("perm-rec");
+    receiverPoNumber = (await createSentWorkflowPo(adminCookie, receiverFixture, 1)).poNumber;
+    const requesterFixture = await ensureWorkflowFixture("perm-deny");
+    requesterPoNumber = (await createSentWorkflowPo(adminCookie, requesterFixture, 1)).poNumber;
+  });
+
+  test("warehouse receiver can access and post receiving while requester is blocked", async ({ page }) => {
+    await loginAs(page, "e2e_receiver");
+    await page.goto(`/m/receive/${encodeURIComponent(receiverPoNumber)}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("mobile-receive-detail")).toBeVisible();
+    await expect(page.getByTestId("mobile-receive-post-button")).toBeEnabled();
+
+    const requesterCookie = (await loginForTests("e2e_requester", TEST_PASSWORD)) ?? "";
+    const denied = await apiJsonRequest(`/purchase/orders/${encodeURIComponent(requesterPoNumber)}/receive`, {
+      method: "POST",
+      cookie: requesterCookie,
+      body: {
+        receiverName: "Requester should not receive",
+        warehouseLocation: "A1-B1",
+        grnNumber: "GRN-DENIED",
+        lines: [],
+      },
+    });
+    expect(denied.status).toBe(403);
+    expect(JSON.stringify(denied.json)).toContain("PO_RECEIVE_FORBIDDEN");
+
+    const requesterPage = await page.context().newPage();
+    await loginAs(requesterPage, "e2e_requester");
+    await requesterPage.goto(`/m/receive/${encodeURIComponent(requesterPoNumber)}`, { waitUntil: "domcontentloaded" });
+    await expect(requesterPage.getByTestId("mobile-receive-detail")).toBeVisible();
+    await expect(requesterPage.getByTestId("mobile-receive-post-button")).toBeDisabled();
+  });
+
+  test("AP and master-data controls enforce role boundaries", async ({ page }) => {
+    await loginAs(page, "e2e_ap_manager");
+    await page.goto("/finance/accounts-payable/payments", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("accounts-payable-page")).toBeVisible();
+    await expect(page.getByText(/Create payment batch/i)).toBeVisible();
+
+    const requesterCookie = (await loginForTests("e2e_requester", TEST_PASSWORD)) ?? "";
+    const releaseDenied = await apiJsonRequest("/ap/payment-batches/1/release", {
+      method: "POST",
+      cookie: requesterCookie,
+      body: { comment: "Requester should not release payments" },
+    });
+    expect(releaseDenied.status).toBe(403);
+
+    const mdDenied = await apiJsonRequest("/currencies", {
+      method: "POST",
+      cookie: requesterCookie,
+      body: {
+        code: `ZZ${Date.now().toString().slice(-1)}`,
+        name: "Denied test currency",
+        symbol: "Z",
+        exchangeRateToZar: 1,
+        active: true,
+      },
+    });
+    expect(mdDenied.status).toBe(403);
+
+    const settingsDenied = await apiJsonRequest("/settings", {
+      method: "PUT",
+      cookie: requesterCookie,
+      body: {},
+    });
+    expect(settingsDenied.status).toBe(403);
+
+    await loginAs(page, "admin");
+    await page.goto("/admin/master-data", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText(/Master Data/i)).toBeVisible();
+
+    await page.goto("/admin/user-roles", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText(/Role & Permission Management/i)).toBeVisible();
+
+    await page.context().clearCookies();
+    const anonymous = await page.context().newPage();
+    await anonymous.goto("/admin/settings", { waitUntil: "domcontentloaded" });
+    await expect(anonymous).toHaveURL(/\/auth(?:\?|$)/);
+  });
+});

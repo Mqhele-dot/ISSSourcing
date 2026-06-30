@@ -92,6 +92,8 @@
     "test:inventory-port": "tsx scripts/test-inventory-port.ts",
     "test:csv": "tsx server/services/document-generator-service.test.ts",
     "test:e2e": "node scripts/run-playwright-e2e.mjs",
+    "test:e2e:procurement-ap-ui": "node scripts/run-playwright-e2e.mjs e2e/procurement-to-ap-ui-workflow.spec.ts",
+    "test:e2e:permissions": "node scripts/run-playwright-e2e.mjs e2e/role-permission-core-workflow.spec.ts",
     "test:functional-e2e": "cross-env PLAYWRIGHT_REUSE_EXISTING_SERVER=1 npx playwright test e2e/functional-audit.spec.ts",
     "test:requisition-supplier-e2e": "cross-env PLAYWRIGHT_REUSE_EXISTING_SERVER=1 npx playwright test e2e/requisitions-supplier-portal.spec.ts",
     "verify:production-base": "node scripts/verify-production-branch.mjs",

@@ -119,6 +119,18 @@ function requirePoWorkflowRole(req: Request): void {
   }
 }
 
+function requirePoReceiveRole(req: Request): void {
+  const role = String((req as Request & { user?: { role?: string } }).user?.role ?? "").toLowerCase();
+  if (!["warehouse_staff", "manager", "planner", "admin"].includes(role)) {
+    throw contractError(
+      403,
+      "PO_RECEIVE_FORBIDDEN",
+      "Receiving purchase orders requires Warehouse Staff, Manager, Planner, or Admin.",
+      "Sign in with a role allowed to receive stock into warehouse inventory.",
+    );
+  }
+}
+
 function resolveActor(req: Request): string {
   const u = (req as Request & { user?: { username?: string | null; email?: string | null } }).user;
   if (u && typeof u.username === "string" && u.username.trim()) return u.username.trim();
@@ -756,6 +768,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           res.setHeader("X-InvTrack-Fallback", "degraded");
           throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
         }
+        requirePoReceiveRole(req);
         const bodyLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
         const lines = bodyLines.map(
           (line: {

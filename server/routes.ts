@@ -932,10 +932,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/settings", async (req: Request, res: Response) => {
+  app.put("/api/settings", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const validatedData = appSettingsFormSchema.parse(req.body);
+      const before = await storage.getAppSettings();
       const updatedSettings = await storage.updateAppSettings(validatedData);
+      if (req.user) {
+        await storage.createActivityLog({
+          action: "SETTINGS_UPDATED",
+          description: `Updated application settings. Old value: ${JSON.stringify(before ?? null)}. New value: ${JSON.stringify(updatedSettings)}. Reason: Admin settings update.`,
+          userId: req.user.id,
+          referenceType: "settings",
+          referenceId: updatedSettings.id,
+        });
+      }
       res.json(updatedSettings);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -2163,7 +2173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Billing settings routes
-  app.get("/api/billing-settings", async (req, res) => {
+  app.get("/api/billing-settings", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req, res) => {
     try {
       const settings = await storage.getBillingSettings();
       return sendOk(res, settings || {});
@@ -2173,9 +2183,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/billing-settings", async (req, res) => {
+  app.post("/api/billing-settings", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req, res) => {
     try {
+      const before = await storage.getBillingSettings();
       const settings = await storage.updateBillingSettings(req.body);
+      if (req.user) {
+        await storage.createActivityLog({
+          action: "BILLING_SETTINGS_UPDATED",
+          description: `Updated billing settings provider readiness. Old value: ${JSON.stringify(before ?? null)}. New value: ${JSON.stringify(settings)}. Reason: Admin billing settings update.`,
+          userId: req.user.id,
+          referenceType: "settings",
+          referenceId: settings?.id,
+        });
+      }
       return sendOk(res, settings);
     } catch (error) {
       console.error("Error updating billing settings:", error);

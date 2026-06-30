@@ -7,6 +7,7 @@ const reportFile = path.join(root, "docs", "production-readiness-audit.md");
 const ignored = new Set([".git", "node_modules", "dist", "build", "uploads", "tmp", "output", ".cache"]);
 const statuses = [
   "Production-ready",
+  "Workflow-backed",
   "Partially working",
   "Cosmetic only",
   "Mock/demo only",
@@ -377,6 +378,32 @@ function routeUiTestEvidence(route) {
   });
 }
 
+function routeE2eTestEvidence(route) {
+  const names = [];
+  if (/^\/(inventory|m\/receive|finance\/invoices|finance\/accounts-payable)(\/|$)/.test(route.route)) {
+    names.push("procurement-to-ap-ui-workflow");
+  }
+  if (/^\/(admin\/user-roles|admin\/settings|admin\/master-data|finance\/accounts-payable|m\/receive)(\/|$)/.test(route.route)) {
+    names.push("role-permission-core-workflow");
+  }
+  return testFiles.filter((file) => {
+    const normalized = toPosix(file).toLowerCase();
+    return names.some((name) => normalized.includes(name.toLowerCase()));
+  });
+}
+
+function routeProofLabels(route, apiUses, text) {
+  const labels = [];
+  if (routeRuntimeTestEvidence(route).length > 0) labels.push("Backend-proven");
+  if (apiUses.length > 0 || /useQuery|useMutation|apiRequest|fetch\(/.test(text)) labels.push("UI-wired");
+  if (routeE2eTestEvidence(route).length > 0) labels.push("E2E-proven");
+  if (/<Can|useCan|usePermissions|permission|ProtectedRoute|ensureRole/i.test(text) || routeE2eTestEvidence(route).some((file) => toPosix(file).includes("role-permission-core-workflow"))) {
+    labels.push("Permission-proven");
+  }
+  if (/audit|approval[-_]?history|activity|revision|history/i.test(text)) labels.push("Audit-proven");
+  return labels;
+}
+
 function isProcurementRoute(route) {
   return /^\/procurement\/(orders|requisitions)(\/|$)/.test(route.route);
 }
@@ -413,7 +440,10 @@ function routeRequiredFixes(route, apiUses, text) {
       fixes.push("core route lacks runtime workflow test evidence");
     }
     if (routeUiTestEvidence(route).length === 0) {
-      fixes.push("core route lacks UI/browser workflow evidence");
+      fixes.push("core route lacks source-level UI workflow evidence");
+    }
+    if (routeE2eTestEvidence(route).length === 0) {
+      fixes.push("core route lacks Playwright/browser workflow evidence");
     }
   }
   if (isCoreWorkflowRoute(route) && !hasAuditEvidence) {
@@ -431,9 +461,13 @@ function routeRequiredFixes(route, apiUses, text) {
 function routeStatus(route, apiUses, text) {
   const fixes = routeRequiredFixes(route, apiUses, text);
   const hasMock = fixes.includes("mock/demo/static markers present");
+  const hasRuntime = routeRuntimeTestEvidence(route).length > 0;
+  const hasUi = routeUiTestEvidence(route).length > 0;
+  const hasE2e = routeE2eTestEvidence(route).length > 0;
   if (!existsSync(path.join(root, route.file))) return "Broken";
   if (hasMock) return "Mock/demo only";
   if (fixes.includes("no clear backend data integration")) return "Cosmetic only";
+  if (isCoreWorkflowRoute(route) && hasRuntime && hasUi && !hasE2e) return "Workflow-backed";
   if (fixes.length > 0 || hasProductionBlockingFixes(fixes)) return "Partially working";
   return "Production-ready";
 }
@@ -712,9 +746,12 @@ function routeRows() {
     const module = detectModule(`${route.route} ${route.file}`);
     const dataSource = apiUses.length ? "Backend API" : /localStorage|sessionStorage/.test(text) ? "Browser storage" : "Static/component state";
     const fixes = routeRequiredFixes(route, apiUses, text);
+    const proof = routeProofLabels(route, apiUses, text);
     const gap =
       status === "Production-ready"
         ? "No major static gap detected"
+        : status === "Workflow-backed"
+          ? "Backend/API workflow and source-level UI wiring exist, but browser/permission proof is still incomplete"
         : status === "Mock/demo only"
           ? "Contains mock/demo/static fallback markers"
           : status === "Cosmetic only"
@@ -722,7 +759,7 @@ function routeRows() {
             : fixes.length
               ? fixes.join("; ")
               : "Needs stronger loading/error/validation/permission/audit proof";
-    return `| ${esc(route.route)} | ${esc(route.file)} | ${module} | ${isCoreWorkflowRoute(route) ? "Yes" : "No"} | ${dataSource} | ${list(apiUses, 5)} | ${status} | ${gap} | Connect to real data, backend validation, permissions, audit/reporting evidence, and a focused test. |`;
+    return `| ${esc(route.route)} | ${esc(route.file)} | ${module} | ${isCoreWorkflowRoute(route) ? "Yes" : "No"} | ${dataSource} | ${list(apiUses, 5)} | ${list(proof, 5)} | ${status} | ${gap} | Connect to real data, backend validation, permissions, audit/reporting evidence, and a focused test. |`;
   });
 }
 
@@ -735,7 +772,8 @@ function coreRouteRows() {
       const status = routeStatus(route, apiUses, text);
       const fixes = routeRequiredFixes(route, apiUses, text);
       const tests = routeTestEvidence(route);
-      return `| ${esc(route.route)} | ${esc(route.file)} | ${detectModule(`${route.route} ${route.file}`)} | ${list(apiUses, 4)} | ${list(tests.map(toPosix), 3)} | ${status} | ${fixes.length ? fixes.join("; ") : "No required fixes detected by static audit"} |`;
+      const proof = routeProofLabels(route, apiUses, text);
+      return `| ${esc(route.route)} | ${esc(route.file)} | ${detectModule(`${route.route} ${route.file}`)} | ${list(apiUses, 4)} | ${list(tests.map(toPosix), 3)} | ${list(proof, 5)} | ${status} | ${fixes.length ? fixes.join("; ") : "No required fixes detected by static audit"} |`;
     });
 }
 
@@ -818,6 +856,16 @@ function runtimeEvidenceRows() {
       "test:core-screen-workflow-contracts",
       "Static UI contract guard proving /m/receive, /inventory, /finance/invoices, and /finance/accounts-payable are wired to real receiving, inventory, PO/GRN match, and payment-control code paths instead of unsafe fallback text.",
       "It is source-level UI proof, not a live browser click-through or full Playwright workflow.",
+    ],
+    [
+      "test:e2e:procurement-ap-ui",
+      "Live Playwright workflow proof that logs in, opens mobile receiving for a real PO, posts a receipt, verifies inventory reflects the received item, and verifies invoice/AP screens show PO/GRN match and payment-control states.",
+      "Uses API setup for the PO and invoices, so it does not prove every form in the procurement chain can create the fixtures through clicks.",
+    ],
+    [
+      "test:e2e:permissions",
+      "Live Playwright/API permission proof for warehouse receiving, requester receive denial, AP workspace access, payment release denial, master-data write denial, settings write denial, and protected admin pages.",
+      "Does not exhaustively test every custom role matrix or every high-risk admin mutation.",
     ],
     [
       "test:production-workflow-proof",
@@ -947,16 +995,16 @@ ${runtimeEvidenceRows()}
 
 ## 1. Route Audit
 
-| Route | Component/File | Module | Core Workflow? | Data Source | API Used | Status | Main Gap | Required Fix |
-|---|---|---|---|---|---|---|---|---|
+| Route | Component/File | Module | Core Workflow? | Data Source | API Used | Proof Labels | Status | Main Gap | Required Fix |
+|---|---|---|---|---|---|---|---|---|---|
 ${routeRows().join("\n")}
 
 ## 2. Core Workflow Routes
 
-Core workflow routes are stricter than supporting pages. They cannot be marked \`Production-ready\` unless static analysis finds real data access, validation, permissions, loading/error handling, and focused test evidence.
+Core workflow routes are stricter than supporting pages. They cannot be marked \`Production-ready\` unless static analysis finds real data access, validation, permissions, loading/error handling, runtime workflow evidence, and Playwright/browser or documented manual QA evidence.
 
-| Route | Component/File | Module | API Used | Test Evidence | Status | Required Fixes |
-|---|---|---|---|---|---|---|
+| Route | Component/File | Module | API Used | Test Evidence | Proof Labels | Status | Required Fixes |
+|---|---|---|---|---|---|---|---|
 ${coreRouteRows().join("\n")}
 
 ## 3. API Audit

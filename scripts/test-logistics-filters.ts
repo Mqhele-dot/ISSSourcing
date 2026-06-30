@@ -15,6 +15,7 @@ import {
   peekSessionCookie,
 } from "./test-http.ts";
 import { exitTest } from "./test-exit.ts";
+import { pool } from "../server/db.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -104,6 +105,34 @@ async function main() {
   const etaFar = new Date(Date.now() + 10 * dayMs).toISOString();
 
   const createdIds: number[] = [];
+
+  const ensurePurchaseOrder = async (poNumber: string) => {
+    const supplier = await pool.query<{ id: number }>(
+      `
+        SELECT id
+        FROM suppliers
+        WHERE organization_id = 1 AND COALESCE(status, 'active') NOT IN ('blocked', 'inactive')
+        ORDER BY id
+        LIMIT 1
+      `,
+    );
+    assert.ok(supplier.rows[0]?.id, "logistics filter test requires a seeded active supplier");
+    await pool.query(
+      `
+        INSERT INTO purchase_orders (organization_id, order_number, supplier_id, status, total_amount, currency_code, updated_at)
+        VALUES (1, $1, $2, 'sent', 100, 'ZAR', NOW())
+        ON CONFLICT (organization_id, order_number) DO UPDATE SET
+          supplier_id = EXCLUDED.supplier_id,
+          status = 'sent',
+          updated_at = NOW()
+      `,
+      [poNumber, supplier.rows[0].id],
+    );
+  };
+
+  for (const po of [poLate, poExc, poNoEta, poFed, poEtaRange, poSoon, poOnTime]) {
+    await ensurePurchaseOrder(po);
+  }
 
   const post = async (body: Record<string, unknown>) => {
     const r = await apiJsonRequest("/logistics/shipments", { method: "POST", body, cookie });

@@ -52,4 +52,20 @@ assertIncludes(apPayments, "PO/GRN match", "/finance/accounts-payable/payments")
 assertIncludes(apPayments, "PENDING MATCH", "/finance/accounts-payable/payments");
 assertIncludes(apPayments, "pending-match invoices stay blocked", "/finance/accounts-payable/payments");
 
+const procurementApE2e = read("e2e/procurement-to-ap-ui-workflow.spec.ts");
+assertIncludes(procurementApE2e, "/m/receive/", "receive -> inventory -> AP E2E");
+assertIncludes(procurementApE2e, "inventory-row-", "receive -> inventory -> AP E2E");
+assertIncludes(procurementApE2e, "PAYMENT BLOCKED", "receive -> inventory -> AP E2E");
+assertIncludes(procurementApE2e, "PAYMENT READY", "receive -> inventory -> AP E2E");
+
+const permissionsE2e = read("e2e/role-permission-core-workflow.spec.ts");
+assertIncludes(permissionsE2e, "PO_RECEIVE_FORBIDDEN", "permission E2E");
+assertIncludes(permissionsE2e, "/ap/payment-batches/1/release", "permission E2E");
+assertIncludes(permissionsE2e, "/admin/user-roles", "permission E2E");
+
+const audit = read("scripts/audit-production-readiness.mjs");
+assertIncludes(audit, "Workflow-backed", "production audit");
+assertIncludes(audit, "E2E-proven", "production audit");
+assertIncludes(audit, "core route lacks Playwright/browser workflow evidence", "production audit");
+
 console.log("Core screen workflow contracts passed.");
