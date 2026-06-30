@@ -612,6 +612,15 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       });
       const createdRows = (await db.insert(approvalPolicies).values(payload).returning()) as any[];
       const created = createdRows[0];
+      if (req.user) {
+        await storage.createActivityLog({
+          action: "APPROVAL_POLICY_CREATED",
+          description: `Created approval policy ${created.name}. New value: ${JSON.stringify(created)}. Reason: Admin approval-control update.`,
+          userId: req.user.id,
+          referenceType: "approval_policy",
+          referenceId: created.id,
+        });
+      }
       return sendOk(res, created, 201);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -629,6 +638,11 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       const id = Number(req.params.id);
       if (isNaN(id)) return sendError(res, 400, "INVALID_ID", "Invalid policy ID");
       const payload = insertApprovalPolicySchema.partial().parse(req.body);
+      const beforeRows = (await db
+        .select()
+        .from(approvalPolicies)
+        .where(and(eq(approvalPolicies.id, id), eq(approvalPolicies.organizationId, getActiveOrganizationId())))
+        .limit(1)) as any[];
       const updatedRows = (await db
         .update(approvalPolicies)
         .set(payload)
@@ -636,6 +650,15 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         .returning()) as any[];
       const updated = updatedRows[0];
       if (!updated) return sendError(res, 404, "NOT_FOUND", "Approval policy not found");
+      if (req.user) {
+        await storage.createActivityLog({
+          action: "APPROVAL_POLICY_UPDATED",
+          description: `Updated approval policy ${updated.name}. Old value: ${JSON.stringify(beforeRows[0] ?? null)}. New value: ${JSON.stringify(updated)}. Reason: Admin approval-control update.`,
+          userId: req.user.id,
+          referenceType: "approval_policy",
+          referenceId: updated.id,
+        });
+      }
       return sendOk(res, updated);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -657,6 +680,15 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         .where(and(eq(approvalPolicies.id, id), eq(approvalPolicies.organizationId, getActiveOrganizationId())))
         .returning({ id: approvalPolicies.id });
       if (deleted.length === 0) return sendError(res, 404, "NOT_FOUND", "Approval policy not found");
+      if (req.user) {
+        await storage.createActivityLog({
+          action: "APPROVAL_POLICY_DELETED",
+          description: `Deleted approval policy #${id}. Old value: ${JSON.stringify({ id })}. Reason: Admin approval-control update.`,
+          userId: req.user.id,
+          referenceType: "approval_policy",
+          referenceId: id,
+        });
+      }
       return res.status(204).send();
     } catch (error) {
       console.error("Error deleting approval policy:", error);

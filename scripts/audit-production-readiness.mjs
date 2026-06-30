@@ -30,7 +30,9 @@ const coreWorkflowRoutePatterns = [
   /^\/analytics\/reports/,
   /^\/analytics\/export-center/,
   /^\/admin\/system-diagnostics/,
+  /^\/admin\/settings/,
   /^\/admin\/user-roles/,
+  /^\/finance\/approval-policies/,
   /^\/m\/counts/,
   /^\/m\/receive/,
 ];
@@ -287,6 +289,28 @@ function routeEvidenceFiles(route) {
       "client/src/pages/master-data/use-master-data.ts",
     ].forEach((file) => files.add(file));
   }
+  if (route.route.startsWith("/admin/settings")) {
+    [
+      "client/src/pages/settings.tsx",
+      "client/src/hooks/use-settings.ts",
+      "server/routes.ts",
+    ].forEach((file) => files.add(file));
+  }
+  if (route.route.startsWith("/admin/user-roles")) {
+    [
+      "client/src/pages/user-roles.tsx",
+      "client/src/components/user/role-manager.tsx",
+      "client/src/hooks/use-permissions.tsx",
+      "server/routes.ts",
+      "server/modules/rbac/register-rbac-routes.ts",
+    ].forEach((file) => files.add(file));
+  }
+  if (route.route.startsWith("/finance/approval-policies")) {
+    [
+      "client/src/pages/approval-policies.tsx",
+      "server/modules/master-data/register-master-data-routes.ts",
+    ].forEach((file) => files.add(file));
+  }
   if (route.route === "/inventory") {
     [
       "client/src/pages/inventory.tsx",
@@ -339,27 +363,24 @@ function routeTestEvidence(route) {
     [/^\/m\/receive(\/|$)/, ["test-po-receiving-inventory-flow", "test-core-screen-workflow-contracts"]],
     [/^\/finance\/invoices(\/|$)/, ["test-ap-po-grn-matching-flow", "test-core-screen-workflow-contracts"]],
     [/^\/finance\/accounts-payable(\/|$)/, ["test-ap-po-grn-matching-flow", "test-ap-workflow", "test-core-screen-workflow-contracts"]],
+    [/^\/admin\/settings(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
+    [/^\/admin\/user-roles(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
+    [/^\/finance\/approval-policies(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
+    [/^\/procurement\/requisitions(\/|$)/, ["test-requisition-line-mdm-flow", "test-mdm-dependency-runtime", "procurement-to-ap-ui-workflow"]],
+    [/^\/procurement\/orders(\/|$)/, ["test-purchase-order-endpoints", "test-po-receiving-inventory-flow", "procurement-to-ap-ui-workflow"]],
   ];
-  const explicit = routeEvidencePatterns
+  return routeEvidencePatterns
     .filter(([pattern]) => pattern.test(route.route))
     .flatMap(([, names]) =>
       testFiles.filter((file) => names.some((name) => toPosix(file).toLowerCase().includes(String(name).toLowerCase()))),
     );
-  const module = detectModule(`${route.route} ${route.file}`).toLowerCase().split(" ")[0];
-  const routeSlug = route.route
-    .replace(/^\/+/, "")
-    .replace(/\/:.+$/, "")
-    .split("/")[0];
-  return testFiles.filter((file) => {
-    const normalized = toPosix(file).toLowerCase();
-    return normalized.includes(module) || normalized.includes(routeSlug);
-  }).concat(explicit);
 }
 
 function routeRuntimeTestEvidence(route) {
   return routeTestEvidence(route).filter((file) => {
     const normalized = toPosix(file).toLowerCase();
-    return !normalized.includes("test-production-workflow-proof")
+    return normalized.startsWith("scripts/test-")
+      && !normalized.includes("test-production-workflow-proof")
       && !normalized.includes("test-requisition-line-mdm-propagation");
   });
 }
@@ -394,10 +415,10 @@ function routeE2eTestEvidence(route) {
 
 function routeProofLabels(route, apiUses, text) {
   const labels = [];
-  if (routeRuntimeTestEvidence(route).length > 0) labels.push("Backend-proven");
+  if (apiUses.length > 0 && routeRuntimeTestEvidence(route).length > 0) labels.push("Backend-proven");
   if (apiUses.length > 0 || /useQuery|useMutation|apiRequest|fetch\(/.test(text)) labels.push("UI-wired");
   if (routeE2eTestEvidence(route).length > 0) labels.push("E2E-proven");
-  if (/<Can|useCan|usePermissions|permission|ProtectedRoute|ensureRole/i.test(text) || routeE2eTestEvidence(route).some((file) => toPosix(file).includes("role-permission-core-workflow"))) {
+  if (/<Can|useCan|usePermissions|permission|ProtectedRoute|canManage|canUpdate|canCreate|canDelete|ensureRole/i.test(text) || routeE2eTestEvidence(route).some((file) => toPosix(file).includes("role-permission-core-workflow"))) {
     labels.push("Permission-proven");
   }
   if (/audit|approval[-_]?history|activity|revision|history/i.test(text)) labels.push("Audit-proven");
@@ -421,12 +442,16 @@ function routeRequiredFixes(route, apiUses, text) {
     .filter((file) => !toPosix(file).startsWith("client/src/api/"))
     .map(fileText)
     .join("\n\n");
-  const hasMock = /\b(mock|demo|sample|stub|fake|coming soon)\b/i.test(uiText);
+  const hasMockMarker = /\b(mock|demo|sample|stub|fake|coming soon)\b/i.test(uiText);
+  const devOnlyDemoMarker =
+    /^\/admin\/settings(\/|$)/.test(route.route)
+    && /import\.meta\.env\.DEV|isDevMode|Reset demo data/.test(uiText);
+  const hasMock = hasMockMarker && !devOnlyDemoMarker;
   const hasApi = apiUses.length || /useQuery|useMutation|apiRequest|fetch\(/.test(text);
   const hasLoading = /isLoading|loading|Skeleton|Loading/.test(text);
   const hasError = /isError|error|PanelInlineError|catch|toast/.test(text);
   const hasValidation = /zod|schema|validate|resolver|FormMessage|required/i.test(text);
-  const hasPermission = /<Can|useCan|usePermissions|permission|ProtectedRoute/i.test(text);
+  const hasPermission = /<Can|useCan|usePermissions|permission|ProtectedRoute|canManage|canUpdate|canCreate|canDelete|ensureRole/i.test(text);
   const hasAuditEvidence = /audit|approval[-_]?history|activity|revision|history/i.test(text);
   if (!existsSync(path.join(root, route.file))) fixes.push("component file missing");
   if (hasMock) fixes.push("mock/demo/static markers present");

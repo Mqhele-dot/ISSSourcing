@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useAuth } from "@/hooks/use-auth";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import type { ApprovalPolicy } from "@shared/schema";
@@ -75,6 +76,8 @@ const emptyForm = {
 
 export default function ApprovalPoliciesPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canManagePolicies = ["admin", "manager"].includes(String(user?.role ?? "").toLowerCase());
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [previewEntity, setPreviewEntity] = useState<(typeof ENTITY_TYPES)[number]["value"]>("requisition");
@@ -259,7 +262,7 @@ export default function ApprovalPoliciesPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6">
+    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6" data-testid="approval-policies-page">
       <PageHeader
         title="Approval policies"
         subtitle="Configure amount bands, approval levels, and required roles or users. Requisition approve/reject routes enforce active policies."
@@ -275,11 +278,21 @@ export default function ApprovalPoliciesPage() {
           <CardTitle>{editingId != null ? `Edit policy #${editingId}` : "New policy"}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {!canManagePolicies ? (
+            <Alert variant="destructive" className="md:col-span-2 lg:col-span-3" data-testid="approval-policies-denied">
+              <AlertTitle>Read-only approval controls</AlertTitle>
+              <AlertDescription>
+                You can review policies, but only admins and managers can change approval routing.
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <div className="space-y-2 md:col-span-2 lg:col-span-3">
             <Label htmlFor="ap-name">Name</Label>
             <Input
               id="ap-name"
+              data-testid="approval-policy-name"
               value={form.name}
+              disabled={!canManagePolicies}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="e.g. Requisitions $10k+ — manager"
             />
@@ -288,6 +301,7 @@ export default function ApprovalPoliciesPage() {
             <Label>Entity</Label>
             <Select
               value={form.entityType}
+              disabled={!canManagePolicies}
               onValueChange={(v) =>
                 setForm((f) => ({ ...f, entityType: v as (typeof ENTITY_TYPES)[number]["value"] }))
               }
@@ -309,9 +323,11 @@ export default function ApprovalPoliciesPage() {
             <Input
               id="ap-min"
               type="number"
+              data-testid="approval-policy-min"
               min={0}
               step="0.01"
               value={form.amountMin}
+              disabled={!canManagePolicies}
               onChange={(e) => setForm((f) => ({ ...f, amountMin: e.target.value }))}
             />
           </div>
@@ -320,9 +336,11 @@ export default function ApprovalPoliciesPage() {
             <Input
               id="ap-max"
               type="number"
+              data-testid="approval-policy-max"
               min={0}
               step="0.01"
               value={form.amountMax}
+              disabled={!canManagePolicies}
               onChange={(e) => setForm((f) => ({ ...f, amountMax: e.target.value }))}
             />
           </div>
@@ -332,7 +350,9 @@ export default function ApprovalPoliciesPage() {
               id="ap-level"
               type="number"
               min={1}
+              data-testid="approval-policy-level"
               value={form.approvalLevel}
+              disabled={!canManagePolicies}
               onChange={(e) => setForm((f) => ({ ...f, approvalLevel: e.target.value }))}
             />
           </div>
@@ -340,6 +360,7 @@ export default function ApprovalPoliciesPage() {
             <Label>Required role (optional)</Label>
             <Select
               value={form.approverRole}
+              disabled={!canManagePolicies}
               onValueChange={(v) => setForm((f) => ({ ...f, approverRole: v }))}
             >
               <SelectTrigger>
@@ -359,6 +380,7 @@ export default function ApprovalPoliciesPage() {
             <Label>Specific approver (optional)</Label>
             <Select
               value={form.approverUserId}
+              disabled={!canManagePolicies}
               onValueChange={(v) => setForm((f) => ({ ...f, approverUserId: v }))}
             >
               <SelectTrigger>
@@ -378,12 +400,17 @@ export default function ApprovalPoliciesPage() {
             <Switch
               id="ap-active"
               checked={form.isActive}
+              disabled={!canManagePolicies}
               onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))}
             />
             <Label htmlFor="ap-active">Active</Label>
           </div>
           <div className="flex flex-wrap items-end gap-2 md:col-span-2 lg:col-span-3">
-            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+            <Button
+              data-testid="approval-policy-save"
+              onClick={() => saveMutation.mutate()}
+              disabled={!canManagePolicies || saveMutation.isPending}
+            >
               {editingId != null ? "Update" : "Create"}
             </Button>
             {editingId != null ? (
@@ -448,7 +475,7 @@ export default function ApprovalPoliciesPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Dry-run: see which active policies apply and suggested approvers for a sample amount (no data is written).
+            Dry-run: see which active policies apply and suggested approvers for a chosen amount (no data is written).
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-2">
@@ -573,14 +600,14 @@ export default function ApprovalPoliciesPage() {
                     </TableCell>
                     <TableCell>{p.isActive ? "Yes" : "No"}</TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
+                      <Button size="sm" variant="outline" onClick={() => startEdit(p)} disabled={!canManagePolicies}>
                         Edit
                       </Button>
                       <Button
                         size="sm"
                         variant="destructive"
                         onClick={() => deleteMutation.mutate(p.id)}
-                        disabled={deleteMutation.isPending}
+                        disabled={!canManagePolicies || deleteMutation.isPending}
                       >
                         Delete
                       </Button>

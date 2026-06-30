@@ -70,6 +70,9 @@ type UserProfile = {
   fullName?: string | null;
   email?: string | null;
   role?: string | null;
+  workPersona?: string | null;
+  organizationRole?: string | null;
+  active?: boolean | null;
   preferences?: { customRoleId?: number | string | null } | null;
 };
 
@@ -367,7 +370,7 @@ export function RoleManager() {
   }, [customRoles, selectedCustomRole, selectedTab]);
 
   return (
-    <Card className="w-full">
+    <Card className="w-full" data-testid="role-manager-card">
       <CardHeader>
         <CardTitle>Role & Permission Management</CardTitle>
         <CardDescription>
@@ -375,6 +378,47 @@ export function RoleManager() {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <Card className="mb-4" data-testid="role-manager-users-card">
+          <CardHeader>
+            <CardTitle className="text-base">User access assignments</CardTitle>
+            <CardDescription>
+              Real user, role, persona, organization membership, and active-state data from the backend.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {users.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No users are available for this organization.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>User</TableHead>
+                      <TableHead>System role</TableHead>
+                      <TableHead>Work persona</TableHead>
+                      <TableHead>Organization role</TableHead>
+                      <TableHead>Active</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((profile) => (
+                      <TableRow key={profile.id} data-testid={`role-user-row-${profile.username}`}>
+                        <TableCell>
+                          <div className="font-medium">{profile.fullName || profile.username}</div>
+                          <div className="text-xs text-muted-foreground">{profile.email || profile.username}</div>
+                        </TableCell>
+                        <TableCell>{profile.role || "viewer"}</TableCell>
+                        <TableCell>{profile.workPersona || "-"}</TableCell>
+                        <TableCell>{profile.organizationRole || "member"}</TableCell>
+                        <TableCell>{profile.active === false ? "Inactive" : "Active"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
         <Tabs value={selectedTab} onValueChange={setSelectedTab}>
           <TabsList className="mb-4">
             <TabsTrigger value="system-roles">System Roles</TabsTrigger>
@@ -617,6 +661,7 @@ export function RoleManager() {
                       </div>
                       <Button
                         type="button"
+                        data-testid="role-manager-assign-custom-access"
                         disabled={!selectedUserId || assignCustomRoleMutation.isPending}
                         onClick={() => {
                           if (!selectedUserId || !selectedCustomRole) return;

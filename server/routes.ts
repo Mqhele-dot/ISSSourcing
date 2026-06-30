@@ -934,8 +934,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/settings", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
-      const validatedData = appSettingsFormSchema.parse(req.body);
       const before = await storage.getAppSettings();
+      const validatedData = appSettingsFormSchema.parse({
+        ...(before ?? {}),
+        ...(req.body ?? {}),
+      });
       const updatedSettings = await storage.updateAppSettings(validatedData);
       if (req.user) {
         await storage.createActivityLog({
@@ -1636,17 +1639,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ================== USER MANAGEMENT ENDPOINTS ==================
   
-  app.get("/api/users", async (_req: Request, res: Response) => {
+  app.get("/api/users", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
     try {
       const users = await storage.getAllUsers();
-      res.json(users);
+      const memberships = await pool.query<{ user_id: number; role: string }>(
+        `SELECT user_id, role FROM organization_members WHERE organization_id = $1`,
+        [getActiveOrganizationId()],
+      );
+      const orgRoleByUser = new Map(memberships.rows.map((row) => [row.user_id, row.role]));
+      res.json(
+        users.map((user) => ({
+          ...user,
+          organizationRole: orgRoleByUser.get(user.id) ?? null,
+        })),
+      );
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
     }
   });
   
-  app.get("/api/users/:id", async (req: Request, res: Response) => {
+  app.get("/api/users/:id", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1666,25 +1679,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.put("/api/users/:id", async (req: Request, res: Response) => {
+  app.put("/api/users/:id", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid user ID" });
       }
       
-      // Validate and update the user
-      const updatedUser = await storage.updateUser(id, req.body);
+      const before = await storage.getUser(id);
+      const allowedFields = new Set([
+        "role",
+        "workPersona",
+        "active",
+        "warehouseId",
+        "supplierId",
+        "approverAmountLimit",
+        "preferences",
+      ]);
+      const updatePayload = Object.fromEntries(
+        Object.entries(req.body ?? {}).filter(([key]) => allowedFields.has(key)),
+      );
+      if (Object.keys(updatePayload).length === 0) {
+        return sendError(res, 400, "USER_UPDATE_EMPTY", "No permitted user control fields were supplied.");
+      }
+      const updatedUser = await storage.updateUser(id, updatePayload);
       
       if (!updatedUser) {
         return res.status(404).json({ message: "User not found" });
       }
       
-      // If user role is changed, log it
-      if (req.body.role && req.user) {
+      if (req.user) {
         await storage.createActivityLog({
-          action: "User Role Updated",
-          description: `Updated user role to ${req.body.role} for user ${updatedUser.username}`,
+          action: "USER_ACCESS_UPDATED",
+          description: `Updated access for ${updatedUser.username}. Old value: ${JSON.stringify({
+            role: before?.role,
+            workPersona: before?.workPersona,
+            active: before?.active,
+            preferences: before?.preferences,
+          })}. New value: ${JSON.stringify({
+            role: updatedUser.role,
+            workPersona: updatedUser.workPersona,
+            active: updatedUser.active,
+            preferences: updatedUser.preferences,
+          })}. Reason: Admin role control update.`,
           userId: req.user.id,
           referenceType: "user",
           referenceId: id
@@ -1698,7 +1735,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.delete("/api/users/:id", async (req: Request, res: Response) => {
+  app.delete("/api/users/:id", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {

@@ -21,6 +21,7 @@ import { Can } from "@/components/auth/can";
 import { useAccent } from "@/components/accent-provider";
 import { useDensity } from "@/components/density-provider";
 import { useAuth } from "@/hooks/use-auth";
+import { useSettings } from "@/hooks/use-settings";
 import { GeneralSettingsForm } from "@/components/settings/general-settings-form";
 import { InventorySettingsForm } from "@/components/settings/inventory-settings-form";
 import { RealtimeSettingsForm } from "@/components/settings/realtime-settings-form";
@@ -238,6 +239,8 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      <ProductionControlPlanePanel isAdmin={roleKey === "admin"} />
+
       <Tabs
         value={activeSection}
         onValueChange={(value) => setLocation(APP_ROUTES.admin.settingsSection(value as typeof activeSection))}
@@ -346,5 +349,132 @@ export default function SettingsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
+  const { settings, isLoading, error, updateSettings } = useSettings();
+  const [form, setForm] = React.useState({
+    companyName: settings.companyName ?? "InvTrack",
+    currencyCode: (settings.currencyCode ?? "ZAR").toUpperCase(),
+    lowStockDefaultThreshold: String(settings.lowStockDefaultThreshold ?? 10),
+    allowNegativeInventory: Boolean(settings.allowNegativeInventory),
+    requireLocationForItems: Boolean(settings.requireLocationForItems),
+  });
+
+  React.useEffect(() => {
+    setForm({
+      companyName: settings.companyName ?? "InvTrack",
+      currencyCode: (settings.currencyCode ?? "ZAR").toUpperCase(),
+      lowStockDefaultThreshold: String(settings.lowStockDefaultThreshold ?? 10),
+      allowNegativeInventory: Boolean(settings.allowNegativeInventory),
+      requireLocationForItems: Boolean(settings.requireLocationForItems),
+    });
+  }, [
+    settings.allowNegativeInventory,
+    settings.companyName,
+    settings.currencyCode,
+    settings.lowStockDefaultThreshold,
+    settings.requireLocationForItems,
+  ]);
+
+  const save = () => {
+    const threshold = Number(form.lowStockDefaultThreshold);
+    if (!Number.isFinite(threshold) || threshold < 1) return;
+    updateSettings.mutate({
+      companyName: form.companyName.trim() || "InvTrack",
+      currencyCode: form.currencyCode.trim().toUpperCase(),
+      lowStockDefaultThreshold: Math.trunc(threshold),
+      allowNegativeInventory: form.allowNegativeInventory,
+      requireLocationForItems: form.requireLocationForItems,
+    });
+  };
+
+  return (
+    <Card className="mb-6" data-testid="settings-control-plane">
+      <CardHeader>
+        <CardTitle className="text-base">Production control plane</CardTitle>
+        <CardDescription>
+          Persisted controls used by reporting, procurement, receiving, AP matching, and inventory checks.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {error ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" data-testid="settings-control-plane-error">
+            Settings failed to load. Retry the page before changing production controls.
+          </div>
+        ) : null}
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="control-company-name">Organization profile</Label>
+            <Input
+              id="control-company-name"
+              data-testid="settings-control-company-name"
+              value={form.companyName}
+              disabled={!isAdmin || isLoading}
+              onChange={(event) => setForm((current) => ({ ...current, companyName: event.target.value }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="control-currency">Reporting currency</Label>
+            <Input
+              id="control-currency"
+              data-testid="settings-control-currency"
+              maxLength={3}
+              value={form.currencyCode}
+              disabled={!isAdmin || isLoading}
+              onChange={(event) => setForm((current) => ({ ...current, currencyCode: event.target.value.toUpperCase() }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="control-low-stock">Low-stock threshold</Label>
+            <Input
+              id="control-low-stock"
+              data-testid="settings-control-low-stock"
+              type="number"
+              min={1}
+              value={form.lowStockDefaultThreshold}
+              disabled={!isAdmin || isLoading}
+              onChange={(event) => setForm((current) => ({ ...current, lowStockDefaultThreshold: event.target.value }))}
+            />
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="flex items-center gap-2 rounded-md border p-3 text-sm">
+            <input
+              type="checkbox"
+              data-testid="settings-control-negative-stock"
+              checked={form.allowNegativeInventory}
+              disabled={!isAdmin || isLoading}
+              onChange={(event) => setForm((current) => ({ ...current, allowNegativeInventory: event.target.checked }))}
+            />
+            Allow negative inventory only when operations policy permits it
+          </label>
+          <label className="flex items-center gap-2 rounded-md border p-3 text-sm">
+            <input
+              type="checkbox"
+              data-testid="settings-control-require-location"
+              checked={form.requireLocationForItems}
+              disabled={!isAdmin || isLoading}
+              onChange={(event) => setForm((current) => ({ ...current, requireLocationForItems: event.target.checked }))}
+            />
+            Require storage location on inventory and receiving controls
+          </label>
+        </div>
+        {!isAdmin ? (
+          <p className="text-sm text-muted-foreground" data-testid="settings-control-denied">
+            You can review settings, but only admins can change production controls.
+          </p>
+        ) : null}
+        <Button
+          type="button"
+          data-testid="settings-control-save"
+          onClick={save}
+          disabled={!isAdmin || isLoading || updateSettings.isPending}
+        >
+          {updateSettings.isPending ? "Saving controls..." : "Save production controls"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

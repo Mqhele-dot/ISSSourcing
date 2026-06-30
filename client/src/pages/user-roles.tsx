@@ -32,7 +32,7 @@ export default function UserRolesPage() {
   const canManageRoles = hasPermission('custom_roles', 'admin') || hasPermission('custom_roles', 'manage');
   
   return (
-    <div className="container mx-auto py-6">
+    <div className="container mx-auto py-6" data-testid="user-roles-page">
       <div className="mb-6">
         <Breadcrumb>
           <BreadcrumbItem>
@@ -64,6 +64,14 @@ export default function UserRolesPage() {
             </div>
           </CardContent>
         </Card>
+      ) : error ? (
+        <Alert variant="destructive" className="mb-8" data-testid="user-roles-error">
+          <ShieldAlert className="h-4 w-4" />
+          <AlertTitle>Unable to load permissions</AlertTitle>
+          <AlertDescription>
+            Permission data failed to load. Refresh the page and try again before making access-control changes.
+          </AlertDescription>
+        </Alert>
       ) : !canManageRoles ? (
         <Alert variant="destructive" className="mb-8">
           <ShieldAlert className="h-4 w-4" />
