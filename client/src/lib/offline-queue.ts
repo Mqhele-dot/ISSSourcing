@@ -28,6 +28,12 @@ const DB_VERSION = 1;
 
 const memoryQueue: OfflineQueuedAction[] = [];
 
+type SyncBatchReplayResult = {
+  idempotencyKey: string;
+  status: "accepted" | "applied" | "duplicate" | "failed";
+  message?: string;
+};
+
 function notifyQueueChanged(pending: number, extra?: { failed?: number; lastSyncAt?: string | null }) {
   if (typeof navigator === "undefined" || !navigator.serviceWorker?.controller) return;
   navigator.serviceWorker.controller.postMessage({
@@ -112,6 +118,73 @@ export async function clearOfflineQueue(): Promise<void> {
   });
 }
 
+async function replaceOfflineQueue(items: readonly OfflineQueuedAction[]): Promise<void> {
+  memoryQueue.length = 0;
+  memoryQueue.push(...items);
+
+  const db = await openDb();
+  if (!db) return;
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    const clearReq = store.clear();
+    clearReq.onerror = () => reject(clearReq.error);
+    clearReq.onsuccess = () => {
+      for (const item of items) {
+        store.put(item);
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+function resolveFailedCount(
+  payload: { data?: { failed?: Array<{ idempotencyKey: string }>; results?: SyncBatchReplayResult[] } } | null,
+): number {
+  const failedKeys = new Set(payload?.data?.failed?.map((row) => row.idempotencyKey) ?? []);
+  for (const result of payload?.data?.results ?? []) {
+    if (result.status === "failed") failedKeys.add(result.idempotencyKey);
+  }
+  return failedKeys.size;
+}
+
+function applyFlushResults(
+  items: readonly OfflineQueuedAction[],
+  payload: { data?: { failed?: Array<{ idempotencyKey: string }>; results?: SyncBatchReplayResult[] } } | null,
+  timestamp: string,
+): OfflineQueuedAction[] {
+  const results = new Map((payload?.data?.results ?? []).map((row) => [row.idempotencyKey, row] as const));
+  const failedKeys = new Set(payload?.data?.failed?.map((row) => row.idempotencyKey) ?? []);
+
+  return items.flatMap((item) => {
+    const result = results.get(item.id);
+    if (result?.status === "applied" || result?.status === "duplicate") {
+      return [];
+    }
+    if (result?.status === "failed" || failedKeys.has(item.id)) {
+      return [{
+        ...item,
+        retryCount: (item.retryCount ?? 0) + 1,
+        failedAt: timestamp,
+      }];
+    }
+    return [item];
+  });
+}
+
+async function markQueueItemsFailed(items: readonly OfflineQueuedAction[], timestamp: string): Promise<OfflineQueuedAction[]> {
+  const next = items.map((item) => ({
+    ...item,
+    retryCount: (item.retryCount ?? 0) + 1,
+    failedAt: timestamp,
+  }));
+  await replaceOfflineQueue(next);
+  return next;
+}
+
 /** POST /api/sync/batch with queued actions; clears queue on success. */
 export async function flushOfflineQueueToServer(): Promise<{ ok: boolean; status?: number }> {
   const items = await peekOfflineQueue();
@@ -134,18 +207,22 @@ export async function flushOfflineQueueToServer(): Promise<{ ok: boolean; status
       }),
     });
     const payload = (await res.json().catch(() => null)) as
-      | { data?: { failed?: Array<{ idempotencyKey: string; message?: string }>; results?: Array<{ status: string }> } }
+      | { data?: { failed?: Array<{ idempotencyKey: string; message?: string }>; results?: SyncBatchReplayResult[] } }
       | null;
-    const failedCount = payload?.data?.failed?.length ?? payload?.data?.results?.filter((row) => row.status === "failed").length ?? 0;
-    if (res.ok && failedCount === 0) {
-      await clearOfflineQueue();
-      notifyQueueChanged(0, { lastSyncAt: new Date().toISOString() });
+    const syncTimestamp = new Date().toISOString();
+    const nextItems = applyFlushResults(items, payload, syncTimestamp);
+    await replaceOfflineQueue(nextItems);
+    const failedCount = resolveFailedCount(payload);
+    if (res.ok && nextItems.length === 0) {
+      notifyQueueChanged(0, { lastSyncAt: syncTimestamp });
       return { ok: true, status: res.status };
     }
-    notifyQueueChanged(items.length, { failed: failedCount || items.length });
+    notifyQueueChanged(nextItems.length, { failed: failedCount || nextItems.length });
     return { ok: false, status: res.status };
   } catch {
-    notifyQueueChanged(items.length, { failed: items.length });
+    const syncTimestamp = new Date().toISOString();
+    const failedItems = await markQueueItemsFailed(items, syncTimestamp);
+    notifyQueueChanged(failedItems.length, { failed: failedItems.length });
     return { ok: false };
   }
 }

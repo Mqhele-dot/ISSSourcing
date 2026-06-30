@@ -43,6 +43,7 @@
     "test:custom-reports-inventory-create": "node scripts/test-custom-reports-inventory-create.mjs",
     "test:billing-settings-hardening": "node scripts/test-billing-settings-hardening.mjs",
     "test:production-workflow-proof": "node scripts/test-production-workflow-proof.mjs",
+    "test:offline-queue-flush": "tsx scripts/test-offline-queue-flush.ts",
     "test:requisition-line-mdm-propagation": "tsx scripts/test-requisition-line-mdm-propagation.ts",
     "test:requisition-line-mdm-flow": "tsx scripts/test-requisition-line-mdm-flow.ts",
     "test:mdm-dependency-runtime": "tsx scripts/test-mdm-dependency-runtime.ts",
