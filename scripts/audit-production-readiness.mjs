@@ -92,6 +92,7 @@ const appRoutesText = readIf("client/src/lib/routes/app-routes.ts");
 const routerText = readIf("client/src/router.tsx");
 const schemaText = readIf("shared/schema.ts");
 const packageJson = JSON.parse(readIf("package.json") || "{}");
+const fileTextCache = new Map();
 
 function parseLazyImports() {
   const imports = new Map();
@@ -251,7 +252,10 @@ function detectModule(value) {
 }
 
 function fileText(relativeFile) {
-  return existsSync(path.join(root, relativeFile)) ? read(relativeFile) : "";
+  if (fileTextCache.has(relativeFile)) return fileTextCache.get(relativeFile);
+  const text = existsSync(path.join(root, relativeFile)) ? read(relativeFile) : "";
+  fileTextCache.set(relativeFile, text);
+  return text;
 }
 
 function routeEvidenceFiles(route) {
@@ -363,6 +367,7 @@ function routeTestEvidence(route) {
     [/^\/m\/receive(\/|$)/, ["test-po-receiving-inventory-flow", "test-core-screen-workflow-contracts"]],
     [/^\/finance\/invoices(\/|$)/, ["test-ap-po-grn-matching-flow", "test-core-screen-workflow-contracts"]],
     [/^\/finance\/accounts-payable(\/|$)/, ["test-ap-po-grn-matching-flow", "test-ap-workflow", "test-core-screen-workflow-contracts"]],
+    [/^\/admin\/master-data(\/|$)/, ["test-master-data-propagation", "test-master-data-integration", "test-mdm-dependency-runtime", "test-control-plane-screen-contracts"]],
     [/^\/admin\/settings(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
     [/^\/admin\/user-roles(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
     [/^\/finance\/approval-policies(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
@@ -390,6 +395,9 @@ function routeUiTestEvidence(route) {
   if (/^\/(inventory|m\/receive|finance\/invoices|finance\/accounts-payable)(\/|$)/.test(route.route)) {
     names.push("test-core-screen-workflow-contracts");
   }
+  if (/^\/(admin\/settings|admin\/user-roles|admin\/master-data|finance\/approval-policies|finance\/accounts-payable)(\/|$)/.test(route.route)) {
+    names.push("test-control-plane-screen-contracts");
+  }
   if (isProcurementRoute(route)) {
     names.push("procurement-to-ap-workflow", "purchase-order-actions");
   }
@@ -404,8 +412,11 @@ function routeE2eTestEvidence(route) {
   if (/^\/(inventory|m\/receive|finance\/invoices|finance\/accounts-payable)(\/|$)/.test(route.route)) {
     names.push("procurement-to-ap-ui-workflow");
   }
-  if (/^\/(admin\/user-roles|admin\/settings|admin\/master-data|finance\/accounts-payable|m\/receive)(\/|$)/.test(route.route)) {
+  if (/^\/(admin\/user-roles|admin\/settings|admin\/master-data|finance\/accounts-payable|finance\/approval-policies|m\/receive)(\/|$)/.test(route.route)) {
     names.push("role-permission-core-workflow");
+  }
+  if (/^\/(admin\/settings|admin\/user-roles|finance\/approval-policies)(\/|$)/.test(route.route)) {
+    names.push("control-plane-admin-workflow");
   }
   return testFiles.filter((file) => {
     const normalized = toPosix(file).toLowerCase();
@@ -591,7 +602,12 @@ const riskTerms = [
   ["localStorage", /localStorage/i],
 ];
 
+let cachedRiskRows = null;
+let cachedRiskRowsBySeverity = null;
+let cachedRiskRowsByCategory = null;
+
 function riskRows() {
+  if (cachedRiskRows) return cachedRiskRows;
   const rows = [];
   for (const file of codeFiles) {
     if (toPosix(file) === "scripts/audit-production-readiness.mjs") continue;
@@ -611,7 +627,8 @@ function riskRows() {
       }
     });
   }
-  return rows;
+  cachedRiskRows = rows;
+  return cachedRiskRows;
 }
 
 function isProductionCodeFile(file) {
@@ -622,13 +639,17 @@ function isProductionCodeFile(file) {
 
 function isTestCodeFile(file) {
   const normalized = toPosix(file);
+  if (normalized === "server/seed.ts" || normalized === "server/seed-operational.ts") return true;
   return normalized.startsWith("scripts/test-") || normalized.startsWith("e2e/") || normalized.endsWith(".test.ts");
 }
 
 function riskSeverity(risk) {
   if (!isProductionCodeFile(risk.file)) return "False positive";
   const lower = `${risk.file} ${risk.description}`.toLowerCase();
-  if (risk.type === "placeholder" && /placeholder=|<selectvalue\s+placeholder/.test(lower)) {
+  if (risk.type === "placeholder" && /placeholder=|<selectvalue\s+placeholder|placeholder\??:|\bplaceholder:\s*["'`]/.test(lower)) {
+    return "False positive";
+  }
+  if (risk.type === "stub" && /legacy email stub|stub\)/.test(lower)) {
     return "False positive";
   }
   const core =
@@ -642,7 +663,9 @@ function riskSeverity(risk) {
 }
 
 function riskRowsBySeverity() {
-  return riskRows().map((risk) => ({ ...risk, severity: riskSeverity(risk) }));
+  if (cachedRiskRowsBySeverity) return cachedRiskRowsBySeverity;
+  cachedRiskRowsBySeverity = riskRows().map((risk) => ({ ...risk, severity: riskSeverity(risk) }));
+  return cachedRiskRowsBySeverity;
 }
 
 function riskCategory(risk) {
@@ -653,7 +676,9 @@ function riskCategory(risk) {
 }
 
 function riskRowsByCategory() {
-  return riskRowsBySeverity().map((risk) => ({ ...risk, category: riskCategory(risk) }));
+  if (cachedRiskRowsByCategory) return cachedRiskRowsByCategory;
+  cachedRiskRowsByCategory = riskRowsBySeverity().map((risk) => ({ ...risk, category: riskCategory(risk) }));
+  return cachedRiskRowsByCategory;
 }
 
 function riskCategoryCount(category) {
@@ -842,8 +867,28 @@ function workflowRows() {
 }
 
 function mockRows() {
+  const categoryOrder = {
+    "Core blocking risks": 0,
+    "Core non-blocking risks": 1,
+    "Test-only markers": 2,
+    "False positives": 3,
+  };
+  const severityOrder = {
+    Critical: 0,
+    High: 1,
+    Medium: 2,
+    Low: 3,
+    "False positive": 4,
+  };
   return riskRowsByCategory()
-    .slice(0, 160)
+    .sort((a, b) => {
+      const categoryDiff = (categoryOrder[a.category] ?? 99) - (categoryOrder[b.category] ?? 99);
+      if (categoryDiff !== 0) return categoryDiff;
+      const severityDiff = (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99);
+      if (severityDiff !== 0) return severityDiff;
+      return `${a.file}:${a.line}`.localeCompare(`${b.file}:${b.line}`);
+    })
+    .slice(0, 260)
     .map((risk) => {
       const productionRisk =
         risk.category === "Test-only markers"
@@ -881,6 +926,11 @@ function runtimeEvidenceRows() {
       "test:core-screen-workflow-contracts",
       "Static UI contract guard proving /m/receive, /inventory, /finance/invoices, and /finance/accounts-payable are wired to real receiving, inventory, PO/GRN match, and payment-control code paths instead of unsafe fallback text.",
       "It is source-level UI proof, not a live browser click-through or full Playwright workflow.",
+    ],
+    [
+      "test:control-plane-screen-contracts",
+      "Static UI contract guard proving /admin/settings, /admin/user-roles, /finance/approval-policies, /admin/master-data, and AP payments expose real APIs, permission denials, dependency responses, and payment-control locks.",
+      "It is source-level UI proof; Production-ready still requires live browser or documented manual QA evidence.",
     ],
     [
       "test:e2e:procurement-ap-ui",

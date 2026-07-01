@@ -42,6 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { WarehouseTable } from "@/pages/warehouses/warehouse-table";
 import { WarehouseDialogs } from "@/pages/warehouses/warehouse-dialogs";
@@ -309,13 +310,16 @@ function MasterTable({
   config: MasterSectionConfig;
 }) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [extraValues, setExtraValues] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [dependencyResponse, setDependencyResponse] = useState<string | null>(null);
   const endpoint = config.endpoint ?? "";
+  const canManageMasterData = String(user?.role ?? "").toLowerCase() === "admin";
 
   const { data = [], isLoading } = useQuery({
     queryKey: [endpoint],
@@ -332,6 +336,7 @@ function MasterTable({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
       void invalidateMasterDataDomainForEndpoint(queryClient, endpoint);
+      setDependencyResponse(null);
       setCode("");
       setName("");
       setExtraValues({});
@@ -352,6 +357,7 @@ function MasterTable({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
       void invalidateMasterDataDomainForEndpoint(queryClient, endpoint);
+      setDependencyResponse(null);
       setEditingId(null);
       setCode("");
       setName("");
@@ -372,12 +378,15 @@ function MasterTable({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
       void invalidateMasterDataDomainForEndpoint(queryClient, endpoint);
+      setDependencyResponse(null);
       toast({ title: `${config.label} removed` });
     },
     onError: (e) => {
+      const message = e instanceof Error ? e.message : String(e);
+      setDependencyResponse(message);
       toast({
         title: `Failed to delete ${config.label.toLowerCase()}`,
-        description: e instanceof Error ? e.message : String(e),
+        description: message,
         variant: "destructive",
       });
     },
@@ -388,11 +397,14 @@ function MasterTable({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [endpoint] });
       void invalidateMasterDataDomainForEndpoint(queryClient, endpoint);
+      setDependencyResponse(null);
     },
     onError: (e) => {
+      const message = e instanceof Error ? e.message : String(e);
+      setDependencyResponse(message);
       toast({
         title: `Failed to update ${config.label.toLowerCase()} status`,
-        description: e instanceof Error ? e.message : String(e),
+        description: message,
         variant: "destructive",
       });
     },
@@ -524,10 +536,33 @@ function MasterTable({
           </div>
         </div>
 
+        {!canManageMasterData ? (
+          <div
+            className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+            data-testid="master-data-permission-denied"
+          >
+            You can review this setup area, but only administrators can create, edit, deactivate, or delete Master Data
+            records. Backend permissions still enforce this rule on write endpoints.
+          </div>
+        ) : null}
+
+        {dependencyResponse ? (
+          <div
+            className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+            data-testid="master-data-dependency-response"
+          >
+            This Master Data change was blocked by a dependency or validation rule: {dependencyResponse}
+          </div>
+        ) : null}
+
         <form
           className="rounded-md border bg-card p-3"
           onSubmit={(e) => {
             e.preventDefault();
+            if (!canManageMasterData) {
+              setDependencyResponse("MASTER_DATA_PERMISSION_DENIED");
+              return;
+            }
             if (!code.trim() || !name.trim()) {
               toast({ title: `Code and ${nameLabel.toLowerCase()} are required`, variant: "destructive" });
               return;
@@ -577,12 +612,12 @@ function MasterTable({
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={updateRecord.isPending}>
+                  <Button type="submit" disabled={!canManageMasterData || updateRecord.isPending}>
                     Save changes
                   </Button>
                 </>
               ) : (
-                <Button type="submit" disabled={createRecord.isPending}>
+                <Button type="submit" disabled={!canManageMasterData || createRecord.isPending}>
                   Add record
                 </Button>
               )}
@@ -674,7 +709,7 @@ function MasterTable({
                             }
                             setExtraValues(nextExtras);
                           }}
-                          disabled={updateRecord.isPending || deleteRecord.isPending}
+                          disabled={!canManageMasterData || updateRecord.isPending || deleteRecord.isPending}
                         >
                           Edit
                         </Button>
@@ -682,7 +717,7 @@ function MasterTable({
                           size="sm"
                           variant="outline"
                           onClick={() => toggleRecord.mutate({ id: row.id, active: row.active === false })}
-                          disabled={toggleRecord.isPending}
+                          disabled={!canManageMasterData || toggleRecord.isPending}
                         >
                           {row.active === false ? "Activate" : "Deactivate"}
                         </Button>
@@ -690,7 +725,7 @@ function MasterTable({
                           size="sm"
                           variant="outline"
                           onClick={() => deleteRecord.mutate(row.id)}
-                          disabled={deleteRecord.isPending}
+                          disabled={!canManageMasterData || deleteRecord.isPending}
                         >
                           Delete
                         </Button>

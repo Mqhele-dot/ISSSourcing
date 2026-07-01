@@ -29,6 +29,7 @@ const suites = {
     ["run", "test:ap-po-grn-matching-flow"],
     ["run", "test:control-plane-runtime"],
     ["run", "test:core-screen-workflow-contracts"],
+    ["run", "test:control-plane-screen-contracts"],
     ["run", "release:gate:delta"],
   ],
   productionSmoke: [
@@ -43,6 +44,7 @@ const suites = {
     ["run", "test:ap-po-grn-matching-flow"],
     ["run", "test:control-plane-runtime"],
     ["run", "test:core-screen-workflow-contracts"],
+    ["run", "test:control-plane-screen-contracts"],
     ["run", "test:diagnostics"],
   ],
 };
@@ -73,7 +75,7 @@ function run(command, args, options = {}) {
   });
 }
 
-async function waitForReady(timeoutMs = 60_000) {
+async function waitForReady(timeoutMs = Number(process.env.LOCAL_TEST_READY_TIMEOUT_MS || 60_000)) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     try {

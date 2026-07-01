@@ -76,6 +76,9 @@ export function ApPaymentsPanel({
   const [batchSegregationReason, setBatchSegregationReason] = useState<Record<number, string>>({});
 
   const isAdmin = String(actorRole ?? "").toLowerCase() === "admin";
+  const canManagePaymentBatches = ["admin", "finance_manager", "ap_manager"].includes(
+    String(actorRole ?? "").toLowerCase(),
+  );
 
   return (
     <div className="space-y-4">
@@ -103,6 +106,14 @@ export function ApPaymentsPanel({
             <p className="text-xs text-muted-foreground">
               PO-linked invoices appear here only after a successful PO/GRN match. Exception or pending-match invoices stay blocked.
             </p>
+          ) : null}
+          {!canManagePaymentBatches ? (
+            <Alert data-testid="ap-payment-role-denied">
+              <AlertDescription className="text-sm">
+                Your role can view payment readiness, but cannot approve or release AP payment batches. Finance manager,
+                AP manager, or admin access is required.
+              </AlertDescription>
+            </Alert>
           ) : null}
           {invoicesLoadFailed ? (
             <p className="text-sm text-destructive">
@@ -244,8 +255,13 @@ export function ApPaymentsPanel({
                     <TableCell className="text-right">
                       <div className="flex min-w-[220px] flex-col items-end gap-2">
                         {blockSelfApprove ? (
-                          <p className="max-w-xs text-left text-xs text-muted-foreground">
+                          <p className="max-w-xs text-left text-xs text-muted-foreground" data-testid="ap-self-approval-blocked">
                             Batch creator cannot approve or release their own batch. Use another approver.
+                          </p>
+                        ) : null}
+                        {!canManagePaymentBatches ? (
+                          <p className="max-w-xs text-left text-xs text-muted-foreground" data-testid="ap-release-permission-blocked">
+                            Approval and release controls are disabled for this role.
                           </p>
                         ) : null}
                         {needsAdminOverride && (batch.status === "PENDING_APPROVAL" || batch.status === "APPROVED") ? (
@@ -268,6 +284,7 @@ export function ApPaymentsPanel({
                             variant="outline"
                             disabled={
                               blockSelfApprove ||
+                              !canManagePaymentBatches ||
                               (needsAdminOverride && !overrideReason.trim()) ||
                               approveBatchMutation.isPending
                             }
@@ -289,6 +306,7 @@ export function ApPaymentsPanel({
                             size="sm"
                             disabled={
                               blockSelfApprove ||
+                              !canManagePaymentBatches ||
                               (needsAdminOverride && !overrideReason.trim()) ||
                               releaseBatchMutation.isPending
                             }
