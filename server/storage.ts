@@ -65,6 +65,15 @@ import crypto from "crypto";
 /** Default org for in-memory storage (matches seeded `organizations.id = 1`). */
 const MEM_DEFAULT_ORG_ID = 1;
 
+function createMissingInventoryItemError(context: string, itemId: number): Error & { status?: number; code?: string } {
+  const error = new Error(
+    `Referenced inventory item ${itemId} is missing while loading ${context}. Repair the source transaction before release.`,
+  ) as Error & { status?: number; code?: string };
+  error.status = 404;
+  error.code = "INVENTORY_ITEM_MISSING";
+  return error;
+}
+
 export interface IStorage {
   // Session store for Express sessions
   sessionStore: session.Store;
@@ -4180,49 +4189,12 @@ export class MemStorage implements IStorage {
     
     // Get items
     const items = await this.getPurchaseRequisitionItems(id);
-    const now = new Date();
     result.items = items.map(item => {
       const inventoryItem = this.inventoryItems.get(item.itemId);
-      const placeholder: InventoryItem = {
-        id: item.itemId,
-        organizationId: MEM_DEFAULT_ORG_ID,
-        name: "Unknown item",
-        sku: `ITEM-${item.itemId}`,
-        description: null,
-        categoryId: null,
-        quantity: 0,
-        price: 0,
-        cost: null,
-        lowStockThreshold: 10,
-        location: null,
-        supplierId: null,
-        barcode: null,
-        barcodeType: "CODE128",
-        dimensions: null,
-        weight: null,
-        unitOfMeasure: "each",
-        unitOfMeasureId: null,
-        supplierPartNumber: null,
-        commodityCodeId: null,
-        defaultWarehouseId: null,
-        minOrderQuantity: 1,
-        leadTime: null,
-        reorderPoint: null,
-        maxStockLevel: null,
-        taxable: true,
-        status: "unknown",
-        expiryDate: null,
-        manufacturingDate: null,
-        lastCountDate: null,
-        images: null,
-        tags: null,
-        customFields: null,
-        createdAt: now,
-        updatedAt: now,
-      };
+      if (!inventoryItem) throw createMissingInventoryItemError(`requisition ${id}`, item.itemId);
       return {
         ...item,
-        item: inventoryItem ?? placeholder
+        item: inventoryItem
       };
     });
     
@@ -4287,46 +4259,10 @@ export class MemStorage implements IStorage {
     const items = await this.getPurchaseOrderItems(id);
     result.items = items.map(item => {
       const inventoryItem = this.inventoryItems.get(item.itemId);
-      const placeholder: InventoryItem = {
-        id: item.itemId,
-        organizationId: MEM_DEFAULT_ORG_ID,
-        name: "Unknown item",
-        sku: `ITEM-${item.itemId}`,
-        description: null,
-        categoryId: null,
-        quantity: 0,
-        price: 0,
-        cost: null,
-        lowStockThreshold: 10,
-        location: null,
-        supplierId: null,
-        barcode: null,
-        barcodeType: "CODE128",
-        dimensions: null,
-        weight: null,
-        unitOfMeasure: "each",
-        unitOfMeasureId: null,
-        supplierPartNumber: null,
-        commodityCodeId: null,
-        defaultWarehouseId: null,
-        minOrderQuantity: 1,
-        leadTime: null,
-        reorderPoint: null,
-        maxStockLevel: null,
-        taxable: true,
-        status: "unknown",
-        expiryDate: null,
-        manufacturingDate: null,
-        lastCountDate: null,
-        images: null,
-        tags: null,
-        customFields: null,
-        createdAt: now,
-        updatedAt: now,
-      };
+      if (!inventoryItem) throw createMissingInventoryItemError(`purchase order ${id}`, item.itemId);
       return {
         ...item,
-        item: inventoryItem ?? placeholder
+        item: inventoryItem
       };
     });
     

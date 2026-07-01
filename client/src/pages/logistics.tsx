@@ -1107,7 +1107,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
         emptyDescription={
           shipmentsFilteredEmpty
             ? "Active filters may be hiding all rows. Try Clear filters, remove chips above, or widen the ETA range."
-            : "Shipments are created from purchase orders. Create a PO or run the demo."
+            : "Shipments are created from purchase orders or receiving activity. Create a PO, configure carrier defaults, or post a receipt to start tracking shipments."
         }
         emptyAction={
           <div className="flex flex-wrap gap-2">
@@ -1115,7 +1115,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
               <Link href={APP_ROUTES.procurement.orders}>View purchase orders</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <Link href="/">Overview / Demo</Link>
+              <Link href="/">Open operations overview</Link>
             </Button>
           </div>
         }
@@ -1752,8 +1752,8 @@ export default function LogisticsPage() {
                 Outbound logistics is not yet tied to inventory issue documents. Use stock movements from inventory
                 operations for ISSUE flows until dispatch documents are linked here.
               </p>
-              <Button type="button" variant="secondary" disabled data-testid="logistics-outbound-placeholder">
-                Plan outbound dispatch (not available)
+              <Button type="button" variant="secondary" disabled data-testid="logistics-outbound-v1-excluded">
+                Outbound dispatch excluded from v1
               </Button>
             </CardContent>
           </Card>

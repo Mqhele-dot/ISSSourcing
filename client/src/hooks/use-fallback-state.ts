@@ -4,11 +4,12 @@ import {
   subscribeFallbackState,
   getSystemBadge,
   type FallbackState,
+  type SystemBadge,
 } from "@/lib/fallback-store";
 
-export function useFallbackState(): FallbackState & { badge: "LIVE" | "DEMO" | "DEGRADED" } {
+export function useFallbackState(): FallbackState & { badge: SystemBadge } {
   const [state, setState] = useState<FallbackState>(getFallbackState);
-  const [badge, setBadge] = useState<"LIVE" | "DEMO" | "DEGRADED">(getSystemBadge);
+  const [badge, setBadge] = useState<SystemBadge>(getSystemBadge);
 
   useEffect(() => {
     return subscribeFallbackState((s) => {

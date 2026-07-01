@@ -8,6 +8,7 @@ const ignored = new Set([".git", "node_modules", "dist", "build", "uploads", "tm
 const statuses = [
   "Production-ready",
   "Workflow-backed",
+  "Non-production v1",
   "Partially working",
   "Cosmetic only",
   "Mock/demo only",
@@ -35,6 +36,11 @@ const coreWorkflowRoutePatterns = [
   /^\/finance\/approval-policies/,
   /^\/m\/counts/,
   /^\/m\/receive/,
+];
+
+const nonProductionV1RoutePatterns = [
+  /^\/operations\/logistics(\/|$)/,
+  /^\/operations\/exceptions(\/|$)/,
 ];
 
 function toPosix(value) {
@@ -361,6 +367,10 @@ function isCoreWorkflowRoute(route) {
   return coreWorkflowRoutePatterns.some((pattern) => pattern.test(route.route));
 }
 
+function isNonProductionV1Route(route) {
+  return nonProductionV1RoutePatterns.some((pattern) => pattern.test(route.route));
+}
+
 function routeTestEvidence(route) {
   const routeEvidencePatterns = [
     [/^\/inventory(\/|$)/, ["test-po-receiving-inventory-flow", "test-core-screen-workflow-contracts"]],
@@ -495,6 +505,7 @@ function routeRequiredFixes(route, apiUses, text) {
 }
 
 function routeStatus(route, apiUses, text) {
+  if (isNonProductionV1Route(route)) return "Non-production v1";
   const fixes = routeRequiredFixes(route, apiUses, text);
   const hasMock = fixes.includes("mock/demo/static markers present");
   const hasRuntime = routeRuntimeTestEvidence(route).length > 0;
@@ -800,6 +811,8 @@ function routeRows() {
     const gap =
       status === "Production-ready"
         ? "No major static gap detected"
+        : status === "Non-production v1"
+          ? "Excluded from v1 production until route-specific real-data, permission, audit, and browser proof is complete"
         : status === "Workflow-backed"
           ? "Backend/API workflow and source-level UI wiring exist, but browser/permission proof is still incomplete"
         : status === "Mock/demo only"
@@ -1053,6 +1066,8 @@ Allowed status labels: ${statuses.map((status) => `\`${status}\``).join(", ")}.
 - Test/spec files discovered: **${testFiles.length}**
 - Mock/demo/static risk markers found: **${riskRows().length}**
 - Core blocking risks: **${riskCategoryCount("Core blocking risks")}**
+- Marker-level blockers: **${riskCategoryCount("Core blocking risks")}**
+- Non-production v1 exclusions: **${routes.filter(isNonProductionV1Route).length} routes**
 - Core non-blocking risks: **${riskCategoryCount("Core non-blocking risks")}**
 - False positives: **${riskCategoryCount("False positives")}**
 - Test-only markers: **${riskCategoryCount("Test-only markers")}**

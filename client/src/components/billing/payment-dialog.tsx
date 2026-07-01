@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { useSettings } from "@/hooks/use-settings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -87,6 +88,7 @@ type PaymentDialogProps = {
 
 export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { formatMoney } = useReportingMoney();
   const { settings } = useSettings();
   const currencyPrefix = settings.currencySymbol?.trim().slice(0, 4) || "¤";
@@ -172,10 +174,13 @@ export function PaymentDialog({ open, onClose, invoices }: PaymentDialogProps) {
   // Create payment mutation
   const paymentMutation = useMutation({
     mutationFn: async (data: PaymentFormValues) => {
-      // Add receivedBy (current user ID - would come from auth in a real app)
+      if (!user?.id) {
+        throw new Error("Authenticated user is required to record a payment");
+      }
+
       const paymentData = {
         ...data,
-        receivedBy: 1, // Placeholder, would be the current user ID
+        receivedBy: user.id,
       };
       
       const res = await apiRequest("POST", "/api/payments", paymentData);

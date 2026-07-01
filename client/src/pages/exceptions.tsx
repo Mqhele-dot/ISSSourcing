@@ -342,14 +342,14 @@ function ExceptionListView() {
         data={data}
         isEmpty={(exceptions) => (Array.isArray(exceptions) ? exceptions : []).length === 0}
         emptyTitle="No exceptions found"
-        emptyDescription="Exceptions are created from inventory issues or PO mismatches. Check inventory or run the demo."
+        emptyDescription="Exceptions are created from inventory issues, PO mismatches, receiving tolerances, and AP match failures. Review inventory, procurement, or system diagnostics to create real exceptions."
         emptyAction={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="default" size="sm">
               <Link href={APP_ROUTES.inventory.root}>View inventory</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <Link href="/">Overview / Demo</Link>
+              <Link href={APP_ROUTES.admin.systemDiagnostics}>Open diagnostics</Link>
             </Button>
           </div>
         }

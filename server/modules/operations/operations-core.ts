@@ -3386,8 +3386,8 @@ export async function runOperationalDemoWalkthrough(actor: string) {
     skuOrId: firstInventoryItem.sku,
     location: firstInventoryItem.location ?? "Main Warehouse",
     delta: shortageDelta,
-    reason: "Demo Walkthrough - force shortage",
-    ref: "DEMO-WALKTHROUGH",
+    reason: "Guided setup - force shortage",
+    ref: "GUIDED-SETUP",
     createdBy: actor,
     skipLocationValidation: true,
   });
@@ -3434,7 +3434,7 @@ export async function runOperationalDemoWalkthrough(actor: string) {
   }
 
   const now = Date.now();
-  const poNumber = `PO-DEMO-${now}`;
+  const poNumber = `PO-GUIDED-${now}`;
   const lineQuantity = 10;
   const lineUnitPrice = Math.max(itemPrice, 1);
   const lineTotal = lineQuantity * lineUnitPrice;
@@ -3474,7 +3474,7 @@ export async function runOperationalDemoWalkthrough(actor: string) {
   );
   steps.push({
     id: "create-po",
-    label: "Create demo purchase order",
+    label: "Create guided purchase order",
     completed: true,
     details: poNumber,
   });
@@ -3482,7 +3482,7 @@ export async function runOperationalDemoWalkthrough(actor: string) {
   const shipmentInsert = await pool.query<{ id: number }>(
     `
     INSERT INTO shipments (po_number, carrier, status, eta, created_at, updated_at)
-    VALUES ($1, 'Demo Carrier', 'created', now() + interval '2 days', now(), now())
+    VALUES ($1, 'Guided Setup Carrier', 'created', now() + interval '2 days', now(), now())
     RETURNING id
     `,
     [poNumber],
@@ -3492,7 +3492,7 @@ export async function runOperationalDemoWalkthrough(actor: string) {
   await updateOperationalShipmentStatus({
     shipmentId: String(shipmentId),
     toStatus: "in_transit",
-    note: "Demo walkthrough status update",
+    note: "Guided setup status update",
     actor,
   });
   steps.push({

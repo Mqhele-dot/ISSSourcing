@@ -2,7 +2,7 @@
  * Global store for InvTrack fallback/degraded state from API responses.
  * Set when any request returns X-InvTrack-Fallback or body meta.fallback;
  * cleared when a request succeeds with no fallback.
- * UI (banner, header badge) subscribes to show LIVE | DEMO | DEGRADED.
+ * UI (banner, header badge) subscribes to show LIVE or DEGRADED.
  */
 
 export type FallbackState = {
@@ -12,6 +12,7 @@ export type FallbackState = {
 
 let state: FallbackState = { fallback: null, endpoint: null };
 const listeners = new Set<(s: FallbackState) => void>();
+export type SystemBadge = "LIVE" | "DEGRADED";
 
 export function getFallbackState(): FallbackState {
   return state;
@@ -29,8 +30,8 @@ export function subscribeFallbackState(fn: (s: FallbackState) => void): () => vo
   return () => listeners.delete(fn);
 }
 
-/** System mode for header badge: LIVE (no fallback), DEMO (demo data), DEGRADED (fallback) */
-export function getSystemBadge(): "LIVE" | "DEMO" | "DEGRADED" {
+/** System mode for header badge: LIVE when normal, DEGRADED when fallback data is visible. */
+export function getSystemBadge(): SystemBadge {
   if (state.fallback) return "DEGRADED";
   return "LIVE";
 }

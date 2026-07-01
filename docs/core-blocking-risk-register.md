@@ -1,18 +1,44 @@
 # Core Blocking Risk Register
 
-Generated from `npm run audit:production` during Wave 3B. The audit now reports **10** core blocking risks after classifying seed fixtures and UI placeholder hints as non-blocking/test-only.
+Generated from `npm run audit:production` during Wave 3C.
 
-| File | Owner | Risk | Action |
+## Current Definition
+
+This register tracks **marker-level production blockers**: critical or high-risk mock/demo/static/fake/placeholder markers in production source paths that can cause a core production route or workflow to present false data, unsafe fallback behavior, or an unproven action as production-ready.
+
+The production audit now separates these from:
+
+- **Core route blockers**: route-level readiness gaps such as missing browser proof, missing validation, or missing permissions.
+- **Marker-level blockers**: the critical/high source markers tracked here.
+- **Non-production v1 exclusions**: routes intentionally excluded from v1 production approval.
+- **False positives**: UI placeholders, static route maps, tests, seed fixtures, or development-only tools that do not create production behavior.
+- **Test-only markers**: fixtures and assertions inside scripts or E2E tests.
+
+## Current Status
+
+| Category | Count | Source |
+|---|---:|---|
+| Marker-level blockers | 0 | `docs/production-readiness-audit.md` |
+| Core blocking risks | 0 | `docs/production-readiness-audit.md` |
+| Non-production v1 exclusions | 4 routes | `/operations/logistics`, `/operations/logistics/:id`, `/operations/exceptions`, `/operations/exceptions/:id` |
+
+## Wave 3C Burn-Down Evidence
+
+| Previous File | Owner | Previous Risk | Resolution |
 |---|---|---|---|
-| `client/src/components/billing/payment-dialog.tsx:178` | Finance/AP | Payment receipt still uses a hardcoded `receivedBy: 1`. | Replace with the authenticated actor from the current user/session and add a payment receipt audit assertion. |
-| `client/src/pages/logistics.tsx:1755` | Operations/Logistics | Outbound logistics path is an explicit disabled placeholder. | Either hide behind a v1 feature gate or wire outbound workflow to real shipment/warehouse movement APIs. |
-| `server/storage.ts:4225` | Inventory platform | Stock movement detail can fall back to a placeholder inventory item. | Return a structured missing-item response or repair referential integrity; do not manufacture item data. |
-| `server/storage.ts:4329` | Inventory platform | Second stock movement/detail path can fall back to a placeholder inventory item. | Apply the same missing-item response/integrity repair as the first placeholder path and add regression coverage. |
-| `client/src/hooks/use-fallback-state.ts:9` | Platform reliability | Global fallback state still exposes `DEMO`/`DEGRADED` modes. | Keep only explicit diagnostic/degraded states for production and require a visible banner when degraded data is shown. |
-| `client/src/lib/fallback-store.ts:33` | Platform reliability | System badge can report `DEMO` from client fallback storage. | Remove production demo fallback or gate it behind a development-only flag. |
-| `client/src/pages/exceptions.tsx:345` | Operations/Exceptions | Empty state still directs users to run the demo. | Replace with real exception setup guidance and a diagnostics/run-checks call-to-action. |
-| `client/src/pages/logistics.tsx:1110` | Operations/Logistics | Empty state still says users can run the demo. | Replace with production guidance: create PO, receive shipment, or configure carrier/supplier defaults. |
-| `client/src/pages/logistics.tsx:1118` | Operations/Logistics | Breadcrumb/link still references “Overview / Demo”. | Rename to production navigation and remove demo wording. |
-| `server/modules/operations/operations-core.ts:3477` | Operations workflow | Server-side learning/action list still exposes “Create demo purchase order”. | Move demo action behind development flag or replace with a production-safe guided setup action. |
+| `client/src/components/billing/payment-dialog.tsx` | Finance/AP | Payment receipt used hardcoded `receivedBy: 1`. | Uses the authenticated `useAuth()` user id and fails if no actor is present. |
+| `client/src/pages/logistics.tsx` | Operations/Logistics | Outbound logistics disabled placeholder looked like production backlog hidden in UI. | Renamed as an explicit v1 exclusion and kept disabled until route-specific proof exists. |
+| `server/storage.ts` | Inventory platform | Requisition detail could manufacture an `Unknown item` fallback. | Throws structured `INVENTORY_ITEM_MISSING` instead of inventing item data. |
+| `server/storage.ts` | Inventory platform | PO detail could manufacture an `Unknown item` fallback. | Throws structured `INVENTORY_ITEM_MISSING` instead of inventing item data. |
+| `client/src/hooks/use-fallback-state.ts` | Platform reliability | Fallback badge type exposed a demo state. | Badge type now only supports `LIVE` and `DEGRADED`. |
+| `client/src/lib/fallback-store.ts` | Platform reliability | System badge could advertise a demo mode. | Store now exposes only production-safe live/degraded states. |
+| `client/src/pages/exceptions.tsx` | Operations/Exceptions | Empty state directed users to run a demo. | Empty state now points to real inventory/diagnostics investigation. |
+| `client/src/pages/logistics.tsx` | Operations/Logistics | Empty state directed users to run a demo. | Empty state now points to PO, carrier default, and receiving setup. |
+| `client/src/pages/logistics.tsx` | Operations/Logistics | Navigation link said `Overview / Demo`. | Link now opens the operations overview without demo wording. |
+| `server/modules/operations/operations-core.ts` | Operations workflow | Guided action said `Create demo purchase order`. | Uses guided setup wording and production-safe references. |
 
-These are not blockers to the Wave 3B gate changes, but they remain blockers for declaring the whole app production-approved.
+## Regression Guard
+
+`npm run test:final-production-blockers` enforces the Wave 3C fixes and is included in `npm run release:gate:delta`.
+
+Production approval still requires `npm run verify:release`, `npm run verify:release:e2e`, and `npm run verify:release:secure`.

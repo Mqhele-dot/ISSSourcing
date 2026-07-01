@@ -111,8 +111,26 @@ async function main() {
   const defaultDepartmentId = Number(departments[0]?.id ?? 0) || undefined;
   const carriers = asArray<{ id: number; name: string; active?: boolean | null }>(unwrapData<unknown>(carriersRes.json));
   const defaultCarrier = carriers.find((carrier) => carrier.active !== false && Number(carrier.id) > 0);
-  const warehouses = asArray<{ id: number; name: string }>(unwrapData<unknown>(warehousesRes.json));
+  const warehouses = asArray<{ id: number; name: string; aisles?: unknown; bins?: unknown }>(unwrapData<unknown>(warehousesRes.json));
   const receiveWarehouse = warehouses.find((warehouse) => Number(warehouse.id) > 0);
+  const receiveAisles = Array.isArray(receiveWarehouse?.aisles)
+    ? receiveWarehouse.aisles.map((aisle) => String(aisle)).filter(Boolean)
+    : [];
+  const receiveBins = Array.isArray(receiveWarehouse?.bins)
+    ? receiveWarehouse.bins
+        .map((bin) => {
+          const record = asRecord(bin);
+          return {
+            code: String(record.code ?? "").trim(),
+            aisle: String(record.aisle ?? "").trim(),
+          };
+        })
+        .filter((bin) => bin.code.length > 0)
+    : [];
+  const receiveAisle = receiveAisles[0] ?? receiveBins[0]?.aisle ?? "";
+  const receiveBin = receiveAisle
+    ? receiveBins.find((bin) => !bin.aisle || bin.aisle === receiveAisle)?.code
+    : receiveBins[0]?.code;
 
   const supplierCreateRes = await apiJsonRequest("/suppliers", {
     method: "POST",
@@ -484,6 +502,8 @@ async function main() {
         body: {
           lines: [{ sku: receiveSku, qty_received_now: 1 }],
           warehouseId: receiveWarehouse.id,
+          ...(receiveAisle ? { aisle: receiveAisle } : {}),
+          ...(receiveBin ? { binCode: receiveBin } : {}),
           receiverName: "Propagation Receiver",
           receivedAt: new Date().toISOString(),
         },
