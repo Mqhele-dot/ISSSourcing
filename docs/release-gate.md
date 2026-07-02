@@ -50,6 +50,9 @@ npm run verify:release:e2e
 | Production workflow proof | `npm run test:production-workflow-proof` | Yes | Prove the core Master Data to Requisition to PO to GRN to Inventory to AP chain has route, validation, dependency, receipt, payment, and audit controls wired in source. | Added to delta gate | Source-level proof complements live API tests without depending on the browser bridge. |
 | Control-plane screen contracts | `npm run test:control-plane-screen-contracts` | Yes | Prove AP payments, settings, roles, approval policies, and Master Data keep source-level UI evidence for real APIs, permission denials, dependency responses, and payment locks. | Added to delta gate | Source-level proof; live browser proof still comes from the E2E gate. |
 | Final production blockers | `npm run test:final-production-blockers` | Yes | Prevent regression of hardcoded payment actor, fake inventory detail fallback, production demo wording, fallback badge state, and Playwright workflow requirements. | Passing locally | Added to `release:gate:delta` in Wave 3C. |
+| Subscription plan catalog | `npm run test:subscription-plans` | Yes | Prove Starter, Standard, Growth, and Enterprise catalog limits, feature groups, labels, support levels, and configurable pricing placeholders are present. | Passing locally | Added to `release:gate:delta` in Wave 4A. |
+| Subscription entitlement enforcement | `npm run test:subscription-entitlements` | Yes | Prove backend feature flags and lifecycle decisions block Starter exports/offline sync, expired trials, inactive subscriptions, and plan-limit writes. | Passing locally | Confirms `PLAN_LIMIT_REACHED` and `FEATURE_NOT_INCLUDED` remain the structured errors. |
+| Subscription UI contracts | `npm run test:subscription-ui-contracts` | Yes | Prove `/admin/subscription` is routed, uses SaaS subscription APIs, shows locked/upgrade states, and stays separate from `/finance/billing`. | Passing locally | Source-level UI proof for the SaaS billing foundation. |
 | Diagnostics self-checks | `npm run test:diagnostics` | Yes | Prove diagnostic rules and route contracts behave predictably. | Passing via delta gate | Complements system diagnostics UI checks. |
 | Focused release gate | `npm run release:gate:delta` | Yes | Run RBAC, requisitions, AP controls, exports, smoke, setup, and installable-complete tests. | Passing via delta gate | Requires live local app from `test:local:delta`. |
 | GitHub CI production readiness | `.github/workflows/production-readiness.yml` | Yes before production | Re-run install, typecheck, lint, build, audit, and stable focused tests on GitHub infrastructure. | Workflow exists | CI must pass on the release head before production approval. |
@@ -83,3 +86,16 @@ Remaining marker-level production blockers are tracked in [Core Blocking Risk Re
 | `npm run verify:release` | Passed locally | Full non-browser release gate completed after the master-data propagation receive test was updated to send warehouse aisle/bin context. |
 | `npm run verify:release:e2e` | Blocked locally by Windows browser launch | The release pre-gate passed, then Playwright failed at Chromium startup with `browserType.launch: spawn EPERM`; use `.github/workflows/playwright-release-gate.yml` as the required E2E evidence path for this environment. |
 | `npm run verify:release:secure` | Passed locally after commit | Re-ran from the committed Wave 3C state; package manifests were clean, lifecycle/SBOM/signature checks passed, and `npm audit --audit-level=high` reported 0 vulnerabilities. |
+
+## Latest Wave 4A Subscription Evidence
+
+| Command | Result | Notes |
+|---|---|---|
+| `npm run test:subscription-plans` | Passed locally | Confirms the SaaS catalog has all four tiers, plan limits, feature groups, support levels, and configurable pricing labels. |
+| `npm run test:subscription-entitlements` | Passed locally | Confirms Starter blocks exports/offline sync, Standard and Growth unlock their tiers, Enterprise limits are unlimited, expired trials block writes, and inactive subscriptions block paid workflow writes. |
+| `npm run test:subscription-ui-contracts` | Passed locally | Confirms `/admin/subscription` is routed, calls the SaaS subscription APIs, shows locked-feature/upgrade states, and does not reuse `/finance/billing` for SaaS plan changes. |
+| `npm run check` | Passed locally | TypeScript completed after schema, API, and UI subscription changes. |
+| `npm run lint` | Passed locally | ESLint completed across client, server, and shared TypeScript after the subscription changes. |
+| `npm run build` | Passed locally | Production build completed and emitted the new `subscription` client chunk. |
+| `npm run audit:production` | Passed locally | Regenerated the production readiness audit with 78 routes and 378 endpoints inspected after `/admin/subscription` and new subscription APIs were added. |
+| `npm run verify:release` | Passed locally | Full non-browser release gate completed, including the live delta suite and the new subscription tests through `release:gate:delta`. |

@@ -37,6 +37,37 @@ export async function ensureDefaultOrganization(): Promise<void> {
   }
 }
 
+export async function ensureOrganizationSubscriptionColumns(): Promise<void> {
+  try {
+    await pool.query(`
+      ALTER TABLE organization_settings
+        ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'active',
+        ADD COLUMN IF NOT EXISTS billing_provider TEXT DEFAULT 'local',
+        ADD COLUMN IF NOT EXISTS billing_customer_id TEXT,
+        ADD COLUMN IF NOT EXISTS billing_subscription_id TEXT,
+        ADD COLUMN IF NOT EXISTS current_period_start TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS usage_snapshot JSONB DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS last_billing_sync_at TIMESTAMP
+    `);
+    await pool.query(`
+      UPDATE organization_settings
+      SET
+        subscription_status = COALESCE(subscription_status, 'active'),
+        billing_provider = COALESCE(billing_provider, 'local'),
+        cancel_at_period_end = COALESCE(cancel_at_period_end, FALSE),
+        usage_snapshot = COALESCE(usage_snapshot, '{}'::jsonb)
+    `);
+  } catch (err) {
+    console.warn(
+      'Could not ensure organization subscription columns:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 export async function ensureSessionTable(): Promise<void> {
   try {
     await pool.query(`
@@ -1259,6 +1290,7 @@ export async function initializeDatabase(): Promise<boolean> {
 
   await ensureSessionTable();
   await ensureDefaultOrganization();
+  await ensureOrganizationSubscriptionColumns();
   await ensureContractDateConstraint();
   await ensureSuppliersTaxIdColumn();
   await ensureLegacyOrgIdColumnsForSeed();

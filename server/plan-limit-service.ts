@@ -1,8 +1,4 @@
 import type { Response } from "express";
-import { desc, eq } from "drizzle-orm";
-import { billingSubscriptions } from "@shared/schema";
-import { db } from "./db";
-import { getActiveOrganizationId } from "./organization-context";
 import { getOrgPlanLimits } from "./org-feature-registry";
 import { getOrgSubscriptionForActiveOrg } from "./org-features";
 import { sendError } from "./api-response";
@@ -21,19 +17,10 @@ export async function ensurePlanLimitAllowsCreate(
   limitKey: PlanLimitKey,
   currentCount: number,
 ): Promise<boolean> {
-  const orgId = getActiveOrganizationId();
-  const [billingSubscription] = await db
-    .select({
-      status: billingSubscriptions.status,
-      currentPeriodEnd: billingSubscriptions.currentPeriodEnd,
-    })
-    .from(billingSubscriptions)
-    .where(eq(billingSubscriptions.organizationId, orgId))
-    .orderBy(desc(billingSubscriptions.updatedAt))
-    .limit(1);
+  const subscription = await getOrgSubscriptionForActiveOrg();
   const writeAccess = getSubscriptionWriteAccessDecision({
-    stripeStatus: billingSubscription?.status ?? "active",
-    currentPeriodEnd: billingSubscription?.currentPeriodEnd ?? null,
+    stripeStatus: subscription.lifecycle.subscriptionStatus,
+    currentPeriodEnd: subscription.lifecycle.trialEndsAt ?? subscription.lifecycle.currentPeriodEnd,
   });
   if (!writeAccess.allowed) {
     sendError(
@@ -44,17 +31,16 @@ export async function ensurePlanLimitAllowsCreate(
       {
         hint: writeAccess.hint,
         details: {
-          organizationId: orgId,
           limitKey,
-          billingStatus: billingSubscription?.status ?? "active",
-          currentPeriodEnd: billingSubscription?.currentPeriodEnd ?? null,
+          billingStatus: subscription.lifecycle.subscriptionStatus,
+          currentPeriodEnd: subscription.lifecycle.currentPeriodEnd,
+          trialEndsAt: subscription.lifecycle.trialEndsAt,
         },
       },
     );
     return false;
   }
 
-  const subscription = await getOrgSubscriptionForActiveOrg();
   const limit = getOrgPlanLimits(subscription.normalizedPlanTier)[limitKey];
   if (limit == null || currentCount < limit) return true;
   const usage = buildUsageSummaries(subscription.limits, {
@@ -66,7 +52,7 @@ export async function ensurePlanLimitAllowsCreate(
   sendError(
     res,
     403,
-    "USAGE_LIMIT_REACHED",
+    "PLAN_LIMIT_REACHED",
     `Your ${subscription.normalizedPlanTier} plan allows ${limit} ${PLAN_LIMIT_LABELS[limitKey]}.`,
     {
       hint: `Upgrade your plan or reduce ${PLAN_LIMIT_LABELS[limitKey]} before creating another record.`,

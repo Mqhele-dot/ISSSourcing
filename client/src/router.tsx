@@ -20,6 +20,7 @@ const Reports = lazy(() => import("@/pages/reports"));
 const InvoicesPage = lazy(() => import("@/pages/invoices"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const UserRolesPage = lazy(() => import("@/pages/user-roles"));
+const SubscriptionPage = lazy(() => import("@/pages/subscription"));
 const ReorderPage = lazy(() => import("@/pages/reorder"));
 const BarcodeScannerPage = lazy(() => import("@/pages/barcode-scanner-page"));
 const RealTimeUpdatesPage = lazy(() => import("@/pages/real-time-updates-page"));
@@ -150,6 +151,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.admin.settings} component={SettingsPage} />
         <ProtectedRoute path={APP_ROUTES.admin.settingsSection(":section")} component={SettingsPage} />
         <ProtectedRoute path={APP_ROUTES.admin.userRoles} component={UserRolesPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.subscription} component={SubscriptionPage} />
         <ProtectedRoute path={APP_ROUTES.admin.profile} component={ProfilePage} />
         <ProtectedRoute path={APP_ROUTES.admin.employeeProfiles} component={EmployeeProfilesPage} />
         <ProtectedRoute path={APP_ROUTES.admin.imageRecognition} component={ImageRecognitionPage} />

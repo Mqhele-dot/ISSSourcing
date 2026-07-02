@@ -42,6 +42,26 @@ export const ORG_PLAN_LIMITS: Record<OrgPlanTier, OrgPlanLimit> = {
 };
 
 export const ORG_FEATURE_CATALOG: Record<string, OrgFeatureCatalogEntry> = {
+  core_procurement: {
+    label: "Core procurement",
+    minimumPlan: "starter",
+    upgradeHint: "Core procurement is included in every plan.",
+  },
+  inventory: {
+    label: "Inventory management",
+    minimumPlan: "starter",
+    upgradeHint: "Inventory management is included in every plan.",
+  },
+  receiving: {
+    label: "Receiving and GRN",
+    minimumPlan: "starter",
+    upgradeHint: "Receiving is included in every plan.",
+  },
+  ap_basics: {
+    label: "AP basics",
+    minimumPlan: "starter",
+    upgradeHint: "AP basics are included in every plan.",
+  },
   mobile_stock_counts: {
     label: "Mobile stock counts",
     minimumPlan: "starter",
@@ -61,6 +81,11 @@ export const ORG_FEATURE_CATALOG: Record<string, OrgFeatureCatalogEntry> = {
     label: "Industry extensions",
     minimumPlan: "standard",
     upgradeHint: "Upgrade to Standard or higher to enable extension modules.",
+  },
+  industry_extensions: {
+    label: "Industry extensions",
+    minimumPlan: "standard",
+    upgradeHint: "Upgrade to Standard or higher to enable industry extension modules.",
   },
   gas: {
     label: "Gas distribution",
@@ -116,6 +141,11 @@ export const ORG_FEATURE_CATALOG: Record<string, OrgFeatureCatalogEntry> = {
     label: "Warehouse limit overrides",
     minimumPlan: "enterprise",
     upgradeHint: "Contact sales for Enterprise warehouse limits.",
+  },
+  custom_enterprise_controls: {
+    label: "Custom enterprise controls",
+    minimumPlan: "enterprise",
+    upgradeHint: "Contact sales to configure custom enterprise controls.",
   },
 };
 

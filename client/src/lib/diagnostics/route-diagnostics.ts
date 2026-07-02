@@ -20,6 +20,7 @@ const ROUTE_MARKERS: Array<{ match: (path: string) => boolean; selectors: string
   { match: (path) => path === "/export-center" || path === "/analytics/export-center", selectors: [`[data-testid="export-center-page"]`] },
   { match: (path) => path.startsWith("/analytics"), selectors: [`[data-testid="analytics-overview-page"]`, `[data-testid="reports-page"]`, `[data-testid="export-center-page"]`] },
   { match: (path) => path.startsWith("/admin/settings"), selectors: [`[data-testid="admin-settings-page"]`] },
+  { match: (path) => path.startsWith("/admin/subscription"), selectors: [`[data-testid="subscription-admin-page"]`] },
   { match: (path) => path.startsWith("/admin/master-data"), selectors: [`[data-testid="master-data-page"]`] },
   { match: (path) => path.startsWith("/admin/document-extractor") || path.startsWith("/documents/extractor"), selectors: [`[data-testid="document-extractor-page"]`] },
   { match: (path) => path === "/admin/system-diagnostics", selectors: [`[data-testid="system-diagnostics-page"]`] },

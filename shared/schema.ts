@@ -92,6 +92,16 @@ export const organizationSettings = pgTable("organization_settings", {
   reportFooter: text("report_footer"),
   planTier: text("plan_tier").default("standard"),
   featureFlags: jsonb("feature_flags").$type<Record<string, boolean>>().default({}),
+  subscriptionStatus: text("subscription_status").default("active"),
+  billingProvider: text("billing_provider").default("local"),
+  billingCustomerId: text("billing_customer_id"),
+  billingSubscriptionId: text("billing_subscription_id"),
+  currentPeriodStart: timestamp("current_period_start"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  trialEndsAt: timestamp("trial_ends_at"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  usageSnapshot: jsonb("usage_snapshot").$type<Record<string, unknown>>().default({}),
+  lastBillingSyncAt: timestamp("last_billing_sync_at"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

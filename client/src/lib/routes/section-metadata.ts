@@ -249,6 +249,13 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         description: "Compliance and activity review workspace.",
         keywords: "audit logs compliance governance",
       },
+      {
+        label: "Subscription",
+        path: APP_ROUTES.admin.subscription,
+        icon: "credit-card",
+        description: "SaaS plan, entitlement, usage, and billing-provider controls.",
+        keywords: "subscription plan entitlements saas billing",
+      },
     ],
   },
   /** Intentionally last in `APP_NAV_SECTIONS` so primary product areas stay grouped; learning is a capstone link. */
@@ -335,6 +342,13 @@ export const COMMAND_MENU_SECONDARY_GROUPS: { heading: string; items: AppNavItem
         description: "Role and access administration.",
         keywords: "rbac permissions roles",
         desktopOnly: true,
+      },
+      {
+        label: "Subscription",
+        path: APP_ROUTES.admin.subscription,
+        icon: "credit-card",
+        description: "Plan, usage, feature entitlements, and billing-provider readiness.",
+        keywords: "subscription billing plan entitlements",
       },
     ],
   },

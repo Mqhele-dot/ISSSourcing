@@ -1,6 +1,6 @@
 # Production Approval Evidence
 
-Generated for Wave 3D on `cursor/project-codespace-compatibility-b14c`.
+Generated for Wave 3D and extended by Wave 4A on `cursor/project-codespace-compatibility-b14c`.
 
 ## Decision
 
@@ -44,6 +44,7 @@ The pages are also visibly labelled in-app as non-production v1 routes so produc
 | Secure release gate | `npm run verify:release:secure` | Yes |
 | GitHub Playwright release gate | `.github/workflows/playwright-release-gate.yml` | Yes when local Chromium launch is blocked |
 | Final audit pass | `npm run audit:production` | Yes |
+| Subscription foundation tests | `npm run test:subscription-plans && npm run test:subscription-entitlements && npm run test:subscription-ui-contracts` | Yes after Wave 4A |
 
 ## Workflow Proof Summary
 
@@ -94,6 +95,31 @@ The secure release gate verifies:
 Primary evidence command:
 
 - `npm run verify:release:secure`
+
+## Subscription And SaaS Billing Proof Summary
+
+Wave 4A adds a production-safe SaaS subscription foundation without changing the AP/customer billing workspace.
+
+Implemented evidence:
+
+- Plan catalog source of truth in `server/subscription-plan-catalog.ts`.
+- Organization subscription lifecycle fields persisted in `organization_settings`.
+- `/api/subscription/plans`, `/current`, `/usage`, `/change-plan`, `/start-trial`, `/cancel`, `/resume`, and `/billing-portal`.
+- Dedicated SaaS page at `/admin/subscription`.
+- Backend plan-limit and feature-entitlement errors: `PLAN_LIMIT_REACHED`, `FEATURE_NOT_INCLUDED`, `TRIAL_EXPIRED`, and `SUBSCRIPTION_INACTIVE`.
+- Production guard that prevents local lifecycle endpoints from faking successful hosted billing actions.
+
+Primary evidence commands:
+
+- `npm run test:subscription-enforcement`
+- `npm run test:subscription-plans`
+- `npm run test:subscription-entitlements`
+- `npm run test:subscription-ui-contracts`
+
+Remaining provider setup:
+
+- Stripe price IDs, portal/customer records, and webhook secrets must be configured in the deployment environment before hosted checkout/portal actions become live.
+- Pricing labels remain configurable placeholders until commercial pricing is approved.
 
 ## Browser E2E Evidence
 

@@ -22,6 +22,7 @@ import { sendError, sendOk } from "../../api-response";
 import { getConfigurationDefinitionsForPlan } from "../../company-configuration-registry";
 import { normalizeOrgPlanTier, type OrgPlanTier } from "../../org-feature-registry";
 import { buildSubscriptionDiagnostics } from "../../subscription-enforcement";
+import { getSubscriptionPlanCatalog, getSubscriptionPlanDefinition } from "../../subscription-plan-catalog";
 
 type Auth = {
   ensureAuthenticated: RequestHandler;
@@ -47,6 +48,12 @@ const checkoutSessionSchema = z.object({
 
 const portalSessionSchema = z.object({
   returnUrl: z.string().url(),
+});
+
+const trialSchema = z.object({
+  planTier: z.enum(["starter", "standard", "growth", "enterprise"]).default("starter"),
+  days: z.coerce.number().int().min(1).max(90).default(14),
+  reason: z.string().max(500).optional(),
 });
 
 const STRIPE_PRICE_ENV: Record<OrgPlanTier, string> = {
@@ -110,6 +117,62 @@ function requireConfigWrite(auth: Auth): RequestHandler[] {
     : [auth.ensureAuthenticated];
 }
 
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+function canUseLocalBillingAdapter(): boolean {
+  return !isProductionRuntime() || process.env.SUBSCRIPTION_LOCAL_ADAPTER_ENABLED === "true";
+}
+
+async function upsertOrganizationSubscriptionState(input: {
+  organizationId: number;
+  planTier?: OrgPlanTier;
+  subscriptionStatus?: string;
+  billingProvider?: string;
+  billingCustomerId?: string | null;
+  billingSubscriptionId?: string | null;
+  currentPeriodStart?: Date | null;
+  currentPeriodEnd?: Date | null;
+  trialEndsAt?: Date | null;
+  cancelAtPeriodEnd?: boolean;
+  usageSnapshot?: Record<string, unknown>;
+}): Promise<void> {
+  const values: Partial<typeof organizationSettings.$inferInsert> = {
+    planTier: input.planTier,
+    subscriptionStatus: input.subscriptionStatus,
+    billingProvider: input.billingProvider,
+    billingCustomerId: input.billingCustomerId,
+    billingSubscriptionId: input.billingSubscriptionId,
+    currentPeriodStart: input.currentPeriodStart,
+    currentPeriodEnd: input.currentPeriodEnd,
+    trialEndsAt: input.trialEndsAt,
+    cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+    usageSnapshot: input.usageSnapshot,
+    lastBillingSyncAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const cleaned = Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined)) as Partial<
+    typeof organizationSettings.$inferInsert
+  >;
+  await db
+    .insert(organizationSettings)
+    .values({
+      organizationId: input.organizationId,
+      planTier: input.planTier ?? "standard",
+      featureFlags: {},
+      subscriptionStatus: input.subscriptionStatus ?? "active",
+      billingProvider: input.billingProvider ?? "local",
+      cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+      usageSnapshot: input.usageSnapshot ?? {},
+      lastBillingSyncAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: organizationSettings.organizationId,
+      set: cleaned,
+    });
+}
+
 /** GET branding / plan metadata for the active organization (Phase 4). */
 export function registerOrganizationRoutes(app: Express, auth: Auth): void {
   app.get("/api/organization/settings", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
@@ -132,6 +195,14 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
       console.error("GET /api/organization/settings:", e);
       res.status(500).json({ message: "Failed to load organization settings" });
     }
+  });
+
+  app.get("/api/subscription/plans", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
+    return sendOk(res, {
+      sourceOfTruth: "server/subscription-plan-catalog",
+      pricing: "configurable",
+      plans: getSubscriptionPlanCatalog(),
+    });
   });
 
   app.get("/api/subscription/current", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
@@ -157,22 +228,26 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
         planTier: subscription.normalizedPlanTier,
         limits: subscription.limits,
         usage,
-        stripeStatus: billingSubscription?.status ?? "active",
-        currentPeriodEnd: billingSubscription?.currentPeriodEnd ?? null,
+        stripeStatus: subscription.lifecycle.subscriptionStatus ?? billingSubscription?.status ?? "active",
+        currentPeriodEnd: subscription.lifecycle.trialEndsAt ?? subscription.lifecycle.currentPeriodEnd ?? billingSubscription?.currentPeriodEnd ?? null,
       });
+      const planDefinition = getSubscriptionPlanDefinition(subscription.normalizedPlanTier);
+      const lockedFeatures = subscription.featureCatalog.filter((feature) => !feature.enabled);
 
       return sendOk(res, {
         organizationId: orgId,
-        provider: "stripe",
+        provider: subscription.lifecycle.billingProvider,
         sourceOfTruth: "local_entitlements",
-        status: billingSubscription?.status ?? "active",
+        status: subscription.lifecycle.subscriptionStatus,
         billingSubscription: billingSubscription ?? null,
-        billingProviders: billingProviderReadiness(),
         ...subscription,
+        plan: planDefinition,
+        billingProviders: billingProviderReadiness(),
         usage,
         access: diagnostics.access,
         usageLimits: diagnostics.usageLimits,
         usageStatus: diagnostics.usageStatus,
+        lockedFeatures,
         upgradeHints: diagnostics.upgradeHints,
       });
     } catch (error) {
@@ -243,6 +318,38 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
         return sendError(res, 400, "PORTAL_SESSION_INVALID", "Invalid portal session request.", { details: error.flatten() });
       }
       console.error("POST /api/subscription/portal-session:", error);
+      return sendError(res, 500, "PORTAL_SESSION_FAILED", "Failed to create Stripe portal session.");
+    }
+  });
+
+  app.post("/api/subscription/billing-portal", ...requireConfigWrite(auth), async (req: Request, res: Response) => {
+    const stripe = stripeClient();
+    if (!stripe) {
+      return sendError(res, 503, "BILLING_PROVIDER_NOT_CONFIGURED", "Stripe customer portal is not configured for this environment.", {
+        hint: "Set STRIPE_SECRET_KEY and customer billing records before enabling portal sessions.",
+      });
+    }
+    try {
+      const parsed = portalSessionSchema.parse(req.body);
+      const orgId = getActiveOrganizationId();
+      const [customer] = await db
+        .select()
+        .from(billingCustomers)
+        .where(and(eq(billingCustomers.organizationId, orgId), eq(billingCustomers.provider, "stripe")))
+        .limit(1);
+      if (!customer) {
+        return sendError(res, 409, "BILLING_CUSTOMER_NOT_FOUND", "No Stripe customer is linked to this organization yet.");
+      }
+      const session = await stripe.billingPortal.sessions.create({
+        customer: customer.providerCustomerId,
+        return_url: parsed.returnUrl,
+      });
+      return sendOk(res, { provider: "stripe", mode: "portal", url: session.url });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return sendError(res, 400, "PORTAL_SESSION_INVALID", "Invalid portal session request.", { details: error.flatten() });
+      }
+      console.error("POST /api/subscription/billing-portal:", error);
       return sendError(res, 500, "PORTAL_SESSION_FAILED", "Failed to create Stripe portal session.");
     }
   });
@@ -330,10 +437,31 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
             });
           await db
             .insert(organizationSettings)
-            .values({ organizationId: orgId, planTier, featureFlags: {} })
+            .values({
+              organizationId: orgId,
+              planTier,
+              featureFlags: {},
+              subscriptionStatus: subscription.status,
+              billingProvider: "stripe",
+              billingCustomerId: customerId,
+              billingSubscriptionId: subscription.id,
+              currentPeriodEnd: timestampToDate(subscription.current_period_end),
+              cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+              lastBillingSyncAt: new Date(),
+            })
             .onConflictDoUpdate({
               target: organizationSettings.organizationId,
-              set: { planTier, updatedAt: new Date() },
+              set: {
+                planTier,
+                subscriptionStatus: subscription.status,
+                billingProvider: "stripe",
+                billingCustomerId: customerId,
+                billingSubscriptionId: subscription.id,
+                currentPeriodEnd: timestampToDate(subscription.current_period_end),
+                cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+                lastBillingSyncAt: new Date(),
+                updatedAt: new Date(),
+              },
             });
           processed = true;
         }
@@ -356,6 +484,11 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
   app.post("/api/subscription/change-plan", ...requireConfigWrite(auth), async (req: Request, res: Response) => {
     try {
       const parsed = changePlanSchema.parse(req.body);
+      if (!canUseLocalBillingAdapter()) {
+        return sendError(res, 409, "BILLING_PROVIDER_ACTION_REQUIRED", "Plan changes must be completed through the hosted billing provider in production.", {
+          hint: "Use checkout or the billing portal so payment state updates local entitlements through verified webhooks.",
+        });
+      }
       const orgId = getActiveOrganizationId();
       const [settings] = await db
         .select()
@@ -364,18 +497,13 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
         .limit(1);
       const previousPlan = settings?.planTier ?? null;
 
-      if (settings) {
-        await db
-          .update(organizationSettings)
-          .set({ planTier: parsed.planTier, updatedAt: new Date() })
-          .where(eq(organizationSettings.organizationId, orgId));
-      } else {
-        await db.insert(organizationSettings).values({
-          organizationId: orgId,
-          planTier: parsed.planTier,
-          featureFlags: {},
-        });
-      }
+      await upsertOrganizationSubscriptionState({
+        organizationId: orgId,
+        planTier: parsed.planTier,
+        subscriptionStatus: "active",
+        billingProvider: "local",
+        cancelAtPeriodEnd: false,
+      });
 
       await db.insert(planChangeAudit).values({
         organizationId: orgId,
@@ -392,6 +520,102 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
       }
       console.error("POST /api/subscription/change-plan:", error);
       return sendError(res, 500, "PLAN_CHANGE_FAILED", "Failed to change plan.");
+    }
+  });
+
+  app.post("/api/subscription/start-trial", ...requireConfigWrite(auth), async (req: Request, res: Response) => {
+    try {
+      if (!canUseLocalBillingAdapter()) {
+        return sendError(res, 409, "BILLING_PROVIDER_ACTION_REQUIRED", "Trials must be issued by the hosted billing provider in production.", {
+          hint: "Configure Stripe checkout/trial settings or enable the local adapter only in non-production environments.",
+        });
+      }
+      const parsed = trialSchema.parse(req.body);
+      const orgId = getActiveOrganizationId();
+      const now = new Date();
+      const trialEndsAt = new Date(now.getTime() + parsed.days * 24 * 60 * 60 * 1000);
+      await upsertOrganizationSubscriptionState({
+        organizationId: orgId,
+        planTier: parsed.planTier,
+        subscriptionStatus: "trialing",
+        billingProvider: "local",
+        currentPeriodStart: now,
+        currentPeriodEnd: trialEndsAt,
+        trialEndsAt,
+        cancelAtPeriodEnd: false,
+      });
+      await db.insert(planChangeAudit).values({
+        organizationId: orgId,
+        fromPlan: null,
+        toPlan: parsed.planTier,
+        reason: parsed.reason ?? "trial_started",
+        changedBy: currentUserId(req),
+      });
+      return sendOk(res, await getOrgSubscriptionForActiveOrg(), 201);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return sendError(res, 400, "TRIAL_START_INVALID", "Invalid trial request.", { details: error.flatten() });
+      }
+      console.error("POST /api/subscription/start-trial:", error);
+      return sendError(res, 500, "TRIAL_START_FAILED", "Failed to start subscription trial.");
+    }
+  });
+
+  app.post("/api/subscription/cancel", ...requireConfigWrite(auth), async (req: Request, res: Response) => {
+    try {
+      if (!canUseLocalBillingAdapter()) {
+        return sendError(res, 409, "BILLING_PROVIDER_ACTION_REQUIRED", "Cancellation must be completed through the hosted billing provider in production.", {
+          hint: "Use the billing portal so cancellation state is verified and synchronized.",
+        });
+      }
+      const orgId = getActiveOrganizationId();
+      const current = await getOrgSubscriptionForActiveOrg();
+      await upsertOrganizationSubscriptionState({
+        organizationId: orgId,
+        subscriptionStatus: "canceled",
+        billingProvider: "local",
+        cancelAtPeriodEnd: true,
+      });
+      await db.insert(planChangeAudit).values({
+        organizationId: orgId,
+        fromPlan: current.normalizedPlanTier,
+        toPlan: current.normalizedPlanTier,
+        reason: "subscription_canceled",
+        changedBy: currentUserId(req),
+      });
+      return sendOk(res, await getOrgSubscriptionForActiveOrg());
+    } catch (error) {
+      console.error("POST /api/subscription/cancel:", error);
+      return sendError(res, 500, "SUBSCRIPTION_CANCEL_FAILED", "Failed to cancel subscription.");
+    }
+  });
+
+  app.post("/api/subscription/resume", ...requireConfigWrite(auth), async (req: Request, res: Response) => {
+    try {
+      if (!canUseLocalBillingAdapter()) {
+        return sendError(res, 409, "BILLING_PROVIDER_ACTION_REQUIRED", "Resume must be completed through the hosted billing provider in production.", {
+          hint: "Use the billing portal so subscription state is verified and synchronized.",
+        });
+      }
+      const orgId = getActiveOrganizationId();
+      const current = await getOrgSubscriptionForActiveOrg();
+      await upsertOrganizationSubscriptionState({
+        organizationId: orgId,
+        subscriptionStatus: "active",
+        billingProvider: "local",
+        cancelAtPeriodEnd: false,
+      });
+      await db.insert(planChangeAudit).values({
+        organizationId: orgId,
+        fromPlan: current.normalizedPlanTier,
+        toPlan: current.normalizedPlanTier,
+        reason: "subscription_resumed",
+        changedBy: currentUserId(req),
+      });
+      return sendOk(res, await getOrgSubscriptionForActiveOrg());
+    } catch (error) {
+      console.error("POST /api/subscription/resume:", error);
+      return sendError(res, 500, "SUBSCRIPTION_RESUME_FAILED", "Failed to resume subscription.");
     }
   });
 
