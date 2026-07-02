@@ -946,6 +946,11 @@ function runtimeEvidenceRows() {
       "It is source-level UI proof; Production-ready still requires live browser or documented manual QA evidence.",
     ],
     [
+      "test:control-plane-runtime",
+      "Runtime API proof that settings, user-role, approval-policy, and master-data control-plane changes are persisted, permission-protected, and audited.",
+      "Does not prove every settings subsection or every custom-role matrix branch.",
+    ],
+    [
       "test:e2e:procurement-ap-ui",
       "Live Playwright workflow proof that logs in, opens mobile receiving for a real PO, posts a receipt, verifies inventory reflects the received item, and verifies invoice/AP screens show PO/GRN match and payment-control states.",
       "Uses API setup for the PO and invoices, so it does not prove every form in the procurement chain can create the fixtures through clicks.",
@@ -954,6 +959,26 @@ function runtimeEvidenceRows() {
       "test:e2e:permissions",
       "Live Playwright/API permission proof for warehouse receiving, requester receive denial, AP workspace access, payment release denial, master-data write denial, settings write denial, and protected admin pages.",
       "Does not exhaustively test every custom role matrix or every high-risk admin mutation.",
+    ],
+    [
+      "test:e2e:control-plane",
+      "Live browser proof that admin control-plane screens open, persist safe settings/role/policy changes, deny requester changes, and expose activity/audit evidence.",
+      "Local Windows browser launch may be blocked by sandbox policy; use the GitHub Playwright Release Gate workflow for release evidence when local Chromium cannot spawn.",
+    ],
+    [
+      "test:final-production-blockers",
+      "Regression guard for the final Wave 3C blockers: authenticated payment actor, structured missing inventory item response, no production demo wording, production-safe fallback badge state, and Playwright release workflow commands.",
+      "It is static/source evidence and does not replace live workflow or browser gates.",
+    ],
+    [
+      "verify:release:e2e",
+      "Formal browser release gate: runs verify:release, procurement/AP E2E, permission E2E, and control-plane E2E.",
+      "In this Windows workspace local Chromium launch can fail with spawn EPERM; production approval should attach the .github/workflows/playwright-release-gate.yml run when local launch is blocked.",
+    ],
+    [
+      "verify:release:secure",
+      "Secure release gate: runs verify:release and supply-chain CI checks including package-manifest cleanliness, lifecycle audit, SBOM, registry signatures, and high-vulnerability audit.",
+      "Does not replace dependency-review or other GitHub branch protection checks.",
     ],
     [
       "test:production-workflow-proof",

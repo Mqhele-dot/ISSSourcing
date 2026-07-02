@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Download } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Download } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { DataState } from "@/components/ui/data-state";
@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +57,20 @@ function formatDate(value: string | null) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "-";
   return parsed.toLocaleString();
+}
+
+function ExceptionsV1ExclusionNotice() {
+  return (
+    <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+      <AlertTriangle className="h-4 w-4" aria-hidden />
+      <AlertTitle>Non-production v1 route</AlertTitle>
+      <AlertDescription>
+        Operations exceptions remain excluded from production approval until route-specific browser proof, permission
+        proof, and audit evidence are complete. Use System Diagnostics and the proven AP/procurement workflows for
+        approved production exception controls.
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 function exceptionsListFiltersNormalized(q: { severity: string; status: string; type: string }) {
@@ -250,6 +265,7 @@ function ExceptionListView() {
         subtitle="Control tower lifecycle management"
         breadcrumb={<span>Operations / Exceptions</span>}
       />
+      <ExceptionsV1ExclusionNotice />
 
       <div data-tour="exceptions-list" className="space-y-4">
       <div data-tour="exceptions-toolbar">
@@ -594,6 +610,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
               subtitle={exception.title}
               breadcrumb={<span>Operations / Exceptions / {exception.id}</span>}
             />
+            <ExceptionsV1ExclusionNotice />
 
             <div className="grid gap-4 md:grid-cols-2">
               <Card data-testid="exception-detail-incident">

@@ -99,6 +99,20 @@ async function downloadShipmentDeliveryNote(shipmentId: number): Promise<void> {
   downloadFile(blob, `delivery-note-${shipmentId}.pdf`);
 }
 
+function LogisticsV1ExclusionNotice() {
+  return (
+    <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+      <AlertTriangle className="h-4 w-4" aria-hidden />
+      <AlertTitle>Non-production v1 route</AlertTitle>
+      <AlertDescription>
+        Logistics remains excluded from production approval until route-specific browser proof, permission proof, and
+        audit evidence are complete. Use this workspace for connected review only, not as an approved production
+        dispatch workflow.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 type Carrier = {
   id: number;
   code: string;
@@ -1407,6 +1421,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                 </Button>
               }
             />
+            <LogisticsV1ExclusionNotice />
 
             {shipment.atRisk ? (
               <Alert variant="destructive">
@@ -1726,6 +1741,7 @@ export default function LogisticsPage() {
         subtitle="Shipment tracking, inbound receive links, carriers, and activity"
         breadcrumb={<span>Operations / Logistics</span>}
       />
+      <LogisticsV1ExclusionNotice />
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="flex h-auto flex-wrap justify-start">
