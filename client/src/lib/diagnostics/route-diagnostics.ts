@@ -5,6 +5,7 @@ const ROUTE_MARKERS: Array<{ match: (path: string) => boolean; selectors: string
   { match: (path) => path === "/inventory/cycle-counts" || path === "/cycle-counts", selectors: [`[data-testid="cycle-counts-page"]`] },
   { match: (path) => path === "/inventory/reorder" || path === "/reorder", selectors: [`[data-testid="reorder-requests-page"]`] },
   { match: (path) => path === "/inventory/barcodes" || path === "/barcode-scanner", selectors: [`[data-testid="barcode-scanner-page"]`] },
+  { match: (path) => path === "/m/approvals", selectors: [`[data-testid="mobile-approvals-page"]`] },
   { match: (path) => path.startsWith("/inventory/"), selectors: [`[data-testid="inventory-detail-page"]`] },
   { match: (path) => path.startsWith("/procurement/orders/"), selectors: [`[data-testid="po-detail-page"]`] },
   { match: (path) => path.startsWith("/procurement/orders") || path === "/orders" || path === "/purchase", selectors: [`[data-testid="purchase-orders-page"]`, `[data-testid="po-table"]`] },

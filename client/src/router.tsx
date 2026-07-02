@@ -59,6 +59,7 @@ const MobileCountsPage = lazy(() => import("@/pages/mobile-counts"));
 const MobileHubHome = lazy(() => import("@/pages/mobile-hub-home"));
 const MobileHubTasks = lazy(() => import("@/pages/mobile-hub-tasks"));
 const MobileHubMore = lazy(() => import("@/pages/mobile-hub-more"));
+const MobileApprovalsPage = lazy(() => import("@/pages/mobile-approvals"));
 const OperationsOverviewPage = lazy(() => import("@/pages/operations-overview-page"));
 const MobileWorkflowsLauncherPage = lazy(() => import("@/pages/mobile-workflows-launcher-page"));
 const DevTestPage = lazy(() => import("@/pages/dev-test-page"));
@@ -78,7 +79,7 @@ export function AppRouter() {
         <ProtectedRoute path="/m/counts/:id" component={MobileCountsPage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileCounts} component={MobileCountsPage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileScan} component={BarcodeScannerPage} />
-        <ProtectedRoute path={APP_ROUTES.operations.mobileApprovals} component={PurchasePage} />
+        <ProtectedRoute path={APP_ROUTES.operations.mobileApprovals} component={MobileApprovalsPage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileMore} component={MobileHubMore} />
         <ProtectedRoute path="/m/receive/:po" component={MobileReceivePage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileReceive} component={MobileReceivePage} />

@@ -114,6 +114,13 @@ export function runDiagnosticsSelfChecks(): SelfCheckReport {
       "isSlowApiDiagnosticEvent matches slow API rows.",
     ),
     check(
+      "route-mobile-approvals",
+      "Mobile approvals route contract",
+      expectedSelectorsForRoute("/m/approvals").includes(`[data-testid="mobile-approvals-page"]`),
+      true,
+      "Route diagnostics expects mobile-approvals page marker.",
+    ),
+    check(
       "route-system-diagnostics",
       "System diagnostics route contract",
       expectedSelectorsForRoute("/admin/system-diagnostics").includes(`[data-testid="system-diagnostics-page"]`),

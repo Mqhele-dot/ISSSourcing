@@ -43,6 +43,7 @@ expectIncludes("supplier portal expects supplier portal page", "/supplier-portal
 expectIncludes("procurement orders expects purchase orders page", "/procurement/orders", `[data-testid="purchase-orders-page"]`);
 expectIncludes("procurement order detail expects PO detail page", "/procurement/orders/PO-TEST", `[data-testid="po-detail-page"]`);
 expectIncludes("warehouse operations has route marker", "/warehouse-operations", `[data-testid="warehouse-operations-page"]`);
+expectIncludes("mobile approvals has route marker", "/m/approvals", `[data-testid="mobile-approvals-page"]`);
 expectIncludes("master data has route marker", "/admin/master-data", `[data-testid="master-data-page"]`);
 expectEmpty("unknown routes return no configured contract", "/unknown-release-cleanup-route");
 
