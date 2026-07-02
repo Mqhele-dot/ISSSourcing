@@ -25,5 +25,7 @@ audit-high*.txt
 .npm-cache-audit/
 .npm-cache-local/
 .npm-cache/
+.electron-cache-local/
+.electron-builder-cache-local/
 artifacts/security-release-status.json
 artifacts/npm-audit.json

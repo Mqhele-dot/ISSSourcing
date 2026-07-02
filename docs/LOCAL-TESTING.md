@@ -92,7 +92,7 @@ If npm or OneDrive leaves `node_modules` in a placeholder or partial state, run:
 npm run repair:win-install
 ```
 
-This rebuilds dependencies with a project-local npm cache and npm 10, then runs `npm run check`.
+This rebuilds dependencies with project-local npm and Electron caches, then runs `npm run check`. Use it when `npm ci` fails with `EPERM` in `%LOCALAPPDATA%\npm-cache` or `%LOCALAPPDATA%\electron\Cache`.
 
 ## Codespace / Remote Browser Walkthrough
 
