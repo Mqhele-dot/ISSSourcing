@@ -8,6 +8,7 @@ type ContractOpt = {
   id: number;
   title: string;
   supplierId: number;
+  currency?: string | null;
   paymentTermsId?: number | null;
   incotermId?: number | null;
   defaultTaxCodeId?: number | null;
@@ -44,6 +45,8 @@ export type PoCommercialTermsCardProps = {
   canSaveCommercial: boolean;
   commercialLockedReason?: string;
   commercialSaveError?: string | null;
+  onClearContract?: () => void;
+  onUseContractCurrency?: () => void;
   /** Last “apply defaults” action — schema-level sourcing notes for currency and payment terms. */
   applyDefaultsHint?: string | null;
 };
@@ -72,9 +75,14 @@ export function PoCommercialTermsCard({
   canSaveCommercial,
   commercialLockedReason,
   commercialSaveError,
+  onClearContract,
+  onUseContractCurrency,
   applyDefaultsHint,
 }: PoCommercialTermsCardProps) {
   const disableFields = !canSaveCommercial || saveCommercialTerms.isPending;
+  const isContractCurrencyValidation =
+    typeof commercialSaveError === "string" &&
+    commercialSaveError.includes("SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED");
   return (
     <Card id="po-commercial" className="scroll-mt-36" data-testid="po-commercial-card">
       <CardHeader>
@@ -94,7 +102,43 @@ export function PoCommercialTermsCard({
             className="md:col-span-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
             data-testid="po-commercial-error"
           >
-            {commercialSaveError}
+            {isContractCurrencyValidation ? (
+              <div className="space-y-2">
+                <p className="font-medium">Contract currency controls this purchase order.</p>
+                <p>
+                  The selected supplier contract has its own currency, so the PO currency must match it before the
+                  commercial terms can be saved.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {onUseContractCurrency ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      data-testid="po-use-contract-currency"
+                      onClick={onUseContractCurrency}
+                      disabled={disableFields}
+                    >
+                      Use contract currency
+                    </Button>
+                  ) : null}
+                  {onClearContract ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      data-testid="po-clear-contract"
+                      onClick={onClearContract}
+                      disabled={disableFields}
+                    >
+                      Clear contract
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              commercialSaveError
+            )}
           </div>
         ) : null}
         <div className="space-y-1">

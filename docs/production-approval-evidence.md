@@ -48,6 +48,8 @@ The pages are also visibly labelled in-app as non-production v1 routes so produc
 | Subscription runtime proof | `npm run test:subscription-runtime-flow` | Yes after Wave 4B |
 | Stripe readiness proof | `npm run test:stripe-billing-readiness` | Yes after Wave 4B |
 | Subscription browser proof | `npm run test:e2e:subscription` | Yes in browser E2E gate |
+| Button/action source proof | `npm run test:button-action-contracts` | Yes after Wave 4D |
+| Button/action browser proof | `npm run test:e2e:button-actions` | Yes in browser E2E gate |
 
 ## Workflow Proof Summary
 
@@ -139,6 +141,23 @@ Required hosted billing environment:
 - `STRIPE_PRICE_GROWTH`
 - `STRIPE_PRICE_ENTERPRISE`
 
+## Button And Action Reliability Proof Summary
+
+Wave 4D adds a core visible-action inventory and regression guard for high-risk buttons that were likely to fail silently during manual testing.
+
+Implemented evidence:
+
+- `docs/button-action-inventory.md` inventories 43 core actions across procurement, AP, subscriptions, diagnostics, reports, Master Data, settings, RBAC, and route recovery.
+- `npm run test:button-action-contracts` blocks inert links, console-only click handlers, action TODOs, missing structured errors, missing invalidation, and missing recovery actions on the critical button paths.
+- `npm run test:e2e:button-actions` is included in the formal browser release gate for contracts, gas timeout retry, subscription actions, custom-role permission removal, and PO commercial validation actions.
+- PO commercial supplier/contract currency override errors now show actionable field-level recovery controls: use contract currency or clear the contract.
+
+Primary evidence commands:
+
+- `npm run test:button-action-contracts`
+- `npm run test:e2e:button-actions`
+- `npm run test:live-diagnostics-regressions`
+
 ## Browser E2E Evidence
 
 Playwright workflow name: **Playwright Release Gate**
@@ -154,7 +173,7 @@ The workflow runs:
 - `npx playwright install --with-deps chromium`
 - `npm run verify:release:e2e`
 
-`verify:release:e2e` includes `npm run test:e2e:subscription` from Wave 4B onward.
+`verify:release:e2e` includes `npm run test:e2e:subscription` from Wave 4B onward and `npm run test:e2e:button-actions` from Wave 4D onward.
 
 If local Windows or Codespaces Chromium launch fails with sandbox/permission errors, attach the GitHub Actions Playwright Release Gate run as the production browser evidence.
 
@@ -166,3 +185,6 @@ If local Windows or Codespaces Chromium launch fails with sandbox/permission err
 | `npm run verify:release:e2e` | Blocked locally in Playwright phase | The command completed the full `verify:release` pre-gate, then failed in the browser phase with the same local Chromium launch restriction tracked by test id `cc280d92bc59b2ee6bff-99ef022bf30a937aa8ca`. Use the GitHub Playwright Release Gate workflow as the required browser evidence for this environment. |
 | `npm run verify:release:secure` | Passed locally | `verify:release` plus package-manifest cleanliness, lifecycle enforcement, SBOM generation, registry signature audit, and high-severity npm audit completed; `npm audit --audit-level=high` reported 0 vulnerabilities. |
 | `npm run audit:production` | Passed locally | Final Wave 3D audit pass kept `Core blocking risks: 0`, `Marker-level blockers: 0`, and `Non-production v1 exclusions: 4 routes`. |
+| `npm run test:button-action-contracts` | Passed locally | Wave 4D source contract passed 12 contracts and 33 assertions across 43 inventoried core actions. |
+| `npm run test:live-diagnostics-regressions` | Passed locally | Confirms the live diagnostics/action fixes remain in place. |
+| `npm run test:e2e:button-actions` | Blocked locally in Playwright page launch | The wrapper started the local app and the API-backed custom-role permission delete idempotency case passed; page-level Chromium launches failed with `browserType.launch: spawn EPERM`. Use the GitHub Playwright Release Gate workflow for browser evidence in this environment. |

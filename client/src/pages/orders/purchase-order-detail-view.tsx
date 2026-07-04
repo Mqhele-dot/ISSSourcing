@@ -678,6 +678,29 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
               description: "Review commercial fields, then save to persist.",
             });
           };
+          const selectedContractRow = contracts.find((x) => String(x.id) === contractId);
+          const useSelectedContractCurrency = () => {
+            const fromContract =
+              typeof selectedContractRow?.currency === "string" && /^[A-Za-z]{3}$/.test(selectedContractRow.currency)
+                ? selectedContractRow.currency.toUpperCase()
+                : null;
+            if (!fromContract) {
+              toast({
+                title: "Contract currency unavailable",
+                description: "This contract does not have a valid currency code. Clear the contract or update Master Data.",
+                variant: "destructive",
+              });
+              return;
+            }
+            setCurrencyCode(fromContract);
+            setCommercialSaveError(null);
+            setCommercialApplyHint(`Using contract currency ${fromContract}. Save terms to persist.`);
+          };
+          const clearSelectedContract = () => {
+            setContractId("none");
+            setCommercialSaveError(null);
+            setCommercialApplyHint("Contract cleared. Review the currency and save terms to persist.");
+          };
           const downloadSignedPdf = async () => {
             setPdfLoading(true);
             try {
@@ -941,6 +964,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                           id: c.id,
                           title: c.title,
                           supplierId: c.supplierId,
+                          currency: c.currency ?? null,
                           paymentTermsId: c.paymentTermsId ?? c.payment_terms_id ?? null,
                           incotermId: c.incotermId ?? c.incoterm_id ?? null,
                           defaultTaxCodeId: c.defaultTaxCodeId ?? c.default_tax_code_id ?? null,
@@ -951,6 +975,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       canSaveCommercial={canUpdatePurchaseOrder(detail.status)}
                       commercialLockedReason="Commercial terms can only be updated before the PO is sent."
                       commercialSaveError={commercialSaveError}
+                      onClearContract={clearSelectedContract}
+                      onUseContractCurrency={useSelectedContractCurrency}
                       applyDefaultsHint={commercialApplyHint}
                     />
                   </div>
