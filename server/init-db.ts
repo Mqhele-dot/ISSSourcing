@@ -1259,8 +1259,8 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
 
       INSERT INTO mdm_document_templates (organization_id, document_type, name, terms_text, footer_text)
       VALUES
-        (1, 'PURCHASE_ORDER', 'Default purchase order template', 'Supplier terms are governed by the selected payment terms and incoterms.', 'Generated from InvTrack Master Data & Control Centre.'),
-        (1, 'GRN', 'Default goods receipt template', 'Receipt quantities are subject to warehouse inspection and tolerance policy.', 'Generated from InvTrack Master Data & Control Centre.')
+        (1, 'PURCHASE_ORDER', 'Default purchase order template', 'Supplier terms are governed by the selected payment terms and incoterms.', 'Generated from ISSSourcing Master Data & Control Centre.'),
+        (1, 'GRN', 'Default goods receipt template', 'Receipt quantities are subject to warehouse inspection and tolerance policy.', 'Generated from ISSSourcing Master Data & Control Centre.')
       ON CONFLICT DO NOTHING;
 
       INSERT INTO mdm_approval_rules (organization_id, code, name, entity_type, min_local_value, max_local_value, approver_role, approval_level)

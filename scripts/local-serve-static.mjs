@@ -23,7 +23,7 @@ if (!fs.existsSync("dist/public/index.html")) {
 
 fs.writeFileSync(".local-dev-url", `APP_URL=${url}\nPORT=${port}\nMODE=static\n`, "utf8");
 
-console.log("InvTrack local static server");
+console.log("ISSSourcing local static server");
 console.log(`URL: ${url}`);
 console.log("Mode: development runtime + built static client (avoids Vite dependency scan on Windows/OneDrive)");
 

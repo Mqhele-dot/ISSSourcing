@@ -49,7 +49,7 @@ export default function DevTestPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6" data-testid="dev-test-page">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">InvTrack — external tester landing</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">ISSSourcing — external tester landing</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Development-only page. Use the public Codespaces URL or local dev server. No secrets are shown here.
         </p>

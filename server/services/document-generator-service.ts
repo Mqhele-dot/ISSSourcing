@@ -36,7 +36,7 @@ import {
 import { format } from 'date-fns';
 import { REPORTING_CURRENCY_FALLBACK_CODE } from "../lib/org-reporting-money";
 
-// ——— Shared PDF layout (matches app style: InvTrack, accent blue, clean table) ———
+// ——— Shared PDF layout (matches app style: ISSSourcing, accent blue, clean table) ———
 const PDF_LAYOUT = {
   pageWidth: 612,
   pageHeight: 792,
@@ -59,7 +59,7 @@ const PDF_LAYOUT = {
   border: rgb(0.85, 0.87, 0.9),
 } as const;
 
-const APP_NAME = 'InvTrack';
+const APP_NAME = 'ISSSourcing';
 
 /** Set for the duration of `generateDocument` so all PDF footers can show org legal line without threading through every helper. */
 let activePdfOrganizationFooter: string | undefined;
@@ -157,8 +157,8 @@ function formatPdfMoney(n: number): string {
 
 function applyPdfMetadata(pdfDoc: PDFDocument, title: string): void {
   const safe = sanitizePdfText(title).slice(0, 240);
-  pdfDoc.setTitle(safe || "InvTrack report");
-  pdfDoc.setSubject(safe || "InvTrack export");
+  pdfDoc.setTitle(safe || "ISSSourcing report");
+  pdfDoc.setSubject(safe || "ISSSourcing export");
   pdfDoc.setCreator(APP_NAME);
   pdfDoc.setProducer(`${APP_NAME} document service`);
   const now = new Date();
@@ -849,7 +849,7 @@ function drawLabelValueColumn(
 export type InventoryItemForPdf = InventoryItem & { categoryName?: string };
 
 /**
- * Generate a PDF document from inventory data (shared InvTrack layout, clean data).
+ * Generate a PDF document from inventory data (shared ISSSourcing layout, clean data).
  * @param template 'standard' (default) or 'compact' for tighter layout
  */
 export async function generateInventoryPdf(
@@ -1146,7 +1146,7 @@ function drawPdfExtraMetadataLines(page: PDFPage, font: PDFFont, lines: string[]
 }
 
 /**
- * Generic PDF generator for any data array (shared InvTrack layout, clean data)
+ * Generic PDF generator for any data array (shared ISSSourcing layout, clean data)
  */
 export async function generateGenericPdf(
   data: any[],
@@ -1758,7 +1758,7 @@ export async function generateSupplierProfilePdf(
     PDF_LAYOUT.margin,
     y,
     "Summary",
-    "File versions and retention are tracked in ISS Sourcing (Supplier → Documents). This PDF summarizes master-data fields only.",
+    "File versions and retention are tracked in ISSSourcing (Supplier → Documents). This PDF summarizes master-data fields only.",
     w,
   );
 
@@ -2164,7 +2164,7 @@ export async function generateGenericDocx(
             children: [
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
-                children: [new TextRun({ text: "InvTrack", bold: true })],
+                children: [new TextRun({ text: "ISSSourcing", bold: true })],
               }),
             ],
           }),

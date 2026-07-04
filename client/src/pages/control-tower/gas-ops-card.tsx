@@ -10,12 +10,29 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { PanelInlineError } from "@/components/panel-inline-error";
 
 type GasQueryResult =
   | { status: "disabled" }
   | { status: "ok"; summary: GasDashboardSummary }
   | { status: "error"; message: string };
+
+const GAS_SUMMARY_TIMEOUT_MS = 4_000;
+
+function withGasTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error("Gas operations summary timed out.")), GAS_SUMMARY_TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
 
 /**
  * Shown when org has `gas` feature enabled; hidden when FEATURE_DISABLED.
@@ -30,7 +47,7 @@ export function GasOpsCard() {
     queryKey: ["/api/gas/dashboard-summary"],
     queryFn: async (): Promise<GasQueryResult> => {
       try {
-        const { data } = await fetchGasDashboardSummaryEnvelope();
+        const { data } = await withGasTimeout(fetchGasDashboardSummaryEnvelope());
         return { status: "ok", summary: data };
       } catch (e) {
         if (e instanceof ApiError && e.code === "FEATURE_DISABLED") {
@@ -82,11 +99,18 @@ export function GasOpsCard() {
 
   if (gasState.data?.status === "error") {
     return (
-      <PanelInlineError
-        title="Gas operations unavailable"
-        description={gasState.data.message}
-        onRetry={() => void gasState.refetch()}
-      />
+      <Card className="border-dashed" data-testid="gas-ops-unavailable">
+        <CardHeader className="flex flex-row items-center gap-2 pb-2">
+          <Flame className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-medium">Gas operations unavailable</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>{gasState.data.message || "The gas extension did not respond. Core control tower data remains available."}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void gasState.refetch()}>
+            Retry gas summary
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 

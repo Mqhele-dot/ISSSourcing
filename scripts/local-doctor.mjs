@@ -33,7 +33,7 @@ function tcpProbe(host, p, timeoutMs = 750) {
   });
 }
 
-console.log("InvTrack local doctor\n");
+console.log("ISSSourcing local doctor\n");
 let ok = true;
 ok = run("node", "node", ["--version"]) && ok;
 ok = run("npm", npmCmd, ["--version"]) && ok;

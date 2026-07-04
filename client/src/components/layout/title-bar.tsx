@@ -10,7 +10,7 @@ export function TitleBar() {
 
   return (
     <div className="bg-secondary h-9 flex items-center justify-between px-2 select-none drag">
-      <div className="text-sm font-medium text-foreground/70 px-2">InvTrack - Inventory Management System</div>
+      <div className="text-sm font-medium text-foreground/70 px-2">ISSSourcing - Inventory Management System</div>
       <div className="flex no-drag">
         <button 
           className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-none transition-colors"

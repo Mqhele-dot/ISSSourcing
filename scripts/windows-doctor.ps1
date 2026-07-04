@@ -9,7 +9,7 @@ function Write-Warn($msg) { Write-Host "  [!!] $msg" -ForegroundColor Yellow }
 function Write-Bad($msg) { Write-Host "  [XX] $msg" -ForegroundColor Red }
 
 Write-Host ""
-Write-Host "ISS Sourcing - Windows local doctor" -ForegroundColor Cyan
+Write-Host "ISSSourcing - Windows local doctor" -ForegroundColor Cyan
 Write-Host ""
 
 # Node

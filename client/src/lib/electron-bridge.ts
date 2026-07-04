@@ -13,11 +13,24 @@ export function isElectronEnvironment(): boolean {
 // Alias for backward compatibility
 export const isElectron = isElectronEnvironment;
 
+function shouldLogElectronBridgeDebug(): boolean {
+  return Boolean(
+    (typeof import.meta !== "undefined" && import.meta.env?.VITE_ELECTRON_BRIDGE_DEBUG === "true") ||
+      window.localStorage?.getItem("electronBridgeDebug") === "true",
+  );
+}
+
+function warnElectronBridge(message: string): void {
+  if (shouldLogElectronBridgeDebug()) {
+    console.warn(message);
+  }
+}
+
 // Electron Bridge class for type safety and organization
 export class ElectronBridge {
   constructor() {
     if (!isElectronEnvironment()) {
-      console.warn('Creating ElectronBridge in non-Electron environment');
+      warnElectronBridge("Creating ElectronBridge in non-Electron environment");
     }
   }
 
@@ -30,7 +43,7 @@ export class ElectronBridge {
 
   send(channel: string, ...args: any[]): void {
     if (!isElectronEnvironment()) {
-      console.warn('Not running in Electron environment, message not sent');
+      warnElectronBridge("Not running in Electron environment, message not sent");
       return;
     }
     window.electron!.send(channel, ...args);
@@ -38,7 +51,7 @@ export class ElectronBridge {
 
   on<T = any>(channel: string, callback: (data: T) => void): () => void {
     if (!isElectronEnvironment()) {
-      console.warn('Not running in Electron environment, listener not added');
+      warnElectronBridge("Not running in Electron environment, listener not added");
       return () => {};
     }
     return window.electron!.on(channel, callback);
@@ -162,7 +175,7 @@ export async function callElectronBridge<T = any>(
  */
 export function sendToElectron(channel: string, ...args: any[]): void {
   if (!isElectronEnvironment()) {
-    console.warn('Not running in Electron environment, message not sent');
+    warnElectronBridge("Not running in Electron environment, message not sent");
     return;
   }
 
@@ -180,7 +193,7 @@ export function listenToElectron<T = any>(
   callback: (data: T) => void
 ): () => void {
   if (!isElectronEnvironment()) {
-    console.warn('Not running in Electron environment, listener not added');
+    warnElectronBridge("Not running in Electron environment, listener not added");
     return () => {}; // No-op cleanup function
   }
 

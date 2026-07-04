@@ -8,6 +8,12 @@ import { addDiagnosticEvent } from "@/lib/diagnostics/diagnostics-store";
 
 const ROUTE_LOAD_TIMEOUT_MS = 12_000;
 
+function reloadWithCacheBust(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set("reload", Date.now().toString(36));
+  window.location.replace(url.toString());
+}
+
 export function RouteFallback() {
   return (
     <div className="flex min-h-[40vh] flex-col gap-4 p-4 md:p-6" aria-busy="true" aria-label="Loading page">
@@ -41,16 +47,19 @@ function RouteFallbackWithTimeout() {
         <Alert>
           <AlertTitle>This page is taking longer than expected</AlertTitle>
           <AlertDescription className="mt-2 flex flex-col gap-3 text-sm">
-            <p>
-              The screen did not finish loading. On slow networks or remote dev environments, chunk downloads may stall.
-              Try again, or reload the tab.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={() => window.location.reload()}>
-                <RefreshCw className="h-4 w-4" />
-                Reload
-              </Button>
-            </div>
+              <p>
+                The screen did not finish loading. On slow networks or remote dev environments, chunk downloads may stall.
+                Try again, or reload the tab. If this happened just after a new build, use the cache-busted reload.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={() => window.location.reload()}>
+                  <RefreshCw className="h-4 w-4" />
+                  Reload
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={reloadWithCacheBust}>
+                  Reload fresh assets
+                </Button>
+              </div>
           </AlertDescription>
         </Alert>
       </div>
@@ -109,6 +118,9 @@ class RouteChunkErrorBoundary extends React.Component<
                 </Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => window.location.reload()}>
                   Reload app
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={reloadWithCacheBust}>
+                  Reload fresh assets
                 </Button>
               </div>
             </AlertDescription>

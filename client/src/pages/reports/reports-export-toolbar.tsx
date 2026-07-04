@@ -89,7 +89,7 @@ export function ReportsExportToolbar({
 
       <p className="text-xs leading-snug text-muted-foreground">
         {exportFormat === "pdf"
-          ? "PDFs use the InvTrack layout; custom files add pages before the data."
+          ? "PDFs use the ISSSourcing layout; custom files add pages before the data."
           : exportFormat === "docx"
             ? "Word export uses narrative layout with aligned tables."
             : exportFormat === "csv"

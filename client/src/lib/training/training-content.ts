@@ -885,7 +885,7 @@ export const TRAINING_MODULES: TrainingModule[] = [
     category: "Admin",
     estimatedMinutes: 14,
     beginnerSummary:
-      "Settings configure how InvTrack behaves for your organization: naming, inventory rules, security, integrations, tax, and more.",
+      "Settings configure how ISSSourcing behaves for your organization: naming, inventory rules, security, integrations, tax, and more.",
     workplacePurpose:
       "Aligns software behavior to policy and local regulations. Poor settings cause silent wrong behavior everywhere else.",
     whoUsesIt: "Administrators, IT, finance for tax/billing modules, operations for warehouse defaults.",

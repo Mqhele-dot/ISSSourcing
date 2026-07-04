@@ -355,7 +355,7 @@ export default function SettingsPage() {
 function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
   const { settings, isLoading, error, updateSettings } = useSettings();
   const [form, setForm] = React.useState({
-    companyName: settings.companyName ?? "InvTrack",
+    companyName: settings.companyName ?? "ISSSourcing",
     currencyCode: (settings.currencyCode ?? "ZAR").toUpperCase(),
     lowStockDefaultThreshold: String(settings.lowStockDefaultThreshold ?? 10),
     allowNegativeInventory: Boolean(settings.allowNegativeInventory),
@@ -364,7 +364,7 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
 
   React.useEffect(() => {
     setForm({
-      companyName: settings.companyName ?? "InvTrack",
+      companyName: settings.companyName ?? "ISSSourcing",
       currencyCode: (settings.currencyCode ?? "ZAR").toUpperCase(),
       lowStockDefaultThreshold: String(settings.lowStockDefaultThreshold ?? 10),
       allowNegativeInventory: Boolean(settings.allowNegativeInventory),
@@ -382,7 +382,7 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
     const threshold = Number(form.lowStockDefaultThreshold);
     if (!Number.isFinite(threshold) || threshold < 1) return;
     updateSettings.mutate({
-      companyName: form.companyName.trim() || "InvTrack",
+      companyName: form.companyName.trim() || "ISSSourcing",
       currencyCode: form.currencyCode.trim().toUpperCase(),
       lowStockDefaultThreshold: Math.trunc(threshold),
       allowNegativeInventory: form.allowNegativeInventory,

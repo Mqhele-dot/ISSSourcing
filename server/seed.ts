@@ -279,7 +279,7 @@ async function ensureSettings(): Promise<void> {
   }
 
   const defaultSettings: InsertAppSettings = {
-    companyName: "InvTrack Demo",
+    companyName: "ISSSourcing Demo",
     primaryColor: "#4f46e5",
     dateFormat: "YYYY-MM-DD",
     timeFormat: "HH:mm",

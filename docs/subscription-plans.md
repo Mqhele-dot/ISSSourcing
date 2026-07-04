@@ -1,6 +1,6 @@
 # Subscription Plans
 
-Wave 4A formalizes InvTrack SaaS plan management. This page is for the InvTrack subscription itself, not supplier/AP billing.
+Wave 4A formalizes ISSSourcing SaaS plan management. This page is for the ISSSourcing subscription itself, not supplier/AP billing.
 
 ## Source Of Truth
 

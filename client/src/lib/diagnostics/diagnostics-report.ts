@@ -16,7 +16,7 @@ export type DiagnosticsReportContext = {
 };
 
 export type DiagnosticsReportJson = {
-  title: "InvTrack Diagnostics Report";
+  title: "ISSSourcing Diagnostics Report";
   generatedAt: string;
   currentRoute: string;
   userAgent: string;
@@ -80,7 +80,7 @@ export function buildDiagnosticsReportJson(context: DiagnosticsReportContext = {
   const slowRequests = events.filter((event) => event.durationMs != null && event.durationMs >= 3_000).length;
 
   return {
-    title: "InvTrack Diagnostics Report",
+    title: "ISSSourcing Diagnostics Report",
     generatedAt: snapshot.generatedAt,
     currentRoute: snapshot.currentRoute,
     userAgent: snapshot.userAgent,
@@ -139,7 +139,7 @@ function scanMarkdown(scan: DiagnosticsScanResult | null | undefined): string {
 
 export function buildDiagnosticsReportMarkdown(context: DiagnosticsReportContext = {}): string {
   const report = buildDiagnosticsReportJson(context);
-  return `# InvTrack Diagnostics Report
+  return `# ISSSourcing Diagnostics Report
 
 ## Summary
 - Generated: ${report.generatedAt}

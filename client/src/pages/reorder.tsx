@@ -143,9 +143,13 @@ export default function ReorderRequestsPage() {
       setConversionDialogOpen(false);
     },
     onError: (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      const isMissingItem = message.includes("REORDER_ITEM_MISSING");
       toast({
-        title: "Convert to requisition failed",
-        description: formatMutationError("Convert reorder request to requisition", "POST", "/api/reorder-requests/.../convert", error),
+        title: isMissingItem ? "Linked inventory item is missing" : "Convert to requisition failed",
+        description: isMissingItem
+          ? "This reorder request points to an inventory item that no longer exists. Open Inventory, restore or recreate the item, then recreate the reorder request."
+          : formatMutationError("Convert reorder request to requisition", "POST", "/api/reorder-requests/.../convert", error),
         variant: "destructive",
       });
     }
@@ -583,6 +587,17 @@ export default function ReorderRequestsPage() {
                 <AlertTitle>This action cannot be undone</AlertTitle>
                 <AlertDescription>
                   Converting this request will generate a purchase requisition for the specified item and quantity.
+                </AlertDescription>
+              </Alert>
+              <Alert className="mb-4 border-amber-200 bg-amber-50 text-amber-950">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Linked inventory item required</AlertTitle>
+                <AlertDescription>
+                  This conversion uses inventory item #{selectedRequest.itemId}. If that item was deleted or not migrated,
+                  restore it before converting.{" "}
+                  <a className="font-medium underline" href={`/inventory/${selectedRequest.itemId}`}>
+                    Open item
+                  </a>
                 </AlertDescription>
               </Alert>
               

@@ -202,6 +202,23 @@ export function registerReorderRequestRoutes(app: Express, auth: Auth): void {
       if (existing.convertedToRequisition) {
         return res.status(400).json({ message: "This reorder request was already converted to a requisition." });
       }
+      const linkedItem = await storage.getInventoryItem(existing.itemId);
+      if (!linkedItem) {
+        return res.status(409).json({
+          ok: false,
+          error: {
+            code: "REORDER_ITEM_MISSING",
+            message: "This reorder request cannot be converted because its linked inventory item is missing.",
+            hint: "Open Inventory, restore or recreate the missing item, then update or recreate this reorder request.",
+            details: {
+              reorderRequestId: existing.id,
+              requestNumber: existing.requestNumber,
+              itemId: existing.itemId,
+              sku: null,
+            },
+          },
+        });
+      }
 
       const requisition = await storage.convertReorderRequestToRequisition(id);
 

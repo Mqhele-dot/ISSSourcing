@@ -19,7 +19,7 @@ export function attachStartupBannerListener(server: Server, opts: StartupListenO
     const isDev = appEnv.isDevelopment;
     const bannerLine = "=".repeat(76);
     console.log(`\n${bannerLine}`);
-    console.log("  ISS Sourcing — web app (API + static/Vite)");
+    console.log("  ISSSourcing — web app (API + static/Vite)");
     console.log(`  Browser URL:  ${localUrl}`);
     console.log(`  Port:         ${port}   (set PORT in .env to change; default 5000)`);
     console.log(`  Health check: ${localUrl}/api/ready`);

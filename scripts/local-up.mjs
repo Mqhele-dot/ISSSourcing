@@ -89,7 +89,7 @@ const url = `http://127.0.0.1:${port}`;
 
 fs.writeFileSync(".local-dev-url", `APP_URL=${url}\nPORT=${port}\n`, "utf8");
 
-console.log("InvTrack local app runner");
+console.log("ISSSourcing local app runner");
 console.log(`URL: ${url}`);
 console.log(`Env: ${createdEnv ? "created .env" : "using existing .env"}; dev test login enabled`);
 console.log(`DB: ${runtimeEnv.DATABASE_URL.replace(/:\/\/([^:]+):([^@]+)@/, "://$1:***@")}`);

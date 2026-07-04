@@ -75,7 +75,7 @@ function run(command, args, options = {}) {
   });
 }
 
-async function waitForReady(timeoutMs = Number(process.env.LOCAL_TEST_READY_TIMEOUT_MS || 60_000)) {
+async function waitForReady(timeoutMs = Number(process.env.LOCAL_TEST_READY_TIMEOUT_MS || 120_000)) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     try {

@@ -149,7 +149,7 @@ export default function SubscriptionPage() {
             <h1 className="text-3xl font-bold">Subscription</h1>
           </div>
           <p className="text-muted-foreground">
-            SaaS plan, usage, and entitlement controls for InvTrack. Supplier billing and AP stay under Finance.
+            SaaS plan, usage, and entitlement controls for ISSSourcing. Supplier billing and AP stay under Finance.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -186,7 +186,7 @@ export default function SubscriptionPage() {
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>Separate from AP billing</AlertTitle>
         <AlertDescription>
-          This page manages the InvTrack SaaS subscription. Supplier invoices, AP matching, and payments remain in{" "}
+          This page manages the ISSSourcing SaaS subscription. Supplier invoices, AP matching, and payments remain in{" "}
           <Link className="font-medium underline" href={APP_ROUTES.finance.accountsPayable}>
             Accounts payable
           </Link>

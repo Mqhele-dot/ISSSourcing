@@ -174,7 +174,7 @@ export function FirstRunOnboardingCoach() {
           <aside className="border-b bg-muted/40 p-5 md:border-b-0 md:border-r">
             <div className="space-y-2">
               <Badge variant="secondary">First setup guide</Badge>
-              <h2 className="text-xl font-semibold leading-tight">Get InvTrack ready</h2>
+              <h2 className="text-xl font-semibold leading-tight">Get ISSSourcing ready</h2>
               <p className="text-sm text-muted-foreground">
                 Follow this path to connect setup, suppliers, buying, inventory, logistics, AP, and reporting.
               </p>

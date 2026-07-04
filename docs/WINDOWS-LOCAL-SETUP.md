@@ -1,4 +1,4 @@
-# Run ISS Sourcing locally on Windows
+# Run ISSSourcing locally on Windows
 
 Use this guide when developing **on your PC** (not GitHub Codespaces). Codespaces docs remain in [`CODESPACES.md`](../CODESPACES.md).
 

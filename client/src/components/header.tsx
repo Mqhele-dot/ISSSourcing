@@ -33,7 +33,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <h1 className="ml-2 text-xl font-semibold text-primary dark:text-white md:hidden">InvTrack</h1>
+          <h1 className="ml-2 text-xl font-semibold text-primary dark:text-white md:hidden">ISSSourcing</h1>
         </div>
         
         <div className="flex-1 flex justify-center px-2 md:ml-6 md:justify-end">

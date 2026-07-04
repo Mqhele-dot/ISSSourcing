@@ -28,11 +28,13 @@ import {
 } from "./services/two-factor-service";
 import { sendError, sendOk } from "./api-response";
 import { organizationContextMiddleware } from "./middleware/organization-context";
+import { getActiveOrganizationId } from "./organization-context";
+import { db } from "./db";
 import { appEnv } from "./config/env";
 import { logger } from "./lib/logger";
-import { ensurePlanLimitAllowsCreate } from "./plan-limit-service";
+import { countOrganizationUsers, ensurePlanLimitAllowsCreate } from "./plan-limit-service";
 
-import type { User as SchemaUser } from "@shared/schema";
+import { organizationMembers, type User as SchemaUser } from "@shared/schema";
 declare global {
   namespace Express {
     interface User extends Omit<SchemaUser, 'password'> {}
@@ -478,8 +480,9 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: passwordPolicyError });
       }
 
-      const existingUsers = await storage.getAllUsers();
-      if (!(await ensurePlanLimitAllowsCreate(res, "users", existingUsers.length))) return;
+      const organizationId = getActiveOrganizationId();
+      const organizationUserCount = await countOrganizationUsers(organizationId);
+      if (!(await ensurePlanLimitAllowsCreate(res, "users", organizationUserCount))) return;
 
       // Create new user with hashed password
       const hashedPassword = await hashPassword(req.body.password);
@@ -490,6 +493,7 @@ export function setupAuth(app: Express) {
       const autoVerifyEmail = appEnv.allowUnverifiedEmailLogin;
       const userData = {
         ...userDataWithoutConfirm,
+        defaultOrganizationId: userDataWithoutConfirm.defaultOrganizationId ?? organizationId,
         password: hashedPassword,
         lastPasswordChange: new Date(),
         emailVerified: autoVerifyEmail,
@@ -511,6 +515,14 @@ export function setupAuth(app: Express) {
 
       // Create the user
       const newUser = await storage.createUser(userData);
+      await db
+        .insert(organizationMembers)
+        .values({
+          organizationId,
+          userId: newUser.id,
+          role: userData.role === "admin" ? "admin" : "member",
+        })
+        .onConflictDoNothing();
       
       // Create verification token
       const verificationToken = await storage.createVerificationToken(newUser.id, 'email', 24 * 60); // 24 hours expiry

@@ -19,25 +19,25 @@ const downloadInfo: Record<Platform, {
 }> = {
   windows: {
     displayName: 'Windows',
-    fileName: 'InvTrack-Setup-1.0.0.exe',
+    fileName: 'ISSSourcing-Setup-1.0.0.exe',
     icon: <svg className="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 14H10v7l-7-4V7l7-4v7H6.5C5.5 10 5 9.5 5 9s.5-1 1.5-1H10V1l-7 4v10l7 4v-7H6.5c-1 0-1.5-.5-1.5-1s.5-1 1.5-1Z"/><polyline points="15 1 22 1 22 8"/><polyline points="22 16 22 23 15 23"/><path d="M22 8v8H15"/><path d="M15 16V8h7"/></svg>,
-    downloadUrl: 'https://github.com/yourusername/invtrack/releases/download/v1.0.0/InvTrack-Setup-1.0.0.exe',
+    downloadUrl: 'https://github.com/yourusername/isssourcing/releases/download/v1.0.0/ISSSourcing-Setup-1.0.0.exe',
     fileSize: '75.4 MB',
     architectures: ['x64', 'arm64']
   },
   mac: {
     displayName: 'macOS',
-    fileName: 'InvTrack-1.0.0.dmg',
+    fileName: 'ISSSourcing-1.0.0.dmg',
     icon: <svg className="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 10a6 6 0 0 1 6 -6"/><path d="M12 19c2 0 3 -1 3 -3"/><path d="M9 19c-2 0 -3 -1 -3 -3"/><path d="M9 19c0 1 0 2 2 3c2 -1 2 -2 2 -3"/><path d="M3 3l18 18"/><path d="M12 6a6 6 0 0 0 -6 6c0 3.5 2.5 6 6 6a6 6 0 0 0 6 -6c0 -3.5 -2.5 -6 -6 -6"/></svg>,
-    downloadUrl: 'https://github.com/yourusername/invtrack/releases/download/v1.0.0/InvTrack-1.0.0.dmg',
+    downloadUrl: 'https://github.com/yourusername/isssourcing/releases/download/v1.0.0/ISSSourcing-1.0.0.dmg',
     fileSize: '78.2 MB',
     architectures: ['x64', 'arm64 (M1/M2)']
   },
   linux: {
     displayName: 'Linux',
-    fileName: 'InvTrack-1.0.0.AppImage',
+    fileName: 'ISSSourcing-1.0.0.AppImage',
     icon: <svg className="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 14c3 0 3 2 3 2v2c0 1.5 1.5 1.5 1.5 1.5h3.5v-10l-5-5h-6l-4 4v10h3.5c1.5 0 1.5-1.5 1.5-1.5v-2s0-2 3-2Z"/><path d="M9 4v4a2 2 0 0 1-2 2h-2"/><path d="M14 4v4a2 2 0 0 0 2 2h2"/></svg>,
-    downloadUrl: 'https://github.com/yourusername/invtrack/releases/download/v1.0.0/InvTrack-1.0.0.AppImage',
+    downloadUrl: 'https://github.com/yourusername/isssourcing/releases/download/v1.0.0/ISSSourcing-1.0.0.AppImage',
     fileSize: '72.1 MB',
     architectures: ['x64', 'arm64']
   }
@@ -122,7 +122,7 @@ export default function DownloadPage() {
   return (
     <div className="container px-4 py-6 mx-auto max-w-7xl">
       <div className="flex flex-col items-center text-center mb-12">
-        <h1 className="text-4xl font-bold mb-4">Download InvTrack Desktop</h1>
+        <h1 className="text-4xl font-bold mb-4">Download ISSSourcing Desktop</h1>
         <p className="text-lg text-muted-foreground max-w-2xl">
           Get the desktop version for enhanced performance, offline capabilities, and seamless integration with your operating system.
         </p>
@@ -138,7 +138,7 @@ export default function DownloadPage() {
               <div className="text-center md:text-left">
                 <h2 className="text-xl font-semibold mb-2">You're Already Using the Desktop App!</h2>
                 <p className="text-muted-foreground">
-                  You're currently using the desktop version of InvTrack with all its benefits and features.
+                  You're currently using the desktop version of ISSSourcing with all its benefits and features.
                 </p>
               </div>
               <div className="ml-auto hidden md:block">
@@ -238,7 +238,7 @@ export default function DownloadPage() {
                 <ol className="text-sm space-y-2 list-decimal pl-4">
                   <li>Download the installer for your platform</li>
                   <li>Run the installer and follow the on-screen instructions</li>
-                  <li>Launch InvTrack and sign in with your existing account</li>
+                  <li>Launch ISSSourcing and sign in with your existing account</li>
                   <li>Your data will automatically sync from the cloud</li>
                 </ol>
               </div>

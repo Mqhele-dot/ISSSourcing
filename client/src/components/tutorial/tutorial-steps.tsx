@@ -21,7 +21,7 @@ export function TutorialSteps() {
     registerTutorial("main", [
       {
         id: "welcome",
-        title: "Welcome to InvTrack",
+        title: "Welcome to ISSSourcing",
         text: "What you are seeing: a short orientation to the shells you will use for inventory, buying, and payables.\n\nWhy it matters: supply-chain work spans many screens; knowing the layout speeds up handoffs between warehouse, procurement, and finance.\n\nRisk if skipped: new teammates hunt for the right tab, duplicate work, or miss approvals because they do not know where decisions are recorded.",
       },
       {
@@ -247,7 +247,7 @@ export function TutorialSteps() {
       {
         id: "billing-settings",
         title: "Billing Settings",
-        text: "What you are seeing: subscription or SaaS billing controls where applicable.\n\nWhy it matters: service continuity for the team using InvTrack.\n\nRisk if skipped: abrupt lockout interrupts receiving or paying during close."
+        text: "What you are seeing: subscription or SaaS billing controls where applicable.\n\nWhy it matters: service continuity for the team using ISSSourcing.\n\nRisk if skipped: abrupt lockout interrupts receiving or paying during close."
       }
     ]);
     
@@ -372,7 +372,7 @@ export function TutorialSteps() {
       {
         id: "billing-intro",
         title: "Billing Management",
-        text: "What you are seeing: subscription or tenant billing for the InvTrack product itself (not supplier invoices).\n\nWhy it matters: keeps the platform available for your team.\n\nRisk if skipped: accidental suspension during month-end close."
+        text: "What you are seeing: subscription or tenant billing for the ISSSourcing product itself (not supplier invoices).\n\nWhy it matters: keeps the platform available for your team.\n\nRisk if skipped: accidental suspension during month-end close."
       },
       {
         id: "subscription-details",
@@ -440,7 +440,7 @@ export function TutorialSteps() {
       {
         id: "database-intro",
         title: "Database Management",
-        text: "What you are seeing: how InvTrack connects to PostgreSQL for durable storage.\n\nWhy it matters: transactions, audit, and reporting all assume a healthy DB.\n\nRisk if skipped: silent data loss or corrupt backups that surface only during recovery."
+        text: "What you are seeing: how ISSSourcing connects to PostgreSQL for durable storage.\n\nWhy it matters: transactions, audit, and reporting all assume a healthy DB.\n\nRisk if skipped: silent data loss or corrupt backups that surface only during recovery."
       },
       {
         id: "connection-string",

@@ -226,7 +226,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
                   collapsed && "md:sr-only",
                 )}
               >
-                InvTrack
+                ISSSourcing
               </h1>
             </div>
             <div className="flex shrink-0 items-center gap-0.5">

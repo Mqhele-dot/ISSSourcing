@@ -337,10 +337,26 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
 
         const removed = await storage.removeCustomRolePermission(roleId, permissionId);
         if (!removed) {
-          return res.status(404).json({ message: "Permission not found or already removed" });
+          return res.status(200).json({
+            ok: true,
+            data: {
+              roleId,
+              permissionId,
+              removed: false,
+              alreadyRemoved: true,
+            },
+          });
         }
 
-        res.status(204).end();
+        res.status(200).json({
+          ok: true,
+          data: {
+            roleId,
+            permissionId,
+            removed: true,
+            alreadyRemoved: false,
+          },
+        });
       } catch (error) {
         console.error("Error removing permission from custom role:", error);
         res.status(500).json({ message: "Error removing permission from custom role" });

@@ -3,7 +3,7 @@ import { db } from "../db";
 import { storage } from "../storage";
 import { getActiveOrganizationId } from "../organization-context";
 import { notifications, users } from "@shared/schema";
-import { sendEmail, buildInvTrackNotificationEmailHtml } from "./email-service";
+import { sendEmail, buildISSSourcingNotificationEmailHtml } from "./email-service";
 import { maybeSendSms } from "./sms-service";
 
 export type EmitNotificationPayload = {
@@ -39,7 +39,7 @@ export async function emitNotification(payload: EmitNotificationPayload): Promis
         await sendEmail({
           to,
           subject: payload.title,
-          html: buildInvTrackNotificationEmailHtml(payload.title, textBody),
+          html: buildISSSourcingNotificationEmailHtml(payload.title, textBody),
           text: textBody,
         });
       }

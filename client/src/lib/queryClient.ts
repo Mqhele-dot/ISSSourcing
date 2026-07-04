@@ -102,12 +102,12 @@ function reportRequestError(params: {
   const apiCode = extractApiErrorCode(params.payload);
   const businessRuleMutationWarning =
     isMutationMethod(method) &&
-    params.status === 403 &&
-    apiCode === "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED";
+    ((params.status === 403 && apiCode === "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED") ||
+      (params.status === 409 && apiCode === "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED"));
   addDiagnosticEvent({
     severity:
       businessRuleMutationWarning
-        ? "warning"
+        ? "info"
         : params.status == null || params.status >= 500 || isMutationMethod(method)
           ? "error"
           : suppressed

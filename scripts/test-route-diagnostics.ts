@@ -42,6 +42,7 @@ expectIncludes("requisition list expects requisitions page", "/procurement/requi
 expectIncludes("supplier portal expects supplier portal page", "/supplier-portal", `[data-testid="supplier-portal-page"]`);
 expectIncludes("procurement orders expects purchase orders page", "/procurement/orders", `[data-testid="purchase-orders-page"]`);
 expectIncludes("procurement order detail expects PO detail page", "/procurement/orders/PO-TEST", `[data-testid="po-detail-page"]`);
+expectIncludes("procurement contracts expects contracts page", "/procurement/contracts", `[data-testid="contracts-page"]`);
 expectIncludes("warehouse operations has route marker", "/warehouse-operations", `[data-testid="warehouse-operations-page"]`);
 expectIncludes("mobile home has route marker", "/m/home", `[data-testid="mobile-hub-home-page"]`);
 expectIncludes("mobile tasks has route marker", "/m/tasks", `[data-testid="mobile-hub-tasks-page"]`);

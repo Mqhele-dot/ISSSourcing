@@ -61,7 +61,7 @@ export function registerDevTestRoutes(app: Express): void {
     const orgId = typeof orgRaw === "number" && Number.isFinite(orgRaw) ? orgRaw : null;
     res.json({
       ok: true,
-      app: "InvTrack",
+      app: "ISSSourcing",
       environment: environmentLabel(),
       authenticated: req.isAuthenticated(),
       userEmail: u?.email ?? null,

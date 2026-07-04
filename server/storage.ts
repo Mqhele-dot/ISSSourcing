@@ -4365,7 +4365,7 @@ export class MemStorage implements IStorage {
       const newSettings: AppSettings = {
         id,
         organizationId: MEM_DEFAULT_ORG_ID,
-        companyName: settings.companyName || "InvTrack",
+        companyName: settings.companyName || "ISSSourcing",
         companyLogo: settings.companyLogo || null,
         primaryColor: settings.primaryColor || "#0F172A",
         dateFormat: settings.dateFormat || "YYYY-MM-DD",

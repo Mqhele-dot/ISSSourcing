@@ -38,7 +38,7 @@ export default function GetEducatedPage() {
     <div className="mx-auto max-w-5xl space-y-6" data-testid="get-educated-page">
       <PageHeader
         title="Get Educated"
-        subtitle="Short lessons for InvTrack—written for newcomers, junior staff, and anyone new to procurement and supply chain."
+        subtitle="Short lessons for ISSSourcing—written for newcomers, junior staff, and anyone new to procurement and supply chain."
         breadcrumb={<span>Learning / Overview</span>}
       />
 

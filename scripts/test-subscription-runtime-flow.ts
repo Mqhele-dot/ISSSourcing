@@ -97,6 +97,12 @@ async function restoreOrgSettings(snapshot: Record<string, unknown> | null) {
 async function cleanupTestRows() {
   await pool.query("DELETE FROM inventory_items WHERE organization_id = $1 AND sku LIKE $2", [ORG_ID, `${TEST_PREFIX}%`]);
   await pool.query("DELETE FROM warehouses WHERE organization_id = $1 AND name LIKE $2", [ORG_ID, `${TEST_PREFIX}%`]);
+  await pool.query(
+    `DELETE FROM organization_members
+     WHERE organization_id = $1
+       AND user_id IN (SELECT id FROM users WHERE username LIKE $2)`,
+    [ORG_ID, `${TEST_PREFIX}%`],
+  );
   await pool.query("DELETE FROM users WHERE username LIKE $1", [`${TEST_PREFIX}%`]);
 }
 
@@ -137,11 +143,23 @@ async function setSubscriptionState(fields: {
 }
 
 async function countRows(table: "users" | "warehouses" | "inventory_items") {
-  const column = table === "users" ? "id IS NOT NULL" : "organization_id = $1";
   const result =
     table === "users"
-      ? await pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM users`)
-      : await pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ${table} WHERE ${column}`, [ORG_ID]);
+      ? await pool.query<{ count: string }>(
+          `
+            SELECT COUNT(DISTINCT u.id)::text AS count
+            FROM users u
+            LEFT JOIN organization_members om
+              ON om.user_id = u.id
+             AND om.organization_id = $1
+            WHERE om.id IS NOT NULL
+               OR u.default_organization_id = $1
+          `,
+          [ORG_ID],
+        )
+      : await pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ${table} WHERE organization_id = $1`, [
+          ORG_ID,
+        ]);
   return Number(result.rows[0]?.count ?? 0);
 }
 

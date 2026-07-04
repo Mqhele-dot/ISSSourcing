@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { pool } from "./db";
 import { getOrgPlanLimits } from "./org-feature-registry";
 import { getOrgSubscriptionForActiveOrg } from "./org-features";
 import { sendError } from "./api-response";
@@ -11,6 +12,22 @@ const PLAN_LIMIT_LABELS: Record<PlanLimitKey, string> = {
   warehouses: "warehouses",
   skus: "SKUs",
 };
+
+export async function countOrganizationUsers(organizationId: number): Promise<number> {
+  const result = await pool.query<{ count: string }>(
+    `
+      SELECT COUNT(DISTINCT u.id)::text AS count
+      FROM users u
+      LEFT JOIN organization_members om
+        ON om.user_id = u.id
+       AND om.organization_id = $1
+      WHERE om.id IS NOT NULL
+         OR u.default_organization_id = $1
+    `,
+    [organizationId],
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}
 
 export async function ensurePlanLimitAllowsCreate(
   res: Response,
