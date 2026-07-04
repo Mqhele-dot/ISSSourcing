@@ -6,7 +6,7 @@ import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 export default function MobileHubMorePage() {
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4" data-testid="mobile-hub-more-page">
       <PageHeader
         title="More"
         description="Settings and full desktop app. Master Data needs a wide screen (about 1024px+). Use Open desktop home below."

@@ -29,7 +29,7 @@ export default function MobileHubHomePage() {
   }, []);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4" data-testid="mobile-hub-home-page">
       <PageHeader title="Tasks" description="Quick access to warehouse and approval flows" />
       <div className="grid grid-cols-2 gap-3">
         {tiles.map(({ href, title, desc, icon: Icon }) => (

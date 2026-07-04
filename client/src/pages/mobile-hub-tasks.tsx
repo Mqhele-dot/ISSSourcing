@@ -6,7 +6,7 @@ import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 export default function MobileHubTasksPage() {
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4" data-testid="mobile-hub-tasks-page">
       <PageHeader title="Task list" description="Operational shortcuts" />
       <div className="flex flex-col gap-2">
         <Button asChild variant="outline" className="h-auto justify-start gap-3 py-4">
