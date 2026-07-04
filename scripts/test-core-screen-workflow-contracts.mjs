@@ -36,6 +36,14 @@ assertIncludes(mobileTasks, "requestJson<ApprovalQueueResponse>(\"GET\", \"/api/
 assertIncludes(mobileTasks, "data-testid={`mobile-task-card-${key}`}", "/m/tasks");
 assertIncludes(mobileTasks, "mobile-tasks-partial-error", "/m/tasks");
 
+const mobileApprovals = read("client/src/pages/mobile-approvals.tsx");
+assertIncludes(mobileApprovals, "requestJson<unknown>(\"GET\", \"/api/purchase-requisitions\")", "/m/approvals");
+assertIncludes(mobileApprovals, "fetchPurchaseOrdersEnvelope({ status: \"open\" })", "/m/approvals");
+assertIncludes(mobileApprovals, "requestJson<ApprovalQueueResponse>(\"GET\", \"/api/ap/approval-queue\")", "/m/approvals");
+assertIncludes(mobileApprovals, "requestJson<unknown>(\"GET\", \"/api/approval-policies\")", "/m/approvals");
+assertIncludes(mobileApprovals, "data-testid={`mobile-approval-card-${key}`}", "/m/approvals");
+assertIncludes(mobileApprovals, "mobile-approvals-partial-error", "/m/approvals");
+
 const inventory = read("client/src/pages/inventory.tsx");
 assertIncludes(inventory, "fetchInventory", "/inventory");
 assertIncludes(inventory, "requestJson<Array<{ id: number; name: string }>>(\"GET\", \"/api/warehouses\")", "/inventory");
