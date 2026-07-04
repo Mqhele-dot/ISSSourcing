@@ -1,6 +1,6 @@
 # Production Approval Evidence
 
-Generated for Wave 3D and extended by Wave 4A on `cursor/project-codespace-compatibility-b14c`.
+Generated for Wave 3D and extended by Waves 4A-4B on `cursor/project-codespace-compatibility-b14c`.
 
 ## Decision
 
@@ -45,6 +45,9 @@ The pages are also visibly labelled in-app as non-production v1 routes so produc
 | GitHub Playwright release gate | `.github/workflows/playwright-release-gate.yml` | Yes when local Chromium launch is blocked |
 | Final audit pass | `npm run audit:production` | Yes |
 | Subscription foundation tests | `npm run test:subscription-plans && npm run test:subscription-entitlements && npm run test:subscription-ui-contracts` | Yes after Wave 4A |
+| Subscription runtime proof | `npm run test:subscription-runtime-flow` | Yes after Wave 4B |
+| Stripe readiness proof | `npm run test:stripe-billing-readiness` | Yes after Wave 4B |
+| Subscription browser proof | `npm run test:e2e:subscription` | Yes in browser E2E gate |
 
 ## Workflow Proof Summary
 
@@ -98,7 +101,7 @@ Primary evidence command:
 
 ## Subscription And SaaS Billing Proof Summary
 
-Wave 4A adds a production-safe SaaS subscription foundation without changing the AP/customer billing workspace.
+Waves 4A-4B add a production-safe SaaS subscription foundation and runtime proof without changing the AP/customer billing workspace.
 
 Implemented evidence:
 
@@ -106,8 +109,10 @@ Implemented evidence:
 - Organization subscription lifecycle fields persisted in `organization_settings`.
 - `/api/subscription/plans`, `/current`, `/usage`, `/change-plan`, `/start-trial`, `/cancel`, `/resume`, and `/billing-portal`.
 - Dedicated SaaS page at `/admin/subscription`.
+- Permission-aware management controls requiring `settings:configure`.
 - Backend plan-limit and feature-entitlement errors: `PLAN_LIMIT_REACHED`, `FEATURE_NOT_INCLUDED`, `TRIAL_EXPIRED`, and `SUBSCRIPTION_INACTIVE`.
 - Production guard that prevents local lifecycle endpoints from faking successful hosted billing actions.
+- Stripe readiness guard for missing provider config, missing price IDs, production local-adapter boundaries, invalid webhook signatures, and missing webhook event IDs.
 
 Primary evidence commands:
 
@@ -115,11 +120,24 @@ Primary evidence commands:
 - `npm run test:subscription-plans`
 - `npm run test:subscription-entitlements`
 - `npm run test:subscription-ui-contracts`
+- `npm run test:subscription-runtime-flow`
+- `npm run test:stripe-billing-readiness`
+- `npm run test:e2e:subscription`
 
 Remaining provider setup:
 
 - Stripe price IDs, portal/customer records, and webhook secrets must be configured in the deployment environment before hosted checkout/portal actions become live.
 - Pricing labels remain configurable placeholders until commercial pricing is approved.
+
+Required hosted billing environment:
+
+- `STRIPE_SECRET_KEY`
+- `VITE_STRIPE_PUBLIC_KEY` or `STRIPE_PUBLIC_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_STARTER`
+- `STRIPE_PRICE_STANDARD`
+- `STRIPE_PRICE_GROWTH`
+- `STRIPE_PRICE_ENTERPRISE`
 
 ## Browser E2E Evidence
 
@@ -135,6 +153,8 @@ The workflow runs:
 - `npm run build`
 - `npx playwright install --with-deps chromium`
 - `npm run verify:release:e2e`
+
+`verify:release:e2e` includes `npm run test:e2e:subscription` from Wave 4B onward.
 
 If local Windows or Codespaces Chromium launch fails with sandbox/permission errors, attach the GitHub Actions Playwright Release Gate run as the production browser evidence.
 

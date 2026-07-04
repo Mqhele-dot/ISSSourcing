@@ -28,7 +28,7 @@ Before production approval, run the browser E2E gate:
 npm run verify:release:e2e
 ```
 
-`verify:release:e2e` runs the full release gate plus the procurement/AP browser workflow, role-permission browser workflow, and control-plane browser workflow. This gate is mandatory before a production release candidate can be approved. If the local Windows or Codespaces browser sandbox cannot launch Chromium, run it in GitHub Actions through `.github/workflows/playwright-release-gate.yml` and attach the workflow run to the release notes.
+`verify:release:e2e` runs the full release gate plus the procurement/AP browser workflow, role-permission browser workflow, control-plane browser workflow, and subscription admin browser workflow. This gate is mandatory before a production release candidate can be approved. If the local Windows or Codespaces browser sandbox cannot launch Chromium, run it in GitHub Actions through `.github/workflows/playwright-release-gate.yml` and attach the workflow run to the release notes.
 
 `test:local:delta` starts the local app, waits for `/api/ready`, and then runs the focused workflow checks that require a live server, including master-data propagation, master-data integration, purchase-order endpoints, AP workflow, diagnostics, route diagnostics, and `release:gate:delta`.
 
@@ -53,6 +53,9 @@ npm run verify:release:e2e
 | Subscription plan catalog | `npm run test:subscription-plans` | Yes | Prove Starter, Standard, Growth, and Enterprise catalog limits, feature groups, labels, support levels, and configurable pricing placeholders are present. | Passing locally | Added to `release:gate:delta` in Wave 4A. |
 | Subscription entitlement enforcement | `npm run test:subscription-entitlements` | Yes | Prove backend feature flags and lifecycle decisions block Starter exports/offline sync, expired trials, inactive subscriptions, and plan-limit writes. | Passing locally | Confirms `PLAN_LIMIT_REACHED` and `FEATURE_NOT_INCLUDED` remain the structured errors. |
 | Subscription UI contracts | `npm run test:subscription-ui-contracts` | Yes | Prove `/admin/subscription` is routed, uses SaaS subscription APIs, shows locked/upgrade states, and stays separate from `/finance/billing`. | Passing locally | Source-level UI proof for the SaaS billing foundation. |
+| Subscription runtime flow | `npm run test:subscription-runtime-flow` | Yes | Prove Starter user/warehouse/SKU/export limits, Standard export unlock, Growth feature unlocks, Enterprise unlimited limits, expired/canceled write blocks, past_due grace, and plan-change audit evidence through the live API. | Added in Wave 4B | Runs inside `release:gate:delta`; snapshots/restores org subscription state and cleans test records. |
+| Stripe billing readiness | `npm run test:stripe-billing-readiness` | Yes | Prove checkout/portal missing-provider and missing-price errors, production local-adapter boundary, webhook signature rejection, event id requirement, and documented Stripe env vars. | Added in Wave 4B | Fast source/API-contract guard; does not contact Stripe. |
+| Subscription browser E2E | `npm run test:e2e:subscription` | Yes before production approval | Prove `/admin/subscription` renders plan cards, usage, locked features, AP billing separation, admin local plan change, and denied/disabled management for non-admin users. | Added to `verify:release:e2e` | Use GitHub Playwright gate if local Chromium sandbox is blocked. |
 | Diagnostics self-checks | `npm run test:diagnostics` | Yes | Prove diagnostic rules and route contracts behave predictably. | Passing via delta gate | Complements system diagnostics UI checks. |
 | Focused release gate | `npm run release:gate:delta` | Yes | Run RBAC, requisitions, AP controls, exports, smoke, setup, and installable-complete tests. | Passing via delta gate | Requires live local app from `test:local:delta`. |
 | GitHub CI production readiness | `.github/workflows/production-readiness.yml` | Yes before production | Re-run install, typecheck, lint, build, audit, and stable focused tests on GitHub infrastructure. | Workflow exists | CI must pass on the release head before production approval. |
@@ -99,3 +102,13 @@ Remaining marker-level production blockers are tracked in [Core Blocking Risk Re
 | `npm run build` | Passed locally | Production build completed and emitted the new `subscription` client chunk. |
 | `npm run audit:production` | Passed locally | Regenerated the production readiness audit with 78 routes and 378 endpoints inspected after `/admin/subscription` and new subscription APIs were added. |
 | `npm run verify:release` | Passed locally | Full non-browser release gate completed, including the live delta suite and the new subscription tests through `release:gate:delta`. |
+
+## Latest Wave 4B Subscription Evidence
+
+| Command | Result | Notes |
+|---|---|---|
+| `npm run test:subscription-runtime-flow` | Passed locally via `test:local:delta` | Live API proof for Starter user/warehouse/SKU/export limits, Standard export unlock, Growth feature unlocks, Enterprise unlimited limits, expired/canceled write blocks, billing grace, and plan-change audit evidence. |
+| `npm run test:stripe-billing-readiness` | Passed locally | Source/API contract guard for Stripe configuration, hosted-billing production boundaries, webhook signature rejection, and required Stripe environment documentation. |
+| `npm run verify:release` | Passed locally | Completed on `BASE_URL=http://127.0.0.1:5017`, including the live delta suite and Wave 4B subscription runtime/Stripe checks. |
+| `npm run security:supply-chain:ci` | Passed locally after commit | Package manifests were clean, lifecycle enforcement/SBOM/signature checks passed, and `npm audit --audit-level=high` reported 0 vulnerabilities. |
+| `npm run test:e2e:subscription` | Blocked locally by Windows browser launch | The server and API preflight completed, then Playwright failed at Chromium startup with `browserType.launch: spawn EPERM`; run `.github/workflows/playwright-release-gate.yml` for required browser evidence in this environment. |

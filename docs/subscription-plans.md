@@ -39,6 +39,18 @@ Stripe is the active hosted billing provider. Local lifecycle actions (`change-p
 
 In production, lifecycle mutations must flow through checkout, portal, or verified webhooks. The app must not fake successful payment-provider actions.
 
+Required hosted billing environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `STRIPE_SECRET_KEY` | Server-side Stripe API key for checkout, portal, and webhook verification helpers. |
+| `VITE_STRIPE_PUBLIC_KEY` or `STRIPE_PUBLIC_KEY` | Publishable key exposed to client settings/readiness displays. |
+| `STRIPE_WEBHOOK_SECRET` | Verifies Stripe webhook signatures before local entitlements are trusted. |
+| `STRIPE_PRICE_STARTER` | Stripe recurring price id for Starter. |
+| `STRIPE_PRICE_STANDARD` | Stripe recurring price id for Standard. |
+| `STRIPE_PRICE_GROWTH` | Stripe recurring price id for Growth. |
+| `STRIPE_PRICE_ENTERPRISE` | Stripe recurring price id for Enterprise or contract checkout placeholder. |
+
 ## APIs
 
 | Endpoint | Purpose |
@@ -59,6 +71,11 @@ npm run test:subscription-enforcement
 npm run test:subscription-plans
 npm run test:subscription-entitlements
 npm run test:subscription-ui-contracts
+npm run test:subscription-runtime-flow
+npm run test:stripe-billing-readiness
+npm run test:e2e:subscription
 ```
 
-These tests are included in `release:gate:delta` from Wave 4A onward.
+`test:subscription-runtime-flow` is the live API proof for Starter limits, export entitlement, plan unlocks, lifecycle blocks, billing grace, and local lifecycle audit evidence. `test:stripe-billing-readiness` is the fast release-gate guard for missing Stripe configuration, production local-adapter boundaries, and webhook signature/error handling. `test:e2e:subscription` is the browser proof for `/admin/subscription` permissions and UI behavior.
+
+The non-browser tests are included in `release:gate:delta` from Wave 4B onward. Browser E2E runs through `verify:release:e2e`.

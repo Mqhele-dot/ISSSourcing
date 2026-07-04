@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
 import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 
@@ -106,6 +107,7 @@ async function postSubscriptionAction(path: string, body?: unknown) {
 
 export default function SubscriptionPage() {
   const { toast } = useToast();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const { data: plansData, isLoading: plansLoading, error: plansError } = useQuery<PlansResponse>({
     queryKey: ["/api/subscription/plans"],
     queryFn: getQueryFn({ on401: "throw" }),
@@ -132,7 +134,10 @@ export default function SubscriptionPage() {
 
   const plans = plansData?.plans ?? [];
   const activeTier = current?.normalizedPlanTier ?? "standard";
-  const isLoading = plansLoading || currentLoading;
+  const canManageSubscription = hasPermission("settings", "configure");
+  const manageSubscriptionMessage = "You need settings:configure permission to manage subscription.";
+  const actionDisabled = actionMutation.isPending || permissionsLoading || !canManageSubscription;
+  const isLoading = plansLoading || currentLoading || permissionsLoading;
   const error = plansError || currentError;
 
   return (
@@ -167,7 +172,9 @@ export default function SubscriptionPage() {
                 body: { returnUrl: window.location.href },
               })
             }
-            disabled={actionMutation.isPending}
+            disabled={actionDisabled}
+            title={!canManageSubscription ? manageSubscriptionMessage : undefined}
+            data-testid="subscription-billing-portal"
           >
             <CreditCard className="mr-2 h-4 w-4" />
             Billing portal
@@ -186,6 +193,14 @@ export default function SubscriptionPage() {
           .
         </AlertDescription>
       </Alert>
+
+      {!permissionsLoading && !canManageSubscription ? (
+        <Alert data-testid="subscription-permission-denied">
+          <LockKeyhole className="h-4 w-4" />
+          <AlertTitle>Subscription management restricted</AlertTitle>
+          <AlertDescription>{manageSubscriptionMessage}</AlertDescription>
+        </Alert>
+      ) : null}
 
       {error ? (
         <Alert variant="destructive">
@@ -282,6 +297,13 @@ export default function SubscriptionPage() {
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-4">
+        {plans.length === 0 && !isLoading ? (
+          <Card className="lg:col-span-4" data-testid="subscription-empty-state">
+            <CardContent className="py-8 text-sm text-muted-foreground">
+              No subscription plans are available from the server catalog.
+            </CardContent>
+          </Card>
+        ) : null}
         {plans.map((plan) => {
           const active = plan.tier === activeTier;
           return (
@@ -320,7 +342,9 @@ export default function SubscriptionPage() {
                   type="button"
                   variant={active ? "outline" : "default"}
                   className="w-full"
-                  disabled={active || actionMutation.isPending}
+                  disabled={active || actionDisabled}
+                  title={!canManageSubscription ? manageSubscriptionMessage : undefined}
+                  data-testid={`subscription-change-plan-${plan.tier}`}
                   onClick={() =>
                     actionMutation.mutate({
                       path: "/api/subscription/change-plan",
@@ -345,10 +369,12 @@ export default function SubscriptionPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button
-            type="button"
-            variant="outline"
-            disabled={actionMutation.isPending}
-            onClick={() =>
+          type="button"
+          variant="outline"
+          disabled={actionDisabled}
+          title={!canManageSubscription ? manageSubscriptionMessage : undefined}
+          data-testid="subscription-start-trial"
+          onClick={() =>
               actionMutation.mutate({
                 path: "/api/subscription/start-trial",
                 body: { planTier: activeTier, days: 14, reason: "admin_subscription_page" },
@@ -358,18 +384,22 @@ export default function SubscriptionPage() {
             Start 14-day trial
           </Button>
           <Button
-            type="button"
-            variant="outline"
-            disabled={actionMutation.isPending}
-            onClick={() => actionMutation.mutate({ path: "/api/subscription/resume" })}
+          type="button"
+          variant="outline"
+          disabled={actionDisabled}
+          title={!canManageSubscription ? manageSubscriptionMessage : undefined}
+          data-testid="subscription-resume"
+          onClick={() => actionMutation.mutate({ path: "/api/subscription/resume" })}
           >
             Resume subscription
           </Button>
           <Button
-            type="button"
-            variant="destructive"
-            disabled={actionMutation.isPending}
-            onClick={() => actionMutation.mutate({ path: "/api/subscription/cancel" })}
+          type="button"
+          variant="destructive"
+          disabled={actionDisabled}
+          title={!canManageSubscription ? manageSubscriptionMessage : undefined}
+          data-testid="subscription-cancel"
+          onClick={() => actionMutation.mutate({ path: "/api/subscription/cancel" })}
           >
             Cancel subscription
           </Button>

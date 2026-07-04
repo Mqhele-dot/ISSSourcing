@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { randomUUID } from "node:crypto";
 import { ZodError, z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { and, eq } from "drizzle-orm";
@@ -364,8 +365,8 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         const date = new Date();
         const year = date.getFullYear().toString().substr(-2);
         const month = (date.getMonth() + 1).toString().padStart(2, "0");
-        const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
-        requisitionInput.requisitionNumber = `REQ-${year}${month}-${random}`;
+        const entropy = `${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+        requisitionInput.requisitionNumber = `REQ-${year}${month}-${entropy}`;
       }
       if (!requisitionInput.status) {
         requisitionInput.status = PurchaseRequisitionStatus.PENDING;

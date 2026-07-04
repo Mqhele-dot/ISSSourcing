@@ -28,6 +28,14 @@ for (const endpoint of [
 }
 
 assert.match(page, /Supplier billing and AP stay under Finance/, "SaaS billing must be visibly separated from AP billing");
+assert.match(page, /usePermissions/, "Subscription page must load current user permissions");
+assert.match(page, /settings",\s*"configure"/, "Subscription management must require settings:configure");
+assert.match(
+  page,
+  /You need settings:configure permission to manage subscription/,
+  "Subscription page must explain denied management actions",
+);
+assert.match(page, /subscription-permission-denied/, "Subscription page must render a permission denied state");
 assert.match(page, /lockedFeatures/, "Subscription page must show locked feature explanations");
 assert.match(page, /upgradeCta/, "Subscription page must show plan upgrade guidance");
 assert.doesNotMatch(financeBilling, /\/api\/subscription\/change-plan/, "/finance/billing must not manage SaaS plans");
@@ -47,6 +55,26 @@ assert.equal(
   packageJson.scripts["test:subscription-ui-contracts"],
   "node scripts/test-subscription-ui-contracts.mjs",
   "test:subscription-ui-contracts script missing",
+);
+assert.equal(
+  packageJson.scripts["test:subscription-runtime-flow"],
+  "tsx scripts/test-subscription-runtime-flow.ts",
+  "test:subscription-runtime-flow script missing",
+);
+assert.equal(
+  packageJson.scripts["test:stripe-billing-readiness"],
+  "node scripts/test-stripe-billing-readiness.mjs",
+  "test:stripe-billing-readiness script missing",
+);
+assert.equal(
+  packageJson.scripts["test:e2e:subscription"],
+  "node scripts/run-playwright-e2e.mjs e2e/subscription-admin-workflow.spec.ts",
+  "test:e2e:subscription script missing",
+);
+assert.match(
+  packageJson.scripts["verify:release:e2e"],
+  /test:e2e:subscription/,
+  "verify:release:e2e must include subscription E2E proof",
 );
 
 console.log("Subscription UI contract passed.");

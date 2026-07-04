@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { pool } from "../server/db.ts";
 import { assertProductionSchemaColumns, requisitionAndPoMdmColumns } from "./production-schema-preflight.ts";
 import { apiJsonRequest } from "./test-http.ts";
@@ -32,7 +33,7 @@ export function unwrapData<T>(json: unknown, label: string): T {
 }
 
 export async function ensureWorkflowFixture(label: string): Promise<WorkflowFixture> {
-  const suffix = `${label}-${Date.now().toString().slice(-8)}-${Math.floor(Math.random() * 1000)}`;
+  const suffix = `${label}-${Date.now().toString(36)}-${process.pid}-${randomUUID().slice(0, 8)}`;
   await assertProductionSchemaColumns([
     ...requisitionAndPoMdmColumns,
     { table: "stock_movements", column: "warehouse_id" },
@@ -163,6 +164,7 @@ export async function createSentWorkflowPo(cookie: string, fixture: WorkflowFixt
       supplierId: fixture.supplierId,
       departmentId: fixture.departmentId,
       currencyCode: "ZAR",
+      requisitionNumber: `REQ-WF-${fixture.suffix}`,
       requiredDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       justification: "Runtime receiving/AP workflow proof",
       notes: `Created by workflow proof ${fixture.suffix}`,

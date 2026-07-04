@@ -315,6 +315,15 @@ function routeEvidenceFiles(route) {
       "server/modules/rbac/register-rbac-routes.ts",
     ].forEach((file) => files.add(file));
   }
+  if (route.route.startsWith("/admin/subscription")) {
+    [
+      "client/src/pages/subscription.tsx",
+      "client/src/hooks/use-permissions.tsx",
+      "server/modules/organization/register-organization-routes.ts",
+      "server/subscription-enforcement.ts",
+      "server/plan-limit-service.ts",
+    ].forEach((file) => files.add(file));
+  }
   if (route.route.startsWith("/finance/approval-policies")) {
     [
       "client/src/pages/approval-policies.tsx",
@@ -380,6 +389,7 @@ function routeTestEvidence(route) {
     [/^\/admin\/master-data(\/|$)/, ["test-master-data-propagation", "test-master-data-integration", "test-mdm-dependency-runtime", "test-control-plane-screen-contracts"]],
     [/^\/admin\/settings(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
     [/^\/admin\/user-roles(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
+    [/^\/admin\/subscription(\/|$)/, ["test-subscription-runtime-flow", "test-subscription-ui-contracts", "subscription-admin-workflow"]],
     [/^\/finance\/approval-policies(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
     [/^\/procurement\/requisitions(\/|$)/, ["test-requisition-line-mdm-flow", "test-mdm-dependency-runtime", "procurement-to-ap-ui-workflow"]],
     [/^\/procurement\/orders(\/|$)/, ["test-purchase-order-endpoints", "test-po-receiving-inventory-flow", "procurement-to-ap-ui-workflow"]],
@@ -408,6 +418,9 @@ function routeUiTestEvidence(route) {
   if (/^\/(admin\/settings|admin\/user-roles|admin\/master-data|finance\/approval-policies|finance\/accounts-payable)(\/|$)/.test(route.route)) {
     names.push("test-control-plane-screen-contracts");
   }
+  if (/^\/admin\/subscription(\/|$)/.test(route.route)) {
+    names.push("test-subscription-ui-contracts");
+  }
   if (isProcurementRoute(route)) {
     names.push("procurement-to-ap-workflow", "purchase-order-actions");
   }
@@ -427,6 +440,9 @@ function routeE2eTestEvidence(route) {
   }
   if (/^\/(admin\/settings|admin\/user-roles|finance\/approval-policies)(\/|$)/.test(route.route)) {
     names.push("control-plane-admin-workflow");
+  }
+  if (/^\/admin\/subscription(\/|$)/.test(route.route)) {
+    names.push("subscription-admin-workflow");
   }
   return testFiles.filter((file) => {
     const normalized = toPosix(file).toLowerCase();
@@ -963,6 +979,21 @@ function runtimeEvidenceRows() {
     [
       "test:e2e:control-plane",
       "Live browser proof that admin control-plane screens open, persist safe settings/role/policy changes, deny requester changes, and expose activity/audit evidence.",
+      "Local Windows browser launch may be blocked by sandbox policy; use the GitHub Playwright Release Gate workflow for release evidence when local Chromium cannot spawn.",
+    ],
+    [
+      "test:subscription-runtime-flow",
+      "Live API proof that Starter user, warehouse, SKU, and export entitlements are enforced; Standard unlocks export; Growth enables analytics/API/document branding; Enterprise is unlimited; expired trial and canceled subscriptions block writes; and past_due reports billing grace while allowing writes.",
+      "Uses direct database setup/cleanup for controlled usage counts where public create APIs would be too slow or unavailable; it does not prove every hosted Stripe checkout branch.",
+    ],
+    [
+      "test:stripe-billing-readiness",
+      "Static/source contract proof that checkout/portal missing-provider and missing-price paths return structured billing errors, production local lifecycle mutations require provider action, webhook signatures are verified, invalid signatures are rejected, and Stripe env vars are documented.",
+      "Does not contact Stripe or replace a configured-provider integration test in a staging account.",
+    ],
+    [
+      "test:e2e:subscription",
+      "Live browser proof that admin users can view subscription plans, usage, locked features, AP billing separation, and local plan changes while viewer/requester users can inspect but cannot manage lifecycle actions.",
       "Local Windows browser launch may be blocked by sandbox policy; use the GitHub Playwright Release Gate workflow for release evidence when local Chromium cannot spawn.",
     ],
     [
