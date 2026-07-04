@@ -24,6 +24,8 @@ If `npm install` or `npm ci` fails on Windows with `EPERM` under `%LOCALAPPDATA%
 npm run repair:win-install
 ```
 
+That repair path forces npm, Electron, and Electron Builder caches into repo-local directories before reinstalling, which avoids the locked `%LOCALAPPDATA%` cache paths that often break OneDrive and automation worktrees.
+
 → **http://127.0.0.1:5000** (or the port in your `.env` `PORT=`)
 
 After `npm run dev`, look for the **ASCII banner** in the terminal (URL + port). A **`.local-dev-url`** file is also created in the repo root with `APP_URL` and `PORT` for copy/paste (gitignored).

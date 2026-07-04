@@ -34,7 +34,7 @@ if (Test-Path $localElectronBuilderCache) {
 }
 
 $env:npm_config_cache = $localCache
-$env:npm_config_electron_cache = $localElectronCache
+$env:electron_config_cache = $localElectronCache
 $env:ELECTRON_CACHE = $localElectronCache
 $env:ELECTRON_BUILDER_CACHE = $localElectronBuilderCache
 
