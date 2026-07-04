@@ -7,6 +7,8 @@ import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisable
 import { sendOk } from "../../api-response";
 import { syncBatchBodySchema } from "./validators";
 import { registerMobileScanRoutes } from "./register-mobile-scan-routes";
+import { resolveMobileScanValue } from "./mobile-scan-service";
+import { scanResolveBodySchema } from "./scan-validators";
 import {
   addMobileCountLine,
   createMobileCountSession,
@@ -81,6 +83,7 @@ export function registerSyncRoutes(app: Express, auth: Auth): void {
 
           accepted.push(action.idempotencyKey);
           let replayMessage = "Recorded offline action.";
+          let replaySummary: Record<string, unknown> | null = null;
           if (action.type === "mobile_count_line") {
             const sessionId = Number(action.payload.sessionId);
             if (!Number.isFinite(sessionId)) throw new MobileCountDomainError("MOBILE_SYNC_SESSION_REQUIRED", "Queued count line is missing sessionId.", 400);
@@ -112,11 +115,31 @@ export function registerSyncRoutes(app: Express, auth: Auth): void {
             const data = createMobileCountSessionSchema.parse({ ...action.payload, mode: "spot" });
             await createMobileCountSession({ organizationId: orgId, data, idempotencyKey: action.idempotencyKey, userId });
             replayMessage = "Spot count replayed.";
+          } else if (action.type === "scan") {
+            const data = scanResolveBodySchema.parse(action.payload);
+            const result = await resolveMobileScanValue({
+              organizationId: orgId,
+              value: data.value,
+              intent: data.intent ?? null,
+            });
+            replaySummary =
+              result.kind === "item"
+                ? { kind: result.kind, itemId: result.item?.id ?? null, sku: result.item?.sku ?? null }
+                : result.kind === "asset"
+                  ? { kind: result.kind, assetId: result.asset.id, serialNumber: result.asset.serialNumber }
+                  : { kind: result.kind, value: result.value };
+            replayMessage =
+              result.kind === "item"
+                ? `Scan replayed for item ${result.item?.sku ?? result.barcode.value}.`
+                : result.kind === "asset"
+                  ? `Scan replayed for asset ${result.asset.serialNumber ?? result.asset.id}.`
+                  : `Scan replayed with no linked record for ${result.value}.`;
           }
 
           const desc = JSON.stringify({
             idempotencyKey: action.idempotencyKey,
             ...action.payload,
+            ...(replaySummary ? { replaySummary } : {}),
           }).slice(0, 1900);
           await db
             .insert(mobileSyncEvents)

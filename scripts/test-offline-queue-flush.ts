@@ -21,13 +21,26 @@ async function main() {
   const applied = await enqueueOfflineAction("mobile_count_line", { sessionId: 101, countedQty: 2 });
   const duplicate = await enqueueOfflineAction("mobile_count_submit", { sessionId: 101 });
   const failed = await enqueueOfflineAction("mobile_count_submit", { sessionId: 202 });
+  const scan = await enqueueOfflineAction("scan", { value: "BC-100", intent: "scan", format: "QR_CODE" });
+  let syncBatchCalls = 0;
 
-  globalThis.fetch = async (input) => {
+  globalThis.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     if (url.endsWith("/api/csrf-token")) {
       return jsonResponse({ csrfToken: "offline-queue-test-token" });
     }
     if (url.endsWith("/api/sync/batch")) {
+      syncBatchCalls += 1;
+      if (syncBatchCalls === 1) {
+        const requestBody = JSON.parse(String(init?.body ?? "{}")) as {
+          actions?: Array<{ idempotencyKey: string; type: string; payload: Record<string, unknown> }>;
+        };
+        const scanAction = requestBody.actions?.find((action) => action.idempotencyKey === scan.id);
+        assert.ok(scanAction, "queued scan should be posted to /api/sync/batch");
+        assert.equal(scanAction?.type, "scan");
+        assert.equal(scanAction?.payload.value, "BC-100");
+        assert.equal(scanAction?.payload.intent, "scan");
+      }
       return jsonResponse({
         ok: true,
         data: {
@@ -36,6 +49,7 @@ async function main() {
             { idempotencyKey: applied.id, status: "applied", type: applied.type, message: "Applied." },
             { idempotencyKey: duplicate.id, status: "duplicate", type: duplicate.type, message: "Already applied." },
             { idempotencyKey: failed.id, status: "failed", type: failed.type, message: "Replay failed." },
+            { idempotencyKey: scan.id, status: "applied", type: scan.type, message: "Scan replayed." },
           ],
         },
       });
