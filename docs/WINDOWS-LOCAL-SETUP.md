@@ -14,6 +14,8 @@ Use this guide when developing **on your PC** (not GitHub Codespaces). Codespace
 
 Optional: **Git** for Windows, **pgAdmin** for DB GUI.
 
+If PowerShell blocks `npm.ps1` with an execution-policy error, use `npm.cmd` (for example `npm.cmd install`, `npm.cmd run dev`) or open `cmd.exe`.
+
 ## 1. Install PostgreSQL on Windows
 
 **The app requires PostgreSQL before login and most APIs work.** If you skip this step, `npm run dev` may still listen on port 5000, but you will see `ECONNREFUSED` in the terminal and **login returns HTTP 503**.

@@ -94,6 +94,8 @@ npm run repair:win-install
 
 This rebuilds dependencies with project-local npm, Electron, and Electron Builder caches, then runs `npm run check`. Use it when `npm ci` fails with `EPERM` in `%LOCALAPPDATA%\npm-cache` or `%LOCALAPPDATA%\electron\Cache`.
 
+If PowerShell blocks `npm.ps1`, run `npm.cmd` equivalents (for example `npm.cmd run test:local`) or start the command from `cmd.exe`.
+
 ## Codespace / Remote Browser Walkthrough
 
 Use this when local OneDrive dependency placeholders block Vite, or when an agent/browser session needs to test the app through the Codespace URL:

@@ -34,6 +34,7 @@ if (Test-Path $localElectronBuilderCache) {
 }
 
 $env:npm_config_cache = $localCache
+$env:npm_config_logs_dir = (Join-Path $localCache "_logs")
 $env:electron_config_cache = $localElectronCache
 $env:ELECTRON_CACHE = $localElectronCache
 $env:ELECTRON_BUILDER_CACHE = $localElectronBuilderCache

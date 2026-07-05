@@ -29,7 +29,7 @@ try {
 
 # npm
 try {
-  $npmV = npm -v 2>$null
+  $npmV = npm.cmd -v 2>$null
   if ($npmV) { Write-Ok "npm $npmV" } else { throw "no npm" }
 } catch {
   Write-Bad "npm not found."
