@@ -61,6 +61,17 @@ type ScanResolution = {
   candidates: Array<{ id: number; sku: string; name: string; barcode?: string | null }>;
 };
 
+class MutationRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly retryable = false,
+  ) {
+    super(message);
+    this.name = "MutationRequestError";
+  }
+}
+
 function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -76,9 +87,19 @@ async function mutationWithKey<T>(url: string, body: unknown, key: string): Prom
   });
   const payload = (await res.json().catch(() => null)) as { ok?: boolean; data?: T; error?: { message?: string } } | null;
   if (!res.ok || payload?.ok === false) {
-    throw new Error(payload?.error?.message ?? `Request failed (${res.status})`);
+    throw new MutationRequestError(
+      payload?.error?.message ?? `Request failed (${res.status})`,
+      res.status,
+      res.status >= 500 || res.status === 408 || res.status === 425 || res.status === 429,
+    );
   }
   return payload?.data as T;
+}
+
+function shouldQueueForReplay(error: unknown) {
+  if (error instanceof MutationRequestError) return error.retryable;
+  if (error instanceof TypeError) return true;
+  return error instanceof Error && /fetch|network|timeout|timed out/i.test(error.message);
 }
 
 function useSessionIdFromLocation() {
@@ -236,7 +257,7 @@ export default function MobileCountsPage() {
       toast({ title: online ? "Count line saved" : "Count line queued offline" });
     },
     onError: async (error) => {
-      if (sessionId && (selectedItemId !== "none" || scanValue.trim())) {
+      if (sessionId && shouldQueueForReplay(error) && (selectedItemId !== "none" || scanValue.trim())) {
         await enqueueOfflineAction("mobile_count_line", {
           sessionId,
           ...(selectedItemId !== "none" ? { itemId: Number(selectedItemId) } : {}),
@@ -246,10 +267,17 @@ export default function MobileCountsPage() {
           binCode: binCode.trim() || null,
           deviceId: "browser-mobile",
         });
+        queryClient.invalidateQueries({ queryKey: ["offline-queue-peek", loc] });
+        toast({
+          title: "Count line queued",
+          description: error instanceof Error ? error.message : "The action will sync when online sync is available.",
+        });
+        return;
       }
       toast({
-        title: "Count line queued",
-        description: error instanceof Error ? error.message : "The action will sync when online sync is available.",
+        title: "Count line not saved",
+        description: error instanceof Error ? error.message : "Fix the validation issue and try again.",
+        variant: "destructive",
       });
     },
   });
@@ -267,6 +295,9 @@ export default function MobileCountsPage() {
         await mutationWithKey(`/api/mobile/counts/${sessionId}/submit`, { deviceId: "browser-mobile" }, key);
         return { offline: false as const };
       } catch (error) {
+        if (!shouldQueueForReplay(error)) {
+          throw error;
+        }
         await enqueueOfflineAction("mobile_count_submit", payload);
         return {
           offline: true as const,

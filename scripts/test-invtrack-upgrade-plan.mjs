@@ -89,8 +89,11 @@ const checks = [
       files.offlineQueue.includes("applyFlushResults") &&
       files.offlineQueue.includes("replaceOfflineQueue") &&
       files.offlineQueue.includes("retryCount: (item.retryCount ?? 0) + 1") &&
+      files.mobilePage.includes("MutationRequestError") &&
+      files.mobilePage.includes("shouldQueueForReplay") &&
       files.mobilePage.includes("mobile_count_submit") &&
-      files.mobilePage.includes("Count submit queued offline"),
+      files.mobilePage.includes("Count submit queued offline") &&
+      files.mobilePage.includes("Count line not saved"),
   },
   {
     name: "subscription feature catalog and limits include research tiers",
@@ -111,7 +114,7 @@ const checks = [
   {
     name: "plan limits are enforced on backend writes",
     ok:
-      files.planLimits.includes("USAGE_LIMIT_REACHED") &&
+      files.planLimits.includes("PLAN_LIMIT_REACHED") &&
       files.inventoryRoutes.includes("ensurePlanLimitAllowsCreate") &&
       files.warehouseRoutes.includes("ensurePlanLimitAllowsCreate") &&
       files.registry.includes("starter: { users: 3, warehouses: 1, skus: 5000 }"),
