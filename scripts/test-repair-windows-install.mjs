@@ -23,6 +23,22 @@ if (!scriptSource.includes("$env:ELECTRON_BUILDER_CACHE = $localElectronBuilderC
   failures.push("repair-windows-install.ps1 must continue exporting ELECTRON_BUILDER_CACHE for electron-builder.");
 }
 
+if (!scriptSource.includes("function Remove-TreeRobust")) {
+  failures.push("repair-windows-install.ps1 must retry locked-path cleanup before giving up.");
+}
+
+if (!scriptSource.includes("function Invoke-NpmCiRepair")) {
+  failures.push("repair-windows-install.ps1 must retry npm ci after transient network or partial-install failures.");
+}
+
+if (!scriptSource.includes("--fetch-retries 5")) {
+  failures.push("repair-windows-install.ps1 must increase npm fetch retries for transient ECONNRESET failures.");
+}
+
+if (!scriptSource.includes("node_modules\\.bin\\vite.cmd")) {
+  failures.push("repair-windows-install.ps1 must verify the Vite shim so build prerequisites are guaranteed.");
+}
+
 if (failures.length > 0) {
   console.error("Windows install repair regression check failed:");
   for (const failure of failures) {

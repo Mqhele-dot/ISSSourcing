@@ -53,10 +53,23 @@ if (-not (Test-Path (Join-Path $root ".env"))) {
 }
 
 # node_modules
+$requiredShimPaths = @(
+  (Join-Path $root "node_modules\\.bin\\tsc.cmd"),
+  (Join-Path $root "node_modules\\.bin\\tsx.cmd"),
+  (Join-Path $root "node_modules\\.bin\\vite.cmd")
+)
+
 if (-not (Test-Path (Join-Path $root "node_modules"))) {
   Write-Warn "node_modules missing - run: npm install"
+  $ok = $false
 } else {
-  Write-Ok "node_modules present"
+  $missingShims = @($requiredShimPaths | Where-Object { -not (Test-Path $_) })
+  if ($missingShims.Count -gt 0) {
+    Write-Bad "node_modules is missing required command shims (tsc/tsx/vite). Run: npm run repair:win-install"
+    $ok = $false
+  } else {
+    Write-Ok "node_modules present and command shims look complete"
+  }
 }
 
 # PostgreSQL client hint (optional)
