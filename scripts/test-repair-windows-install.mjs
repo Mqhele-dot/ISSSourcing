@@ -11,6 +11,14 @@ if (!scriptSource.includes("$env:electron_config_cache = $localElectronCache")) 
   failures.push("repair-windows-install.ps1 must export electron_config_cache for Electron's installer.");
 }
 
+if (!scriptSource.includes("$env:LOCALAPPDATA = $localAppData")) {
+  failures.push("repair-windows-install.ps1 must redirect LOCALAPPDATA into the repo so Electron downloads avoid locked user caches.");
+}
+
+if (!scriptSource.includes("$env:TEMP = $localTemp")) {
+  failures.push("repair-windows-install.ps1 must redirect TEMP into the repo so npm unpack temp files stay out of locked user folders.");
+}
+
 if (scriptSource.includes("$env:npm_config_electron_cache = $localElectronCache")) {
   failures.push("repair-windows-install.ps1 still exports npm_config_electron_cache, which Electron ignores.");
 }

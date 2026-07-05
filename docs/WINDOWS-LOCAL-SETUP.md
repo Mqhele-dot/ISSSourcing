@@ -36,6 +36,12 @@ cd C:\path\to\ISSSourcing
 npm install
 ```
 
+If install fails with cache or OneDrive `EPERM` errors, run:
+
+```powershell
+npm run repair:win-install
+```
+
 If install fails on **node-gyp** / **canvas** / **sharp**:
 
 1. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/).

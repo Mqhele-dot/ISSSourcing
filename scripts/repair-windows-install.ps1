@@ -4,6 +4,8 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
 
 $localCache = Join-Path $RepoRoot ".npm-cache-local"
+$localTemp = Join-Path $RepoRoot ".npm-temp-local"
+$localAppData = Join-Path $RepoRoot ".appdata-local"
 $localElectronCache = Join-Path $RepoRoot ".electron-cache-local"
 $localElectronBuilderCache = Join-Path $RepoRoot ".electron-builder-cache-local"
 $nodeModules = Join-Path $RepoRoot "node_modules"
@@ -69,6 +71,8 @@ function Invoke-NpmCiRepair {
 
 Write-Host "Repairing Windows dependency install in $RepoRoot"
 Write-Host "Using project-local npm cache: $localCache"
+Write-Host "Using project-local npm temp: $localTemp"
+Write-Host "Using project-local app data: $localAppData"
 Write-Host "Using project-local Electron cache: $localElectronCache"
 Write-Host "Using project-local Electron Builder cache: $localElectronBuilderCache"
 
@@ -80,6 +84,16 @@ if (Test-Path $nodeModules) {
 if (Test-Path $localCache) {
   Write-Host "Removing stale local npm cache..."
   Remove-TreeRobust -Path $localCache -Label "local npm cache"
+}
+
+if (Test-Path $localTemp) {
+  Write-Host "Removing stale local npm temp..."
+  Remove-TreeRobust -Path $localTemp -Label "local npm temp"
+}
+
+if (Test-Path $localAppData) {
+  Write-Host "Removing stale local app data..."
+  Remove-TreeRobust -Path $localAppData -Label "local app data"
 }
 
 if (Test-Path $localElectronCache) {
@@ -94,6 +108,10 @@ if (Test-Path $localElectronBuilderCache) {
 
 $env:npm_config_cache = $localCache
 $env:npm_config_logs_dir = (Join-Path $localCache "_logs")
+$env:TEMP = $localTemp
+$env:TMP = $localTemp
+$env:LOCALAPPDATA = $localAppData
+$env:APPDATA = $localAppData
 $env:electron_config_cache = $localElectronCache
 $env:ELECTRON_CACHE = $localElectronCache
 $env:ELECTRON_BUILDER_CACHE = $localElectronBuilderCache
