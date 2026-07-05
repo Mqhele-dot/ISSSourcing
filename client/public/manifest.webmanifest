@@ -1,6 +1,6 @@
 {
-  "name": "InvTrack",
-  "short_name": "InvTrack",
+  "name": "ISSSourcing",
+  "short_name": "ISSSourcing",
   "description": "Inventory, procurement, and warehouse operations",
   "start_url": "/",
   "display": "standalone",

@@ -1,4 +1,4 @@
-# CSP / frontend posture (InvTrack)
+# CSP / frontend posture (ISSSourcing)
 
 ## Server CSP (Helmet)
 

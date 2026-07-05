@@ -79,7 +79,16 @@ const actionContracts = [
   {
     name: "business-rule 409 is not pushed as unresolved global action failure",
     file: "client/src/lib/queryClient.ts",
-    must: [/SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED/, /businessRuleMutationWarning[\s\S]*return;/],
+    must: [
+      /CONTROLLED_BUSINESS_RULE_CODES/,
+      /SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED/,
+      /REORDER_ITEM_MISSING/,
+      /PLAN_LIMIT_REACHED/,
+      /FEATURE_NOT_INCLUDED/,
+      /SUBSCRIPTION_INACTIVE/,
+      /TRIAL_EXPIRED/,
+      /controlledBusinessRule[\s\S]*return;/,
+    ],
   },
   {
     name: "gas summary timeout has bounded wait and unavailable state",
@@ -111,6 +120,11 @@ assertContains(
   "docs/button-action-inventory.md",
   /Core actions inventoried \| 43/,
   "button action inventory must summarize inventoried actions",
+);
+assertContains(
+  "docs/button-action-inventory.md",
+  /Actions with browser smoke coverage \| 13/,
+  "button action inventory must summarize expanded browser action coverage",
 );
 
 console.log(`button/action contract checks passed (${actionContracts.length} contracts, ${checked} assertions)`);

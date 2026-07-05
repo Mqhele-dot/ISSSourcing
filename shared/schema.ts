@@ -1564,7 +1564,7 @@ export const appSettings = pgTable(
       .notNull()
       .default(1)
       .references(() => organizations.id),
-    companyName: text("company_name").notNull().default("InvTrack"),
+    companyName: text("company_name").notNull().default("ISSSourcing"),
   companyLogo: text("company_logo"),
   primaryColor: text("primary_color").default("#0F172A"),
   dateFormat: text("date_format").default("YYYY-MM-DD"),

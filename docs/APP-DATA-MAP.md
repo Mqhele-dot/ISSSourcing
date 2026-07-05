@@ -1,4 +1,4 @@
-# ISSSourcing / InvTrack App Data Map
+# ISSSourcing App Data Map
 
 This map documents the current operational structure and the main data dependencies that affect testing and feature changes.
 

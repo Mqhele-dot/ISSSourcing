@@ -143,14 +143,16 @@ Required hosted billing environment:
 
 ## Button And Action Reliability Proof Summary
 
-Wave 4D adds a core visible-action inventory and regression guard for high-risk buttons that were likely to fail silently during manual testing.
+Waves 4D-4E add a core visible-action inventory, diagnostics closure guard, and browser-smoke expansion for high-risk buttons that were likely to fail silently during manual testing.
 
 Implemented evidence:
 
 - `docs/button-action-inventory.md` inventories 43 core actions across procurement, AP, subscriptions, diagnostics, reports, Master Data, settings, RBAC, and route recovery.
-- `npm run test:button-action-contracts` blocks inert links, console-only click handlers, action TODOs, missing structured errors, missing invalidation, and missing recovery actions on the critical button paths.
-- `npm run test:e2e:button-actions` is included in the formal browser release gate for contracts, gas timeout retry, subscription actions, custom-role permission removal, and PO commercial validation actions.
+- Browser smoke coverage increased to 13 action surfaces, with remaining gaps documented in priority order.
+- `npm run test:button-action-contracts` blocks inert links, console-only click handlers, action TODOs, missing structured errors, missing invalidation, missing recovery actions, and missing controlled-business-rule diagnostics on the critical button paths.
+- `npm run test:e2e:button-actions` is included in the formal browser release gate for contracts, gas timeout retry, subscription actions, custom-role permission removal, PO commercial validation actions, AP payment validation, diagnostics actions, settings save, Master Data validation, and approval-policy validation.
 - PO commercial supplier/contract currency override errors now show actionable field-level recovery controls: use contract currency or clear the contract.
+- Expected validation/business-rule codes are classified as controlled info diagnostics instead of unresolved app failures.
 
 Primary evidence commands:
 
@@ -185,6 +187,10 @@ If local Windows or Codespaces Chromium launch fails with sandbox/permission err
 | `npm run verify:release:e2e` | Blocked locally in Playwright phase | The command completed the full `verify:release` pre-gate, then failed in the browser phase with the same local Chromium launch restriction tracked by test id `cc280d92bc59b2ee6bff-99ef022bf30a937aa8ca`. Use the GitHub Playwright Release Gate workflow as the required browser evidence for this environment. |
 | `npm run verify:release:secure` | Passed locally | `verify:release` plus package-manifest cleanliness, lifecycle enforcement, SBOM generation, registry signature audit, and high-severity npm audit completed; `npm audit --audit-level=high` reported 0 vulnerabilities. |
 | `npm run audit:production` | Passed locally | Final Wave 3D audit pass kept `Core blocking risks: 0`, `Marker-level blockers: 0`, and `Non-production v1 exclusions: 4 routes`. |
-| `npm run test:button-action-contracts` | Passed locally | Wave 4D source contract passed 12 contracts and 33 assertions across 43 inventoried core actions. |
+| `npm run test:button-action-contracts` | Passed locally | Wave 4E source contract passed 12 contracts and 39 assertions across 43 inventoried core actions. |
 | `npm run test:live-diagnostics-regressions` | Passed locally | Confirms the live diagnostics/action fixes remain in place. |
 | `npm run test:e2e:button-actions` | Blocked locally in Playwright page launch | The wrapper started the local app and the API-backed custom-role permission delete idempotency case passed; page-level Chromium launches failed with `browserType.launch: spawn EPERM`. Use the GitHub Playwright Release Gate workflow for browser evidence in this environment. |
+| `npm run test:subscription-tenant-isolation` | Passed locally | Wave 4E confirmed tenant-scoped subscription user limits still hold. |
+| `npm run test:subscription-runtime-flow` | Passed locally with temporary server on port 5017 | Wave 4E live API proof for subscription lifecycle and entitlement controls. |
+| `npm run verify:release` | Passed locally in Wave 4E | Full non-browser release gate completed after diagnostics, branding, and button/action expansion. |
+| `npm run verify:release:secure` | Passed locally in Wave 4E | Full release gate plus package-manifest, lifecycle, SBOM, registry-signature, and high-vulnerability supply-chain checks completed. |

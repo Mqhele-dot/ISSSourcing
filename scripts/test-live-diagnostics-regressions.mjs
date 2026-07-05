@@ -53,8 +53,13 @@ assertContains(
 
 assertContains(
   "client/src/lib/queryClient.ts",
-  /SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED[\s\S]*info/,
-  "supplier/contract currency override must be treated as controlled validation",
+  /CONTROLLED_BUSINESS_RULE_CODES[\s\S]*SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED[\s\S]*REORDER_ITEM_MISSING[\s\S]*PLAN_LIMIT_REACHED[\s\S]*FEATURE_NOT_INCLUDED[\s\S]*SUBSCRIPTION_INACTIVE[\s\S]*TRIAL_EXPIRED[\s\S]*PAYMENT_BATCH_SELF_APPROVAL_BLOCKED[\s\S]*controlledBusinessRule[\s\S]*\?\s*"info"/,
+  "expected business-rule responses must be treated as controlled validation/info diagnostics",
+);
+assertContains(
+  "client/src/lib/queryClient.ts",
+  /alreadyRemoved[\s\S]*controlledBusinessRule[\s\S]*return;/,
+  "idempotent alreadyRemoved permission deletes must not become unresolved action failures",
 );
 
 assertContains(
@@ -75,9 +80,13 @@ assertNotContains(
 );
 
 for (const path of [
+  "client/public/manifest.webmanifest",
   "client/src/pages/subscription.tsx",
   "docs/subscription-plans.md",
   "docs/production-approval-evidence.md",
+  "electron/main.js",
+  "electron/ipc-handlers.js",
+  "shared/schema.ts",
 ]) {
   assertNotContains(path, /InvTrack/, `${path} must use ISSSourcing branding`);
   assertContains(path, /ISSSourcing/, `${path} should contain ISSSourcing branding`);

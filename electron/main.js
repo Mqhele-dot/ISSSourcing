@@ -370,8 +370,8 @@ function createAppMenu() {
           label: 'About',
           click: () => {
             dialog.showMessageBox({
-              title: 'About InvTrack',
-              message: 'InvTrack - Inventory Management System',
+              title: 'About ISSSourcing',
+              message: 'ISSSourcing - Inventory Management System',
               detail: `Version: ${app.getVersion()}\nElectron: ${process.versions.electron}\nNode: ${process.versions.node}\nChrome: ${process.versions.chrome}`
             });
           }
@@ -393,7 +393,7 @@ function createTray() {
   
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open InvTrack',
+      label: 'Open ISSSourcing',
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -417,7 +417,7 @@ function createTray() {
     }
   ]);
   
-  tray.setToolTip('InvTrack - Inventory Management System');
+  tray.setToolTip('ISSSourcing - Inventory Management System');
   tray.setContextMenu(contextMenu);
   
   tray.on('click', () => {

@@ -1,4 +1,4 @@
-# Large page decomposition (InvTrack client)
+# Large page decomposition (ISSSourcing client)
 
 For dense screens (reports, suppliers, warehouses), keep the route file as **composition only**:
 

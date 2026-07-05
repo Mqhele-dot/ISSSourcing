@@ -10,9 +10,49 @@ This inventory covers the visible, production-relevant action surfaces that are 
 |---|---:|---|
 | Core actions inventoried | 43 | Procurement, inventory/reorder, RBAC, Control Tower, AP, subscription, reporting, diagnostics, and setup actions. |
 | Actions covered by source/runtime contract tests | 43 | `npm run test:button-action-contracts` plus existing runtime tests for procurement, AP, subscription, diagnostics, and setup. |
-| Actions with browser smoke coverage | 7 | `npm run test:e2e:button-actions` targets the live diagnostics failures and critical workflow buttons. |
+| Actions with browser smoke coverage | 13 | `npm run test:e2e:button-actions` targets the live diagnostics failures, critical workflow buttons, and five additional validation/control flows. |
 | Fixed in Wave 4C/4D | 7 | Reorder convert, role permission remove, contracts route, PO commercial validation, gas timeout, subscription buttons, route chunk recovery. |
 | Non-production v1 excluded actions | 4 route families | `/operations/logistics*` and `/operations/exceptions*` remain excluded/labelled until route-specific proof exists. |
+
+## Browser-Covered Actions
+
+`npm run test:e2e:button-actions` now covers these 13 action paths:
+
+| Route | Action | Evidence Asserted |
+|---|---|---|
+| `/procurement/contracts` | Route navigation / lazy chunk recovery marker | Real route marker is visible. |
+| `/operations/control-tower` | Gas summary retry/unavailable state | Page remains usable and retry action is visible after a forced 504. |
+| `/admin/subscription` | Change plan action | Admin plan action renders from live subscription UI. |
+| `/admin/user-roles` API path | Custom-role permission delete | Repeated delete returns success with `alreadyRemoved` instead of noisy 404. |
+| `/procurement/orders/:po` | Save commercial terms | Contract-currency backend 409 renders repair actions. |
+| `/procurement/orders/:po` | Use contract currency | Recovery action is visible in the validation banner. |
+| `/procurement/orders/:po` | Clear contract | Recovery action is visible in the validation banner. |
+| `/finance/accounts-payable/payments` | Create AP payment batch | Missing invoice selection shows validation. |
+| `/admin/system-diagnostics` | Run diagnostics scan | Scan results region remains visible after clicking Run scan. |
+| `/admin/system-diagnostics` | Export diagnostics JSON/Markdown | Export buttons remain available after scan. |
+| `/admin/settings` | Save production controls | Settings save action shows success state. |
+| `/admin/master-data/departments` | Add master-data record | Empty submit shows validation instead of silent failure. |
+| `/finance/approval-policies` | Save approval policy | Empty policy name shows validation/error state. |
+
+The PO commercial validation test proves three action surfaces in one flow: save attempt, use contract currency, and clear contract. The diagnostics test proves scan and export actions in one flow.
+
+## Remaining Browser-Coverage Gaps
+
+These inventoried actions have source/runtime evidence but are not yet individually browser-smoked:
+
+| Priority | Route / Area | Remaining Action Gap |
+|---:|---|---|
+| 1 | `/inventory/reorder` | Export PDF/Excel/CSV, approve, reject, and successful convert click-through. |
+| 2 | `/finance/invoices` | Create invoice validation, match/dispute actions, payment/status actions, and invoice export. |
+| 3 | `/admin/user-roles` | Browser-level create role, add permission, assign user role, and visible list refresh after delete. |
+| 4 | `/admin/master-data/*` | Successful create/update/delete/deactivate with where-used dependency response. |
+| 5 | `/finance/approval-policies` | Successful create/update/delete and approval-route impact. |
+| 6 | `/admin/documents` | Upload, open, and retention actions. |
+| 7 | `/reports` / Export Center | Preview custom report and compressed export download. |
+| 8 | `/procurement/orders/:po` | Approve, send, receive, and signable PDF actions in browser. |
+| 9 | App shell | Global search/jump and route boundary recovery from a real chunk failure. |
+
+Next coverage should prioritize reorder export/convert success, invoices/AP exception payment block, and Master Data dependency responses because those are the highest-risk user-click paths after the Wave 4D/4E fixes.
 
 ## Inventory
 
@@ -61,4 +101,3 @@ This inventory covers the visible, production-relevant action surfaces that are 
 | `/admin/system-diagnostics` | `client/src/pages/system-diagnostics-page.tsx` | Run scan | `diagnostics:read` | Diagnostics | Diagnostics scan endpoint | Issue counts refresh | Error state | Diagnostics tests |
 | App shell | `client/src/components/sidebar.tsx` | Navigation items | Authenticated route access | Varies | Client navigation | Route marker appears | Route boundary / auth state | Route diagnostics |
 | App shell | `client/src/components/header.tsx` | Global search / jump | Authenticated route access | Varies | Client action | Search/jump opens intended route | Empty/no result state | Existing smoke coverage |
-

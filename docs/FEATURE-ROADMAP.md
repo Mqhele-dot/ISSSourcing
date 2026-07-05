@@ -1,6 +1,6 @@
 # Complete Feature List vs Current State — Professional Supply Chain Application
 
-This document maps the **Complete Feature List for a Professional Supply Chain Application** to the current ISSSourcing/InvTrack codebase. Status: **Implemented** | **Partial** | **Not started**.
+This document maps the **Complete Feature List for a Professional Supply Chain Application** to the current ISSSourcing codebase. Status: **Implemented** | **Partial** | **Not started**.
 
 ---
 

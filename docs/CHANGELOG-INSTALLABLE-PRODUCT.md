@@ -173,11 +173,11 @@ After `drizzle-kit push` (or your migration process), existing rows will have **
 - **Readiness banner**: setup-unavailable alert only when **`setupQueryActive`**; **Retry** disables on **`setupFetching`** (not readiness fetch).
 - **`useProductSetupComplete`**: returns **false** when **`setupStatusHealth === "degraded"`** or any **`critical`** issue (stricter than onboarding flags alone).
 - **Suppliers**: **`payment-terms` / `currencies` / `performance`** queries **`throwOnError: false`** + **`PanelInlineError`** for aux failures.
-- **Purchase orders list**: (superseded by InvTrack hardening) failures **propagate** to **`useAsyncResource`**; **`fallback`** hidden when the fetch errors.
+- **Purchase orders list**: (superseded by ISSSourcing hardening) failures **propagate** to **`useAsyncResource`**; **`fallback`** hidden when the fetch errors.
 - **Reports**: **`useReportsPageData`** aux queries **`throwOnError: false`**; report preview tabs use **`useReportingMoney`** (**`formatMoney`**) instead of **`formatCurrency`**.
 - **Routing spot-check**: procurement/finance/analytics pages rely on **`APP_ROUTES`** / section nav; no stray hardcoded **`href`** paths found in that pass.
 
-### InvTrack inventory & procurement hardening (runtime reliability)
+### ISSSourcing inventory & procurement hardening (runtime reliability)
 
 #### Inventory
 

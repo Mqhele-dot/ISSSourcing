@@ -1,7 +1,7 @@
 /**
  * Electron Database Service
  * 
- * Handles local SQLite database operations for the desktop version of InvTrack.
+ * Handles local SQLite database operations for the desktop version of ISSSourcing.
  * Provides offline functionality with synchronization capabilities.
  */
 

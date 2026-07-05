@@ -99,7 +99,7 @@ function handleDocumentGeneration() {
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontSize = 12;
       
-      page.drawText('InvTrack - Generated Report', {
+      page.drawText('ISSSourcing - Generated Report', {
         x: 50,
         y: height - 50,
         size: 24,

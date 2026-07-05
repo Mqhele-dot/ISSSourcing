@@ -1,4 +1,4 @@
-# npm registry policy (InvTrack / ISS Sourcing)
+# npm registry policy (ISSSourcing)
 
 ## Approved registry
 

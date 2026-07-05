@@ -1,6 +1,6 @@
 # Build Supply-Chain Hardening
 
-This pass applies the supplied research report to the InvTrack build path.
+This pass applies the supplied research report to the ISSSourcing build path.
 
 ## Implemented Controls
 

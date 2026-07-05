@@ -86,5 +86,46 @@ test.describe("button and action smoke", () => {
     await expect(page.getByTestId("po-use-contract-currency")).toBeVisible();
     await expect(page.getByTestId("po-clear-contract")).toBeVisible();
   });
-});
 
+  test("AP payment batch action shows validation when no invoice is selected", async ({ page }) => {
+    await gotoAuthed(page, "/finance/accounts-payable/payments");
+    await expect(page.getByTestId("accounts-payable-page")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("ap-create-batch-button").click();
+    await expect(page.getByText("Select at least one invoice")).toBeVisible();
+  });
+
+  test("system diagnostics scan and export actions remain usable", async ({ page }) => {
+    await gotoAuthed(page, "/admin/system-diagnostics");
+    await expect(page.getByTestId("system-diagnostics-page")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("diagnostics-run-scan-button").click();
+    await expect(page.getByTestId("diagnostics-scan-results")).toBeVisible();
+    await expect(page.getByTestId("diagnostics-export-json")).toBeVisible();
+    await expect(page.getByTestId("diagnostics-export-markdown")).toBeVisible();
+    await page.getByTestId("diagnostics-clear-events").click();
+    await expect(page.getByText("No live diagnostics events captured in this browser yet.")).toBeVisible();
+  });
+
+  test("settings save action persists through the production control plane", async ({ page }) => {
+    await gotoAuthed(page, "/admin/settings");
+    await expect(page.getByTestId("admin-settings-page")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("settings-control-low-stock").fill("10");
+    await page.getByTestId("settings-control-save").click();
+    await expect(page.getByText("Settings updated")).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("master-data add action reports validation instead of silently failing", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await gotoAuthed(page, "/admin/master-data/departments");
+    await expect(page.getByTestId("master-data-page")).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "Add record" }).click();
+    await expect(page.getByText(/Code and .* are required/i)).toBeVisible();
+  });
+
+  test("approval policy save action validates missing policy name", async ({ page }) => {
+    await gotoAuthed(page, "/finance/approval-policies");
+    await expect(page.getByTestId("approval-policies-page")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("approval-policy-name").fill("");
+    await page.getByTestId("approval-policy-save").click();
+    await expect(page.getByText(/Save failed|Policy name|required/i)).toBeVisible({ timeout: 20_000 });
+  });
+});

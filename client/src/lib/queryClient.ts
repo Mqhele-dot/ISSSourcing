@@ -82,7 +82,34 @@ function extractApiErrorCode(payload: unknown): string | undefined {
   if (isApiEnvelope(payload) && !payload.ok) {
     return payload.error.code;
   }
+  if (payload && typeof payload === "object" && "code" in payload) {
+    const value = (payload as { code?: unknown }).code;
+    if (typeof value === "string" && value.trim()) return value;
+  }
   return undefined;
+}
+
+const CONTROLLED_BUSINESS_RULE_CODES = new Set([
+  "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED",
+  "REORDER_ITEM_MISSING",
+  "PLAN_LIMIT_REACHED",
+  "FEATURE_NOT_INCLUDED",
+  "SUBSCRIPTION_INACTIVE",
+  "TRIAL_EXPIRED",
+  "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED",
+]);
+
+function isControlledBusinessRuleError(params: {
+  method: string;
+  status?: number;
+  apiCode?: string;
+  payload?: unknown;
+}): boolean {
+  if (!isMutationMethod(params.method)) return false;
+  if (params.status == null || ![400, 403, 404, 409].includes(params.status)) return false;
+  if (params.apiCode && CONTROLLED_BUSINESS_RULE_CODES.has(params.apiCode)) return true;
+  const raw = JSON.stringify(params.payload ?? "");
+  return /"alreadyRemoved"\s*:\s*true/.test(raw);
 }
 
 function reportRequestError(params: {
@@ -100,13 +127,15 @@ function reportRequestError(params: {
   const suppressed = shouldSuppressGlobalError(params.method, params.status, params.url);
   const method = params.method.toUpperCase();
   const apiCode = extractApiErrorCode(params.payload);
-  const businessRuleMutationWarning =
-    isMutationMethod(method) &&
-    ((params.status === 403 && apiCode === "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED") ||
-      (params.status === 409 && apiCode === "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED"));
+  const controlledBusinessRule = isControlledBusinessRuleError({
+    method,
+    status: params.status,
+    apiCode,
+    payload: params.payload,
+  });
   addDiagnosticEvent({
     severity:
-      businessRuleMutationWarning
+      controlledBusinessRule
         ? "info"
         : params.status == null || params.status >= 500 || isMutationMethod(method)
           ? "error"
@@ -129,7 +158,7 @@ function reportRequestError(params: {
     userAction: suppressed ? undefined : "Review the endpoint, status code, and server logs around this timestamp.",
   });
 
-  if (suppressed || businessRuleMutationWarning) {
+  if (suppressed || controlledBusinessRule) {
     return;
   }
   actionErrorStore.push({

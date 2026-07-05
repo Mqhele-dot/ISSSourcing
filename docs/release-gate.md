@@ -56,8 +56,8 @@ npm run verify:release:e2e
 | Subscription runtime flow | `npm run test:subscription-runtime-flow` | Yes | Prove Starter user/warehouse/SKU/export limits, Standard export unlock, Growth feature unlocks, Enterprise unlimited limits, expired/canceled write blocks, past_due grace, and plan-change audit evidence through the live API. | Added in Wave 4B | Runs inside `release:gate:delta`; snapshots/restores org subscription state and cleans test records. |
 | Stripe billing readiness | `npm run test:stripe-billing-readiness` | Yes | Prove checkout/portal missing-provider and missing-price errors, production local-adapter boundary, webhook signature rejection, event id requirement, and documented Stripe env vars. | Added in Wave 4B | Fast source/API-contract guard; does not contact Stripe. |
 | Subscription browser E2E | `npm run test:e2e:subscription` | Yes before production approval | Prove `/admin/subscription` renders plan cards, usage, locked features, AP billing separation, admin local plan change, and denied/disabled management for non-admin users. | Added to `verify:release:e2e` | Use GitHub Playwright gate if local Chromium sandbox is blocked. |
-| Button/action source contracts | `npm run test:button-action-contracts` | Yes | Prove 43 inventoried core visible actions have real handlers, feedback, invalidation, structured errors, and no inert/console-only action wiring. | Passing locally | Added to `release:gate:delta`; inventory is `docs/button-action-inventory.md`. |
-| Button/action browser smoke | `npm run test:e2e:button-actions` | Yes before production approval | Click/smoke high-risk action paths for contracts, gas timeout retry, subscription actions, custom-role permission removal, and PO commercial validation actions. | Added to `verify:release:e2e` | Use GitHub Playwright gate if local Chromium sandbox is blocked. |
+| Button/action source contracts | `npm run test:button-action-contracts` | Yes | Prove 43 inventoried core visible actions have real handlers, feedback, invalidation, structured errors, controlled validation classification, and no inert/console-only action wiring. | Passing locally | Added to `release:gate:delta`; inventory is `docs/button-action-inventory.md`. |
+| Button/action browser smoke | `npm run test:e2e:button-actions` | Yes before production approval | Click/smoke high-risk action paths for contracts, gas timeout retry, subscription actions, custom-role permission removal, PO commercial validation, AP payment validation, diagnostics, settings, Master Data, and approval policies. | Added to `verify:release:e2e` | 13 action surfaces covered; use GitHub Playwright gate if local Chromium sandbox is blocked. |
 | Diagnostics self-checks | `npm run test:diagnostics` | Yes | Prove diagnostic rules and route contracts behave predictably. | Passing via delta gate | Complements system diagnostics UI checks. |
 | Focused release gate | `npm run release:gate:delta` | Yes | Run RBAC, requisitions, AP controls, exports, smoke, setup, and installable-complete tests. | Passing via delta gate | Requires live local app from `test:local:delta`. |
 | GitHub CI production readiness | `.github/workflows/production-readiness.yml` | Yes before production | Re-run install, typecheck, lint, build, audit, and stable focused tests on GitHub infrastructure. | Workflow exists | CI must pass on the release head before production approval. |
@@ -126,3 +126,19 @@ Remaining marker-level production blockers are tracked in [Core Blocking Risk Re
 | `npm run build` | Passed locally | Client and server build completed; server used the existing Windows OneDrive transpiled runtime fallback. |
 | `npm run audit:production` | Passed locally | Regenerated `docs/production-readiness-audit.md`; core blocking and marker-level blockers remain separated from non-blocking source markers. |
 | `npm run test:e2e:button-actions` | Blocked locally by Windows browser launch | The wrapper started the app and API-backed custom-role permission delete idempotency passed; page-level Playwright cases failed at Chromium startup with `browserType.launch: spawn EPERM`. Use `.github/workflows/playwright-release-gate.yml` for required browser evidence in this environment. |
+
+## Latest Wave 4E Diagnostics/Button Evidence
+
+| Command | Result | Notes |
+|---|---|---|
+| `npm run test:button-action-contracts` | Passed locally | 12 contracts and 39 assertions; browser smoke coverage inventory increased to 13 action surfaces. |
+| `npm run test:live-diagnostics-regressions` | Passed locally | Confirms route recovery, reorder repair guidance, RBAC idempotent delete, gas fallback, ISSSourcing branding, tenant subscription checks, and controlled business-rule diagnostics. |
+| `npm run test:subscription-tenant-isolation` | Passed locally | Confirms org-scoped subscription user limit handling remains isolated. |
+| `npm run test:subscription-runtime-flow` | Passed locally with temporary server on port 5017 | Live API proof for plan limits, feature gates, lifecycle states, and audit evidence. |
+| `npm run check` | Passed locally | TypeScript completed after Wave 4E changes. |
+| `npm run lint` | Passed locally | ESLint completed across client, server, and shared TypeScript. |
+| `npm run build` | Passed locally | Production build completed with Windows OneDrive server fallback. |
+| `npm run audit:production` | Passed locally | Core blocking risks remain 0; marker-level blockers remain 0. |
+| `npm run verify:release` | Passed locally | Full non-browser release gate completed, including live local delta suite. |
+| `npm run verify:release:secure` | Passed locally | Ran `verify:release` plus package-manifest, lifecycle, SBOM, registry-signature, and high-vulnerability supply-chain checks. |
+| `npm run test:e2e:button-actions` | Browser evidence path remains GitHub workflow | Local page-level Chromium launches are blocked by `spawn EPERM`; run `.github/workflows/playwright-release-gate.yml` for production browser evidence. |

@@ -36,7 +36,7 @@ export function useSettings() {
   const defaultSettings: AppSettings = {
     id: 1,
     organizationId: 1,
-    companyName: "Inventory Manager",
+    companyName: "ISSSourcing",
     companyLogo: null,
     primaryColor: "#0f766e",
     dateFormat: "YYYY-MM-DD",
