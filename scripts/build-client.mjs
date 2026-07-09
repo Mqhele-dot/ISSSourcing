@@ -7,6 +7,47 @@ import themePlugin from "@replit/vite-plugin-shadcn-theme-json";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
 const isReplit = process.env.REPL_ID !== undefined;
+const manualChunks = (id) => {
+  if (!id.includes("node_modules")) {
+    return undefined;
+  }
+
+  const normalizedId = id.replaceAll("\\", "/");
+  if (normalizedId.includes("/recharts/")) {
+    return "recharts-vendor";
+  }
+  if (normalizedId.includes("/d3-")) {
+    return "d3-vendor";
+  }
+  if (
+    normalizedId.includes("/pdfjs-dist/") ||
+    normalizedId.includes("/pdf-lib/") ||
+    normalizedId.includes("/pdf.js-extract/") ||
+    normalizedId.includes("/docx/") ||
+    normalizedId.includes("/jsbarcode/") ||
+    normalizedId.includes("/qrcode/")
+  ) {
+    return "document-vendor";
+  }
+  if (normalizedId.includes("/html5-qrcode/") || normalizedId.includes("/tesseract.js/")) {
+    return "scan-vendor";
+  }
+  if (normalizedId.includes("/date-fns/") || normalizedId.includes("/react-day-picker/")) {
+    return "date-vendor";
+  }
+  if (
+    normalizedId.includes("/@radix-ui/") ||
+    normalizedId.includes("/cmdk/") ||
+    normalizedId.includes("/vaul/") ||
+    normalizedId.includes("/framer-motion/") ||
+    normalizedId.includes("/lucide-react/") ||
+    normalizedId.includes("/react-icons/")
+  ) {
+    return "ui-vendor";
+  }
+
+  return undefined;
+};
 
 const plugins = [react(), themePlugin({ themeJsonPath: path.resolve(projectRoot, "theme.json") })];
 
@@ -38,6 +79,12 @@ await build(
     build: {
       outDir: path.resolve(projectRoot, "dist/public"),
       emptyOutDir: true,
+      chunkSizeWarningLimit: 500,
+      rollupOptions: {
+        output: {
+          manualChunks,
+        },
+      },
     },
   }),
 );

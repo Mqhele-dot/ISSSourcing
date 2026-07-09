@@ -7,6 +7,47 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const manualChunks = (id: string) => {
+  if (!id.includes("node_modules")) {
+    return undefined;
+  }
+
+  const normalizedId = id.replaceAll("\\", "/");
+  if (normalizedId.includes("/recharts/")) {
+    return "recharts-vendor";
+  }
+  if (normalizedId.includes("/d3-")) {
+    return "d3-vendor";
+  }
+  if (
+    normalizedId.includes("/pdfjs-dist/") ||
+    normalizedId.includes("/pdf-lib/") ||
+    normalizedId.includes("/pdf.js-extract/") ||
+    normalizedId.includes("/docx/") ||
+    normalizedId.includes("/jsbarcode/") ||
+    normalizedId.includes("/qrcode/")
+  ) {
+    return "document-vendor";
+  }
+  if (normalizedId.includes("/html5-qrcode/") || normalizedId.includes("/tesseract.js/")) {
+    return "scan-vendor";
+  }
+  if (normalizedId.includes("/date-fns/") || normalizedId.includes("/react-day-picker/")) {
+    return "date-vendor";
+  }
+  if (
+    normalizedId.includes("/@radix-ui/") ||
+    normalizedId.includes("/cmdk/") ||
+    normalizedId.includes("/vaul/") ||
+    normalizedId.includes("/framer-motion/") ||
+    normalizedId.includes("/lucide-react/") ||
+    normalizedId.includes("/react-icons/")
+  ) {
+    return "ui-vendor";
+  }
+
+  return undefined;
+};
 
 /** Replit-only: the runtime error modal can trigger full page reloads in other hosts (e.g. Codespaces). */
 const isReplit = process.env.REPL_ID !== undefined;
@@ -101,5 +142,11 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks,
+      },
+    },
   },
 });
