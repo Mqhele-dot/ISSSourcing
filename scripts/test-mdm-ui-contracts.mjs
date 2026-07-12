@@ -11,6 +11,14 @@ assertIncludes(ui, "master-data-governance-dashboard", "governance dashboard");
 assertIncludes(ui, "master-data-change-requests", "change request queue");
 assertIncludes(ui, "master-data-standard-record-fields", "standard record model");
 assertIncludes(ui, "master-data-where-used-response", "where-used response");
+assertIncludes(ui, "usePermissions", "permission-aware UI hook");
+assertIncludes(ui, 'hasPermission("master_data", "update")', "permission-based update gate");
+assertIncludes(ui, "canSubmitChangeRequest", "steward/manager change request state");
+assertIncludes(ui, "canApproveChangeRequest", "approver state");
+assertIncludes(ui, "canAdminOverride", "admin override state");
+if (ui.includes('String(user?.role ?? "").toLowerCase() === "admin"')) {
+  throw new Error("Master Data UI must not use hardcoded admin-only role checks");
+}
 assertIncludes(ui, 'requestJson<MdmDomainRegistryEntry[]>("GET", "/api/mdm/domain-registry")', "domain registry query");
 assertIncludes(ui, 'requestJson<MdmChangeRequest[]>("GET", "/api/mdm/change-requests")', "change request query");
 assertIncludes(ui, "require approval", "approval banner language");

@@ -65,9 +65,13 @@ import {
   validateMdmTransaction,
 } from "./mdm-control-centre";
 import {
+  addMdmChangeRequestComment,
   approveMdmChangeRequest,
+  applyMdmChangeRequest,
   createMdmChangeRequest,
+  getMdmChangeRequest,
   listMdmChangeRequests,
+  rejectMdmChangeRequest,
 } from "./mdm-change-request-service";
 import { getMdmWhereUsed } from "./mdm-where-used-service";
 
@@ -158,6 +162,19 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     return Number.isFinite(n) ? n : undefined;
   }
 
+  function sendMdmApprovalError(res: Response, error: unknown) {
+    if (error && typeof error === "object" && "status" in error && "code" in error) {
+      const structured = error as { status?: unknown; code?: unknown; message?: unknown };
+      return sendError(
+        res,
+        Number(structured.status) || 403,
+        typeof structured.code === "string" ? structured.code : "MDM_APPROVAL_BLOCKED",
+        typeof structured.message === "string" ? structured.message : "MDM approval was blocked",
+      );
+    }
+    return null;
+  }
+
   app.get("/api/mdm/control-centre/health", ...masterRead, async (_req: Request, res: Response) => {
     try {
       return sendOk(res, await getMdmControlCentreHealth(getActiveOrganizationId()));
@@ -177,6 +194,19 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       console.error("Error listing MDM change requests:", error);
       return sendError(res, 500, "MDM_CHANGE_REQUEST_LIST_FAILED", "Failed to list MDM change requests");
+    }
+  });
+
+  app.get("/api/mdm/change-requests/:id", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
+      const change = await getMdmChangeRequest(getActiveOrganizationId(), id);
+      if (!change) return sendError(res, 404, "NOT_FOUND", "MDM change request not found");
+      return sendOk(res, change);
+    } catch (error) {
+      console.error("Error fetching MDM change request:", error);
+      return sendError(res, 500, "MDM_CHANGE_REQUEST_GET_FAILED", "Failed to fetch MDM change request");
     }
   });
 
@@ -225,16 +255,81 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, approved);
     } catch (error) {
       console.error("Error approving MDM change request:", error);
-      if (error && typeof error === "object" && "status" in error && "code" in error) {
-        const structured = error as { status?: unknown; code?: unknown; message?: unknown };
-        return sendError(
-          res,
-          Number(structured.status) || 403,
-          typeof structured.code === "string" ? structured.code : "MDM_APPROVAL_BLOCKED",
-          typeof structured.message === "string" ? structured.message : "MDM approval was blocked",
-        );
-      }
+      const structured = sendMdmApprovalError(res, error);
+      if (structured) return structured;
       return sendError(res, 500, "MDM_CHANGE_REQUEST_APPROVAL_FAILED", "Failed to approve MDM change request");
+    }
+  });
+
+  app.post("/api/mdm/change-requests/:id/reject", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      const actorId = sessionUserId(req);
+      if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
+      if (!actorId) return sendError(res, 401, "UNAUTHENTICATED", "A signed-in user is required");
+      const rejected = await rejectMdmChangeRequest({
+        organizationId: getActiveOrganizationId(),
+        id,
+        actorId,
+        reason: String(req.body?.reason ?? "Rejected"),
+      });
+      if (!rejected) return sendError(res, 404, "NOT_FOUND", "MDM change request not found");
+      return sendOk(res, rejected);
+    } catch (error) {
+      console.error("Error rejecting MDM change request:", error);
+      const structured = sendMdmApprovalError(res, error);
+      if (structured) return structured;
+      return sendError(res, 500, "MDM_CHANGE_REQUEST_REJECT_FAILED", "Failed to reject MDM change request");
+    }
+  });
+
+  app.post("/api/mdm/change-requests/:id/apply", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      const actorId = sessionUserId(req);
+      if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
+      if (!actorId) return sendError(res, 401, "UNAUTHENTICATED", "A signed-in user is required");
+      const applied = await applyMdmChangeRequest({
+        organizationId: getActiveOrganizationId(),
+        id,
+        actorId,
+        reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+        allowAdminOverride: req.body?.allowAdminOverride === true,
+      });
+      if (!applied) return sendError(res, 404, "NOT_FOUND", "MDM change request not found");
+      return sendOk(res, applied);
+    } catch (error) {
+      console.error("Error applying MDM change request:", error);
+      const structured = sendMdmApprovalError(res, error);
+      if (structured) return structured;
+      return sendError(
+        res,
+        500,
+        "MDM_CHANGE_REQUEST_APPLY_FAILED",
+        error instanceof Error ? error.message : "Failed to apply MDM change request",
+      );
+    }
+  });
+
+  app.post("/api/mdm/change-requests/:id/comments", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      const actorId = sessionUserId(req);
+      const comment = String(req.body?.comment ?? "").trim();
+      if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
+      if (!actorId) return sendError(res, 401, "UNAUTHENTICATED", "A signed-in user is required");
+      if (!comment) return sendError(res, 400, "MDM_COMMENT_REQUIRED", "A comment is required");
+      const created = await addMdmChangeRequestComment({
+        organizationId: getActiveOrganizationId(),
+        id,
+        actorId,
+        comment,
+      });
+      if (!created) return sendError(res, 404, "NOT_FOUND", "MDM change request not found");
+      return sendOk(res, created, 201);
+    } catch (error) {
+      console.error("Error adding MDM change request comment:", error);
+      return sendError(res, 500, "MDM_CHANGE_REQUEST_COMMENT_FAILED", "Failed to add MDM change request comment");
     }
   });
 

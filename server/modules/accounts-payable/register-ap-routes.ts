@@ -16,6 +16,7 @@ import { resolveRequestActor } from "../../auth/request-user";
 import { parseApprovalContext, parseInvoiceFilters } from "./ap-route-adapters";
 import {
   addInvoiceItemRecord,
+  ApStructuredError,
   approveInvoice,
   approvePaymentBatch,
   createCapture,
@@ -58,6 +59,16 @@ import {
   legacyInvoiceItemPatchSchema,
   parseRouteId,
 } from "./ap-route-validation";
+
+function sendApStructuredError(res: Response, error: unknown) {
+  if (error instanceof ApStructuredError) {
+    return sendError(res, error.status, error.code, error.message, {
+      hint: error.hint,
+      details: error.details,
+    });
+  }
+  return null;
+}
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -348,6 +359,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, result);
     } catch (error) {
       console.error("Error matching AP invoice:", error);
+      const structured = sendApStructuredError(res, error);
+      if (structured) return structured;
       return sendError(res, 400, "INVOICE_MATCH_FAILED", error instanceof Error ? error.message : "Failed to run invoice match");
     }
   });
@@ -375,6 +388,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, invoice);
     } catch (error) {
       console.error("Error submitting invoice for approval:", error);
+      const structured = sendApStructuredError(res, error);
+      if (structured) return structured;
       const message = error instanceof Error ? error.message : "Failed to submit invoice for approval";
       const clientError =
         /must be matched|unresolved matching exceptions|not linked to a purchase order|Linked purchase order not found|Invoice is not linked/i.test(
@@ -686,6 +701,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!result) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, result);
     } catch (error) {
+      const structured = sendApStructuredError(res, error);
+      if (structured) return structured;
       return sendError(res, 400, "INVOICE_MATCH_FAILED", error instanceof Error ? error.message : "Failed to run invoice match");
     }
   });

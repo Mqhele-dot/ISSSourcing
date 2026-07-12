@@ -160,13 +160,19 @@ Implemented evidence:
 - `/api/mdm/defaults/requisition-context` uses a safe item-category join so integer/text category mismatches cannot crash requisition setup.
 - High-risk MDM changes have maker-checker change-request scaffolding and self-approval blocking.
 - The Control Centre UI now exposes registry health, high-risk domains, pending change requests, standard lifecycle fields, data-quality issues, and where-used checks.
-- Added MDM release tests: `test:mdm-requisition-context`, `test:mdm-domain-registry`, `test:mdm-change-requests`, `test:mdm-data-quality`, `test:mdm-where-used`, `test:mdm-security`, and `test:mdm-ui-contracts`.
+- Added MDM release tests: `test:mdm-requisition-context`, `test:mdm-domain-registry`, `test:mdm-change-requests`, `test:mdm-data-quality`, `test:mdm-where-used`, `test:mdm-security`, `test:mdm-runtime-security`, `test:mdm-ui-contracts`, and `test:ap-po-link-validation`.
 
 Primary evidence commands:
 
-- `npm run test:button-action-contracts`
-- `npm run test:e2e:button-actions`
-- `npm run test:live-diagnostics-regressions`
+- `npm run test:mdm-requisition-context`
+- `npm run test:mdm-domain-registry`
+- `npm run test:mdm-change-requests`
+- `npm run test:mdm-data-quality`
+- `npm run test:mdm-where-used`
+- `npm run test:mdm-security`
+- `npm run test:mdm-runtime-security`
+- `npm run test:mdm-ui-contracts`
+- `npm run test:ap-po-link-validation`
 
 ## Browser E2E Evidence
 

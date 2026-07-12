@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
 import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { WarehouseTable } from "@/pages/warehouses/warehouse-table";
 import { WarehouseDialogs } from "@/pages/warehouses/warehouse-dialogs";
@@ -352,7 +353,8 @@ function MasterTable({
   config: MasterSectionConfig;
 }) {
   const { toast } = useToast();
-  const { user } = useAuth();
+  useAuth();
+  const { hasPermission, hasRole } = usePermissions();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [extraValues, setExtraValues] = useState<Record<string, string>>({});
@@ -362,7 +364,26 @@ function MasterTable({
   const [dependencyResponse, setDependencyResponse] = useState<string | null>(null);
   const [whereUsedResponse, setWhereUsedResponse] = useState<string | null>(null);
   const endpoint = config.endpoint ?? "";
-  const canManageMasterData = String(user?.role ?? "").toLowerCase() === "admin";
+  const canReadMasterData =
+    hasPermission("master_data", "read") ||
+    hasPermission("settings", "read") ||
+    hasPermission("import_export", "read") ||
+    hasRole(["manager", "admin"]);
+  const canCreateMasterData =
+    hasPermission("master_data", "create") || hasPermission("import_export", "import") || hasRole(["manager", "admin"]);
+  const canUpdateMasterData =
+    hasPermission("master_data", "update") || hasPermission("settings", "manage") || hasRole(["manager", "admin"]);
+  const canDeleteMasterData =
+    hasPermission("master_data", "delete") || hasPermission("settings", "admin") || hasRole("admin");
+  const canSubmitChangeRequest =
+    hasPermission("master_data", "create") || hasPermission("master_data", "update") || hasRole(["manager", "admin"]);
+  const canApproveChangeRequest =
+    hasPermission("master_data", "approve") || hasPermission("settings", "admin") || hasRole("admin");
+  const canAdminOverride =
+    hasPermission("master_data", "admin") || hasPermission("settings", "admin") || hasRole("admin");
+  const disabledReason = !canReadMasterData
+    ? "Your role can open this page but cannot read Master Data records."
+    : "Your permissions do not allow this Master Data action.";
   const domainKey =
     config.slug === "units"
       ? "units-of-measure"
@@ -607,13 +628,20 @@ function MasterTable({
           </div>
         </div>
 
-        {!canManageMasterData ? (
+        <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+          Access mode: {canReadMasterData ? "read" : "limited"}
+          {canSubmitChangeRequest ? " + submit change request" : ""}
+          {canApproveChangeRequest ? " + approve/reject" : ""}
+          {canAdminOverride ? " + admin override" : ""}.
+        </div>
+
+        {!canCreateMasterData && !canUpdateMasterData ? (
           <div
             className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
             data-testid="master-data-permission-denied"
           >
-            You can review this setup area, but only administrators can create, edit, deactivate, or delete Master Data
-            records. Backend permissions still enforce this rule on write endpoints.
+            {disabledReason} Stewards and managers can submit governed change requests, approvers can approve or reject
+            high-risk requests, and admin override remains explicit and audited.
           </div>
         ) : null}
 
@@ -639,7 +667,7 @@ function MasterTable({
           className="rounded-md border bg-card p-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!canManageMasterData) {
+            if (editingId != null ? !canUpdateMasterData : !canCreateMasterData) {
               setDependencyResponse("MASTER_DATA_PERMISSION_DENIED");
               return;
             }
@@ -692,12 +720,20 @@ function MasterTable({
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={!canManageMasterData || updateRecord.isPending}>
+                  <Button
+                    type="submit"
+                    disabled={!canUpdateMasterData || updateRecord.isPending}
+                    title={!canUpdateMasterData ? disabledReason : undefined}
+                  >
                     Save changes
                   </Button>
                 </>
               ) : (
-                <Button type="submit" disabled={!canManageMasterData || createRecord.isPending}>
+                <Button
+                  type="submit"
+                  disabled={!canCreateMasterData || createRecord.isPending}
+                  title={!canCreateMasterData ? disabledReason : undefined}
+                >
                   Add record
                 </Button>
               )}
@@ -789,7 +825,8 @@ function MasterTable({
                             }
                             setExtraValues(nextExtras);
                           }}
-                          disabled={!canManageMasterData || updateRecord.isPending || deleteRecord.isPending}
+                          disabled={!canUpdateMasterData || updateRecord.isPending || deleteRecord.isPending}
+                          title={!canUpdateMasterData ? disabledReason : undefined}
                         >
                           Edit
                         </Button>
@@ -805,7 +842,8 @@ function MasterTable({
                           size="sm"
                           variant="outline"
                           onClick={() => toggleRecord.mutate({ id: row.id, active: row.active === false })}
-                          disabled={!canManageMasterData || toggleRecord.isPending}
+                          disabled={!canUpdateMasterData || toggleRecord.isPending}
+                          title={!canUpdateMasterData ? disabledReason : undefined}
                         >
                           {row.active === false ? "Activate" : "Deactivate"}
                         </Button>
@@ -813,7 +851,8 @@ function MasterTable({
                           size="sm"
                           variant="outline"
                           onClick={() => deleteRecord.mutate(row.id)}
-                          disabled={!canManageMasterData || deleteRecord.isPending}
+                          disabled={!canDeleteMasterData || deleteRecord.isPending}
+                          title={!canDeleteMasterData ? disabledReason : undefined}
                         >
                           Delete
                         </Button>

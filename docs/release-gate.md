@@ -60,9 +60,12 @@ npm run verify:release:e2e
 | Button/action browser smoke | `npm run test:e2e:button-actions` | Yes before production approval | Click/smoke high-risk action paths for contracts, gas timeout retry, subscription actions, custom-role permission removal, PO commercial validation, AP payment validation, diagnostics, settings, Master Data, and approval policies. | Added to `verify:release:e2e` | 13 action surfaces covered; use GitHub Playwright gate if local Chromium sandbox is blocked. |
 | MDM requisition context | `npm run test:mdm-requisition-context` | Yes | Prove `/api/mdm/defaults/requisition-context` cannot regress to the integer/text item-category crash and returns requisition defaults. | Passing locally via `verify:release` | Runtime DB/service proof. |
 | MDM domain registry | `npm run test:mdm-domain-registry` | Yes | Prove governed domains, owners, stewards, risk, required fields, high-risk fields, where-used checks, import/export, and audit policy are registered. | Passing locally via `verify:release` | Source contract proof. |
+| MDM change requests | `npm run test:mdm-change-requests` | Yes | Prove maker-checker lifecycle routes and services cover create, approve, reject, apply, failed apply, comments, apply-once, and before/after evidence. | Added to `release:gate:delta` | Source contract proof. |
 | MDM data quality | `npm run test:mdm-data-quality` | Yes | Prove duplicate, compliance, UOM, item, supplier, tax, warehouse, and finance data-quality checks are catalogued and scanned. | Passing locally via `verify:release` | Source contract proof. |
 | MDM where-used | `npm run test:mdm-where-used` | Yes | Prove unsafe archive/deactivate dependency checks are exposed through API and UI. | Passing locally via `verify:release` | Source contract proof. |
 | MDM security/UI contracts | `npm run test:mdm-security && npm run test:mdm-ui-contracts` | Yes | Prove tenant scoping, deny-by-default write gates, stale version errors, maker-checker controls, audit hooks, and control-centre UI states. | Passing locally via `verify:release` | Source contract proof. |
+| MDM runtime security | `npm run test:mdm-runtime-security` | Yes | Prove DB-backed tenant isolation, low-risk create/audit, high-risk pending approval, self-approval blocking, stale update blocking, comments, apply-once, and failed-apply recording. | Added to `release:gate:delta` | Runtime DB/service proof. |
+| AP PO-link validation | `npm run test:ap-po-link-validation` | Yes | Prove no-PO match/approval failures return `AP_INVOICE_PO_LINK_REQUIRED` with invoice id and repair hint instead of generic AP errors. | Added to `release:gate:delta` | Source/service contract proof. |
 | Diagnostics self-checks | `npm run test:diagnostics` | Yes | Prove diagnostic rules and route contracts behave predictably. | Passing via delta gate | Complements system diagnostics UI checks. |
 | Focused release gate | `npm run release:gate:delta` | Yes | Run RBAC, requisitions, AP controls, exports, smoke, setup, and installable-complete tests. | Passing via delta gate | Requires live local app from `test:local:delta`. |
 | GitHub CI production readiness | `.github/workflows/production-readiness.yml` | Yes before production | Re-run install, typecheck, lint, build, audit, and stable focused tests on GitHub infrastructure. | Workflow exists | CI must pass on the release head before production approval. |
@@ -147,3 +150,18 @@ Remaining marker-level production blockers are tracked in [Core Blocking Risk Re
 | `npm run verify:release` | Passed locally | Full non-browser release gate completed, including live local delta suite. |
 | `npm run verify:release:secure` | Passed locally | Ran `verify:release` plus package-manifest, lifecycle, SBOM, registry-signature, and high-vulnerability supply-chain checks. |
 | `npm run test:e2e:button-actions` | Browser evidence path remains GitHub workflow | Local page-level Chromium launches are blocked by `spawn EPERM`; run `.github/workflows/playwright-release-gate.yml` for production browser evidence. |
+
+## Latest Wave 5B MDM Runtime Evidence
+
+| Command | Result | Notes |
+|---|---|---|
+| `npm run test:mdm-change-requests` | Passed locally | Confirms governed MDM change requests expose create, approve, reject, apply, failed apply, comments, apply-once, and before/after lifecycle evidence. |
+| `npm run test:mdm-runtime-security` | Passed locally | Runtime DB/service proof for tenant isolation, low-risk create audit, high-risk pending approval, self-approval blocking, stale update blocking, comments, apply-once, and failed-apply recording. |
+| `npm run test:ap-po-link-validation` | Passed locally | Confirms AP no-PO match/approval failures return `AP_INVOICE_PO_LINK_REQUIRED` with invoice id and repair hint. |
+| `npm run test:latest-runtime-failures` | Passed locally | Re-runs MDM requisition-context, MDM runtime security, AP PO-link validation, and live diagnostics regressions. |
+| `npm run check` | Passed locally | TypeScript completed after Wave 5B service, route, UI, and test changes. |
+| `npm run lint` | Passed locally | ESLint completed across client, server, and shared TypeScript. |
+| `npm run build` | Passed locally | Production build completed with the existing Windows OneDrive server fallback. |
+| `npm run audit:production` | Passed locally | Core blocking risks remain 0; marker-level blockers remain 0. |
+| `npm run verify:release` | Passed locally | Full non-browser release gate completed, including the new MDM change-request, MDM runtime-security, and AP PO-link validation gates in `release:gate:delta`. |
+| `npm run verify:release:secure` | Passed locally | Re-ran `verify:release` plus package-manifest cleanliness, lifecycle, SBOM, registry-signature, and high-vulnerability supply-chain checks; `npm audit --audit-level=high` reported 0 vulnerabilities. |

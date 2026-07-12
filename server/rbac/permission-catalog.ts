@@ -38,7 +38,7 @@ export const PERMISSION_CATALOG_CATEGORIES: PermissionCatalogCategory[] = [
   {
     id: "system",
     label: "System",
-    resources: ["settings", "system", "import_export", "documents", "notifications"],
+    resources: ["settings", "system", "master_data", "import_export", "documents", "notifications"],
   },
 ];
 

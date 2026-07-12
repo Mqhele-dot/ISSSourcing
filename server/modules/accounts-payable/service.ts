@@ -71,6 +71,34 @@ const DEFAULT_MATCH_ON_SUBMIT_APPROVAL: MatchOptions = {
   taxTolerancePct: 0,
 };
 
+export class ApStructuredError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly details?: unknown;
+  readonly hint?: string;
+
+  constructor(code: string, message: string, status = 400, options?: { details?: unknown; hint?: string }) {
+    super(message);
+    this.name = "ApStructuredError";
+    this.code = code;
+    this.status = status;
+    this.details = options?.details;
+    this.hint = options?.hint;
+  }
+}
+
+function invoicePoLinkRequired(invoiceId: number) {
+  return new ApStructuredError(
+    "AP_INVOICE_PO_LINK_REQUIRED",
+    "Invoice must be linked to a purchase order before matching or submitting for approval.",
+    400,
+    {
+      details: { invoiceId },
+      hint: "Link this invoice to a purchase order before matching or submitting for approval.",
+    },
+  );
+}
+
 function toDateOrUndefined(value: unknown): Date | undefined {
   if (value == null || value === "") return undefined;
   const parsed = value instanceof Date ? value : new Date(String(value));
@@ -653,6 +681,9 @@ export async function submitInvoiceForApproval(invoiceId: number, userId: number
   const orgId = getActiveOrganizationId();
   const invoice = await storage.getInvoice(invoiceId);
   if (!invoice) return undefined;
+  if (!invoice.purchaseOrderId) {
+    throw invoicePoLinkRequired(invoiceId);
+  }
   assertInvoiceTransition(String(invoice.status), "PENDING_APPROVAL");
   let latestMatch = await getLatestMatchResult(invoiceId, orgId);
   if (!latestMatch) {
@@ -1354,7 +1385,7 @@ export async function evaluateInvoiceMatch(
   const invoice = await storage.getInvoice(invoiceId);
   if (!invoice) return undefined;
   if (!invoice.purchaseOrderId) {
-    throw new Error("Invoice is not linked to a purchase order");
+    throw invoicePoLinkRequired(invoiceId);
   }
 
   const po = await storage.getPurchaseOrder(invoice.purchaseOrderId);
