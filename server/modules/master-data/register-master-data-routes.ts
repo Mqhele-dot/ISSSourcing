@@ -49,6 +49,7 @@ import {
 } from "@shared/schema";
 import {
   createImportBatch,
+  getMdmDomainRegistry,
   createMdmDomainRecord,
   getImportBatchValidationReport,
   getMdmAudit,
@@ -63,6 +64,12 @@ import {
   updateMdmDomainRecord,
   validateMdmTransaction,
 } from "./mdm-control-centre";
+import {
+  approveMdmChangeRequest,
+  createMdmChangeRequest,
+  listMdmChangeRequests,
+} from "./mdm-change-request-service";
+import { getMdmWhereUsed } from "./mdm-where-used-service";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -160,6 +167,77 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
+  app.get("/api/mdm/domain-registry", ...masterRead, async (_req: Request, res: Response) => {
+    return sendOk(res, getMdmDomainRegistry());
+  });
+
+  app.get("/api/mdm/change-requests", ...masterRead, async (_req: Request, res: Response) => {
+    try {
+      return sendOk(res, await listMdmChangeRequests(getActiveOrganizationId()));
+    } catch (error) {
+      console.error("Error listing MDM change requests:", error);
+      return sendError(res, 500, "MDM_CHANGE_REQUEST_LIST_FAILED", "Failed to list MDM change requests");
+    }
+  });
+
+  app.post("/api/mdm/change-requests", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      return sendOk(
+        res,
+        await createMdmChangeRequest({
+          organizationId: getActiveOrganizationId(),
+          domain: String(req.body?.domain ?? ""),
+          entityId: req.body?.entityId == null ? null : Number(req.body.entityId),
+          action: String(req.body?.action ?? "update") as any,
+          proposedPatch:
+            req.body?.proposedPatch && typeof req.body.proposedPatch === "object" ? req.body.proposedPatch : {},
+          beforeState: req.body?.beforeState && typeof req.body.beforeState === "object" ? req.body.beforeState : null,
+          submittedBy: sessionUserId(req),
+          reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+        }),
+        201,
+      );
+    } catch (error) {
+      console.error("Error creating MDM change request:", error);
+      return sendError(
+        res,
+        500,
+        "MDM_CHANGE_REQUEST_CREATE_FAILED",
+        error instanceof Error ? error.message : "Failed to create MDM change request",
+      );
+    }
+  });
+
+  app.post("/api/mdm/change-requests/:id/approve", ...masterWrite, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      const actorId = sessionUserId(req);
+      if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
+      if (!actorId) return sendError(res, 401, "UNAUTHENTICATED", "A signed-in user is required");
+      const approved = await approveMdmChangeRequest({
+        organizationId: getActiveOrganizationId(),
+        id,
+        actorId,
+        reason: String(req.body?.reason ?? "Approved"),
+        allowAdminOverride: req.body?.allowAdminOverride === true,
+      });
+      if (!approved) return sendError(res, 404, "NOT_FOUND", "MDM change request not found");
+      return sendOk(res, approved);
+    } catch (error) {
+      console.error("Error approving MDM change request:", error);
+      if (error && typeof error === "object" && "status" in error && "code" in error) {
+        const structured = error as { status?: unknown; code?: unknown; message?: unknown };
+        return sendError(
+          res,
+          Number(structured.status) || 403,
+          typeof structured.code === "string" ? structured.code : "MDM_APPROVAL_BLOCKED",
+          typeof structured.message === "string" ? structured.message : "MDM approval was blocked",
+        );
+      }
+      return sendError(res, 500, "MDM_CHANGE_REQUEST_APPROVAL_FAILED", "Failed to approve MDM change request");
+    }
+  });
+
   app.get("/api/mdm/data-quality/issues", ...masterRead, async (_req: Request, res: Response) => {
     try {
       return sendOk(res, await getMdmDataQualityIssues(getActiveOrganizationId()));
@@ -249,6 +327,18 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
+  app.get("/api/mdm/:domain/:id/where-used", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const domain = String(req.params.domain ?? "");
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid MDM record ID");
+      return sendOk(res, await getMdmWhereUsed(domain, getActiveOrganizationId(), id));
+    } catch (error) {
+      console.error("Error fetching MDM where-used:", error);
+      return sendError(res, 500, "MDM_WHERE_USED_FAILED", "Failed to fetch Master Data dependency usage");
+    }
+  });
+
   app.get("/api/mdm/:domain", ...masterRead, async (req: Request, res: Response) => {
     try {
       const domain = String(req.params.domain ?? "");
@@ -297,6 +387,9 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         const message = typeof structured.message === "string" ? structured.message : "Master Data update was blocked.";
         if (code === "MDM_RECORD_IN_USE" && Number.isFinite(status) && status >= 400 && status < 600) {
           return sendError(res, status, code, message, { details: { usage: structured.usage } });
+        }
+        if (code === "MDM_STALE_VERSION" && Number.isFinite(status) && status >= 400 && status < 600) {
+          return sendError(res, status, code, message);
         }
         if (Number.isFinite(status) && status >= 400 && status < 600) {
           return sendError(res, status, code, message, { details: { usage: structured.usage } });

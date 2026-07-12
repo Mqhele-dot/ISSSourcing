@@ -1,4 +1,6 @@
 import { pool } from "../../db";
+import { MDM_DATA_QUALITY_CHECKS } from "./mdm-data-quality-engine";
+export { getMdmDomainRegistry } from "./mdm-domain-registry";
 
 export type MdmDomain =
   | "legal-entities"
@@ -44,6 +46,16 @@ export class MdmDependencyError extends Error {
     super(`Cannot deactivate this ${domain} record while it is used by ${summary}.`);
     this.name = "MdmDependencyError";
     this.usage = usage;
+  }
+}
+
+export class MdmStaleVersionError extends Error {
+  readonly status = 409;
+  readonly code = "MDM_STALE_VERSION";
+
+  constructor() {
+    super("This Master Data record was changed by someone else. Refresh before saving again.");
+    this.name = "MdmStaleVersionError";
   }
 }
 
@@ -428,6 +440,13 @@ export async function updateMdmDomainRecord(
   if (before.rowCount === 0) return null;
 
   const payload = filterPayload(config, input);
+  const expectedVersion = Number(input.version ?? input.expectedVersion);
+  if (Number.isFinite(expectedVersion) && before.rows[0] && "version" in before.rows[0]) {
+    const currentVersion = Number(before.rows[0].version ?? 1);
+    if (currentVersion !== expectedVersion) {
+      throw new MdmStaleVersionError();
+    }
+  }
   if (payload.active === false) {
     const usage = await getMdmDisableDependencies(domain, organizationId, id);
     if (usage.length > 0) {
@@ -435,6 +454,9 @@ export async function updateMdmDomainRecord(
     }
   }
   payload.updated_at = new Date();
+  if ("version" in before.rows[0]) {
+    payload.version = Number(before.rows[0].version ?? 1) + 1;
+  }
   const columns = Object.keys(payload);
   const values = Object.values(payload);
   values.push(organizationId, id);
@@ -585,6 +607,77 @@ export async function scanMdmDataQuality(organizationId: number) {
       affectedEntityType: "inventory_item",
       affectedEntityId: item.id,
       recommendedAction: "Open Item Catalogue and add UOM, preferred supplier, price, tax, and GL mapping.",
+    });
+  }
+
+  const duplicateSuppliers = await pool.query<{ name: string; count: string }>(
+    `
+      SELECT LOWER(TRIM(name)) AS name, COUNT(*)::text AS count
+      FROM suppliers
+      WHERE organization_id = $1 AND COALESCE(status, 'active') <> 'deleted'
+      GROUP BY LOWER(TRIM(name))
+      HAVING COUNT(*) > 1
+      LIMIT 25
+    `,
+    [organizationId],
+  );
+  for (const duplicate of duplicateSuppliers.rows) {
+    issues.push({
+      domain: "Suppliers",
+      severity: "warning",
+      issueCode: "DUPLICATE_SUPPLIER_NAME",
+      title: "Duplicate supplier candidate",
+      message: `${duplicate.count} supplier records share the normalized name "${duplicate.name}".`,
+      recommendedAction: "Review duplicate candidates and merge, block, or mark the replacement supplier record.",
+    });
+  }
+
+  const expiredSupplierDocuments = await pool.query<{ id: number; supplier_id: number; document_type: string }>(
+    `
+      SELECT id, supplier_id, document_type
+      FROM mdm_supplier_documents
+      WHERE organization_id = $1
+        AND required_for_po = TRUE
+        AND expiry_date IS NOT NULL
+        AND expiry_date < NOW()
+        AND COALESCE(status, 'pending') <> 'waived'
+      LIMIT 25
+    `,
+    [organizationId],
+  );
+  for (const doc of expiredSupplierDocuments.rows) {
+    issues.push({
+      domain: "Supplier Compliance Documents",
+      severity: "error",
+      issueCode: "SUPPLIER_COMPLIANCE_EXPIRED",
+      title: "Supplier compliance document expired",
+      message: `Required ${doc.document_type} document for supplier #${doc.supplier_id} has expired.`,
+      affectedEntityType: "supplier_document",
+      affectedEntityId: doc.id,
+      recommendedAction: "Renew or explicitly waive the compliance document before issuing new purchase orders.",
+    });
+  }
+
+  const invalidConversions = await pool.query<{ id: number; factor: number }>(
+    `
+      SELECT id, factor
+      FROM mdm_uom_conversions
+      WHERE organization_id = $1
+        AND (factor IS NULL OR factor <= 0 OR from_uom_id = to_uom_id)
+      LIMIT 25
+    `,
+    [organizationId],
+  );
+  for (const conversion of invalidConversions.rows) {
+    issues.push({
+      domain: "Units & Conversions",
+      severity: "error",
+      issueCode: "INVALID_UOM_CONVERSION",
+      title: "Invalid UOM conversion",
+      message: `UOM conversion #${conversion.id} has an invalid factor or converts a unit to itself.`,
+      affectedEntityType: "uom_conversion",
+      affectedEntityId: conversion.id,
+      recommendedAction: "Set a positive conversion factor between two distinct units of measure.",
     });
   }
 
@@ -788,6 +881,7 @@ export async function scanMdmDataQuality(organizationId: number) {
       activeGlMappings,
       activeDocumentSequences: activeSequences,
       activeProcurementPolicies: activePolicies,
+      dataQualityChecks: MDM_DATA_QUALITY_CHECKS.length,
     },
   };
 }
@@ -862,6 +956,37 @@ export async function getMdmControlCentreHealth(organizationId: number) {
       },
     ],
     topIssues: scan.issues.slice(0, 8),
+    governance: {
+      dataQualityChecks: MDM_DATA_QUALITY_CHECKS.length,
+      makerCheckerRequiredFor: [
+        "supplier banks",
+        "supplier tax",
+        "GL mappings",
+        "cost centres",
+        "UOM conversions",
+        "tax codes",
+        "payment terms",
+        "contract currency",
+        "approval policies",
+        "warehouse status",
+      ],
+      standardRecordFields: [
+        "organizationId",
+        "code/businessKey",
+        "name",
+        "status",
+        "version",
+        "effectiveFrom",
+        "effectiveTo",
+        "createdBy",
+        "updatedBy",
+        "approvedBy",
+        "sourceSystem",
+        "externalReference",
+        "archivedAt",
+        "archivedBy",
+      ],
+    },
   };
 }
 
@@ -893,10 +1018,10 @@ export async function getRequisitionContext(organizationId: number) {
           mic.default_gl_account_code AS gl_account_code
         FROM inventory_items ii
         LEFT JOIN mdm_item_categories mic
-          ON mic.organization_id = ii.organization_id
-          AND mic.id = ii.category_id
+          ON mic.organization_id::text = ii.organization_id::text
+          AND mic.id::text = NULLIF(TRIM(ii.category_id::text), '')
           AND COALESCE(mic.active, TRUE) = TRUE
-        WHERE ii.organization_id = $1 AND COALESCE(ii.status, 'active') = 'active'
+        WHERE ii.organization_id::text = $1::text AND COALESCE(ii.status, 'active') = 'active'
         ORDER BY ii.sku ASC
         LIMIT 500
       `,

@@ -154,6 +154,14 @@ Implemented evidence:
 - PO commercial supplier/contract currency override errors now show actionable field-level recovery controls: use contract currency or clear the contract.
 - Expected validation/business-rule codes are classified as controlled info diagnostics instead of unresolved app failures.
 
+## Wave 5A MDM Control Centre Proof Summary
+
+- Master Data now has a server-side domain registry covering suppliers, supplier banks, contracts, items, UOM, warehouses, departments, cost centres, GL accounts, tax, currencies, FX, payment terms, incoterms, carriers, approval rules, document sequences, and legal entities.
+- `/api/mdm/defaults/requisition-context` uses a safe item-category join so integer/text category mismatches cannot crash requisition setup.
+- High-risk MDM changes have maker-checker change-request scaffolding and self-approval blocking.
+- The Control Centre UI now exposes registry health, high-risk domains, pending change requests, standard lifecycle fields, data-quality issues, and where-used checks.
+- Added MDM release tests: `test:mdm-requisition-context`, `test:mdm-domain-registry`, `test:mdm-change-requests`, `test:mdm-data-quality`, `test:mdm-where-used`, `test:mdm-security`, and `test:mdm-ui-contracts`.
+
 Primary evidence commands:
 
 - `npm run test:button-action-contracts`

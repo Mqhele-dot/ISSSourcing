@@ -115,6 +115,48 @@ type MdmControlCentreHealth = {
   metrics: Record<string, number>;
   sections: MdmHealthSection[];
   topIssues: MdmQualityIssue[];
+  governance?: {
+    dataQualityChecks: number;
+    makerCheckerRequiredFor: string[];
+    standardRecordFields: string[];
+  };
+};
+
+type MdmDomainRegistryEntry = {
+  key: string;
+  displayName: string;
+  ownerRole: string;
+  stewardRole: string;
+  riskLevel: "low" | "medium" | "high" | "critical";
+  requiredPermissions: string[];
+  requiredFields: string[];
+  highRiskFields: string[];
+  approvalRequiredFields: string[];
+  whereUsedChecks: string[];
+  supportedActions: string[];
+  importExportSupport: string;
+  auditRequired: boolean;
+};
+
+type MdmChangeRequest = {
+  id: number;
+  domain: string;
+  entityId?: number | null;
+  action: string;
+  riskLevel: string;
+  status: string;
+  submittedBy?: number | null;
+  approvedBy?: number | null;
+  reason?: string | null;
+  createdAt?: string | null;
+};
+
+type MdmWhereUsedResult = {
+  code: "MDM_DEPENDENCY_BLOCKED" | "MDM_NO_DEPENDENCIES";
+  dependencies: Array<{ workflow: string; label: string; count: number; blocking: boolean }>;
+  canArchive: boolean;
+  canDeactivate: boolean;
+  replacementAllowed: boolean;
 };
 
 type MasterExtraField = {
@@ -318,8 +360,17 @@ function MasterTable({
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [dependencyResponse, setDependencyResponse] = useState<string | null>(null);
+  const [whereUsedResponse, setWhereUsedResponse] = useState<string | null>(null);
   const endpoint = config.endpoint ?? "";
   const canManageMasterData = String(user?.role ?? "").toLowerCase() === "admin";
+  const domainKey =
+    config.slug === "units"
+      ? "units-of-measure"
+      : config.slug === "taxCodes"
+        ? "tax-codes"
+        : config.slug === "paymentTerms"
+          ? "payment-terms"
+          : config.slug;
 
   const { data = [], isLoading } = useQuery({
     queryKey: [endpoint],
@@ -410,6 +461,25 @@ function MasterTable({
     },
   });
 
+  const whereUsed = useMutation({
+    mutationFn: (id: number) =>
+      requestJson<MdmWhereUsedResult>("GET", `/api/mdm/${encodeURIComponent(domainKey)}/${id}/where-used`),
+    onSuccess: (result) => {
+      if (!result.dependencies.length) {
+        setWhereUsedResponse("No active dependencies were found. This record can be archived or deactivated safely.");
+        return;
+      }
+      setWhereUsedResponse(
+        result.dependencies
+          .map((dependency) => `${dependency.workflow}: ${dependency.count} ${dependency.label}`)
+          .join("; "),
+      );
+    },
+    onError: (e) => {
+      setWhereUsedResponse(e instanceof Error ? e.message : String(e));
+    },
+  });
+
   const activeCount = data.filter((row) => row.active !== false).length;
   const inactiveCount = data.length - activeCount;
 
@@ -450,6 +520,7 @@ function MasterTable({
     setCode("");
     setName("");
     setExtraValues({});
+    setWhereUsedResponse(null);
   }
 
   function buildPayload() {
@@ -552,6 +623,15 @@ function MasterTable({
             data-testid="master-data-dependency-response"
           >
             This Master Data change was blocked by a dependency or validation rule: {dependencyResponse}
+          </div>
+        ) : null}
+
+        {whereUsedResponse ? (
+          <div
+            className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950"
+            data-testid="master-data-where-used-response"
+          >
+            Where-used check: {whereUsedResponse}
           </div>
         ) : null}
 
@@ -712,6 +792,14 @@ function MasterTable({
                           disabled={!canManageMasterData || updateRecord.isPending || deleteRecord.isPending}
                         >
                           Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => whereUsed.mutate(row.id)}
+                          disabled={whereUsed.isPending}
+                        >
+                          Where-used
                         </Button>
                         <Button
                           size="sm"
@@ -966,6 +1054,115 @@ function ControlCentreIssuePanel({
   );
 }
 
+function ControlCentreGovernancePanel({
+  registry,
+  changeRequests,
+  health,
+}: {
+  registry: MdmDomainRegistryEntry[];
+  changeRequests: MdmChangeRequest[];
+  health?: MdmControlCentreHealth;
+}) {
+  const highRiskDomains = registry.filter((domain) => domain.riskLevel === "critical" || domain.riskLevel === "high");
+  const pendingRequests = changeRequests.filter((request) =>
+    ["submitted", "validation_passed", "pending_approval"].includes(String(request.status ?? "").toLowerCase()),
+  );
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-3" data-testid="master-data-governance-dashboard">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Domain governance</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Ownership, stewardship, risk, permissions, unique keys, audit, import/export, and where-used rules.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-3 gap-2 text-sm">
+            <div className="rounded-md border p-3">
+              <div className="text-xl font-semibold">{registry.length}</div>
+              <div className="text-muted-foreground">domains</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xl font-semibold">{highRiskDomains.length}</div>
+              <div className="text-muted-foreground">high risk</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xl font-semibold">{health?.governance?.dataQualityChecks ?? 0}</div>
+              <div className="text-muted-foreground">DQ checks</div>
+            </div>
+          </div>
+          <div className="max-h-48 space-y-2 overflow-auto pr-1">
+            {highRiskDomains.slice(0, 8).map((domain) => (
+              <div key={domain.key} className="rounded-md border bg-background p-2 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium">{domain.displayName}</span>
+                  <Badge variant={domain.riskLevel === "critical" ? "destructive" : "secondary"}>
+                    {domain.riskLevel}
+                  </Badge>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Owner: {domain.ownerRole} | Steward: {domain.stewardRole}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Maker-checker queue</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            High-risk supplier bank, tax, GL, UOM, payment-term, contract-currency, approval, and warehouse status
+            changes require approval.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-2" data-testid="master-data-change-requests">
+          {pendingRequests.length === 0 ? (
+            <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+              No pending high-risk change requests.
+            </div>
+          ) : (
+            pendingRequests.slice(0, 6).map((request) => (
+              <div key={request.id} className="rounded-md border bg-background p-2 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium">
+                    {request.domain} #{request.entityId ?? "new"}
+                  </span>
+                  <Badge variant={request.riskLevel === "critical" ? "destructive" : "secondary"}>
+                    {request.status}
+                  </Badge>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">{request.action}</div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Standard record model</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Typed domain tables stay intact, but adapters expose tenant, lifecycle, audit, version, source, and archive
+            fields.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-1.5" data-testid="master-data-standard-record-fields">
+            {(health?.governance?.standardRecordFields ?? []).map((field) => (
+              <Badge key={field} variant="outline">
+                {field}
+              </Badge>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function MasterDataPage() {
   const { toast } = useToast();
   const [location, setLocation] = useLocation();
@@ -983,6 +1180,18 @@ export default function MasterDataPage() {
   const dataQualityIssues = useQuery({
     queryKey: ["/api/mdm/data-quality/issues"],
     queryFn: () => requestJson<MdmQualityIssue[]>("GET", "/api/mdm/data-quality/issues"),
+    staleTime: 60_000,
+  });
+
+  const mdmRegistry = useQuery({
+    queryKey: ["/api/mdm/domain-registry"],
+    queryFn: () => requestJson<MdmDomainRegistryEntry[]>("GET", "/api/mdm/domain-registry"),
+    staleTime: 300_000,
+  });
+
+  const mdmChangeRequests = useQuery({
+    queryKey: ["/api/mdm/change-requests"],
+    queryFn: () => requestJson<MdmChangeRequest[]>("GET", "/api/mdm/change-requests"),
     staleTime: 60_000,
   });
 
@@ -1029,6 +1238,8 @@ export default function MasterDataPage() {
   const totalActive = summaryRows.reduce((sum, row) => sum + row.active, 0);
   const setupGaps = summaryRows.filter((row) => row.total === 0).length;
   const health = mdmHealth.data;
+  const registry = mdmRegistry.data ?? [];
+  const changeRequests = mdmChangeRequests.data ?? [];
   const issues = dataQualityIssues.data ?? health?.topIssues ?? [];
   const issueCount = health
     ? health.issueCounts.error + health.issueCounts.warning + health.issueCounts.info
@@ -1126,6 +1337,7 @@ export default function MasterDataPage() {
           </CardContent>
         </Card>
       ) : null}
+      <ControlCentreGovernancePanel registry={registry} changeRequests={changeRequests} health={health} />
       <ControlCentreIssuePanel
         issues={issues}
         onScan={() => scanDataQuality.mutate()}

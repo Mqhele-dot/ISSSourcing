@@ -68,3 +68,5 @@ The shared client transport classifies these expected responses as controlled va
 
 - Internal compatibility names such as `X-InvTrack-Fallback`, `X-InvTrack-Endpoint`, `InvTrackMeta`, and legacy test/script names remain intentionally unchanged because they are protocol or historical identifiers, not production-facing UI.
 - Operations logistics and exceptions remain non-production v1 unless their route-specific proof is completed.
+- Wave 5A closes the latest MDM runtime failure by making requisition-context category joins safe when local data or legacy schema stores `inventory_items.category_id` as text.
+- MDM dependency and governance failures should now surface as structured `MDM_DEPENDENCY_BLOCKED`, `MDM_STALE_VERSION`, or maker-checker errors rather than raw database errors.

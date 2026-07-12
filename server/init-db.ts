@@ -1006,6 +1006,66 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL,
         completed_at TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS mdm_import_rows (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        batch_id INTEGER NOT NULL,
+        row_number INTEGER NOT NULL,
+        raw_data JSONB DEFAULT '{}'::jsonb,
+        normalized_data JSONB DEFAULT '{}'::jsonb,
+        status TEXT DEFAULT 'pending',
+        duplicate_candidate BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_import_errors (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        batch_id INTEGER NOT NULL,
+        row_id INTEGER,
+        field_name TEXT,
+        error_code TEXT NOT NULL,
+        message TEXT NOT NULL,
+        severity TEXT DEFAULT 'error',
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_change_requests (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        domain TEXT NOT NULL,
+        entity_id INTEGER,
+        action TEXT NOT NULL,
+        proposed_patch JSONB DEFAULT '{}'::jsonb,
+        before_state JSONB,
+        risk_level TEXT DEFAULT 'medium' NOT NULL,
+        status TEXT DEFAULT 'draft' NOT NULL,
+        submitted_by INTEGER,
+        approved_by INTEGER,
+        rejected_by INTEGER,
+        reason TEXT,
+        target_version INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        decided_at TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS mdm_change_request_steps (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        change_request_id INTEGER NOT NULL,
+        step TEXT NOT NULL,
+        status TEXT NOT NULL,
+        actor_id INTEGER,
+        reason TEXT,
+        before_state JSONB,
+        after_state JSONB,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mdm_change_request_comments (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL DEFAULT 1,
+        change_request_id INTEGER NOT NULL,
+        comment TEXT NOT NULL,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS mdm_data_quality_issues (
         id SERIAL PRIMARY KEY,
         organization_id INTEGER NOT NULL DEFAULT 1,
@@ -1022,6 +1082,45 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL,
         resolved_at TIMESTAMP
       );
+    `);
+
+    await pool.query(`
+      DO $$
+      DECLARE
+        mdm_table TEXT;
+      BEGIN
+        FOREACH mdm_table IN ARRAY ARRAY[
+          'mdm_legal_entities',
+          'mdm_sites',
+          'mdm_cost_centres',
+          'mdm_supplier_documents',
+          'mdm_supplier_contacts',
+          'mdm_supplier_bank_accounts',
+          'mdm_supplier_items',
+          'mdm_item_categories',
+          'mdm_uom_classes',
+          'mdm_uom_conversions',
+          'mdm_exchange_rates',
+          'mdm_procurement_policies',
+          'mdm_approval_rules',
+          'mdm_document_sequences',
+          'mdm_document_templates',
+          'mdm_gl_mappings'
+        ]
+        LOOP
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS status TEXT', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1 NOT NULL', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS effective_from TIMESTAMP', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS effective_to TIMESTAMP', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS created_by INTEGER', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS updated_by INTEGER', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS approved_by INTEGER', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS source_system TEXT DEFAULT ''ISSSourcing''', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS external_reference TEXT', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP', mdm_table);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS archived_by INTEGER', mdm_table);
+        END LOOP;
+      END $$;
     `);
 
     await pool.query(`
