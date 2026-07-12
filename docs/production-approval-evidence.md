@@ -159,8 +159,10 @@ Implemented evidence:
 - Master Data now has a server-side domain registry covering suppliers, supplier banks, contracts, items, UOM, warehouses, departments, cost centres, GL accounts, tax, currencies, FX, payment terms, incoterms, carriers, approval rules, document sequences, and legal entities.
 - `/api/mdm/defaults/requisition-context` uses a safe item-category join so integer/text category mismatches cannot crash requisition setup.
 - High-risk MDM changes have maker-checker change-request scaffolding and self-approval blocking.
-- The Control Centre UI now exposes registry health, high-risk domains, pending change requests, standard lifecycle fields, data-quality issues, and where-used checks.
-- Added MDM release tests: `test:mdm-requisition-context`, `test:mdm-domain-registry`, `test:mdm-change-requests`, `test:mdm-data-quality`, `test:mdm-where-used`, `test:mdm-security`, `test:mdm-runtime-security`, `test:mdm-ui-contracts`, and `test:ap-po-link-validation`.
+- MDM write APIs now enforce domain registry permissions through `requireMdmPermission(domain, action)` and return `MDM_PERMISSION_DENIED` with required permissions and repair hints.
+- The Control Centre UI now exposes registry health, high-risk domains, pending change-request detail, approve/reject/apply actions, comments, step timeline, before/after diff, failed-apply state, standard lifecycle fields, data-quality issues, and where-used checks.
+- Added MDM release tests: `test:mdm-requisition-context`, `test:mdm-domain-registry`, `test:mdm-change-requests`, `test:mdm-data-quality`, `test:mdm-where-used`, `test:mdm-security`, `test:mdm-runtime-security`, `test:mdm-api-authorization`, `test:mdm-ui-contracts`, and `test:ap-po-link-validation`.
+- AP no-PO validation now has browser smoke coverage through `test:e2e:button-actions`; the UI click surfaces the `AP_INVOICE_PO_LINK_REQUIRED` repair hint instead of hiding the backend validation behind a disabled button.
 
 Primary evidence commands:
 
@@ -171,6 +173,7 @@ Primary evidence commands:
 - `npm run test:mdm-where-used`
 - `npm run test:mdm-security`
 - `npm run test:mdm-runtime-security`
+- `npm run test:mdm-api-authorization`
 - `npm run test:mdm-ui-contracts`
 - `npm run test:ap-po-link-validation`
 

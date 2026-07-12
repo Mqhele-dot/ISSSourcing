@@ -16,6 +16,16 @@ assertIncludes(ui, 'hasPermission("master_data", "update")', "permission-based u
 assertIncludes(ui, "canSubmitChangeRequest", "steward/manager change request state");
 assertIncludes(ui, "canApproveChangeRequest", "approver state");
 assertIncludes(ui, "canAdminOverride", "admin override state");
+assertIncludes(ui, "mdm-change-request-detail", "pending change request detail");
+assertIncludes(ui, "mdm-approve-change-request", "approve button");
+assertIncludes(ui, "mdm-reject-change-request", "reject button");
+assertIncludes(ui, "mdm-apply-change-request", "apply button");
+assertIncludes(ui, "mdm-comment-box", "comment box");
+assertIncludes(ui, "mdm-before-after-diff", "before/after diff");
+assertIncludes(ui, "mdm-step-timeline", "step timeline");
+assertIncludes(ui, "mdm-failed-apply-reason", "failed_to_apply display");
+assertIncludes(ui, "mdm-admin-override-warning", "admin override warning");
+assertIncludes(ui, "unauthorizedReason", "disabled reasons for unauthorized users");
 if (ui.includes('String(user?.role ?? "").toLowerCase() === "admin"')) {
   throw new Error("Master Data UI must not use hardcoded admin-only role checks");
 }

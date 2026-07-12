@@ -94,6 +94,49 @@ test.describe("button and action smoke", () => {
     await expect(page.getByText("Select at least one invoice")).toBeVisible();
   });
 
+  test("AP invoice without PO shows controlled PO-link repair guidance", async ({ page }) => {
+    const cookie = (await loginForTests("admin", "Admin123!")) ?? "";
+    const suppliersResponse = await apiJsonRequest("/suppliers", { cookie });
+    const suppliers = Array.isArray(suppliersResponse.json)
+      ? suppliersResponse.json
+      : (suppliersResponse.json as { data?: unknown[] }).data ?? [];
+    test.skip(suppliers.length === 0, "No supplier fixture available for AP no-PO validation smoke");
+    const supplierId = Number((suppliers[0] as { id?: number }).id);
+    const invoiceNumber = `INV-NOPO-${Date.now().toString().slice(-8)}`;
+    const created = await apiJsonRequest("/invoices", {
+      method: "POST",
+      cookie,
+      body: {
+        invoiceNumber,
+        supplierId,
+        purchaseOrderId: null,
+        issueDate: new Date().toISOString().slice(0, 10),
+        total: 25,
+        subtotal: 25,
+        tax: 0,
+        status: "DRAFT",
+        items: [],
+      },
+    });
+    expect([200, 201]).toContain(created.status);
+    const invoiceId = Number((created.json as { data?: { id?: number }; id?: number }).data?.id ?? (created.json as { id?: number }).id);
+    expect(Number.isFinite(invoiceId)).toBeTruthy();
+
+    await gotoAuthed(page, "/finance/invoices");
+    await expect(page.getByText(invoiceNumber)).toBeVisible({ timeout: 20_000 });
+    const matchResponse = page.waitForResponse(
+      (response) => response.url().includes(`/api/invoices/${invoiceId}/match`) && response.request().method() === "POST",
+    );
+    await page.getByTestId(`invoice-run-match-${invoiceId}`).click();
+    const response = await matchResponse;
+    expect(response.status()).toBe(400);
+    const payload = await response.json();
+    expect(JSON.stringify(payload)).toContain("AP_INVOICE_PO_LINK_REQUIRED");
+    await expect(
+      page.getByText("Link this invoice to a purchase order before matching or submitting for approval."),
+    ).toBeVisible({ timeout: 20_000 });
+  });
+
   test("system diagnostics scan and export actions remain usable", async ({ page }) => {
     await gotoAuthed(page, "/admin/system-diagnostics");
     await expect(page.getByTestId("system-diagnostics-page")).toBeVisible({ timeout: 20_000 });

@@ -65,6 +65,7 @@ npm run verify:release:e2e
 | MDM where-used | `npm run test:mdm-where-used` | Yes | Prove unsafe archive/deactivate dependency checks are exposed through API and UI. | Passing locally via `verify:release` | Source contract proof. |
 | MDM security/UI contracts | `npm run test:mdm-security && npm run test:mdm-ui-contracts` | Yes | Prove tenant scoping, deny-by-default write gates, stale version errors, maker-checker controls, audit hooks, and control-centre UI states. | Passing locally via `verify:release` | Source contract proof. |
 | MDM runtime security | `npm run test:mdm-runtime-security` | Yes | Prove DB-backed tenant isolation, low-risk create/audit, high-risk pending approval, self-approval blocking, stale update blocking, comments, apply-once, and failed-apply recording. | Added to `release:gate:delta` | Runtime DB/service proof. |
+| MDM API authorization | `npm run test:mdm-api-authorization` | Yes | Prove `/api/mdm/*` write routes use domain registry permissions, return `MDM_PERMISSION_DENIED`, and expose steward workflow UI/browser evidence hooks. | Added to `release:gate:delta` | Route/source contract proof. |
 | AP PO-link validation | `npm run test:ap-po-link-validation` | Yes | Prove no-PO match/approval failures return `AP_INVOICE_PO_LINK_REQUIRED` with invoice id and repair hint instead of generic AP errors. | Added to `release:gate:delta` | Source/service contract proof. |
 | Diagnostics self-checks | `npm run test:diagnostics` | Yes | Prove diagnostic rules and route contracts behave predictably. | Passing via delta gate | Complements system diagnostics UI checks. |
 | Focused release gate | `npm run release:gate:delta` | Yes | Run RBAC, requisitions, AP controls, exports, smoke, setup, and installable-complete tests. | Passing via delta gate | Requires live local app from `test:local:delta`. |
@@ -157,6 +158,7 @@ Remaining marker-level production blockers are tracked in [Core Blocking Risk Re
 |---|---|---|
 | `npm run test:mdm-change-requests` | Passed locally | Confirms governed MDM change requests expose create, approve, reject, apply, failed apply, comments, apply-once, and before/after lifecycle evidence. |
 | `npm run test:mdm-runtime-security` | Passed locally | Runtime DB/service proof for tenant isolation, low-risk create audit, high-risk pending approval, self-approval blocking, stale update blocking, comments, apply-once, and failed-apply recording. |
+| `npm run test:mdm-api-authorization` | Passed locally | Route-level contract for domain permission enforcement, structured MDM denials, steward workflow UI controls, and AP no-PO browser proof hooks. |
 | `npm run test:ap-po-link-validation` | Passed locally | Confirms AP no-PO match/approval failures return `AP_INVOICE_PO_LINK_REQUIRED` with invoice id and repair hint. |
 | `npm run test:latest-runtime-failures` | Passed locally | Re-runs MDM requisition-context, MDM runtime security, AP PO-link validation, and live diagnostics regressions. |
 | `npm run check` | Passed locally | TypeScript completed after Wave 5B service, route, UI, and test changes. |
@@ -165,3 +167,16 @@ Remaining marker-level production blockers are tracked in [Core Blocking Risk Re
 | `npm run audit:production` | Passed locally | Core blocking risks remain 0; marker-level blockers remain 0. |
 | `npm run verify:release` | Passed locally | Full non-browser release gate completed, including the new MDM change-request, MDM runtime-security, and AP PO-link validation gates in `release:gate:delta`. |
 | `npm run verify:release:secure` | Passed locally | Re-ran `verify:release` plus package-manifest cleanliness, lifecycle, SBOM, registry-signature, and high-vulnerability supply-chain checks; `npm audit --audit-level=high` reported 0 vulnerabilities. |
+
+## Latest Wave 5C MDM Authorization Evidence
+
+| Command | Result | Notes |
+|---|---|---|
+| `npm run test:mdm-api-authorization` | Passed locally | Confirms `/api/mdm/*` write routes use domain permission helpers, target-domain authorization for change-request actions, structured `MDM_PERMISSION_DENIED`, steward UI workflow evidence, and AP no-PO browser proof hooks. |
+| `npm run test:mdm-ui-contracts` | Passed locally | Confirms approve, reject, apply, comment, before/after diff, step timeline, failed-apply state, admin override warning, and disabled reasons are present in Master Data. |
+| `npm run test:button-action-contracts` | Passed locally | 14 contracts and 43 assertions; AP no-PO invoice match is now covered as controlled validation. |
+| `npm run check` | Passed locally | TypeScript completed after MDM API authorization, steward UI, and AP no-PO changes. |
+| `npm run lint` | Passed locally | ESLint completed across client, server, and shared TypeScript. |
+| `npm run build` | Passed locally | Production build completed with the existing Windows OneDrive server fallback. |
+| `npm run audit:production` | Passed locally | Core blocking risks remain 0; marker-level blockers remain 0. |
+| `npm run verify:release` | Passed locally | Full non-browser release gate completed, including `test:mdm-api-authorization` in `release:gate:delta`. |

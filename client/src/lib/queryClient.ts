@@ -46,7 +46,8 @@ async function parseJsonOrText(res: Response): Promise<unknown> {
 function formatServerErrorPayload(payload: unknown): string | null {
   if (isApiEnvelope(payload) && !payload.ok) {
     const codePrefix = payload.error.code ? `[${payload.error.code}] ` : "";
-    return `${codePrefix}${payload.error.message}`;
+    const hint = payload.error.hint ? ` ${payload.error.hint}` : "";
+    return `${codePrefix}${payload.error.message}${hint}`;
   }
   if (typeof payload === "object" && payload !== null) {
     const maybeFunction = "functionName" in payload ? (payload as { functionName?: unknown }).functionName : undefined;
@@ -97,6 +98,7 @@ const CONTROLLED_BUSINESS_RULE_CODES = new Set([
   "SUBSCRIPTION_INACTIVE",
   "TRIAL_EXPIRED",
   "PAYMENT_BATCH_SELF_APPROVAL_BLOCKED",
+  "AP_INVOICE_PO_LINK_REQUIRED",
 ]);
 
 function isControlledBusinessRuleError(params: {

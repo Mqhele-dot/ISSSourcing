@@ -105,6 +105,16 @@ const actionContracts = [
     file: "client/src/pages/accounts-payable/ap-payments-panel.tsx",
     must: [/Create AP payment batch/, /Exception or pending-match invoices stay blocked/, /ap-create-batch-button/],
   },
+  {
+    name: "AP no-PO invoice match surfaces controlled repair guidance",
+    file: "client/src/pages/invoices.tsx",
+    must: [/invoice-run-match-\$\{invoice\.id\}/, /Run match to show PO-link repair guidance/],
+  },
+  {
+    name: "AP no-PO validation is treated as controlled business validation",
+    file: "client/src/lib/queryClient.ts",
+    must: [/AP_INVOICE_PO_LINK_REQUIRED/, /payload\.error\.hint/],
+  },
 ];
 
 let checked = 0;
@@ -123,7 +133,7 @@ assertContains(
 );
 assertContains(
   "docs/button-action-inventory.md",
-  /Actions with browser smoke coverage \| 13/,
+  /Actions with browser smoke coverage \| 14/,
   "button action inventory must summarize expanded browser action coverage",
 );
 

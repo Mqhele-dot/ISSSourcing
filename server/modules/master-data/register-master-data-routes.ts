@@ -64,6 +64,7 @@ import {
   updateMdmDomainRecord,
   validateMdmTransaction,
 } from "./mdm-control-centre";
+import { getMdmDomainRegistryEntry } from "./mdm-domain-registry";
 import {
   addMdmChangeRequestComment,
   approveMdmChangeRequest,
@@ -78,6 +79,90 @@ import { getMdmWhereUsed } from "./mdm-where-used-service";
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
   ensureRole: (roles: string[]) => RequestHandler;
+};
+
+type MdmPermissionAction = "read" | "create" | "update" | "delete" | "approve" | "apply" | "comment" | "import" | "scan";
+
+const MDM_PERMISSION_ALIASES: Record<string, Array<{ resource: string; permissionType: string }>> = {
+  "master-data:read": [
+    { resource: "master_data", permissionType: "read" },
+    { resource: "settings", permissionType: "read" },
+  ],
+  "suppliers:manage": [
+    { resource: "suppliers", permissionType: "manage" },
+    { resource: "suppliers", permissionType: "update" },
+  ],
+  "supplier-bank:manage": [
+    { resource: "suppliers", permissionType: "manage" },
+    { resource: "suppliers", permissionType: "update" },
+  ],
+  "contracts:manage": [
+    { resource: "purchases", permissionType: "manage" },
+    { resource: "purchases", permissionType: "update" },
+  ],
+  "inventory:manage": [
+    { resource: "inventory", permissionType: "manage" },
+    { resource: "inventory", permissionType: "update" },
+  ],
+  "warehouses:manage": [
+    { resource: "warehouses", permissionType: "manage" },
+    { resource: "warehouses", permissionType: "update" },
+  ],
+  "departments:manage": [
+    { resource: "settings", permissionType: "manage" },
+    { resource: "settings", permissionType: "update" },
+  ],
+  "finance-mapping:manage": [
+    { resource: "settings", permissionType: "manage" },
+    { resource: "settings", permissionType: "update" },
+  ],
+  "tax:manage": [
+    { resource: "settings", permissionType: "manage" },
+    { resource: "settings", permissionType: "update" },
+  ],
+  "currencies:manage": [
+    { resource: "settings", permissionType: "manage" },
+    { resource: "settings", permissionType: "update" },
+  ],
+  "payment-terms:manage": [
+    { resource: "settings", permissionType: "manage" },
+    { resource: "settings", permissionType: "update" },
+  ],
+  "incoterms:manage": [
+    { resource: "suppliers", permissionType: "manage" },
+    { resource: "purchases", permissionType: "update" },
+  ],
+  "carriers:manage": [
+    { resource: "warehouses", permissionType: "manage" },
+    { resource: "warehouses", permissionType: "update" },
+  ],
+  "approval-policies:manage": [
+    { resource: "settings", permissionType: "manage" },
+    { resource: "settings", permissionType: "update" },
+  ],
+  "documents:manage": [
+    { resource: "documents", permissionType: "manage" },
+    { resource: "documents", permissionType: "update" },
+  ],
+  "settings:manage": [
+    { resource: "settings", permissionType: "manage" },
+    { resource: "settings", permissionType: "update" },
+    { resource: "settings", permissionType: "configure" },
+  ],
+};
+
+const MDM_REGISTRY_DOMAIN_ALIASES: Record<string, string> = {
+  sites: "legal-entities",
+  "supplier-documents": "supplier-compliance-documents",
+  "supplier-bank-accounts": "supplier-banks",
+  "supplier-items": "suppliers",
+  "uom-classes": "units-of-measure",
+  "exchange-rates": "fx-rates",
+  "procurement-policies": "approval-rules",
+  "document-templates": "document-sequences",
+  "gl-mappings": "gl-accounts",
+  "import-batches": "documents",
+  "data-quality-issues": "settings",
 };
 
 function pgErrorCode(error: unknown): string | undefined {
@@ -156,6 +241,109 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
   const masterRead = [auth.ensureAuthenticated];
   const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
 
+  async function hasResolvedPermission(
+    req: Request,
+    aliases: Array<{ resource: string; permissionType: string }>,
+  ): Promise<boolean> {
+    const user = (req as Request & { user?: { id?: number; role?: string } }).user;
+    if (!user) return false;
+    if (user.role === "admin") return true;
+    for (const alias of aliases) {
+      if (await storage.checkPermission(user.role ?? "", alias.resource, alias.permissionType)) {
+        return true;
+      }
+      if (user.role === "custom" && user.id) {
+        const customRoleId = await storage.getUserCustomRoleId(user.id);
+        if (customRoleId && (await storage.checkCustomRolePermission(customRoleId, alias.resource as any, alias.permissionType as any))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function requiredPermissionsForDomain(domain: string, action: MdmPermissionAction): string[] {
+    const registryKey = getMdmDomainRegistryEntry(domain) ? domain : MDM_REGISTRY_DOMAIN_ALIASES[domain];
+    const registryPermissions = registryKey ? getMdmDomainRegistryEntry(registryKey)?.requiredPermissions ?? [] : [];
+    if (registryPermissions.length > 0) return registryPermissions;
+    if (action === "read") return ["master-data:read"];
+    if (action === "import") return ["master-data:read", "documents:manage"];
+    return ["master-data:read", "settings:manage"];
+  }
+
+  function resolvePermissionAliases(permission: string): Array<{ resource: string; permissionType: string }> {
+    const explicit = MDM_PERMISSION_ALIASES[permission];
+    if (explicit) return explicit;
+    const [resourceRaw, permissionTypeRaw] = permission.split(":");
+    const resource = String(resourceRaw ?? "").replace(/-/g, "_");
+    const permissionType = String(permissionTypeRaw ?? "read");
+    return resource && permissionType ? [{ resource, permissionType }] : [];
+  }
+
+  function sendMdmPermissionDenied(
+    res: Response,
+    domain: string,
+    action: MdmPermissionAction,
+    requiredPermissions: string[],
+  ) {
+    return sendError(
+      res,
+      403,
+      "MDM_PERMISSION_DENIED",
+      `You do not have permission to ${action} Master Data domain ${domain}.`,
+      {
+        hint:
+          "Ask an administrator to grant the required domain permission or submit the change through an approved steward role.",
+        details: {
+          domain,
+          action,
+          requiredPermissions,
+        },
+      },
+    );
+  }
+
+  function requireMdmPermission(domainInput: string | ((req: Request) => string), action: MdmPermissionAction): RequestHandler {
+    return async (req: Request, res: Response, next) => {
+      const domain = typeof domainInput === "function" ? domainInput(req) : domainInput;
+      const requiredPermissions = requiredPermissionsForDomain(domain, action);
+      for (const permission of requiredPermissions) {
+        const aliases = resolvePermissionAliases(permission);
+        if (!(await hasResolvedPermission(req, aliases))) {
+          return sendMdmPermissionDenied(res, domain, action, requiredPermissions);
+        }
+      }
+      return next();
+    };
+  }
+
+  async function requireMdmPermissionForChangeRequest(
+    req: Request,
+    res: Response,
+    action: MdmPermissionAction,
+  ): Promise<boolean> {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      sendError(res, 400, "INVALID_ID", "Invalid change request ID");
+      return false;
+    }
+    const change = await getMdmChangeRequest(getActiveOrganizationId(), id);
+    if (!change) {
+      sendError(res, 404, "NOT_FOUND", "MDM change request not found");
+      return false;
+    }
+    const domain = String((change as { domain?: unknown }).domain ?? "");
+    const requiredPermissions = requiredPermissionsForDomain(domain, action);
+    for (const permission of requiredPermissions) {
+      const aliases = resolvePermissionAliases(permission);
+      if (!(await hasResolvedPermission(req, aliases))) {
+        sendMdmPermissionDenied(res, domain, action, requiredPermissions);
+        return false;
+      }
+    }
+    return true;
+  }
+
   function sessionUserId(req: Request): number | undefined {
     const id = (req as Request & { user?: { id?: unknown } }).user?.id;
     const n = Number(id);
@@ -210,7 +398,11 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/change-requests", ...masterWrite, async (req: Request, res: Response) => {
+  app.post(
+    "/api/mdm/change-requests",
+    ...masterRead,
+    requireMdmPermission((req) => String(req.body?.domain ?? ""), "create"),
+    async (req: Request, res: Response) => {
     try {
       return sendOk(
         res,
@@ -236,14 +428,16 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         error instanceof Error ? error.message : "Failed to create MDM change request",
       );
     }
-  });
+    },
+  );
 
-  app.post("/api/mdm/change-requests/:id/approve", ...masterWrite, async (req: Request, res: Response) => {
+  app.post("/api/mdm/change-requests/:id/approve", ...masterRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       const actorId = sessionUserId(req);
       if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
       if (!actorId) return sendError(res, 401, "UNAUTHENTICATED", "A signed-in user is required");
+      if (!(await requireMdmPermissionForChangeRequest(req, res, "approve"))) return;
       const approved = await approveMdmChangeRequest({
         organizationId: getActiveOrganizationId(),
         id,
@@ -261,12 +455,13 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/change-requests/:id/reject", ...masterWrite, async (req: Request, res: Response) => {
+  app.post("/api/mdm/change-requests/:id/reject", ...masterRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       const actorId = sessionUserId(req);
       if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
       if (!actorId) return sendError(res, 401, "UNAUTHENTICATED", "A signed-in user is required");
+      if (!(await requireMdmPermissionForChangeRequest(req, res, "approve"))) return;
       const rejected = await rejectMdmChangeRequest({
         organizationId: getActiveOrganizationId(),
         id,
@@ -283,12 +478,13 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/change-requests/:id/apply", ...masterWrite, async (req: Request, res: Response) => {
+  app.post("/api/mdm/change-requests/:id/apply", ...masterRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       const actorId = sessionUserId(req);
       if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
       if (!actorId) return sendError(res, 401, "UNAUTHENTICATED", "A signed-in user is required");
+      if (!(await requireMdmPermissionForChangeRequest(req, res, "apply"))) return;
       const applied = await applyMdmChangeRequest({
         organizationId: getActiveOrganizationId(),
         id,
@@ -311,7 +507,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/change-requests/:id/comments", ...masterWrite, async (req: Request, res: Response) => {
+  app.post("/api/mdm/change-requests/:id/comments", ...masterRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       const actorId = sessionUserId(req);
@@ -319,6 +515,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
       if (!actorId) return sendError(res, 401, "UNAUTHENTICATED", "A signed-in user is required");
       if (!comment) return sendError(res, 400, "MDM_COMMENT_REQUIRED", "A comment is required");
+      if (!(await requireMdmPermissionForChangeRequest(req, res, "comment"))) return;
       const created = await addMdmChangeRequestComment({
         organizationId: getActiveOrganizationId(),
         id,
@@ -342,7 +539,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/data-quality/scan", ...masterWrite, async (_req: Request, res: Response) => {
+  app.post("/api/mdm/data-quality/scan", ...masterRead, requireMdmPermission("data-quality-issues", "scan"), async (_req: Request, res: Response) => {
     try {
       return sendOk(res, await scanMdmDataQuality(getActiveOrganizationId()));
     } catch (error) {
@@ -369,7 +566,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/validate-transaction", ...masterWrite, async (req: Request, res: Response) => {
+  app.post("/api/mdm/validate-transaction", ...masterRead, requireMdmPermission("procurement-policies", "scan"), async (req: Request, res: Response) => {
     try {
       return sendOk(res, await validateMdmTransaction(getActiveOrganizationId(), req.body ?? {}));
     } catch (error) {
@@ -387,7 +584,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/import-batches", ...masterWrite, async (req: Request, res: Response) => {
+  app.post("/api/mdm/import-batches", ...masterRead, requireMdmPermission((req) => String(req.body?.domain ?? "import-batches"), "import"), async (req: Request, res: Response) => {
     try {
       return sendOk(res, await createImportBatch(getActiveOrganizationId(), req.body ?? {}, sessionUserId(req)), 201);
     } catch (error) {
@@ -445,7 +642,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/:domain", ...masterWrite, async (req: Request, res: Response) => {
+  app.post("/api/mdm/:domain", ...masterRead, requireMdmPermission((req) => String(req.params.domain ?? ""), "create"), async (req: Request, res: Response) => {
     try {
       const domain = String(req.params.domain ?? "");
       if (!isMdmDomain(domain)) return sendError(res, 404, "MDM_DOMAIN_NOT_FOUND", "Unknown MDM domain");
@@ -464,7 +661,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.patch("/api/mdm/:domain/:id", ...masterWrite, async (req: Request, res: Response) => {
+  app.patch("/api/mdm/:domain/:id", ...masterRead, requireMdmPermission((req) => String(req.params.domain ?? ""), "update"), async (req: Request, res: Response) => {
     try {
       const domain = String(req.params.domain ?? "");
       if (!isMdmDomain(domain)) return sendError(res, 404, "MDM_DOMAIN_NOT_FOUND", "Unknown MDM domain");

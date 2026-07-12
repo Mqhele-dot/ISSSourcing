@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -148,8 +149,31 @@ type MdmChangeRequest = {
   status: string;
   submittedBy?: number | null;
   approvedBy?: number | null;
+  decidedAt?: string | null;
+  appliedBy?: number | null;
+  appliedAt?: string | null;
+  failureReason?: string | null;
   reason?: string | null;
+  proposedPatch?: Record<string, unknown> | null;
+  beforeState?: Record<string, unknown> | null;
+  appliedRecord?: Record<string, unknown> | null;
   createdAt?: string | null;
+  steps?: Array<{
+    id?: number;
+    step?: string;
+    status?: string;
+    actorId?: number | null;
+    reason?: string | null;
+    beforeState?: Record<string, unknown> | null;
+    afterState?: Record<string, unknown> | null;
+    createdAt?: string | null;
+  }>;
+  comments?: Array<{
+    id?: number;
+    comment?: string | null;
+    createdBy?: number | null;
+    createdAt?: string | null;
+  }>;
 };
 
 type MdmWhereUsedResult = {
@@ -1102,10 +1126,78 @@ function ControlCentreGovernancePanel({
   changeRequests: MdmChangeRequest[];
   health?: MdmControlCentreHealth;
 }) {
+  const { toast } = useToast();
+  const { hasPermission, hasRole } = usePermissions();
+  const [selectedRequestId, setSelectedRequestId] = useState<number | null>(changeRequests[0]?.id ?? null);
+  const [comment, setComment] = useState("");
+  const canApproveChangeRequest =
+    hasPermission("master_data", "approve") || hasPermission("settings", "update") || hasRole(["admin", "manager"]);
+  const canApplyChangeRequest =
+    hasPermission("master_data", "execute") || hasPermission("settings", "update") || hasRole(["admin", "manager"]);
+  const canCommentOnChangeRequest =
+    hasPermission("master_data", "update") || hasPermission("settings", "update") || hasRole(["admin", "manager"]);
+  const canAdminOverride = hasRole("admin") && hasPermission("settings", "update");
   const highRiskDomains = registry.filter((domain) => domain.riskLevel === "critical" || domain.riskLevel === "high");
   const pendingRequests = changeRequests.filter((request) =>
     ["submitted", "validation_passed", "pending_approval"].includes(String(request.status ?? "").toLowerCase()),
   );
+  const selectedSummary =
+    changeRequests.find((request) => Number(request.id) === Number(selectedRequestId)) ?? changeRequests[0] ?? null;
+  const selectedDetail = useQuery({
+    queryKey: ["/api/mdm/change-requests", selectedSummary?.id],
+    enabled: selectedSummary?.id != null,
+    queryFn: () => requestJson<MdmChangeRequest>("GET", `/api/mdm/change-requests/${selectedSummary!.id}`),
+  });
+  const selectedRequest = selectedDetail.data ?? selectedSummary;
+  const selectedStatus = String(selectedRequest?.status ?? "").toLowerCase();
+  const showApproveReject = Boolean(selectedRequest) && ["submitted", "validation_passed", "pending_approval"].includes(selectedStatus);
+  const showApply = Boolean(selectedRequest) && selectedStatus === "approved";
+  const unauthorizedReason = "You need the domain steward, approver, or admin permission for this Master Data action.";
+
+  const refreshChangeRequests = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["/api/mdm/change-requests"] });
+    if (selectedRequest?.id != null) {
+      await queryClient.invalidateQueries({ queryKey: ["/api/mdm/change-requests", selectedRequest.id] });
+    }
+  };
+  const runChangeRequestAction = useMutation({
+    mutationFn: async (input: { action: "approve" | "reject" | "apply"; reason: string; allowAdminOverride?: boolean }) => {
+      if (!selectedRequest) throw new Error("Select a change request first.");
+      return requestJson<MdmChangeRequest>("POST", `/api/mdm/change-requests/${selectedRequest.id}/${input.action}`, {
+        reason: input.reason,
+        allowAdminOverride: input.allowAdminOverride === true,
+      });
+    },
+    onSuccess: async (_data, variables) => {
+      await refreshChangeRequests();
+      toast({ title: `MDM change request ${variables.action}d` });
+    },
+    onError: (error) => {
+      toast({
+        title: "MDM change request action failed",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    },
+  });
+  const addComment = useMutation({
+    mutationFn: async () => {
+      if (!selectedRequest) throw new Error("Select a change request first.");
+      return requestJson("POST", `/api/mdm/change-requests/${selectedRequest.id}/comments`, { comment });
+    },
+    onSuccess: async () => {
+      setComment("");
+      await refreshChangeRequests();
+      toast({ title: "MDM comment added" });
+    },
+    onError: (error) => {
+      toast({
+        title: "MDM comment failed",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <div className="grid gap-4 xl:grid-cols-3" data-testid="master-data-governance-dashboard">
@@ -1164,7 +1256,13 @@ function ControlCentreGovernancePanel({
             </div>
           ) : (
             pendingRequests.slice(0, 6).map((request) => (
-              <div key={request.id} className="rounded-md border bg-background p-2 text-sm">
+              <button
+                type="button"
+                key={request.id}
+                className="w-full rounded-md border bg-background p-2 text-left text-sm transition hover:border-primary"
+                data-testid={`mdm-change-request-row-${request.id}`}
+                onClick={() => setSelectedRequestId(request.id)}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-medium">
                     {request.domain} #{request.entityId ?? "new"}
@@ -1174,9 +1272,144 @@ function ControlCentreGovernancePanel({
                   </Badge>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">{request.action}</div>
-              </div>
+              </button>
             ))
           )}
+          {selectedRequest ? (
+            <div className="mt-3 space-y-3 rounded-md border bg-muted/20 p-3" data-testid="mdm-change-request-detail">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="font-medium">
+                    {selectedRequest.domain} #{selectedRequest.entityId ?? "new"} steward review
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Status: {selectedRequest.status} | Action: {selectedRequest.action}
+                  </p>
+                </div>
+                <Badge variant={selectedStatus === "failed_to_apply" ? "destructive" : "outline"}>
+                  {selectedRequest.status}
+                </Badge>
+              </div>
+              {selectedStatus === "failed_to_apply" ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm" data-testid="mdm-failed-apply-reason">
+                  Failed to apply: {selectedRequest.failureReason ?? "No failure reason was recorded."}
+                </div>
+              ) : null}
+              <div className="grid gap-2 md:grid-cols-2" data-testid="mdm-before-after-diff">
+                <div>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Before</p>
+                  <pre className="max-h-40 overflow-auto rounded-md bg-background p-2 text-xs">
+                    {JSON.stringify(selectedRequest.beforeState ?? {}, null, 2)}
+                  </pre>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">After</p>
+                  <pre className="max-h-40 overflow-auto rounded-md bg-background p-2 text-xs">
+                    {JSON.stringify(selectedRequest.proposedPatch ?? selectedRequest.appliedRecord ?? {}, null, 2)}
+                  </pre>
+                </div>
+              </div>
+              <div data-testid="mdm-step-timeline">
+                <p className="text-xs font-medium uppercase text-muted-foreground">Step timeline</p>
+                <div className="mt-1 space-y-1">
+                  {(selectedRequest.steps ?? []).length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No lifecycle steps recorded yet.</p>
+                  ) : (
+                    (selectedRequest.steps ?? []).map((step, index) => (
+                      <div key={step.id ?? index} className="rounded border bg-background p-2 text-xs">
+                        <span className="font-medium">{step.step ?? "step"}</span> | {step.status ?? "recorded"} | actor{" "}
+                        {step.actorId ?? "system"} {step.reason ? `| ${step.reason}` : ""}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div data-testid="mdm-comment-box">
+                <Label htmlFor="mdm-change-comment">Comment</Label>
+                <Textarea
+                  id="mdm-change-comment"
+                  value={comment}
+                  disabled={!canCommentOnChangeRequest}
+                  onChange={(event) => setComment(event.target.value)}
+                  placeholder={canCommentOnChangeRequest ? "Add steward note or approval context" : unauthorizedReason}
+                  rows={2}
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!canCommentOnChangeRequest || !comment.trim() || addComment.isPending}
+                    title={!canCommentOnChangeRequest ? unauthorizedReason : undefined}
+                    onClick={() => addComment.mutate()}
+                  >
+                    Add comment
+                  </Button>
+                  {showApproveReject ? (
+                    <>
+                      <Button
+                        size="sm"
+                        disabled={!canApproveChangeRequest || runChangeRequestAction.isPending}
+                        title={!canApproveChangeRequest ? unauthorizedReason : undefined}
+                        data-testid="mdm-approve-change-request"
+                        onClick={() =>
+                          runChangeRequestAction.mutate({ action: "approve", reason: "Approved in Control Centre" })
+                        }
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!canApproveChangeRequest || runChangeRequestAction.isPending}
+                        title={!canApproveChangeRequest ? unauthorizedReason : undefined}
+                        data-testid="mdm-reject-change-request"
+                        onClick={() =>
+                          runChangeRequestAction.mutate({ action: "reject", reason: "Rejected in Control Centre" })
+                        }
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  ) : null}
+                  {showApply ? (
+                    <Button
+                      size="sm"
+                      disabled={!canApplyChangeRequest || runChangeRequestAction.isPending}
+                      title={!canApplyChangeRequest ? unauthorizedReason : undefined}
+                      data-testid="mdm-apply-change-request"
+                      onClick={() => runChangeRequestAction.mutate({ action: "apply", reason: "Applied in Control Centre" })}
+                    >
+                      Apply approved change
+                    </Button>
+                  ) : null}
+                  {canAdminOverride ? (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={runChangeRequestAction.isPending}
+                      data-testid="mdm-admin-override-warning"
+                      onClick={() =>
+                        runChangeRequestAction.mutate({
+                          action: selectedStatus === "approved" ? "apply" : "approve",
+                          reason: "Explicit admin override from Master Data Control Centre",
+                          allowAdminOverride: true,
+                        })
+                      }
+                    >
+                      Admin override
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="space-y-1" data-testid="mdm-change-comments">
+                {(selectedRequest.comments ?? []).map((entry, index) => (
+                  <div key={entry.id ?? index} className="rounded border bg-background p-2 text-xs">
+                    {entry.comment} | by {entry.createdBy ?? "system"}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

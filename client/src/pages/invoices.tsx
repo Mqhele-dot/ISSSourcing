@@ -838,7 +838,9 @@ export default function InvoicesPage() {
                             size="sm"
                             variant="outline"
                             onClick={() => runMatch.mutate(invoice.id)}
-                            disabled={runMatch.isPending || !invoice.purchaseOrderId}
+                            disabled={runMatch.isPending}
+                            title={!invoice.purchaseOrderId ? "Run match to show PO-link repair guidance." : undefined}
+                            data-testid={`invoice-run-match-${invoice.id}`}
                           >
                             Run 3-way match
                           </Button>

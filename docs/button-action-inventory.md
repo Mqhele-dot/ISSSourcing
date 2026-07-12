@@ -10,13 +10,13 @@ This inventory covers the visible, production-relevant action surfaces that are 
 |---|---:|---|
 | Core actions inventoried | 43 | Procurement, inventory/reorder, RBAC, Control Tower, AP, subscription, reporting, diagnostics, and setup actions. |
 | Actions covered by source/runtime contract tests | 43 | `npm run test:button-action-contracts` plus existing runtime tests for procurement, AP, subscription, diagnostics, and setup. |
-| Actions with browser smoke coverage | 13 | `npm run test:e2e:button-actions` targets the live diagnostics failures, critical workflow buttons, and five additional validation/control flows. |
+| Actions with browser smoke coverage | 14 | `npm run test:e2e:button-actions` targets the live diagnostics failures, critical workflow buttons, and AP no-PO repair guidance. |
 | Fixed in Wave 4C/4D | 7 | Reorder convert, role permission remove, contracts route, PO commercial validation, gas timeout, subscription buttons, route chunk recovery. |
 | Non-production v1 excluded actions | 4 route families | `/operations/logistics*` and `/operations/exceptions*` remain excluded/labelled until route-specific proof exists. |
 
 ## Browser-Covered Actions
 
-`npm run test:e2e:button-actions` now covers these 13 action paths:
+`npm run test:e2e:button-actions` now covers these 14 action paths:
 
 | Route | Action | Evidence Asserted |
 |---|---|---|
@@ -28,6 +28,7 @@ This inventory covers the visible, production-relevant action surfaces that are 
 | `/procurement/orders/:po` | Use contract currency | Recovery action is visible in the validation banner. |
 | `/procurement/orders/:po` | Clear contract | Recovery action is visible in the validation banner. |
 | `/finance/accounts-payable/payments` | Create AP payment batch | Missing invoice selection shows validation. |
+| `/finance/invoices` | Run 3-way match on invoice without PO | Backend returns `AP_INVOICE_PO_LINK_REQUIRED` and the UI shows the PO-link repair hint. |
 | `/admin/system-diagnostics` | Run diagnostics scan | Scan results region remains visible after clicking Run scan. |
 | `/admin/system-diagnostics` | Export diagnostics JSON/Markdown | Export buttons remain available after scan. |
 | `/admin/settings` | Save production controls | Settings save action shows success state. |
@@ -43,7 +44,7 @@ These inventoried actions have source/runtime evidence but are not yet individua
 | Priority | Route / Area | Remaining Action Gap |
 |---:|---|---|
 | 1 | `/inventory/reorder` | Export PDF/Excel/CSV, approve, reject, and successful convert click-through. |
-| 2 | `/finance/invoices` | Create invoice validation, match/dispute actions, payment/status actions, and invoice export. |
+| 2 | `/finance/invoices` | Create invoice validation, matched/disputed invoice flows, payment/status actions, and invoice export. |
 | 3 | `/admin/user-roles` | Browser-level create role, add permission, assign user role, and visible list refresh after delete. |
 | 4 | `/admin/master-data/*` | Successful create/update/delete/deactivate with where-used dependency response. |
 | 5 | `/finance/approval-policies` | Successful create/update/delete and approval-route impact. |
@@ -87,6 +88,7 @@ Next coverage should prioritize reorder export/convert success, invoices/AP exce
 | `/finance/accounts-payable` | `client/src/pages/accounts-payable.tsx` | Create AP payment batch | `payments:create` | AP / Growth+ where enforced | `POST /api/accounts-payable/payment-batches` | Batch created for eligible matched invoices | Invalid/exception invoices blocked visibly | Runtime + e2e workflow |
 | `/finance/accounts-payable` | `client/src/pages/accounts-payable.tsx` | Approve invoice | `invoices:approve` | AP | AP approval endpoint | Invoice advances | Segregation/policy validation | AP workflow tests |
 | `/finance/invoices` | `client/src/pages/invoices.tsx` | Create invoice | `invoices:create` | AP | Invoice create endpoint | Invoice list refreshes | Validation error state | AP workflow tests |
+| `/finance/invoices` | `client/src/pages/invoices.tsx` | Run 3-way match on invoice without PO | `invoices:update` | AP | `POST /api/invoices/:id/match` | PO-linked invoices show match result | `AP_INVOICE_PO_LINK_REQUIRED` repair hint is visible | Browser smoke, AP PO-link validation |
 | `/finance/invoices` | `client/src/pages/invoices.tsx` | Export invoices | `reports:export` | Exports | Export transport | Download | Error toast | Source contract |
 | `/admin/master-data` | `client/src/pages/master-data.tsx` | Add master-data record | Domain-specific admin | Control plane | `POST /api/mdm/:domain` or compatibility endpoint | Record appears and dependent queries invalidate | Validation/dependency error | MDM runtime tests |
 | `/admin/master-data` | `client/src/pages/master-data.tsx` | Update master-data record | Domain-specific admin | Control plane | `PATCH /api/mdm/:domain/:id` | Record updates and audit exists | Dependency response shown | MDM runtime tests |
