@@ -9,7 +9,14 @@ import path from "node:path";
 import { config } from "dotenv";
 import pg from "pg";
 import { exitTest } from "./test-exit.ts";
-import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
+import {
+  apiJsonRequest,
+  getTestBaseUrl,
+  isConnectionRefused,
+  isLiveServerRequired,
+  loginForTests,
+  reportConnectionRefused,
+} from "./test-http.ts";
 
 config({ path: path.join(process.cwd(), ".env") });
 config({ path: path.join(process.cwd(), ".env.local") });
@@ -48,7 +55,7 @@ async function main() {
 
   const cookie = await loginForTests("admin", "Admin123!", baseUrl);
   if (!cookie) {
-    console.log("  ⚠ Admin login failed. Skipping.");
+    console.log("  âš  Admin login failed. Skipping.");
     exitTest(0);
     return;
   }
@@ -67,7 +74,7 @@ async function main() {
     }>(`SELECT product_onboarding_completed_at, product_onboarding_state FROM app_settings WHERE organization_id = 1 LIMIT 1`);
 
     if (sel.rows.length === 0) {
-      console.log("  ⚠ No app_settings row for organization_id=1. Skipping.");
+      console.log("  âš  No app_settings row for organization_id=1. Skipping.");
       exitTest(0);
       return;
     }
@@ -91,15 +98,15 @@ async function main() {
     });
 
     if (put.status !== 200) {
-      console.log("  ✗ PUT /api/setup/product/checkpoint → %d (expected 200)", put.status);
+      console.log("  âœ— PUT /api/setup/product/checkpoint â†’ %d (expected 200)", put.status);
       exitTest(1);
       return;
     }
-    console.log("  ✓ PUT /api/setup/product/checkpoint → 200");
+    console.log("  âœ“ PUT /api/setup/product/checkpoint â†’ 200");
 
     const get = await apiJsonRequest("/setup/status", { method: "GET", cookie, baseUrl });
     if (get.status !== 200) {
-      console.log("  ✗ GET /api/setup/status → %d (expected 200)", get.status);
+      console.log("  âœ— GET /api/setup/status â†’ %d (expected 200)", get.status);
       exitTest(1);
       return;
     }
@@ -109,29 +116,29 @@ async function main() {
     const checkpoint = onboarding?.checkpoint as Record<string, unknown> | undefined;
 
     if (!checkpoint || typeof checkpoint !== "object") {
-      console.log("  ✗ setup status missing onboarding.checkpoint");
+      console.log("  âœ— setup status missing onboarding.checkpoint");
       exitTest(1);
       return;
     }
     if (checkpoint.step !== "business") {
-      console.log("  ✗ checkpoint.step expected business, got %s", String(checkpoint.step));
+      console.log("  âœ— checkpoint.step expected business, got %s", String(checkpoint.step));
       exitTest(1);
       return;
     }
     const draft = checkpoint.draft as Record<string, unknown> | undefined;
     if (!draft || draft.companyName !== "CheckpointApiTestCo") {
-      console.log("  ✗ checkpoint.draft.companyName mismatch");
+      console.log("  âœ— checkpoint.draft.companyName mismatch");
       exitTest(1);
       return;
     }
 
-    console.log("  ✓ GET /api/setup/status includes checkpoint step + draft");
+    console.log("  âœ“ GET /api/setup/status includes checkpoint step + draft");
     console.log("\nResult: passed (DB state restored).");
     exitTest(0);
   } catch (err) {
     if (isConnectionRefused(err)) {
-      console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", baseUrl);
-      exitTest(0);
+      reportConnectionRefused(baseUrl);
+      exitTest(isLiveServerRequired() ? 1 : 0);
       return;
     }
     console.error(err);

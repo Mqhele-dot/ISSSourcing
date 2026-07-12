@@ -14,7 +14,9 @@ import {
   clearSessionCookie,
   getTestBaseUrl,
   isConnectionRefused,
+  isLiveServerRequired,
   peekSessionCookie,
+  reportConnectionRefused,
 } from "./test-http.ts";
 import { exitTest } from "./test-exit.ts";
 import { pool } from "../server/db.ts";
@@ -296,8 +298,8 @@ async function main() {
 main().catch((err) => {
   void pool.end().catch(() => undefined);
   if (isConnectionRefused(err)) {
-    console.error("Server not reachable at", getTestBaseUrl(), "- start with: npm run dev");
-    exitTest(1);
+    reportConnectionRefused(getTestBaseUrl());
+    exitTest(isLiveServerRequired() ? 1 : 0);
     return;
   }
   console.error(err);

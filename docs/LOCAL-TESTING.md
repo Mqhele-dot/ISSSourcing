@@ -34,6 +34,8 @@ npm run test:local:delta
 
 This runs the quick checks plus the server-backed AP, procurement, export, smoke, setup, and installable-app delta gate.
 
+The runner exports `TEST_REQUIRE_SERVER=1` for every server-backed suite it starts, so a missing local app fails closed instead of quietly soft-passing on connection refusal.
+
 ## Reuse An Already Running Server
 
 ```powershell
@@ -48,6 +50,8 @@ $env:PORT="5100"
 $env:BASE_URL="http://127.0.0.1:5100"
 npm run test:local
 ```
+
+If you run one of the server-backed scripts directly and want the same fail-closed behavior, set `TEST_REQUIRE_SERVER=1` first (PowerShell: `$env:TEST_REQUIRE_SERVER="1"`).
 
 ## Open The Full App Locally
 

@@ -39,7 +39,7 @@ function run(command, args) {
     const child = spawn(command, args, {
       stdio: "inherit",
       shell: process.platform === "win32",
-      env: process.env,
+      env: { ...process.env, TEST_REQUIRE_SERVER: "1" },
     });
     child.on("exit", (code) => {
       if (code === 0) resolve();

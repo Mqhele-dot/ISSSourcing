@@ -39,7 +39,7 @@ function run(command, args, options = {}) {
     const useShell = process.platform === "win32";
     const child = spawn(useShell ? [command, ...args].join(" ") : command, useShell ? [] : args, {
       cwd: process.cwd(),
-      env: { ...process.env, BASE_URL, PORT, ...options.env },
+      env: { ...process.env, BASE_URL, PORT, TEST_REQUIRE_SERVER: "1", ...options.env },
       shell: useShell,
       stdio: options.stdio || "inherit",
     });
@@ -69,7 +69,7 @@ function startServer() {
   const useShell = process.platform === "win32";
   const child = spawn(useShell ? `${npmCmd} run dev` : npmCmd, useShell ? [] : ["run", "dev"], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT, LOCAL_TEST_API_ONLY: "1" },
+    env: { ...process.env, PORT, BASE_URL, TEST_REQUIRE_SERVER: "1", LOCAL_TEST_API_ONLY: "1" },
     shell: useShell,
     stdio: "inherit",
   });

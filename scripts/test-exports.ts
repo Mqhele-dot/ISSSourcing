@@ -1,6 +1,13 @@
 import process from "node:process";
 import { exitTest } from "./test-exit.ts";
-import { apiRawRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
+import {
+  apiRawRequest,
+  getTestBaseUrl,
+  isConnectionRefused,
+  isLiveServerRequired,
+  loginForTests,
+  reportConnectionRefused,
+} from "./test-http.ts";
 
 type ExportCase = {
   reportType: string;
@@ -73,8 +80,8 @@ async function main() {
 
 main().catch((err) => {
   if (isConnectionRefused(err)) {
-    console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", getTestBaseUrl());
-    exitTest(0);
+    reportConnectionRefused(getTestBaseUrl());
+    exitTest(isLiveServerRequired() ? 1 : 0);
   }
   console.error(err);
   exitTest(1);

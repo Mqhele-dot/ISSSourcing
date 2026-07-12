@@ -38,6 +38,10 @@ export function getTestBaseUrl(): string {
   return (process.env.BASE_URL ?? "http://127.0.0.1:5000").replace(/\/$/, "");
 }
 
+export function isLiveServerRequired(): boolean {
+  return process.env.TEST_REQUIRE_SERVER === "1";
+}
+
 export function clearSessionCookie(): void {
   lastSetCookie = undefined;
 }
@@ -190,6 +194,14 @@ export async function loginForTests(
 export function isConnectionRefused(err: unknown): boolean {
   const e = err as NodeJS.ErrnoException & { cause?: { code?: string } };
   return e?.code === "ECONNREFUSED" || e?.cause?.code === "ECONNREFUSED";
+}
+
+export function reportConnectionRefused(baseUrl: string, startCommand = "npm run dev"): void {
+  if (isLiveServerRequired()) {
+    console.log("  X Server is required but not reachable at %s. Start with: %s", baseUrl, startCommand);
+    return;
+  }
+  console.log("  ! Server not reachable at %s. Start with: %s", baseUrl, startCommand);
 }
 
 /** Log pass/fail for `X-Request-Id` on a response (shared by procurement / demo scripts). */

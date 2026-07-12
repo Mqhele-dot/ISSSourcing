@@ -4,7 +4,9 @@ import {
   clearSessionCookie,
   getTestBaseUrl,
   isConnectionRefused,
+  isLiveServerRequired,
   loginForTests,
+  reportConnectionRefused,
 } from "./test-http.ts";
 
 async function main() {
@@ -15,14 +17,14 @@ async function main() {
   const check = async (label: string, promise: Promise<boolean>) => {
     try {
       const ok = await promise;
-      if (ok) console.log("  ✓ %s", label);
+      if (ok) console.log("  âœ“ %s", label);
       else {
         failures++;
-        console.log("  ✗ %s", label);
+        console.log("  âœ— %s", label);
       }
     } catch (error) {
       failures++;
-      console.log("  ✗ %s — %s", label, error instanceof Error ? error.message : String(error));
+      console.log("  âœ— %s â€” %s", label, error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -34,7 +36,7 @@ async function main() {
 
   const cookie = await loginForTests("admin", "Admin123!", baseUrl);
   if (!cookie) {
-    console.log("  ⚠ Admin login failed. Ensure demo users exist (npm run db:seed).");
+    console.log("  âš  Admin login failed. Ensure demo users exist (npm run db:seed).");
     exitTest(0);
     return;
   }
@@ -121,8 +123,8 @@ async function main() {
 
 main().catch((err) => {
   if (isConnectionRefused(err)) {
-    console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", getTestBaseUrl());
-    exitTest(0);
+    reportConnectionRefused(getTestBaseUrl());
+    exitTest(isLiveServerRequired() ? 1 : 0);
     return;
   }
   console.error(err);

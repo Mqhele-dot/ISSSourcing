@@ -10,7 +10,15 @@ import path from "node:path";
 import { config } from "dotenv";
 import pg from "pg";
 import { exitTest } from "./test-exit.ts";
-import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests, peekSessionCookie } from "./test-http.ts";
+import {
+  apiJsonRequest,
+  getTestBaseUrl,
+  isConnectionRefused,
+  isLiveServerRequired,
+  loginForTests,
+  peekSessionCookie,
+  reportConnectionRefused,
+} from "./test-http.ts";
 
 config({ path: path.join(process.cwd(), ".env") });
 config({ path: path.join(process.cwd(), ".env.local") });

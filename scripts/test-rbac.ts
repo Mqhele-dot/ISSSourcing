@@ -9,7 +9,14 @@
  */
 import process from "node:process";
 import { exitTest } from "./test-exit.ts";
-import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
+import {
+  apiJsonRequest,
+  getTestBaseUrl,
+  isConnectionRefused,
+  isLiveServerRequired,
+  loginForTests,
+  reportConnectionRefused,
+} from "./test-http.ts";
 
 async function main() {
   const BASE_URL = getTestBaseUrl();
@@ -89,7 +96,8 @@ async function main() {
   } catch (err) {
     if (isConnectionRefused(err)) {
       console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", BASE_URL);
-      exitTest(0);
+      reportConnectionRefused(BASE_URL);
+      exitTest(isLiveServerRequired() ? 1 : 0);
     }
     throw err;
   }
