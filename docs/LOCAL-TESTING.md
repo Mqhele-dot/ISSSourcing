@@ -68,7 +68,7 @@ If npm or OneDrive leaves `node_modules` in a placeholder or partial state, run:
 npm run repair:win-install
 ```
 
-This rebuilds dependencies with a project-local npm cache and npm 10, then runs `npm run check`.
+This rebuilds dependencies with project-local npm, Electron, and Electron Builder caches instead of `%LocalAppData%`, then runs `npm run check`.
 
 ## Codespace / Remote Browser Walkthrough
 
