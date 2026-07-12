@@ -1,5 +1,5 @@
 import type { Express, Request, RequestHandler, Response } from "express";
-import { and, eq, gte, lt } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
 import {
@@ -35,6 +35,15 @@ type BillingProviderStatus = {
   priceMappingsConfigured: boolean;
 };
 
+type UsageSummary = {
+  key: string;
+  value: number;
+  limit: number | null;
+  remaining: number | null;
+  percentUsed: number | null;
+  withinPlan: boolean;
+};
+
 const changePlanSchema = z.object({
   planTier: z.enum(["starter", "standard", "growth", "enterprise"]),
   reason: z.string().max(500).optional(),
@@ -45,6 +54,43 @@ const configUpdateSchema = z.object({
   scope: z.enum(["organization", "warehouse", "role"]).default("organization"),
   scopeId: z.string().max(128).optional().nullable(),
 });
+
+const usageEventSchema = z.object({
+  counterKey: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .regex(/^[a-z0-9_.-]+$/i, "Counter key may only include letters, numbers, dots, hyphens, and underscores."),
+  value: z.coerce.number().int().min(1).default(1),
+});
+
+function buildUsageSummary(
+  limits: { users: number | null; warehouses: number | null; skus: number | null },
+  rows: Array<{ counterKey: string; value: number }>,
+): UsageSummary[] {
+  const limitByKey: Record<string, number | null> = {
+    users: limits.users,
+    warehouses: limits.warehouses,
+    skus: limits.skus,
+  };
+
+  return rows
+    .map((row) => {
+      const limit = Object.prototype.hasOwnProperty.call(limitByKey, row.counterKey) ? limitByKey[row.counterKey] : null;
+      const remaining = typeof limit === "number" ? Math.max(limit - row.value, 0) : null;
+      const percentUsed = typeof limit === "number" && limit > 0 ? Math.min(100, Math.round((row.value / limit) * 100)) : null;
+      return {
+        key: row.counterKey,
+        value: row.value,
+        limit,
+        remaining,
+        percentUsed,
+        withinPlan: limit == null ? true : row.value <= limit,
+      };
+    })
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
 
 function currentUserId(req: Request): number | null {
   return (req as Request & { user?: { id?: number } }).user?.id ?? null;
@@ -267,6 +313,7 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
   app.get("/api/subscription/usage", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
     try {
       const orgId = getActiveOrganizationId();
+      const subscription = await getOrgSubscriptionForActiveOrg();
       const now = new Date();
       const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
       const periodEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
@@ -280,7 +327,13 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
             lt(usageCounters.periodStart, periodEnd),
           ),
         );
-      return sendOk(res, { periodStart, periodEnd, counters: rows });
+      return sendOk(res, {
+        periodStart,
+        periodEnd,
+        counters: rows,
+        limits: subscription.limits,
+        summary: buildUsageSummary(subscription.limits, rows),
+      });
     } catch (error) {
       console.error("GET /api/subscription/usage:", error);
       return sendError(res, 500, "SUBSCRIPTION_USAGE_FAILED", "Failed to load subscription usage.");
@@ -288,9 +341,8 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
   });
 
   app.post("/api/subscription/usage-events", ...requireConfigWrite(auth), async (req: Request, res: Response) => {
-    const schema = z.object({ counterKey: z.string().min(1).max(80), value: z.coerce.number().int().min(1).default(1) });
     try {
-      const parsed = schema.parse(req.body);
+      const parsed = usageEventSchema.parse(req.body);
       const orgId = getActiveOrganizationId();
       const now = new Date();
       const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -306,10 +358,24 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
         })
         .onConflictDoUpdate({
           target: [usageCounters.organizationId, usageCounters.counterKey, usageCounters.periodStart],
-          set: { value: parsed.value, updatedAt: now },
+          set: {
+            value: sql`${usageCounters.value} + ${parsed.value}`,
+            periodEnd,
+            updatedAt: now,
+          },
         })
         .returning();
-      return sendOk(res, row, 201);
+      const subscription = await getOrgSubscriptionForActiveOrg();
+      const [summary] = buildUsageSummary(subscription.limits, [row]);
+      return sendOk(
+        res,
+        {
+          counter: row,
+          appliedDelta: parsed.value,
+          summary,
+        },
+        201,
+      );
     } catch (error) {
       if (error instanceof z.ZodError) {
         return sendError(res, 400, "USAGE_EVENT_INVALID", "Invalid usage event.", { details: error.flatten() });

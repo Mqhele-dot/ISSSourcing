@@ -32,6 +32,7 @@
     "test:diagnostics": "tsx scripts/test-diagnostics-self-checks.ts",
     "test:diagnostics-guidance": "node scripts/test-diagnostics-guidance.mjs",
     "test:billing-settings-hardening": "node scripts/test-billing-settings-hardening.mjs",
+    "test:subscription-usage-hardening": "node scripts/test-subscription-usage-hardening.mjs",
     "test:windows-install-repair": "node scripts/test-repair-windows-install.mjs",
     "test:route-diagnostics": "tsx scripts/test-route-diagnostics.ts",
     "test:codespaces-schema-preflight": "node scripts/test-codespaces-schema-preflight.mjs",
