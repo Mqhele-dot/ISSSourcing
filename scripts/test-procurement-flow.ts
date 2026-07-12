@@ -19,6 +19,7 @@ import {
   getTestBaseUrl,
   isConnectionRefused,
   loginForTests,
+  reportConnectionRefused,
 } from "./test-http.ts";
 
 function asArray<T = Record<string, unknown>>(value: unknown): T[] {
@@ -354,12 +355,10 @@ async function main() {
 
 main().catch((err) => {
   if (isConnectionRefused(err)) {
-    console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", getTestBaseUrl());
-    exitTest(0);
+    exitTest(reportConnectionRefused(getTestBaseUrl()));
     return;
   }
   console.error(err);
   exitTest(1);
   return;
 });
-

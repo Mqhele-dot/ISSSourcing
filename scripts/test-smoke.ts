@@ -5,6 +5,7 @@ import {
   getTestBaseUrl,
   isConnectionRefused,
   loginForTests,
+  reportConnectionRefused,
 } from "./test-http.ts";
 
 async function fetchPageOk(baseUrl: string, path: string, cookie: string): Promise<boolean> {
@@ -135,8 +136,7 @@ async function main() {
 
 main().catch((err) => {
   if (isConnectionRefused(err)) {
-    console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", getTestBaseUrl());
-    exitTest(0);
+    exitTest(reportConnectionRefused(getTestBaseUrl()));
     return;
   }
   console.error(err);

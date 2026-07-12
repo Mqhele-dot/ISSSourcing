@@ -1,5 +1,11 @@
 import { exitTest } from "./test-exit.ts";
-import { apiJsonRequest, getTestBaseUrl, isConnectionRefused, loginForTests } from "./test-http.ts";
+import {
+  apiJsonRequest,
+  getTestBaseUrl,
+  isConnectionRefused,
+  loginForTests,
+  reportConnectionRefused,
+} from "./test-http.ts";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -330,8 +336,8 @@ async function main() {
 
 main().catch((err) => {
   if (isConnectionRefused(err)) {
-    console.log("  ⚠ Server not reachable at %s. Start with: npm run dev", getTestBaseUrl());
-    exitTest(0);
+    exitTest(reportConnectionRefused(getTestBaseUrl()));
+    return;
   }
   console.error(err);
   exitTest(1);

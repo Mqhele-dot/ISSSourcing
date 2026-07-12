@@ -192,6 +192,23 @@ export function isConnectionRefused(err: unknown): boolean {
   return e?.code === "ECONNREFUSED" || e?.cause?.code === "ECONNREFUSED";
 }
 
+export function shouldRequireLiveServer(): boolean {
+  const raw = process.env.TEST_REQUIRE_SERVER;
+  return raw === "1" || raw === "true";
+}
+
+export function reportConnectionRefused(baseUrl = getTestBaseUrl()): number {
+  const exitCode = shouldRequireLiveServer() ? 1 : 0;
+  const reporter = exitCode === 1 ? console.error : console.log;
+  reporter(
+    "  %s Server not reachable at %s. Start with: npm run dev%s",
+    exitCode === 1 ? "X" : "!",
+    baseUrl,
+    exitCode === 1 ? " (failing because TEST_REQUIRE_SERVER=1)" : "",
+  );
+  return exitCode;
+}
+
 /** Log pass/fail for `X-Request-Id` on a response (shared by procurement / demo scripts). */
 export function expectRequestId(label: string, requestId: string | null): boolean {
   if (requestId && requestId.length > 0) {

@@ -10,6 +10,8 @@ npm run test:local
 
 This starts `npm run dev` on `http://127.0.0.1:5000` in API-only test mode, waits for `/api/ready`, runs the core supplier/defaults and diagnostics checks, then stops the server. API-only mode keeps automated checks local and avoids depending on the Codespaces forwarded URL or the browser dev server.
 
+`test:local`, `test:local:delta`, and `test:production-smoke` now set `TEST_REQUIRE_SERVER=1` for the invoked smoke suites so a dropped or missing local runtime fails closed instead of reporting a false green.
+
 ## Delta Release Check
 
 ```powershell

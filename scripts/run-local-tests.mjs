@@ -63,7 +63,7 @@ function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.platform === "win32" ? "cmd.exe" : command, process.platform === "win32" ? ["/d", "/s", "/c", [command, ...args].join(" ")] : args, {
       cwd: process.cwd(),
-      env: { ...process.env, BASE_URL, PORT, ...options.env },
+      env: { ...process.env, BASE_URL, PORT, TEST_REQUIRE_SERVER: "1", ...options.env },
       shell: false,
       stdio: options.stdio || "inherit",
     });
