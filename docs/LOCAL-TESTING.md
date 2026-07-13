@@ -2,6 +2,14 @@
 
 Use these commands to test the app from the local Windows workspace without using Codespaces.
 
+Before the first local run in a Windows worktree, prefer:
+
+```powershell
+npm run ci:workspace
+```
+
+That command routes Windows installs through the repo-local repair flow automatically and uses a normal `npm ci` path elsewhere.
+
 ## Quick App Check
 
 ```powershell

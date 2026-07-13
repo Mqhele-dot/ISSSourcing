@@ -18,6 +18,12 @@ npm run db:push
 npm run dev
 ```
 
+For automation worktrees and Windows/OneDrive checkouts, prefer:
+
+```powershell
+npm run ci:workspace
+```
+
 If `npm install` or `npm ci` fails on Windows with `EPERM` under `%LOCALAPPDATA%\electron\Cache` or the default npm cache, run:
 
 ```powershell
@@ -25,6 +31,8 @@ npm run repair:win-install
 ```
 
 That repair path forces npm cache, temp/app-data folders, and Electron/Electron Builder caches into repo-local directories before reinstalling, which avoids the locked `%LOCALAPPDATA%` cache paths that often break OneDrive and automation worktrees.
+
+`npm run ci:workspace` now routes Windows installs through that repair flow automatically.
 
 If PowerShell blocks `npm.ps1` on this machine, use `npm.cmd` (for example `npm.cmd run check`) or open `cmd.exe`.
 
