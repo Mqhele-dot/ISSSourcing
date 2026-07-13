@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
@@ -70,6 +70,7 @@ export function useRequisitionForm(params: {
   const [currencyCode, setCurrencyCode] = useState("ZAR");
   const [items, setItems] = useState<ReqLineDraft[]>([{ itemId: 0, quantity: 1, unitPrice: 0 }]);
   const [fieldErrors, setFieldErrors] = useState<RequisitionFieldErrors>({});
+  const organizationCurrencyInitialized = useRef(false);
 
   const { data: requisition, isLoading } = useQuery({
     queryKey: ["/api/purchase-requisitions", id],
@@ -104,6 +105,13 @@ export function useRequisitionForm(params: {
     retry: false,
     staleTime: 60_000,
   });
+  const reportingCurrencyCode = String(mdmContext?.defaultCurrencyCode ?? "ZAR").trim().toUpperCase();
+
+  useEffect(() => {
+    if (!isNew || !mdmContext?.defaultCurrencyCode || organizationCurrencyInitialized.current) return;
+    organizationCurrencyInitialized.current = true;
+    setCurrencyCode(reportingCurrencyCode);
+  }, [isNew, mdmContext?.defaultCurrencyCode, reportingCurrencyCode]);
 
   const { data: departments = [] } = useQuery({
     queryKey: ["/api/departments"],
@@ -152,7 +160,11 @@ export function useRequisitionForm(params: {
   });
 
   const effectiveSuppliers = useMemo(
-    () => (mdmContext?.suppliers?.length ? mdmContext.suppliers : suppliers),
+    () =>
+      (mdmContext?.suppliers?.length ? mdmContext.suppliers : suppliers).filter((supplier) => {
+        const governed = supplier as Supplier & { onboardingStatus?: string | null };
+        return String(supplier.status).toLowerCase() === "active" && String(governed.onboardingStatus ?? "approved").toLowerCase() === "approved";
+      }),
     [mdmContext?.suppliers, suppliers],
   );
 
@@ -189,7 +201,11 @@ export function useRequisitionForm(params: {
     [effectiveCurrencies, currencyCode],
   );
 
-  const exchangeRateToZar = Number(selectedCurrency?.exchangeRateToZar ?? (currencyCode === "ZAR" ? 1 : 0));
+  // The database field retains its legacy name, but the rate now targets the
+  // active legal entity's reporting currency rather than always targeting ZAR.
+  const exchangeRateToZar = Number(
+    selectedCurrency?.exchangeRateToZar ?? (currencyCode === reportingCurrencyCode ? 1 : 0),
+  );
 
   const requisitionTotals = useMemo(() => {
     const orderTotal = items.reduce((sum, item) => {
@@ -197,9 +213,11 @@ export function useRequisitionForm(params: {
       const unitPrice = Number(item.unitPrice);
       return Number.isFinite(qty) && Number.isFinite(unitPrice) ? sum + qty * unitPrice : sum;
     }, 0);
+    const reportingTotal = orderTotal * (Number.isFinite(exchangeRateToZar) && exchangeRateToZar > 0 ? exchangeRateToZar : 0);
     return {
       orderTotal,
-      zarTotal: orderTotal * (Number.isFinite(exchangeRateToZar) && exchangeRateToZar > 0 ? exchangeRateToZar : 0),
+      reportingTotal,
+      zarTotal: reportingTotal,
     };
   }, [exchangeRateToZar, items]);
 
@@ -258,7 +276,9 @@ export function useRequisitionForm(params: {
     if (requisition) {
       setNotes(requisition.notes ?? "");
       setSupplierId(requisition.supplierId ?? "");
-      setCurrencyCode(((requisition as PurchaseRequisition & { currencyCode?: string | null }).currencyCode ?? "ZAR").toUpperCase());
+      setCurrencyCode(
+        ((requisition as PurchaseRequisition & { currencyCode?: string | null }).currencyCode ?? reportingCurrencyCode).toUpperCase(),
+      );
       setDepartmentId((requisition as PurchaseRequisition & { departmentId?: number | null }).departmentId ?? "");
       setJustification((requisition as PurchaseRequisition & { justification?: string | null }).justification ?? "");
       setRequiredDate(requisition.requiredDate ? new Date(requisition.requiredDate).toISOString().slice(0, 10) : "");
@@ -279,7 +299,7 @@ export function useRequisitionForm(params: {
         );
       }
     }
-  }, [requisition]);
+  }, [requisition, reportingCurrencyCode]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -325,15 +345,17 @@ export function useRequisitionForm(params: {
         name: payload.name,
         email: payload.email || undefined,
         phone: payload.phone || undefined,
-        status: "active",
+        status: "prospective",
         defaultCurrencyCode: currencyCode,
       });
       return res.json() as Promise<Supplier>;
     },
     onSuccess: async (supplier) => {
       queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
-      setSupplierId(supplier.id);
-      toast({ title: "Supplier added", description: `${supplier.name} is now selected for this requisition.` });
+      toast({
+        title: "Prospective supplier created",
+        description: `${supplier.name} must complete supplier onboarding and independent approval before it can be used on a requisition or PO.`,
+      });
     },
     onError: (e) => {
       toast({ title: "Supplier create failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
@@ -427,7 +449,7 @@ export function useRequisitionForm(params: {
     if (!supplierId) nextErrors.supplierId = "Supplier is required";
     if (!currencyCode) nextErrors.currencyCode = "Currency is required";
     if (!Number.isFinite(exchangeRateToZar) || exchangeRateToZar <= 0) {
-      nextErrors.currencyCode = "Selected currency needs a positive ZAR exchange rate in Master Data";
+      nextErrors.currencyCode = `Selected currency needs a positive ${reportingCurrencyCode} exchange rate in Master Data`;
     }
     if (!departmentId) nextErrors.departmentId = "Department is required";
     if (!requiredDate) nextErrors.requiredDate = "Required date is required";
@@ -457,7 +479,7 @@ export function useRequisitionForm(params: {
     }
     if (isNew) createMutation.mutate();
     else updateMutation.mutate();
-  }, [supplierId, currencyCode, exchangeRateToZar, departmentId, requiredDate, items, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
+  }, [supplierId, currencyCode, exchangeRateToZar, reportingCurrencyCode, departmentId, requiredDate, items, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
@@ -481,6 +503,7 @@ export function useRequisitionForm(params: {
     setCurrencyCode,
     selectedCurrency,
     exchangeRateToZar,
+    reportingCurrencyCode,
     requisitionTotals,
     departmentId,
     setDepartmentId,

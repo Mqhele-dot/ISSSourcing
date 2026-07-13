@@ -30,6 +30,7 @@ audit-high*.txt
 
 # Local runtime artifacts from diagnostics, smoke tests, and generated exports.
 .control-tower-*.log
+.local-app-*.log
 output/
 tmp/
 uploads/exports/

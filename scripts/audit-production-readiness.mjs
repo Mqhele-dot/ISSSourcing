@@ -21,6 +21,7 @@ const coreWorkflowRoutePatterns = [
   /^\/admin\/master-data/,
   /^\/procurement\/requisitions/,
   /^\/procurement\/orders/,
+  /^\/procurement\/sourcing/,
   /^\/procurement\/suppliers/,
   /^\/procurement\/contracts/,
   /^\/inventory(\/|$)/,
@@ -39,8 +40,11 @@ const coreWorkflowRoutePatterns = [
 ];
 
 const nonProductionV1RoutePatterns = [
-  /^\/operations\/logistics(\/|$)/,
-  /^\/operations\/exceptions(\/|$)/,
+  /^\/operations(\/|$)/,
+  /^\/inventory(\/|$)/,
+  /^\/m\/(home|tasks|counts|scan|receive|pick|workflows|more)(\/|$)/,
+  /^\/finance\/(invoices|accounts-payable|billing)(\/|$)/,
+  /^\/analytics\/(inventory|finance|logistics)(\/|$)/,
 ];
 
 function toPosix(value) {
@@ -138,6 +142,7 @@ const staticRouteFallbacks = new Map([
   ["APP_ROUTES.operations.exceptions", "/operations/exceptions"],
   ["APP_ROUTES.inventory.root", "/inventory"],
   ["APP_ROUTES.procurement.orders", "/procurement/orders"],
+  ["APP_ROUTES.procurement.sourcing", "/procurement/sourcing"],
 ]);
 const helperRouteBases = new Map([
   ["APP_ROUTES.inventory.warehouse", "/inventory/warehouses"],
@@ -155,14 +160,16 @@ function resolveRouteExpression(raw) {
     .replace("${APP_ROUTES.operations.logistics}", "/operations/logistics")
     .replace("${APP_ROUTES.operations.exceptions}", "/operations/exceptions")
     .replace("${APP_ROUTES.inventory.root}", "/inventory")
-    .replace("${APP_ROUTES.procurement.orders}", "/procurement/orders");
+    .replace("${APP_ROUTES.procurement.orders}", "/procurement/orders")
+    .replace("${APP_ROUTES.procurement.sourcing}", "/procurement/sourcing");
   const quoted = expression.match(/^["'`]([^"'`]+)["'`]$/);
   if (quoted) {
     return quoted[1]
       .replace("${APP_ROUTES.operations.logistics}", "/operations/logistics")
       .replace("${APP_ROUTES.operations.exceptions}", "/operations/exceptions")
       .replace("${APP_ROUTES.inventory.root}", "/inventory")
-      .replace("${APP_ROUTES.procurement.orders}", "/procurement/orders");
+      .replace("${APP_ROUTES.procurement.orders}", "/procurement/orders")
+      .replace("${APP_ROUTES.procurement.sourcing}", "/procurement/sourcing");
   }
   if (staticRoutes.has(expression)) return staticRoutes.get(expression);
   if (staticRouteFallbacks.has(expression)) return staticRouteFallbacks.get(expression);
@@ -392,6 +399,7 @@ function routeTestEvidence(route) {
     [/^\/admin\/subscription(\/|$)/, ["test-subscription-runtime-flow", "test-subscription-ui-contracts", "subscription-admin-workflow"]],
     [/^\/finance\/approval-policies(\/|$)/, ["test-control-plane-runtime", "control-plane-admin-workflow"]],
     [/^\/procurement\/requisitions(\/|$)/, ["test-requisition-line-mdm-flow", "test-mdm-dependency-runtime", "procurement-to-ap-ui-workflow"]],
+    [/^\/procurement\/sourcing(\/|$)/, ["test-sourcing-workflow", "test-commercial-procurement-foundation", "procurement-sourcing-ui-workflow"]],
     [/^\/procurement\/orders(\/|$)/, ["test-purchase-order-endpoints", "test-po-receiving-inventory-flow", "procurement-to-ap-ui-workflow"]],
   ];
   return routeEvidencePatterns
@@ -422,7 +430,7 @@ function routeUiTestEvidence(route) {
     names.push("test-subscription-ui-contracts");
   }
   if (isProcurementRoute(route)) {
-    names.push("procurement-to-ap-workflow", "purchase-order-actions");
+    names.push("procurement-to-ap-workflow", "purchase-order-actions", "test-commercial-procurement-foundation");
   }
   return testFiles.filter((file) => {
     const normalized = toPosix(file).toLowerCase();
@@ -444,6 +452,9 @@ function routeE2eTestEvidence(route) {
   if (/^\/admin\/subscription(\/|$)/.test(route.route)) {
     names.push("subscription-admin-workflow");
   }
+  if (/^\/procurement\/sourcing(\/|$)/.test(route.route)) {
+    names.push("procurement-sourcing-ui-workflow");
+  }
   return testFiles.filter((file) => {
     const normalized = toPosix(file).toLowerCase();
     return names.some((name) => normalized.includes(name.toLowerCase()));
@@ -458,12 +469,18 @@ function routeProofLabels(route, apiUses, text) {
   if (/<Can|useCan|usePermissions|permission|ProtectedRoute|canManage|canUpdate|canCreate|canDelete|ensureRole/i.test(text) || routeE2eTestEvidence(route).some((file) => toPosix(file).includes("role-permission-core-workflow"))) {
     labels.push("Permission-proven");
   }
-  if (/audit|approval[-_]?history|activity|revision|history/i.test(text)) labels.push("Audit-proven");
+  if (hasRouteAuditEvidence(route, text)) labels.push("Audit-proven");
   return labels;
 }
 
 function isProcurementRoute(route) {
-  return /^\/procurement\/(orders|requisitions)(\/|$)/.test(route.route);
+  return /^\/procurement\/(orders|requisitions|sourcing)(\/|$)/.test(route.route);
+}
+
+function hasRouteAuditEvidence(route, text) {
+  if (/audit|approval[-_]?history|activity|revision|history/i.test(text)) return true;
+  return /^\/procurement\/sourcing(\/|$)/.test(route.route)
+    && routeRuntimeTestEvidence(route).some((file) => toPosix(file).includes("test-sourcing-workflow"));
 }
 
 function hasProductionBlockingFixes(fixes) {
@@ -489,7 +506,7 @@ function routeRequiredFixes(route, apiUses, text) {
   const hasError = /isError|error|PanelInlineError|catch|toast/.test(text);
   const hasValidation = /zod|schema|validate|resolver|FormMessage|required/i.test(text);
   const hasPermission = /<Can|useCan|usePermissions|permission|ProtectedRoute|canManage|canUpdate|canCreate|canDelete|ensureRole/i.test(text);
-  const hasAuditEvidence = /audit|approval[-_]?history|activity|revision|history/i.test(text);
+  const hasAuditEvidence = hasRouteAuditEvidence(route, text);
   if (!existsSync(path.join(root, route.file))) fixes.push("component file missing");
   if (hasMock) fixes.push("mock/demo/static markers present");
   if (!hasApi && route.protected) fixes.push("no clear backend data integration");
@@ -642,12 +659,14 @@ function riskRows() {
     lines.forEach((line, index) => {
       for (const [label, regex] of riskTerms) {
         if (regex.test(line)) {
+          const sourceLine = line.trim();
           rows.push({
             file: toPosix(file),
             line: index + 1,
             area: detectModule(file),
             type: label,
-            description: line.trim().slice(0, 180),
+            sourceLine,
+            description: sourceLine.slice(0, 180),
           });
           break;
         }
@@ -672,7 +691,7 @@ function isTestCodeFile(file) {
 
 function riskSeverity(risk) {
   if (!isProductionCodeFile(risk.file)) return "False positive";
-  const lower = `${risk.file} ${risk.description}`.toLowerCase();
+  const lower = `${risk.file} ${risk.sourceLine ?? risk.description}`.toLowerCase();
   if (risk.type === "placeholder" && /placeholder=|<selectvalue\s+placeholder|placeholder\??:|\bplaceholder:\s*["'`]/.test(lower)) {
     return "False positive";
   }
@@ -828,7 +847,7 @@ function routeRows() {
       status === "Production-ready"
         ? "No major static gap detected"
         : status === "Non-production v1"
-          ? "Excluded from v1 production until route-specific real-data, permission, audit, and browser proof is complete"
+          ? "Excluded from the procurement-only production release until a later route-specific evidence wave is approved"
         : status === "Workflow-backed"
           ? "Backend/API workflow and source-level UI wiring exist, but browser/permission proof is still incomplete"
         : status === "Mock/demo only"
@@ -932,6 +951,16 @@ function mockRows() {
 function runtimeEvidenceRows() {
   const rows = [
     [
+      "test:sourcing-workflow",
+      "Creates and publishes an RFQ, proves mapped supplier isolation, submits a versioned quote, scores the quote, blocks owner self-approval, records independent award approval, converts the award to a PO with MDM finance fields, and verifies the audit hash chain.",
+      "Does not replace browser proof, production email-provider verification, or a load test with large quote comparisons.",
+    ],
+    [
+      "test:e2e:sourcing",
+      "Playwright proof for supplier quote submission, buyer scoring and award recommendation, independent planner approval, and award-to-PO conversion.",
+      "Uses deterministic database setup for the open RFQ; supplier onboarding and requisition creation have separate workflow tests.",
+    ],
+    [
       "test:requisition-line-mdm-flow",
       "Creates a requisition through the API with item, UOM, tax, cost centre, and GL metadata; approves it; converts it to a PO; verifies the PO line keeps the metadata; verifies PO item update preserves finance mapping.",
       "Does not prove every procurement route screen interaction or every approval policy branch.",
@@ -1003,7 +1032,7 @@ function runtimeEvidenceRows() {
     ],
     [
       "verify:release:e2e",
-      "Formal browser release gate: runs verify:release, procurement/AP E2E, permission E2E, and control-plane E2E.",
+      "Formal browser release gate: runs verify:release plus procurement/AP, permission, control-plane, subscription, button-action, and sourcing E2E suites.",
       "In this Windows workspace local Chromium launch can fail with spawn EPERM; production approval should attach the .github/workflows/playwright-release-gate.yml run when local launch is blocked.",
     ],
     [
@@ -1123,7 +1152,7 @@ Allowed status labels: ${statuses.map((status) => `\`${status}\``).join(", ")}.
 - Mock/demo/static risk markers found: **${riskRows().length}**
 - Core blocking risks: **${riskCategoryCount("Core blocking risks")}**
 - Marker-level blockers: **${riskCategoryCount("Core blocking risks")}**
-- Non-production v1 exclusions: **${routes.filter(isNonProductionV1Route).length} routes**
+- Procurement-release exclusions: **${routes.filter(isNonProductionV1Route).length} routes**
 - Core non-blocking risks: **${riskCategoryCount("Core non-blocking risks")}**
 - False positives: **${riskCategoryCount("False positives")}**
 - Test-only markers: **${riskCategoryCount("Test-only markers")}**
@@ -1131,7 +1160,7 @@ Allowed status labels: ${statuses.map((status) => `\`${status}\``).join(", ")}.
 - Mock/demo/static severity split: **Critical ${riskRowsBySeverity().filter((risk) => risk.severity === "Critical").length}**, **High ${riskRowsBySeverity().filter((risk) => risk.severity === "High").length}**, **Medium ${riskRowsBySeverity().filter((risk) => risk.severity === "Medium").length}**, **Low ${riskRowsBySeverity().filter((risk) => risk.severity === "Low").length}**, **False positive ${riskRowsBySeverity().filter((risk) => risk.severity === "False positive").length}**
 - Baseline comparison: **Wave 1 baseline**. Future production audits should compare these counts and risk markers so new or worsened production gaps are visible before release.
 
-The app now has a real production foundation across MDM, procurement, inventory, AP, logistics, reporting, diagnostics, subscriptions, and mobile stock counts. The biggest remaining risk is not absence of screens; it is inconsistent production proof in handoffs, degraded fallback behavior, business-rule enforcement, and audit evidence.
+The app now has a production-candidate foundation for the procurement-only commercial boundary: governed Master Data, supplier onboarding, requisitions, sourcing, approvals, purchase orders, contracts, reporting, diagnostics, subscriptions, and administration. Inventory operations, receiving, logistics, AP, payment control, and mobile warehouse workflows remain explicitly gated later-release modules even where earlier technical proof exists.
 
 ## Runtime Workflow Evidence
 
@@ -1225,7 +1254,7 @@ ${testRows().join("\n")}
 
 1. **Stabilise and expose app truth**: fix broken routes/APIs, standardize API errors, make diagnostics authoritative, label demo-only behavior, and keep check/lint/build green.
 2. **Build the real data backbone**: continue the MDM rebuild, domain-specific fields, where-used relationships, data-quality scans, backend validation, and audit history.
-3. **Wire procurement-to-payment flow**: prove MDM defaults into requisitions, approval policy into approval decisions, PO defaults, GRN inventory updates, AP matching, payments, reports, and audit.
+3. **Complete the procurement release boundary**: preserve MDM defaults through requisition, sourcing, independent award, PO approval and dispatch, contracts, procurement reports, and audit evidence.
 4. **Add controls and security**: protect supplier banking, payments, approval rules, tax/GL setup, master-data changes, user roles, and sensitive exports.
 5. **Add production release gates**: route/API/schema readiness, workflow smoke, permission tests, data-quality tests, dependency checks, and deployment evidence.
 

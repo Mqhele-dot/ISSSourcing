@@ -24,13 +24,13 @@ async function fetchCsrfToken(cookie?: string, baseUrl?: string): Promise<{ toke
     credentials: "include",
     signal: AbortSignal.timeout(TEST_HTTP_TIMEOUT_MS),
   });
-  captureCookieFromResponse(response);
+  const refreshedCookie = captureCookieFromResponse(response);
   const payload = await response.json().catch(() => null) as
     | { csrfToken?: string; data?: { csrfToken?: string } }
     | null;
   return {
     token: payload?.data?.csrfToken ?? payload?.csrfToken,
-    cookie: peekSessionCookie() ?? cookie,
+    cookie: refreshedCookie ?? cookie,
   };
 }
 
@@ -47,11 +47,13 @@ export function peekSessionCookie(): string | undefined {
   return lastSetCookie;
 }
 
-function captureCookieFromResponse(res: Response): void {
+function captureCookieFromResponse(res: Response): string | undefined {
   const setCookie = res.headers.get("set-cookie");
   if (setCookie) {
     lastSetCookie = setCookie.split(";")[0];
+    return lastSetCookie;
   }
+  return undefined;
 }
 
 export type ApiJsonResult = {
@@ -72,6 +74,7 @@ export async function apiJsonRequest(
     body?: unknown;
     cookie?: string;
     baseUrl?: string;
+    headers?: Record<string, string>;
   } = {},
 ): Promise<ApiJsonResult> {
   const base = options.baseUrl ?? getTestBaseUrl();
@@ -92,6 +95,7 @@ export async function apiJsonRequest(
       ...(options.body != null ? { "Content-Type": "application/json" } : {}),
       ...(cookie ? { Cookie: cookie } : {}),
       ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...options.headers,
     },
     body: options.body != null ? JSON.stringify(options.body) : undefined,
     credentials: "include",
@@ -112,6 +116,7 @@ export async function apiRawRequest(
     body?: unknown;
     cookie?: string;
     baseUrl?: string;
+    headers?: Record<string, string>;
   } = {},
 ): Promise<Response> {
   const base = options.baseUrl ?? getTestBaseUrl();
@@ -132,6 +137,7 @@ export async function apiRawRequest(
       ...(options.body != null ? { "Content-Type": "application/json" } : {}),
       ...(cookie ? { Cookie: cookie } : {}),
       ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...options.headers,
     },
     body: options.body != null ? JSON.stringify(options.body) : undefined,
     credentials: "include",

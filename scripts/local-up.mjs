@@ -2,26 +2,20 @@
 import fs from "node:fs";
 import net from "node:net";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import process from "node:process";
+import { parse as parseDotenv } from "dotenv";
 
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 const envPath = ".env";
 const defaultPort = process.env.PORT || "5000";
 const defaultDbUrl = "postgresql://postgres:postgres@localhost:5432/inventory_dev?sslmode=disable";
+const detached = process.argv.includes("--detach");
+const require = createRequire(import.meta.url);
 
 function readEnvFile() {
   if (!fs.existsSync(envPath)) return {};
-  return Object.fromEntries(
-    fs
-      .readFileSync(envPath, "utf8")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("#") && line.includes("="))
-      .map((line) => {
-        const idx = line.indexOf("=");
-        return [line.slice(0, idx), line.slice(idx + 1)];
-      }),
-  );
+  return parseDotenv(fs.readFileSync(envPath, "utf8"));
 }
 
 function ensureLocalEnv() {
@@ -62,13 +56,23 @@ function tcpProbe(host, port, timeoutMs = 750) {
 }
 
 function mergeLocalRuntimeEnv(fileEnv) {
+  const configuredDatabaseUrl = process.env.DATABASE_URL || fileEnv.DATABASE_URL;
+  const pgUser = process.env.PGUSER || fileEnv.PGUSER;
+  const pgPassword = process.env.PGPASSWORD || fileEnv.PGPASSWORD;
+  const pgHost = process.env.PGHOST || fileEnv.PGHOST || "127.0.0.1";
+  const pgPort = process.env.PGPORT || fileEnv.PGPORT || fileEnv.DB_PORT || "5432";
+  const pgDatabase = process.env.PGDATABASE || fileEnv.PGDATABASE;
+  const databaseUrl = configuredDatabaseUrl || (pgUser && pgDatabase
+    ? `postgresql://${encodeURIComponent(pgUser)}:${encodeURIComponent(pgPassword || "")}@${pgHost}:${pgPort}/${encodeURIComponent(pgDatabase)}?sslmode=disable`
+    : defaultDbUrl);
   return {
+    ...fileEnv,
     ...process.env,
     NODE_ENV: process.env.NODE_ENV || fileEnv.NODE_ENV || "development",
     RUNTIME_DEPLOYMENT: process.env.RUNTIME_DEPLOYMENT || fileEnv.RUNTIME_DEPLOYMENT || "development",
     HOST: process.env.HOST || fileEnv.HOST || "127.0.0.1",
     PORT: process.env.PORT || fileEnv.PORT || defaultPort,
-    DATABASE_URL: process.env.DATABASE_URL || fileEnv.DATABASE_URL || defaultDbUrl,
+    DATABASE_URL: databaseUrl,
     SESSION_SECRET: process.env.SESSION_SECRET || fileEnv.SESSION_SECRET || "dev-session-secret-change-me",
     INTERNAL_EXPORT_TOKEN:
       process.env.INTERNAL_EXPORT_TOKEN || fileEnv.INTERNAL_EXPORT_TOKEN || "dev-internal-export-token-change-me",
@@ -102,12 +106,28 @@ if (!(await tcpProbe("127.0.0.1", pgPort))) {
 }
 
 const useShell = process.platform === "win32";
-const child = spawn(useShell ? "cmd.exe" : npmCmd, useShell ? ["/d", "/s", "/c", `${npmCmd} run dev`] : ["run", "dev"], {
+const stdoutFd = detached ? fs.openSync(`.local-app-${port}.log`, "a") : undefined;
+const stderrFd = detached ? fs.openSync(`.local-app-${port}.error.log`, "a") : undefined;
+const launchCommand = detached ? process.execPath : useShell ? "cmd.exe" : npmCmd;
+const launchArgs = detached
+  ? [require.resolve("tsx/cli"), "server/index.ts"]
+  : useShell
+    ? ["/d", "/s", "/c", `${npmCmd} run dev`]
+    : ["run", "dev"];
+const child = spawn(launchCommand, launchArgs, {
   cwd: process.cwd(),
   env: runtimeEnv,
-  stdio: "inherit",
+  stdio: detached ? ["ignore", stdoutFd, stderrFd] : "inherit",
   shell: false,
+  detached,
 });
+
+if (detached) {
+  child.unref();
+  console.log(`Started detached local server process ${child.pid}.`);
+  console.log(`Logs: .local-app-${port}.log and .local-app-${port}.error.log`);
+  process.exit(0);
+}
 
 function shutdown() {
   child.kill();

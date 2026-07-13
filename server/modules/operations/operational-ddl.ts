@@ -155,6 +155,23 @@ export const OPERATIONAL_TABLE_DDLS = [
   ALTER TABLE shipments ADD COLUMN IF NOT EXISTS source_ref text
   `,
   `
+  ALTER TABLE shipments ADD COLUMN IF NOT EXISTS organization_id integer REFERENCES organizations(id)
+  `,
+  `
+  UPDATE shipments shipment
+  SET organization_id = purchase_order.organization_id
+  FROM purchase_orders purchase_order
+  WHERE shipment.organization_id IS NULL
+    AND (
+      shipment.purchase_order_id = purchase_order.id
+      OR shipment.po_number = purchase_order.order_number
+    )
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS shipments_organization_id_idx
+  ON shipments (organization_id)
+  `,
+  `
   UPDATE shipments SET direction = 'inbound' WHERE direction IS NULL
   `,
   `
@@ -191,8 +208,9 @@ export async function initializeOperationalData() {
 
   if (shipmentCount === 0) {
     await pool.query(`
-      INSERT INTO shipments (po_number, carrier, status, eta, created_at, updated_at)
+      INSERT INTO shipments (organization_id, po_number, carrier, status, eta, created_at, updated_at)
       SELECT
+        po.organization_id,
         po.order_number,
         'Demo Carrier',
         CASE

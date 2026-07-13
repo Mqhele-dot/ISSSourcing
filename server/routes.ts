@@ -38,6 +38,7 @@ import { registerPurchaseOrderListRoutesBeforeOperationalMount } from "./modules
 import { registerRbacRoutes } from "./modules/rbac/register-rbac-routes";
 import { registerCatalogRoutes } from "./modules/catalog/register-catalog-routes";
 import { registerMasterDataRoutes } from "./modules/master-data/register-master-data-routes";
+import { registerProductionReleaseBoundary } from "./production-release-boundary";
 import { registerAnalyticsRoutes } from "./modules/reports/register-analytics-routes";
 import { registerSetupRoutes } from "./modules/setup/register-setup-routes";
 import { getActiveOrganizationId } from "./organization-context";
@@ -74,8 +75,10 @@ import {
   permissionTypeEnum,
   type DocumentType,
   organizationSettings,
+  organizationMembers,
   projects,
 } from "@shared/schema";
+import { appendAuditEvent } from "./services/audit-chain-service";
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -137,6 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const auth = setupAuth(app);
   registerPurchaseOrderListRoutesBeforeOperationalMount(app, auth);
   registerOperationalRoutes(app, auth);
+  registerProductionReleaseBoundary(app, auth);
   registerDomainModules(app, auth);
   registerRbacRoutes(app, auth);
   registerCatalogRoutes(app, auth);
@@ -1638,6 +1642,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ================== USER MANAGEMENT ENDPOINTS ==================
+
+  async function activeOrganizationUser(userId: number) {
+    const [membership] = await db
+      .select({ id: organizationMembers.id, role: organizationMembers.role })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.organizationId, getActiveOrganizationId()),
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.active, true),
+        ),
+      )
+      .limit(1);
+    return membership ?? null;
+  }
   
   app.get("/api/users", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
     try {
@@ -1648,7 +1667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       const orgRoleByUser = new Map(memberships.rows.map((row) => [row.user_id, row.role]));
       res.json(
-        users.map((user) => ({
+        users.filter((user) => orgRoleByUser.has(user.id)).map((user) => ({
           ...user,
           organizationRole: orgRoleByUser.get(user.id) ?? null,
         })),
@@ -1668,7 +1687,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const user = await storage.getUser(id);
       
-      if (!user) {
+      if (!user || !(await activeOrganizationUser(id))) {
         return res.status(404).json({ message: "User not found" });
       }
       
@@ -1679,14 +1698,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.put("/api/users/:id", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
+  app.put("/api/users/:id", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
         return res.status(400).json({ message: "Invalid user ID" });
       }
       
+      const membership = await activeOrganizationUser(id);
       const before = await storage.getUser(id);
+      if (!membership || !before) return sendError(res, 404, "USER_NOT_FOUND", "User not found in this organization.");
       const allowedFields = new Set([
         "role",
         "workPersona",
@@ -1702,7 +1723,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (Object.keys(updatePayload).length === 0) {
         return sendError(res, 400, "USER_UPDATE_EMPTY", "No permitted user control fields were supplied.");
       }
-      const updatedUser = await storage.updateUser(id, updatePayload);
+      const requestedRole = typeof updatePayload.role === "string" ? updatePayload.role : undefined;
+      const requestedActive = typeof updatePayload.active === "boolean" ? updatePayload.active : undefined;
+      delete updatePayload.role;
+      delete updatePayload.active;
+      if (requestedRole !== undefined || requestedActive !== undefined) {
+        await db
+          .update(organizationMembers)
+          .set({
+            ...(requestedRole !== undefined ? { applicationRole: requestedRole } : {}),
+            ...(requestedActive !== undefined
+              ? { active: requestedActive, status: requestedActive ? "active" : "suspended" }
+              : {}),
+          })
+          .where(eq(organizationMembers.id, membership.id));
+      }
+      const persistedUser = Object.keys(updatePayload).length > 0
+        ? await storage.updateUser(id, updatePayload)
+        : before;
+      const updatedUser = persistedUser
+        ? {
+            ...persistedUser,
+            role: requestedRole ?? persistedUser.role,
+            active: requestedActive ?? persistedUser.active,
+          }
+        : null;
       
       if (!updatedUser) {
         return res.status(404).json({ message: "User not found" });
@@ -1726,6 +1771,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
           referenceType: "user",
           referenceId: id
         });
+        await appendAuditEvent({
+          organizationId: getActiveOrganizationId(),
+          actor: { userId: req.user.id },
+          action: "USER_ACCESS_UPDATED",
+          resourceType: "organization_membership",
+          resourceId: membership.id,
+          before: {
+            userId: id,
+            role: before.role,
+            active: before.active,
+            workPersona: before.workPersona,
+          },
+          after: {
+            userId: id,
+            role: updatedUser.role,
+            active: updatedUser.active,
+            workPersona: updatedUser.workPersona,
+          },
+          reason: typeof req.body?.reason === "string" ? req.body.reason : "Administrator access-control update",
+          requestId: String(res.locals.requestId ?? "unknown-request-id"),
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent") ?? null,
+        });
       }
       
       res.json(updatedUser);
@@ -1735,7 +1803,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.delete("/api/users/:id", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
+  app.delete("/api/users/:id", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1746,20 +1814,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.user && req.user.id === id) {
         return res.status(400).json({ message: "Cannot delete your own account" });
       }
-      
-      const success = await storage.deleteUser(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "User not found" });
+      const membership = await activeOrganizationUser(id);
+      if (!membership) {
+        return sendError(res, 404, "USER_NOT_FOUND", "User not found in this organization.");
       }
+      await db
+        .update(organizationMembers)
+        .set({ active: false, status: "removed" })
+        .where(eq(organizationMembers.id, membership.id));
       
       if (req.user) {
         await storage.createActivityLog({
-          action: "User Deleted",
-          description: `Deleted user with ID ${id}`,
+          action: "USER_MEMBERSHIP_REMOVED",
+          description: `Removed user ${id} from the active organization`,
           userId: req.user.id,
           referenceType: "user",
           referenceId: id
+        });
+        await appendAuditEvent({
+          organizationId: getActiveOrganizationId(),
+          actor: { userId: req.user.id },
+          action: "USER_MEMBERSHIP_REMOVED",
+          resourceType: "organization_membership",
+          resourceId: membership.id,
+          before: { userId: id, active: true, status: "active" },
+          after: { userId: id, active: false, status: "removed" },
+          reason: typeof req.body?.reason === "string" ? req.body.reason : "Administrator removed organization access",
+          requestId: String(res.locals.requestId ?? "unknown-request-id"),
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent") ?? null,
         });
       }
       
@@ -1773,7 +1856,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ================== USER PROFILE MANAGEMENT ENDPOINTS ==================
   
   // User contact information
-  app.get("/api/users/:id/contacts", async (req: Request, res: Response) => {
+  app.get("/api/users/:id/contacts", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = Number(req.params.id);
       if (isNaN(userId)) {
@@ -1793,7 +1876,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/users/:id/contacts", async (req: Request, res: Response) => {
+  app.post("/api/users/:id/contacts", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = Number(req.params.id);
       if (isNaN(userId)) {
@@ -1814,7 +1897,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.put("/api/users/contacts/:id", async (req: Request, res: Response) => {
+  app.put("/api/users/contacts/:id", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
       const contactId = Number(req.params.id);
       if (isNaN(contactId)) {
@@ -1840,7 +1923,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.delete("/api/users/contacts/:id", async (req: Request, res: Response) => {
+  app.delete("/api/users/contacts/:id", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
       const contactId = Number(req.params.id);
       if (isNaN(contactId)) {
@@ -1872,7 +1955,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // User security settings
-  app.get("/api/users/:id/security-settings", async (req: Request, res: Response) => {
+  app.get("/api/users/:id/security-settings", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = Number(req.params.id);
       if (isNaN(userId)) {
@@ -1896,7 +1979,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/users/:id/security-settings", async (req: Request, res: Response) => {
+  app.post("/api/users/:id/security-settings", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = Number(req.params.id);
       if (isNaN(userId)) {
@@ -1929,7 +2012,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // User access logs
-  app.get("/api/users/:id/access-logs", async (req: Request, res: Response) => {
+  app.get("/api/users/:id/access-logs", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = Number(req.params.id);
       if (isNaN(userId)) {
@@ -1949,7 +2032,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/users/:id/access-logs", async (req: Request, res: Response) => {
+  app.post("/api/users/:id/access-logs", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const userId = Number(req.params.id);
       if (isNaN(userId)) {
@@ -1971,7 +2054,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Time restrictions
-  app.get("/api/users/:id/time-restrictions", async (req: Request, res: Response) => {
+  app.get("/api/users/:id/time-restrictions", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const userId = Number(req.params.id);
       if (isNaN(userId)) {
@@ -1991,7 +2074,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/users/:id/time-restrictions", async (req: Request, res: Response) => {
+  app.post("/api/users/:id/time-restrictions", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const userId = Number(req.params.id);
       if (isNaN(userId)) {
@@ -2016,7 +2099,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.put("/api/time-restrictions/:id", async (req: Request, res: Response) => {
+  app.put("/api/time-restrictions/:id", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const restrictionId = Number(req.params.id);
       if (isNaN(restrictionId)) {
@@ -2041,7 +2124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.delete("/api/time-restrictions/:id", async (req: Request, res: Response) => {
+  app.delete("/api/time-restrictions/:id", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const restrictionId = Number(req.params.id);
       if (isNaN(restrictionId)) {

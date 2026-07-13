@@ -21,6 +21,31 @@ async function ensureAdminUserId(): Promise<number> {
   return id;
 }
 
+async function ensureFunctionalQaMemberships(): Promise<void> {
+  await pool.query(
+    `INSERT INTO organization_members (
+       organization_id, user_id, role, application_role, active, status, created_at
+     )
+     SELECT $1, users.id,
+            CASE WHEN users.username = 'admin' THEN 'owner' ELSE 'member' END,
+            COALESCE(users.role::text, 'viewer'), true, 'active', now()
+     FROM users
+     WHERE users.active IS DISTINCT FROM false
+     ON CONFLICT (organization_id, user_id) DO UPDATE SET
+       application_role = EXCLUDED.application_role,
+       active = true,
+       status = 'active'`,
+    [ORG_ID],
+  );
+  await pool.query(
+    `UPDATE users
+     SET default_organization_id = $1
+     WHERE active IS DISTINCT FROM false
+       AND default_organization_id IS NULL`,
+    [ORG_ID],
+  );
+}
+
 /** FQA PO lines require a supplier FK; bare DBs may have none for org 1. */
 async function ensureFqaSupplierId(): Promise<number> {
   const existing = await pool.query<{ id: number }>(
@@ -104,6 +129,7 @@ export async function seedFunctionalQA(): Promise<void> {
     await lockClient.query("SELECT pg_advisory_lock($1)", [FQA_SEED_ADVISORY_LOCK_KEY]);
 
     await ensureAdminUserId();
+    await ensureFunctionalQaMemberships();
     const catElec = await upsertCategory("Electronics");
     const catCons = await upsertCategory("Consumables");
     await upsertWarehouseCity("Johannesburg");

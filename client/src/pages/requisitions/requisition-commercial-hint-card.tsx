@@ -14,6 +14,7 @@ export function RequisitionCommercialHintCard({
   paymentTerms,
   incoterms,
   taxCodes,
+  reportingCurrencyCode,
 }: {
   supplierId: number | "";
   suppliers: Supplier[];
@@ -23,6 +24,7 @@ export function RequisitionCommercialHintCard({
   paymentTerms: TermOpt[];
   incoterms: TermOpt[];
   taxCodes: Array<{ id: number; code: string; name: string }>;
+  reportingCurrencyCode: string;
 }) {
   if (supplierId === "") return null;
 
@@ -32,7 +34,9 @@ export function RequisitionCommercialHintCard({
   const code = String(supplier.defaultCurrencyCode ?? "").trim().toUpperCase();
   const currencyName = code && /^[A-Z]{3}$/.test(code) ? currencies.find((c) => c.code === code)?.name : undefined;
   const currencyDisplay =
-    code && /^[A-Z]{3}$/.test(code) ? `${code}${currencyName ? ` — ${currencyName}` : ""}` : "ZAR (supplier default not set; PO will use requisition/reporting currency)";
+    code && /^[A-Z]{3}$/.test(code)
+      ? `${code}${currencyName ? ` - ${currencyName}` : ""}`
+      : `${reportingCurrencyCode} (supplier default not set; PO will use requisition reporting currency)`;
 
   return (
     <Card data-testid="requisition-commercial-hint">

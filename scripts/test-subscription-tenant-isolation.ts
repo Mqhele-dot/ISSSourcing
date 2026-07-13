@@ -70,9 +70,14 @@ async function main() {
 
     const planLimitSource = readFileSync("server/plan-limit-service.ts", "utf8");
     const authSource = readFileSync("server/auth.ts", "utf8");
+    const organizationRouteSource = readFileSync("server/modules/organization/register-organization-routes.ts", "utf8");
     assert.match(planLimitSource, /organization_members/, "user counting must use organization memberships");
-    assert.match(authSource, /countOrganizationUsers\(organizationId\)/, "registration must use org-scoped user count");
-    assert.match(authSource, /organizationMembers/, "registration must attach new users to the active organization");
+    assert.match(authSource, /createdOrganizationId/, "public registration must create a tenant instead of using an implicit organization");
+    assert.match(authSource, /role: "owner"/, "the registering user must become the new tenant owner");
+    assert.match(organizationRouteSource, /\/api\/organization\/members/, "tenant users must be added through the protected membership endpoint");
+    assert.match(organizationRouteSource, /countOrganizationUsers\(organizationId\)/, "membership creation must use an organization-scoped user count");
+    assert.match(organizationRouteSource, /ensureTwoFactorAuthenticated[\s\S]*ensurePermission\("users", "manage"\)/, "membership creation requires 2FA and user-management permission");
+    assert.match(organizationRouteSource, /ORGANIZATION_MEMBER_ADDED/, "membership creation must append audit evidence");
     assert.match(planLimitSource, /limitKey[\s\S]*currentCount/, "PLAN_LIMIT_REACHED details include limit key and current count");
 
     await pool.query(

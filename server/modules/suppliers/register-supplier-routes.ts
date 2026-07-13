@@ -5,7 +5,7 @@ import { storage } from "../../storage";
 import { sendError, sendFunctionError } from "../../api-response";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
-import { getActiveOrganizationId } from "../../organization-context";
+import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
 import { createSupplierRepository } from "../../repositories";
 import { createSupplierService } from "../../services/supplier-service";
 import { insertSupplierSchema, insertSupplierLogoSchema, PurchaseOrderStatus } from "@shared/schema";
@@ -17,6 +17,11 @@ import {
   dependencyBlockedMessage,
   getSupplierWhereUsed,
 } from "../master-data/dependency-checks";
+import { and, eq } from "drizzle-orm";
+import { db } from "../../db";
+import { mdmSupplierDocuments, organizationMembers, organizations, supplierPortalMappings, suppliers as supplierTable, users } from "@shared/schema";
+import { appendAuditEvent } from "../../services/audit-chain-service";
+import { getCountryPack } from "../master-data/country-pack-registry";
 
 const supplierRepo = createSupplierRepository(storage);
 const supplierService = createSupplierService(supplierRepo, storage);
@@ -56,25 +61,51 @@ async function recordSupplierConsistencyDiagnostics(orgId: number, supplierId: n
 export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
   // Supplier endpoints - RBAC: viewer read-only; manager/admin can create/update/delete
   const supplierRead = [auth.ensureAuthenticated];
-  const supplierWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])] ;
+  const supplierWrite = [
+    auth.ensureAuthenticated,
+    auth.ensureTwoFactorAuthenticated,
+    auth.ensureRole(["manager", "admin"]),
+  ];
 
   const resolveSupplierIdForUser = async (req: Request): Promise<number | null> => {
     const user = (req as Request & { user?: { id: number; role?: string; email?: string } }).user;
     if (!user) return null;
     const explicit = Number(req.query.supplierId ?? req.body?.supplierId);
     const hasExplicit = Number.isFinite(explicit) && explicit > 0;
-    if (user.role === "supplier") {
+    const activeRole = getOptionalTenantContext()?.userRole ?? user.role;
+    if (activeRole === "supplier") {
+      const [tenantMapping] = await db
+        .select({ supplierId: supplierPortalMappings.supplierId })
+        .from(supplierPortalMappings)
+        .innerJoin(
+          supplierTable,
+          and(
+            eq(supplierTable.id, supplierPortalMappings.supplierId),
+            eq(supplierTable.organizationId, getActiveOrganizationId()),
+          ),
+        )
+        .where(
+          and(
+            eq(supplierPortalMappings.organizationId, getActiveOrganizationId()),
+            eq(supplierPortalMappings.userId, user.id),
+            eq(supplierPortalMappings.active, true),
+          ),
+        )
+        .limit(1);
+      if (tenantMapping?.supplierId) return tenantMapping.supplierId;
       const fullUser = await storage.getUser(Number(user.id));
-      const mapped = fullUser?.supplierId != null ? Number(fullUser.supplierId) : null;
-      if (mapped != null && Number.isFinite(mapped) && mapped > 0) {
-        return mapped;
+      const legacySupplierId = Number(fullUser?.supplierId);
+      if (Number.isFinite(legacySupplierId) && legacySupplierId > 0) {
+        const [legacyMapping] = await db
+          .select({ id: supplierTable.id })
+          .from(supplierTable)
+          .where(and(eq(supplierTable.id, legacySupplierId), eq(supplierTable.organizationId, getActiveOrganizationId())))
+          .limit(1);
+        if (legacyMapping) return legacyMapping.id;
       }
-      const supplierRows = await supplierRepo.findAll();
-      const fallback = supplierRows.find((supplier) => supplier.email && user.email && supplier.email.toLowerCase() === user.email.toLowerCase());
-      // Supplier users are always scoped to their own mapped supplier, even if query/body includes supplierId.
-      return fallback?.id ?? null;
+      return null;
     }
-    if (user.role === "admin" || user.role === "manager") {
+    if (activeRole === "admin" || activeRole === "manager") {
       return hasExplicit ? explicit : null;
     }
     return null;
@@ -157,6 +188,44 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
+  app.get("/api/suppliers/:id/portal-users", ...supplierRead, async (req: Request, res: Response) => {
+    try {
+      const supplierId = Number(req.params.id);
+      if (!Number.isInteger(supplierId) || supplierId <= 0) return sendError(res, 400, "INVALID_SUPPLIER_ID", "A valid supplier ID is required.");
+      const rows = await db
+        .select({ id: supplierPortalMappings.id, userId: users.id, username: users.username, email: users.email, fullName: users.fullName, active: supplierPortalMappings.active })
+        .from(supplierPortalMappings)
+        .innerJoin(users, eq(users.id, supplierPortalMappings.userId))
+        .where(and(eq(supplierPortalMappings.organizationId, getActiveOrganizationId()), eq(supplierPortalMappings.supplierId, supplierId)));
+      return res.json(rows);
+    } catch (error) {
+      console.error("Error fetching supplier portal mappings:", error);
+      return sendError(res, 500, "SUPPLIER_PORTAL_MAPPINGS_FAILED", "Supplier portal mappings could not be loaded.");
+    }
+  });
+
+  app.post("/api/suppliers/:id/portal-users", ...supplierWrite, async (req: Request, res: Response) => {
+    try {
+      const supplierId = Number(req.params.id);
+      const userId = Number(req.body?.userId);
+      if (!Number.isInteger(supplierId) || supplierId <= 0 || !Number.isInteger(userId) || userId <= 0) {
+        return sendError(res, 400, "SUPPLIER_PORTAL_MAPPING_INVALID", "Valid supplier and user IDs are required.");
+      }
+      const organizationId = getActiveOrganizationId();
+      const [[supplier], [membership]] = await Promise.all([
+        db.select({ id: supplierTable.id }).from(supplierTable).where(and(eq(supplierTable.id, supplierId), eq(supplierTable.organizationId, organizationId))).limit(1),
+        db.select({ id: organizationMembers.id }).from(organizationMembers).where(and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, userId), eq(organizationMembers.active, true))).limit(1),
+      ]);
+      if (!supplier || !membership) return sendError(res, 404, "SUPPLIER_PORTAL_MAPPING_TARGET_NOT_FOUND", "Supplier and active user membership must belong to this organization.");
+      const [mapping] = await db.insert(supplierPortalMappings).values({ organizationId, supplierId, userId, active: true, createdByUserId: req.user!.id }).onConflictDoUpdate({ target: [supplierPortalMappings.organizationId, supplierPortalMappings.userId], set: { supplierId, active: true, updatedAt: new Date(), createdByUserId: req.user!.id } }).returning();
+      await appendAuditEvent({ organizationId, actor: { userId: req.user!.id }, action: "SUPPLIER_PORTAL_MAPPING_UPDATED", resourceType: "supplier", resourceId: supplierId, after: { mappingId: mapping.id, userId, supplierId }, reason: String(req.body?.reason ?? "Supplier portal user mapping"), requestId: String(res.locals.requestId ?? "unknown-request-id"), ipAddress: req.ip, userAgent: req.get("user-agent") ?? null });
+      return res.status(201).json(mapping);
+    } catch (error) {
+      console.error("Error saving supplier portal mapping:", error);
+      return sendError(res, 500, "SUPPLIER_PORTAL_MAPPING_FAILED", "Supplier portal mapping could not be saved.");
+    }
+  });
+
   app.get("/api/suppliers/:id", ...supplierRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
@@ -189,7 +258,15 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
 
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
       const orgId = getActiveOrganizationId();
-      const newSupplier = await supplierService.create(validatedData, userId);
+      const newSupplier = await supplierService.create({
+        ...validatedData,
+        status: "prospective",
+        onboardingStatus: "prospective",
+        approvedAt: null,
+        approvedByUserId: null,
+        createdByUserId: userId,
+      }, userId);
+      await appendAuditEvent({ organizationId: orgId, actor: { userId }, action: "SUPPLIER_ONBOARDING_STARTED", resourceType: "supplier", resourceId: newSupplier.id, after: newSupplier, requestId: String(res.locals.requestId ?? "unknown-request-id"), ipAddress: req.ip, userAgent: req.get("user-agent") ?? null });
       void recordSupplierConsistencyDiagnostics(orgId, newSupplier.id);
       res.status(201).json(newSupplier);
     } catch (error) {
@@ -212,6 +289,12 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       const validatedData = insertSupplierSchema.partial().parse(req.body);
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
       const orgId = getActiveOrganizationId();
+      const existingSupplier = await supplierRepo.findById(id);
+      if (!existingSupplier) return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found.");
+      const requestedOnboardingStatus = String((validatedData as { onboardingStatus?: unknown }).onboardingStatus ?? "").toLowerCase();
+      if (requestedOnboardingStatus === "approved" || (String(existingSupplier.onboardingStatus).toLowerCase() !== "approved" && String((validatedData as { status?: unknown }).status ?? "").toLowerCase() === "active")) {
+        return sendError(res, 409, "SUPPLIER_APPROVAL_WORKFLOW_REQUIRED", "Prospective suppliers must be approved through the controlled onboarding action.", { hint: `Use POST /api/suppliers/${id}/approve with an independent approver and reason.` });
+      }
       const status = String((validatedData as { status?: unknown }).status ?? "").toLowerCase();
       if (["inactive", "blocked", "suspended", "archived"].includes(status)) {
         const dependencies = await getSupplierWhereUsed(orgId, id);
@@ -250,6 +333,38 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
 
   app.put("/api/suppliers/:id", ...supplierWrite, handleUpdateSupplier);
   app.patch("/api/suppliers/:id", ...supplierWrite, handleUpdateSupplier);
+
+  app.post("/api/suppliers/:id/approve", ...supplierWrite, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      const approverId = Number(req.user?.id);
+      const reason = String(req.body?.reason ?? "").trim();
+      if (!Number.isInteger(id) || id <= 0) return sendError(res, 400, "INVALID_SUPPLIER_ID", "A valid supplier ID is required.");
+      if (reason.length < 5) return sendError(res, 400, "SUPPLIER_APPROVAL_REASON_REQUIRED", "An approval reason of at least 5 characters is required.");
+      const organizationId = getActiveOrganizationId();
+      const [supplier] = await db.select().from(supplierTable).where(and(eq(supplierTable.id, id), eq(supplierTable.organizationId, organizationId))).limit(1);
+      if (!supplier) return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found.");
+      if (supplier.createdByUserId === approverId) return sendError(res, 403, "SEGREGATION_OF_DUTIES_VIOLATION", "The supplier onboarding maker cannot approve their own supplier.", { hint: "Ask another authorized manager or administrator to complete approval." });
+      if (!supplier.defaultCurrencyCode || !supplier.paymentTermsId || !supplier.taxCodeId) {
+        return sendError(res, 409, "SUPPLIER_ONBOARDING_INCOMPLETE", "Supplier currency, payment terms, and tax code are required before approval.", { details: { missing: [!supplier.defaultCurrencyCode && "defaultCurrencyCode", !supplier.paymentTermsId && "paymentTermsId", !supplier.taxCodeId && "taxCodeId"].filter(Boolean) } });
+      }
+      if (supplier.isOnceOff && (!supplier.onceOffExpiresAt || supplier.onceOffExpiresAt.getTime() <= Date.now())) {
+        return sendError(res, 409, "ONCE_OFF_SUPPLIER_EXPIRY_REQUIRED", "Once-off suppliers require a future expiration date before approval.");
+      }
+      const [organization] = await db.select({ countryCode: organizations.countryCode }).from(organizations).where(eq(organizations.id, organizationId)).limit(1);
+      const pack = getCountryPack(organization?.countryCode);
+      const documents = await db.select().from(mdmSupplierDocuments).where(and(eq(mdmSupplierDocuments.organizationId, organizationId), eq(mdmSupplierDocuments.supplierId, id)));
+      const validDocumentTypes = new Set(documents.filter((document) => String(document.status).toLowerCase() === "approved" && (!document.expiryDate || document.expiryDate.getTime() > Date.now())).map((document) => document.documentType));
+      const missingDocuments = pack.supplierCompliance.filter((documentType) => !validDocumentTypes.has(documentType));
+      if (missingDocuments.length > 0) return sendError(res, 409, "SUPPLIER_COMPLIANCE_INCOMPLETE", `Supplier is missing ${pack.name} compliance evidence.`, { hint: "Upload and approve the required compliance documents in Master Data.", details: { missingDocuments } });
+      const [approved] = await db.update(supplierTable).set({ status: "active", onboardingStatus: "approved", approvedAt: new Date(), approvedByUserId: approverId, complianceStatus: "compliant", updatedAt: new Date() }).where(and(eq(supplierTable.id, id), eq(supplierTable.organizationId, organizationId))).returning();
+      await appendAuditEvent({ organizationId, actor: { userId: approverId }, action: "SUPPLIER_ONBOARDING_APPROVED", resourceType: "supplier", resourceId: id, before: supplier, after: approved, reason, requestId: String(res.locals.requestId ?? "unknown-request-id"), ipAddress: req.ip, userAgent: req.get("user-agent") ?? null });
+      return res.json(approved);
+    } catch (error) {
+      console.error("Error approving supplier onboarding:", error);
+      return sendError(res, 500, "SUPPLIER_APPROVAL_FAILED", "Supplier approval could not be completed.");
+    }
+  });
 
   app.delete("/api/suppliers/:id", ...supplierWrite, async (req: Request, res: Response) => {
     try {

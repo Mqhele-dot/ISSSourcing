@@ -948,6 +948,7 @@ function normalizePurchaseStatus(rawStatus: string | null | undefined): string {
 }
 
 async function resolvePurchaseOrder(poOrId: string) {
+  const organizationId = getActiveOrganizationId();
   const numericId = Number(poOrId);
   const byIdResult = Number.isFinite(numericId)
     ? await pool.query<{
@@ -962,10 +963,10 @@ async function resolvePurchaseOrder(poOrId: string) {
         `
         SELECT id, order_number, supplier_id, status, order_date, created_at, total_amount
         FROM purchase_orders
-        WHERE id = $1
+        WHERE id = $1 AND organization_id = $2
         LIMIT 1
         `,
-        [numericId],
+        [numericId, organizationId],
       )
     : { rows: [] };
 
@@ -985,10 +986,10 @@ async function resolvePurchaseOrder(poOrId: string) {
     `
     SELECT id, order_number, supplier_id, status, order_date, created_at, total_amount
     FROM purchase_orders
-    WHERE order_number = $1
+    WHERE order_number = $1 AND organization_id = $2
     LIMIT 1
     `,
-    [poOrId],
+    [poOrId, organizationId],
   );
 
   return byNumberResult.rows[0] ?? null;
@@ -1180,6 +1181,7 @@ export async function createOperationalShipment(input: {
   }>(
     `
     INSERT INTO shipments (
+      organization_id,
       po_number,
       purchase_order_id,
       carrier,
@@ -1199,10 +1201,11 @@ export async function createOperationalShipment(input: {
       created_at,
       updated_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now(), now())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now(), now())
     RETURNING id, po_number, carrier, status, eta, drift_minutes, tracking_number, created_at, updated_at
     `,
     [
+      getActiveOrganizationId(),
       order.order_number,
       order.id,
       carrierSnapshot,
@@ -1339,6 +1342,7 @@ async function syncPurchaseOrderAllocations(orderId: number): Promise<void> {
 }
 
 async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrderShipment[]> {
+  const organizationId = getActiveOrganizationId();
   const shipmentResult = await pool.query<{
     id: number;
     carrier: string | null;
@@ -1359,11 +1363,11 @@ async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrde
     SELECT id, carrier, status, eta, drift_minutes, updated_at, tracking_number,
            carrier_id, transport_mode, freight_cost, delivery_note_ref, grn_number,
            direction, source_type
-    FROM shipments
-    WHERE po_number = $1
+    FROM shipments shipment
+    WHERE shipment.po_number = $1 AND shipment.organization_id = $2
     ORDER BY updated_at DESC
     `,
-    [poNumber],
+    [poNumber, organizationId],
   );
 
   return shipmentResult.rows.map((shipment) => ({
@@ -1389,8 +1393,8 @@ export async function listOperationalPurchaseOrders(filters: {
   supplier?: string;
   q?: string;
 }): Promise<PurchaseOrderListItem[]> {
-  const whereClauses: string[] = [];
-  const params: Array<string | number> = [];
+  const whereClauses: string[] = ["po.organization_id = $1"];
+  const params: Array<string | number> = [getActiveOrganizationId()];
 
   if (filters.supplier && filters.supplier.trim()) {
     const supplier = filters.supplier.trim();
@@ -1411,7 +1415,7 @@ export async function listOperationalPurchaseOrders(filters: {
     );
   }
 
-  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
   const result = await pool.query<{
     id: number;
     order_number: string;
@@ -1439,7 +1443,7 @@ export async function listOperationalPurchaseOrders(filters: {
       COALESCE(SUM(pol.quantity), 0)::int AS qty_ordered_total,
       COALESCE(SUM(pol.received_quantity), 0)::int AS qty_received_total
     FROM purchase_orders po
-    LEFT JOIN suppliers s ON s.id = po.supplier_id
+    LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.organization_id = po.organization_id
     LEFT JOIN purchase_order_items pol ON pol.order_id = po.id
     ${whereSql}
     GROUP BY po.id, s.name
@@ -1492,10 +1496,10 @@ export async function getOperationalPurchaseOrderDetail(poOrId: string) {
     `
     SELECT id, name
     FROM suppliers
-    WHERE id = $1
+    WHERE id = $1 AND organization_id = $2
     LIMIT 1
     `,
-    [order.supplier_id],
+    [order.supplier_id, getActiveOrganizationId()],
   );
 
   const lines = await getPurchaseOrderLines(order.id);
@@ -1548,14 +1552,18 @@ export async function transitionOperationalPurchaseOrderStatus(
     throw new Error("invalid_transition");
   }
 
-  await pool.query(
+  const organizationId = getActiveOrganizationId();
+  const updateResult = await pool.query(
     `
     UPDATE purchase_orders
     SET status = $2, updated_at = now()
-    WHERE id = $1
+    WHERE id = $1 AND organization_id = $3
     `,
-    [order.id, toStatus],
+    [order.id, toStatus, organizationId],
   );
+  if (updateResult.rowCount !== 1) {
+    throw new Error("po_not_found");
+  }
 
   if (toStatus === "approved") {
     try {
@@ -3481,11 +3489,11 @@ export async function runOperationalDemoWalkthrough(actor: string) {
 
   const shipmentInsert = await pool.query<{ id: number }>(
     `
-    INSERT INTO shipments (po_number, carrier, status, eta, created_at, updated_at)
-    VALUES ($1, 'Guided Setup Carrier', 'created', now() + interval '2 days', now(), now())
+    INSERT INTO shipments (organization_id, po_number, carrier, status, eta, created_at, updated_at)
+    VALUES ($1, $2, 'Guided Setup Carrier', 'created', now() + interval '2 days', now(), now())
     RETURNING id
     `,
-    [poNumber],
+    [getActiveOrganizationId(), poNumber],
   );
   const shipmentId = shipmentInsert.rows[0].id;
 

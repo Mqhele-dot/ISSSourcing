@@ -25,6 +25,7 @@ import {
   inventorySerials,
   notificationPreferences,
   notifications,
+  organizationMembers,
   paymentTerms,
   purchaseRequisitions,
   purchaseRequisitionItems,
@@ -32,6 +33,7 @@ import {
   purchaseOrderItems,
   retentionPolicies,
   supplierContracts,
+  supplierPortalMappings,
   taxCodes,
   userContacts,
   userSecuritySettings,
@@ -392,6 +394,39 @@ async function ensureDemoUsers(demoPasswordHash: string): Promise<void> {
           },
         });
     }
+  }
+}
+
+async function ensureDemoTenantMemberships(supplierMap: Map<string, number>): Promise<void> {
+  const seededUsers = await db.select({ id: users.id, username: users.username, role: users.role }).from(users);
+  for (const user of seededUsers) {
+    await db.insert(organizationMembers).values({
+      organizationId: 1,
+      userId: user.id,
+      role: user.username === "admin" ? "owner" : "member",
+      applicationRole: user.role ?? "viewer",
+      active: true,
+      status: "active",
+    }).onConflictDoUpdate({
+      target: [organizationMembers.organizationId, organizationMembers.userId],
+      set: { applicationRole: user.role ?? "viewer", active: true, status: "active" },
+    });
+    await db.update(users).set({ defaultOrganizationId: 1 }).where(eq(users.id, user.id));
+  }
+
+  const supplierUser = seededUsers.find((user) => user.username === "supplierdemo");
+  const supplierId = supplierMap.get("Tech Solutions Inc.");
+  if (supplierUser && supplierId) {
+    await db.update(users).set({ supplierId, defaultOrganizationId: 1 }).where(eq(users.id, supplierUser.id));
+    await db.insert(supplierPortalMappings).values({
+      organizationId: 1,
+      userId: supplierUser.id,
+      supplierId,
+      active: true,
+    }).onConflictDoUpdate({
+      target: [supplierPortalMappings.organizationId, supplierPortalMappings.userId],
+      set: { supplierId, active: true, updatedAt: new Date() },
+    });
   }
 }
 
@@ -1059,6 +1094,7 @@ export async function seedDatabase(): Promise<DemoDataSummary> {
   await ensureAdminUser(demoPasswordHash);
   await ensureUserRolePlannerEnumValue();
   await ensureDemoUsers(demoPasswordHash);
+  await ensureDemoTenantMemberships(supplierMap);
   await ensureInventoryItems(defaultWarehouseId, categoryMap, supplierMap);
   await ensureActivityLogs();
   await ensureReorderRequests(supplierMap);

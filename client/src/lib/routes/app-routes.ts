@@ -102,6 +102,8 @@ export const APP_ROUTES = {
     warehouseOperations: "/inventory/warehouse-operations",
   },
   procurement: {
+    sourcing: "/procurement/sourcing",
+    sourcingEvent: (id: string | number) => `/procurement/sourcing/${encodeURIComponent(String(id))}`,
     orders: "/procurement/orders",
     /** Build a link to a PO; encodes the segment for reserved URL characters. Do not use for Wouter `path` patterns — use `` `/procurement/orders/:po` ``. */
     order: (po: string | number) =>

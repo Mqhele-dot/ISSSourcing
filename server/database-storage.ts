@@ -68,6 +68,7 @@ import {
   repoGetInventoryItemBySku,
   repoUpdateInventoryItem,
 } from "./repositories/inventory-item-repository";
+import { buildISSSourcingNotificationEmailHtml, sendEmail } from "./services/email-service";
 
 const PostgresSessionStore = connectPgSimple(session);
 
@@ -404,7 +405,7 @@ export class DatabaseStorage implements IStorage {
       : null;
     const customRoleId = Number(prefs?.customRoleId);
     if (Number.isFinite(customRoleId) && customRoleId > 0) return customRoleId;
-    return this.memStorage.getUserCustomRoleId(userId);
+    return null;
   }
   
   async getUserPreferences(userId: number): Promise<UserPreference | undefined> {
@@ -420,51 +421,126 @@ export class DatabaseStorage implements IStorage {
   }
   
   async checkPermission(role: string, resource: string, permissionType: string): Promise<boolean> {
-    return this.memStorage.checkPermission(role, resource, permissionType);
+    if (String(role).toLowerCase() === "admin") return true;
+    const [permission] = await db
+      .select({ id: permissions.id })
+      .from(permissions)
+      .where(
+        and(
+          eq(permissions.role, role as typeof permissions.$inferSelect.role),
+          eq(permissions.resource, resource as typeof permissions.$inferSelect.resource),
+          eq(permissions.permissionType, permissionType as typeof permissions.$inferSelect.permissionType),
+        ),
+      )
+      .limit(1);
+    return Boolean(permission);
   }
   
   async checkCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean> {
-    return this.memStorage.checkCustomRolePermission(roleId, resource, permissionType);
+    const [permission] = await db
+      .select({ id: customRolePermissions.id })
+      .from(customRolePermissions)
+      .innerJoin(
+        customRoles,
+        and(
+          eq(customRoles.id, customRolePermissions.roleId),
+          eq(customRoles.organizationId, getActiveOrganizationId()),
+          eq(customRoles.isActive, true),
+        ),
+      )
+      .where(
+        and(
+          eq(customRolePermissions.roleId, roleId),
+          eq(customRolePermissions.resource, resource as typeof customRolePermissions.$inferSelect.resource),
+          eq(customRolePermissions.permissionType, permissionType as typeof customRolePermissions.$inferSelect.permissionType),
+        ),
+      )
+      .limit(1);
+    return Boolean(permission);
   }
   
   async getSystemRoles(): Promise<string[]> {
-    return this.memStorage.getSystemRoles();
+    return userRoleEnum.enumValues.filter((role) => role !== "custom");
   }
   
   async getCustomRoles(): Promise<CustomRole[]> {
-    return this.memStorage.getCustomRoles();
+    return db
+      .select()
+      .from(customRoles)
+      .where(eq(customRoles.organizationId, getActiveOrganizationId()))
+      .orderBy(customRoles.name);
   }
   
   async getCustomRole(id: number): Promise<CustomRole | undefined> {
-    return this.memStorage.getCustomRole(id);
+    const [role] = await db
+      .select()
+      .from(customRoles)
+      .where(and(eq(customRoles.id, id), eq(customRoles.organizationId, getActiveOrganizationId())))
+      .limit(1);
+    return role;
   }
   
   async createCustomRole(role: InsertCustomRole): Promise<CustomRole> {
-    return this.memStorage.createCustomRole(role);
+    const [created] = await db
+      .insert(customRoles)
+      .values({ ...role, organizationId: getActiveOrganizationId() })
+      .returning();
+    return created;
   }
   
   async updateCustomRole(id: number, role: Partial<InsertCustomRole>): Promise<CustomRole | undefined> {
-    return this.memStorage.updateCustomRole(id, role);
+    const { organizationId: _ignored, ...safePatch } = role;
+    const [updated] = await db
+      .update(customRoles)
+      .set({ ...safePatch, updatedAt: new Date() })
+      .where(and(eq(customRoles.id, id), eq(customRoles.organizationId, getActiveOrganizationId())))
+      .returning();
+    return updated;
   }
   
   async deleteCustomRole(id: number): Promise<boolean> {
-    return this.memStorage.deleteCustomRole(id);
+    const result = await db
+      .delete(customRoles)
+      .where(and(eq(customRoles.id, id), eq(customRoles.organizationId, getActiveOrganizationId())))
+      .returning({ id: customRoles.id });
+    return result.length > 0;
   }
   
   async getRolePermissions(role: keyof typeof UserRoleEnum): Promise<Permission[]> {
-    return this.memStorage.getRolePermissions(role);
+    return db
+      .select()
+      .from(permissions)
+      .where(eq(permissions.role, String(role).toLowerCase() as typeof permissions.$inferSelect.role));
   }
   
   async getCustomRolePermissions(roleId: number): Promise<CustomRolePermission[]> {
-    return this.memStorage.getCustomRolePermissions(roleId);
+    const role = await this.getCustomRole(roleId);
+    if (!role) return [];
+    return db.select().from(customRolePermissions).where(eq(customRolePermissions.roleId, roleId));
   }
   
   async addCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission> {
-    return this.memStorage.addCustomRolePermission(roleId, resource, permissionType);
+    const role = await this.getCustomRole(roleId);
+    if (!role) throw Object.assign(new Error("Custom role not found in this organization."), { code: "CUSTOM_ROLE_NOT_FOUND", status: 404 });
+    const [created] = await db
+      .insert(customRolePermissions)
+      .values({
+        roleId,
+        resource: resource as typeof customRolePermissions.$inferInsert.resource,
+        permissionType: permissionType as typeof customRolePermissions.$inferInsert.permissionType,
+      })
+      .returning();
+    return created;
   }
   
   async removeCustomRolePermission(roleId: number, permissionId: number): Promise<boolean> {
-    return this.memStorage.removeCustomRolePermission(roleId, permissionId);
+    const role = await this.getCustomRole(roleId);
+    if (!role) return false;
+    const removed = await db
+      .delete(customRolePermissions)
+      .where(and(eq(customRolePermissions.id, permissionId), eq(customRolePermissions.roleId, roleId)))
+      .returning({ id: customRolePermissions.id });
+    return removed.length > 0;
   }
   
   async logUserAccess(
@@ -1928,19 +2004,30 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined> {
-    return this.memStorage.getSupplierLogo(supplierId);
+    const [logo] = await db.select().from(supplierLogos).where(eq(supplierLogos.supplierId, supplierId));
+    return logo;
   }
   
   async createSupplierLogo(logo: InsertSupplierLogo): Promise<SupplierLogo> {
-    return this.memStorage.createSupplierLogo(logo);
+    const [created] = await db.insert(supplierLogos).values(logo).returning();
+    return created;
   }
   
   async updateSupplierLogo(supplierId: number, logoUrl: string): Promise<SupplierLogo | undefined> {
-    return this.memStorage.updateSupplierLogo(supplierId, logoUrl);
+    const [updated] = await db
+      .update(supplierLogos)
+      .set({ logoUrl, updatedAt: new Date() })
+      .where(eq(supplierLogos.supplierId, supplierId))
+      .returning();
+    return updated;
   }
   
   async deleteSupplierLogo(supplierId: number): Promise<boolean> {
-    return this.memStorage.deleteSupplierLogo(supplierId);
+    const deleted = await db
+      .delete(supplierLogos)
+      .where(eq(supplierLogos.supplierId, supplierId))
+      .returning({ id: supplierLogos.id });
+    return deleted.length > 0;
   }
 
   async getContracts(supplierId?: number): Promise<SupplierContract[]> {
@@ -2576,7 +2663,7 @@ export class DatabaseStorage implements IStorage {
       description: `Updated PO ${updated.orderNumber} to ${status}`,
       referenceType: "purchase_order",
       referenceId: id,
-      userId: 1,
+      userId: null,
     });
 
     return updated;
@@ -2789,7 +2876,7 @@ export class DatabaseStorage implements IStorage {
         description: `Created PO ${orderNumber} from requisition ${requisition.requisitionNumber}`,
         referenceType: "purchase_order",
         referenceId: order.id,
-        userId: requisition.approverId ?? requisition.requestorId ?? 1,
+        userId: requisition.approverId ?? requisition.requestorId ?? null,
       });
 
       return order;
@@ -2797,12 +2884,34 @@ export class DatabaseStorage implements IStorage {
   }
   
   async sendPurchaseOrderEmail(id: number, recipientEmail: string): Promise<boolean> {
-    if (process.env.NODE_ENV === "production") {
-      console.warn(
-        "[database-storage] sendPurchaseOrderEmail delegates to MemStorage; outbound PO email may be a no-op in production.",
-      );
+    const organizationId = getActiveOrganizationId();
+    const [order] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, organizationId)))
+      .limit(1);
+    if (!order) return false;
+    if (
+      process.env.NODE_ENV === "production"
+      && (!process.env.EMAIL_HOST?.trim() || !process.env.EMAIL_USER?.trim() || !process.env.EMAIL_PASS?.trim())
+    ) {
+      return false;
     }
-    return this.memStorage.sendPurchaseOrderEmail(id, recipientEmail);
+    const result = await sendEmail({
+      to: recipientEmail,
+      subject: `Purchase order ${order.orderNumber}`,
+      text: `Purchase order ${order.orderNumber} has been issued. Order value: ${order.currencyCode} ${Number(order.totalAmount).toFixed(2)}.`,
+      html: buildISSSourcingNotificationEmailHtml(
+        `Purchase order ${order.orderNumber}`,
+        `Your purchase order has been issued.\n\nOrder value: ${order.currencyCode} ${Number(order.totalAmount).toFixed(2)}\n\nSign in to the supplier portal to review the controlled document and acknowledgement status.`,
+      ),
+    });
+    if (!result.success) return false;
+    await db
+      .update(purchaseOrders)
+      .set({ emailSent: true, emailSentDate: new Date(), updatedAt: new Date() })
+      .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, organizationId)));
+    return true;
   }
   
   async getAllVatRates(): Promise<VatRate[]> {

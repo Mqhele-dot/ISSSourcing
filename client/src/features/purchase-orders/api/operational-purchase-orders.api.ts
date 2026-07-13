@@ -38,6 +38,49 @@ export type PurchaseOrderSendBody = {
   };
 };
 
+function workflowHeaders(action: string, purchaseOrderId: number): HeadersInit {
+  return { "Idempotency-Key": `${action}-${purchaseOrderId}-${crypto.randomUUID()}` };
+}
+
+export async function submitPurchaseOrderForApproval(
+  purchaseOrderId: number,
+  reason?: string,
+): Promise<unknown> {
+  const { data } = await invTrackFetch<unknown>(
+    "POST",
+    `/api/purchase-orders/${purchaseOrderId}/submit`,
+    { reason: reason?.trim() || undefined },
+    { headers: workflowHeaders("po-submit", purchaseOrderId) },
+  );
+  return data;
+}
+
+export async function approvePurchaseOrderRecord(
+  purchaseOrderId: number,
+  reason: string,
+): Promise<unknown> {
+  const { data } = await invTrackFetch<unknown>(
+    "POST",
+    `/api/purchase-orders/${purchaseOrderId}/approve`,
+    { reason: reason.trim() },
+    { headers: workflowHeaders("po-approve", purchaseOrderId) },
+  );
+  return data;
+}
+
+export async function dispatchPurchaseOrderRecord(
+  purchaseOrderId: number,
+  email: string,
+): Promise<unknown> {
+  const { data } = await invTrackFetch<unknown>(
+    "POST",
+    `/api/purchase-orders/${purchaseOrderId}/send-email`,
+    { email: email.trim() },
+    { headers: workflowHeaders("po-dispatch", purchaseOrderId) },
+  );
+  return data;
+}
+
 export async function fetchPurchaseOrdersEnvelope(
   params?: {
     status?: string;

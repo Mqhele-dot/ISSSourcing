@@ -4,14 +4,14 @@ Generated for Wave 3D and extended by Waves 4A-4B on `cursor/project-codespace-c
 
 ## Decision
 
-**Final decision:** ISSSourcing is a production approval candidate for the proven core procurement, receiving, inventory, AP, master-data, settings, roles, and approval-policy workflows. It is **not** full-suite production-approved for routes explicitly excluded from v1.
+**Final decision:** ISSSourcing is a production approval candidate for the procurement-only commercial boundary documented in `docs/COMMERCIAL-PROCUREMENT-BOUNDARY.md`. Receiving, inventory operations, logistics, AP, payment control, and mobile warehouse workflows remain later-release modules even where earlier runtime proof exists. They are not promoted by this release.
 
 ## Production Base
 
 | Field | Value |
 |---|---|
 | Production base branch | `cursor/project-codespace-compatibility-b14c` |
-| Current evidence commit | Updated by Wave 3D evidence pack |
+| Current evidence commit | Commercial procurement implementation head; record the pushed SHA in release notes |
 | Production approval status | Candidate, pending required release gates and branch-protection checks |
 
 ## Current Blockers
@@ -20,20 +20,30 @@ Generated for Wave 3D and extended by Waves 4A-4B on `cursor/project-codespace-c
 |---|---:|---|
 | Core blocking risks | 0 | `docs/production-readiness-audit.md` |
 | Marker-level blockers | 0 | `docs/production-readiness-audit.md` and `docs/core-blocking-risk-register.md` |
-| Non-production v1 exclusions | 4 routes | `docs/core-route-v1-decision-log.md` |
+| Non-production release exclusions | Operations, inventory operations, mobile warehouse, logistics, AP, and payment execution | `docs/COMMERCIAL-PROCUREMENT-BOUNDARY.md` |
 
-## Non-Production V1 Exclusions
+## Commercial Procurement Proof
 
-These routes are intentionally excluded from v1 production approval until route-specific real-data, permission, audit, and browser proof is complete:
+The current increment adds tenant-safe supplier sourcing from RFQ through award-to-PO conversion:
 
-| Route | Status |
+- `npm run test:commercial-procurement-foundation` protects tenant, audit, country-pack, production-boundary, and sourcing contracts.
+- `npm run test:local:sourcing` runs the full RFQ, mapped supplier quote, evaluation, self-approval denial, independent approval, conversion, MDM propagation, and audit-chain workflow against PostgreSQL and HTTP APIs.
+- `npm run test:e2e:sourcing` proves supplier quote submission and buyer evaluation, award, independent approval, and conversion through Playwright.
+- `.github/workflows/playwright-release-gate.yml` includes the sourcing browser proof through `verify:release:e2e`.
+
+## Non-Production Release Exclusions
+
+The production procurement boundary excludes these route groups until each later wave has route-specific real-data, permission, audit, runtime, and browser proof:
+
+| Route group | Status |
 |---|---|
-| `/operations/logistics` | Non-production v1 |
-| `/operations/logistics/:id` | Non-production v1 |
-| `/operations/exceptions` | Non-production v1 |
-| `/operations/exceptions/:id` | Non-production v1 |
+| `/operations/*` including logistics, exceptions, and control tower | Later-release operational module |
+| `/inventory/*` including warehouses, movements, counts, reorder, and stock operations | Later-release inventory module |
+| `/m/receive`, `/m/counts/*`, `/m/pick`, and other mobile warehouse routes | Later-release mobile operations module |
+| `/finance/invoices` and `/finance/accounts-payable/*` | Later-release AP module |
+| Payment execution and direct banking | Excluded; direct bank initiation is outside program scope |
 
-The pages are also visibly labelled in-app as non-production v1 routes so production users do not mistake them for approved workflows.
+Production navigation hides these modules and bookmarked routes show a controlled release-boundary message. Development keeps them visible with a preview warning for continued testing.
 
 ## Required Release Gates
 
@@ -192,7 +202,7 @@ The workflow runs:
 - `npx playwright install --with-deps chromium`
 - `npm run verify:release:e2e`
 
-`verify:release:e2e` includes `npm run test:e2e:subscription` from Wave 4B onward and `npm run test:e2e:button-actions` from Wave 4D onward.
+`verify:release:e2e` includes `npm run test:e2e:subscription` from Wave 4B onward, `npm run test:e2e:button-actions` from Wave 4D onward, and `npm run test:e2e:sourcing` for the commercial procurement boundary.
 
 If local Windows or Codespaces Chromium launch fails with sandbox/permission errors, attach the GitHub Actions Playwright Release Gate run as the production browser evidence.
 
@@ -203,7 +213,7 @@ If local Windows or Codespaces Chromium launch fails with sandbox/permission err
 | `npm run verify:release` | Passed locally | `verify:production-base`, TypeScript, lint, build, production audit, and live delta suite completed. |
 | `npm run verify:release:e2e` | Blocked locally in Playwright phase | The command completed the full `verify:release` pre-gate, then failed in the browser phase with the same local Chromium launch restriction tracked by test id `cc280d92bc59b2ee6bff-99ef022bf30a937aa8ca`. Use the GitHub Playwright Release Gate workflow as the required browser evidence for this environment. |
 | `npm run verify:release:secure` | Passed locally | `verify:release` plus package-manifest cleanliness, lifecycle enforcement, SBOM generation, registry signature audit, and high-severity npm audit completed; `npm audit --audit-level=high` reported 0 vulnerabilities. |
-| `npm run audit:production` | Passed locally | Final Wave 3D audit pass kept `Core blocking risks: 0`, `Marker-level blockers: 0`, and `Non-production v1 exclusions: 4 routes`. |
+| `npm run audit:production` | Passed locally | The commercial procurement audit reports `Core blocking risks: 0`, `Marker-level blockers: 0`, and `Procurement-release exclusions: 33 routes`. The historic Wave 3D boundary contained four exclusions; the current commercial boundary is intentionally narrower. |
 | `npm run test:button-action-contracts` | Passed locally | Wave 4E source contract passed 12 contracts and 39 assertions across 43 inventoried core actions. |
 | `npm run test:live-diagnostics-regressions` | Passed locally | Confirms the live diagnostics/action fixes remain in place. |
 | `npm run test:e2e:button-actions` | Blocked locally in Playwright page launch | The wrapper started the local app and the API-backed custom-role permission delete idempotency case passed; page-level Chromium launches failed with `browserType.launch: spawn EPERM`. Use the GitHub Playwright Release Gate workflow for browser evidence in this environment. |

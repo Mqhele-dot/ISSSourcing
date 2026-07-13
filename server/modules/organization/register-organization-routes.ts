@@ -13,6 +13,7 @@ import {
   organizations,
   planChangeAudit,
   usageCounters,
+  users,
   warehouses,
   inventoryItems,
 } from "@shared/schema";
@@ -23,11 +24,36 @@ import { getConfigurationDefinitionsForPlan } from "../../company-configuration-
 import { normalizeOrgPlanTier, type OrgPlanTier } from "../../org-feature-registry";
 import { buildSubscriptionDiagnostics } from "../../subscription-enforcement";
 import { getSubscriptionPlanCatalog, getSubscriptionPlanDefinition } from "../../subscription-plan-catalog";
+import { appendAuditEvent } from "../../services/audit-chain-service";
+import { listCountryPacks } from "../master-data/country-pack-registry";
+import { countOrganizationUsers, ensurePlanLimitAllowsCreate } from "../../plan-limit-service";
 
 type Auth = {
   ensureAuthenticated: RequestHandler;
-  ensurePermission?: (resource: string, permissionType: string) => RequestHandler;
+  ensurePermission: (resource: string, permissionType: string) => RequestHandler;
+  ensureTwoFactorAuthenticated: RequestHandler;
 };
+
+const activeOrganizationSchema = z.object({
+  organizationId: z.coerce.number().int().positive(),
+});
+
+const addOrganizationMemberSchema = z.object({
+  userId: z.coerce.number().int().positive(),
+  membershipRole: z.enum(["owner", "admin", "member"]).default("member"),
+  applicationRole: z.enum([
+    "admin",
+    "manager",
+    "planner",
+    "warehouse_staff",
+    "sales",
+    "auditor",
+    "supplier",
+    "custom",
+    "viewer",
+  ]).default("viewer"),
+  reason: z.string().trim().min(3).max(500),
+});
 
 const changePlanSchema = z.object({
   planTier: z.enum(["starter", "standard", "growth", "enterprise"]),
@@ -175,6 +201,144 @@ async function upsertOrganizationSubscriptionState(input: {
 
 /** GET branding / plan metadata for the active organization (Phase 4). */
 export function registerOrganizationRoutes(app: Express, auth: Auth): void {
+  app.get("/api/organization/country-packs", auth.ensureAuthenticated, (_req: Request, res: Response) => {
+    return sendOk(res, listCountryPacks());
+  });
+
+  app.get("/api/organization/memberships", auth.ensureAuthenticated, async (req: Request, res: Response) => {
+    const userId = currentUserId(req);
+    if (!userId) return sendError(res, 401, "UNAUTHORIZED", "Authentication is required.");
+    const memberships = await db
+      .select({
+        membershipId: organizationMembers.id,
+        organizationId: organizations.id,
+        organizationName: organizations.name,
+        organizationSlug: organizations.slug,
+        countryCode: organizations.countryCode,
+        defaultCurrencyCode: organizations.defaultCurrencyCode,
+        locale: organizations.locale,
+        timezone: organizations.timezone,
+        membershipRole: organizationMembers.role,
+        applicationRole: organizationMembers.applicationRole,
+        active: organizationMembers.active,
+        status: organizationMembers.status,
+      })
+      .from(organizationMembers)
+      .innerJoin(organizations, eq(organizations.id, organizationMembers.organizationId))
+      .where(and(eq(organizationMembers.userId, userId), eq(organizations.active, true)));
+    return sendOk(res, memberships);
+  });
+
+  app.post(
+    "/api/organization/members",
+    auth.ensureAuthenticated,
+    auth.ensureTwoFactorAuthenticated,
+    auth.ensurePermission("users", "manage"),
+    async (req: Request, res: Response) => {
+      const parsed = addOrganizationMemberSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return sendError(res, 400, "ORGANIZATION_MEMBER_INVALID", "The organization member request is invalid.", {
+          details: { fieldIssues: parsed.error.flatten().fieldErrors },
+        });
+      }
+
+      const organizationId = getActiveOrganizationId();
+      const [user] = await db.select({ id: users.id, username: users.username }).from(users)
+        .where(and(eq(users.id, parsed.data.userId), eq(users.active, true)))
+        .limit(1);
+      if (!user) {
+        return sendError(res, 404, "USER_NOT_FOUND", "The selected active user account does not exist.");
+      }
+
+      const [existing] = await db.select({ id: organizationMembers.id }).from(organizationMembers)
+        .where(and(
+          eq(organizationMembers.organizationId, organizationId),
+          eq(organizationMembers.userId, parsed.data.userId),
+        ))
+        .limit(1);
+      if (existing) {
+        return sendError(res, 409, "ORGANIZATION_MEMBERSHIP_EXISTS", "This user already belongs to the organization.", {
+          hint: "Update the existing membership instead of adding another one.",
+        });
+      }
+
+      const currentCount = await countOrganizationUsers(organizationId);
+      if (!(await ensurePlanLimitAllowsCreate(res, "users", currentCount))) return;
+
+      const [membership] = await db.insert(organizationMembers).values({
+        organizationId,
+        userId: parsed.data.userId,
+        role: parsed.data.membershipRole,
+        applicationRole: parsed.data.applicationRole,
+        active: true,
+        status: "active",
+      }).returning();
+
+      await appendAuditEvent({
+        organizationId,
+        actor: { userId: req.user!.id },
+        action: "ORGANIZATION_MEMBER_ADDED",
+        resourceType: "organization_membership",
+        resourceId: membership.id,
+        after: {
+          userId: parsed.data.userId,
+          username: user.username,
+          membershipRole: parsed.data.membershipRole,
+          applicationRole: parsed.data.applicationRole,
+          active: true,
+        },
+        reason: parsed.data.reason,
+        requestId: String(res.locals.requestId ?? "unknown-request-id"),
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent") ?? null,
+      });
+
+      return sendOk(res, membership, 201);
+    },
+  );
+
+  app.post("/api/organization/active", auth.ensureAuthenticated, async (req: Request, res: Response) => {
+    const userId = currentUserId(req);
+    if (!userId) return sendError(res, 401, "UNAUTHORIZED", "Authentication is required.");
+    const parsed = activeOrganizationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "ORGANIZATION_SWITCH_INVALID", "Choose a valid organization.", {
+        details: { fieldIssues: parsed.error.flatten().fieldErrors },
+      });
+    }
+    const [membership] = await db
+      .select({ id: organizationMembers.id, role: organizationMembers.role })
+      .from(organizationMembers)
+      .innerJoin(organizations, eq(organizations.id, organizationMembers.organizationId))
+      .where(
+        and(
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.organizationId, parsed.data.organizationId),
+          eq(organizationMembers.active, true),
+          eq(organizations.active, true),
+        ),
+      )
+      .limit(1);
+    if (!membership) {
+      return sendError(res, 403, "MEMBERSHIP_NOT_ACTIVE", "You do not have an active membership in that organization.", {
+        hint: "Select an organization listed in your account memberships or ask its administrator for access.",
+      });
+    }
+    req.session.activeOrganizationId = parsed.data.organizationId;
+    await appendAuditEvent({
+      organizationId: parsed.data.organizationId,
+      actor: { userId },
+      action: "ORGANIZATION_CONTEXT_SELECTED",
+      resourceType: "organization_membership",
+      resourceId: membership.id,
+      details: { membershipRole: membership.role },
+      requestId: String(res.locals.requestId ?? "unknown-request-id"),
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent") ?? null,
+    });
+    return sendOk(res, { organizationId: parsed.data.organizationId, membershipId: membership.id });
+  });
+
   app.get("/api/organization/settings", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
     try {
       const orgId = getActiveOrganizationId();

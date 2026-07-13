@@ -33,6 +33,7 @@ export function RequisitionHeaderFields({
   currencyCode,
   currencies,
   exchangeRateToZar,
+  reportingCurrencyCode,
   requisitionTotals,
   departmentId,
   projectId,
@@ -58,7 +59,8 @@ export function RequisitionHeaderFields({
   supplierId: number | "";
   currencyCode: string;
   exchangeRateToZar: number;
-  requisitionTotals: { orderTotal: number; zarTotal: number };
+  reportingCurrencyCode: string;
+  requisitionTotals: { orderTotal: number; reportingTotal: number; zarTotal: number };
   departmentId: number | "";
   projectId: number | "";
   requiredDate: string;
@@ -111,7 +113,7 @@ export function RequisitionHeaderFields({
           </div>
           {selectedCurrency ? (
             <Badge variant="secondary">
-              {selectedCurrency.regionCode ?? "ZA"} · {selectedCurrency.code} @ {Number(exchangeRateToZar || 0).toFixed(4)} ZAR
+              {selectedCurrency.regionCode ?? "Global"} / {selectedCurrency.code} @ {Number(exchangeRateToZar || 0).toFixed(4)} {reportingCurrencyCode}
             </Badge>
           ) : null}
         </div>
@@ -160,15 +162,15 @@ export function RequisitionHeaderFields({
               {currencies.map((currency) => (
                 <SelectItem key={currency.code} value={currency.code}>
                   {currency.code} - {currency.name}
-                  {currency.isMainForRegion ? " · main" : ""} · {currency.regionCode ?? "ZA"}
+                   {currency.isMainForRegion ? " / main" : ""} / {currency.regionCode ?? "Global"}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            {currencyCode === "ZAR"
-              ? "ZAR is the main test/reporting currency."
-              : `1 ${currencyCode} = ${Number(exchangeRateToZar || 0).toFixed(4)} ZAR from Master Data.`}
+             {currencyCode === reportingCurrencyCode
+               ? `${reportingCurrencyCode} is this organization's reporting currency.`
+               : `1 ${currencyCode} = ${Number(exchangeRateToZar || 0).toFixed(4)} ${reportingCurrencyCode} from Master Data.`}
           </p>
           {fieldErrors.currencyCode ? <p className="text-xs text-destructive">{fieldErrors.currencyCode}</p> : null}
         </div>
@@ -189,7 +191,7 @@ export function RequisitionHeaderFields({
               </div>
             </div>
             <div className="mt-3 flex items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">This creates an onboarded supplier shell with {currencyCode} as its default currency.</p>
+              <p className="text-xs text-muted-foreground">This creates a prospective supplier for governed onboarding with {currencyCode} as its proposed currency.</p>
               <Button
                 type="button"
                 size="sm"
@@ -243,7 +245,7 @@ export function RequisitionHeaderFields({
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Converted reporting value</p>
-              <p className="text-lg font-semibold tabular-nums">ZAR {requisitionTotals.zarTotal.toFixed(2)}</p>
+              <p className="text-lg font-semibold tabular-nums">{reportingCurrencyCode} {requisitionTotals.reportingTotal.toFixed(2)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Exchange source</p>

@@ -55,6 +55,7 @@ import {
   getMdmAudit,
   getMdmControlCentreHealth,
   getMdmDataQualityIssues,
+  getMdmDisableDependencies,
   getPurchaseOrderContext,
   getRequisitionContext,
   isMdmDomain,
@@ -64,7 +65,7 @@ import {
   updateMdmDomainRecord,
   validateMdmTransaction,
 } from "./mdm-control-centre";
-import { getMdmDomainRegistryEntry } from "./mdm-domain-registry";
+import { getMdmDomainRegistryEntry, isHighRiskMdmField } from "./mdm-domain-registry";
 import {
   addMdmChangeRequestComment,
   approveMdmChangeRequest,
@@ -75,10 +76,12 @@ import {
   rejectMdmChangeRequest,
 } from "./mdm-change-request-service";
 import { getMdmWhereUsed } from "./mdm-where-used-service";
+import { getFxProviderStatus, getFxRateFreshness, importFxRatesForOrganizations } from "./fx-provider-service";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
   ensureRole: (roles: string[]) => RequestHandler;
+  ensureTwoFactorAuthenticated: RequestHandler;
 };
 
 type MdmPermissionAction = "read" | "create" | "update" | "delete" | "approve" | "apply" | "comment" | "import" | "scan";
@@ -164,6 +167,27 @@ const MDM_REGISTRY_DOMAIN_ALIASES: Record<string, string> = {
   "import-batches": "documents",
   "data-quality-issues": "settings",
 };
+
+function governedMdmFields(domain: string, payload: Record<string, unknown>): string[] {
+  const registryKey = MDM_REGISTRY_DOMAIN_ALIASES[domain] ?? domain;
+  return Object.keys(payload).filter((field) => isHighRiskMdmField(registryKey, field));
+}
+
+function requireGovernedMdmChange(res: Response, domain: string, payload: Record<string, unknown>) {
+  const fields = governedMdmFields(domain, payload);
+  if (fields.length === 0) return false;
+  sendError(
+    res,
+    409,
+    "MDM_CHANGE_REQUEST_REQUIRED",
+    `Direct changes to controlled ${domain} fields are not allowed.`,
+    {
+      hint: "Create an MDM change request, obtain independent approval, then apply the approved version.",
+      details: { domain, controlledFields: fields, changeRequestEndpoint: "/api/mdm/change-requests" },
+    },
+  );
+  return true;
+}
 
 function pgErrorCode(error: unknown): string | undefined {
   if (error && typeof error === "object" && "code" in error) {
@@ -372,6 +396,25 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
+  app.get("/api/mdm/fx/status", ...masterRead, async (_req: Request, res: Response) => {
+    try {
+      return sendOk(res, { provider: getFxProviderStatus(), freshness: await getFxRateFreshness(getActiveOrganizationId()) });
+    } catch (error) {
+      console.error("Error loading FX provider status:", error);
+      return sendError(res, 500, "FX_STATUS_FAILED", "FX provider and rate freshness could not be loaded.");
+    }
+  });
+
+  app.post("/api/mdm/fx/import", ...masterRead, auth.ensureTwoFactorAuthenticated, requireMdmPermission("exchange-rates", "import"), async (_req: Request, res: Response) => {
+    try {
+      if (!process.env.FX_PROVIDER_URL) return sendError(res, 409, "FX_PROVIDER_NOT_CONFIGURED", "The FX provider is not configured.", { hint: "Set FX_PROVIDER_URL and optionally FX_PROVIDER_TOKEN on the server." });
+      return sendOk(res, await importFxRatesForOrganizations());
+    } catch (error) {
+      console.error("FX provider import failed:", error);
+      return sendError(res, 502, "FX_PROVIDER_IMPORT_FAILED", "FX rates could not be imported from the configured provider.");
+    }
+  });
+
   app.get("/api/mdm/domain-registry", ...masterRead, async (_req: Request, res: Response) => {
     return sendOk(res, getMdmDomainRegistry());
   });
@@ -431,7 +474,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     },
   );
 
-  app.post("/api/mdm/change-requests/:id/approve", ...masterRead, async (req: Request, res: Response) => {
+  app.post("/api/mdm/change-requests/:id/approve", ...masterRead, auth.ensureTwoFactorAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       const actorId = sessionUserId(req);
@@ -455,7 +498,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/change-requests/:id/reject", ...masterRead, async (req: Request, res: Response) => {
+  app.post("/api/mdm/change-requests/:id/reject", ...masterRead, auth.ensureTwoFactorAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       const actorId = sessionUserId(req);
@@ -478,7 +521,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/mdm/change-requests/:id/apply", ...masterRead, async (req: Request, res: Response) => {
+  app.post("/api/mdm/change-requests/:id/apply", ...masterRead, auth.ensureTwoFactorAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       const actorId = sessionUserId(req);
@@ -646,6 +689,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     try {
       const domain = String(req.params.domain ?? "");
       if (!isMdmDomain(domain)) return sendError(res, 404, "MDM_DOMAIN_NOT_FOUND", "Unknown MDM domain");
+      if (requireGovernedMdmChange(res, domain, req.body ?? {})) return;
       return sendOk(
         res,
         await createMdmDomainRecord(domain, getActiveOrganizationId(), req.body ?? {}, sessionUserId(req)),
@@ -667,6 +711,20 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       if (!isMdmDomain(domain)) return sendError(res, 404, "MDM_DOMAIN_NOT_FOUND", "Unknown MDM domain");
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid MDM record ID");
+      if (req.body?.active === false) {
+        const usage = await getMdmDisableDependencies(domain, getActiveOrganizationId(), id);
+        if (usage.length > 0) {
+          const total = usage.reduce((sum, entry) => sum + entry.count, 0);
+          return sendError(
+            res,
+            409,
+            "MDM_RECORD_IN_USE",
+            `Cannot deactivate this ${domain} record while it is used by ${total} open workflow record${total === 1 ? "" : "s"}.`,
+            { details: { usage } },
+          );
+        }
+      }
+      if (requireGovernedMdmChange(res, domain, req.body ?? {})) return;
       const updated = await updateMdmDomainRecord(domain, getActiveOrganizationId(), id, req.body ?? {}, sessionUserId(req));
       if (!updated) return sendError(res, 404, "NOT_FOUND", "MDM record not found");
       return sendOk(res, updated);

@@ -1,5 +1,9 @@
 import type { AppSettings } from "@shared/schema";
 import type { IStorage } from "../storage";
+import { db } from "../db";
+import { organizations } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { getActiveOrganizationId } from "../organization-context";
 
 /**
  * Fallback when `app_settings` is missing or `currency_code` is unset/invalid (bootstrap, legacy rows).
@@ -26,6 +30,13 @@ export function reportingCurrencyCodeFromAppSettings(settings: AppSettings | nul
 
 export async function getReportingCurrencyCode(storage: IStorage): Promise<string> {
   try {
+    const [organization] = await db
+      .select({ defaultCurrencyCode: organizations.defaultCurrencyCode })
+      .from(organizations)
+      .where(eq(organizations.id, getActiveOrganizationId()))
+      .limit(1);
+    const organizationCode = organization?.defaultCurrencyCode?.trim().toUpperCase() ?? "";
+    if (organizationCode && isValidIso4217(organizationCode)) return organizationCode;
     const s = await storage.getAppSettings();
     return reportingCurrencyCodeFromAppSettings(s ?? undefined);
   } catch {

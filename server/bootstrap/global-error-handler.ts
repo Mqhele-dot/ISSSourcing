@@ -4,6 +4,7 @@ import { appEnv } from "../config/env";
 import { logger } from "../lib/logger";
 import { handleCSRFError } from "../services/security-service";
 import { recordServerDiagnosticEvent } from "../diagnostics/server-diagnostics-store";
+import { TenantContextError } from "../organization-context";
 
 export function registerGlobalErrorHandler(app: Express): void {
   app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
@@ -11,8 +12,14 @@ export function registerGlobalErrorHandler(app: Express): void {
     if (e?.code === "EBADCSRFTOKEN") {
       return handleCSRFError(err, req, res, next);
     }
+    if (err instanceof TenantContextError) {
+      return sendError(res, 403, err.code, err.message, {
+        hint: "Select an active organization or ask an administrator to restore your membership.",
+      });
+    }
     const status = e?.status || e?.statusCode || 500;
-    const message = e?.message || "Internal Server Error";
+    const internalMessage = e?.message || "Internal Server Error";
+    const message = status >= 500 ? "The request could not be completed." : internalMessage;
     res.locals.errorCode = status >= 500 ? "UNHANDLED_SERVER_ERROR" : "REQUEST_FAILED";
     logger.error("Unhandled request error", {
       requestId: res.locals?.requestId,
@@ -25,7 +32,7 @@ export function registerGlobalErrorHandler(app: Express): void {
       severity: status >= 500 ? "error" : "warning",
       source: "request",
       title: "Unhandled request error",
-      message,
+      message: internalMessage,
       route: req.path,
       method: req.method,
       status,

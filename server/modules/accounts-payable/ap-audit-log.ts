@@ -1,5 +1,4 @@
-import { db } from "../../db";
-import { auditLogs } from "@shared/schema";
+import { appendAuditEvent } from "../../services/audit-chain-service";
 
 export type ApAuditAction =
   | "AP_CAPTURE_CREATED"
@@ -24,21 +23,20 @@ export async function writeApAuditLog(input: {
   reason?: string | null;
   extra?: Record<string, unknown>;
 }) {
-  await db.insert(auditLogs).values({
+  await appendAuditEvent({
     organizationId: input.organizationId,
-    userId: input.actorUserId,
+    actor: { userId: input.actorUserId },
     action: input.action,
     resourceType: input.entityType,
     resourceId: input.entityId,
+    before: input.priorState == null ? null : { status: input.priorState },
+    after: input.nextState == null ? null : { status: input.nextState },
+    reason: input.reason ?? null,
     details: {
       actorUserId: input.actorUserId,
       organizationId: input.organizationId,
-      timestamp: new Date().toISOString(),
       entityType: input.entityType,
       entityId: input.entityId,
-      priorState: input.priorState ?? null,
-      nextState: input.nextState ?? null,
-      reason: input.reason ?? null,
       ...input.extra,
     },
   });

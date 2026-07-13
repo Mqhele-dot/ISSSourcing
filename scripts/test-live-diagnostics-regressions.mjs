@@ -99,8 +99,13 @@ assertContains(
 );
 assertContains(
   "server/auth.ts",
-  /countOrganizationUsers\(organizationId\)[\s\S]*organizationMembers/,
-  "registration must enforce and persist org-scoped membership",
+  /createdOrganization[\s\S]*role: "owner"/,
+  "public registration must create a new tenant and owner membership",
+);
+assertContains(
+  "server/modules/organization/register-organization-routes.ts",
+  /\/api\/organization\/members[\s\S]*ensureTwoFactorAuthenticated[\s\S]*countOrganizationUsers\(organizationId\)[\s\S]*ORGANIZATION_MEMBER_ADDED/,
+  "organization membership creation must enforce 2FA, tenant plan limits, and audit evidence",
 );
 
 console.log("live diagnostics regression source checks passed");

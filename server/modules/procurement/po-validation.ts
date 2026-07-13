@@ -109,21 +109,26 @@ async function hasGlMapping(params: {
 }
 
 async function hasActiveFxRate(organizationId: number, currencyCode: string): Promise<boolean> {
-  if (!currencyCode || currencyCode.toUpperCase() === "ZAR") return true;
+  const organization = await pool.query<{ default_currency_code: string }>(
+    "SELECT default_currency_code FROM organizations WHERE id = $1 AND active = TRUE LIMIT 1",
+    [organizationId],
+  );
+  const reportingCurrency = String(organization.rows[0]?.default_currency_code ?? "ZAR").toUpperCase();
+  if (!currencyCode || currencyCode.toUpperCase() === reportingCurrency) return true;
   const rows = await pool.query<{ id: number }>(
     `
       SELECT id
       FROM mdm_exchange_rates
       WHERE organization_id = $1
         AND upper(from_currency_code) = $2
-        AND upper(to_currency_code) = 'ZAR'
+        AND upper(to_currency_code) = $3
         AND COALESCE(active, TRUE) = TRUE
         AND effective_date <= now()
         AND (expires_at IS NULL OR expires_at >= now())
       ORDER BY effective_date DESC
       LIMIT 1
     `,
-    [organizationId, currencyCode.toUpperCase()],
+    [organizationId, currencyCode.toUpperCase(), reportingCurrency],
   );
   return rows.rows.length > 0;
 }
@@ -170,12 +175,14 @@ export async function validatePurchaseOrderWorkflowReadiness(
     }
   }
 
-  if (policy.requireFxRate && !(await hasActiveFxRate(input.organizationId, String(input.currencyCode ?? "ZAR")))) {
+  if (policy.requireFxRate && !(await hasActiveFxRate(input.organizationId, String(input.currencyCode ?? "")))) {
+    const organization = await pool.query<{ default_currency_code: string }>("SELECT default_currency_code FROM organizations WHERE id = $1 LIMIT 1", [input.organizationId]);
+    const reportingCurrency = String(organization.rows[0]?.default_currency_code ?? "ZAR").toUpperCase();
     return {
       ok: false,
       status: 409,
       code: "PO_FX_RATE_REQUIRED",
-      message: `No active ZAR exchange rate exists for ${String(input.currencyCode ?? "").toUpperCase()}.`,
+      message: `No active ${String(input.currencyCode ?? "").toUpperCase()}/${reportingCurrency} exchange rate exists.`,
     };
   }
 

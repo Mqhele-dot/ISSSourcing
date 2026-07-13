@@ -20,7 +20,9 @@ The production audit now separates these from:
 |---|---:|---|
 | Marker-level blockers | 0 | `docs/production-readiness-audit.md` |
 | Core blocking risks | 0 | `docs/production-readiness-audit.md` |
-| Non-production v1 exclusions | 4 routes | `/operations/logistics`, `/operations/logistics/:id`, `/operations/exceptions`, `/operations/exceptions/:id` |
+| Procurement-release exclusions | 33 route entries | Receiving, inventory operations, mobile warehouse, logistics, exceptions, AP, payment control, billing, and non-procurement analytics listed by `docs/production-readiness-audit.md` |
+
+The earlier Wave 3C release boundary excluded only four logistics and exception routes. The commercial procurement release deliberately narrows the production boundary further. Its 33 excluded route entries are not marker-level failures; they are later-release modules protected by server and client production gates.
 
 ## Wave 3C Burn-Down Evidence
 

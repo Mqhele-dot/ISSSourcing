@@ -30,6 +30,8 @@ npm run verify:release:e2e
 
 `verify:release:e2e` runs the full release gate plus the procurement/AP browser workflow, role-permission browser workflow, control-plane browser workflow, subscription admin browser workflow, and button/action smoke workflow. This gate is mandatory before a production release candidate can be approved. If the local Windows or Codespaces browser sandbox cannot launch Chromium, run it in GitHub Actions through `.github/workflows/playwright-release-gate.yml` and attach the workflow run to the release notes.
 
+The commercial procurement increment also adds `test:e2e:sourcing` to this gate. It covers supplier quote submission, buyer evaluation, award recommendation, independent planner approval, and award-to-PO conversion. The live `test:sourcing-workflow` gate is part of `release:gate:delta` and proves the same lifecycle against PostgreSQL and HTTP APIs.
+
 `test:local:delta` starts the local app, waits for `/api/ready`, and then runs the focused workflow checks that require a live server, including master-data propagation, master-data integration, purchase-order endpoints, AP workflow, diagnostics, route diagnostics, and `release:gate:delta`.
 
 ## Gate Matrix
@@ -48,6 +50,9 @@ npm run verify:release:e2e
 | Purchase-order endpoints | `npm run test:purchase-order-endpoints` | Yes | Prove PO endpoint behavior, including supplier/contract currency override blocking. | Passing via delta gate | Tests expect structured supplier/contract currency override failures. |
 | AP workflow | `npm run test:ap-workflow` | Yes | Prove AP invoice/capture/receipt workflow remains connected. | Passing via delta gate | Expected negative-path errors may appear in logs while assertions pass. |
 | Production workflow proof | `npm run test:production-workflow-proof` | Yes | Prove the core Master Data to Requisition to PO to GRN to Inventory to AP chain has route, validation, dependency, receipt, payment, and audit controls wired in source. | Added to delta gate | Source-level proof complements live API tests without depending on the browser bridge. |
+| Commercial procurement foundation | `npm run test:commercial-procurement-foundation` | Yes | Prove fail-closed tenancy, tenant-scoped operational aliases, sourcing persistence, country packs, audit chaining, supplier isolation, governed PO actions, and production boundaries remain wired. | Passing locally (22 controls) | Source contract for the procurement-only commercial release. |
+| Live sourcing workflow | `npm run test:sourcing-workflow` | Yes | Prove RFQ publication, mapped supplier quote, FX-normalized comparison, evaluation, self-approval denial, independent award approval, PO conversion, MDM propagation, and audit-chain validity. | Passing locally | Runs with a real local server through `npm run test:local:sourcing`; also included in `release:gate:delta`. |
+| Sourcing browser workflow | `npm run test:e2e:sourcing` | Yes before production approval | Prove supplier and buyer sourcing actions through the browser, including independent approval and PO conversion. | Added to formal E2E gate | Run through the Playwright Release Gate when the local Chromium sandbox is unavailable. |
 | Control-plane screen contracts | `npm run test:control-plane-screen-contracts` | Yes | Prove AP payments, settings, roles, approval policies, and Master Data keep source-level UI evidence for real APIs, permission denials, dependency responses, and payment locks. | Added to delta gate | Source-level proof; live browser proof still comes from the E2E gate. |
 | Final production blockers | `npm run test:final-production-blockers` | Yes | Prevent regression of hardcoded payment actor, fake inventory detail fallback, production demo wording, fallback badge state, and Playwright workflow requirements. | Passing locally | Added to `release:gate:delta` in Wave 3C. |
 | Subscription plan catalog | `npm run test:subscription-plans` | Yes | Prove Starter, Standard, Growth, and Enterprise catalog limits, feature groups, labels, support levels, and configurable pricing placeholders are present. | Passing locally | Added to `release:gate:delta` in Wave 4A. |
@@ -84,9 +89,22 @@ npm run verify:release:e2e
 
 A feature or route is not production-ready unless it uses real data, has backend validation, respects permissions where needed, handles errors clearly, and has tests or explicit verification evidence.
 
-Operations logistics and exceptions remain tracked in [Core Route V1 Decision Log](core-route-v1-decision-log.md). They are explicitly classified as `Non-production v1` by `npm run audit:production`; do not treat those routes as production-approved until their route-specific actions are complete.
+The complete procurement-only boundary is defined in [Commercial Procurement Release Boundary](COMMERCIAL-PROCUREMENT-BOUNDARY.md). Receiving, inventory operations, mobile warehouse work, logistics, exceptions, AP, payment control, and their non-procurement analytics remain later-release modules. Production navigation and direct route access must keep these areas gated until their route-specific evidence is complete.
 
-Remaining marker-level production blockers are tracked in [Core Blocking Risk Register](core-blocking-risk-register.md). The Wave 3C audit reconciles the old 43-vs-10 mismatch: the current marker-level blocker count is **0**, while **4 routes** remain intentionally excluded from v1 production approval.
+Remaining marker-level production blockers are tracked in [Core Blocking Risk Register](core-blocking-risk-register.md). The current audit reports **0 core blockers**, **0 marker-level blockers**, and **33 procurement-release route exclusions**. Those exclusions are an intentional commercial boundary, not unresolved procurement blockers.
+
+## Latest Commercial Procurement Evidence
+
+| Command | Result | Notes |
+|---|---|---|
+| `npm run test:commercial-procurement-foundation` | Passed locally | 22 controls cover fail-closed tenancy, supplier isolation, sourcing persistence, governed PO actions, country packs, audit chaining, and the procurement-only production boundary. |
+| `npm run test:local:sourcing` | Passed locally | Live PostgreSQL/API proof covers RFQ publication, mapped supplier quote submission, reporting-currency comparison, evaluation, self-approval denial, independent award approval, award-to-PO conversion, and audit-chain verification. |
+| `npm run test:subscription-runtime-flow` | Passed locally | Tenant member addition now uses a permission, 2FA, plan-limit, and audit-protected organization membership endpoint; public registration creates a new tenant instead of relying on organization 1. |
+| `npm run test:local:delta` | Passed locally | Full live release delta completed after the tenant-membership and legacy test-contract fixes. |
+| `npm run build` | Passed locally | Vite built 3,635 modules and the server build completed with the repository's Windows OneDrive fallback. |
+| `npm run security:audit` | Passed locally | `npm audit --audit-level=high` reported 0 vulnerabilities. |
+| `npm run test:e2e:sourcing` | Blocked locally at Chromium launch | API preflight passed, then the Windows sandbox returned `browserType.launch: spawn EPERM`. `.github/workflows/playwright-release-gate.yml` remains the required browser evidence path. |
+| `npm run audit:production` | Passed locally | Latest generated audit reports 0 core blockers, 0 marker-level blockers, and 33 explicitly gated procurement-release exclusions. |
 
 ## Latest Wave 3C Evidence
 

@@ -78,6 +78,11 @@ export const organizations = pgTable("organizations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").unique(),
+  active: boolean("active").default(true).notNull(),
+  countryCode: text("country_code").default("ZA").notNull(),
+  defaultCurrencyCode: text("default_currency_code").default("ZAR").notNull(),
+  locale: text("locale").default("en-ZA").notNull(),
+  timezone: text("timezone").default("Africa/Johannesburg").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -156,6 +161,9 @@ export const organizationMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("member"),
+    applicationRole: text("application_role").default("viewer").notNull(),
+    active: boolean("active").default(true).notNull(),
+    status: text("status").default("active").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("organization_members_org_user_uidx").on(t.organizationId, t.userId)],
@@ -209,8 +217,8 @@ export const insertUserSchema = createInsertSchema(users)
     lastPasswordChange: z.date().nullable().optional(),
   });
 
-// User registration form schema with validation
-export const userRegistrationSchema = insertUserSchema.extend({
+// Public SaaS registration creates an organization owner. Tenant membership is never client-selected.
+export const userRegistrationSchema = z.object({
   username: z.string().min(4, "Username must be at least 4 characters").max(50, "Username cannot exceed 50 characters"),
   email: z.string().email("Please enter a valid email address"),
   password: z.string()
@@ -221,6 +229,8 @@ export const userRegistrationSchema = insertUserSchema.extend({
     .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
   confirmPassword: z.string(),
   fullName: z.string().min(2, "Full name must be at least 2 characters").max(100, "Full name cannot exceed 100 characters"),
+  organizationName: z.string().min(2, "Organization name must be at least 2 characters").max(120),
+  countryCode: z.enum(["ZA", "GB", "US"]).default("ZA"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords do not match",
   path: ["confirmPassword"]
@@ -878,6 +888,16 @@ export const suppliers = pgTable("suppliers", {
   legalName: text("legal_name"),
   supplierType: text("supplier_type"),
   status: text("status").notNull().default("active"),
+  onboardingStatus: text("onboarding_status").notNull().default("prospective"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+  isOnceOff: boolean("is_once_off").notNull().default(false),
+  onceOffExpiresAt: timestamp("once_off_expires_at"),
+  riskRating: text("risk_rating").default("unrated"),
+  serviceRegions: jsonb("service_regions").$type<string[]>().default([]),
+  supportedCurrencies: jsonb("supported_currencies").$type<string[]>().default([]),
+  categoryCodes: jsonb("category_codes").$type<string[]>().default([]),
   registrationNumber: text("registration_number"),
   category: text("category"),
   contactName: text("contact_name"),
@@ -914,7 +934,7 @@ export const suppliers = pgTable("suppliers", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [uniqueIndex("suppliers_org_code_uidx").on(t.organizationId, t.supplierCode)]);
 
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({
   id: true,
@@ -1082,6 +1102,22 @@ export const purchaseRequisitionItems = pgTable("purchase_requisition_items", {
   notes: text("notes"),
 });
 
+/** Tenant-specific supplier portal identity; avoids a global user-to-supplier mapping leak. */
+export const supplierPortalMappings = pgTable(
+  "supplier_portal_mappings",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    supplierId: integer("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
+    active: boolean("active").notNull().default(true),
+    createdByUserId: integer("created_by_user_id").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("supplier_portal_mappings_org_user_uidx").on(t.organizationId, t.userId)],
+);
+
 export const insertPurchaseRequisitionItemSchema = createInsertSchema(purchaseRequisitionItems).omit({
   id: true,
 });
@@ -1117,6 +1153,14 @@ export const purchaseOrders = pgTable(
   currencyCode: text("currency_code").notNull().default("ZAR"),
   taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
   status: text("status").notNull().default("DRAFT"),
+  approvalStatus: text("approval_status").notNull().default("DRAFT"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  revisionNumber: integer("revision_number").notNull().default(1),
+  sourcingAwardId: integer("sourcing_award_id"),
+  dispatchStatus: text("dispatch_status").notNull().default("NOT_SENT"),
+  dispatchError: text("dispatch_error"),
   orderDate: timestamp("order_date").defaultNow().notNull(),
   expectedDeliveryDate: timestamp("expected_delivery_date"),
   deliveryAddress: text("delivery_address"),
@@ -1162,6 +1206,262 @@ export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderIte
   id: true,
 });
 
+// Strategic sourcing: RFQ, structured quotes, evaluation, and award evidence.
+export const sourcingEvents = pgTable(
+  "sourcing_events",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    eventNumber: text("event_number").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("DRAFT"),
+    ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
+    requisitionId: integer("requisition_id").references(() => purchaseRequisitions.id),
+    legalEntityId: integer("legal_entity_id").references(() => mdmLegalEntities.id),
+    reportingCurrencyCode: text("reporting_currency_code").notNull().default("ZAR"),
+    deadline: timestamp("deadline").notNull(),
+    minimumResponses: integer("minimum_responses").notNull().default(1),
+    competitionRequired: boolean("competition_required").notNull().default(true),
+    lockedFxSnapshot: jsonb("locked_fx_snapshot").$type<Record<string, number>>().default({}),
+    terms: text("terms"),
+    version: integer("version").notNull().default(1),
+    publishedAt: timestamp("published_at"),
+    closedAt: timestamp("closed_at"),
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("sourcing_events_org_number_uidx").on(t.organizationId, t.eventNumber)],
+);
+
+export const sourcingEventLines = pgTable(
+  "sourcing_event_lines",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    eventId: integer("event_id").notNull().references(() => sourcingEvents.id, { onDelete: "cascade" }),
+    lineNumber: integer("line_number").notNull(),
+    itemId: integer("item_id").references(() => inventoryItems.id),
+    description: text("description").notNull(),
+    quantity: real("quantity").notNull(),
+    unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
+    taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
+    costCentreId: integer("cost_centre_id").references(() => mdmCostCentres.id),
+    glAccountCode: text("gl_account_code"),
+    deliverySiteId: integer("delivery_site_id").references(() => mdmSites.id),
+    requiredDate: timestamp("required_date"),
+    targetUnitPrice: real("target_unit_price"),
+    targetCurrencyCode: text("target_currency_code"),
+    requirements: jsonb("requirements").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("sourcing_event_lines_event_line_uidx").on(t.eventId, t.lineNumber)],
+);
+
+export const sourcingEvaluationCriteria = pgTable("sourcing_evaluation_criteria", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  eventId: integer("event_id").notNull().references(() => sourcingEvents.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  criterionType: text("criterion_type").notNull().default("commercial"),
+  weight: real("weight").notNull(),
+  knockout: boolean("knockout").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  guidance: text("guidance"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const sourcingInvitations = pgTable(
+  "sourcing_invitations",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    eventId: integer("event_id").notNull().references(() => sourcingEvents.id, { onDelete: "cascade" }),
+    supplierId: integer("supplier_id").notNull().references(() => suppliers.id),
+    status: text("status").notNull().default("INVITED"),
+    invitedByUserId: integer("invited_by_user_id").notNull().references(() => users.id),
+    invitedAt: timestamp("invited_at").defaultNow().notNull(),
+    viewedAt: timestamp("viewed_at"),
+    respondedAt: timestamp("responded_at"),
+  },
+  (t) => [uniqueIndex("sourcing_invitations_event_supplier_uidx").on(t.eventId, t.supplierId)],
+);
+
+export const supplierQuotes = pgTable(
+  "supplier_quotes",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    eventId: integer("event_id").notNull().references(() => sourcingEvents.id),
+    supplierId: integer("supplier_id").notNull().references(() => suppliers.id),
+    quoteNumber: text("quote_number").notNull(),
+    status: text("status").notNull().default("DRAFT"),
+    version: integer("version").notNull().default(1),
+    supersedesQuoteId: integer("supersedes_quote_id"),
+    submittedByUserId: integer("submitted_by_user_id").references(() => users.id),
+    currencyCode: text("currency_code").notNull(),
+    exchangeRateToReporting: real("exchange_rate_to_reporting").notNull().default(1),
+    subtotal: real("subtotal").notNull().default(0),
+    taxTotal: real("tax_total").notNull().default(0),
+    landedCostTotal: real("landed_cost_total").notNull().default(0),
+    reportingTotal: real("reporting_total").notNull().default(0),
+    validityDate: timestamp("validity_date"),
+    paymentTerms: text("payment_terms"),
+    deliveryDays: integer("delivery_days"),
+    notes: text("notes"),
+    complianceStatus: text("compliance_status").notNull().default("PENDING"),
+    submittedAt: timestamp("submitted_at"),
+    withdrawnAt: timestamp("withdrawn_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("supplier_quotes_org_number_uidx").on(t.organizationId, t.quoteNumber)],
+);
+
+export const supplierQuoteLines = pgTable(
+  "supplier_quote_lines",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    quoteId: integer("quote_id").notNull().references(() => supplierQuotes.id, { onDelete: "cascade" }),
+    eventLineId: integer("event_line_id").notNull().references(() => sourcingEventLines.id),
+    quantity: real("quantity").notNull(),
+    unitPrice: real("unit_price").notNull(),
+    taxAmount: real("tax_amount").notNull().default(0),
+    freightAmount: real("freight_amount").notNull().default(0),
+    landedCost: real("landed_cost").notNull().default(0),
+    promisedDate: timestamp("promised_date"),
+    supplierItemCode: text("supplier_item_code"),
+    alternativeDescription: text("alternative_description"),
+    compliant: boolean("compliant").notNull().default(true),
+    exceptionReason: text("exception_reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("supplier_quote_lines_quote_event_line_uidx").on(t.quoteId, t.eventLineId)],
+);
+
+export const sourcingClarifications = pgTable("sourcing_clarifications", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  eventId: integer("event_id").notNull().references(() => sourcingEvents.id, { onDelete: "cascade" }),
+  supplierId: integer("supplier_id").references(() => suppliers.id),
+  createdByUserId: integer("created_by_user_id").notNull().references(() => users.id),
+  subject: text("subject").notNull(),
+  message: text("message").notNull(),
+  visibility: text("visibility").notNull().default("PRIVATE"),
+  parentId: integer("parent_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const sourcingEvaluations = pgTable(
+  "sourcing_evaluations",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    eventId: integer("event_id").notNull().references(() => sourcingEvents.id, { onDelete: "cascade" }),
+    quoteId: integer("quote_id").notNull().references(() => supplierQuotes.id, { onDelete: "cascade" }),
+    criterionId: integer("criterion_id").notNull().references(() => sourcingEvaluationCriteria.id),
+    evaluatorUserId: integer("evaluator_user_id").notNull().references(() => users.id),
+    score: real("score").notNull(),
+    weightedScore: real("weighted_score").notNull(),
+    comment: text("comment"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("sourcing_evaluations_quote_criterion_user_uidx").on(t.quoteId, t.criterionId, t.evaluatorUserId)],
+);
+
+export const sourcingAwards = pgTable("sourcing_awards", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  eventId: integer("event_id").notNull().references(() => sourcingEvents.id),
+  status: text("status").notNull().default("DRAFT"),
+  recommendedByUserId: integer("recommended_by_user_id").notNull().references(() => users.id),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+  justification: text("justification").notNull(),
+  overrideReason: text("override_reason"),
+  version: integer("version").notNull().default(1),
+  submittedAt: timestamp("submitted_at"),
+  approvedAt: timestamp("approved_at"),
+  rejectedAt: timestamp("rejected_at"),
+  convertedPurchaseOrderId: integer("converted_purchase_order_id").references(() => purchaseOrders.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const sourcingAwardLines = pgTable("sourcing_award_lines", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  awardId: integer("award_id").notNull().references(() => sourcingAwards.id, { onDelete: "cascade" }),
+  eventLineId: integer("event_line_id").notNull().references(() => sourcingEventLines.id),
+  quoteLineId: integer("quote_line_id").notNull().references(() => supplierQuoteLines.id),
+  supplierId: integer("supplier_id").notNull().references(() => suppliers.id),
+  awardedQuantity: real("awarded_quantity").notNull(),
+  awardedUnitPrice: real("awarded_unit_price").notNull(),
+  currencyCode: text("currency_code").notNull(),
+  reportingAmount: real("reporting_amount").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const workflowIdempotency = pgTable(
+  "workflow_idempotency",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    idempotencyKey: text("idempotency_key").notNull(),
+    action: text("action").notNull(),
+    resourceType: text("resource_type").notNull(),
+    resourceId: integer("resource_id"),
+    response: jsonb("response").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("workflow_idempotency_org_key_uidx").on(t.organizationId, t.idempotencyKey)],
+);
+
+export const insertSourcingEventSchema = createInsertSchema(sourcingEvents).omit({
+  id: true,
+  organizationId: true,
+  ownerUserId: true,
+  publishedAt: true,
+  closedAt: true,
+  archivedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertSourcingEventLineSchema = createInsertSchema(sourcingEventLines).omit({
+  id: true,
+  organizationId: true,
+  eventId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertSourcingCriterionSchema = createInsertSchema(sourcingEvaluationCriteria).omit({
+  id: true,
+  organizationId: true,
+  eventId: true,
+  createdAt: true,
+});
+export const insertSupplierQuoteSchema = createInsertSchema(supplierQuotes).omit({
+  id: true,
+  organizationId: true,
+  supplierId: true,
+  submittedByUserId: true,
+  submittedAt: true,
+  withdrawnAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertSupplierQuoteLineSchema = createInsertSchema(supplierQuoteLines).omit({
+  id: true,
+  organizationId: true,
+  quoteId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const approvalPolicies = pgTable("approval_policies", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id")
@@ -1199,6 +1499,7 @@ export const approvalHistory = pgTable("approval_history", {
 
 export const purchaseOrderRevisions = pgTable("purchase_order_revisions", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
   orderId: integer("order_id").notNull(),
   revisionNumber: integer("revision_number").notNull(),
   snapshot: jsonb("snapshot").notNull(),
@@ -2544,6 +2845,11 @@ export const auditLogs = pgTable("audit_logs", {
   resourceType: text("resource_type").notNull(),
   resourceId: integer("resource_id"),
   details: jsonb("details"),
+  reason: text("reason"),
+  previousHash: text("previous_hash"),
+  eventHash: text("event_hash"),
+  hashVersion: integer("hash_version").default(1).notNull(),
+  requestId: text("request_id"),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -318,6 +318,36 @@ export async function invalidateRequisitionDomain(queryClient: QueryClient): Pro
   ]);
 }
 
+export async function invalidateSourcingDomain(
+  queryClient: QueryClient,
+  eventId?: number | string | null,
+): Promise<void> {
+  const eventKeys: readonly (readonly string[])[] = eventId == null
+    ? []
+    : [
+        qk.sourcingEvent(eventId),
+        qk.sourcingComparison(eventId),
+        qk.supplierSourcingEvent(eventId),
+        ["/api/sourcing/events", String(eventId)],
+        ["/api/sourcing/events", String(eventId), "comparison"],
+        ["/api/sourcing/supplier/events", String(eventId)],
+      ];
+
+  await Promise.all([
+    invalidateKeyPrefix(queryClient, qk.sourcing),
+    invalidateKeyPrefix(queryClient, qk.supplierSourcing),
+    invalidateMany(queryClient, [
+      ["/api/sourcing/events"],
+      ["/api/sourcing/supplier/events"],
+      ...eventKeys,
+      qk.requisitions,
+      qk.purchaseOrders,
+      qk.contracts,
+      ...dashboardsAndAnalyticsPrefixes,
+    ]),
+  ]);
+}
+
 export async function invalidateInvoiceDomain(queryClient: QueryClient): Promise<void> {
   await Promise.all([
     invalidateKeyPrefix(queryClient, qk.invoices),

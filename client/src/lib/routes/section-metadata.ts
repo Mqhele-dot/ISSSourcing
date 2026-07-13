@@ -106,6 +106,13 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
     label: "Procurement",
     items: [
       {
+        label: "Sourcing & RFQs",
+        path: APP_ROUTES.procurement.sourcing,
+        icon: "scale",
+        description: "Competitive RFQs, structured quotes, evaluation, and controlled awards.",
+        keywords: "sourcing rfq quotes bids tender award evaluation",
+      },
+      {
         label: "Purchase orders",
         path: APP_ROUTES.procurement.orders,
         icon: "shopping-cart",

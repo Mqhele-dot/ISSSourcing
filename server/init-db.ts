@@ -128,6 +128,354 @@ export async function ensureSuppliersTaxIdColumn(): Promise<void> {
   }
 }
 
+/** Add fail-closed tenancy and audit-chain columns without rewriting historical business records. */
+export async function ensureTenantSecurityColumns(): Promise<void> {
+  try {
+    await pool.query(`
+      ALTER TABLE organizations ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+      ALTER TABLE organizations ADD COLUMN IF NOT EXISTS country_code TEXT NOT NULL DEFAULT 'ZA';
+      ALTER TABLE organizations ADD COLUMN IF NOT EXISTS default_currency_code TEXT NOT NULL DEFAULT 'ZAR';
+      ALTER TABLE organizations ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en-ZA';
+      ALTER TABLE organizations ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'Africa/Johannesburg';
+
+      ALTER TABLE organization_members ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+      ALTER TABLE organization_members ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+      ALTER TABLE organization_members ADD COLUMN IF NOT EXISTS application_role TEXT NOT NULL DEFAULT 'viewer';
+      WITH ranked_memberships AS (
+        SELECT id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY organization_id, user_id
+                 ORDER BY active DESC, (role = 'owner') DESC, id ASC
+               ) AS duplicate_rank
+        FROM organization_members
+      )
+      DELETE FROM organization_members
+      WHERE id IN (SELECT id FROM ranked_memberships WHERE duplicate_rank > 1);
+      CREATE UNIQUE INDEX IF NOT EXISTS organization_members_org_user_uidx
+        ON organization_members (organization_id, user_id);
+      UPDATE organization_members om
+      SET application_role = COALESCE(NULLIF(u.role::text, ''), 'viewer')
+      FROM users u
+      WHERE u.id = om.user_id
+        AND (om.application_role IS NULL OR om.application_role = 'viewer');
+
+      CREATE UNIQUE INDEX IF NOT EXISTS permissions_role_resource_type_uidx
+        ON permissions (role, resource, permission_type);
+      INSERT INTO permissions (role, resource, permission_type)
+      SELECT 'admin'::user_role, resource_value, permission_value
+      FROM unnest(enum_range(NULL::resource)) AS resource_value
+      CROSS JOIN unnest(enum_range(NULL::permission_type)) AS permission_value
+      ON CONFLICT (role, resource, permission_type) DO NOTHING;
+      INSERT INTO permissions (role, resource, permission_type)
+      SELECT 'manager'::user_role, resource_value, permission_value
+      FROM unnest(enum_range(NULL::resource)) AS resource_value
+      CROSS JOIN unnest(enum_range(NULL::permission_type)) AS permission_value
+      WHERE NOT (resource_value = 'system'::resource AND permission_value = 'admin'::permission_type)
+      ON CONFLICT (role, resource, permission_type) DO NOTHING;
+      INSERT INTO permissions (role, resource, permission_type)
+      SELECT 'planner'::user_role, resource_value, permission_value
+      FROM unnest(ARRAY['purchases','suppliers','reports','documents','analytics','dashboards']::resource[]) AS resource_value
+      CROSS JOIN unnest(ARRAY['create','read','update','approve','manage','print','download','upload','view_reports']::permission_type[]) AS permission_value
+      ON CONFLICT (role, resource, permission_type) DO NOTHING;
+      INSERT INTO permissions (role, resource, permission_type)
+      SELECT 'warehouse_staff'::user_role, resource_value, permission_value
+      FROM unnest(ARRAY['inventory','warehouses','stock_movements','reorder_requests','documents']::resource[]) AS resource_value
+      CROSS JOIN unnest(ARRAY['create','read','update','execute','transfer','scan','upload','download']::permission_type[]) AS permission_value
+      ON CONFLICT (role, resource, permission_type) DO NOTHING;
+      INSERT INTO permissions (role, resource, permission_type)
+      SELECT role_value, resource_value, 'read'::permission_type
+      FROM unnest(ARRAY['viewer','sales']::user_role[]) AS role_value
+      CROSS JOIN unnest(enum_range(NULL::resource)) AS resource_value
+      ON CONFLICT (role, resource, permission_type) DO NOTHING;
+      INSERT INTO permissions (role, resource, permission_type)
+      SELECT 'auditor'::user_role, resource_value, permission_value
+      FROM unnest(enum_range(NULL::resource)) AS resource_value
+      CROSS JOIN unnest(ARRAY['read','audit','export','download','view_reports']::permission_type[]) AS permission_value
+      ON CONFLICT (role, resource, permission_type) DO NOTHING;
+      INSERT INTO permissions (role, resource, permission_type)
+      SELECT 'supplier'::user_role, resource_value, permission_value
+      FROM unnest(ARRAY['purchases','suppliers','documents','notifications']::resource[]) AS resource_value
+      CROSS JOIN unnest(ARRAY['read','update','upload','download']::permission_type[]) AS permission_value
+      ON CONFLICT (role, resource, permission_type) DO NOTHING;
+
+      ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reason TEXT;
+      ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS previous_hash TEXT;
+      ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS event_hash TEXT;
+      ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS hash_version INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS request_id TEXT;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS audit_logs_org_event_hash_uidx
+        ON audit_logs (organization_id, event_hash)
+        WHERE event_hash IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS audit_logs_org_created_idx
+        ON audit_logs (organization_id, created_at, id);
+
+      CREATE OR REPLACE FUNCTION prevent_audit_log_mutation()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        RAISE EXCEPTION 'AUDIT_LOG_APPEND_ONLY: audit events cannot be updated or deleted';
+      END;
+      $$ LANGUAGE plpgsql;
+      DROP TRIGGER IF EXISTS audit_logs_append_only_guard ON audit_logs;
+      CREATE TRIGGER audit_logs_append_only_guard
+        BEFORE UPDATE OR DELETE ON audit_logs
+        FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_mutation();
+
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'prospective';
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER REFERENCES users(id);
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS approved_by_user_id INTEGER REFERENCES users(id);
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS is_once_off BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS once_off_expires_at TIMESTAMP;
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS risk_rating TEXT DEFAULT 'unrated';
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS service_regions JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS supported_currencies JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS category_codes JSONB DEFAULT '[]'::jsonb;
+      UPDATE suppliers
+      SET onboarding_status = 'approved',
+          approved_at = COALESCE(approved_at, updated_at, created_at, NOW())
+      WHERE LOWER(COALESCE(status, 'active')) = 'active'
+        AND onboarding_status = 'prospective'
+        AND created_by_user_id IS NULL;
+
+      CREATE TABLE IF NOT EXISTS supplier_portal_mappings (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by_user_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (organization_id, user_id)
+      );
+      INSERT INTO supplier_portal_mappings (organization_id, user_id, supplier_id, active)
+      SELECT s.organization_id, u.id, u.supplier_id, TRUE
+      FROM users u
+      INNER JOIN suppliers s ON s.id = u.supplier_id
+      WHERE u.supplier_id IS NOT NULL
+      ON CONFLICT (organization_id, user_id) DO NOTHING;
+    `);
+    console.log('Tenant security and audit chain columns ready');
+  } catch (err) {
+    console.warn('Could not ensure tenant security columns:', err instanceof Error ? err.message : err);
+  }
+}
+
+/** Add the tenant-scoped strategic sourcing workflow without changing historical procurement records. */
+export async function ensureStrategicSourcingTables(): Promise<void> {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sourcing_events (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        event_number TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        owner_user_id INTEGER NOT NULL REFERENCES users(id),
+        requisition_id INTEGER REFERENCES purchase_requisitions(id),
+        legal_entity_id INTEGER REFERENCES mdm_legal_entities(id),
+        reporting_currency_code TEXT NOT NULL DEFAULT 'ZAR',
+        deadline TIMESTAMP NOT NULL,
+        minimum_responses INTEGER NOT NULL DEFAULT 1,
+        competition_required BOOLEAN NOT NULL DEFAULT TRUE,
+        locked_fx_snapshot JSONB DEFAULT '{}'::jsonb,
+        terms TEXT,
+        version INTEGER NOT NULL DEFAULT 1,
+        published_at TIMESTAMP,
+        closed_at TIMESTAMP,
+        archived_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT sourcing_events_status_check CHECK (status IN ('DRAFT','PUBLISHED','OPEN','CLOSED','EVALUATING','AWARDED','CANCELLED','ARCHIVED')),
+        CONSTRAINT sourcing_events_minimum_responses_check CHECK (minimum_responses > 0),
+        UNIQUE (organization_id, event_number)
+      );
+
+      CREATE TABLE IF NOT EXISTS sourcing_event_lines (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        event_id INTEGER NOT NULL REFERENCES sourcing_events(id) ON DELETE CASCADE,
+        line_number INTEGER NOT NULL,
+        item_id INTEGER REFERENCES inventory_items(id),
+        description TEXT NOT NULL,
+        quantity REAL NOT NULL CHECK (quantity > 0),
+        unit_of_measure_id INTEGER REFERENCES units_of_measure(id),
+        tax_code_id INTEGER REFERENCES tax_codes(id),
+        cost_centre_id INTEGER REFERENCES mdm_cost_centres(id),
+        gl_account_code TEXT,
+        delivery_site_id INTEGER REFERENCES mdm_sites(id),
+        required_date TIMESTAMP,
+        target_unit_price REAL,
+        target_currency_code TEXT,
+        requirements JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (event_id, line_number)
+      );
+
+      CREATE TABLE IF NOT EXISTS sourcing_evaluation_criteria (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        event_id INTEGER NOT NULL REFERENCES sourcing_events(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        criterion_type TEXT NOT NULL DEFAULT 'commercial',
+        weight REAL NOT NULL CHECK (weight > 0 AND weight <= 100),
+        knockout BOOLEAN NOT NULL DEFAULT FALSE,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        guidance TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS sourcing_invitations (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        event_id INTEGER NOT NULL REFERENCES sourcing_events(id) ON DELETE CASCADE,
+        supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+        status TEXT NOT NULL DEFAULT 'INVITED',
+        invited_by_user_id INTEGER NOT NULL REFERENCES users(id),
+        invited_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        viewed_at TIMESTAMP,
+        responded_at TIMESTAMP,
+        UNIQUE (event_id, supplier_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS supplier_quotes (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        event_id INTEGER NOT NULL REFERENCES sourcing_events(id),
+        supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+        quote_number TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        version INTEGER NOT NULL DEFAULT 1,
+        supersedes_quote_id INTEGER,
+        submitted_by_user_id INTEGER REFERENCES users(id),
+        currency_code TEXT NOT NULL,
+        exchange_rate_to_reporting REAL NOT NULL DEFAULT 1 CHECK (exchange_rate_to_reporting > 0),
+        subtotal REAL NOT NULL DEFAULT 0,
+        tax_total REAL NOT NULL DEFAULT 0,
+        landed_cost_total REAL NOT NULL DEFAULT 0,
+        reporting_total REAL NOT NULL DEFAULT 0,
+        validity_date TIMESTAMP,
+        payment_terms TEXT,
+        delivery_days INTEGER,
+        notes TEXT,
+        compliance_status TEXT NOT NULL DEFAULT 'PENDING',
+        submitted_at TIMESTAMP,
+        withdrawn_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT supplier_quotes_status_check CHECK (status IN ('DRAFT','SUBMITTED','WITHDRAWN','SUPERSEDED')),
+        UNIQUE (organization_id, quote_number)
+      );
+
+      CREATE TABLE IF NOT EXISTS supplier_quote_lines (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        quote_id INTEGER NOT NULL REFERENCES supplier_quotes(id) ON DELETE CASCADE,
+        event_line_id INTEGER NOT NULL REFERENCES sourcing_event_lines(id),
+        quantity REAL NOT NULL CHECK (quantity > 0),
+        unit_price REAL NOT NULL CHECK (unit_price >= 0),
+        tax_amount REAL NOT NULL DEFAULT 0 CHECK (tax_amount >= 0),
+        freight_amount REAL NOT NULL DEFAULT 0 CHECK (freight_amount >= 0),
+        landed_cost REAL NOT NULL DEFAULT 0 CHECK (landed_cost >= 0),
+        promised_date TIMESTAMP,
+        supplier_item_code TEXT,
+        alternative_description TEXT,
+        compliant BOOLEAN NOT NULL DEFAULT TRUE,
+        exception_reason TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (quote_id, event_line_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS sourcing_clarifications (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        event_id INTEGER NOT NULL REFERENCES sourcing_events(id) ON DELETE CASCADE,
+        supplier_id INTEGER REFERENCES suppliers(id),
+        created_by_user_id INTEGER NOT NULL REFERENCES users(id),
+        subject TEXT NOT NULL,
+        message TEXT NOT NULL,
+        visibility TEXT NOT NULL DEFAULT 'PRIVATE',
+        parent_id INTEGER,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS sourcing_evaluations (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        event_id INTEGER NOT NULL REFERENCES sourcing_events(id) ON DELETE CASCADE,
+        quote_id INTEGER NOT NULL REFERENCES supplier_quotes(id) ON DELETE CASCADE,
+        criterion_id INTEGER NOT NULL REFERENCES sourcing_evaluation_criteria(id),
+        evaluator_user_id INTEGER NOT NULL REFERENCES users(id),
+        score REAL NOT NULL CHECK (score >= 0 AND score <= 100),
+        weighted_score REAL NOT NULL,
+        comment TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (quote_id, criterion_id, evaluator_user_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS sourcing_awards (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        event_id INTEGER NOT NULL REFERENCES sourcing_events(id),
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        recommended_by_user_id INTEGER NOT NULL REFERENCES users(id),
+        approved_by_user_id INTEGER REFERENCES users(id),
+        justification TEXT NOT NULL,
+        override_reason TEXT,
+        version INTEGER NOT NULL DEFAULT 1,
+        submitted_at TIMESTAMP,
+        approved_at TIMESTAMP,
+        rejected_at TIMESTAMP,
+        converted_purchase_order_id INTEGER REFERENCES purchase_orders(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT sourcing_awards_status_check CHECK (status IN ('DRAFT','SUBMITTED','APPROVED','REJECTED','CONVERTED'))
+      );
+
+      CREATE TABLE IF NOT EXISTS sourcing_award_lines (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        award_id INTEGER NOT NULL REFERENCES sourcing_awards(id) ON DELETE CASCADE,
+        event_line_id INTEGER NOT NULL REFERENCES sourcing_event_lines(id),
+        quote_line_id INTEGER NOT NULL REFERENCES supplier_quote_lines(id),
+        supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+        awarded_quantity REAL NOT NULL CHECK (awarded_quantity > 0),
+        awarded_unit_price REAL NOT NULL CHECK (awarded_unit_price >= 0),
+        currency_code TEXT NOT NULL,
+        reporting_amount REAL NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS workflow_idempotency (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        idempotency_key TEXT NOT NULL,
+        action TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id INTEGER,
+        response JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (organization_id, idempotency_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS sourcing_events_org_status_idx ON sourcing_events(organization_id, status);
+      CREATE INDEX IF NOT EXISTS sourcing_quotes_org_event_idx ON supplier_quotes(organization_id, event_id);
+      CREATE INDEX IF NOT EXISTS sourcing_awards_org_event_idx ON sourcing_awards(organization_id, event_id);
+      CREATE INDEX IF NOT EXISTS sourcing_clarifications_org_event_idx ON sourcing_clarifications(organization_id, event_id);
+      ALTER TABLE sourcing_event_lines ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER REFERENCES mdm_cost_centres(id);
+      ALTER TABLE sourcing_event_lines ADD COLUMN IF NOT EXISTS gl_account_code TEXT;
+    `);
+    console.log('Strategic sourcing tables ready');
+  } catch (err) {
+    console.warn('Could not ensure strategic sourcing tables:', err instanceof Error ? err.message : err);
+  }
+}
+
 /** Tables that gained `organization_id` + composite unique indexes; legacy DBs may lack the column. */
 const LEGACY_ORG_SCOPED_TABLES: readonly {
   table: string;
@@ -166,6 +514,12 @@ const LEGACY_ORG_SCOPED_TABLES: readonly {
     fkName: "inventory_items_organization_id_organizations_id_fk",
   },
   {
+    table: "suppliers",
+    uniqueIndexName: "suppliers_org_code_uidx",
+    uniqueIndexCols: "(organization_id, supplier_code)",
+    fkName: "suppliers_organization_id_organizations_id_fk",
+  },
+  {
     table: "app_settings",
     uniqueIndexName: "app_settings_org_uidx",
     uniqueIndexCols: "(organization_id)",
@@ -200,7 +554,6 @@ const LEGACY_ORG_SCOPED_TABLES: readonly {
 /** Tables that need `organization_id` + FK but have no composite unique on (org, …) in legacy repair. */
 const LEGACY_ORG_ID_COLUMN_ONLY: readonly { table: string; fkName: string }[] = [
   { table: "notifications", fkName: "notifications_organization_id_organizations_id_fk" },
-  { table: "suppliers", fkName: "suppliers_organization_id_organizations_id_fk" },
   { table: "activity_logs", fkName: "activity_logs_organization_id_organizations_id_fk" },
   { table: "stock_movements", fkName: "stock_movements_organization_id_organizations_id_fk" },
   { table: "supplier_contracts", fkName: "supplier_contracts_organization_id_organizations_id_fk" },
@@ -492,6 +845,7 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       );
       CREATE TABLE IF NOT EXISTS purchase_order_revisions (
         id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
         order_id INTEGER NOT NULL,
         revision_number INTEGER NOT NULL,
         snapshot JSONB NOT NULL,
@@ -1192,6 +1546,22 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS incoterm_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS currency_code TEXT NOT NULL DEFAULT 'ZAR';
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'DRAFT';
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER REFERENCES users(id);
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS approved_by_user_id INTEGER REFERENCES users(id);
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS revision_number INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS sourcing_award_id INTEGER;
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS dispatch_status TEXT NOT NULL DEFAULT 'NOT_SENT';
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS dispatch_error TEXT;
+      ALTER TABLE purchase_order_revisions ADD COLUMN IF NOT EXISTS organization_id INTEGER;
+      UPDATE purchase_order_revisions r
+      SET organization_id = po.organization_id
+      FROM purchase_orders po
+      WHERE po.id = r.order_id AND r.organization_id IS NULL;
+      ALTER TABLE purchase_order_revisions ALTER COLUMN organization_id SET NOT NULL;
+      CREATE INDEX IF NOT EXISTS purchase_order_revisions_org_order_idx
+        ON purchase_order_revisions (organization_id, order_id, revision_number);
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS tax_code_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS project_id INTEGER;
       ALTER TABLE supplier_contracts ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;
@@ -1249,7 +1619,12 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
 
     await pool.query(`
       INSERT INTO mdm_legal_entities (organization_id, code, name, default_currency_code, country_code)
-      SELECT id, UPPER(COALESCE(NULLIF(slug, ''), 'DEFAULT')), name, 'ZAR', 'ZA'
+      SELECT
+        id,
+        UPPER(COALESCE(NULLIF(slug, ''), 'DEFAULT')),
+        name,
+        COALESCE(NULLIF(default_currency_code, ''), 'ZAR'),
+        COALESCE(NULLIF(country_code, ''), 'ZA')
       FROM organizations
       ON CONFLICT (organization_id, code) DO UPDATE SET
         name = EXCLUDED.name,
@@ -1281,10 +1656,52 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         updated_at = NOW();
 
       INSERT INTO mdm_exchange_rates (organization_id, from_currency_code, to_currency_code, rate, source, effective_date, manual_override_allowed)
-      SELECT 1, c.code, 'ZAR', COALESCE(NULLIF(c.exchange_rate_to_zar, 0), CASE WHEN c.code = 'ZAR' THEN 1 ELSE 1 END), 'currency-master', DATE_TRUNC('day', NOW()), TRUE
-      FROM currencies c
-      WHERE COALESCE(c.active, TRUE) = TRUE
+      SELECT
+        o.id,
+        c.code,
+        COALESCE(NULLIF(o.default_currency_code, ''), 'ZAR'),
+        CASE
+          WHEN UPPER(c.code) = UPPER(COALESCE(NULLIF(o.default_currency_code, ''), 'ZAR')) THEN 1
+          ELSE c.exchange_rate_to_zar
+        END,
+        CASE
+          WHEN UPPER(c.code) = UPPER(COALESCE(NULLIF(o.default_currency_code, ''), 'ZAR')) THEN 'organization-base'
+          ELSE 'legacy-zar-master'
+        END,
+        DATE_TRUNC('day', NOW()),
+        TRUE
+      FROM organizations o
+      CROSS JOIN currencies c
+      WHERE COALESCE(o.active, TRUE) = TRUE
+        AND COALESCE(c.active, TRUE) = TRUE
+        AND (
+          UPPER(c.code) = UPPER(COALESCE(NULLIF(o.default_currency_code, ''), 'ZAR'))
+          OR UPPER(COALESCE(NULLIF(o.default_currency_code, ''), 'ZAR')) = 'ZAR'
+        )
+        AND COALESCE(c.exchange_rate_to_zar, 0) > 0
       ON CONFLICT (organization_id, from_currency_code, to_currency_code, effective_date) DO NOTHING;
+
+      INSERT INTO mdm_procurement_policies (organization_id, code, name, policy_type, config, active)
+      SELECT
+        o.id,
+        'RFQ-COMPETITION',
+        'Competitive sourcing threshold',
+        'sourcing',
+        jsonb_build_object(
+          'competitionRequired', TRUE,
+          'competitionThreshold', CASE UPPER(COALESCE(o.country_code, 'ZA'))
+            WHEN 'GB' THEN 2500
+            WHEN 'US' THEN 3000
+            ELSE 50000
+          END,
+          'minimumResponses', 3,
+          'allowSoleSourceException', TRUE,
+          'exceptionRequiresApproval', TRUE
+        ),
+        TRUE
+      FROM organizations o
+      WHERE COALESCE(o.active, TRUE) = TRUE
+      ON CONFLICT (organization_id, code) DO NOTHING;
 
       INSERT INTO mdm_supplier_contacts (organization_id, supplier_id, contact_type, name, email, phone, role_title, is_primary)
       SELECT s.organization_id, s.id, 'primary', COALESCE(NULLIF(s.contact_name, ''), s.name), s.email, s.phone, 'Primary contact', TRUE
@@ -1308,9 +1725,10 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
           ELSE CONCAT(REPEAT('*', GREATEST(LENGTH(s.bank_account_number) - 4, 0)), RIGHT(s.bank_account_number, 4))
         END,
         s.bank_swift,
-        COALESCE(NULLIF(s.default_currency_code, ''), 'ZAR'),
+        COALESCE(NULLIF(s.default_currency_code, ''), NULLIF(o.default_currency_code, ''), 'ZAR'),
         TRUE
       FROM suppliers s
+      JOIN organizations o ON o.id = s.organization_id
       WHERE s.bank_name IS NOT NULL AND s.bank_name <> ''
       ON CONFLICT (organization_id, supplier_id, bank_name, COALESCE(account_number_masked, '')) DO UPDATE SET
         swift_code = EXCLUDED.swift_code,
@@ -1392,9 +1810,11 @@ export async function initializeDatabase(): Promise<boolean> {
   await ensureOrganizationSubscriptionColumns();
   await ensureContractDateConstraint();
   await ensureSuppliersTaxIdColumn();
+  await ensureTenantSecurityColumns();
   await ensureLegacyOrgIdColumnsForSeed();
   await ensurePurchaseRequisitionsTables();
   await ensureProfessionalSupplyChainTables();
+  await ensureStrategicSourcingTables();
 
   try {
     // Check if users table exists by trying to query it

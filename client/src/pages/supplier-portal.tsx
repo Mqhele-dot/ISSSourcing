@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageShell } from "@/components/page-shell";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import type { PurchaseOrder } from "@/api/client";
+import { SupplierSourcingWorkspace } from "@/pages/supplier-sourcing-workspace";
 
 export default function SupplierPortalPage() {
   const { toast } = useToast();
@@ -292,7 +293,8 @@ export default function SupplierPortalPage() {
       ) : null}
 
       <Tabs defaultValue="open-pos" className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-6" data-testid="supplier-portal-tabs">
+        <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-7" data-testid="supplier-portal-tabs">
+          <TabsTrigger value="sourcing" data-testid="supplier-portal-sourcing-tab">RFQs</TabsTrigger>
           <TabsTrigger value="open-pos" data-testid="supplier-portal-open-pos-tab">Open POs</TabsTrigger>
           <TabsTrigger value="confirmations" data-testid="supplier-portal-confirmations-tab">Confirmations</TabsTrigger>
           <TabsTrigger value="delivery-updates" data-testid="supplier-portal-delivery-updates-tab">Delivery Updates</TabsTrigger>
@@ -300,6 +302,10 @@ export default function SupplierPortalPage() {
           <TabsTrigger value="payment-status" data-testid="supplier-portal-payment-status-tab">Payment Status</TabsTrigger>
           <TabsTrigger value="documents" data-testid="supplier-portal-documents-tab">Documents</TabsTrigger>
         </TabsList>
+
+      <TabsContent value="sourcing" className="space-y-4">
+        <SupplierSourcingWorkspace enabled={role === "supplier"} />
+      </TabsContent>
 
       <TabsContent value="open-pos" className="space-y-4">
       <Card className={!supplierSelected ? "opacity-70" : undefined}>

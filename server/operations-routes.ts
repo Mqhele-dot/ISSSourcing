@@ -701,6 +701,13 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           res.setHeader("X-InvTrack-Fallback", "degraded");
           throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
         }
+        if (process.env.NODE_ENV === "production") {
+          throw contractError(
+            409,
+            "CONTROLLED_PO_APPROVAL_REQUIRED",
+            "Use the controlled purchase-order submit and independent approval workflow.",
+          );
+        }
         requirePoWorkflowRole(req);
         try {
           const detail = await withTimeout(
@@ -733,6 +740,13 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         if (isOperationsDegraded()) {
           res.setHeader("X-InvTrack-Fallback", "degraded");
           throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
+        }
+        if (process.env.NODE_ENV === "production") {
+          throw contractError(
+            409,
+            "CONTROLLED_PO_DISPATCH_REQUIRED",
+            "Use controlled purchase-order dispatch so provider delivery evidence is recorded.",
+          );
         }
         requirePoWorkflowRole(req);
         try {

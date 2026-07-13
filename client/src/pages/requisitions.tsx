@@ -271,7 +271,9 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
 
   const convertMutation = useMutation({
     mutationFn: (id: number) =>
-      apiRequest("POST", `/api/purchase-requisitions/${id}/convert`, {}),
+      requestJson("POST", `/api/purchase-requisitions/${id}/convert`, {}, {
+        headers: { "Idempotency-Key": `requisition-convert-${id}` },
+      }),
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
       await invalidateRequisitionDomain(queryClient);

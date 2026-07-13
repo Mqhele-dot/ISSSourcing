@@ -4,6 +4,7 @@ import type { Express } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
+import { eq } from "drizzle-orm";
 import { storage } from "./storage";
 import type { Request, Response, NextFunction } from "express";
 import {
@@ -28,13 +29,19 @@ import {
 } from "./services/two-factor-service";
 import { sendError, sendOk } from "./api-response";
 import { organizationContextMiddleware } from "./middleware/organization-context";
-import { getActiveOrganizationId } from "./organization-context";
+import { getOptionalTenantContext } from "./organization-context";
 import { db } from "./db";
 import { appEnv } from "./config/env";
 import { logger } from "./lib/logger";
-import { countOrganizationUsers, ensurePlanLimitAllowsCreate } from "./plan-limit-service";
 
-import { organizationMembers, type User as SchemaUser } from "@shared/schema";
+import {
+  organizationMembers,
+  organizations,
+  organizationSettings,
+  userRegistrationSchema,
+  type User as SchemaUser,
+} from "@shared/schema";
+import { getCountryPack } from "./modules/master-data/country-pack-registry";
 declare global {
   namespace Express {
     interface User extends Omit<SchemaUser, 'password'> {}
@@ -91,7 +98,8 @@ function ensureAuthenticated(req: Request, res: Response, next: NextFunction) {
 
 // Middleware to check if the user has admin role
 function ensureAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated() && req.user && req.user.role === "admin") {
+  const activeRole = getOptionalTenantContext()?.userRole ?? req.user?.role;
+  if (req.isAuthenticated() && req.user && activeRole === "admin") {
     return next();
   }
   return sendError(res, 403, "FORBIDDEN_ADMIN_REQUIRED", "Forbidden: Admin access required", {
@@ -109,8 +117,9 @@ function ensureRole(role: string | string[]) {
     }
 
     const roles = Array.isArray(role) ? role : [role];
+    const activeRole = getOptionalTenantContext()?.userRole ?? req.user.role;
     
-    if (typeof req.user.role === "string" && roles.includes(req.user.role)) {
+    if (typeof activeRole === "string" && roles.includes(activeRole)) {
       return next();
     }
     
@@ -133,7 +142,7 @@ function ensurePermission(resource: string, permissionType: string) {
       });
     }
 
-    const userRole = req.user.role;
+    const userRole = getOptionalTenantContext()?.userRole ?? req.user.role;
     
     // Admin always has all permissions
     if (userRole === "admin") {
@@ -243,14 +252,15 @@ function redactAuditDetails(value: unknown): unknown {
 }
 
 async function getEffectivePermissions(user: Express.User): Promise<Array<{ resource: string; permissionType: string }>> {
-  if (user.role === "admin") {
+  const activeRole = getOptionalTenantContext()?.userRole ?? user.role;
+  if (activeRole === "admin") {
     const all = await storage.getAllPermissions();
     return all.map(({ resource, permissionType }) => ({ resource, permissionType }));
   }
 
-  const rolePermissions = await storage.getRolePermissions(user.role as any);
+  const rolePermissions = await storage.getRolePermissions(activeRole as any);
   const effective = rolePermissions.map(({ resource, permissionType }) => ({ resource, permissionType }));
-  if (user.role === "custom") {
+  if (activeRole === "custom") {
     const customRoleId = await storage.getUserCustomRoleId(user.id);
     if (customRoleId) {
       const custom = await storage.getCustomRolePermissions(customRoleId);
@@ -438,7 +448,14 @@ export function setupAuth(app: Express) {
     const requiresTwoFactor = req.user.twoFactorEnabled && !req.session.twoFactorAuthenticated;
     
     // Don't send sensitive data to client
-    const safeUser = { ...req.user };
+    const tenantContext = getOptionalTenantContext();
+    const safeUser = {
+      ...req.user,
+      role: tenantContext?.userRole ?? req.user.role,
+      activeOrganizationId: tenantContext?.organizationId ?? null,
+      membershipId: tenantContext?.membershipId ?? null,
+      organizationRole: tenantContext?.membershipRole ?? null,
+    };
     
     return sendOk(res, {
       ...safeUser,
@@ -449,7 +466,7 @@ export function setupAuth(app: Express) {
   app.get("/api/user/permissions", ensureAuthenticated, async (req, res) => {
     try {
       return sendOk(res, {
-        role: req.user!.role,
+        role: getOptionalTenantContext()?.userRole ?? req.user!.role,
         permissions: await getEffectivePermissions(req.user!),
       });
     } catch (error) {
@@ -460,40 +477,77 @@ export function setupAuth(app: Express) {
 
   // Route to register new user with rate limiting
   app.post("/api/register", registerRateLimiter, async (req, res) => {
+    let createdOrganizationId: number | null = null;
     try {
+      const parsedRegistration = userRegistrationSchema.safeParse(req.body);
+      if (!parsedRegistration.success) {
+        return sendError(res, 400, "REGISTRATION_VALIDATION_FAILED", "Registration details are invalid.", {
+          details: { fieldIssues: parsedRegistration.error.flatten().fieldErrors },
+        });
+      }
+      const registration = parsedRegistration.data;
       // Check if username already exists
-      const existingUser = await storage.getUserByUsername(req.body.username);
+      const existingUser = await storage.getUserByUsername(registration.username);
       if (existingUser) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
       // Check if email already exists
-      if (req.body.email) {
-        const existingEmail = await storage.getUserByEmail(req.body.email);
+      if (registration.email) {
+        const existingEmail = await storage.getUserByEmail(registration.email);
         if (existingEmail) {
           return res.status(400).json({ message: "Email already exists" });
         }
       }
 
-      const passwordPolicyError = validatePasswordPolicy(req.body.password);
+      const passwordPolicyError = validatePasswordPolicy(registration.password);
       if (passwordPolicyError) {
         return res.status(400).json({ message: passwordPolicyError });
       }
 
-      const organizationId = getActiveOrganizationId();
-      const organizationUserCount = await countOrganizationUsers(organizationId);
-      if (!(await ensurePlanLimitAllowsCreate(res, "users", organizationUserCount))) return;
-
       // Create new user with hashed password
-      const hashedPassword = await hashPassword(req.body.password);
-      
-      // Create user data object (without confirmPassword)
-      const { confirmPassword, ...userDataWithoutConfirm } = req.body;
+      const hashedPassword = await hashPassword(registration.password);
+      const pack = getCountryPack(registration.countryCode);
+      const baseSlug = registration.organizationName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 48) || `organization-${Date.now()}`;
+      let slug = baseSlug;
+      let createdOrganization: typeof organizations.$inferSelect | undefined;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        try {
+          [createdOrganization] = await db
+            .insert(organizations)
+            .values({
+              name: registration.organizationName,
+              slug,
+              countryCode: pack.code,
+              defaultCurrencyCode: pack.defaultCurrencyCode,
+              locale: pack.locale,
+              timezone: pack.timezone,
+            })
+            .returning();
+          break;
+        } catch {
+          slug = `${baseSlug}-${Date.now()}-${attempt + 1}`;
+        }
+      }
+      if (!createdOrganization) {
+        return sendError(res, 409, "ORGANIZATION_CREATE_FAILED", "The organization could not be created.", {
+          hint: "Try a different organization name or contact support.",
+        });
+      }
+      const organizationId = createdOrganization.id;
+      createdOrganizationId = organizationId;
       
       const autoVerifyEmail = appEnv.allowUnverifiedEmailLogin;
       const userData = {
-        ...userDataWithoutConfirm,
-        defaultOrganizationId: userDataWithoutConfirm.defaultOrganizationId ?? organizationId,
+        username: registration.username,
+        email: registration.email,
+        fullName: registration.fullName,
+        role: "admin" as const,
+        defaultOrganizationId: organizationId,
         password: hashedPassword,
         lastPasswordChange: new Date(),
         emailVerified: autoVerifyEmail,
@@ -520,9 +574,19 @@ export function setupAuth(app: Express) {
         .values({
           organizationId,
           userId: newUser.id,
-          role: userData.role === "admin" ? "admin" : "member",
+          role: "owner",
+          applicationRole: "admin",
+          active: true,
+          status: "active",
         })
         .onConflictDoNothing();
+      await db.insert(organizationSettings).values({
+        organizationId,
+        displayName: registration.organizationName,
+        planTier: "starter",
+        subscriptionStatus: "active",
+        billingProvider: "local",
+      }).onConflictDoNothing();
       
       // Create verification token
       const verificationToken = await storage.createVerificationToken(newUser.id, 'email', 24 * 60); // 24 hours expiry
@@ -536,15 +600,26 @@ export function setupAuth(app: Express) {
       }
 
       // Return success - email is automatically verified in development
-      res.status(201).json({ 
+      return sendOk(res, {
         message: autoVerifyEmail
           ? "Registration successful! You can now log in with your credentials."
           : "Registration successful! Please verify your email before logging in.",
-        requiresEmailVerification: !autoVerifyEmail
-      });
+        requiresEmailVerification: !autoVerifyEmail,
+        organization: {
+          id: createdOrganization.id,
+          name: createdOrganization.name,
+          countryCode: createdOrganization.countryCode,
+          defaultCurrencyCode: createdOrganization.defaultCurrencyCode,
+        },
+      }, 201);
     } catch (error) {
       console.error("Registration error:", error);
-      res.status(500).json({ message: "Error creating user account" });
+      if (createdOrganizationId) {
+        await db.delete(organizations).where(eq(organizations.id, createdOrganizationId)).catch(() => undefined);
+      }
+      return sendError(res, 500, "REGISTRATION_FAILED", "The account could not be created.", {
+        hint: "Retry the registration. If the problem continues, contact support with the request ID.",
+      });
     }
   });
 

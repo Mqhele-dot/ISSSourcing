@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  approvePurchaseOrder,
+  approvePurchaseOrderRecord,
+  dispatchPurchaseOrderRecord,
   receivePurchaseOrder,
-  sendPurchaseOrder,
+  submitPurchaseOrderForApproval,
   transitionPurchaseOrderStatus,
-  type PurchaseOrderSendBody,
   type PurchaseReceiveResult,
 } from "../api/purchase-orders.api";
 import type { PurchaseOrderDetail } from "@/api/types";
@@ -22,9 +22,12 @@ export function useApprovePurchaseOrderMutation(po: string) {
   const poNumber = normalizeOperationalPoParam(po);
   return useMutation({
     mutationKey: ["purchase-order-approve", poNumber],
-    mutationFn: async () => {
+    mutationFn: async (input: { purchaseOrderId: number; action: "submit" | "approve"; reason?: string }) => {
       assertPoNumberForMutation(poNumber);
-      return approvePurchaseOrder(poNumber);
+      if (input.action === "submit") {
+        return submitPurchaseOrderForApproval(input.purchaseOrderId, input.reason);
+      }
+      return approvePurchaseOrderRecord(input.purchaseOrderId, input.reason ?? "");
     },
     onSuccess: async () => {
       await invalidatePurchaseOrderOperationalQueries(queryClient, poNumber);
@@ -38,9 +41,9 @@ export function useSendPurchaseOrderMutation(po: string) {
   const poNumber = normalizeOperationalPoParam(po);
   return useMutation({
     mutationKey: ["purchase-order-send", poNumber],
-    mutationFn: async (sendBody?: PurchaseOrderSendBody) => {
+    mutationFn: async (input: { purchaseOrderId: number; email: string }) => {
       assertPoNumberForMutation(poNumber);
-      return sendPurchaseOrder(poNumber, sendBody);
+      return dispatchPurchaseOrderRecord(input.purchaseOrderId, input.email);
     },
     onSuccess: async () => {
       await invalidatePurchaseOrderOperationalQueries(queryClient, poNumber);

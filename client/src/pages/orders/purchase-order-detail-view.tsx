@@ -17,7 +17,6 @@ import {
   Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
@@ -65,11 +64,9 @@ import { fetchApprovalSuggestions, fetchShipments } from "@/api/client";
 import type { PurchaseReceiveResult } from "@/api/types";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import {
-  procurementPoApproveUrl,
   procurementPoCommercialUrl,
   procurementPoReceiveUrl,
   procurementPoRevisionsUrl,
-  procurementPoSendUrl,
 } from "@/api/procurement-purchase-order-paths";
 import { useAuth } from "@/hooks/use-auth";
 import { PoReceivePanel } from "./po-receive-panel";
@@ -123,8 +120,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [currencyCode, setCurrencyCode] = useState("ZAR");
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [receiveLineIssues, setReceiveLineIssues] = useState<ReceiveLineFieldError[]>([]);
-  const [createShipmentOnSend, setCreateShipmentOnSend] = useState(false);
-  const [sendShipmentCarrier, setSendShipmentCarrier] = useState("");
+  const [approvalReason, setApprovalReason] = useState("");
+  const [dispatchEmail, setDispatchEmail] = useState("");
   const [receiveShipmentChoice, setReceiveShipmentChoice] = useState<string>("auto");
   const [receiveGrn, setReceiveGrn] = useState("");
   const [commercialSaveError, setCommercialSaveError] = useState<string | null>(null);
@@ -446,16 +443,21 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   );
 
   const updateStatus = (action: "approve" | "send") => {
-    if (!poNumber) return;
+    if (!poNumber || !data) return;
+    const normalizedStatus = String(data.status).trim().toLowerCase();
     const onErr = (statusError: Error) => {
       const err = statusError as Error & { status?: number };
-      const actionLabel = action === "approve" ? "Approve PO" : "Send PO";
+      const actionLabel = action === "approve"
+        ? normalizedStatus === "draft" ? "Submit PO" : "Approve PO"
+        : "Dispatch PO";
       toast({
         title: "Update failed",
         description: formatMutationError(
           actionLabel,
           "POST",
-          action === "approve" ? procurementPoApproveUrl(poNumber) : procurementPoSendUrl(poNumber),
+          action === "approve"
+            ? `/api/purchase-orders/${data.id}/${normalizedStatus === "draft" ? "submit" : "approve"}`
+            : `/api/purchase-orders/${data.id}/send-email`,
           err,
         ),
         variant: "destructive",
@@ -469,14 +471,27 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
 
     if (action === "approve") {
       if (approvePurchaseOrderMutation.isPending) return;
-      approvePurchaseOrderMutation.mutate(undefined, { onError: onErr });
+      const workflowAction = normalizedStatus === "draft" ? "submit" : "approve";
+      approvePurchaseOrderMutation.mutate(
+        { purchaseOrderId: data.id, action: workflowAction, reason: approvalReason },
+        {
+          onError: onErr,
+          onSuccess: () => {
+            setApprovalReason("");
+            toast({ title: workflowAction === "submit" ? "PO submitted" : "PO approved" });
+          },
+        },
+      );
       return;
     }
     if (sendPurchaseOrderMutation.isPending) return;
-    const sendBody = createShipmentOnSend
-      ? { shipment: { create: true, carrier: sendShipmentCarrier.trim() || "Carrier TBD" } }
-      : undefined;
-    sendPurchaseOrderMutation.mutate(sendBody, { onError: onErr });
+    sendPurchaseOrderMutation.mutate(
+      { purchaseOrderId: data.id, email: dispatchEmail },
+      {
+        onError: onErr,
+        onSuccess: () => toast({ title: "PO dispatched", description: `Delivery accepted for ${dispatchEmail.trim()}.` }),
+      },
+    );
   };
 
   const submitReceive = () => {
@@ -731,18 +746,24 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
             { href: "#po-activity", label: "Activity", icon: Activity },
           ] as const;
 
-          const approveDisabledMsg = approveActionDisabledReason({
+          const baseApproveDisabledMsg = approveActionDisabledReason({
             poNumber,
             status: detail.status,
             role: user?.role ?? undefined,
             mutationPending: statusMutationPending,
           });
-          const sendDisabledMsg = sendActionDisabledReason({
+          const approveDisabledMsg = baseApproveDisabledMsg
+            ?? (String(detail.status).toLowerCase() === "open" && approvalReason.trim().length < 5
+              ? "An independent approval reason of at least 5 characters is required."
+              : null);
+          const baseSendDisabledMsg = sendActionDisabledReason({
             poNumber,
             status: detail.status,
             role: user?.role ?? undefined,
             mutationPending: statusMutationPending,
           });
+          const sendDisabledMsg = baseSendDisabledMsg
+            ?? (!/^\S+@\S+\.\S+$/.test(dispatchEmail.trim()) ? "Enter the verified supplier dispatch email." : null);
 
           return (
             <>
@@ -812,36 +833,30 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                         onClick={() => updateStatus("approve")}
                       >
                         <CheckCircle2 className="h-4 w-4" aria-hidden />
-                        Approve
+                        {String(detail.status).toLowerCase() === "draft" ? "Submit for approval" : "Approve"}
                       </Button>
                     </Can>
-                    <div
-                      className="flex min-w-[min(100%,280px)] flex-col gap-2 sm:flex-row sm:items-center"
-                      data-testid="po-send-shipment-options"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="po-send-create-shipment"
-                          checked={createShipmentOnSend}
-                          onCheckedChange={(v) => setCreateShipmentOnSend(v === true)}
-                          disabled={!!sendDisabledMsg}
-                        />
-                        <Label htmlFor="po-send-create-shipment" className="cursor-pointer text-sm font-normal">
-                          Create in-transit shipment on send
-                        </Label>
-                      </div>
-                      {createShipmentOnSend ? (
-                        <Input
-                          id="po-send-carrier"
-                          className="h-9 max-w-[220px]"
-                          placeholder="Carrier name"
-                          value={sendShipmentCarrier}
-                          onChange={(e) => setSendShipmentCarrier(e.target.value)}
-                          disabled={!!sendDisabledMsg}
-                          aria-label="Shipment carrier name"
-                        />
-                      ) : null}
-                    </div>
+                    {String(detail.status).toLowerCase() === "open" ? (
+                      <Input
+                        id="po-approval-reason"
+                        className="h-9 min-w-[240px]"
+                        placeholder="Independent approval reason"
+                        value={approvalReason}
+                        onChange={(event) => setApprovalReason(event.target.value)}
+                        aria-label="Purchase order approval reason"
+                      />
+                    ) : null}
+                    {String(detail.status).toLowerCase() === "approved" ? (
+                      <Input
+                        id="po-dispatch-email"
+                        type="email"
+                        className="h-9 min-w-[240px]"
+                        placeholder="supplier@example.com"
+                        value={dispatchEmail}
+                        onChange={(event) => setDispatchEmail(event.target.value)}
+                        aria-label="Purchase order dispatch email"
+                      />
+                    ) : null}
                     <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
                       <Button
                         variant="outline"
@@ -852,7 +867,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                         onClick={() => updateStatus("send")}
                       >
                         <Send className="h-4 w-4" aria-hidden />
-                        Send
+                        Dispatch
                       </Button>
                     </Can>
                     </div>

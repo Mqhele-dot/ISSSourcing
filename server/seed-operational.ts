@@ -80,8 +80,12 @@ export async function seedOperationalIfEmpty(): Promise<{
     const pos = (await pool.query<{ order_number: string }>("SELECT order_number FROM purchase_orders ORDER BY id LIMIT 12")).rows;
     for (const [index, row] of pos.entries()) {
       await pool.query(
-        `INSERT INTO shipments (po_number, carrier, status, eta, created_at, updated_at)
-         VALUES ($1, $2, $3, now() + interval '2 days', now() - ($4::int * interval '45 minutes'), now())`,
+        `INSERT INTO shipments (organization_id, po_number, carrier, status, eta, created_at, updated_at)
+         SELECT purchase_order.organization_id, $1, $2, $3,
+                now() + interval '2 days', now() - ($4::int * interval '45 minutes'), now()
+         FROM purchase_orders purchase_order
+         WHERE purchase_order.order_number = $1
+         LIMIT 1`,
         [
           row.order_number,
           index % 2 === 0 ? "Demo Carrier" : "Global Freight",

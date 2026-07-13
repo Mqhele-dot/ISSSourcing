@@ -8,6 +8,8 @@ import {
 } from "@/lib/routes/section-metadata";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { requestJson } from "@/lib/queryClient";
 import { useTheme } from "@/components/theme-provider";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import {
@@ -39,6 +41,7 @@ import {
   Receipt,
   RefreshCw,
   ScanSearch,
+  Scale,
   ScrollText,
   ChevronsLeft,
   ChevronsRight,
@@ -66,6 +69,16 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
   const [location] = useLocation();
   const { theme, setTheme } = useTheme();
   const isDesktopNav = useMediaQuery("(min-width: 1024px)");
+  const { data: releaseScope } = useQuery<{
+    boundary: "procurement" | "full";
+    productionRuntime: boolean;
+    previewMode: boolean;
+    modules: Record<string, boolean>;
+  }>({
+    queryKey: ["/api/release-scope"],
+    queryFn: () => requestJson("GET", "/api/release-scope"),
+    staleTime: 5 * 60_000,
+  });
 
   const iconMap = {
     activity: Activity,
@@ -95,6 +108,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
     receipt: Receipt,
     "refresh-cw": RefreshCw,
     "scan-search": ScanSearch,
+    scale: Scale,
     "scroll-text": ScrollText,
     settings: Settings,
     "shield-check": ShieldCheck,
@@ -192,6 +206,18 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
   const showNavPath = (path: string, desktopOnly?: boolean) =>
     isDesktopNav || (!NAV_DESKTOP_ONLY_PATHS.has(path) && !desktopOnly);
 
+  const productionAreaForSection = (key: string): string | null => {
+    if (key === "operations") return "logistics";
+    if (key === "inventory") return "inventory";
+    if (key === "finance") return "finance";
+    return null;
+  };
+
+  const showSection = (key: string) => {
+    const area = productionAreaForSection(key);
+    return !area || releaseScope?.modules?.[area] !== false;
+  };
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -256,7 +282,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
         <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-4">
           <div className="space-y-1">
             {/* Order mirrors `APP_NAV_SECTIONS`; "Learning" / Get Educated is the final section. */}
-            {APP_NAV_SECTIONS.map((section) => (
+            {APP_NAV_SECTIONS.filter((section) => showSection(section.key)).map((section) => (
               <div key={section.key}>
                 <SectionTitle>{section.label}</SectionTitle>
                 {section.items
@@ -278,7 +304,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
                           item.path === APP_ROUTES.training.getEducated ? "sidebar-get-educated" : undefined
                         }
                       >
-                        {item.label}
+                        {item.label}{releaseScope?.previewMode && productionAreaForSection(section.key) ? " (Preview)" : ""}
                       </NavItem>
                     );
                   })}

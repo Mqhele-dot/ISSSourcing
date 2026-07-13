@@ -5,6 +5,10 @@ const BASE_URL = process.env.BASE_URL || `http://127.0.0.1:${PORT}`;
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
 const suites = {
+  sourcing: [
+    ["run", "test:commercial-procurement-foundation"],
+    ["run", "test:sourcing-workflow"],
+  ],
   quick: [
     ["run", "check"],
     ["run", "lint"],
@@ -54,6 +58,7 @@ function hasFlag(name) {
 }
 
 function suiteName() {
+  if (hasFlag("--sourcing")) return "sourcing";
   if (hasFlag("--production-smoke")) return "productionSmoke";
   if (hasFlag("--delta")) return "delta";
   return "quick";

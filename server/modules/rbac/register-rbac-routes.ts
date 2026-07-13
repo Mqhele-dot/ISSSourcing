@@ -3,10 +3,13 @@ import { storage } from "../../storage";
 import type { UserRole, Resource, PermissionType } from "@shared/schema";
 import { getPermissionCatalogPayload } from "../../rbac/permission-catalog";
 import { sendError, sendOk } from "../../api-response";
+import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
+import { appendAuditEvent } from "../../services/audit-chain-service";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
   ensurePermission: (resource: string, permission: string) => RequestHandler;
+  ensureTwoFactorAuthenticated: RequestHandler;
 };
 
 /**
@@ -26,7 +29,8 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
       const permissions: Record<string, Record<string, boolean>> = {};
       let customRoleId: number | undefined;
 
-      if (user.role === "custom") {
+      const activeRole = getOptionalTenantContext()?.userRole ?? user.role;
+      if (activeRole === "custom") {
         customRoleId = (await storage.getUserCustomRoleId(user.id)) ?? undefined;
       }
 
@@ -34,8 +38,8 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
         permissions[resource] = {};
         for (const permissionType of permissionTypes) {
           const hasSystemPermission =
-            user.role === "admin" ||
-            (await storage.checkPermission(user.role as string, resource, permissionType));
+            activeRole === "admin" ||
+            (await storage.checkPermission(activeRole as string, resource, permissionType));
           const hasCustomPermission =
             !hasSystemPermission && customRoleId
               ? await storage.checkCustomRolePermission(
@@ -50,7 +54,7 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
 
       return sendOk(res, {
         userId: user.id,
-        role: user.role,
+        role: activeRole,
         customRoleId: customRoleId ?? null,
         permissions,
       });
@@ -71,7 +75,7 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/roles", async (_req: Request, res: Response) => {
+  app.get("/api/roles", auth.ensureAuthenticated, auth.ensurePermission("custom_roles", "read"), async (_req: Request, res: Response) => {
     try {
       const roles = await storage.getSystemRoles();
       res.json(roles);
@@ -81,7 +85,7 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/roles/:role/permissions", async (req: Request, res: Response) => {
+  app.get("/api/roles/:role/permissions", auth.ensureAuthenticated, auth.ensurePermission("custom_roles", "read"), async (req: Request, res: Response) => {
     try {
       const role = req.params.role as UserRole;
 
@@ -127,7 +131,7 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/custom-roles", auth.ensurePermission("custom_roles", "create"), async (req: Request, res: Response) => {
+  app.post("/api/custom-roles", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("custom_roles", "create"), async (req: Request, res: Response) => {
     try {
       const { name, description, isActive } = req.body;
 
@@ -148,6 +152,18 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
         isSystemRole: false,
       });
 
+      await appendAuditEvent({
+        organizationId: getActiveOrganizationId(),
+        actor: { userId: req.user!.id },
+        action: "CUSTOM_ROLE_CREATED",
+        resourceType: "custom_role",
+        resourceId: newRole.id,
+        after: newRole,
+        requestId: String(res.locals.requestId ?? "unknown-request-id"),
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent") ?? null,
+      });
+
       res.status(201).json(newRole);
     } catch (error) {
       console.error("Error creating custom role:", error);
@@ -155,7 +171,7 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.put("/api/custom-roles/:id", auth.ensurePermission("custom_roles", "update"), async (req: Request, res: Response) => {
+  app.put("/api/custom-roles/:id", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("custom_roles", "update"), async (req: Request, res: Response) => {
     try {
       const roleId = parseInt(req.params.id);
       if (isNaN(roleId)) {
@@ -182,6 +198,20 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
         isActive,
       });
 
+      await appendAuditEvent({
+        organizationId: getActiveOrganizationId(),
+        actor: { userId: req.user!.id },
+        action: "CUSTOM_ROLE_UPDATED",
+        resourceType: "custom_role",
+        resourceId: roleId,
+        before: existingRole,
+        after: updatedRole,
+        reason: typeof req.body?.reason === "string" ? req.body.reason : null,
+        requestId: String(res.locals.requestId ?? "unknown-request-id"),
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent") ?? null,
+      });
+
       res.json(updatedRole);
     } catch (error) {
       console.error("Error updating custom role:", error);
@@ -189,7 +219,7 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.delete("/api/custom-roles/:id", auth.ensurePermission("custom_roles", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/custom-roles/:id", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("custom_roles", "delete"), async (req: Request, res: Response) => {
     try {
       const roleId = parseInt(req.params.id);
       if (isNaN(roleId)) {
@@ -206,6 +236,18 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
         return res.status(500).json({ message: "Failed to delete custom role" });
       }
 
+      await appendAuditEvent({
+        organizationId: getActiveOrganizationId(),
+        actor: { userId: req.user!.id },
+        action: "CUSTOM_ROLE_DELETED",
+        resourceType: "custom_role",
+        resourceId: roleId,
+        before: existingRole,
+        reason: typeof req.body?.reason === "string" ? req.body.reason : null,
+        requestId: String(res.locals.requestId ?? "unknown-request-id"),
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent") ?? null,
+      });
       res.status(204).end();
     } catch (error) {
       console.error("Error deleting custom role:", error);
@@ -233,7 +275,7 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/custom-roles/:id/permissions", auth.ensurePermission("custom_roles", "update"), async (req: Request, res: Response) => {
+  app.post("/api/custom-roles/:id/permissions", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("custom_roles", "update"), async (req: Request, res: Response) => {
     try {
       const roleId = parseInt(req.params.id);
       if (isNaN(roleId)) {
@@ -311,6 +353,17 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
       }
 
       const newPermission = await storage.addCustomRolePermission(roleId, resource, permissionType);
+      await appendAuditEvent({
+        organizationId: getActiveOrganizationId(),
+        actor: { userId: req.user!.id },
+        action: "CUSTOM_ROLE_PERMISSION_ADDED",
+        resourceType: "custom_role",
+        resourceId: roleId,
+        after: { resource, permissionType, permissionId: newPermission.id },
+        requestId: String(res.locals.requestId ?? "unknown-request-id"),
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent") ?? null,
+      });
       res.status(201).json(newPermission);
     } catch (error) {
       console.error("Error adding permission to custom role:", error);
@@ -320,6 +373,8 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
 
   app.delete(
     "/api/custom-roles/:roleId/permissions/:permissionId",
+    auth.ensureAuthenticated,
+    auth.ensureTwoFactorAuthenticated,
     auth.ensurePermission("custom_roles", "update"),
     async (req: Request, res: Response) => {
       try {

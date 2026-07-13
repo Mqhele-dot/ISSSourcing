@@ -289,7 +289,7 @@ async function count(sqlText: string, values: QueryValue[] = []): Promise<number
   return Number(result.rows[0]?.count ?? 0);
 }
 
-async function getMdmDisableDependencies(
+export async function getMdmDisableDependencies(
   domain: MdmDomain,
   organizationId: number,
   id: number,
@@ -991,8 +991,32 @@ export async function getMdmControlCentreHealth(organizationId: number) {
 }
 
 export async function getRequisitionContext(organizationId: number) {
-  const [currencies, departments, costCentres, taxCodes, uoms, suppliers, items, approvalRules, organizationTaxDefault] = await Promise.all([
+  const organizationResult = await pool.query(
+    "SELECT default_currency_code, country_code FROM organizations WHERE id = $1 AND COALESCE(active, TRUE) = TRUE LIMIT 1",
+    [organizationId],
+  );
+  const organization = organizationResult.rows[0];
+  if (!organization) throw new Error("Active organization not found for requisition context");
+  const defaultCurrencyCode = String(organization.default_currency_code ?? "ZAR").trim().toUpperCase();
+  const [currencies, exchangeRates, departments, costCentres, taxCodes, uoms, suppliers, items, approvalRules, organizationTaxDefault] = await Promise.all([
     pool.query("SELECT * FROM currencies WHERE COALESCE(active, TRUE) = TRUE ORDER BY code ASC"),
+    pool.query(
+      `
+        SELECT DISTINCT ON (UPPER(from_currency_code))
+          UPPER(from_currency_code) AS from_currency_code,
+          rate,
+          source,
+          effective_date
+        FROM mdm_exchange_rates
+        WHERE organization_id = $1
+          AND UPPER(to_currency_code) = $2
+          AND COALESCE(active, TRUE) = TRUE
+          AND effective_date <= NOW()
+          AND (expires_at IS NULL OR expires_at > NOW())
+        ORDER BY UPPER(from_currency_code), effective_date DESC, id DESC
+      `,
+      [organizationId, defaultCurrencyCode],
+    ),
     pool.query("SELECT * FROM departments WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code ASC", [
       organizationId,
     ]),
@@ -1005,7 +1029,9 @@ export async function getRequisitionContext(organizationId: number) {
       `
         SELECT id, name, supplier_code, status, default_currency_code, payment_terms_id, tax_code_id, default_department_id, risk_status
         FROM suppliers
-        WHERE organization_id = $1 AND COALESCE(status, 'active') = 'active'
+        WHERE organization_id = $1
+          AND COALESCE(status, 'active') = 'active'
+          AND COALESCE(onboarding_status, 'prospective') = 'approved'
         ORDER BY name ASC
       `,
       [organizationId],
@@ -1050,9 +1076,21 @@ export async function getRequisitionContext(organizationId: number) {
       [organizationId],
     ),
   ]);
+  const rates = new Map(
+    exchangeRates.rows.map((row) => [String(row.from_currency_code).toUpperCase(), Number(row.rate)]),
+  );
   return {
-    defaultCurrencyCode: "ZAR",
-    currencies: currencies.rows.map(rowToCamel),
+    defaultCurrencyCode,
+    countryCode: String(organization.country_code ?? "ZA").toUpperCase(),
+    currencies: currencies.rows.map((row) =>
+      rowToCamel({
+        ...row,
+        exchange_rate_to_zar:
+          String(row.code).toUpperCase() === defaultCurrencyCode
+            ? 1
+            : rates.get(String(row.code).toUpperCase()) ?? 0,
+      }),
+    ),
     departments: departments.rows.map(rowToCamel),
     costCentres: costCentres.rows.map(rowToCamel),
     taxCodes: taxCodes.rows.map(rowToCamel),
@@ -1069,7 +1107,7 @@ export async function getRequisitionContext(organizationId: number) {
       requiresTaxCode: true,
       requiresCurrency: true,
       onceOffItemRequiresReason: true,
-      approvalValueCurrency: "ZAR",
+      approvalValueCurrency: defaultCurrencyCode,
     },
   };
 }

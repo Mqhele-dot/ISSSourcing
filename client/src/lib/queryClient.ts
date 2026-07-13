@@ -442,7 +442,7 @@ export async function invTrackFetch<T>(
   method: string,
   url: string,
   data?: unknown,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; headers?: HeadersInit },
 ): Promise<{ data: T; meta: InvTrackMeta }> {
   let csrfRetried = false;
 
@@ -459,7 +459,7 @@ export async function invTrackFetch<T>(
     }
     let res: Response;
     try {
-      const headers = await buildRequestHeaders(method, undefined, {
+      const headers = await buildRequestHeaders(method, options?.headers, {
         contentType: data != null ? "application/json" : false,
       });
       res = await fetch(url, {
@@ -769,8 +769,13 @@ function attachRequestId(err: Error, requestId: string | null | undefined): Erro
 }
 
 /** Preferred: single wrapper with envelope unwrap and meta. Use for all new code. */
-export async function requestJson<T>(method: string, url: string, data?: unknown): Promise<T> {
-  const { data: out } = await invTrackFetch<T>(method, url, data);
+export async function requestJson<T>(
+  method: string,
+  url: string,
+  data?: unknown,
+  options?: { signal?: AbortSignal; headers?: HeadersInit },
+): Promise<T> {
+  const { data: out } = await invTrackFetch<T>(method, url, data, options);
   return out;
 }
 

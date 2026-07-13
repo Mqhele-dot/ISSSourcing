@@ -4,6 +4,7 @@ type ApiErrorBody = {
   code: string;
   message: string;
   hint?: string;
+  fieldIssues?: Record<string, string[]>;
   details?: unknown;
   requestId: string;
 };
@@ -34,7 +35,7 @@ export function sendError(
   status: number,
   code: string,
   message: string,
-  options?: { hint?: string; details?: unknown },
+  options?: { hint?: string; fieldIssues?: Record<string, string[]>; details?: unknown },
 ) {
   const requestId = resolveRequestId(res);
   return res.status(status).json({
@@ -43,6 +44,7 @@ export function sendError(
       code,
       message,
       hint: options?.hint,
+      fieldIssues: options?.fieldIssues,
       details: options?.details,
       requestId,
     } satisfies ApiErrorBody,

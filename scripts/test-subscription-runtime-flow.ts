@@ -167,21 +167,44 @@ async function ensureUsersAtLimit() {
   let count = await countRows("users");
   for (let i = count; i < 3; i++) {
     const username = `${TEST_PREFIX}-user-${i}`;
-    const result = await apiJsonRequest("/register", {
-      method: "POST",
-      body: {
-        username,
-        email: `${username}@example.com`,
-        password: "Admin123!Test",
-        confirmPassword: "Admin123!Test",
-        fullName: `Subscription Runtime ${i}`,
-        role: "viewer",
-      },
-    });
-    assert.equal(result.status, 201, `user registration to reach Starter limit failed: ${JSON.stringify(result.json)}`);
+    const seeded = await pool.query<{ id: number }>(
+      `
+        INSERT INTO users (username, password, email, full_name, role, active, email_verified)
+        SELECT $1, password, $2, $3, 'viewer', TRUE, TRUE
+        FROM users
+        WHERE id = 1
+        RETURNING id
+      `,
+      [username, `${username}@example.com`, `Subscription Runtime ${i}`],
+    );
+    assert.ok(seeded.rows[0]?.id, "A deterministic user should be seeded for the plan-limit fixture");
+    await pool.query(
+      `
+        INSERT INTO organization_members (
+          organization_id, user_id, role, application_role, active, status
+        ) VALUES ($1, $2, 'member', 'viewer', TRUE, 'active')
+      `,
+      [ORG_ID, seeded.rows[0].id],
+    );
     count++;
   }
   assert.ok(count >= 3, "Starter user usage should be at or above the limit before 4th-user proof");
+}
+
+async function seedDetachedUser(suffix: string) {
+  const username = `${TEST_PREFIX}-${suffix}`;
+  const seeded = await pool.query<{ id: number }>(
+    `
+      INSERT INTO users (username, password, email, full_name, role, active, email_verified)
+      SELECT $1, password, $2, $3, 'viewer', TRUE, TRUE
+      FROM users
+      WHERE id = 1
+      RETURNING id
+    `,
+    [username, `${username}@example.com`, "Blocked Starter User"],
+  );
+  assert.ok(seeded.rows[0]?.id, "A detached user should be available for membership-limit proof");
+  return seeded.rows[0].id;
 }
 
 async function ensureWarehousesAtLimit(adminCookie: string) {
@@ -237,15 +260,15 @@ async function main() {
     console.log("  ok active org set to Starter through local adapter");
 
     await ensureUsersAtLimit();
-    const blockedUser = await apiJsonRequest("/register", {
+    const blockedUserId = await seedDetachedUser("blocked-user");
+    const blockedUser = await apiJsonRequest("/organization/members", {
       method: "POST",
+      cookie: adminCookie,
       body: {
-        username: `${TEST_PREFIX}-blocked-user`,
-        email: `${TEST_PREFIX}-blocked-user@example.com`,
-        password: "Admin123!Test",
-        confirmPassword: "Admin123!Test",
-        fullName: "Blocked Starter User",
-        role: "viewer",
+        userId: blockedUserId,
+        membershipRole: "member",
+        applicationRole: "viewer",
+        reason: "Subscription runtime user-limit proof",
       },
     });
     assert.equal(blockedUser.status, 403, `4th user should be blocked: ${JSON.stringify(blockedUser.json)}`);

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { EntityDocumentsCard } from "@/components/documents/entity-documents-card";
@@ -51,6 +51,7 @@ export default function RequisitionFormPage() {
             supplierId={f.supplierId}
             currencyCode={f.currencyCode}
             exchangeRateToZar={f.exchangeRateToZar}
+            reportingCurrencyCode={f.reportingCurrencyCode}
             requisitionTotals={f.requisitionTotals}
             departmentId={f.departmentId}
             projectId={f.projectId}
@@ -78,6 +79,7 @@ export default function RequisitionFormPage() {
             paymentTerms={f.paymentTerms}
             incoterms={f.incoterms}
             taxCodes={f.taxCodes}
+            reportingCurrencyCode={f.reportingCurrencyCode}
           />
 
           <RequisitionLinesEditor
@@ -88,6 +90,7 @@ export default function RequisitionFormPage() {
             costCentres={f.costCentres}
             currencyCode={f.currencyCode}
             exchangeRateToZar={f.exchangeRateToZar}
+            reportingCurrencyCode={f.reportingCurrencyCode}
             fieldError={f.fieldErrors.items}
             onAddRow={f.addItem}
             onRemoveRow={f.removeItem}
@@ -104,6 +107,14 @@ export default function RequisitionFormPage() {
             <Button variant="outline" asChild>
               <Link href={listPath}>Cancel</Link>
             </Button>
+            {!isNew && id && String(f.requisition?.status).toUpperCase() === "APPROVED" ? (
+              <Button variant="outline" asChild data-testid="requisition-start-rfq">
+                <Link href={`/procurement/sourcing?requisitionId=${id}`}>
+                  <Scale className="mr-2 h-4 w-4" />
+                  Start controlled RFQ
+                </Link>
+              </Button>
+            ) : null}
           </div>
           {!isNew && id ? (
             <>

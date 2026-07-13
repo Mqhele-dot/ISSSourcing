@@ -3,11 +3,13 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
 import { organizationMembers, organizations } from "@shared/schema";
-import { getActiveOrganizationId } from "../../organization-context";
+import { getOptionalTenantContext } from "../../organization-context";
+import { getCountryPack } from "../master-data/country-pack-registry";
 
 const bootstrapBody = z.object({
   name: z.string().min(2).max(120),
   slug: z.string().min(2).max(64).regex(/^[a-z0-9-]+$/).optional(),
+  countryCode: z.enum(["ZA", "GB", "US"]).default("ZA"),
 });
 
 type Auth = {
@@ -26,12 +28,13 @@ export function registerOnboardingRoutes(app: Express, auth: Auth): void {
     auth.ensureRole(["admin"]),
     async (req: Request, res: Response) => {
       try {
-        const previousOrganizationId = getActiveOrganizationId();
+        const previousOrganizationId = getOptionalTenantContext()?.organizationId ?? null;
         const parsed = bootstrapBody.safeParse(req.body);
         if (!parsed.success) {
           return res.status(400).json({ message: parsed.error.flatten().fieldErrors });
         }
-        const { name, slug } = parsed.data;
+        const { name, slug, countryCode } = parsed.data;
+        const pack = getCountryPack(countryCode);
         const baseSlug = slug ?? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);
         let created: typeof organizations.$inferSelect | undefined;
         let slugTry = baseSlug || `org-${Date.now()}`;
@@ -42,6 +45,10 @@ export function registerOnboardingRoutes(app: Express, auth: Auth): void {
               .values({
                 name,
                 slug: slugTry,
+                countryCode: pack.code,
+                defaultCurrencyCode: pack.defaultCurrencyCode,
+                locale: pack.locale,
+                timezone: pack.timezone,
               })
               .returning();
             created = row;
@@ -70,6 +77,9 @@ export function registerOnboardingRoutes(app: Express, auth: Auth): void {
               organizationId: created.id,
               userId,
               role: "owner",
+              applicationRole: "admin",
+              active: true,
+              status: "active",
             });
           }
         }
