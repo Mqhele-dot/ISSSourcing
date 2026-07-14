@@ -16,10 +16,13 @@ async function main() {
   try {
     await client.query("BEGIN");
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const nextOrganizationId = await client.query<{ id: number }>(
+      "SELECT COALESCE(MAX(id), 0) + 1000 AS id FROM organizations",
+    );
     const organization = await client.query<{ id: number }>(
-      `INSERT INTO organizations (name, slug, active, country_code, default_currency_code, locale, timezone)
-       VALUES ($1, $2, TRUE, 'ZA', 'ZAR', 'en-ZA', 'Africa/Johannesburg') RETURNING id`,
-      [`Audit integrity test ${suffix}`, `audit-integrity-${suffix}`],
+      `INSERT INTO organizations (id, name, slug, active, country_code, default_currency_code, locale, timezone)
+       VALUES ($1, $2, $3, TRUE, 'ZA', 'ZAR', 'en-ZA', 'Africa/Johannesburg') RETURNING id`,
+      [nextOrganizationId.rows[0].id, `Audit integrity test ${suffix}`, `audit-integrity-${suffix}`],
     );
     const organizationId = organization.rows[0].id;
 
