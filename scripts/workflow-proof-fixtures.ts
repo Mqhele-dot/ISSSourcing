@@ -11,6 +11,7 @@ export type WorkflowFixture = {
   supplierId: number;
   itemId: number;
   sku: string;
+  initialQuantity: number;
   unitOfMeasureId: number;
   taxCodeId: number;
   departmentId: number;
@@ -34,6 +35,7 @@ export function unwrapData<T>(json: unknown, label: string): T {
 
 export async function ensureWorkflowFixture(label: string): Promise<WorkflowFixture> {
   const suffix = `${label}-${Date.now().toString(36)}-${process.pid}-${randomUUID().slice(0, 8)}`;
+  const initialQuantity = 25;
   await assertProductionSchemaColumns([
     ...requisitionAndPoMdmColumns,
     { table: "stock_movements", column: "warehouse_id" },
@@ -128,7 +130,7 @@ export async function ensureWorkflowFixture(label: string): Promise<WorkflowFixt
         organization_id, name, sku, quantity, price, supplier_id, unit_of_measure,
         unit_of_measure_id, taxable, status, location, default_warehouse_id, updated_at
       )
-      VALUES (1, $1, $2, 25, 100, $3, 'each', $4, TRUE, 'active', $5, $6, NOW())
+      VALUES (1, $1, $2, $3, 100, $4, 'each', $5, TRUE, 'active', $6, $7, NOW())
       ON CONFLICT (organization_id, sku) DO UPDATE SET
         supplier_id = EXCLUDED.supplier_id,
         unit_of_measure_id = EXCLUDED.unit_of_measure_id,
@@ -138,7 +140,15 @@ export async function ensureWorkflowFixture(label: string): Promise<WorkflowFixt
         updated_at = NOW()
       RETURNING id
     `,
-    [`Workflow Item ${suffix}`, sku, supplier.rows[0].id, uom.rows[0].id, `A1-B1`, warehouse.rows[0].id],
+    [
+      `Workflow Item ${suffix}`,
+      sku,
+      initialQuantity,
+      supplier.rows[0].id,
+      uom.rows[0].id,
+      `A1-B1`,
+      warehouse.rows[0].id,
+    ],
   );
 
   return {
@@ -146,6 +156,7 @@ export async function ensureWorkflowFixture(label: string): Promise<WorkflowFixt
     supplierId: supplier.rows[0].id,
     itemId: item.rows[0].id,
     sku,
+    initialQuantity,
     unitOfMeasureId: uom.rows[0].id,
     taxCodeId: tax.rows[0].id,
     departmentId: department.rows[0].id,

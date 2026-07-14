@@ -189,7 +189,10 @@ test.describe("procurement to AP browser workflow", () => {
     await page.getByTestId("inventory-search-input").fill(receiveFixture.sku);
     const inventoryRow = page.getByTestId(`inventory-row-${receiveFixture.sku}`);
     await expect(inventoryRow).toBeVisible({ timeout: 20_000 });
-    await expect(inventoryRow.locator("[data-on-hand]")).toHaveAttribute("data-on-hand", "3");
+    await expect(inventoryRow.locator("[data-on-hand]")).toHaveAttribute(
+      "data-on-hand",
+      String(receiveFixture.initialQuantity + 3),
+    );
 
     await page.goto("/finance/invoices", { waitUntil: "domcontentloaded" });
     await expect(page.getByText(matchedInvoiceNumber)).toBeVisible({ timeout: 20_000 });
