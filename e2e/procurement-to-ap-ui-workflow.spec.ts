@@ -195,11 +195,14 @@ test.describe("procurement to AP browser workflow", () => {
     );
 
     await page.goto("/finance/invoices", { waitUntil: "domcontentloaded" });
-    await expect(page.getByText(matchedInvoiceNumber)).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/Receipt evidence: PO\/GRN match checked/i)).toBeVisible();
-    await expect(page.getByText(/PAYMENT READY|MATCHED/i)).toBeVisible();
-    await expect(page.getByText(exceptionInvoiceNumber)).toBeVisible();
-    await expect(page.getByText(/PAYMENT BLOCKED/i)).toBeVisible();
+    const matchedInvoiceRow = page.getByRole("row").filter({ hasText: matchedInvoiceNumber });
+    await expect(matchedInvoiceRow).toBeVisible({ timeout: 20_000 });
+    await expect(matchedInvoiceRow.getByText("Receipt evidence: PO/GRN match checked", { exact: true })).toBeVisible();
+    await expect(matchedInvoiceRow.getByText(/PAYMENT READY|MATCHED/, { exact: true })).toBeVisible();
+
+    const exceptionInvoiceRow = page.getByRole("row").filter({ hasText: exceptionInvoiceNumber });
+    await expect(exceptionInvoiceRow).toBeVisible();
+    await expect(exceptionInvoiceRow.getByText("PAYMENT BLOCKED", { exact: true })).toBeVisible();
 
     await page.goto("/finance/accounts-payable/payments", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("accounts-payable-page")).toBeVisible();
