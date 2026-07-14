@@ -26,10 +26,20 @@ async function main(): Promise<void> {
   console.log("MDM runtime security proof\n");
 
   const orgA = 1;
-  const orgB = 987654;
+  const orgBResult = await pool.query<{ id: number }>(
+    "SELECT COALESCE(MAX(id), 0) + 2000 AS id FROM organizations",
+  );
+  const orgB = orgBResult.rows[0].id;
   const actorA = 1;
   const actorB = 2;
 
+  await pool.query(
+    `INSERT INTO organizations (id, name, slug, active, country_code, default_currency_code, locale, timezone)
+     VALUES ($1, $2, $3, TRUE, 'ZA', 'ZAR', 'en-ZA', 'Africa/Johannesburg')`,
+    [orgB, `MDM runtime tenant ${suffix}`, `mdm-runtime-${suffix}-${orgB}`],
+  );
+
+  try {
   const orgALegal = await createMdmDomainRecord(
     "legal-entities",
     orgA,
@@ -214,7 +224,12 @@ async function main(): Promise<void> {
   assert.equal(failedDetail?.status, "failed_to_apply", "Failed apply should be recorded");
   console.log("  ok failed apply is recorded");
 
-  console.log("\nMDM runtime security proof passed.");
+    console.log("\nMDM runtime security proof passed.");
+  } finally {
+    await pool.query("DELETE FROM mdm_legal_entities WHERE organization_id = $1", [orgB]).catch(() => undefined);
+    await pool.query("DELETE FROM mdm_audit_logs WHERE organization_id = $1", [orgB]).catch(() => undefined);
+    await pool.query("DELETE FROM organizations WHERE id = $1", [orgB]).catch(() => undefined);
+  }
 }
 
 main()
