@@ -46,6 +46,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+report_failure() {
+  local status=$?
+  echo "Runtime harness failed with exit code ${status}." >&2
+  if [[ -f "${APP_LOG}" ]]; then
+    echo "---- app log ----" >&2
+    sed -n '1,320p' "${APP_LOG}" >&2
+  fi
+  return "${status}"
+}
+trap report_failure ERR
+
 echo "🚀 Starting runtime Postgres service..."
 "${COMPOSE_CMD[@]}" up -d postgres
 

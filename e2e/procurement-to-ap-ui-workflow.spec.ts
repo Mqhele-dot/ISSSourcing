@@ -180,7 +180,7 @@ test.describe("procurement to AP browser workflow", () => {
     await page.getByTestId(`mobile-receive-qty-${receiveFixture.sku}`).fill("3");
     await page.getByTestId("mobile-receive-post-button").click();
 
-    await expect(page.getByText(/receipt posted|PO receive processed|no remaining quantity/i)).toBeVisible({
+    await expect(page.getByText("Receipt posted", { exact: true })).toBeVisible({
       timeout: 20_000,
     });
 

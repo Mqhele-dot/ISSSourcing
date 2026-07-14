@@ -46,21 +46,63 @@ async function ensureFunctionalQaMemberships(): Promise<void> {
   );
 }
 
-/** FQA PO lines require a supplier FK; bare DBs may have none for org 1. */
+/** Create a test-owned supplier whose locked contract currency exercises PO controls deterministically. */
 async function ensureFqaSupplierId(): Promise<number> {
-  const existing = await pool.query<{ id: number }>(
-    "SELECT id FROM suppliers WHERE organization_id = $1 ORDER BY id LIMIT 1",
-    [ORG_ID],
-  );
-  if (existing.rows[0]?.id) return existing.rows[0].id;
   const ins = await pool.query<{ id: number }>(
-    `INSERT INTO suppliers (organization_id, name, contact_name, email, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, now(), now())
+    `INSERT INTO suppliers (
+       organization_id, supplier_code, name, contact_name, email, status,
+       onboarding_status, default_currency_code, allow_currency_override,
+       require_approval_for_override, created_at, updated_at
+     )
+     VALUES ($1, 'FQA-SEED', $2, $3, $4, 'active', 'approved', 'ZAR', false, true, now(), now())
+     ON CONFLICT (organization_id, supplier_code) DO UPDATE SET
+       name = EXCLUDED.name,
+       contact_name = EXCLUDED.contact_name,
+       email = EXCLUDED.email,
+       status = 'active',
+       onboarding_status = 'approved',
+       default_currency_code = 'ZAR',
+       allow_currency_override = false,
+       require_approval_for_override = true,
+       updated_at = now()
      RETURNING id`,
     [ORG_ID, "FQA Seed Supplier", "QA", "fqa-supplier@example.test"],
   );
   const id = ins.rows[0]?.id;
   if (!id) throw new Error("seed-functional-qa: failed to insert supplier");
+
+  const existingContract = await pool.query<{ id: number }>(
+    `SELECT id
+     FROM supplier_contracts
+     WHERE organization_id = $1 AND supplier_id = $2 AND reference_number = 'FQA-USD-LOCK'
+     ORDER BY id
+     LIMIT 1`,
+    [ORG_ID, id],
+  );
+  let contractId = existingContract.rows[0]?.id;
+  if (!contractId) {
+    const contract = await pool.query<{ id: number }>(
+      `INSERT INTO supplier_contracts (
+         organization_id, supplier_id, title, contract_type, reference_number,
+         start_date, end_date, currency, status, created_at, updated_at
+       )
+       VALUES (
+         $1, $2, 'FQA USD Currency Lock', 'framework', 'FQA-USD-LOCK',
+         now() - interval '1 day', now() + interval '1 year', 'USD', 'active', now(), now()
+       )
+       RETURNING id`,
+      [ORG_ID, id],
+    );
+    contractId = contract.rows[0]?.id;
+  }
+  if (!contractId) throw new Error("seed-functional-qa: failed to create currency-lock contract");
+
+  await pool.query(
+    `UPDATE suppliers
+     SET default_contract_id = $1, updated_at = now()
+     WHERE organization_id = $2 AND id = $3`,
+    [contractId, ORG_ID, id],
+  );
   return id;
 }
 
@@ -180,12 +222,17 @@ export async function seedFunctionalQA(): Promise<void> {
       { num: "PO-FQA-003", status: "received", total: 500 },
     ] as const) {
       await pool.query(
-        `INSERT INTO purchase_orders (organization_id, order_number, supplier_id, status, order_date, total_amount, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, now(), $5, now(), now())
+        `INSERT INTO purchase_orders (
+           organization_id, order_number, supplier_id, status, currency_code,
+           contract_id, order_date, total_amount, created_at, updated_at
+         )
+         VALUES ($1, $2, $3, $4, 'ZAR', NULL, now(), $5, now(), now())
          ON CONFLICT (organization_id, order_number) DO UPDATE SET
            status = EXCLUDED.status,
            total_amount = EXCLUDED.total_amount,
            supplier_id = EXCLUDED.supplier_id,
+           currency_code = 'ZAR',
+           contract_id = NULL,
            updated_at = now()`,
         [ORG_ID, row.num, supplierId, row.status, row.total],
       );

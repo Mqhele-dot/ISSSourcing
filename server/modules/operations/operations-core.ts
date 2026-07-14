@@ -1,5 +1,5 @@
 import { pool } from "../../db";
-import { resetAndSeedDemoData } from "../../seed";
+import { seedDatabase } from "../../seed";
 import { initializeOperationalData } from "./operational-ddl";
 import { refsMatch, toNumber, toString } from "./operational-utils";
 import {
@@ -3374,13 +3374,13 @@ export async function runOperationalDemoWalkthrough(actor: string) {
   const orgId = getActiveOrganizationId();
   const steps: Array<{ id: string; label: string; completed: boolean; details?: string }> = [];
 
-  const resetSummary = await resetAndSeedDemoData();
+  const seedSummary = await seedDatabase();
   await initializeOperationalData();
   steps.push({
-    id: "reset-demo",
-    label: "Reset demo data",
+    id: "verify-demo-data",
+    label: "Verify guided-workflow data",
     completed: true,
-    details: `Users ${resetSummary.users}, Items ${resetSummary.items}`,
+    details: `Users ${seedSummary.users}, Items ${seedSummary.items}`,
   });
 
   const inventoryItems = await listOperationalInventory({});
