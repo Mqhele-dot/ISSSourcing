@@ -7,29 +7,12 @@ import { logger } from "../lib/logger";
 import { startExportWorker } from "../modules/exports/export-worker";
 import { pool } from "../db";
 import { runWithTenantContext } from "../organization-context";
-import { recordServerDiagnosticEvent } from "../diagnostics/server-diagnostics-store";
-import { verifyAuditChain } from "../services/audit-chain-service";
+import { runAuditIntegrityChecks } from "../services/audit-integrity-monitor";
 
 export function startBackgroundTasks(server: Server): void {
   startExportWorker();
 
   const auditIntegrityIntervalMinutes = Math.max(60, Number(process.env.AUDIT_INTEGRITY_INTERVAL_MINUTES ?? 1440));
-  const runAuditIntegrityChecks = async () => {
-    const organizations = await pool.query<{ id: number }>("SELECT id FROM organizations WHERE active = TRUE ORDER BY id");
-    for (const organization of organizations.rows) {
-      const verification = await verifyAuditChain(organization.id);
-      if (!verification.valid) {
-        logger.warn("Audit chain integrity failure", verification);
-        recordServerDiagnosticEvent({
-          severity: "critical",
-          source: "security",
-          title: "Audit chain integrity failure",
-          message: `Audit history integrity failed for organization ${organization.id}.`,
-          details: verification,
-        });
-      }
-    }
-  };
   void runAuditIntegrityChecks().catch((error) => {
     logger.warn("Initial audit chain integrity check failed", { error: error instanceof Error ? error.message : String(error) });
   });

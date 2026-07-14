@@ -36,7 +36,7 @@ const checks = [
   [/CONTROLLED_PO_APPROVAL_REQUIRED/.test(operationalRoutes) && /CONTROLLED_PO_DISPATCH_REQUIRED/.test(operationalRoutes), "legacy one-click PO aliases are blocked in production"],
   [/submitPurchaseOrderForApproval/.test(purchaseOrderApi) && /approvePurchaseOrderRecord/.test(purchaseOrderApi) && /dispatchPurchaseOrderRecord/.test(purchaseOrderApi) && /Independent approval reason/.test(purchaseOrderView), "PO screen uses controlled procurement actions"],
   [/ZA:/.test(countryPacks) && /GB:/.test(countryPacks) && /US:/.test(countryPacks), "ZA, UK, and US country packs exist"],
-  [/PRODUCTION_RELEASE_SCOPE/.test(productionBoundary) && /gate\("receiving"\)/.test(productionBoundary) && /gate\("finance"\)/.test(productionBoundary), "post-v1 operational and finance areas have server-side production boundaries"],
+  [/PRODUCTION_RELEASE_SCOPE/.test(productionBoundary) && /gate\("receiving",\s*policy\)/.test(productionBoundary) && /gate\("finance",\s*policy\)/.test(productionBoundary), "post-v1 operational and finance areas have server-side production boundaries"],
   [/WHERE id = \$1 AND organization_id = \$2/.test(operationalCore) && /po\.organization_id = \$1/.test(operationalCore), "legacy operational PO aliases remain tenant scoped"],
   [/ProductionWarehousesPage/.test(router) && /ProductionAccountsPayablePage/.test(router) && /ProductionMobileCountsPage/.test(router), "bookmarked post-v1 UI routes remain production gated"],
   [/SupplierSourcingWorkspace/.test(supplierPortal) && /Submit structured quote/.test(supplierPortal) && /Clarifications/.test(supplierPortal), "supplier portal exposes live structured RFQ and clarification controls"],
