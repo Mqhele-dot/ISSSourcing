@@ -163,7 +163,10 @@ async function main() {
   }
 
   const inventory = await apiJsonRequest("/inventory?low=1", { cookie, baseUrl });
-  assert(inventory.ok, "Inventory low filter endpoint failed");
+  assert(
+    inventory.ok,
+    `Inventory low filter endpoint failed: ${inventory.status} ${extractErrorMessage(inventory.json)}`,
+  );
   const inventoryData = Array.isArray(inventory.json)
     ? inventory.json
     : (inventory.json?.ok === true && Array.isArray(inventory.json?.data) ? inventory.json.data : []);

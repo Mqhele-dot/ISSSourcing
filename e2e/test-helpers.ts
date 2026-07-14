@@ -1,6 +1,10 @@
 import { expect, type Page } from "@playwright/test";
 
 export async function loginAsAdmin(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("invtrack:first-run-coach:v1:1", "done");
+  });
+
   if (process.env.PLAYWRIGHT_USE_DEV_TEST_LOGIN !== "0") {
     await page.goto("/dev-test-login?redirect=/operations/control-tower", { waitUntil: "load" });
     if (!page.url().includes("/auth") && !page.url().includes("/dev-test-login")) {
