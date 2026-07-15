@@ -364,12 +364,14 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
 
   const purchaseOrderId = invoiceData.purchaseOrderId == null ? null : toNumber(invoiceData.purchaseOrderId, 0);
   let purchaseOrder: Awaited<ReturnType<typeof storage.getPurchaseOrder>> | null = null;
+  let linkedPurchaseOrderItems: Awaited<ReturnType<typeof storage.getPurchaseOrderItems>> = [];
   if (purchaseOrderId) {
     purchaseOrder = (await storage.getPurchaseOrder(purchaseOrderId)) ?? null;
     if (!purchaseOrder) throw new Error("Purchase order does not exist");
     if (Number(purchaseOrder.supplierId) !== supplierId) {
       throw new Error("Invoice supplier must match purchase order supplier");
     }
+    linkedPurchaseOrderItems = await storage.getPurchaseOrderItems(purchaseOrderId);
   }
 
   for (let i = 0; i < items.length; i += 1) {
@@ -377,8 +379,18 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
     if (toNumber(line.quantity) <= 0 || toNumber(line.unitPrice) <= 0) {
       throw new Error(`Invoice item ${i + 1} must have positive quantity and unit price`);
     }
-    if (!toNumber(line.itemId, 0)) {
-      throw new Error(`Invoice item ${i + 1} must include a valid itemId`);
+    const linkedPoLineId = toNumber(line.purchaseOrderItemId, 0);
+    const linkedPoLine = linkedPoLineId
+      ? linkedPurchaseOrderItems.find((candidate) => Number(candidate.id) === linkedPoLineId)
+      : undefined;
+    if (linkedPoLineId && !linkedPoLine) {
+      throw new Error(`Invoice item ${i + 1} references a purchase-order line outside this invoice's PO`);
+    }
+    if (!toNumber(line.itemId, 0) && !linkedPoLine) {
+      throw new Error(`Invoice item ${i + 1} must include a catalogue item or linked purchase-order line`);
+    }
+    if (linkedPoLine && linkedPoLine.itemId != null && line.itemId != null && Number(linkedPoLine.itemId) !== Number(line.itemId)) {
+      throw new Error(`Invoice item ${i + 1} does not match its linked purchase-order line`);
     }
   }
 
@@ -1427,11 +1439,16 @@ export async function evaluateInvoiceMatch(
   let matchedLineCount = 0;
 
   for (const invItem of invItems) {
-    const poItem = poItems.find((candidate) => candidate.itemId === invItem.itemId);
+    const poItem = invItem.purchaseOrderItemId != null
+      ? poItems.find((candidate) => Number(candidate.id) === Number(invItem.purchaseOrderItemId))
+      : poItems.find((candidate) => candidate.itemId != null && candidate.itemId === invItem.itemId);
+    const lineKey = invItem.purchaseOrderItemId != null ? `po-line:${invItem.purchaseOrderItemId}` : `item:${invItem.itemId}`;
     if (!poItem) {
       mismatches.push({
         code: "MISSING_PO_LINE",
         itemId: invItem.itemId,
+        purchaseOrderItemId: invItem.purchaseOrderItemId,
+        lineKey,
         message: "Item not found on purchase order",
         severity: "high",
       });
@@ -1446,6 +1463,8 @@ export async function evaluateInvoiceMatch(
       mismatches.push({
         code: "PRICE_MISMATCH",
         itemId: invItem.itemId,
+        purchaseOrderItemId: invItem.purchaseOrderItemId,
+        lineKey,
         message: `Invoice unit price ${invoiceUnitPrice} differs from PO ${poUnitPrice}`,
         deltaPct: Number(priceDeltaPct.toFixed(2)),
         severity: "high",
@@ -1453,13 +1472,15 @@ export async function evaluateInvoiceMatch(
     }
 
     const receivedQty =
-      receiptItemsByItemId.get(invItem.itemId) ?? toNumber(poItem.receivedQuantity, 0);
+      (invItem.itemId == null ? undefined : receiptItemsByItemId.get(invItem.itemId)) ?? toNumber(poItem.receivedQuantity, 0);
     const invoicedQty = toNumber(invItem.quantity, 0);
     const maxQty = receivedQty * (1 + quantityTolerancePct / 100);
     if (invoicedQty > maxQty) {
       mismatches.push({
         code: "QTY_MISMATCH",
         itemId: invItem.itemId,
+        purchaseOrderItemId: invItem.purchaseOrderItemId,
+        lineKey,
         message: `Invoice quantity ${invoicedQty} exceeds received quantity ${receivedQty}`,
         expectedMax: maxQty,
         severity: "high",
@@ -1471,12 +1492,14 @@ export async function evaluateInvoiceMatch(
       mismatches.push({
         code: "TAX_REVIEW_REQUIRED",
         itemId: invItem.itemId,
+        purchaseOrderItemId: invItem.purchaseOrderItemId,
+        lineKey,
         message: `Invoice line has tax amount ${toNumber(invItem.taxAmount, 0)} and requires AP review`,
         severity: "medium",
       });
     }
 
-    const hasMismatchForLine = mismatches.some((entry) => entry.itemId === invItem.itemId);
+    const hasMismatchForLine = mismatches.some((entry) => entry.lineKey === lineKey);
     if (!hasMismatchForLine) {
       matchedLineCount += 1;
     }

@@ -17,6 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -87,16 +89,20 @@ export default function ApprovalPoliciesPage() {
   const canManagePolicies = ["admin", "manager"].includes(String(user?.role ?? "").toLowerCase());
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingVersion, setEditingVersion] = useState(1);
+  const [changeReason, setChangeReason] = useState("");
+  const [conflictingPolicies, setConflictingPolicies] = useState<Array<{ id: number; name: string; amountMin: number; amountMax: number | null; approvalLevel: number }>>([]);
   const [previewEntity, setPreviewEntity] = useState<(typeof ENTITY_TYPES)[number]["value"]>("requisition");
   const [previewAmount, setPreviewAmount] = useState("5000");
   const [search, setSearch] = useState("");
   const [entityFilter, setEntityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("active");
+  const [overlapOnly, setOverlapOnly] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
   const { data: policyPage, isLoading } = useQuery<PolicyPage>({
-    queryKey: ["/api/approval-policies", { search, entityFilter, statusFilter, page, pageSize }],
+    queryKey: ["/api/approval-policies", { search, entityFilter, statusFilter, overlapOnly, page, pageSize }],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -105,6 +111,7 @@ export default function ApprovalPoliciesPage() {
       });
       if (search.trim()) params.set("q", search.trim());
       if (entityFilter !== "all") params.set("entityType", entityFilter);
+      if (overlapOnly) params.set("overlapOnly", "true");
       const raw = await requestJson<unknown>("GET", `/api/approval-policies?${params.toString()}`);
       if (raw && typeof raw === "object" && Array.isArray((raw as PolicyPage).items)) return raw as PolicyPage;
       const items = normalizeApiList<ApprovalPolicy>(raw);
@@ -117,7 +124,7 @@ export default function ApprovalPoliciesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, entityFilter, statusFilter]);
+  }, [search, entityFilter, statusFilter, overlapOnly]);
 
   const { data: users = [] } = useQuery({
     queryKey: ["/api/users"],
@@ -217,7 +224,11 @@ export default function ApprovalPoliciesPage() {
       };
 
       if (editingId != null) {
-        return requestJson<ApprovalPolicy>("PATCH", `/api/approval-policies/${editingId}`, body);
+        return requestJson<ApprovalPolicy>("PATCH", `/api/approval-policies/${editingId}`, {
+          ...body,
+          expectedVersion: editingVersion,
+          changeReason,
+        });
       }
       return requestJson<ApprovalPolicy>("POST", "/api/approval-policies", body);
     },
@@ -227,8 +238,14 @@ export default function ApprovalPoliciesPage() {
       toast({ title: editingId != null ? "Policy updated" : "Policy created" });
       setForm(emptyForm);
       setEditingId(null);
+      setChangeReason("");
+      setConflictingPolicies([]);
     },
     onError: (e) => {
+      const apiError = e as Error & { code?: string; details?: { conflicts?: Array<{ id: number; name: string; amountMin: number; amountMax: number | null; approvalLevel: number }> } };
+      if (apiError.code === "APPROVAL_POLICY_OVERLAP") {
+        setConflictingPolicies(apiError.details?.conflicts ?? []);
+      }
       toast({
         title: "Save failed",
         description: formatMutationError(
@@ -270,6 +287,9 @@ export default function ApprovalPoliciesPage() {
 
   const startEdit = (p: ApprovalPolicy) => {
     setEditingId(p.id);
+    setEditingVersion(Number(p.version ?? 1));
+    setChangeReason("");
+    setConflictingPolicies([]);
     setForm({
       name: p.name ?? "",
       entityType: (p.entityType as (typeof ENTITY_TYPES)[number]["value"]) ?? "requisition",
@@ -303,9 +323,46 @@ export default function ApprovalPoliciesPage() {
         }
       />
 
+      <Sheet
+        open={editingId != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingId(null);
+            setForm(emptyForm);
+            setChangeReason("");
+            setConflictingPolicies([]);
+          }
+        }}
+      >
+        <SheetContent className="w-full overflow-y-auto sm:max-w-xl" data-testid="approval-policy-edit-sheet">
+          <SheetHeader>
+            <SheetTitle>Edit approval policy</SheetTitle>
+            <SheetDescription>Version {editingVersion}. Routing changes require a reason and are checked against active policies before saving.</SheetDescription>
+          </SheetHeader>
+          <div className="space-y-4 py-6">
+            <div className="space-y-2"><Label htmlFor="edit-ap-name">Name</Label><Input id="edit-ap-name" value={form.name} onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))} disabled={!canManagePolicies} /></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2"><Label>Entity</Label><Select value={form.entityType} onValueChange={(value) => setForm((current) => ({ ...current, entityType: value as typeof form.entityType }))} disabled={!canManagePolicies}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ENTITY_TYPES.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label htmlFor="edit-ap-level">Approval level</Label><Input id="edit-ap-level" type="number" min={1} value={form.approvalLevel} onChange={(event) => setForm((current) => ({ ...current, approvalLevel: event.target.value }))} disabled={!canManagePolicies} /></div>
+              <div className="space-y-2"><Label htmlFor="edit-ap-min">Amount min</Label><Input id="edit-ap-min" type="number" min={0} value={form.amountMin} onChange={(event) => setForm((current) => ({ ...current, amountMin: event.target.value }))} disabled={!canManagePolicies} /></div>
+              <div className="space-y-2"><Label htmlFor="edit-ap-max">Amount max</Label><Input id="edit-ap-max" type="number" min={0} value={form.amountMax} onChange={(event) => setForm((current) => ({ ...current, amountMax: event.target.value }))} disabled={!canManagePolicies} placeholder="No cap" /></div>
+              <div className="space-y-2"><Label>Required role</Label><Select value={form.approverRole} onValueChange={(value) => setForm((current) => ({ ...current, approverRole: value }))} disabled={!canManagePolicies}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Any role</SelectItem>{APPROVER_ROLES.map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Specific approver</Label><Select value={form.approverUserId} onValueChange={(value) => setForm((current) => ({ ...current, approverUserId: value }))} disabled={!canManagePolicies}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{users.map((candidate) => <SelectItem key={candidate.id} value={String(candidate.id)}>{candidate.fullName || candidate.username}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+            <div className="flex items-center gap-2"><Switch id="edit-ap-active" checked={form.isActive} onCheckedChange={(checked) => setForm((current) => ({ ...current, isActive: checked }))} disabled={!canManagePolicies} /><Label htmlFor="edit-ap-active">Active</Label></div>
+            <div className="space-y-2"><Label htmlFor="edit-ap-reason">Change reason</Label><Textarea id="edit-ap-reason" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} placeholder="Why is this approval control changing?" disabled={!canManagePolicies} data-testid="approval-policy-change-reason" /></div>
+            {conflictingPolicies.length > 0 ? <Alert className="border-amber-300 bg-amber-50"><AlertTitle>Conflicting active policies</AlertTitle><AlertDescription><ul className="mt-2 space-y-2">{conflictingPolicies.map((policy) => <li key={policy.id} className="flex items-center justify-between gap-3"><span>{policy.name} (L{policy.approvalLevel}, {policy.amountMin.toLocaleString()} to {policy.amountMax == null ? "no cap" : policy.amountMax.toLocaleString()})</span><Button type="button" size="sm" variant="outline" onClick={() => { setSearch(policy.name); setEditingId(null); }}>Find policy</Button></li>)}</ul><p className="mt-3">You can still deactivate this policy or correct its name/approver without changing the overlapping band.</p></AlertDescription></Alert> : null}
+          </div>
+          <SheetFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingId(null)}>Cancel</Button>
+            <Button type="button" onClick={() => saveMutation.mutate()} disabled={!canManagePolicies || saveMutation.isPending}>{saveMutation.isPending ? "Saving..." : "Save policy"}</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
       <Card>
         <CardHeader>
-          <CardTitle>{editingId != null ? `Edit policy #${editingId}` : "New policy"}</CardTitle>
+          <CardTitle>New policy</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {!canManagePolicies ? (
@@ -441,19 +498,8 @@ export default function ApprovalPoliciesPage() {
               onClick={() => saveMutation.mutate()}
               disabled={!canManagePolicies || saveMutation.isPending}
             >
-              {editingId != null ? "Update" : "Create"}
+              Create
             </Button>
-            {editingId != null ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setEditingId(null);
-                  setForm(emptyForm);
-                }}
-              >
-                Cancel edit
-              </Button>
-            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -586,7 +632,7 @@ export default function ApprovalPoliciesPage() {
               <CardTitle>Configured policies</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">{totalPolicies.toLocaleString()} matching policies</p>
             </div>
-            <div className="grid w-full gap-2 md:w-auto md:grid-cols-[minmax(16rem,1fr)_12rem_10rem]">
+            <div className="grid w-full gap-2 md:w-auto md:grid-cols-[minmax(16rem,1fr)_12rem_10rem_auto]">
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -614,6 +660,9 @@ export default function ApprovalPoliciesPage() {
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
+              <Button type="button" variant={overlapOnly ? "default" : "outline"} onClick={() => setOverlapOnly((value) => !value)}>
+                Overlaps only
+              </Button>
             </div>
           </div>
         </CardHeader>

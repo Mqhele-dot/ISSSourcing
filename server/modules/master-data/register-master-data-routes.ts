@@ -1076,17 +1076,31 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
   app.get("/api/approval-policies", ...masterRead, async (req: Request, res: Response) => {
     try {
       const organizationId = getActiveOrganizationId();
-      const paginated = req.query.page != null || req.query.pageSize != null || req.query.q != null || req.query.entityType != null;
+      const paginated = req.query.page != null || req.query.pageSize != null || req.query.q != null || req.query.entityType != null || req.query.overlapOnly != null;
       const page = Math.max(1, Number(req.query.page ?? 1) || 1);
       const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 25) || 25));
       const q = String(req.query.q ?? "").trim();
       const entityType = String(req.query.entityType ?? "").trim();
       const status = String(req.query.status ?? "all").trim();
+      const overlapOnly = String(req.query.overlapOnly ?? "false") === "true";
       const clauses = [eq(approvalPolicies.organizationId, organizationId)];
       if (q) clauses.push(or(ilike(approvalPolicies.name, `%${q}%`), ilike(approvalPolicies.entityType, `%${q}%`))!);
       if (entityType && entityType !== "all") clauses.push(eq(approvalPolicies.entityType, entityType));
       if (status === "active") clauses.push(eq(approvalPolicies.isActive, true));
       if (status === "inactive") clauses.push(eq(approvalPolicies.isActive, false));
+      if (overlapOnly) {
+        clauses.push(sql<boolean>`EXISTS (
+          SELECT 1 FROM approval_policies other
+          WHERE other.organization_id = ${organizationId}
+            AND other.id <> ${approvalPolicies.id}
+            AND other.entity_type = ${approvalPolicies.entityType}
+            AND other.approval_level = ${approvalPolicies.approvalLevel}
+            AND COALESCE(other.is_active, true) = true
+            AND COALESCE(${approvalPolicies.isActive}, true) = true
+            AND other.amount_min <= COALESCE(${approvalPolicies.amountMax}, 1e100)
+            AND ${approvalPolicies.amountMin} <= COALESCE(other.amount_max, 1e100)
+        )`);
+      }
       const where = and(...clauses);
       const rows = await db
         .select()
@@ -1181,7 +1195,11 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) return sendError(res, 400, "INVALID_ID", "Invalid policy ID");
-      const payload = insertApprovalPolicySchema.partial().parse(req.body);
+      const rawBody = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+      const expectedVersion = Number(rawBody.expectedVersion);
+      const changeReason = typeof rawBody.changeReason === "string" ? rawBody.changeReason.trim() : "";
+      const { expectedVersion: _expectedVersion, changeReason: _changeReason, version: _version, ...policyFields } = rawBody;
+      const payload = insertApprovalPolicySchema.partial().parse(policyFields);
       const beforeRows = (await db
         .select()
         .from(approvalPolicies)
@@ -1189,15 +1207,33 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         .limit(1)) as any[];
       const before = beforeRows[0];
       if (!before) return sendError(res, 404, "NOT_FOUND", "Approval policy not found");
+      if (Number.isFinite(expectedVersion) && expectedVersion !== Number(before.version ?? 1)) {
+        return sendError(res, 409, "APPROVAL_POLICY_STALE", "This policy changed after you opened it.", {
+          hint: "Reload the latest policy before saving your changes.",
+          details: { expectedVersion, currentVersion: Number(before.version ?? 1) },
+        });
+      }
+      const reasonFields = ["entityType", "amountMin", "amountMax", "approvalLevel", "approverRole", "approverUserId", "isActive"];
+      const sensitiveChange = reasonFields.some((field) => Object.prototype.hasOwnProperty.call(payload, field) && payload[field as keyof typeof payload] !== before[field]);
+      if (sensitiveChange && !changeReason) {
+        return sendError(res, 400, "APPROVAL_POLICY_CHANGE_REASON_REQUIRED", "Explain why approval routing is changing.", {
+          details: { fieldIssues: { changeReason: ["A change reason is required for routing, threshold, approver, level, or activation changes."] } },
+        });
+      }
       const candidate = { ...before, ...payload } as ApprovalPolicyCandidate;
-      const conflicts = await findApprovalPolicyConflicts(getActiveOrganizationId(), {
-        id,
-        entityType: String(candidate.entityType),
-        approvalLevel: Number(candidate.approvalLevel),
-        amountMin: Number(candidate.amountMin),
-        amountMax: candidate.amountMax == null ? null : Number(candidate.amountMax),
-        isActive: candidate.isActive,
-      });
+      const conflictControlledFields = ["entityType", "amountMin", "amountMax", "approvalLevel", "isActive"];
+      const conflictShapeChanged = conflictControlledFields.some((field) => Object.prototype.hasOwnProperty.call(payload, field) && payload[field as keyof typeof payload] !== before[field]);
+      const isDeactivating = before.isActive !== false && candidate.isActive === false;
+      const conflicts = conflictShapeChanged && !isDeactivating
+        ? await findApprovalPolicyConflicts(getActiveOrganizationId(), {
+            id,
+            entityType: String(candidate.entityType),
+            approvalLevel: Number(candidate.approvalLevel),
+            amountMin: Number(candidate.amountMin),
+            amountMax: candidate.amountMax == null ? null : Number(candidate.amountMax),
+            isActive: candidate.isActive,
+          })
+        : [];
       if (conflicts.length > 0) {
         return sendError(
           res,
@@ -1209,15 +1245,22 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       }
       const updatedRows = (await db
         .update(approvalPolicies)
-        .set(payload)
-        .where(and(eq(approvalPolicies.id, id), eq(approvalPolicies.organizationId, getActiveOrganizationId())))
+        .set({ ...payload, version: sql`${approvalPolicies.version} + 1`, updatedAt: new Date() })
+        .where(and(
+          eq(approvalPolicies.id, id),
+          eq(approvalPolicies.organizationId, getActiveOrganizationId()),
+          eq(approvalPolicies.version, Number(before.version ?? 1)),
+        ))
         .returning()) as any[];
       const updated = updatedRows[0];
-      if (!updated) return sendError(res, 404, "NOT_FOUND", "Approval policy not found");
+      if (!updated) return sendError(res, 409, "APPROVAL_POLICY_STALE", "This policy changed while you were saving it.", {
+        hint: "Reload the latest policy before saving your changes.",
+        details: { expectedVersion: Number(before.version ?? 1) },
+      });
       if (req.user) {
         await storage.createActivityLog({
           action: "APPROVAL_POLICY_UPDATED",
-          description: `Updated approval policy ${updated.name}. Old value: ${JSON.stringify(beforeRows[0] ?? null)}. New value: ${JSON.stringify(updated)}. Reason: Admin approval-control update.`,
+          description: `Updated approval policy ${updated.name}. Old value: ${JSON.stringify(beforeRows[0] ?? null)}. New value: ${JSON.stringify(updated)}. Reason: ${changeReason || "Non-routing correction"}. Conflict state: ${conflicts.length ? "overlap" : "clear"}.`,
           userId: req.user.id,
           referenceType: "approval_policy",
           referenceId: updated.id,

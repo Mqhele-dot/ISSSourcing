@@ -2461,7 +2461,9 @@ export class DatabaseStorage implements IStorage {
     for (const item of items) {
       const totalPrice = (Number(item.unitPrice) || 0) * (item.quantity || 0);
       totalAmount += totalPrice;
-      const inv = await repoGetInventoryItem(item.itemId);
+      const isCatalogLine = String(item.lineType ?? "CATALOG").toUpperCase() === "CATALOG";
+      const inv = item.itemId ? await repoGetInventoryItem(item.itemId) : undefined;
+      if (isCatalogLine && !inv) throw new Error(`Inventory item with ID ${item.itemId} not found`);
       await db.insert(purchaseOrderItems).values({
         ...item,
         orderId: created.id,
@@ -2528,8 +2530,9 @@ export class DatabaseStorage implements IStorage {
     if (!order) {
       throw new Error(`Purchase order ${item.orderId} not found`);
     }
-    const inv = await repoGetInventoryItem(item.itemId);
-    if (!inv) {
+    const isCatalogLine = String(item.lineType ?? "CATALOG").toUpperCase() === "CATALOG";
+    const inv = item.itemId ? await repoGetInventoryItem(item.itemId) : undefined;
+    if (isCatalogLine && !inv) {
       throw new Error(`Inventory item with ID ${item.itemId} not found`);
     }
 
@@ -2538,6 +2541,14 @@ export class DatabaseStorage implements IStorage {
       .values({
         orderId: item.orderId,
         itemId: item.itemId,
+        lineNumber: item.lineNumber ?? 1,
+        lineType: item.lineType ?? "CATALOG",
+        description: item.description ?? inv?.name ?? null,
+        itemCodeSnapshot: item.itemCodeSnapshot ?? inv?.sku ?? null,
+        itemDescriptionSnapshot: item.itemDescriptionSnapshot ?? inv?.name ?? null,
+        manualEntryReason: item.manualEntryReason ?? null,
+        fulfilmentType: item.fulfilmentType ?? (String(item.lineType).toUpperCase() === "SERVICE" ? "SERVICE_CONFIRMATION" : "GOODS_RECEIPT"),
+        receiptRequired: item.receiptRequired ?? true,
         quantity: item.quantity ?? 1,
         unitPrice: item.unitPrice,
         totalPrice: item.totalPrice,
@@ -2593,6 +2604,14 @@ export class DatabaseStorage implements IStorage {
       taxCodeId: item.taxCodeId !== undefined ? item.taxCodeId : existingItem.taxCodeId,
       costCentreId: item.costCentreId !== undefined ? item.costCentreId : existingItem.costCentreId,
       glAccountCode: item.glAccountCode !== undefined ? item.glAccountCode : existingItem.glAccountCode,
+      lineNumber: item.lineNumber ?? existingItem.lineNumber,
+      lineType: item.lineType ?? existingItem.lineType,
+      description: item.description !== undefined ? item.description : existingItem.description,
+      itemCodeSnapshot: item.itemCodeSnapshot !== undefined ? item.itemCodeSnapshot : existingItem.itemCodeSnapshot,
+      itemDescriptionSnapshot: item.itemDescriptionSnapshot !== undefined ? item.itemDescriptionSnapshot : existingItem.itemDescriptionSnapshot,
+      manualEntryReason: item.manualEntryReason !== undefined ? item.manualEntryReason : existingItem.manualEntryReason,
+      fulfilmentType: item.fulfilmentType ?? existingItem.fulfilmentType,
+      receiptRequired: item.receiptRequired ?? existingItem.receiptRequired,
     };
 
     const [updatedItem] = await db.update(purchaseOrderItems).set(merged).where(eq(purchaseOrderItems.id, id)).returning();
@@ -2725,7 +2744,7 @@ export class DatabaseStorage implements IStorage {
 
     if (!updatedItem) return undefined;
 
-    const inv = await repoGetInventoryItem(poItem.itemId);
+    const inv = poItem.itemId ? await repoGetInventoryItem(poItem.itemId) : undefined;
     if (inv) {
       await repoUpdateInventoryItem(inv.id, {
         quantity: Number(inv.quantity ?? 0) + receivedQuantity,
@@ -2759,7 +2778,7 @@ export class DatabaseStorage implements IStorage {
     await this.createActivityLog({
       action: "Item Received",
       description: `Received ${receivedQuantity} unit(s) of item #${poItem.itemId} from PO #${poItem.orderId}${grnSuffix}`,
-      itemId: poItem.itemId,
+      itemId: poItem.itemId ?? undefined,
       referenceType: "purchase_order",
       referenceId: poItem.orderId,
       userId: actorUserId,
@@ -2836,15 +2855,21 @@ export class DatabaseStorage implements IStorage {
         .returning();
 
       for (const item of requisitionItems) {
-        const inv = await tx
-          .select()
-          .from(inventoryItems)
-          .where(eq(inventoryItems.id, item.itemId))
-          .limit(1);
+        const inv = item.itemId
+          ? await tx.select().from(inventoryItems).where(eq(inventoryItems.id, item.itemId)).limit(1)
+          : [];
         const invRow = inv[0];
         await tx.insert(purchaseOrderItems).values({
           orderId: order.id,
           itemId: item.itemId,
+          lineNumber: item.lineNumber,
+          lineType: item.lineType,
+          description: item.description,
+          itemCodeSnapshot: item.itemCodeSnapshot ?? invRow?.sku ?? null,
+          itemDescriptionSnapshot: item.itemDescriptionSnapshot ?? invRow?.name ?? item.description,
+          manualEntryReason: item.manualEntryReason,
+          fulfilmentType: item.fulfilmentType,
+          receiptRequired: item.receiptRequired,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           totalPrice: item.totalPrice,
@@ -2946,7 +2971,7 @@ export class DatabaseStorage implements IStorage {
     return this.memStorage.getItemWithSupplierAndCategory(id);
   }
   
-  async getRequisitionWithDetails(id: number): Promise<(PurchaseRequisition & { items: (PurchaseRequisitionItem & { item: InventoryItem; })[]; requestor?: User; approver?: User; supplier?: Supplier; }) | undefined> {
+  async getRequisitionWithDetails(id: number): Promise<(PurchaseRequisition & { items: (PurchaseRequisitionItem & { item?: InventoryItem; })[]; requestor?: User; approver?: User; supplier?: Supplier; }) | undefined> {
     const orgId = getActiveOrganizationId();
     const [req] = await db
       .select()
@@ -2954,7 +2979,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(purchaseRequisitions.id, id), eq(purchaseRequisitions.organizationId, orgId)));
     if (!req) return undefined;
     const items = await db.select().from(purchaseRequisitionItems).where(eq(purchaseRequisitionItems.requisitionId, id));
-    const itemIds = [...new Set(items.map((i) => i.itemId))];
+    const itemIds = [...new Set(items.map((i) => i.itemId).filter((itemId): itemId is number => itemId != null))];
     const invItems =
       itemIds.length > 0
         ? await db
@@ -3007,7 +3032,7 @@ export class DatabaseStorage implements IStorage {
       ...req,
       items: items.map((i) => ({
         ...i,
-        item: invMap.get(i.itemId) ?? placeholderInventory(i.itemId),
+        item: i.itemId ? invMap.get(i.itemId) ?? placeholderInventory(i.itemId) : undefined,
       })),
       requestor: undefined as User | undefined,
       approver: undefined as User | undefined,
@@ -3027,7 +3052,7 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
   
-  async getPurchaseOrderWithDetails(id: number): Promise<(PurchaseOrder & { items: (PurchaseOrderItem & { item: InventoryItem; })[]; supplier: Supplier; requisition?: PurchaseRequisition; }) | undefined> {
+  async getPurchaseOrderWithDetails(id: number): Promise<(PurchaseOrder & { items: (PurchaseOrderItem & { item?: InventoryItem; })[]; supplier: Supplier; requisition?: PurchaseRequisition; }) | undefined> {
     const orgId = getActiveOrganizationId();
     const [order] = await db
       .select()
@@ -3062,7 +3087,7 @@ export class DatabaseStorage implements IStorage {
       } as Supplier);
 
     const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));
-    const itemIds = [...new Set(items.map((line) => line.itemId))];
+    const itemIds = [...new Set(items.map((line) => line.itemId).filter((itemId): itemId is number => itemId != null))];
     const invItems =
       itemIds.length > 0
         ? await db
@@ -3112,7 +3137,7 @@ export class DatabaseStorage implements IStorage {
     });
     const enrichedItems = items.map((line) => ({
       ...line,
-      item: invMap.get(line.itemId) ?? placeholderInventory(line.itemId),
+      item: line.itemId ? invMap.get(line.itemId) ?? placeholderInventory(line.itemId) : undefined,
     }));
 
     let requisition: PurchaseRequisition | undefined;
@@ -3295,8 +3320,10 @@ export class DatabaseStorage implements IStorage {
         for (const item of items) {
           await tx.insert(invoiceItems).values({
             invoiceId: created.id,
-            itemId: Number(item.itemId),
-            description: item.description ?? `Item #${item.itemId}`,
+            itemId: item.itemId == null ? null : Number(item.itemId),
+            purchaseOrderItemId: item.purchaseOrderItemId == null ? null : Number(item.purchaseOrderItemId),
+            lineType: item.lineType ?? "CATALOG",
+            description: item.description ?? (item.itemId == null ? "Manual procurement line" : `Item #${item.itemId}`),
             quantity: Number(item.quantity ?? 1),
             unitPrice: Number(item.unitPrice ?? 0),
             discount: Number(item.discount ?? 0),

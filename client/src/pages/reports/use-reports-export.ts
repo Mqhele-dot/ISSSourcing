@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from "react";
-import { downloadFile } from "@/lib/utils";
 import type { ReportsExportDeps } from "./reports-types";
 import { getExportReportType, getReportTitle } from "./reports-types";
 import { requestJson } from "@/lib/queryClient";
+import { downloadExportJob } from "@/lib/export-job-download";
 
 type ExportJob = {
   id: number;
@@ -101,15 +101,9 @@ export function useReportsExport({
       });
 
       const job = await waitForExportJob(queued.id);
-      if (job.status !== "succeeded" || !job.downloadUrl) {
+      if (job.status !== "succeeded") {
         throw new Error(exportFailureMessage(job));
       }
-
-      const response = await fetch(job.downloadUrl, { credentials: "include" });
-      if (!response.ok) {
-        throw new Error(`Download failed (${response.status}).`);
-      }
-      const blob = await response.blob();
       const fileExtension = exportFormat === "excel" ? "xlsx" : exportFormat === "csv" ? "csv.gz" : exportFormat;
       const filenameSuffix =
         exportFormat === "pdf"
@@ -119,7 +113,7 @@ export function useReportsExport({
             : exportFormat === "csv"
               ? "raw-data"
               : "analysis";
-      downloadFile(blob, `${activeTab}-${filenameSuffix}.${fileExtension}`);
+      await downloadExportJob(job.id, `${activeTab}-${filenameSuffix}.${fileExtension}`);
 
       toast({
         title: "Export Successful",

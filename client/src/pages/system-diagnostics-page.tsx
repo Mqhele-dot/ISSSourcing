@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,8 +44,112 @@ import {
 type DiagnosticsReportContext,
 } from "@/lib/diagnostics/diagnostics-report";
 import { runDiagnosticsSelfChecks } from "@shared/diagnostics/self-checks";
+import {
+  diagnosticCategories,
+  type DiagnosticCategory,
+  type DiagnosticFinding,
+  type DiagnosticsSummary,
+} from "@shared/diagnostics/findings";
+import { requestJson } from "@/lib/queryClient";
 
 type ScanCategory = keyof DiagnosticsScanResult;
+
+const DIAGNOSTIC_WORKSPACES: Record<DiagnosticCategory, { label: string; description: string }> = {
+  overview: { label: "Overview", description: "Readiness, observed failures, safe probes, and affected modules." },
+  "user-errors": { label: "User-Visible Errors", description: "Failed actions and structured validation that users actually encountered." },
+  frontend: { label: "Frontend", description: "React, route, browser network, and slow-request evidence from this browser." },
+  backend: { label: "Backend", description: "Readiness, server exceptions, failed routes, database, schema, and job evidence." },
+  business: { label: "Business Rules", description: "Approval conflicts and controlled workflow or master-data failures." },
+  integrations: { label: "Integrations", description: "Export, email, billing, WebSocket, and externally configured service evidence." },
+  consistency: { label: "Data Consistency", description: "Fixture pollution and orphan, dependency, currency, tax, or GL risks." },
+  notifications: { label: "Notifications", description: "Unread backlog, duplicate-event symptoms, delivery, and retention evidence." },
+  security: { label: "Security", description: "Recorded runtime security evidence and explicit release-gate verification gaps." },
+  audit: { label: "Audit Timeline", description: "Tenant-scoped audit coverage and recent activity evidence." },
+};
+
+function diagnosticsWorkspaceFromUrl(): DiagnosticCategory {
+  if (typeof window === "undefined") return "overview";
+  const value = new URLSearchParams(window.location.search).get("view") as DiagnosticCategory | null;
+  return value && diagnosticCategories.includes(value) ? value : "overview";
+}
+
+function statusLabel(status: DiagnosticFinding["status"]): string {
+  return status.replaceAll("_", " ");
+}
+
+function DiagnosticsWorkspacePanel({
+  category,
+  findings,
+  localEvents,
+  loading,
+  error,
+  probing,
+  onRunProbes,
+  onRetry,
+}: {
+  category: DiagnosticCategory;
+  findings: DiagnosticFinding[];
+  localEvents: DiagnosticEvent[];
+  loading: boolean;
+  error: string | null;
+  probing: boolean;
+  onRunProbes: () => void;
+  onRetry: () => void;
+}) {
+  const workspace = DIAGNOSTIC_WORKSPACES[category];
+  return (
+    <Card data-testid={`diagnostics-workspace-${category}`}>
+      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+        <div>
+          <CardTitle className="text-base">{workspace.label}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">{workspace.description}</p>
+        </div>
+        <Button type="button" size="sm" variant="outline" disabled={probing} onClick={onRunProbes}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${probing ? "animate-spin" : ""}`} />
+          Run safe probes
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading ? <p className="text-sm text-muted-foreground">Loading observed evidence...</p> : null}
+        {error ? (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+            <span>{error}</span>
+            <Button type="button" size="sm" variant="outline" onClick={onRetry}>Retry</Button>
+          </div>
+        ) : null}
+        {!loading && !error && findings.length === 0 && localEvents.length === 0 ? (
+          <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+            No evidence has been recorded for this workspace. This means not exercised, not automatically healthy.
+          </div>
+        ) : null}
+        {findings.map((row) => (
+          <div key={row.id} className="rounded-md border p-3" data-testid={`diagnostic-finding-${row.code}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={row.severity === "critical" || row.severity === "error" ? "destructive" : "outline"}>{row.severity}</Badge>
+              <Badge variant="secondary" className="capitalize">{statusLabel(row.status)}</Badge>
+              <span className="font-medium">{row.title}</span>
+              {row.occurrences > 1 ? <span className="text-xs text-muted-foreground">{row.occurrences} occurrences</span> : null}
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{row.message}</p>
+            {row.affectedRoute || row.affectedAction ? <p className="mt-1 text-xs text-muted-foreground">{row.affectedAction ?? "Action"} {row.affectedRoute ?? ""}</p> : null}
+            {row.remediation ? <p className="mt-2 text-sm"><span className="font-medium">Next step:</span> {row.remediation}</p> : null}
+          </div>
+        ))}
+        {localEvents.map((event) => (
+          <div key={`client-${event.id}`} className="rounded-md border p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={event.severity === "critical" || event.severity === "error" ? "destructive" : "outline"}>{event.severity}</Badge>
+              <Badge variant="secondary">observed in browser</Badge>
+              <span className="font-medium">{event.title}</span>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{event.message}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{event.method ?? ""} {event.endpoint ?? event.route ?? ""}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
 
 type DiagnosticsGuidance = {
   title: string;
@@ -152,6 +257,7 @@ function formatPathLine(
 export default function SystemDiagnosticsPage() {
   const { toast } = useToast();
   const [events, setEvents] = useState<DiagnosticEvent[]>(() => getDiagnosticEvents());
+  const [activeWorkspace, setActiveWorkspace] = useState<DiagnosticCategory>(diagnosticsWorkspaceFromUrl);
   const [scan, setScan] = useState<DiagnosticsScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanRunning, setScanRunning] = useState(false);
@@ -159,6 +265,24 @@ export default function SystemDiagnosticsPage() {
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [fixingCategory, setFixingCategory] = useState<string | null>(null);
   const [pendingFixCategory, setPendingFixCategory] = useState<string | null>(null);
+  const findingsQuery = useQuery({
+    queryKey: ["/api/diagnostics/findings", activeWorkspace],
+    queryFn: () => requestJson<{ category: DiagnosticCategory; generatedAt: string; findings: DiagnosticFinding[] }>("GET", `/api/diagnostics/findings?category=${encodeURIComponent(activeWorkspace)}`),
+    throwOnError: false,
+  });
+  const summaryQuery = useQuery({
+    queryKey: ["/api/diagnostics/summary"],
+    queryFn: () => requestJson<DiagnosticsSummary>("GET", "/api/diagnostics/summary"),
+    throwOnError: false,
+  });
+  const probesMutation = useMutation({
+    mutationFn: () => requestJson<{ summary: DiagnosticsSummary; findings: DiagnosticFinding[] }>("POST", "/api/diagnostics/probes/run", {}),
+    onSuccess: async (result) => {
+      toast({ title: "Safe probes complete", description: `${result.summary.total} finding(s); ${result.summary.openCount} require attention.` });
+      await Promise.all([findingsQuery.refetch(), summaryQuery.refetch()]);
+    },
+    onError: (error: Error) => toast({ title: "Safe probes failed", description: error.message, variant: "destructive" }),
+  });
   const {
     phase,
     readinessProbeFailed,
@@ -175,6 +299,12 @@ export default function SystemDiagnosticsPage() {
   } = useAppReadinessState();
 
   useEffect(() => subscribeToDiagnostics((next) => setEvents(next)), []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("view", activeWorkspace);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }, [activeWorkspace]);
 
   const busy = readyPending || setupPending || readinessFetching || setupFetching;
   const refetchReady = refetchReadiness;
@@ -267,6 +397,18 @@ export default function SystemDiagnosticsPage() {
   const recentCutoff = Date.now() - 10 * 60 * 1000;
   const recentEvents = events.filter((event) => new Date(event.timestamp).getTime() >= recentCutoff);
   const recentUnresolved = recentEvents.filter((event) => !event.resolved);
+  const workspaceLocalEvents = useMemo(() => {
+    if (activeWorkspace === "frontend") {
+      return events.filter((event) => ["react", "route", "network", "console"].includes(event.source)).slice(0, 50);
+    }
+    if (activeWorkspace === "user-errors") {
+      return events.filter((event) => !event.resolved && (event.source === "api" || event.source === "auth") && (event.severity === "error" || Number(event.status ?? 0) >= 400)).slice(0, 50);
+    }
+    if (activeWorkspace === "integrations") {
+      return events.filter((event) => /export|email|stripe|websocket|camera/i.test(`${event.title} ${event.endpoint ?? ""}`)).slice(0, 30);
+    }
+    return [];
+  }, [activeWorkspace, events]);
   const scanIssueCount = scan
     ? Object.values(scan).reduce((sum, rows) => sum + (Array.isArray(rows) ? rows.length : 0), 0)
     : 0;
@@ -347,49 +489,29 @@ export default function SystemDiagnosticsPage() {
 
       <ModuleTrainingPanel moduleId="system-diagnostics" />
 
-      <Tabs defaultValue="overview" className="space-y-4" data-testid="diagnostics-tabs">
+      <Tabs value={activeWorkspace} onValueChange={(value) => setActiveWorkspace(value as DiagnosticCategory)} className="space-y-4" data-testid="diagnostics-tabs">
         <TabsList className="grid h-auto grid-cols-2 gap-1 md:grid-cols-5">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="user-errors">User-Visible Errors</TabsTrigger>
-          <TabsTrigger value="frontend">Frontend Errors</TabsTrigger>
-          <TabsTrigger value="backend">Backend Errors</TabsTrigger>
-          <TabsTrigger value="business">Business Rules</TabsTrigger>
-          <TabsTrigger value="integrations">Integration Health</TabsTrigger>
-          <TabsTrigger value="consistency">Data Consistency</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="security">Security & Supply Chain</TabsTrigger>
-          <TabsTrigger value="audit">Audit Timeline</TabsTrigger>
+          {diagnosticCategories.map((category) => (
+            <TabsTrigger key={category} value={category}>
+              {DIAGNOSTIC_WORKSPACES[category].label}
+              {summaryQuery.data?.byCategory[category] ? <span className="ml-1 text-xs">({summaryQuery.data.byCategory[category]})</span> : null}
+            </TabsTrigger>
+          ))}
         </TabsList>
-        <TabsContent value="overview" className="text-sm text-muted-foreground">
-          Runtime readiness, live diagnostics, scan results, and export tools are shown below.
-        </TabsContent>
-        <TabsContent value="user-errors" className="text-sm text-muted-foreground">
-          User-visible API and mutation failures are collected by the global action error center and toast flow.
-        </TabsContent>
-        <TabsContent value="frontend" className="text-sm text-muted-foreground">
-          React render errors, route issues, API failures, and slow browser requests are captured in live diagnostics.
-        </TabsContent>
-        <TabsContent value="backend" className="text-sm text-muted-foreground">
-          Server request errors, unhandled rejections, uncaught exceptions, readiness failures, and diagnostic scan failures are included in the server snapshot.
-        </TabsContent>
-        <TabsContent value="business" className="text-sm text-muted-foreground">
-          Business-rule failures include supplier currency overrides, blocked supplier transaction attempts, invalid approvals, and PO commercial update locks.
-        </TabsContent>
-        <TabsContent value="integrations" className="text-sm text-muted-foreground">
-          Integration health is represented by readiness probes, email/export checks, and failed API events.
-        </TabsContent>
-        <TabsContent value="consistency" className="text-sm text-muted-foreground">
-          The scan flags supplier currency mismatches against PO documents while preserving locked historical documents.
-        </TabsContent>
-        <TabsContent value="notifications" className="text-sm text-muted-foreground">
-          High-priority supplier consistency findings create admin/manager notifications from the diagnostics scan.
-        </TabsContent>
-        <TabsContent value="security" className="text-sm text-muted-foreground">
-          Security and supply-chain status is surfaced through release-gate output, readiness, and server diagnostics.
-        </TabsContent>
-        <TabsContent value="audit" className="text-sm text-muted-foreground">
-          Audit context is available from activity logs, PO revisions, diagnostics events, and generated support reports.
-        </TabsContent>
+        {diagnosticCategories.map((category) => (
+          <TabsContent key={category} value={category}>
+            <DiagnosticsWorkspacePanel
+              category={category}
+              findings={category === activeWorkspace ? findingsQuery.data?.findings ?? [] : []}
+              localEvents={category === activeWorkspace ? workspaceLocalEvents : []}
+              loading={category === activeWorkspace && findingsQuery.isPending}
+              error={category === activeWorkspace && findingsQuery.error ? findingsQuery.error.message : null}
+              probing={probesMutation.isPending}
+              onRunProbes={() => probesMutation.mutate()}
+              onRetry={() => void findingsQuery.refetch()}
+            />
+          </TabsContent>
+        ))}
       </Tabs>
 
       <div className="flex flex-wrap gap-2">

@@ -381,13 +381,13 @@ getSupplierLogo(supplierId: number): Promise<SupplierLogo | undefined>;
     category?: Category 
   }) | undefined>;
   getRequisitionWithDetails(id: number): Promise<(PurchaseRequisition & { 
-    items: (PurchaseRequisitionItem & { item: InventoryItem })[];
+    items: (PurchaseRequisitionItem & { item?: InventoryItem })[];
     requestor?: User;
     approver?: User;
     supplier?: Supplier;
   }) | undefined>;
   getPurchaseOrderWithDetails(id: number): Promise<(PurchaseOrder & { 
-    items: (PurchaseOrderItem & { item: InventoryItem })[];
+    items: (PurchaseOrderItem & { item?: InventoryItem })[];
     supplier: Supplier;
     requisition?: PurchaseRequisition;
   }) | undefined>;
@@ -3566,15 +3566,24 @@ export class MemStorage implements IStorage {
     const id = this.requisitionItemCurrentId++;
     
     // Make sure the referenced inventory item exists
-    const inventoryItem = this.inventoryItems.get(item.itemId);
-    if (!inventoryItem) {
+    const inventoryItem = item.itemId ? this.inventoryItems.get(item.itemId) : undefined;
+    if (String(item.lineType ?? "CATALOG").toUpperCase() === "CATALOG" && !inventoryItem) {
       throw new Error(`Inventory item with ID ${item.itemId} not found`);
     }
     
     const requisitionItem: PurchaseRequisitionItem = {
       ...item,
       id,
+      itemId: item.itemId ?? null,
       quantity: item.quantity ?? 0,
+      lineNumber: item.lineNumber ?? 1,
+      lineType: item.lineType ?? "CATALOG",
+      description: item.description ?? inventoryItem?.name ?? null,
+      itemCodeSnapshot: item.itemCodeSnapshot ?? inventoryItem?.sku ?? null,
+      itemDescriptionSnapshot: item.itemDescriptionSnapshot ?? inventoryItem?.name ?? null,
+      manualEntryReason: item.manualEntryReason ?? null,
+      fulfilmentType: item.fulfilmentType ?? "GOODS_RECEIPT",
+      receiptRequired: item.receiptRequired ?? true,
       unitOfMeasureId: item.unitOfMeasureId ?? null,
       taxCodeId: item.taxCodeId ?? null,
       costCentreId: item.costCentreId ?? null,
@@ -3842,19 +3851,28 @@ export class MemStorage implements IStorage {
     const id = this.orderItemCurrentId++;
     
     // Make sure the referenced inventory item exists
-    const inventoryItem = this.inventoryItems.get(item.itemId);
-    if (!inventoryItem) {
+    const inventoryItem = item.itemId ? this.inventoryItems.get(item.itemId) : undefined;
+    if (String(item.lineType ?? "CATALOG").toUpperCase() === "CATALOG" && !inventoryItem) {
       throw new Error(`Inventory item with ID ${item.itemId} not found`);
     }
     
     const orderItem: PurchaseOrderItem = {
       ...item,
       id,
+      itemId: item.itemId ?? null,
       quantity: item.quantity ?? 0,
+      lineNumber: item.lineNumber ?? 1,
+      lineType: item.lineType ?? "CATALOG",
+      description: item.description ?? inventoryItem?.name ?? null,
+      itemCodeSnapshot: item.itemCodeSnapshot ?? inventoryItem?.sku ?? null,
+      itemDescriptionSnapshot: item.itemDescriptionSnapshot ?? inventoryItem?.name ?? null,
+      manualEntryReason: item.manualEntryReason ?? null,
+      fulfilmentType: item.fulfilmentType ?? "GOODS_RECEIPT",
+      receiptRequired: item.receiptRequired ?? true,
       notes: item.notes ?? null,
       receivedQuantity: item.receivedQuantity ?? null,
-      unitOfMeasureId: item.unitOfMeasureId ?? inventoryItem.unitOfMeasureId ?? null,
-      commodityCodeId: item.commodityCodeId ?? inventoryItem.commodityCodeId ?? null,
+      unitOfMeasureId: item.unitOfMeasureId ?? inventoryItem?.unitOfMeasureId ?? null,
+      commodityCodeId: item.commodityCodeId ?? inventoryItem?.commodityCodeId ?? null,
       taxCodeId: item.taxCodeId ?? null,
       costCentreId: item.costCentreId ?? null,
       glAccountCode: item.glAccountCode ?? null,
@@ -4010,7 +4028,7 @@ export class MemStorage implements IStorage {
     this.purchaseOrderItems.set(itemId, updatedItem);
     
     // Update the inventory quantity
-    const inventoryItem = this.inventoryItems.get(poItem.itemId);
+    const inventoryItem = poItem.itemId ? this.inventoryItems.get(poItem.itemId) : undefined;
     if (inventoryItem) {
       await this.updateInventoryItem(inventoryItem.id, {
         quantity: inventoryItem.quantity + receivedQuantity
@@ -4196,7 +4214,7 @@ export class MemStorage implements IStorage {
   }
   
   async getRequisitionWithDetails(id: number): Promise<(PurchaseRequisition & { 
-    items: (PurchaseRequisitionItem & { item: InventoryItem })[];
+    items: (PurchaseRequisitionItem & { item?: InventoryItem })[];
     requestor?: User;
     approver?: User;
     supplier?: Supplier;
@@ -4204,13 +4222,13 @@ export class MemStorage implements IStorage {
     const requisition = this.purchaseRequisitions.get(id);
     if (!requisition) return undefined;
     
-    const result = { ...requisition, items: [] as (PurchaseRequisitionItem & { item: InventoryItem })[], requestor: undefined as User | undefined, approver: undefined as User | undefined, supplier: undefined as Supplier | undefined };
+    const result = { ...requisition, items: [] as (PurchaseRequisitionItem & { item?: InventoryItem })[], requestor: undefined as User | undefined, approver: undefined as User | undefined, supplier: undefined as Supplier | undefined };
     
     // Get items
     const items = await this.getPurchaseRequisitionItems(id);
     result.items = items.map(item => {
-      const inventoryItem = this.inventoryItems.get(item.itemId);
-      if (!inventoryItem) throw createMissingInventoryItemError(`requisition ${id}`, item.itemId);
+      const inventoryItem = item.itemId ? this.inventoryItems.get(item.itemId) : undefined;
+      if (item.itemId && !inventoryItem) throw createMissingInventoryItemError(`requisition ${id}`, item.itemId);
       return {
         ...item,
         item: inventoryItem
@@ -4236,7 +4254,7 @@ export class MemStorage implements IStorage {
   }
   
   async getPurchaseOrderWithDetails(id: number): Promise<(PurchaseOrder & { 
-    items: (PurchaseOrderItem & { item: InventoryItem })[];
+    items: (PurchaseOrderItem & { item?: InventoryItem })[];
     supplier: Supplier;
     requisition?: PurchaseRequisition;
   }) | undefined> {
@@ -4268,7 +4286,7 @@ export class MemStorage implements IStorage {
         updatedAt: now,
       } as Supplier);
     
-    const result: PurchaseOrder & { items: (PurchaseOrderItem & { item: InventoryItem })[]; supplier: Supplier; requisition?: PurchaseRequisition } = { 
+    const result: PurchaseOrder & { items: (PurchaseOrderItem & { item?: InventoryItem })[]; supplier: Supplier; requisition?: PurchaseRequisition } = { 
       ...order, 
       items: [],
       supplier: supplierResolved
@@ -4277,8 +4295,8 @@ export class MemStorage implements IStorage {
     // Get items
     const items = await this.getPurchaseOrderItems(id);
     result.items = items.map(item => {
-      const inventoryItem = this.inventoryItems.get(item.itemId);
-      if (!inventoryItem) throw createMissingInventoryItemError(`purchase order ${id}`, item.itemId);
+      const inventoryItem = item.itemId ? this.inventoryItems.get(item.itemId) : undefined;
+      if (item.itemId && !inventoryItem) throw createMissingInventoryItemError(`purchase order ${id}`, item.itemId);
       return {
         ...item,
         item: inventoryItem
@@ -5455,6 +5473,9 @@ export class MemStorage implements IStorage {
     
     const newItem: InvoiceItem = {
       ...item,
+      itemId: item.itemId ?? null,
+      purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+      lineType: item.lineType ?? "CATALOG",
       id,
       createdAt: now,
       updatedAt: now,

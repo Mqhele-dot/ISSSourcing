@@ -2,12 +2,18 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { SearchableRecordCombobox } from "@/components/searchable-record-combobox";
 import type { InventoryItem } from "@shared/schema";
 
 export interface ReqLineDraft {
   id?: number;
-  itemId: number;
+  itemId: number | null;
+  lineType: "CATALOG" | "NON_STOCK" | "SERVICE";
+  description?: string;
+  manualEntryReason?: string;
+  receiptRequired?: boolean;
   quantity: number;
   unitPrice: number;
   unitOfMeasureId?: number | null;
@@ -35,7 +41,7 @@ type RequisitionLinesEditorProps = {
   fieldError?: string;
   onAddRow: () => void;
   onRemoveRow: (idx: number) => void;
-  onUpdateRow: (idx: number, field: keyof ReqLineDraft, value: number | string | null) => void;
+  onUpdateRow: (idx: number, field: keyof ReqLineDraft, value: number | string | boolean | null) => void;
   readOnly?: boolean;
   lockedReason?: string;
 };
@@ -82,6 +88,7 @@ export function RequisitionLinesEditor({
         {items.map((item, idx) => {
           const lineKey = item.id ?? idx;
           const selectedItem = inventoryItems.find((candidate) => Number(candidate.id) === Number(item.itemId));
+          const isManual = item.lineType !== "CATALOG";
           const selectedUom = unitsOfMeasure.find((uom) => Number(uom.id) === Number(item.unitOfMeasureId));
           const selectedTaxCode = taxCodes.find((taxCode) => Number(taxCode.id) === Number(item.taxCodeId));
           const lineValue = Number(item.quantity || 0) * Number(item.unitPrice || 0);
@@ -94,9 +101,19 @@ export function RequisitionLinesEditor({
               : null,
           ].filter(Boolean);
           return (
-          <div key={lineKey} className="grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(220px,1.5fr)_92px_140px_140px_140px_160px_44px]" data-testid={`requisition-line-row-${lineKey}`}>
+          <div key={lineKey} className="grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(240px,1.5fr)_92px_140px_140px_140px_160px_44px]" data-testid={`requisition-line-row-${lineKey}`}>
             <div className="space-y-2">
-              <Label htmlFor={"req-item-" + idx}>Item *</Label>
+              <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1" aria-label={`Line ${idx + 1} type`}>
+                {(["CATALOG", "NON_STOCK", "SERVICE"] as const).map((type) => (
+                  <Button key={type} type="button" size="sm" variant={item.lineType === type ? "default" : "ghost"} onClick={() => onUpdateRow(idx, "lineType", type)} disabled={readOnly}>
+                    {type === "CATALOG" ? "Catalog" : type === "NON_STOCK" ? "Non-stock" : "Service"}
+                  </Button>
+                ))}
+              </div>
+              <Label htmlFor={"req-item-" + idx}>{isManual ? "Description *" : "Item *"}</Label>
+              {isManual ? (
+                <Textarea id={"req-item-" + idx} value={item.description ?? ""} onChange={(event) => onUpdateRow(idx, "description", event.target.value)} placeholder={item.lineType === "SERVICE" ? "Describe the service and deliverable" : "Describe the non-stock good"} disabled={readOnly} data-testid={`requisition-line-description-${lineKey}`} />
+              ) : (
               <SearchableRecordCombobox
                 value={item.itemId ? String(item.itemId) : ""}
                 onValueChange={(value) => onUpdateRow(idx, "itemId", Number(value))}
@@ -112,6 +129,16 @@ export function RequisitionLinesEditor({
                 ariaLabel={"Select item for line " + (idx + 1)}
                 testId={`requisition-line-item-${lineKey}`}
               />
+              )}
+              {isManual ? (
+                <>
+                  <Input value={item.manualEntryReason ?? ""} onChange={(event) => onUpdateRow(idx, "manualEntryReason", event.target.value)} placeholder="Business reason for manual entry *" disabled={readOnly} data-testid={`requisition-line-reason-${lineKey}`} />
+                  <div className="flex items-center gap-2">
+                    <Switch id={`req-evidence-${lineKey}`} checked={item.receiptRequired !== false} onCheckedChange={(checked) => onUpdateRow(idx, "receiptRequired", checked)} disabled={readOnly} />
+                    <Label htmlFor={`req-evidence-${lineKey}`} className="text-xs font-normal">{item.lineType === "SERVICE" ? "Service confirmation required" : "Goods receipt required"}</Label>
+                  </div>
+                </>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor={"req-qty-" + idx}>Qty *</Label>

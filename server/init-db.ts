@@ -725,7 +725,15 @@ export async function ensurePurchaseRequisitionsTables(): Promise<void> {
       CREATE TABLE IF NOT EXISTS purchase_requisition_items (
         id SERIAL PRIMARY KEY,
         requisition_id INTEGER NOT NULL,
-        item_id INTEGER NOT NULL,
+        item_id INTEGER,
+        line_number INTEGER NOT NULL DEFAULT 1,
+        line_type TEXT NOT NULL DEFAULT 'CATALOG',
+        description TEXT,
+        item_code_snapshot TEXT,
+        item_description_snapshot TEXT,
+        manual_entry_reason TEXT,
+        fulfilment_type TEXT NOT NULL DEFAULT 'GOODS_RECEIPT',
+        receipt_required BOOLEAN NOT NULL DEFAULT TRUE,
         quantity INTEGER NOT NULL DEFAULT 1,
         unit_price REAL NOT NULL,
         total_price REAL NOT NULL,
@@ -740,6 +748,15 @@ export async function ensurePurchaseRequisitionsTables(): Promise<void> {
     await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS tax_code_id INTEGER`);
     await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER`);
     await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ALTER COLUMN item_id DROP NOT NULL`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS line_number INTEGER NOT NULL DEFAULT 1`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS line_type TEXT NOT NULL DEFAULT 'CATALOG'`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS description TEXT`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS item_code_snapshot TEXT`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS item_description_snapshot TEXT`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS manual_entry_reason TEXT`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS fulfilment_type TEXT NOT NULL DEFAULT 'GOODS_RECEIPT'`);
+    await pool.query(`ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS receipt_required BOOLEAN NOT NULL DEFAULT TRUE`);
     console.log('Purchase requisitions tables ready');
   } catch (err) {
     console.warn('Could not ensure purchase requisitions tables:', err instanceof Error ? err.message : err);
@@ -843,6 +860,7 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         approver_role TEXT,
         approver_user_id INTEGER,
         is_active BOOLEAN DEFAULT TRUE,
+        version INTEGER NOT NULL DEFAULT 1,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL,
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
@@ -1602,6 +1620,15 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS tax_code_id INTEGER;
       ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER;
       ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT;
+      ALTER TABLE purchase_requisition_items ALTER COLUMN item_id DROP NOT NULL;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS line_number INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS line_type TEXT NOT NULL DEFAULT 'CATALOG';
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS description TEXT;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS item_code_snapshot TEXT;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS item_description_snapshot TEXT;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS manual_entry_reason TEXT;
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS fulfilment_type TEXT NOT NULL DEFAULT 'GOODS_RECEIPT';
+      ALTER TABLE purchase_requisition_items ADD COLUMN IF NOT EXISTS receipt_required BOOLEAN NOT NULL DEFAULT TRUE;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS department_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS contract_id INTEGER;
       ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;
@@ -1635,6 +1662,19 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS tax_code_id INTEGER;
       ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS cost_centre_id INTEGER;
       ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS gl_account_code TEXT;
+      ALTER TABLE purchase_order_items ALTER COLUMN item_id DROP NOT NULL;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS line_number INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS line_type TEXT NOT NULL DEFAULT 'CATALOG';
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS description TEXT;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS item_code_snapshot TEXT;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS item_description_snapshot TEXT;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS manual_entry_reason TEXT;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS fulfilment_type TEXT NOT NULL DEFAULT 'GOODS_RECEIPT';
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS receipt_required BOOLEAN NOT NULL DEFAULT TRUE;
+      ALTER TABLE invoice_items ALTER COLUMN item_id DROP NOT NULL;
+      ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS purchase_order_item_id INTEGER REFERENCES purchase_order_items(id);
+      ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS line_type TEXT NOT NULL DEFAULT 'CATALOG';
+      ALTER TABLE approval_policies ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supplier_id INTEGER;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_terms_id INTEGER;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency_code TEXT;

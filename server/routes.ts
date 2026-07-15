@@ -80,6 +80,7 @@ import {
   projects,
 } from "@shared/schema";
 import { appendAuditEvent } from "./services/audit-chain-service";
+import { getProcurementLineReportRows } from "./services/procurement-line-report-service";
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -101,6 +102,8 @@ import { getReportingCurrencyCode } from "./lib/org-reporting-money";
 import { allowDevOnlyRoutes } from "./lib/deployment-behavior";
 import { analyticsRateLimiter, exportRateLimiter, uploadRateLimiter } from "./services/security-service";
 import { getServerDiagnosticEvents, recordServerDiagnosticEvent } from "./diagnostics/server-diagnostics-store";
+import { collectDiagnosticFindings, summarizeDiagnosticFindings } from "./diagnostics/diagnostic-findings-service";
+import { diagnosticCategories, type DiagnosticCategory } from "@shared/diagnostics/findings";
 import { detectSupplierDocumentMismatches } from "./modules/procurement/supplier-defaults";
 
 function isInternalExportRequest(req: Request): boolean {
@@ -558,120 +561,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           break;
           
         case 'purchase_orders': {
-          // Get all orders
-          let orders = await storage.getAllPurchaseOrders();
-          
-          // Apply date range filter if provided
-          if (filter.startDate && filter.endDate) {
-            orders = orders.filter(order => 
-              order.createdAt >= filter.startDate && order.createdAt <= filter.endDate
-            );
-          }
-          
-          // Apply supplier filter if provided
-          if (filter.supplierId) {
-            orders = orders.filter(order => order.supplierId === filter.supplierId);
-          }
-          
-          // Apply status filter if provided
-          if (filter.status) {
-            orders = orders.filter(order => order.status === filter.status);
-          }
-          if (filter.projectId) {
-            orders = orders.filter(
-              (order) => (order as { projectId?: number | null }).projectId === filter.projectId,
-            );
-          }
-
-          const poSuppliers = await storage.getAllSuppliers();
-          const poSupplierNames = new Map(poSuppliers.map((s) => [s.id, s.name]));
-          if (format === "pdf") {
-            const enriched: unknown[] = [];
-            for (const o of orders) {
-              const d = await storage.getPurchaseOrderWithDetails(o.id);
-              if (d) enriched.push(d);
-            }
-            data = enriched;
-          } else {
-            data = orders.map((o) => ({
-              ...o,
-              supplierName: poSupplierNames.get(o.supplierId) ?? "",
-            }));
-          }
+          data = await getProcurementLineReportRows({
+            organizationId: getActiveOrganizationId(),
+            dataset: "purchase_orders",
+            filters: filter,
+          });
           title = 'Purchase Orders Report' + filterText;
           break;
         }
           
         case 'purchase_requisitions': {
-          // Get all requisitions
-          let requisitions = await storage.getAllPurchaseRequisitions();
-          
-          // Apply date range filter if provided
-          if (filter.startDate && filter.endDate) {
-            requisitions = requisitions.filter(req => 
-              req.createdAt >= filter.startDate && req.createdAt <= filter.endDate
-            );
-          }
-          
-          // Apply supplier filter if provided
-          if (filter.supplierId) {
-            requisitions = requisitions.filter(req => req.supplierId === filter.supplierId);
-          }
-          
-          // Apply status filter if provided
-          if (filter.status) {
-            requisitions = requisitions.filter(req => req.status === filter.status);
-          }
-          if (filter.projectId) {
-            requisitions = requisitions.filter(
-              (req) => (req as { projectId?: number | null }).projectId === filter.projectId,
-            );
-          }
-
-          const reqSuppliers = await storage.getAllSuppliers();
-          const reqSupplierNames = new Map(reqSuppliers.map((s) => [s.id, s.name]));
-          const reqUsers = await storage.getAllUsers();
-          const reqUserDisplay = new Map(
-            reqUsers.map((u) => [u.id, (u.fullName || u.username || "").trim()]),
-          );
-          if (format === "pdf") {
-            const enrichedReq: unknown[] = [];
-            const allUsersForReqPdf = await storage.getAllUsers();
-            const userLabelForReqPdf = new Map(
-              allUsersForReqPdf.map((u) => [
-                u.id,
-                `${(u.fullName || u.username || "").trim() || `User #${u.id}`}`,
-              ]),
-            );
-            for (const r of requisitions) {
-              const d = await storage.getRequisitionWithDetails(r.id);
-              if (d) {
-                const hist = await db
-                  .select()
-                  .from(approvalHistory)
-                  .where(
-                    and(
-                      eq(approvalHistory.organizationId, getActiveOrganizationId()),
-                      eq(approvalHistory.entityType, "requisition"),
-                      eq(approvalHistory.entityId, r.id),
-                    ),
-                  )
-                  .orderBy(asc(approvalHistory.performedAt));
-                const approvalHistoryForPdf = hist.map((row) => ({
-                  ...row,
-                  performedByLabel: userLabelForReqPdf.get(row.performedBy) ?? `User #${row.performedBy}`,
-                }));
-                enrichedReq.push({ ...d, approvalHistoryForPdf });
-              }
-            }
-            data = enrichedReq;
-          } else {
-            data = requisitions.map((r) => ({
-              ...r,
-              supplierName: r.supplierId != null ? (reqSupplierNames.get(r.supplierId) ?? "") : "",
-              requestorName: r.requestorId != null ? (reqUserDisplay.get(r.requestorId) ?? "") : "",
-            }));
-          }
+          data = await getProcurementLineReportRows({
+            organizationId: getActiveOrganizationId(),
+            dataset: "purchase_requisitions",
+            filters: filter,
+          });
           title = 'Purchase Requisitions Report' + filterText;
           break;
         }
@@ -1016,6 +920,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Error updating app settings:", error);
         res.status(500).json({ message: "Failed to update app settings" });
       }
+    }
+  });
+
+  app.get("/api/diagnostics/summary", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (_req: Request, res: Response) => {
+    try {
+      const findings = await collectDiagnosticFindings(getActiveOrganizationId());
+      return res.json(summarizeDiagnosticFindings(findings));
+    } catch (error) {
+      recordServerDiagnosticEvent({ severity: "error", source: "system", title: "Diagnostics summary failed", message: error instanceof Error ? error.message : String(error), details: error });
+      return sendError(res, 500, "DIAGNOSTICS_SUMMARY_FAILED", "Diagnostics summary could not be generated.", { hint: "Retry the safe probes and review database readiness." });
+    }
+  });
+
+  app.get("/api/diagnostics/findings", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const requested = String(req.query.category ?? "overview") as DiagnosticCategory;
+      if (!diagnosticCategories.includes(requested)) {
+        return sendError(res, 400, "DIAGNOSTIC_CATEGORY_INVALID", "Unknown diagnostics workspace.", { hint: `Use one of: ${diagnosticCategories.join(", ")}.` });
+      }
+      const findings = await collectDiagnosticFindings(getActiveOrganizationId());
+      const filtered = requested === "overview" ? findings : findings.filter((row) => row.category === requested);
+      return res.json({ category: requested, generatedAt: new Date().toISOString(), findings: filtered });
+    } catch (error) {
+      recordServerDiagnosticEvent({ severity: "error", source: "system", title: "Diagnostics findings failed", message: error instanceof Error ? error.message : String(error), details: error });
+      return sendError(res, 500, "DIAGNOSTICS_FINDINGS_FAILED", "Diagnostics findings could not be loaded.", { hint: "Retry the workspace and use the request ID if it continues to fail." });
+    }
+  });
+
+  app.post("/api/diagnostics/probes/run", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (_req: Request, res: Response) => {
+    try {
+      const findings = await collectDiagnosticFindings(getActiveOrganizationId());
+      const summary = summarizeDiagnosticFindings(findings);
+      recordServerDiagnosticEvent({ severity: summary.openCount ? "warning" : "info", source: "system", title: "Safe diagnostic probes completed", message: `${summary.total} finding(s) collected; ${summary.openCount} require attention.`, details: summary });
+      return res.json({ summary, findings });
+    } catch (error) {
+      recordServerDiagnosticEvent({ severity: "error", source: "system", title: "Safe diagnostic probes failed", message: error instanceof Error ? error.message : String(error), details: error });
+      return sendError(res, 500, "DIAGNOSTIC_PROBE_FAILED", "Safe diagnostic probes failed.", { hint: "Check readiness and schema status, then retry." });
     }
   });
 

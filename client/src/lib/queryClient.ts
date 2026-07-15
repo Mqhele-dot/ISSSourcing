@@ -518,8 +518,16 @@ export async function invTrackFetch<T>(
       });
       const err = attachRequestId(new Error(`${res.status}: ${msg}`), res.headers.get("X-Request-Id")) as Error & {
         status?: number;
+        code?: string;
+        details?: unknown;
+        hint?: string;
       };
       err.status = res.status;
+      if (isApiEnvelope(payload) && !payload.ok) {
+        err.code = payload.error.code;
+        err.details = payload.error.details;
+        err.hint = payload.error.hint;
+      }
       throw err;
     }
 

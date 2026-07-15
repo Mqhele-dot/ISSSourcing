@@ -42,6 +42,13 @@ type MdmRequisitionContext = {
 
 const LOCKED_REQUISITION_STATUSES = new Set(["APPROVED", "CONVERTED", "CLOSED", "CANCELLED"]);
 
+function isValidRequisitionLine(line: ReqLineDraft): boolean {
+  const commercialValuesAreValid = line.quantity > 0 && Number(line.unitPrice) > 0;
+  if (!commercialValuesAreValid) return false;
+  if (line.lineType === "CATALOG") return Number(line.itemId) > 0;
+  return Boolean(line.description?.trim() && line.manualEntryReason?.trim());
+}
+
 function lockedReasonForStatus(status: unknown): string {
   const normalized = String(status || "").trim().toUpperCase();
   if (!LOCKED_REQUISITION_STATUSES.has(normalized)) return "";
@@ -68,7 +75,7 @@ export function useRequisitionForm(params: {
   const [requiredDate, setRequiredDate] = useState("");
   const [projectId, setProjectId] = useState<number | "">("");
   const [currencyCode, setCurrencyCode] = useState("ZAR");
-  const [items, setItems] = useState<ReqLineDraft[]>([{ itemId: 0, quantity: 1, unitPrice: 0 }]);
+  const [items, setItems] = useState<ReqLineDraft[]>([{ itemId: null, lineType: "CATALOG", quantity: 1, unitPrice: 0 }]);
   const [fieldErrors, setFieldErrors] = useState<RequisitionFieldErrors>({});
   const organizationCurrencyInitialized = useRef(false);
 
@@ -287,7 +294,11 @@ export function useRequisitionForm(params: {
         setItems(
           requisition.items.map((i) => ({
             id: i.id,
-            itemId: i.itemId,
+            itemId: i.itemId ?? null,
+            lineType: (i.lineType as ReqLineDraft["lineType"]) ?? "CATALOG",
+            description: i.description ?? "",
+            manualEntryReason: i.manualEntryReason ?? "",
+            receiptRequired: i.receiptRequired !== false,
             quantity: i.quantity,
             unitPrice: i.unitPrice,
             unitOfMeasureId: (i as PurchaseRequisitionItem & { unitOfMeasureId?: number | null }).unitOfMeasureId ?? null,
@@ -313,9 +324,13 @@ export function useRequisitionForm(params: {
         requiredDate: requiredDate ? new Date(requiredDate).toISOString() : undefined,
         projectId: projectId === "" ? undefined : Number(projectId),
         items: items
-          .filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0)
+          .filter(isValidRequisitionLine)
           .map((i) => ({
             itemId: i.itemId,
+            lineType: i.lineType,
+            description: i.description || undefined,
+            manualEntryReason: i.manualEntryReason || undefined,
+            receiptRequired: i.receiptRequired !== false,
             quantity: i.quantity,
             unitPrice: i.unitPrice,
             unitOfMeasureId: i.unitOfMeasureId ?? undefined,
@@ -368,10 +383,14 @@ export function useRequisitionForm(params: {
         throw new Error(lockedReason || "This requisition is locked.");
       }
       const validItems = items
-        .filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0)
+        .filter(isValidRequisitionLine)
         .map((i) => ({
           id: i.id,
           itemId: i.itemId,
+          lineType: i.lineType,
+          description: i.description || undefined,
+          manualEntryReason: i.manualEntryReason || undefined,
+          receiptRequired: i.receiptRequired !== false,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
           unitOfMeasureId: i.unitOfMeasureId ?? undefined,
@@ -404,12 +423,18 @@ export function useRequisitionForm(params: {
     },
   });
 
-  const addItem = useCallback(() => setItems((prev) => [...prev, { itemId: 0, quantity: 1, unitPrice: 0, lineCurrencyCode: currencyCode }]), [currencyCode]);
+  const addItem = useCallback(() => setItems((prev) => [...prev, { itemId: null, lineType: "CATALOG", receiptRequired: true, quantity: 1, unitPrice: 0, lineCurrencyCode: currencyCode }]), [currencyCode]);
   const removeItem = useCallback((idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx)), []);
-  const updateItem = useCallback((idx: number, field: keyof ReqLineDraft, value: number | string | null) => {
+  const updateItem = useCallback((idx: number, field: keyof ReqLineDraft, value: number | string | boolean | null) => {
     setItems((prev) => {
       const next = [...prev];
       const current = { ...next[idx], [field]: value };
+      if (field === "lineType") {
+        current.itemId = value === "CATALOG" ? current.itemId : null;
+        current.description = value === "CATALOG" ? "" : current.description;
+        current.manualEntryReason = value === "CATALOG" ? "" : current.manualEntryReason;
+        current.receiptRequired = true;
+      }
       if (field === "itemId") {
         const selected = effectiveInventoryItems.find((item) => Number(item.id) === Number(value)) as
           | (InventoryItem & { supplierPartNumber?: string | null; defaultTaxCodeId?: number | null; glAccountCode?: string | null })
@@ -453,9 +478,9 @@ export function useRequisitionForm(params: {
     }
     if (!departmentId) nextErrors.departmentId = "Department is required";
     if (!requiredDate) nextErrors.requiredDate = "Required date is required";
-    const validItems = items.filter((i) => i.itemId > 0 && i.quantity > 0 && Number(i.unitPrice) > 0);
+    const validItems = items.filter(isValidRequisitionLine);
     if (validItems.length === 0) {
-      nextErrors.items = "Add at least one valid item with qty > 0 and unit price > 0";
+      nextErrors.items = "Add a valid catalogue or manual line with quantity, price, and required details";
     }
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -467,10 +492,10 @@ export function useRequisitionForm(params: {
       return;
     }
     if (validItems.length === 0) {
-      const hasItems = items.some((i) => i.itemId > 0);
+      const hasItems = items.some((i) => i.lineType !== "CATALOG" || Number(i.itemId) > 0);
       if (!hasItems) {
         toast({ title: "Add at least one item", variant: "destructive" });
-      } else if (items.some((i) => i.itemId > 0 && i.quantity <= 0)) {
+      } else if (items.some((i) => (i.lineType !== "CATALOG" || Number(i.itemId) > 0) && i.quantity <= 0)) {
         toast({ title: "Quantity must be greater than zero for each item", variant: "destructive" });
       } else {
         toast({ title: "Unit price must be greater than zero for each item", variant: "destructive" });

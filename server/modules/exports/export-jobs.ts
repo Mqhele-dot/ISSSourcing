@@ -3,6 +3,7 @@ import { pool } from "../../db";
 import { appEnv } from "../../config/env";
 import { getActiveOrganizationId } from "../../organization-context";
 import { incrementMetric } from "../../observability/metrics";
+import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
 
 export type ExportJobStatus = "queued" | "running" | "succeeded" | "failed";
 
@@ -127,6 +128,25 @@ export async function getScopedExportJob(id: number): Promise<ExportJobRow | nul
   return result.rows[0] ? mapExportJobRow(result.rows[0]) : null;
 }
 
+export async function refreshScopedExportDownloadToken(id: number): Promise<ExportJobRow | null> {
+  const token = randomBytes(24).toString("hex");
+  const tokenExpiry = new Date(Date.now() + appEnv.exportDownloadTokenTtlMinutes * 60_000);
+  const result = await pool.query(
+    `UPDATE export_jobs
+     SET download_token = $3,
+         download_token_expires_at = $4,
+         updated_at = NOW()
+     WHERE id = $1
+       AND organization_id = $2
+       AND status = 'succeeded'
+       AND file_path IS NOT NULL
+       AND (retention_expires_at IS NULL OR retention_expires_at > NOW())
+     RETURNING *`,
+    [id, getActiveOrganizationId(), token, tokenExpiry],
+  );
+  return result.rows[0] ? mapExportJobRow(result.rows[0]) : null;
+}
+
 export async function claimNextQueuedExportJob(): Promise<ExportJobRow | null> {
   const result = await pool.query(
     `
@@ -181,16 +201,46 @@ export async function markExportJobSucceeded(input: {
 }
 
 export async function markExportJobFailed(id: number, message: string): Promise<void> {
-  await pool.query(
+  const result = await pool.query(
     `
       UPDATE export_jobs
       SET status = 'failed',
           last_error = $2,
           updated_at = NOW()
       WHERE id = $1
+      RETURNING organization_id, dataset, format
     `,
     [id, message.slice(0, 2000)],
   );
+  const row = result.rows[0];
+  if (row) {
+    let failure: Record<string, unknown> = {};
+    try {
+      failure = JSON.parse(message) as Record<string, unknown>;
+    } catch {
+      failure = {};
+    }
+    recordServerDiagnosticEvent({
+      severity: "error",
+      source: "integration",
+      title: "Export generation failed",
+      message:
+        typeof failure.message === "string"
+          ? failure.message
+          : "The export worker could not generate the requested file.",
+      route: "/api/export-jobs",
+      method: "WORKER",
+      details: {
+        organizationId: Number(row.organization_id),
+        jobId: id,
+        dataset: row.dataset,
+        format: row.format,
+        code: typeof failure.code === "string" ? failure.code : "EXPORT_GENERATION_FAILED",
+        requestId: typeof failure.requestId === "string" ? failure.requestId : `export-job-${id}`,
+        remediation: "Retry the job from Export Center. If it fails again, use this request ID in System Diagnostics.",
+      },
+    });
+  }
 }
 
 export async function requeueExportJob(id: number): Promise<void> {

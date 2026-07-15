@@ -1,7 +1,10 @@
 import { pool } from "../../db";
 
 export type PurchaseOrderValidationLine = {
-  itemId: number;
+  itemId?: number | null;
+  lineType?: string | null;
+  description?: string | null;
+  glAccountCode?: string | null;
   unitOfMeasureId?: number | null;
   taxCodeId?: number | null;
 };
@@ -136,9 +139,14 @@ async function hasActiveFxRate(organizationId: number, currencyCode: string): Pr
 export async function validatePurchaseOrderWorkflowReadiness(
   input: PurchaseOrderValidationInput,
 ): Promise<PurchaseOrderValidationResult> {
-  const itemIds = Array.from(new Set(input.items.map((item) => Number(item.itemId)).filter((id) => id > 0)));
-  if (itemIds.length === 0) {
-    return { ok: false, status: 400, code: "PO_ITEMS_REQUIRED", message: "At least one valid item is required." };
+  const catalogLines = input.items.filter((line) => String(line.lineType ?? "CATALOG").toUpperCase() === "CATALOG");
+  const manualLines = input.items.filter((line) => String(line.lineType ?? "CATALOG").toUpperCase() !== "CATALOG");
+  const itemIds = Array.from(new Set(catalogLines.map((item) => Number(item.itemId)).filter((id) => id > 0)));
+  if (input.items.length === 0 || catalogLines.some((line) => !Number(line.itemId))) {
+    return { ok: false, status: 400, code: "PO_ITEMS_REQUIRED", message: "Every catalogue line requires a valid item." };
+  }
+  if (manualLines.some((line) => !String(line.description ?? "").trim())) {
+    return { ok: false, status: 400, code: "PO_MANUAL_LINE_DESCRIPTION_REQUIRED", message: "Every manual PO line requires a description." };
   }
 
   const policy = await loadPurchaseOrderValidationPolicy(input.organizationId);
@@ -187,6 +195,18 @@ export async function validatePurchaseOrderWorkflowReadiness(
   }
 
   for (const line of input.items) {
+    if (String(line.lineType ?? "CATALOG").toUpperCase() !== "CATALOG") {
+      if (policy.requireUomConversion && !Number(line.unitOfMeasureId ?? 0)) {
+        return { ok: false, status: 409, code: "PO_UOM_REQUIRED", message: "Manual lines require a unit of measure before the PO can be submitted or sent." };
+      }
+      if (policy.requireTaxCode && !Number(line.taxCodeId ?? input.taxCodeId ?? 0)) {
+        return { ok: false, status: 409, code: "PO_TAX_CODE_REQUIRED", message: "Manual lines require a tax code before the PO can be submitted or sent." };
+      }
+      if (policy.requireGlMapping && !String(line.glAccountCode ?? "").trim()) {
+        return { ok: false, status: 409, code: "PO_GL_MAPPING_REQUIRED", message: "Manual lines require a GL account before the PO can be submitted or sent." };
+      }
+      continue;
+    }
     const item = itemsById.get(Number(line.itemId));
     if (!item) continue;
     const lineTaxCodeId = Number(line.taxCodeId ?? input.taxCodeId ?? 0) || null;

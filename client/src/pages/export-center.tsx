@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Eye, RotateCcw, Wand2 } from "lucide-react";
@@ -15,6 +15,7 @@ import { requestJson } from "@/lib/queryClient";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { PanelInlineError } from "@/components/panel-inline-error";
 import { useToast } from "@/hooks/use-toast";
+import { downloadExportJob } from "@/lib/export-job-download";
 
 type ExportHistoryRow = {
   id: number;
@@ -98,6 +99,19 @@ export default function ExportCenterPage() {
   const [customReportName, setCustomReportName] = useState("PO delivery comparison");
   const [customPreview, setCustomPreview] = useState<CustomPreview | null>(null);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("download") !== "expired") return;
+    toast({
+      title: "Download link expired",
+      description: "The export is still available. Use Download again to issue a fresh secure link.",
+    });
+    params.delete("download");
+    params.delete("job");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, [toast]);
+
   const datasetsQuery = useQuery({
     queryKey: ["/api/export-center/datasets"],
     queryFn: () => requestJson<ExportDataset[]>("GET", "/api/export-center/datasets"),
@@ -120,6 +134,10 @@ export default function ExportCenterPage() {
   const retryMutation = useMutation({
     mutationFn: (id: number) => requestJson("POST", `/api/export-jobs/${id}/retry`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/export-center/history"] }),
+  });
+  const downloadMutation = useMutation({
+    mutationFn: (row: ExportHistoryRow) => downloadExportJob(row.id, row.fileName || `export-${row.id}`),
+    onError: (error) => toast({ title: "Download failed", description: error instanceof Error ? error.message : String(error), variant: "destructive" }),
   });
   const previewMutation = useMutation({
     mutationFn: () =>
@@ -376,12 +394,10 @@ export default function ExportCenterPage() {
                     ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {row.downloadUrl ? (
-                      <Button asChild size="sm" variant="outline">
-                        <a href={row.downloadUrl}>
-                          <Download className="mr-2 h-4 w-4" />
-                          Download
-                        </a>
+                    {row.status === "succeeded" ? (
+                      <Button size="sm" variant="outline" onClick={() => downloadMutation.mutate(row)} disabled={downloadMutation.isPending}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Download
                       </Button>
                     ) : null}
                     {row.canRetry ? (

@@ -8,9 +8,11 @@ import { getActiveOrganizationId } from "../../organization-context";
 import { getExportDatasetRegistry } from "../../services/export-registry";
 import { sendError, sendOk } from "../../api-response";
 import { storage } from "../../storage";
-import { createExportJob, getScopedExportJob, listExportJobs, requeueExportJob } from "./export-jobs";
+import { createExportJob, getScopedExportJob, listExportJobs, refreshScopedExportDownloadToken, requeueExportJob } from "./export-jobs";
 import { removeExportFile } from "./export-file-store";
 import { exportRateLimiter } from "../../services/security-service";
+import { getProcurementLineReportRows } from "../../services/procurement-line-report-service";
+import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
 
 const createSavedReportSchema = z.object({
   reportName: z.string().trim().min(1),
@@ -77,7 +79,7 @@ function withDownloadUrl(row: Awaited<ReturnType<typeof listExportJobs>>[number]
     error,
     createdBy: row.createdBy ? `User #${row.createdBy}` : null,
     downloadUrl:
-      row.status === "succeeded" && row.downloadToken
+      row.status === "succeeded" && row.downloadToken && (!row.downloadTokenExpiresAt || new Date(row.downloadTokenExpiresAt).getTime() > Date.now())
         ? `/api/export/download/${row.id}?token=${encodeURIComponent(row.downloadToken)}`
         : null,
     canRetry: row.status === "failed",
@@ -125,20 +127,10 @@ async function buildCustomDatasetRows(dataset: string, limit: number, offset = 0
     return (await storage.getAllSuppliers()).slice(offset, offset + limit);
   }
   if (dataset === "purchase_orders") {
-    const suppliers = await storage.getAllSuppliers();
-    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
-    return (await storage.getAllPurchaseOrders()).slice(offset, offset + limit).map((order) => ({
-      ...order,
-      supplierName: supplierById.get(order.supplierId) ?? "",
-    }));
+    return getProcurementLineReportRows({ organizationId: orgId, dataset, limit, offset });
   }
   if (dataset === "purchase_requisitions") {
-    const suppliers = await storage.getAllSuppliers();
-    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
-    return (await storage.getAllPurchaseRequisitions()).slice(offset, offset + limit).map((requisition) => ({
-      ...requisition,
-      supplierName: requisition.supplierId != null ? supplierById.get(requisition.supplierId) ?? "" : "",
-    }));
+    return getProcurementLineReportRows({ organizationId: orgId, dataset, limit, offset });
   }
   if (dataset === "reorder_requests") {
     const items = await storage.getAllInventoryItems();
@@ -459,6 +451,23 @@ export function registerExportCenterRoutes(
     sendOk(res, refreshed ? withDownloadUrl(refreshed) : null);
   });
 
+  app.post("/api/export-jobs/:id/download-token", ...exportAccess, exportRateLimiter, async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_EXPORT_JOB_ID", "Invalid export job id.");
+    const refreshed = await refreshScopedExportDownloadToken(id);
+    if (!refreshed?.downloadToken) {
+      return sendError(res, 410, "EXPORT_FILE_RETENTION_EXPIRED", "The retained export is no longer available.", {
+        hint: "Run the export again from Reports or Export Center.",
+      });
+    }
+    return sendOk(res, {
+      jobId: refreshed.id,
+      fileName: refreshed.fileName,
+      downloadUrl: `/api/export/download/${refreshed.id}?token=${encodeURIComponent(refreshed.downloadToken)}`,
+      expiresAt: refreshed.downloadTokenExpiresAt,
+    });
+  });
+
   app.get("/api/export/download/:id", ...exportAccess, async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     const token = typeof req.query.token === "string" ? req.query.token : "";
@@ -473,7 +482,20 @@ export function registerExportCenterRoutes(
       return sendError(res, 403, "EXPORT_DOWNLOAD_TOKEN_INVALID", "Export download token is invalid.");
     }
     if (job.downloadTokenExpiresAt && new Date(job.downloadTokenExpiresAt).getTime() < Date.now()) {
-      return sendError(res, 410, "EXPORT_DOWNLOAD_TOKEN_EXPIRED", "Export download token has expired.");
+      recordServerDiagnosticEvent({
+        source: "integration",
+        severity: "warning",
+        title: "Export download token expired",
+        message: `Export download token expired for job ${job.id}`,
+        route: req.originalUrl,
+        details: { jobId: job.id, dataset: job.dataset, format: job.format, remediation: "Issue a fresh scoped token from Export Center." },
+      });
+      if (req.accepts(["html", "json"]) === "html") {
+        return res.redirect(303, `/analytics/export-center?download=expired&job=${job.id}`);
+      }
+      return sendError(res, 410, "EXPORT_DOWNLOAD_TOKEN_EXPIRED", "Export download token has expired.", {
+        hint: "Request a new download token from Export Center.",
+      });
     }
     const absolutePath = path.isAbsolute(job.filePath) ? job.filePath : path.join(process.cwd(), job.filePath);
     if (!fs.existsSync(absolutePath)) {

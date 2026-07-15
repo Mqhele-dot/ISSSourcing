@@ -318,17 +318,28 @@ const purchaseOrderCommercialPatchSchema = z
 
 function normalizeRequisitionLineInput(item: unknown, index: number) {
   const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
-  const itemId = Number(row.itemId);
+  const lineType = String(row.lineType ?? "CATALOG").trim().toUpperCase();
+  if (!(["CATALOG", "NON_STOCK", "SERVICE"] as const).includes(lineType as "CATALOG" | "NON_STOCK" | "SERVICE")) {
+    throw Object.assign(new Error(`Line ${index + 1}: line type is invalid`), { status: 400, code: "REQUISITION_LINE_TYPE_INVALID" });
+  }
+  const itemIdValue = Number(row.itemId);
+  const itemId = Number.isFinite(itemIdValue) && itemIdValue > 0 ? itemIdValue : null;
+  const description = typeof row.description === "string" && row.description.trim() ? row.description.trim() : null;
+  const manualEntryReason =
+    typeof row.manualEntryReason === "string" && row.manualEntryReason.trim() ? row.manualEntryReason.trim() : null;
   const qty = Number(row.quantity);
   const unit = Number(row.unitPrice);
-  if (!Number.isFinite(itemId) || itemId <= 0) {
-    throw new Error(`Line ${index + 1}: item is required`);
+  if (lineType === "CATALOG" && !itemId) {
+    throw Object.assign(new Error(`Line ${index + 1}: catalogue item is required`), { status: 400, code: "REQUISITION_CATALOG_ITEM_REQUIRED" });
+  }
+  if (lineType !== "CATALOG" && (!description || !manualEntryReason)) {
+    throw Object.assign(new Error(`Line ${index + 1}: manual description and business reason are required`), { status: 400, code: "REQUISITION_MANUAL_LINE_DETAILS_REQUIRED" });
   }
   if (!Number.isFinite(qty) || qty <= 0) {
-    throw new Error(`Line ${index + 1}: quantity must be greater than zero`);
+    throw Object.assign(new Error(`Line ${index + 1}: quantity must be greater than zero`), { status: 400, code: "REQUISITION_LINE_QUANTITY_INVALID" });
   }
   if (!Number.isFinite(unit) || unit <= 0) {
-    throw new Error(`Line ${index + 1}: unit price must be greater than zero`);
+    throw Object.assign(new Error(`Line ${index + 1}: unit price must be greater than zero`), { status: 400, code: "REQUISITION_LINE_PRICE_INVALID" });
   }
   const id = row.id == null ? null : Number(row.id);
   const unitOfMeasureId = Number(row.unitOfMeasureId);
@@ -339,6 +350,12 @@ function normalizeRequisitionLineInput(item: unknown, index: number) {
   return {
     id: id !== null && Number.isFinite(id) && id > 0 ? id : undefined,
     itemId,
+    lineNumber: index + 1,
+    lineType,
+    description,
+    manualEntryReason,
+    fulfilmentType: lineType === "SERVICE" ? "SERVICE_CONFIRMATION" : "GOODS_RECEIPT",
+    receiptRequired: row.receiptRequired == null ? true : row.receiptRequired === true,
     quantity: qty,
     unitPrice: unit,
     totalPrice: qty * unit,
@@ -507,6 +524,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         const normalized = normalizeRequisitionLineInput(item, index);
         return {
           itemId: normalized.itemId,
+          lineNumber: normalized.lineNumber,
+          lineType: normalized.lineType,
+          description: normalized.description,
+          manualEntryReason: normalized.manualEntryReason,
+          fulfilmentType: normalized.fulfilmentType,
+          receiptRequired: normalized.receiptRequired,
           quantity: normalized.quantity,
           unitPrice: normalized.unitPrice,
           totalPrice: normalized.totalPrice,
@@ -556,7 +579,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       const mdmValidation = await validateMdmTransaction(getActiveOrganizationId(), {
         transactionType: "requisition",
         supplierId: validatedReqData.supplierId,
-        itemIds: validatedItemsData.map((item) => item.itemId),
+        itemIds: validatedItemsData.map((item) => item.itemId).filter((itemId): itemId is number => itemId != null),
         currencyCode: validatedReqData.currencyCode,
       });
       if (!mdmValidation.valid) {
@@ -692,6 +715,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           const payload = {
             requisitionId: id,
             itemId: line.itemId,
+            lineNumber: line.lineNumber,
+            lineType: line.lineType,
+            description: line.description,
+            manualEntryReason: line.manualEntryReason,
+            fulfilmentType: line.fulfilmentType,
+            receiptRequired: line.receiptRequired,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
             totalPrice: line.totalPrice,
@@ -1281,6 +1310,9 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         taxCodeId: validatedOrderData.taxCodeId,
         items: validatedItemsData.map((item) => ({
           itemId: item.itemId,
+          lineType: item.lineType,
+          description: item.description,
+          glAccountCode: item.glAccountCode,
           unitOfMeasureId: item.unitOfMeasureId,
           taxCodeId: item.taxCodeId,
         })),
@@ -1907,7 +1939,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         ...req.body,
         orderId,
       });
-      const inv = await storage.getInventoryItem(validatedData.itemId);
+      const isCatalogLine = String(validatedData.lineType ?? "CATALOG").toUpperCase() === "CATALOG";
+      if (isCatalogLine && !validatedData.itemId) {
+        return sendError(res, 400, "PO_CATALOG_ITEM_REQUIRED", "Catalogue PO lines require an inventory item.");
+      }
+      if (!isCatalogLine && (!validatedData.description?.trim() || !validatedData.manualEntryReason?.trim())) {
+        return sendError(res, 400, "PO_MANUAL_LINE_DETAILS_REQUIRED", "Manual PO lines require a description and approved exception reason.");
+      }
+      const inv = validatedData.itemId ? await storage.getInventoryItem(validatedData.itemId) : undefined;
       const enriched: InsertPurchaseOrderItem = {
         ...validatedData,
         unitOfMeasureId: validatedData.unitOfMeasureId ?? inv?.unitOfMeasureId ?? null,

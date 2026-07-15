@@ -1088,19 +1088,33 @@ export const insertPurchaseRequisitionSchema = createInsertSchema(purchaseRequis
   updatedAt: true,
 });
 
+export const procurementLineTypes = ["CATALOG", "NON_STOCK", "SERVICE"] as const;
+export type ProcurementLineType = (typeof procurementLineTypes)[number];
+
+export const fulfilmentTypes = ["GOODS_RECEIPT", "SERVICE_CONFIRMATION", "NONE"] as const;
+export type FulfilmentType = (typeof fulfilmentTypes)[number];
+
 // Purchase Requisition Item schema
 export const purchaseRequisitionItems = pgTable("purchase_requisition_items", {
-  id: serial("id").primaryKey(),
-  requisitionId: integer("requisition_id").notNull(),
-  itemId: integer("item_id").notNull(),
-  quantity: integer("quantity").notNull().default(1),
-  unitPrice: real("unit_price").notNull(),
-  totalPrice: real("total_price").notNull(),
-  unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
-  taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
-  costCentreId: integer("cost_centre_id").references(() => mdmCostCentres.id),
-  glAccountCode: text("gl_account_code"),
-  notes: text("notes"),
+    id: serial("id").primaryKey(),
+    requisitionId: integer("requisition_id").notNull(),
+    itemId: integer("item_id"),
+    lineNumber: integer("line_number").notNull().default(1),
+    lineType: text("line_type").notNull().default("CATALOG"),
+    description: text("description"),
+    itemCodeSnapshot: text("item_code_snapshot"),
+    itemDescriptionSnapshot: text("item_description_snapshot"),
+    manualEntryReason: text("manual_entry_reason"),
+    fulfilmentType: text("fulfilment_type").notNull().default("GOODS_RECEIPT"),
+    receiptRequired: boolean("receipt_required").notNull().default(true),
+    quantity: integer("quantity").notNull().default(1),
+    unitPrice: real("unit_price").notNull(),
+    totalPrice: real("total_price").notNull(),
+    unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
+    taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
+    costCentreId: integer("cost_centre_id").references(() => mdmCostCentres.id),
+    glAccountCode: text("gl_account_code"),
+    notes: text("notes"),
 });
 
 /** Tenant-specific supplier portal identity; avoids a global user-to-supplier mapping leak. */
@@ -1188,19 +1202,27 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
 
 // Purchase Order Item schema
 export const purchaseOrderItems = pgTable("purchase_order_items", {
-  id: serial("id").primaryKey(),
-  orderId: integer("order_id").notNull(),
-  itemId: integer("item_id").notNull(),
-  quantity: integer("quantity").notNull().default(1),
-  unitPrice: real("unit_price").notNull(),
-  totalPrice: real("total_price").notNull(),
-  receivedQuantity: integer("received_quantity").default(0),
-  notes: text("notes"),
-  unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
-  commodityCodeId: integer("commodity_code_id").references(() => commodityCodes.id),
-  taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
-  costCentreId: integer("cost_centre_id").references(() => mdmCostCentres.id),
-  glAccountCode: text("gl_account_code"),
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id").notNull(),
+    itemId: integer("item_id"),
+    lineNumber: integer("line_number").notNull().default(1),
+    lineType: text("line_type").notNull().default("CATALOG"),
+    description: text("description"),
+    itemCodeSnapshot: text("item_code_snapshot"),
+    itemDescriptionSnapshot: text("item_description_snapshot"),
+    manualEntryReason: text("manual_entry_reason"),
+    fulfilmentType: text("fulfilment_type").notNull().default("GOODS_RECEIPT"),
+    receiptRequired: boolean("receipt_required").notNull().default(true),
+    quantity: integer("quantity").notNull().default(1),
+    unitPrice: real("unit_price").notNull(),
+    totalPrice: real("total_price").notNull(),
+    receivedQuantity: integer("received_quantity").default(0),
+    notes: text("notes"),
+    unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
+    commodityCodeId: integer("commodity_code_id").references(() => commodityCodes.id),
+    taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
+    costCentreId: integer("cost_centre_id").references(() => mdmCostCentres.id),
+    glAccountCode: text("gl_account_code"),
 });
 
 export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({
@@ -1477,6 +1499,7 @@ export const approvalPolicies = pgTable("approval_policies", {
   approverRole: text("approver_role"),
   approverUserId: integer("approver_user_id"),
   isActive: boolean("is_active").default(true),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -3179,7 +3202,9 @@ export const invoiceFormSchema = insertInvoiceSchema.extend({
 export const invoiceItems = pgTable("invoice_items", {
   id: serial("id").primaryKey(),
   invoiceId: integer("invoice_id").notNull(),
-  itemId: integer("item_id").notNull(),
+  itemId: integer("item_id"),
+  purchaseOrderItemId: integer("purchase_order_item_id").references(() => purchaseOrderItems.id),
+  lineType: text("line_type").notNull().default("CATALOG"),
   description: text("description").notNull(),
   quantity: real("quantity").notNull().default(1),
   unitPrice: real("unit_price").notNull(),
@@ -3207,10 +3232,16 @@ export const insertInvoiceItemSchema = createInsertSchema(invoiceItems).omit({
 });
 
 export const invoiceItemFormSchema = insertInvoiceItemSchema.extend({
-  itemId: z.number().int().positive("Item ID must be a positive number"),
+  itemId: z.number().int().positive("Item ID must be a positive number").nullable().optional(),
+  purchaseOrderItemId: z.number().int().positive("PO line ID must be a positive number").nullable().optional(),
+  lineType: z.enum(procurementLineTypes).default("CATALOG"),
   quantity: z.number().min(0.01, "Quantity must be greater than 0"),
   unitPrice: z.number().min(0, "Unit price must be a positive number"),
   totalPrice: z.number().min(0, "Total price must be a positive number"),
+}).superRefine((line, context) => {
+  if (!line.itemId && !line.purchaseOrderItemId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["itemId"], message: "Select a catalogue item or linked purchase-order line." });
+  }
 });
 
 export const apInvoiceCaptures = pgTable("ap_invoice_captures", {
