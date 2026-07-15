@@ -177,7 +177,7 @@ test.describe("button and action smoke", () => {
     await gotoAuthed(page, "/admin/master-data/departments");
     await expect(page.getByTestId("master-data-page")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Add record" }).click();
-    await expect(page.getByText(/Code and .* are required/i)).toBeVisible();
+    await expect(page.getByText("Code and name are required", { exact: true })).toBeVisible();
   });
 
   test("approval policy save action validates missing policy name", async ({ page }) => {
