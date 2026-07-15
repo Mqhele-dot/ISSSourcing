@@ -157,7 +157,7 @@ test.describe("control-plane production controls", () => {
     await page.getByTestId("approval-policy-level").fill("1");
     await page.getByTestId("approval-policy-save").click();
     await expect(page.getByText("Policy created", { exact: true })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(policyName)).toBeVisible();
+    await expect(page.getByRole("cell", { name: policyName, exact: true })).toBeVisible();
     await expectActivity("APPROVAL_POLICY_CREATED", "approval_policy");
 
     await loginAs(page, "e2e_control_requester", requesterUserId);
