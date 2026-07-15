@@ -2902,6 +2902,8 @@ export const notifications = pgTable("notifications", {
   body: text("body"),
   entityType: text("entity_type"),
   entityId: integer("entity_id"),
+  occurrenceCount: integer("occurrence_count").notNull().default(1),
+  lastOccurredAt: timestamp("last_occurred_at").defaultNow().notNull(),
   readAt: timestamp("read_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

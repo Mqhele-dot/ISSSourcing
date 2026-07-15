@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
+import "dotenv/config";
+import { assertDisposableTestDatabase } from "./test-database-safety.mjs";
 
 const PORT = process.env.PORT || "5000";
 const BASE_URL = process.env.BASE_URL || `http://127.0.0.1:${PORT}`;
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+const runtimeDatabaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 
 const suites = {
   sourcing: [
@@ -68,7 +71,16 @@ function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.platform === "win32" ? "cmd.exe" : command, process.platform === "win32" ? ["/d", "/s", "/c", [command, ...args].join(" ")] : args, {
       cwd: process.cwd(),
-      env: { ...process.env, BASE_URL, PORT, TEST_REQUIRE_SERVER: "1", ...options.env },
+      env: {
+        ...process.env,
+        DATABASE_URL: runtimeDatabaseUrl,
+        TEST_DATABASE_URL: runtimeDatabaseUrl,
+        REQUIRE_DISPOSABLE_TEST_DATABASE: "1",
+        BASE_URL,
+        PORT,
+        TEST_REQUIRE_SERVER: "1",
+        ...options.env,
+      },
       shell: false,
       stdio: options.stdio || "inherit",
     });
@@ -101,7 +113,14 @@ function startServer() {
       : { LOCAL_TEST_API_ONLY: "1" };
   const child = spawn(process.platform === "win32" ? "cmd.exe" : npmCmd, process.platform === "win32" ? ["/d", "/s", "/c", `${npmCmd} run dev`] : ["run", "dev"], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT, ...serverEnv },
+    env: {
+      ...process.env,
+      DATABASE_URL: runtimeDatabaseUrl,
+      TEST_DATABASE_URL: runtimeDatabaseUrl,
+      REQUIRE_DISPOSABLE_TEST_DATABASE: "1",
+      PORT,
+      ...serverEnv,
+    },
     shell: false,
     stdio: "inherit",
   });
@@ -139,6 +158,10 @@ try {
   console.log(`Local test runner`);
   console.log(`Base URL: ${BASE_URL}`);
   console.log(`Suite: ${selectedSuite}`);
+
+  if (["sourcing", "delta", "productionSmoke"].includes(selectedSuite)) {
+    assertDisposableTestDatabase(runtimeDatabaseUrl);
+  }
 
   if (!hasFlag("--no-server")) {
     server = startServer();

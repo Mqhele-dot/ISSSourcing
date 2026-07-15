@@ -2,13 +2,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableRecordCombobox } from "@/components/searchable-record-combobox";
 import type { InventoryItem } from "@shared/schema";
 
 export interface ReqLineDraft {
@@ -103,26 +97,21 @@ export function RequisitionLinesEditor({
           <div key={lineKey} className="grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(220px,1.5fr)_92px_140px_140px_140px_160px_44px]" data-testid={`requisition-line-row-${lineKey}`}>
             <div className="space-y-2">
               <Label htmlFor={"req-item-" + idx}>Item *</Label>
-              <Select
+              <SearchableRecordCombobox
                 value={item.itemId ? String(item.itemId) : ""}
-                onValueChange={(v) => onUpdateRow(idx, "itemId", v ? Number(v) : 0)}
+                onValueChange={(value) => onUpdateRow(idx, "itemId", Number(value))}
+                options={inventoryItems.map((inventoryItem) => ({
+                  value: String(inventoryItem.id),
+                  label: `${inventoryItem.name} (${inventoryItem.sku})`,
+                  keywords: `${inventoryItem.sku} ${inventoryItem.supplierPartNumber ?? ""}`,
+                }))}
+                placeholder="Select item..."
+                searchPlaceholder="Search item name, SKU, or supplier part..."
                 disabled={readOnly}
-              >
-                <SelectTrigger
-                  id={"req-item-" + idx}
-                  aria-label={"Select item for line " + (idx + 1)}
-                  data-testid={`requisition-line-item-${lineKey}`}
-                >
-                  <SelectValue placeholder="Select item..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {inventoryItems.map((i) => (
-                    <SelectItem key={i.id} value={String(i.id)}>
-                      {i.name} ({i.sku})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                id={"req-item-" + idx}
+                ariaLabel={"Select item for line " + (idx + 1)}
+                testId={`requisition-line-item-${lineKey}`}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor={"req-qty-" + idx}>Qty *</Label>
@@ -139,22 +128,21 @@ export function RequisitionLinesEditor({
             </div>
             <div className="space-y-2">
               <Label htmlFor={"req-uom-" + idx}>Purchase UOM</Label>
-              <Select
+              <SearchableRecordCombobox
                 value={item.unitOfMeasureId ? String(item.unitOfMeasureId) : ""}
-                onValueChange={(v) => onUpdateRow(idx, "unitOfMeasureId", v ? Number(v) : null)}
+                onValueChange={(value) => onUpdateRow(idx, "unitOfMeasureId", Number(value))}
+                options={unitsOfMeasure.filter((uom) => uom.active !== false).map((uom) => ({
+                  value: String(uom.id),
+                  label: `${uom.code || uom.symbol || uom.name} - ${uom.name}`,
+                  keywords: `${uom.symbol ?? ""}`,
+                }))}
+                placeholder="Select UOM"
+                searchPlaceholder="Search unit code or name..."
                 disabled={readOnly}
-              >
-                <SelectTrigger id={"req-uom-" + idx} data-testid={`requisition-line-uom-${lineKey}`}>
-                  <SelectValue placeholder="Select UOM" />
-                </SelectTrigger>
-                <SelectContent>
-                  {unitsOfMeasure.filter((uom) => uom.active !== false).map((uom) => (
-                    <SelectItem key={uom.id} value={String(uom.id)}>
-                      {uom.code || uom.symbol || uom.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                id={"req-uom-" + idx}
+                ariaLabel={"Select purchase UOM for line " + (idx + 1)}
+                testId={`requisition-line-uom-${lineKey}`}
+              />
               {selectedUom ? <p className="text-xs text-muted-foreground">{selectedUom.name}</p> : null}
             </div>
             <div className="space-y-2">
@@ -173,22 +161,20 @@ export function RequisitionLinesEditor({
             </div>
             <div className="space-y-2">
               <Label htmlFor={"req-tax-" + idx}>Tax code</Label>
-              <Select
+              <SearchableRecordCombobox
                 value={item.taxCodeId ? String(item.taxCodeId) : ""}
-                onValueChange={(v) => onUpdateRow(idx, "taxCodeId", v ? Number(v) : null)}
+                onValueChange={(value) => onUpdateRow(idx, "taxCodeId", Number(value))}
+                options={taxCodes.filter((taxCode) => taxCode.active !== false).map((taxCode) => ({
+                  value: String(taxCode.id),
+                  label: `${taxCode.code} - ${taxCode.name}`,
+                }))}
+                placeholder="Select tax"
+                searchPlaceholder="Search tax code or name..."
                 disabled={readOnly}
-              >
-                <SelectTrigger id={"req-tax-" + idx} data-testid={`requisition-line-tax-${lineKey}`}>
-                  <SelectValue placeholder="Select tax" />
-                </SelectTrigger>
-                <SelectContent>
-                  {taxCodes.filter((taxCode) => taxCode.active !== false).map((taxCode) => (
-                    <SelectItem key={taxCode.id} value={String(taxCode.id)}>
-                      {taxCode.code} - {taxCode.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                id={"req-tax-" + idx}
+                ariaLabel={"Select tax code for line " + (idx + 1)}
+                testId={`requisition-line-tax-${lineKey}`}
+              />
               {selectedTaxCode ? <p className="text-xs text-muted-foreground">{selectedTaxCode.name}</p> : null}
             </div>
             <div className="space-y-2">
@@ -200,22 +186,22 @@ export function RequisitionLinesEditor({
                 </div>
               </div>
               {costCentres.length > 0 ? (
-                <Select
+                <SearchableRecordCombobox
                   value={item.costCentreId ? String(item.costCentreId) : ""}
-                  onValueChange={(v) => onUpdateRow(idx, "costCentreId", v ? Number(v) : null)}
+                  onValueChange={(value) => onUpdateRow(idx, "costCentreId", value === "__none__" ? null : Number(value))}
+                  options={[
+                    { value: "__none__", label: "No cost centre" },
+                    ...costCentres.filter((costCentre) => costCentre.active !== false).map((costCentre) => ({
+                      value: String(costCentre.id),
+                      label: `${costCentre.code} - ${costCentre.name}`,
+                    })),
+                  ]}
+                  placeholder="Cost centre"
+                  searchPlaceholder="Search cost centre..."
                   disabled={readOnly}
-                >
-                  <SelectTrigger data-testid={`requisition-line-cost-centre-${lineKey}`}>
-                    <SelectValue placeholder="Cost centre" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {costCentres.filter((cc) => cc.active !== false).map((cc) => (
-                      <SelectItem key={cc.id} value={String(cc.id)}>
-                        {cc.code} - {cc.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  ariaLabel={"Select cost centre for line " + (idx + 1)}
+                  testId={`requisition-line-cost-centre-${lineKey}`}
+                />
               ) : null}
               <p className={item.glAccountCode ? "text-xs text-muted-foreground" : "text-xs text-amber-700"}>
                 {item.glAccountCode ? `GL ${item.glAccountCode}` : "GL mapping missing"}

@@ -41,14 +41,40 @@ const customExportSchema = customPreviewSchema.extend({
   format: z.enum(["csv"]).default("csv"),
 });
 
+const reportsPreviewSchema = customPreviewSchema.extend({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  sortBy: z.string().trim().max(80).optional(),
+  sortDirection: z.enum(["asc", "desc"]).default("asc"),
+});
+
 function currentUserId(req: Request): number | null {
   const userId = Number((req as Request & { user?: { id?: number } }).user?.id);
   return Number.isFinite(userId) && userId > 0 ? userId : null;
 }
 
 function withDownloadUrl(row: Awaited<ReturnType<typeof listExportJobs>>[number]) {
+  let error: { code: string; message: string; hint?: string; requestId?: string | null } | null = null;
+  if (row.lastError) {
+    try {
+      const parsed = JSON.parse(row.lastError) as Record<string, unknown>;
+      error = {
+        code: typeof parsed.code === "string" ? parsed.code : "EXPORT_GENERATION_FAILED",
+        message: typeof parsed.message === "string" ? parsed.message : row.lastError,
+        hint: typeof parsed.hint === "string" ? parsed.hint : undefined,
+        requestId: typeof parsed.requestId === "string" ? parsed.requestId : null,
+      };
+    } catch {
+      error = {
+        code: "EXPORT_GENERATION_FAILED",
+        message: row.lastError,
+        hint: "Retry the export. If it fails again, review System Diagnostics.",
+      };
+    }
+  }
   return {
     ...row,
+    error,
     createdBy: row.createdBy ? `User #${row.createdBy}` : null,
     downloadUrl:
       row.status === "succeeded" && row.downloadToken
@@ -76,23 +102,32 @@ function safeFileStem(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "export";
 }
 
-async function buildCustomDatasetRows(dataset: string, limit: number): Promise<Array<Record<string, unknown>>> {
+function zodFieldIssues(error: unknown): Record<string, string[]> | undefined {
+  if (!(error instanceof z.ZodError)) return undefined;
+  return Object.fromEntries(
+    Object.entries(error.flatten().fieldErrors).filter(
+      (entry): entry is [string, string[]] => Array.isArray(entry[1]) && entry[1].length > 0,
+    ),
+  );
+}
+
+async function buildCustomDatasetRows(dataset: string, limit: number, offset = 0): Promise<Array<Record<string, unknown>>> {
   const orgId = getActiveOrganizationId();
   if (dataset === "inventory") {
     const categories = await storage.getAllCategories();
     const categoryById = new Map(categories.map((category) => [category.id, category.name]));
-    return (await storage.getAllInventoryItems()).slice(0, limit).map((item) => ({
+    return (await storage.getAllInventoryItems()).slice(offset, offset + limit).map((item) => ({
       ...item,
       categoryName: item.categoryId != null ? categoryById.get(item.categoryId) ?? "" : "",
     }));
   }
   if (dataset === "suppliers") {
-    return (await storage.getAllSuppliers()).slice(0, limit);
+    return (await storage.getAllSuppliers()).slice(offset, offset + limit);
   }
   if (dataset === "purchase_orders") {
     const suppliers = await storage.getAllSuppliers();
     const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
-    return (await storage.getAllPurchaseOrders()).slice(0, limit).map((order) => ({
+    return (await storage.getAllPurchaseOrders()).slice(offset, offset + limit).map((order) => ({
       ...order,
       supplierName: supplierById.get(order.supplierId) ?? "",
     }));
@@ -100,7 +135,7 @@ async function buildCustomDatasetRows(dataset: string, limit: number): Promise<A
   if (dataset === "purchase_requisitions") {
     const suppliers = await storage.getAllSuppliers();
     const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
-    return (await storage.getAllPurchaseRequisitions()).slice(0, limit).map((requisition) => ({
+    return (await storage.getAllPurchaseRequisitions()).slice(offset, offset + limit).map((requisition) => ({
       ...requisition,
       supplierName: requisition.supplierId != null ? supplierById.get(requisition.supplierId) ?? "" : "",
     }));
@@ -112,7 +147,7 @@ async function buildCustomDatasetRows(dataset: string, limit: number): Promise<A
     const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
     const warehouses = await storage.getAllWarehouses();
     const warehouseById = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse.name]));
-    return (await storage.getAllReorderRequests()).slice(0, limit).map((request) => ({
+    return (await storage.getAllReorderRequests()).slice(offset, offset + limit).map((request) => ({
       ...request,
       itemName: itemById.get(request.itemId) ?? "",
       supplierName: request.supplierId != null ? supplierById.get(request.supplierId) ?? "" : "",
@@ -122,7 +157,7 @@ async function buildCustomDatasetRows(dataset: string, limit: number): Promise<A
   if (dataset === "invoices") {
     const suppliers = await storage.getAllSuppliers();
     const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
-    return (await storage.getAllInvoices()).slice(0, limit).map((invoice) => ({
+    return (await storage.getAllInvoices()).slice(offset, offset + limit).map((invoice) => ({
       ...invoice,
       supplierName: invoice.supplierId != null ? supplierById.get(invoice.supplierId) ?? "" : "",
     }));
@@ -130,7 +165,7 @@ async function buildCustomDatasetRows(dataset: string, limit: number): Promise<A
   if (dataset === "activity_logs") {
     const users = await storage.getAllUsers();
     const userById = new Map(users.map((user) => [user.id, user.fullName || user.username || `User #${user.id}`]));
-    return (await storage.getAllActivityLogs()).slice(0, limit).map((log) => ({
+    return (await storage.getAllActivityLogs()).slice(offset, offset + limit).map((log) => ({
       ...log,
       userName: log.userId != null ? userById.get(log.userId) ?? "" : "",
     }));
@@ -150,9 +185,9 @@ async function buildCustomDatasetRows(dataset: string, limit: number): Promise<A
           ON po.order_number = shipment.po_number
         WHERE po.organization_id = $1
         ORDER BY shipment.updated_at DESC NULLS LAST
-        LIMIT $2
+        LIMIT $2 OFFSET $3
       `,
-      [orgId, limit],
+      [orgId, limit, offset],
     );
     return result.rows;
   }
@@ -181,9 +216,9 @@ async function buildCustomDatasetRows(dataset: string, limit: number): Promise<A
           ON shipment.po_number = po.order_number
         WHERE po.organization_id = $1
         ORDER BY po.created_at DESC, shipment.updated_at DESC NULLS LAST
-        LIMIT $2
+        LIMIT $2 OFFSET $3
       `,
-      [orgId, limit],
+      [orgId, limit, offset],
     );
     return result.rows;
   }
@@ -228,8 +263,58 @@ export function registerExportCenterRoutes(
         previewLimit: parsed.limit,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to preview custom report.";
-      sendError(res, 400, "CUSTOM_REPORT_PREVIEW_FAILED", message);
+      const fieldIssues = zodFieldIssues(error);
+      sendError(res, 400, "CUSTOM_REPORT_PREVIEW_FAILED", "The custom report preview could not be generated.", {
+        hint: "Review the selected dataset and columns, then retry.",
+        fieldIssues,
+      });
+    }
+  });
+
+  app.post("/api/reports/preview", ...exportAccess, async (req: Request, res: Response) => {
+    try {
+      const parsed = reportsPreviewSchema.parse(req.body);
+      const entry = getExportDatasetRegistry().find((item) => item.key === parsed.dataset);
+      if (!entry?.previewable) {
+        return sendError(res, 400, "REPORT_DATASET_NOT_PREVIEWABLE", "This dataset cannot be previewed.");
+      }
+      const allowedColumns = new Map(entry.columns.map((column) => [column.key, column]));
+      const selectedKeys = (parsed.columns?.length ? parsed.columns : entry.columns.map((column) => column.key)).filter(
+        (column) => allowedColumns.has(column),
+      );
+      if (selectedKeys.length === 0) {
+        return sendError(res, 400, "REPORT_COLUMNS_INVALID", "Select at least one valid column.");
+      }
+      const offset = (parsed.page - 1) * parsed.pageSize;
+      const fetched = await buildCustomDatasetRows(parsed.dataset, parsed.pageSize + 1, offset);
+      const hasNext = fetched.length > parsed.pageSize;
+      const rows = fetched.slice(0, parsed.pageSize);
+      if (parsed.sortBy && selectedKeys.includes(parsed.sortBy)) {
+        rows.sort((left, right) => {
+          const result = String(left[parsed.sortBy!] ?? "").localeCompare(String(right[parsed.sortBy!] ?? ""), undefined, {
+            numeric: true,
+          });
+          return parsed.sortDirection === "desc" ? -result : result;
+        });
+      }
+      return sendOk(res, {
+        dataset: parsed.dataset,
+        label: entry.label,
+        columns: selectedKeys.map((key) => allowedColumns.get(key)),
+        rows: rows.map((row) => Object.fromEntries(selectedKeys.map((key) => [key, row[key] ?? ""]))),
+        page: parsed.page,
+        pageSize: parsed.pageSize,
+        hasNext,
+        resultCount: rows.length,
+        appliedFilters: parsed.filters,
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      const fieldIssues = zodFieldIssues(error);
+      return sendError(res, 400, "REPORT_PREVIEW_FAILED", "The report preview could not be generated.", {
+        hint: "Review the selected dataset, columns, filters, and sort options, then retry.",
+        fieldIssues,
+      });
     }
   });
 
@@ -261,8 +346,11 @@ export function registerExportCenterRoutes(
       res.setHeader("X-Export-Compressed-Bytes", String(compressed.length));
       res.send(compressed);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to export custom report.";
-      sendError(res, 400, "CUSTOM_REPORT_EXPORT_FAILED", message);
+      const fieldIssues = zodFieldIssues(error);
+      sendError(res, 400, "CUSTOM_REPORT_EXPORT_FAILED", "The custom report could not be exported.", {
+        hint: "Review the report definition and retry. If it fails again, use the request ID in System Diagnostics.",
+        fieldIssues,
+      });
     }
   });
 

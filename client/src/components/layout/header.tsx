@@ -21,6 +21,7 @@ import { requestOpenCommandPalette } from "@/components/command-menu";
 import { useTheme } from "@/components/theme-provider";
 import { useAccent } from "@/components/accent-provider";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { qk } from "@/lib/query-keys";
 import { queryClient, requestJson } from "@/lib/queryClient";
 
 type Notification = {
@@ -30,6 +31,17 @@ type Notification = {
   type: string;
   readAt: string | null;
   createdAt: string;
+  lastOccurredAt: string;
+  occurrenceCount: number;
+};
+
+type NotificationResponse = {
+  items: Notification[];
+  total: number;
+  unreadCount: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
 };
 
 export const Header: React.FC = () => {
@@ -57,18 +69,23 @@ export const Header: React.FC = () => {
   };
   const permissionSummary =
     permissionSummaryByRole[(user?.role || "viewer").toLowerCase()] || "Custom role";
-  const { data: notifications = [] } = useQuery({
-    queryKey: ["/api/notifications"],
-    queryFn: () => requestJson<Notification[]>("GET", "/api/notifications"),
+  const { data: notificationPage } = useQuery({
+    queryKey: [...qk.notifications, "recent"],
+    queryFn: () => requestJson<NotificationResponse>("GET", "/api/notifications?page=1&pageSize=8"),
     enabled: !!user,
     refetchInterval: 30000,
   });
-  const unreadCount = notifications.filter((notification) => !notification.readAt).length;
+  const notifications = notificationPage?.items ?? [];
+  const unreadCount = notificationPage?.unreadCount ?? 0;
   const markRead = useMutation({
     mutationFn: (id: number) => requestJson("POST", `/api/notifications/${id}/read`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: qk.notifications });
     },
+  });
+  const markAllRead = useMutation({
+    mutationFn: () => requestJson("POST", "/api/notifications/mark-all-read"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.notifications }),
   });
 
   const breadcrumb = location
@@ -172,22 +189,37 @@ export const Header: React.FC = () => {
               <Bell className="h-5 w-5" />
               {unreadCount > 0 ? (
                 <span className="absolute -top-0.5 -right-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
-                  {unreadCount}
+                  {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
               ) : null}
               <span className="sr-only">Notifications</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-80" align="end">
-            <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+            <DropdownMenuLabel className="flex items-center justify-between gap-3">
+              <span>Notifications</span>
+              {unreadCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={markAllRead.isPending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    markAllRead.mutate();
+                  }}
+                >
+                  Mark all read
+                </Button>
+              ) : null}
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {notifications.length === 0 ? (
               <div className="px-2 py-3 text-xs text-muted-foreground">No notifications yet.</div>
             ) : (
               notifications
                 .slice()
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                .slice(0, 8)
                 .map((notification) => (
                   <DropdownMenuItem
                     key={notification.id}
@@ -199,7 +231,10 @@ export const Header: React.FC = () => {
                     }}
                   >
                     <div className="flex w-full items-center justify-between gap-2">
-                      <span className="text-xs font-medium">{notification.title}</span>
+                      <span className="text-xs font-medium">
+                        {notification.title}
+                        {notification.occurrenceCount > 1 ? ` (${notification.occurrenceCount})` : ""}
+                      </span>
                       {!notification.readAt ? (
                         <span className="h-2 w-2 rounded-full bg-primary" />
                       ) : null}

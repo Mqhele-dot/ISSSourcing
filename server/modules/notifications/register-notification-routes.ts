@@ -1,9 +1,10 @@
 import type { Express, Request, Response } from "express";
-import { eq } from "drizzle-orm";
-import { db } from "../../db";
+import { and, eq } from "drizzle-orm";
+import { db, pool } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
+import { sendError, sendOk } from "../../api-response";
 import { sendEmail } from "../../services/email-service";
-import { notifications, notificationPreferences, users } from "@shared/schema";
+import { notifications, notificationPreferences, organizationMembers, users } from "@shared/schema";
 import type { AuthBundle } from "../procurement/types";
 
 /** User notifications, preferences, and admin send. */
@@ -14,30 +15,93 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
   app.get("/api/notifications", ...masterRead, async (req: Request, res: Response) => {
     try {
       const userId = (req as Request & { user?: { id: number } }).user?.id;
-      if (!userId) return res.status(401).json({ message: "Unauthorized" });
-      const rows = await db.select().from(notifications).where(eq(notifications.userId, userId));
-      res.json(rows);
+      if (!userId) return sendError(res, 401, "AUTHENTICATION_REQUIRED", "Authentication is required.");
+      const organizationId = getActiveOrganizationId();
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+      const offset = (page - 1) * pageSize;
+      const result = await pool.query(
+        `
+          SELECT
+            id,
+            type,
+            title,
+            body,
+            entity_type AS "entityType",
+            entity_id AS "entityId",
+            occurrence_count AS "occurrenceCount",
+            last_occurred_at AS "lastOccurredAt",
+            read_at AS "readAt",
+            created_at AS "createdAt",
+            COUNT(*) OVER()::integer AS "total",
+            COUNT(*) FILTER (WHERE read_at IS NULL) OVER()::integer AS "unreadCount"
+          FROM notifications
+          WHERE organization_id = $1 AND user_id = $2
+          ORDER BY last_occurred_at DESC, id DESC
+          LIMIT $3 OFFSET $4
+        `,
+        [organizationId, userId, pageSize, offset],
+      );
+      const total = Number(result.rows[0]?.total ?? 0);
+      const unreadCount = Number(result.rows[0]?.unreadCount ?? 0);
+      return sendOk(res, {
+        items: result.rows.map(({ total: _total, unreadCount: _unreadCount, ...row }) => row),
+        total,
+        unreadCount,
+        page,
+        pageSize,
+        hasNext: offset + result.rows.length < total,
+      });
     } catch (error) {
       console.error("Error fetching notifications:", error);
-      res.status(500).json({ message: "Failed to fetch notifications" });
+      return sendError(res, 500, "NOTIFICATION_LIST_FAILED", "Failed to fetch notifications.");
     }
   });
 
   app.post("/api/notifications/:id/read", ...masterRead, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid notification ID" });
+      const userId = (req as Request & { user?: { id: number } }).user?.id;
+      if (!userId) return sendError(res, 401, "AUTHENTICATION_REQUIRED", "Authentication is required.");
+      if (isNaN(id)) return sendError(res, 400, "NOTIFICATION_ID_INVALID", "Invalid notification ID.");
       const updatedRows = (await db
         .update(notifications)
         .set({ readAt: new Date() })
-        .where(eq(notifications.id, id))
+        .where(
+          and(
+            eq(notifications.id, id),
+            eq(notifications.userId, userId),
+            eq(notifications.organizationId, getActiveOrganizationId()),
+          ),
+        )
         .returning()) as any[];
       const updated = updatedRows[0];
-      if (!updated) return res.status(404).json({ message: "Notification not found" });
-      res.json(updated);
+      if (!updated) return sendError(res, 404, "NOTIFICATION_NOT_FOUND", "Notification not found.");
+      return sendOk(res, updated);
     } catch (error) {
       console.error("Error marking notification read:", error);
-      res.status(500).json({ message: "Failed to update notification" });
+      return sendError(res, 500, "NOTIFICATION_UPDATE_FAILED", "Failed to update notification.");
+    }
+  });
+
+  app.post("/api/notifications/mark-all-read", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as Request & { user?: { id: number } }).user?.id;
+      if (!userId) return sendError(res, 401, "AUTHENTICATION_REQUIRED", "Authentication is required.");
+      const updated = await db
+        .update(notifications)
+        .set({ readAt: new Date() })
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.organizationId, getActiveOrganizationId()),
+          ),
+        )
+        .returning({ id: notifications.id });
+      return sendOk(res, { updated: updated.length });
+    } catch (error) {
+      console.error("Error marking notifications read:", error);
+      return sendError(res, 500, "NOTIFICATIONS_MARK_ALL_FAILED", "Failed to mark notifications as read.");
     }
   });
 
@@ -100,7 +164,26 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
         entityId?: number;
       };
       if (!payload?.userId || !payload?.type || !payload?.title) {
-        return res.status(400).json({ message: "userId, type and title are required" });
+        return sendError(res, 400, "NOTIFICATION_INPUT_INVALID", "userId, type and title are required.");
+      }
+      const targetMembership = await db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.organizationId, getActiveOrganizationId()),
+            eq(organizationMembers.userId, payload.userId),
+            eq(organizationMembers.active, true),
+          ),
+        )
+        .limit(1);
+      if (!targetMembership[0]) {
+        return sendError(
+          res,
+          404,
+          "NOTIFICATION_RECIPIENT_NOT_FOUND",
+          "The notification recipient is not an active member of this organization.",
+        );
       }
       const createdRows = (await db
         .insert(notifications)

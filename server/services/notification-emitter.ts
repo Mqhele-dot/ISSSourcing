@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import { getActiveOrganizationId } from "../organization-context";
@@ -15,18 +15,69 @@ export type EmitNotificationPayload = {
   entityId?: number;
 };
 
-export async function emitNotification(payload: EmitNotificationPayload): Promise<void> {
+async function upsertInAppNotification(payload: EmitNotificationPayload): Promise<{ created: boolean }> {
+  const organizationId = getActiveOrganizationId();
+  const bodyCondition = payload.body == null ? isNull(notifications.body) : eq(notifications.body, payload.body);
+  const entityTypeCondition =
+    payload.entityType == null ? isNull(notifications.entityType) : eq(notifications.entityType, payload.entityType);
+  const entityIdCondition =
+    payload.entityId == null ? isNull(notifications.entityId) : eq(notifications.entityId, payload.entityId);
+  const existing = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.organizationId, organizationId),
+        eq(notifications.userId, payload.userId),
+        eq(notifications.type, payload.type),
+        eq(notifications.title, payload.title),
+        bodyCondition,
+        entityTypeCondition,
+        entityIdCondition,
+      ),
+    )
+    .orderBy(desc(notifications.lastOccurredAt))
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(notifications)
+      .set({
+        body: payload.body ?? null,
+        entityType: payload.entityType ?? null,
+        entityId: payload.entityId ?? null,
+        occurrenceCount: sql`${notifications.occurrenceCount} + 1`,
+        lastOccurredAt: new Date(),
+        readAt: null,
+      })
+      .where(
+        and(
+          eq(notifications.id, existing[0].id),
+          eq(notifications.organizationId, organizationId),
+          eq(notifications.userId, payload.userId),
+        ),
+      );
+    return { created: false };
+  }
+
   await db.insert(notifications).values({
-    organizationId: getActiveOrganizationId(),
+    organizationId,
     userId: payload.userId,
     type: payload.type,
     title: payload.title,
     body: payload.body ?? null,
     entityType: payload.entityType ?? null,
     entityId: payload.entityId ?? null,
+    occurrenceCount: 1,
+    lastOccurredAt: new Date(),
   } as typeof notifications.$inferInsert);
+  return { created: true };
+}
 
-  if (process.env.DISABLE_NOTIFICATION_EMAIL !== "true") {
+export async function emitNotification(payload: EmitNotificationPayload): Promise<void> {
+  const result = await upsertInAppNotification(payload);
+
+  if (result.created && process.env.DISABLE_NOTIFICATION_EMAIL !== "true") {
     try {
       const rows = await db
         .select({ email: users.email })
@@ -48,7 +99,7 @@ export async function emitNotification(payload: EmitNotificationPayload): Promis
     }
   }
 
-  if (process.env.DISABLE_NOTIFICATION_SMS !== "true") {
+  if (result.created && process.env.DISABLE_NOTIFICATION_SMS !== "true") {
     try {
       const u = await storage.getUser(payload.userId);
       const phone = u?.phone?.trim();

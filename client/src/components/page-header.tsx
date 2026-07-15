@@ -1,4 +1,5 @@
-import type { ComponentType, ReactNode } from "react";
+import React, { createElement, isValidElement, type ComponentType, type ReactElement, type ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
@@ -6,7 +7,7 @@ interface PageHeaderProps {
   title: string;
   subtitle?: string;
   description?: string;
-  icon?: ReactNode | ComponentType<{ className?: string }>;
+  icon?: ReactElement | ComponentType<{ className?: string }> | LucideIcon;
   breadcrumb?: ReactNode;
   actions?: ReactNode;
   action?: {
@@ -37,13 +38,16 @@ export function PageHeader({
   titleTestId,
 }: PageHeaderProps) {
   const hasLegacyActions = action || secondaryAction;
-  const renderIcon = () => {
+  const renderIcon = (): ReactNode => {
     if (!icon) return null;
-    if (typeof icon === "function") {
-      const IconComponent = icon as ComponentType<{ className?: string }>;
-      return <IconComponent className="h-8 w-8" />;
-    }
-    return icon as ReactNode;
+    if (isValidElement(icon)) return icon;
+
+    // Lucide icons are React.forwardRef objects, not plain functions. Creating
+    // the element also supports ordinary component types without rendering the
+    // component object itself as a React child (React error #31).
+    return createElement(icon as ComponentType<{ className?: string }>, {
+      className: "h-8 w-8",
+    });
   };
 
   return (

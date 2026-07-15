@@ -53,6 +53,11 @@ type ComparisonLine = { id: number; quoteId: number; eventLineId: number; quanti
 type Comparison = Array<{ quote: QuoteSummary["quote"]; supplierName: string; lines: ComparisonLine[]; weightedScore: number | null }>;
 type Supplier = { id: number; name: string; status: string; onboardingStatus?: string | null; complianceStatus?: string | null };
 type Currency = { code: string; active: boolean };
+
+function asCollection<T>(value: T[] | { items?: T[] } | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  return Array.isArray(value?.items) ? value.items : [];
+}
 type RequisitionSourcingContext = {
   requisition: { id: number; requisitionNumber: string; justification?: string | null; requiredDate?: string | null; supplierId?: number | null };
   reportingCurrencyCode: string;
@@ -100,8 +105,8 @@ function NewEventDialog({ open, onOpenChange, requisitionId }: { open: boolean; 
   ]);
   const prefillApplied = useRef(false);
 
-  const suppliersQuery = useQuery<Supplier[]>({ queryKey: ["/api/suppliers", "sourcing-picker"], queryFn: () => requestJson("GET", "/api/suppliers") });
-  const currenciesQuery = useQuery<Currency[]>({ queryKey: ["/api/master-data/currencies", "sourcing-picker"], queryFn: () => requestJson("GET", "/api/master-data/currencies") });
+  const suppliersQuery = useQuery<Supplier[] | { items?: Supplier[] }>({ queryKey: ["/api/suppliers", "sourcing-picker"], queryFn: () => requestJson("GET", "/api/suppliers") });
+  const currenciesQuery = useQuery<Currency[] | { items?: Currency[] }>({ queryKey: ["/api/currencies", "sourcing-picker"], queryFn: () => requestJson("GET", "/api/currencies") });
   const organizationQuery = useQuery<{ organization?: { defaultCurrencyCode?: string | null } }>({ queryKey: ["/api/organization/settings", "sourcing-currency"], queryFn: () => requestJson("GET", "/api/organization/settings") });
   const requisitionQuery = useQuery<RequisitionSourcingContext>({
     queryKey: ["/api/sourcing/requisition-context", requisitionId],
@@ -136,7 +141,7 @@ function NewEventDialog({ open, onOpenChange, requisitionId }: { open: boolean; 
       setCurrency(organizationCurrency);
     }
   }, [organizationQuery.data, requisitionId, requisitionQuery.data]);
-  const eligibleSuppliers = useMemo(() => (suppliersQuery.data ?? []).filter((supplier) => {
+  const eligibleSuppliers = useMemo(() => asCollection(suppliersQuery.data).filter((supplier) => {
     const eligible = String(supplier.status).toLowerCase() === "active"
       && String(supplier.onboardingStatus ?? "approved").toLowerCase() === "approved"
       && String(supplier.complianceStatus ?? "").toLowerCase() !== "blocked";
@@ -191,7 +196,7 @@ function NewEventDialog({ open, onOpenChange, requisitionId }: { open: boolean; 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2"><Label htmlFor="rfq-title">Event title</Label><Input id="rfq-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Office equipment framework RFQ" /></div>
           <div className="space-y-2"><Label htmlFor="rfq-deadline">Submission deadline</Label><Input id="rfq-deadline" type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></div>
-          <div className="space-y-2"><Label>Reporting currency</Label><Select value={currency} onValueChange={setCurrency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(currenciesQuery.data ?? [{ code: "ZAR", active: true }]).filter((item) => item.active).map((item) => <SelectItem key={item.code} value={item.code}>{item.code}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>Reporting currency</Label><Select value={currency} onValueChange={setCurrency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{asCollection(currenciesQuery.data).filter((item) => item.active).map((item) => <SelectItem key={item.code} value={item.code}>{item.code}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2 sm:col-span-2"><Label htmlFor="rfq-description">Commercial brief</Label><Textarea id="rfq-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Scope, delivery expectations, compliance requirements, and award assumptions." /></div>
         </div>
 

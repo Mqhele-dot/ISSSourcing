@@ -59,7 +59,7 @@ export function RequisitionCommercialHintCard({
           <span className="text-foreground">{taxCodes.length}</span> tax codes.
         </p>
         {contractsForSupplier.length > 0 ? (
-          <ul className="list-inside list-disc space-y-1 text-foreground">
+          <ul className="hidden" aria-hidden="true">
             {contractsForSupplier.slice(0, 5).map((c) => (
               <li key={c.id}>{c.title}</li>
             ))}

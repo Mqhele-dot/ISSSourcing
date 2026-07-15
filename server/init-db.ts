@@ -898,9 +898,54 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         body TEXT,
         entity_type TEXT,
         entity_id INTEGER,
+        occurrence_count INTEGER DEFAULT 1 NOT NULL,
+        last_occurred_at TIMESTAMP DEFAULT NOW() NOT NULL,
         read_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS occurrence_count INTEGER DEFAULT 1 NOT NULL;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS last_occurred_at TIMESTAMP DEFAULT NOW() NOT NULL;
+      WITH duplicate_groups AS (
+        SELECT
+          MAX(id) AS keeper_id,
+          COALESCE(organization_id, 1) AS organization_id,
+          user_id,
+          type,
+          title,
+          COUNT(*)::int AS occurrence_count,
+          MAX(COALESCE(last_occurred_at, created_at)) AS last_occurred_at,
+          CASE WHEN BOOL_OR(read_at IS NULL) THEN NULL ELSE MAX(read_at) END AS read_at
+        FROM notifications
+        GROUP BY COALESCE(organization_id, 1), user_id, type, title
+        HAVING COUNT(*) > 1
+      )
+      UPDATE notifications notification
+      SET
+        occurrence_count = GREATEST(notification.occurrence_count, duplicate_groups.occurrence_count),
+        last_occurred_at = duplicate_groups.last_occurred_at,
+        read_at = duplicate_groups.read_at
+      FROM duplicate_groups
+      WHERE notification.id = duplicate_groups.keeper_id;
+
+      WITH keepers AS (
+        SELECT MAX(id) AS keeper_id, COALESCE(organization_id, 1) AS organization_id, user_id, type, title
+        FROM notifications
+        GROUP BY COALESCE(organization_id, 1), user_id, type, title
+      )
+      DELETE FROM notifications notification
+      USING keepers
+      WHERE COALESCE(notification.organization_id, 1) = keepers.organization_id
+        AND notification.user_id = keepers.user_id
+        AND notification.type = keepers.type
+        AND notification.title = keepers.title
+        AND notification.id <> keepers.keeper_id;
+
+      DELETE FROM notifications
+      WHERE read_at IS NOT NULL
+        AND COALESCE(last_occurred_at, created_at) < NOW() - INTERVAL '90 days';
+
+      CREATE INDEX IF NOT EXISTS idx_notifications_org_user_recent
+        ON notifications (organization_id, user_id, last_occurred_at DESC);
       CREATE TABLE IF NOT EXISTS notification_preferences (
         id SERIAL PRIMARY KEY,
         user_id INTEGER UNIQUE NOT NULL,

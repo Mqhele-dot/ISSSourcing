@@ -4,6 +4,16 @@ Use this gate for production stabilisation work on `cursor/project-codespace-com
 
 This branch is buildable, not production-approved. Production approval requires the local gate below plus the required GitHub CI checks on the release head.
 
+The current expanded-module hardening wave is `BLOCKED` for production approval until its data-hygiene maintenance, module-level runtime proof, tenant-isolation proof, and browser evidence are complete. The earlier procurement-only candidate evidence is historical and does not approve the expanded build.
+
+All mutation-bearing local and release tests require a disposable database:
+
+```bash
+TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/isssourcing_test npm run verify:release
+```
+
+The runner and shared HTTP transport refuse ordinary application, production-like, and unverified server database targets. See `docs/DATA-HYGIENE-AND-TEST-ISOLATION.md`.
+
 ## Required Commands
 
 Run:

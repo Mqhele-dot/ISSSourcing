@@ -1,16 +1,10 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableRecordCombobox } from "@/components/searchable-record-combobox";
 import type { Supplier } from "@shared/schema";
 import type { RequisitionFieldErrors } from "@/pages/requisitions/use-requisition-form";
 
@@ -77,29 +71,11 @@ export function RequisitionHeaderFields({
   onJustificationChange: (v: string) => void;
   onNotesChange: (v: string) => void;
 }) {
-  const [supplierSearch, setSupplierSearch] = useState("");
   const [showSupplierCreate, setShowSupplierCreate] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [newSupplierEmail, setNewSupplierEmail] = useState("");
   const [newSupplierPhone, setNewSupplierPhone] = useState("");
   const selectedCurrency = currencies.find((currency) => currency.code === currencyCode);
-  const filteredSuppliers = useMemo(() => {
-    const term = supplierSearch.trim().toLowerCase();
-    if (!term) return suppliers;
-    return suppliers.filter((supplier) =>
-      [
-        supplier.name,
-        (supplier as Supplier & { supplierCode?: string | null }).supplierCode,
-        supplier.email,
-        supplier.phone,
-        (supplier as Supplier & { defaultCurrencyCode?: string | null }).defaultCurrencyCode,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
-  }, [supplierSearch, suppliers]);
 
   return (
     <>
@@ -120,31 +96,23 @@ export function RequisitionHeaderFields({
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="req-supplier">Supplier *</Label>
-          <Input
-            value={supplierSearch}
-            onChange={(event) => setSupplierSearch(event.target.value)}
-            placeholder="Search supplier, code, email, or currency..."
+          <SearchableRecordCombobox
+            id="req-supplier"
+            value={supplierId === "" ? "" : String(supplierId)}
+            onValueChange={(value) => onSupplierChange(Number(value))}
+            options={suppliers.map((supplier) => ({
+              value: String(supplier.id),
+              label: `${supplier.name}${(supplier as Supplier & { defaultCurrencyCode?: string | null }).defaultCurrencyCode ? ` | ${(supplier as Supplier & { defaultCurrencyCode?: string | null }).defaultCurrencyCode}` : ""}`,
+              keywords: `${(supplier as Supplier & { supplierCode?: string | null }).supplierCode ?? ""} ${supplier.email ?? ""} ${supplier.phone ?? ""}`,
+            }))}
+            placeholder="Select supplier..."
+            searchPlaceholder="Search supplier, code, email, or currency..."
+            ariaLabel="Select supplier"
             disabled={readOnly}
-            aria-label="Search suppliers"
           />
-          <Select value={String(supplierId)} onValueChange={(v) => onSupplierChange(v ? Number(v) : "")} disabled={readOnly}>
-            <SelectTrigger id="req-supplier" aria-label="Select supplier">
-              <SelectValue placeholder="Select supplier..." />
-            </SelectTrigger>
-            <SelectContent>
-              {filteredSuppliers.map((s) => (
-                <SelectItem key={s.id} value={String(s.id)}>
-                  {s.name}
-                  {(s as Supplier & { defaultCurrencyCode?: string | null }).defaultCurrencyCode
-                    ? ` · ${(s as Supplier & { defaultCurrencyCode?: string | null }).defaultCurrencyCode}`
-                    : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           {!readOnly ? (
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">{filteredSuppliers.length} supplier(s) match.</p>
+              <p className="text-xs text-muted-foreground">{suppliers.length} approved supplier(s) available. Search shows 20 at a time.</p>
               <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => setShowSupplierCreate((open) => !open)}>
                 {showSupplierCreate ? "Hide new supplier" : "Add supplier here"}
               </Button>
@@ -154,19 +122,20 @@ export function RequisitionHeaderFields({
         </div>
         <div className="space-y-2">
           <Label htmlFor="req-currency">Request currency *</Label>
-          <Select value={currencyCode} onValueChange={onCurrencyChange} disabled={readOnly}>
-            <SelectTrigger id="req-currency" aria-label="Select requisition currency">
-              <SelectValue placeholder="Select currency..." />
-            </SelectTrigger>
-            <SelectContent>
-              {currencies.map((currency) => (
-                <SelectItem key={currency.code} value={currency.code}>
-                  {currency.code} - {currency.name}
-                   {currency.isMainForRegion ? " / main" : ""} / {currency.regionCode ?? "Global"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableRecordCombobox
+            id="req-currency"
+            value={currencyCode}
+            onValueChange={onCurrencyChange}
+            options={currencies.map((currency) => ({
+              value: currency.code,
+              label: `${currency.code} - ${currency.name}${currency.isMainForRegion ? " | main" : ""} | ${currency.regionCode ?? "Global"}`,
+              keywords: `${currency.regionName ?? ""} ${currency.symbol ?? ""}`,
+            }))}
+            placeholder="Select currency..."
+            searchPlaceholder="Search currency, region, or code..."
+            ariaLabel="Select requisition currency"
+            disabled={readOnly}
+          />
           <p className="text-xs text-muted-foreground">
              {currencyCode === reportingCurrencyCode
                ? `${reportingCurrencyCode} is this organization's reporting currency.`
@@ -211,18 +180,16 @@ export function RequisitionHeaderFields({
         ) : null}
         <div className="space-y-2">
           <Label htmlFor="req-department">Department</Label>
-          <Select value={String(departmentId)} onValueChange={(v) => onDepartmentChange(v ? Number(v) : "")} disabled={readOnly}>
-            <SelectTrigger id="req-department" aria-label="Select department">
-              <SelectValue placeholder="Select department..." />
-            </SelectTrigger>
-            <SelectContent>
-              {departments.map((d) => (
-                <SelectItem key={d.id} value={String(d.id)}>
-                  {d.code} - {d.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableRecordCombobox
+            id="req-department"
+            value={departmentId === "" ? "" : String(departmentId)}
+            onValueChange={(value) => onDepartmentChange(Number(value))}
+            options={departments.map((department) => ({ value: String(department.id), label: `${department.code} - ${department.name}` }))}
+            placeholder="Select department..."
+            searchPlaceholder="Search department code or name..."
+            ariaLabel="Select department"
+            disabled={readOnly}
+          />
           {fieldErrors.departmentId ? <p className="text-xs text-destructive">{fieldErrors.departmentId}</p> : null}
         </div>
         <div className="space-y-2">
@@ -256,23 +223,19 @@ export function RequisitionHeaderFields({
         {projects.length > 0 ? (
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="req-project">Project (optional)</Label>
-            <Select
+            <SearchableRecordCombobox
+              id="req-project"
               value={projectId === "" ? "__none__" : String(projectId)}
-              onValueChange={(v) => onProjectChange(v === "__none__" ? "" : Number(v))}
+              onValueChange={(value) => onProjectChange(value === "__none__" ? "" : Number(value))}
+              options={[
+                { value: "__none__", label: "No project" },
+                ...projects.map((project) => ({ value: String(project.id), label: `${project.code} - ${project.name}` })),
+              ]}
+              placeholder="No project"
+              searchPlaceholder="Search project code or name..."
+              ariaLabel="Project"
               disabled={readOnly}
-            >
-              <SelectTrigger id="req-project" aria-label="Project">
-                <SelectValue placeholder="No project" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">No project</SelectItem>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    {p.code} — {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
             {fieldErrors.projectId ? <p className="text-xs text-destructive">{fieldErrors.projectId}</p> : null}
           </div>
         ) : null}

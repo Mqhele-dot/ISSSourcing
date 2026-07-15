@@ -28,7 +28,6 @@ const RealTimeUpdatesPage = lazy(() => import("@/pages/real-time-updates-page"))
 const SyncTestPage = lazy(() => import("@/pages/sync-test-page"));
 const SyncDashboard = lazy(() => import("@/pages/sync-dashboard"));
 const DownloadPage = lazy(() => import("@/pages/download"));
-const BillingPage = lazy(() => import("@/pages/billing"));
 const ProfilePage = lazy(() => import("@/pages/profile"));
 const EmployeeProfilesPage = lazy(() => import("@/pages/employee-profiles"));
 const ImageRecognitionPage = lazy(() => import("@/pages/image-recognition-page"));
@@ -76,7 +75,6 @@ const ProductionMobileReceivePage = withProductionBoundary(MobileReceivePage, "r
 const ProductionInvoicesPage = withProductionBoundary(InvoicesPage, "finance");
 const ProductionAccountsPayablePage = withProductionBoundary(AccountsPayablePage, "finance");
 const ProductionAccountsPayableRedirect = withProductionBoundary(AccountsPayableRedirectToIntake, "finance");
-const ProductionBillingPage = withProductionBoundary(BillingPage, "finance");
 const ProductionInventoryDetailPage = withProductionBoundary(InventoryItemDetail, "inventory");
 const ProductionWarehousesPage = withProductionBoundary(WarehousesPage, "inventory");
 const ProductionWarehouseDetailPage = withProductionBoundary(WarehouseDetailPage, "inventory");
@@ -164,7 +162,9 @@ export function AppRouter() {
         <ProtectedRoute path="/finance/accounts-payable/:section" component={ProductionAccountsPayablePage} />
         <ProtectedRoute path={APP_ROUTES.finance.accountsPayable} component={ProductionAccountsPayableRedirect} />
         <ProtectedRoute path={APP_ROUTES.finance.approvalPolicies} component={ApprovalPoliciesPage} />
-        <ProtectedRoute path={APP_ROUTES.finance.billing} component={ProductionBillingPage} />
+        <Route path={APP_ROUTES.finance.billing}>
+          <Redirect to={APP_ROUTES.finance.invoices} />
+        </Route>
 
         <ProtectedRoute path={APP_ROUTES.admin.integrations} component={IntegrationsPage} />
         <ProtectedRoute path={APP_ROUTES.admin.masterData} component={MasterDataPage} />

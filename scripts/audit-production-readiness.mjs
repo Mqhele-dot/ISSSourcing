@@ -1152,7 +1152,8 @@ Allowed status labels: ${statuses.map((status) => `\`${status}\``).join(", ")}.
 - Mock/demo/static risk markers found: **${riskRows().length}**
 - Core blocking risks: **${riskCategoryCount("Core blocking risks")}**
 - Marker-level blockers: **${riskCategoryCount("Core blocking risks")}**
-- Procurement-release exclusions: **${routes.filter(isNonProductionV1Route).length} routes**
+- Historical procurement-release exclusions: **${routes.filter(isNonProductionV1Route).length} routes**
+- Expanded release decision: **BLOCKED pending module-level runtime, tenant-isolation, security, and browser evidence**
 - Core non-blocking risks: **${riskCategoryCount("Core non-blocking risks")}**
 - False positives: **${riskCategoryCount("False positives")}**
 - Test-only markers: **${riskCategoryCount("Test-only markers")}**
@@ -1160,7 +1161,7 @@ Allowed status labels: ${statuses.map((status) => `\`${status}\``).join(", ")}.
 - Mock/demo/static severity split: **Critical ${riskRowsBySeverity().filter((risk) => risk.severity === "Critical").length}**, **High ${riskRowsBySeverity().filter((risk) => risk.severity === "High").length}**, **Medium ${riskRowsBySeverity().filter((risk) => risk.severity === "Medium").length}**, **Low ${riskRowsBySeverity().filter((risk) => risk.severity === "Low").length}**, **False positive ${riskRowsBySeverity().filter((risk) => risk.severity === "False positive").length}**
 - Baseline comparison: **Wave 1 baseline**. Future production audits should compare these counts and risk markers so new or worsened production gaps are visible before release.
 
-The app now has a production-candidate foundation for the procurement-only commercial boundary: governed Master Data, supplier onboarding, requisitions, sourcing, approvals, purchase orders, contracts, reporting, diagnostics, subscriptions, and administration. Inventory operations, receiving, logistics, AP, payment control, and mobile warehouse workflows remain explicitly gated later-release modules even where earlier technical proof exists.
+The earlier procurement-only candidate remains historical evidence for its immutable source SHA. The current build exposes the wider application for controlled hardening, so it is not an approved production candidate. Inventory operations, receiving, logistics, exceptions, AP, payment control, reports, notifications, and mobile warehouse workflows require clean route-specific evidence before the expanded release can be approved.
 
 ## Runtime Workflow Evidence
 

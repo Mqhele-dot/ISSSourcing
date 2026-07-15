@@ -1,4 +1,5 @@
-import express, { type Express, type Request, type Response } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
@@ -41,7 +42,7 @@ import { registerMasterDataRoutes } from "./modules/master-data/register-master-
 import { registerProductionReleaseBoundary } from "./production-release-boundary";
 import { registerAnalyticsRoutes } from "./modules/reports/register-analytics-routes";
 import { registerSetupRoutes } from "./modules/setup/register-setup-routes";
-import { getActiveOrganizationId } from "./organization-context";
+import { getActiveOrganizationId, runWithTenantContext } from "./organization-context";
 import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisabled } from "./org-features";
 import { readiness } from "./readiness";
 import { sendError, sendOk, sendFunctionError } from "./api-response";
@@ -93,6 +94,7 @@ import {
 } from "./http/upload-config";
 import { csvBufferForExcel, workbookToBuffer } from "./http/export-helpers";
 import { appEnv } from "./config/env";
+import { isDisposableDatabaseUrl } from "./config/database-safety";
 import { getProductBootstrapHints } from "./lib/product-bootstrap";
 import { getBuildInfo } from "./lib/build-info";
 import { getReportingCurrencyCode } from "./lib/org-reporting-money";
@@ -103,6 +105,47 @@ import { detectSupplierDocumentMismatches } from "./modules/procurement/supplier
 
 function isInternalExportRequest(req: Request): boolean {
   return Boolean(appEnv.internalExportToken) && req.get("x-internal-export-key") === appEnv.internalExportToken;
+}
+
+function establishInternalExportTenantContext(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!isInternalExportRequest(req)) {
+    next();
+    return;
+  }
+
+  const organizationId = Number(req.get("x-internal-export-organization-id"));
+  const requestedBy = Number(req.get("x-internal-export-user-id") ?? 0);
+  if (!Number.isInteger(organizationId) || organizationId <= 0) {
+    sendError(
+      res,
+      400,
+      "EXPORT_TENANT_CONTEXT_INVALID",
+      "The queued export is missing a valid organization context.",
+      { hint: "Retry the export from Export Center. If it fails again, review System Diagnostics." },
+    );
+    return;
+  }
+
+  runWithTenantContext(
+    {
+      organizationId,
+      membershipId: 0,
+      userId: Number.isInteger(requestedBy) && requestedBy > 0 ? requestedBy : 0,
+      userRole: "system",
+      membershipRole: "system",
+      effectivePermissions: ["reports:read", "reports:export"],
+      correlationId: req.get("x-request-id") ?? randomUUID(),
+      systemActor: {
+        id: "export-worker",
+        purpose: "Generate a tenant-scoped queued export",
+      },
+    },
+    next,
+  );
 }
 
 function pathStatus(targetPath: string) {
@@ -184,7 +227,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // Document generation endpoints
-  app.get("/api/export/:reportType/:format", exportRateLimiter, async (req: Request, res: Response) => {
+  app.get(
+    "/api/export/:reportType/:format",
+    exportRateLimiter,
+    establishInternalExportTenantContext,
+    async (req: Request, res: Response) => {
     try {
       if (!isInternalExportRequest(req)) {
         const guarded = exportAccess as unknown as Array<(req: Request, res: Response, next: (err?: unknown) => void) => void>;
@@ -914,9 +961,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
     } catch (error) {
       console.error(`Error generating ${req.params.format} report for ${req.params.reportType}:`, error);
-      return res.status(500).json({
-        message: `Failed to generate ${req.params.reportType} report as ${req.params.format}.`,
-      });
+      return sendError(
+        res,
+        500,
+        "REPORT_EXPORT_FAILED",
+        `Failed to generate ${req.params.reportType} report as ${req.params.format}.`,
+        {
+          hint: "Retry the export from Export Center. If it fails again, use the request ID in System Diagnostics.",
+          details: { dataset: req.params.reportType, format: req.params.format },
+        },
+      );
     }
   });
 
@@ -1099,6 +1153,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      const fixturePollution = await pool.query<{ total: string }>(
+        `
+          SELECT SUM(match_count)::text AS total
+          FROM (
+            SELECT COUNT(*) AS match_count FROM suppliers
+              WHERE organization_id = $1 AND name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Supplier '
+            UNION ALL
+            SELECT COUNT(*) FROM inventory_items
+              WHERE organization_id = $1 AND (name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)')
+            UNION ALL
+            SELECT COUNT(*) FROM approval_policies
+              WHERE organization_id = $1 AND name ~ '^(AP Workflow|AP Test|AP Invalid)'
+            UNION ALL
+            SELECT COUNT(*) FROM sourcing_events
+              WHERE organization_id = $1 AND title ~ '^(Runtime RFQ|E2E Controlled RFQ) '
+          ) fixture_matches
+        `,
+        [getActiveOrganizationId()],
+      );
+      const fixtureCount = Number(fixturePollution.rows[0]?.total ?? 0);
+      if (fixtureCount > 0) {
+        result.data.push(`${fixtureCount} probable automated test fixture record(s) found; run npm run data:fixture-audit before any purge.`);
+        recordServerDiagnosticEvent({
+          severity: "warning",
+          source: "business-rule",
+          title: "Automated fixture pollution detected",
+          message: `${fixtureCount} probable test-owned records are present in the active organization.`,
+          details: { command: "npm run data:fixture-audit", organizationId: getActiveOrganizationId() },
+        });
+      }
+
       const filtered: Record<string, string[]> = {};
       for (const [key, arr] of Object.entries(result)) {
         if (Array.isArray(arr) && arr.length > 0) filtered[key] = arr;
@@ -1106,7 +1191,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(filtered);
     } catch (err) {
       console.error("Diagnostics scan error:", err);
-      res.status(500).json({ message: "Scan failed", error: err instanceof Error ? err.message : String(err) });
+      return sendError(res, 500, "DIAGNOSTICS_SCAN_FAILED", "Diagnostics scan failed", {
+        hint: "Retry the scan. If it fails again, use the request ID to review server diagnostics.",
+      });
     }
   });
 
@@ -2559,6 +2646,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/health", sendShallowHealth);
 
   const sendReadyPayload = async (res: Response) => {
+    if (isDisposableDatabaseUrl(process.env.TEST_DATABASE_URL)) {
+      res.setHeader("X-Test-Database-Mode", "disposable");
+    }
     let buildPayload: ReturnType<typeof getBuildInfo>;
     let uploadOk = false;
     let emailOk = false;

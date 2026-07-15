@@ -2,7 +2,9 @@
 
 ## Release Decision
 
-**Current decision: CANDIDATE for commercial procurement only.**
+**Current decision: SUPERSEDED / BLOCKED while the expanded application boundary is being hardened.**
+
+The procurement-only candidate recorded below remains historical evidence for its immutable SHA. It does not approve the current expanded build. Inventory, receiving, logistics, exceptions, AP, reports, notifications, and mobile operations are now visible for controlled implementation and require their own clean runtime, tenant-isolation, security, and browser evidence before the current branch can return to candidate status.
 
 This is not full ERP production approval. Receiving, inventory operations, logistics, mobile warehouse operations, AP, invoices, payment control, and direct bank payment initiation are not approved by this evidence pack. Formal production approval still requires the named human sign-offs and branch-protection approval.
 
@@ -11,7 +13,7 @@ This is not full ERP production approval. Receiving, inventory operations, logis
 | Branch | `cursor/project-codespace-compatibility-b14c` |
 | Immutable candidate source SHA | `b8164e178126dc8c8943b165e1f95a06d47bb9a5` |
 | Evidence packaging commit | This documentation-only commit; resolve with `git log -1 --format=%H` after checkout |
-| Production scope | Procurement only |
+| Historical production scope | Procurement only; superseded for the current expanded build |
 | GitHub workflow | **Playwright Release Gate** (`.github/workflows/playwright-release-gate.yml`) |
 | Workflow run | [Run 29383670960](https://github.com/Mqhele-dot/ISSSourcing/actions/runs/29383670960) |
 | Workflow conclusion | `success` |

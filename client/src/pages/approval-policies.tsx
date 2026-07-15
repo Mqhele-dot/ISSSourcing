@@ -62,6 +62,13 @@ const APPROVER_ROLES = [
 ] as const;
 
 type UserOpt = { id: number; username: string; fullName?: string | null };
+type PolicyPage = {
+  items: ApprovalPolicy[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
+};
 
 const emptyForm = {
   name: "",
@@ -82,14 +89,35 @@ export default function ApprovalPoliciesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [previewEntity, setPreviewEntity] = useState<(typeof ENTITY_TYPES)[number]["value"]>("requisition");
   const [previewAmount, setPreviewAmount] = useState("5000");
+  const [search, setSearch] = useState("");
+  const [entityFilter, setEntityFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
 
-  const { data: policies = [], isLoading } = useQuery({
-    queryKey: ["/api/approval-policies"],
+  const { data: policyPage, isLoading } = useQuery<PolicyPage>({
+    queryKey: ["/api/approval-policies", { search, entityFilter, statusFilter, page, pageSize }],
     queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/approval-policies");
-      return normalizeApiList<ApprovalPolicy>(raw);
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        status: statusFilter,
+      });
+      if (search.trim()) params.set("q", search.trim());
+      if (entityFilter !== "all") params.set("entityType", entityFilter);
+      const raw = await requestJson<unknown>("GET", `/api/approval-policies?${params.toString()}`);
+      if (raw && typeof raw === "object" && Array.isArray((raw as PolicyPage).items)) return raw as PolicyPage;
+      const items = normalizeApiList<ApprovalPolicy>(raw);
+      return { items, total: items.length, page: 1, pageSize, hasNext: false };
     },
   });
+  const policies = useMemo(() => policyPage?.items ?? [], [policyPage]);
+  const totalPolicies = policyPage?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalPolicies / pageSize));
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, entityFilter, statusFilter]);
 
   const { data: users = [] } = useQuery({
     queryKey: ["/api/users"],
@@ -117,6 +145,7 @@ export default function ApprovalPoliciesPage() {
         const a = active[i];
         const b = active[j];
         if (String(a.entityType) !== String(b.entityType)) continue;
+        if (Number(a.approvalLevel) !== Number(b.approvalLevel)) continue;
         const aMin = Number(a.amountMin ?? 0);
         const bMin = Number(b.amountMin ?? 0);
         const aMax = a.amountMax == null ? null : Number(a.amountMax);
@@ -431,12 +460,12 @@ export default function ApprovalPoliciesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Policy chain (active only)</CardTitle>
+          <CardTitle>Visible policy chain</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Policies grouped by entity, sorted by approval level (ascending). Rows flagged when two active policies on
-            the same entity have overlapping amount bands.
+            Policies on the current filtered page, grouped by entity and approval level. Only overlapping active bands
+            at the same level are conflicts; intentional multi-level approval chains remain valid.
           </p>
           {ENTITY_TYPES.map((t) => {
             const chain = policiesByEntityChain.get(t.value) ?? [];
@@ -552,7 +581,41 @@ export default function ApprovalPoliciesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Configured policies</CardTitle>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <CardTitle>Configured policies</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">{totalPolicies.toLocaleString()} matching policies</p>
+            </div>
+            <div className="grid w-full gap-2 md:w-auto md:grid-cols-[minmax(16rem,1fr)_12rem_10rem]">
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search policy name or entity"
+                aria-label="Search approval policies"
+              />
+              <Select value={entityFilter} onValueChange={setEntityFilter}>
+                <SelectTrigger aria-label="Filter by entity">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All entities</SelectItem>
+                  {ENTITY_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger aria-label="Filter by status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {overlappingPolicyIds.size > 0 ? (
@@ -569,6 +632,8 @@ export default function ApprovalPoliciesPage() {
           ) : sortedPolicies.length === 0 ? (
             <p className="text-sm text-muted-foreground">No policies yet. Add one to gate approvals by amount.</p>
           ) : (
+            <div className="overflow-hidden rounded-md border">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -617,6 +682,21 @@ export default function ApprovalPoliciesPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t px-3 py-2 text-sm">
+              <span className="text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                  Previous
+                </Button>
+                <Button type="button" size="sm" variant="outline" disabled={!policyPage?.hasNext} onClick={() => setPage((value) => value + 1)}>
+                  Next
+                </Button>
+              </div>
+            </div>
+            </div>
           )}
         </CardContent>
       </Card>

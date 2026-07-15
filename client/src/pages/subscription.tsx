@@ -296,7 +296,7 @@ export default function SubscriptionPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4">
         {plans.length === 0 && !isLoading ? (
           <Card className="lg:col-span-4" data-testid="subscription-empty-state">
             <CardContent className="py-8 text-sm text-muted-foreground">
@@ -307,7 +307,7 @@ export default function SubscriptionPage() {
         {plans.map((plan) => {
           const active = plan.tier === activeTier;
           return (
-            <Card key={plan.tier} className={active ? "border-primary" : undefined} data-testid={`subscription-plan-${plan.tier}`}>
+            <Card key={plan.tier} className={`flex h-full min-w-0 flex-col ${active ? "border-primary" : ""}`} data-testid={`subscription-plan-${plan.tier}`}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle>{plan.displayName}</CardTitle>
@@ -315,11 +315,11 @@ export default function SubscriptionPage() {
                 </div>
                 <CardDescription>{plan.description}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="flex flex-1 flex-col gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Pricing</p>
                   <p className="font-semibold">{plan.monthlyPrice}</p>
-                  <p className="text-sm text-muted-foreground">{plan.annualPrice}</p>
+                  {plan.annualPrice !== plan.monthlyPrice ? <p className="text-sm text-muted-foreground">{plan.annualPrice}</p> : null}
                 </div>
                 <div className="space-y-1 text-sm">
                   <p>{formatLimit(plan.limits.users, "users")}</p>
@@ -337,7 +337,7 @@ export default function SubscriptionPage() {
                     ))}
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground">{plan.supportLevel}</p>
+                <p className="mt-auto text-sm text-muted-foreground">{plan.supportLevel}</p>
                 <Button
                   type="button"
                   variant={active ? "outline" : "default"}
@@ -352,7 +352,7 @@ export default function SubscriptionPage() {
                     })
                   }
                 >
-                  {active ? "Current plan" : plan.upgradeCta}
+                  {active ? "Current plan" : `Choose ${plan.displayName}`}
                 </Button>
               </CardContent>
             </Card>

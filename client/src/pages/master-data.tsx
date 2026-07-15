@@ -6,6 +6,8 @@ import {
   AlertTriangle,
   Building2,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Coins,
   Database,
   ExternalLink,
@@ -20,6 +22,7 @@ import {
   Truck,
   Wallet,
   Package,
+  MoreHorizontal,
   RefreshCw,
   type LucideIcon,
 } from "lucide-react";
@@ -31,6 +34,14 @@ import { PageDataState } from "@/components/page-shell";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
@@ -74,6 +85,14 @@ type BaseMasterRecord = {
   regionName?: string | null;
   isMainForRegion?: boolean | null;
   exchangeRateToZar?: number | null;
+};
+
+type PaginatedMasterRecords = {
+  items: BaseMasterRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
 };
 
 const MASTER_ENDPOINTS = {
@@ -384,6 +403,7 @@ function MasterTable({
   const [extraValues, setExtraValues] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [dependencyResponse, setDependencyResponse] = useState<string | null>(null);
   const [whereUsedResponse, setWhereUsedResponse] = useState<string | null>(null);
@@ -417,15 +437,28 @@ function MasterTable({
           ? "payment-terms"
           : config.slug;
 
-  const { data = [], isLoading } = useQuery({
-    queryKey: [endpoint],
+  const pageSize = 25;
+  const { data: pageData, isLoading } = useQuery<PaginatedMasterRecords>({
+    queryKey: [endpoint, { search, statusFilter, page, pageSize }],
     queryFn: async () => {
-      if (!endpoint) return [];
-      const raw = await requestJson<unknown>("GET", endpoint);
-      return normalizeApiList<BaseMasterRecord>(raw);
+      if (!endpoint) return { items: [], total: 0, page: 1, pageSize, hasNext: false };
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        status: statusFilter,
+      });
+      if (search.trim()) params.set("q", search.trim());
+      const raw = await requestJson<unknown>("GET", `${endpoint}?${params.toString()}`);
+      if (raw && typeof raw === "object" && Array.isArray((raw as PaginatedMasterRecords).items)) {
+        return raw as PaginatedMasterRecords;
+      }
+      const items = normalizeApiList<BaseMasterRecord>(raw);
+      return { items, total: items.length, page: 1, pageSize, hasNext: false };
     },
     enabled: Boolean(endpoint),
   });
+  const data = useMemo(() => pageData?.items ?? [], [pageData]);
+  const totalRecords = pageData?.total ?? 0;
 
   const createRecord = useMutation({
     mutationFn: (payload: Record<string, unknown>) => requestJson("POST", endpoint, payload),
@@ -555,6 +588,13 @@ function MasterTable({
       })
       .sort((a, b) => a.code.localeCompare(b.code));
   }, [data, search, statusFilter]);
+  const pageCount = Math.max(1, Math.ceil(totalRecords / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = sorted;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, endpoint]);
 
   const extraFields = config.extraFields ?? [];
   const visibleExtraFields = extraFields.slice(0, config.slug === "currencies" ? 6 : 3);
@@ -645,7 +685,7 @@ function MasterTable({
           <div className="rounded-md border bg-background p-3">
             <div className="text-xs font-medium uppercase text-muted-foreground">Coverage</div>
             <div className="mt-2 flex items-end gap-2">
-              <span className="text-2xl font-semibold">{data.length}</span>
+              <span className="text-2xl font-semibold">{totalRecords}</span>
               <span className="pb-1 text-sm text-muted-foreground">records</span>
               {inactiveCount > 0 ? <Badge variant="outline">{inactiveCount} inactive</Badge> : null}
             </div>
@@ -796,8 +836,10 @@ function MasterTable({
           ) : sorted.length === 0 ? (
             <div className="rounded-md border p-4 text-sm text-muted-foreground">No matching records.</div>
           ) : (
-            <Table>
-              <TableHeader>
+            <div className="overflow-hidden rounded-md border">
+              <div className="max-w-full overflow-x-auto">
+              <Table>
+              <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow>
                   <TableHead className="w-[10rem]">Code</TableHead>
                   <TableHead>{nameLabel}</TableHead>
@@ -809,7 +851,7 @@ function MasterTable({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sorted.map((row) => (
+                {pageRows.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell className="font-medium">{row.code}</TableCell>
                     <TableCell>
@@ -834,58 +876,91 @@ function MasterTable({
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditingId(row.id);
-                            setCode(row.code);
-                            setName(recordDisplayName(row, config) === "-" ? "" : recordDisplayName(row, config));
-                            const nextExtras: Record<string, string> = {};
-                            for (const field of extraFields) {
-                              const value = row[field.key];
-                              nextExtras[String(field.key)] = value == null ? "" : String(value);
-                            }
-                            setExtraValues(nextExtras);
-                          }}
-                          disabled={!canUpdateMasterData || updateRecord.isPending || deleteRecord.isPending}
-                          title={!canUpdateMasterData ? disabledReason : undefined}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => whereUsed.mutate(row.id)}
-                          disabled={whereUsed.isPending}
-                        >
-                          Where-used
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => toggleRecord.mutate({ id: row.id, active: row.active === false })}
-                          disabled={!canUpdateMasterData || toggleRecord.isPending}
-                          title={!canUpdateMasterData ? disabledReason : undefined}
-                        >
-                          {row.active === false ? "Activate" : "Deactivate"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => deleteRecord.mutate(row.id)}
-                          disabled={!canDeleteMasterData || deleteRecord.isPending}
-                          title={!canDeleteMasterData ? disabledReason : undefined}
-                        >
-                          Delete
-                        </Button>
+                      <div className="flex justify-end">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost" aria-label={`Actions for ${row.code}`}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>{row.code}</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              disabled={!canUpdateMasterData || updateRecord.isPending || deleteRecord.isPending}
+                              onSelect={() => {
+                                setEditingId(row.id);
+                                setCode(row.code);
+                                setName(recordDisplayName(row, config) === "-" ? "" : recordDisplayName(row, config));
+                                const nextExtras: Record<string, string> = {};
+                                for (const field of extraFields) {
+                                  const value = row[field.key];
+                                  nextExtras[String(field.key)] = value == null ? "" : String(value);
+                                }
+                                setExtraValues(nextExtras);
+                              }}
+                            >
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={whereUsed.isPending} onSelect={() => whereUsed.mutate(row.id)}>
+                              Where used
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={!canUpdateMasterData || toggleRecord.isPending}
+                              onSelect={() => toggleRecord.mutate({ id: row.id, active: row.active === false })}
+                            >
+                              {row.active === false ? "Activate" : "Deactivate"}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              disabled={!canDeleteMasterData || deleteRecord.isPending}
+                              onSelect={() => deleteRecord.mutate(row.id)}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+              </Table>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t px-3 py-2 text-sm">
+                <span className="text-muted-foreground">
+                  {totalRecords === 0
+                    ? "No records"
+                    : `Showing ${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, totalRecords)} of ${totalRecords}`}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage <= 1}
+                    onClick={() => setPage((value) => Math.max(1, value - 1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <span className="min-w-20 text-center text-muted-foreground">
+                    Page {currentPage} of {pageCount}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!pageData?.hasNext}
+                    onClick={() => setPage((value) => Math.min(pageCount, value + 1))}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </CardContent>

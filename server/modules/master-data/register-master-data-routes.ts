@@ -1,7 +1,7 @@
 import type { Express, Request, RequestHandler, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { and, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { storage } from "../../storage";
 import { sendError, sendOk } from "../../api-response";
@@ -77,12 +77,49 @@ import {
 } from "./mdm-change-request-service";
 import { getMdmWhereUsed } from "./mdm-where-used-service";
 import { getFxProviderStatus, getFxRateFreshness, importFxRatesForOrganizations } from "./fx-provider-service";
+import { approvalRangesOverlap, type ApprovalPolicyCandidate } from "./approval-policy-overlap";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
   ensureRole: (roles: string[]) => RequestHandler;
   ensureTwoFactorAuthenticated: RequestHandler;
 };
+
+async function findApprovalPolicyConflicts(
+  organizationId: number,
+  candidate: ApprovalPolicyCandidate,
+): Promise<Array<{ id: number; name: string; amountMin: number; amountMax: number | null; approvalLevel: number }>> {
+  if (candidate.isActive === false) return [];
+  const rows = await db
+    .select({
+      id: approvalPolicies.id,
+      name: approvalPolicies.name,
+      entityType: approvalPolicies.entityType,
+      amountMin: approvalPolicies.amountMin,
+      amountMax: approvalPolicies.amountMax,
+      approvalLevel: approvalPolicies.approvalLevel,
+      isActive: approvalPolicies.isActive,
+    })
+    .from(approvalPolicies)
+    .where(
+      and(
+        eq(approvalPolicies.organizationId, organizationId),
+        eq(approvalPolicies.entityType, candidate.entityType),
+        eq(approvalPolicies.approvalLevel, candidate.approvalLevel),
+        eq(approvalPolicies.isActive, true),
+      ),
+    );
+
+  return rows
+    .filter((row) => row.id !== candidate.id && approvalRangesOverlap(candidate, row))
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      amountMin: Number(row.amountMin),
+      amountMax: row.amountMax == null ? null : Number(row.amountMax),
+      approvalLevel: row.approvalLevel,
+    }));
+}
 
 type MdmPermissionAction = "read" | "create" | "update" | "delete" | "approve" | "apply" | "comment" | "import" | "scan";
 
@@ -758,10 +795,38 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     table: any,
     insertSchema: { parse: (input: unknown) => TInsert },
   ) => {
-    app.get(basePath, ...masterRead, async (_req: Request, res: Response) => {
+    app.get(basePath, ...masterRead, async (req: Request, res: Response) => {
       try {
-        const rows = await db.select().from(table);
-        return sendOk(res, rows);
+        const paginated = req.query.page != null || req.query.pageSize != null || req.query.q != null || req.query.status != null;
+        if (!paginated) {
+          const rows = await db.select().from(table);
+          return sendOk(res, rows);
+        }
+        const page = Math.max(1, Number(req.query.page ?? 1) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 25) || 25));
+        const q = String(req.query.q ?? "").trim();
+        const status = String(req.query.status ?? "all").trim();
+        const clauses: any[] = [];
+        const searchColumns = [table.code, table.name, table.description].filter(Boolean);
+        if (q && searchColumns.length > 0) {
+          clauses.push(or(...searchColumns.map((column: any) => ilike(column, `%${q}%`))));
+        }
+        if (table.active && status === "active") clauses.push(eq(table.active, true));
+        if (table.active && status === "inactive") clauses.push(eq(table.active, false));
+        const where = clauses.length > 0 ? and(...clauses) : undefined;
+        let rowsQuery = db.select().from(table).$dynamic();
+        let countQuery = db.select({ count: sql<number>`count(*)::int` }).from(table).$dynamic();
+        if (where) {
+          rowsQuery = rowsQuery.where(where);
+          countQuery = countQuery.where(where);
+        }
+        const rows = await rowsQuery
+          .orderBy(table.code ? table.code : table.id)
+          .limit(pageSize)
+          .offset((page - 1) * pageSize);
+        const [countRow] = await countQuery;
+        const total = Number(countRow?.count ?? 0);
+        return sendOk(res, { items: rows, total, page, pageSize, hasNext: page * pageSize < total });
       } catch (error) {
         console.error(`Error fetching ${basePath}:`, error);
         return sendError(res, 500, "MASTER_DATA_LIST_FAILED", "Failed to fetch records");
@@ -1008,13 +1073,32 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/approval-policies", ...masterRead, async (_req, res: Response) => {
+  app.get("/api/approval-policies", ...masterRead, async (req: Request, res: Response) => {
     try {
+      const organizationId = getActiveOrganizationId();
+      const paginated = req.query.page != null || req.query.pageSize != null || req.query.q != null || req.query.entityType != null;
+      const page = Math.max(1, Number(req.query.page ?? 1) || 1);
+      const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 25) || 25));
+      const q = String(req.query.q ?? "").trim();
+      const entityType = String(req.query.entityType ?? "").trim();
+      const status = String(req.query.status ?? "all").trim();
+      const clauses = [eq(approvalPolicies.organizationId, organizationId)];
+      if (q) clauses.push(or(ilike(approvalPolicies.name, `%${q}%`), ilike(approvalPolicies.entityType, `%${q}%`))!);
+      if (entityType && entityType !== "all") clauses.push(eq(approvalPolicies.entityType, entityType));
+      if (status === "active") clauses.push(eq(approvalPolicies.isActive, true));
+      if (status === "inactive") clauses.push(eq(approvalPolicies.isActive, false));
+      const where = and(...clauses);
       const rows = await db
         .select()
         .from(approvalPolicies)
-        .where(eq(approvalPolicies.organizationId, getActiveOrganizationId()));
-      return sendOk(res, rows);
+        .where(where)
+        .orderBy(desc(approvalPolicies.updatedAt), desc(approvalPolicies.id))
+        .limit(paginated ? pageSize : 10_000)
+        .offset(paginated ? (page - 1) * pageSize : 0);
+      if (!paginated) return sendOk(res, rows);
+      const [countRow] = await db.select({ count: sql<number>`count(*)::int` }).from(approvalPolicies).where(where);
+      const total = Number(countRow?.count ?? 0);
+      return sendOk(res, { items: rows, total, page, pageSize, hasNext: page * pageSize < total });
     } catch (error) {
       console.error("Error fetching approval policies:", error);
       return sendError(res, 500, "APPROVAL_POLICIES_LIST_FAILED", "Failed to fetch approval policies");
@@ -1049,10 +1133,27 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
 
   app.post("/api/approval-policies", ...masterWrite, async (req, res) => {
     try {
+      const organizationId = getActiveOrganizationId();
       const payload = insertApprovalPolicySchema.parse({
         ...(req.body ?? {}),
-        organizationId: getActiveOrganizationId(),
+        organizationId,
       });
+      const conflicts = await findApprovalPolicyConflicts(organizationId, {
+        entityType: payload.entityType,
+        approvalLevel: Number(payload.approvalLevel ?? 1),
+        amountMin: Number(payload.amountMin),
+        amountMax: payload.amountMax == null ? null : Number(payload.amountMax),
+        isActive: payload.isActive !== false,
+      });
+      if (conflicts.length > 0) {
+        return sendError(
+          res,
+          409,
+          "APPROVAL_POLICY_OVERLAP",
+          "An active policy already covers this amount band at the same approval level.",
+          { hint: "Adjust the amount band or approval level. Valid multi-level approval chains remain allowed.", details: { conflicts } },
+        );
+      }
       const createdRows = (await db.insert(approvalPolicies).values(payload).returning()) as any[];
       const created = createdRows[0];
       if (req.user) {
@@ -1086,6 +1187,26 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         .from(approvalPolicies)
         .where(and(eq(approvalPolicies.id, id), eq(approvalPolicies.organizationId, getActiveOrganizationId())))
         .limit(1)) as any[];
+      const before = beforeRows[0];
+      if (!before) return sendError(res, 404, "NOT_FOUND", "Approval policy not found");
+      const candidate = { ...before, ...payload } as ApprovalPolicyCandidate;
+      const conflicts = await findApprovalPolicyConflicts(getActiveOrganizationId(), {
+        id,
+        entityType: String(candidate.entityType),
+        approvalLevel: Number(candidate.approvalLevel),
+        amountMin: Number(candidate.amountMin),
+        amountMax: candidate.amountMax == null ? null : Number(candidate.amountMax),
+        isActive: candidate.isActive,
+      });
+      if (conflicts.length > 0) {
+        return sendError(
+          res,
+          409,
+          "APPROVAL_POLICY_OVERLAP",
+          "An active policy already covers this amount band at the same approval level.",
+          { hint: "Adjust the amount band or approval level. Valid multi-level approval chains remain allowed.", details: { conflicts } },
+        );
+      }
       const updatedRows = (await db
         .update(approvalPolicies)
         .set(payload)

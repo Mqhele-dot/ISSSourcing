@@ -174,13 +174,6 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         description: "Amount bands, approvers, and finance approval governance.",
         keywords: "approvals policy",
       },
-      {
-        label: "Billing",
-        path: APP_ROUTES.finance.billing,
-        icon: "credit-card",
-        description: "Billing settings and payment configuration.",
-        keywords: "billing payments",
-      },
     ],
   },
   {
@@ -349,13 +342,6 @@ export const COMMAND_MENU_SECONDARY_GROUPS: { heading: string; items: AppNavItem
         description: "Role and access administration.",
         keywords: "rbac permissions roles",
         desktopOnly: true,
-      },
-      {
-        label: "Subscription",
-        path: APP_ROUTES.admin.subscription,
-        icon: "credit-card",
-        description: "Plan, usage, feature entitlements, and billing-provider readiness.",
-        keywords: "subscription billing plan entitlements",
       },
     ],
   },

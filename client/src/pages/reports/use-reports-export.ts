@@ -8,8 +8,23 @@ type ExportJob = {
   id: number;
   status: "queued" | "running" | "succeeded" | "failed";
   lastError?: string | null;
+  error?: { code: string; message: string; hint?: string; requestId?: string | null } | null;
   downloadUrl?: string | null;
 };
+
+function exportFailureMessage(job: ExportJob): string {
+  if (job.error) {
+    const requestReference = job.error.requestId ? ` Request ID: ${job.error.requestId}.` : "";
+    return `${job.error.message}${job.error.hint ? ` ${job.error.hint}` : ""}${requestReference}`;
+  }
+  if (!job.lastError) return "Export job failed. Retry it from Export Center or review System Diagnostics.";
+  try {
+    const parsed = JSON.parse(job.lastError) as { message?: string; hint?: string; requestId?: string };
+    return `${parsed.message ?? "Export job failed."}${parsed.hint ? ` ${parsed.hint}` : ""}${parsed.requestId ? ` Request ID: ${parsed.requestId}.` : ""}`;
+  } catch {
+    return job.lastError;
+  }
+}
 
 async function waitForExportJob(jobId: number): Promise<ExportJob> {
   for (let attempt = 0; attempt < 60; attempt++) {
@@ -87,7 +102,7 @@ export function useReportsExport({
 
       const job = await waitForExportJob(queued.id);
       if (job.status !== "succeeded" || !job.downloadUrl) {
-        throw new Error(job.lastError || "Export job failed.");
+        throw new Error(exportFailureMessage(job));
       }
 
       const response = await fetch(job.downloadUrl, { credentials: "include" });
@@ -95,7 +110,7 @@ export function useReportsExport({
         throw new Error(`Download failed (${response.status}).`);
       }
       const blob = await response.blob();
-      const fileExtension = exportFormat === "excel" ? "xlsx" : exportFormat;
+      const fileExtension = exportFormat === "excel" ? "xlsx" : exportFormat === "csv" ? "csv.gz" : exportFormat;
       const filenameSuffix =
         exportFormat === "pdf"
           ? "report"
@@ -113,7 +128,10 @@ export function useReportsExport({
     } catch (error) {
       toast({
         title: "Export Failed",
-        description: error instanceof Error ? error.message : "Failed to export report",
+        description:
+          error instanceof Error
+            ? error.message
+            : "The export could not be generated. Retry it from Export Center or review System Diagnostics.",
         variant: "destructive",
       });
     } finally {
