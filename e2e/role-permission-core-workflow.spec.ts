@@ -44,11 +44,13 @@ async function ensureTestUser(username: string, role: string, workPersona: strin
 
   await pool.query(
     `
-      INSERT INTO organization_members (organization_id, user_id, role)
-      VALUES (1, $1, 'member')
-      ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role
+      INSERT INTO organization_members (organization_id, user_id, role, application_role)
+      VALUES (1, $1, 'member', $2)
+      ON CONFLICT (organization_id, user_id) DO UPDATE SET
+        role = EXCLUDED.role,
+        application_role = EXCLUDED.application_role
     `,
-    [result.rows[0].id],
+    [result.rows[0].id, role],
   );
   return result.rows[0].id;
 }
