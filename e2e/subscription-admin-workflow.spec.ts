@@ -13,9 +13,9 @@ async function hashPassword(password: string): Promise<string> {
   return `${hash.toString("hex")}.${salt}`;
 }
 
-async function ensureTestUser(username: string, role: string): Promise<void> {
+async function ensureTestUser(username: string, role: string): Promise<number> {
   const password = await hashPassword(TEST_PASSWORD);
-  await pool.query(
+  const result = await pool.query<{ id: number }>(
     `
       INSERT INTO users (
         username, password, email, full_name, role,
@@ -30,12 +30,28 @@ async function ensureTestUser(username: string, role: string): Promise<void> {
         email_verified = TRUE,
         default_organization_id = 1,
         updated_at = NOW()
+      RETURNING id
     `,
     [username, password, `${username}@example.com`, `E2E ${username}`, role],
   );
+
+  await pool.query(
+    `
+      INSERT INTO organization_members (organization_id, user_id, role, application_role)
+      VALUES (1, $1, 'member', $2)
+      ON CONFLICT (organization_id, user_id) DO UPDATE SET
+        role = EXCLUDED.role,
+        application_role = EXCLUDED.application_role
+    `,
+    [result.rows[0].id, role],
+  );
+  return result.rows[0].id;
 }
 
-async function loginAs(page: Page, username: string) {
+async function loginAs(page: Page, username: string, userId: number) {
+  await page.addInitScript((id) => {
+    window.localStorage.setItem(`invtrack:first-run-coach:v1:${id}`, "done");
+  }, userId);
   await page.context().clearCookies();
   await page.goto("/auth", { waitUntil: "load" });
   await expect(page.getByPlaceholder("Enter your username")).toBeVisible({ timeout: 25_000 });
@@ -102,10 +118,15 @@ test.describe.configure({ mode: "serial" });
 
 test.describe("subscription admin workflow", () => {
   let snapshot: Record<string, unknown> | null = null;
+  let adminUserId: number;
+  let viewerUserId: number;
 
   test.beforeAll(async () => {
     snapshot = await snapshotOrgSettings();
-    await ensureTestUser("e2e_subscription_viewer", "viewer");
+    viewerUserId = await ensureTestUser("e2e_subscription_viewer", "viewer");
+    const admin = await pool.query<{ id: number }>("SELECT id FROM users WHERE username = 'admin' LIMIT 1");
+    if (!admin.rows[0]) throw new Error("Seeded admin user is required for subscription E2E proof.");
+    adminUserId = admin.rows[0].id;
     const adminCookie = (await loginForTests("admin", TEST_PASSWORD)) ?? "";
     const starter = await apiJsonRequest("/subscription/change-plan", {
       method: "POST",
@@ -121,7 +142,7 @@ test.describe("subscription admin workflow", () => {
   });
 
   test("admin can view plans, usage, locked features, and change plan in local mode", async ({ page }) => {
-    await loginAs(page, "admin");
+    await loginAs(page, "admin", adminUserId);
     await page.goto("/admin/subscription", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("subscription-admin-page")).toBeVisible();
     await expect(page.getByText(/Separate from AP billing/i)).toBeVisible();
@@ -130,7 +151,7 @@ test.describe("subscription admin workflow", () => {
       await expect(page.getByTestId(`subscription-plan-${plan}`)).toBeVisible();
     }
 
-    await expect(page.getByText(/Current plan/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Current plan/i })).toBeVisible();
     await expect(page.getByText(/Users/i).first()).toBeVisible();
     await expect(page.getByText(/Upgrade/i).first()).toBeVisible();
     await expect(page.getByText(/Exports/i).first()).toBeVisible();
@@ -141,7 +162,7 @@ test.describe("subscription admin workflow", () => {
   });
 
   test("viewer can inspect subscription state but cannot manage lifecycle", async ({ page }) => {
-    await loginAs(page, "e2e_subscription_viewer");
+    await loginAs(page, "e2e_subscription_viewer", viewerUserId);
     await page.goto("/admin/subscription", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("subscription-admin-page")).toBeVisible();
     await expect(page.getByTestId("subscription-permission-denied")).toContainText(
