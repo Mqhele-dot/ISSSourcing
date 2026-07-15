@@ -53,7 +53,10 @@ async function ensureTestUser(username: string, role: string, workPersona: strin
   return result.rows[0].id;
 }
 
-async function loginAs(page: Page, username: string) {
+async function loginAs(page: Page, username: string, userId: number) {
+  await page.addInitScript((id) => {
+    window.localStorage.setItem(`invtrack:first-run-coach:v1:${id}`, "done");
+  }, userId);
   await page.context().clearCookies();
   await page.goto("about:blank");
   await page.goto("/auth", { waitUntil: "load" });
@@ -68,14 +71,17 @@ async function loginAs(page: Page, username: string) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("core workflow permission controls", () => {
+  let receiverUserId: number;
+  let requesterUserId: number;
+  let apManagerUserId: number;
   let receiverFixture: WorkflowFixture;
   let receiverPoNumber: string;
   let requesterPoNumber: string;
 
   test.beforeAll(async () => {
-    await ensureTestUser("e2e_receiver", "warehouse_staff", "Warehouse receiver");
-    await ensureTestUser("e2e_requester", "viewer", "Requester");
-    await ensureTestUser("e2e_ap_manager", "manager", "AP user");
+    receiverUserId = await ensureTestUser("e2e_receiver", "warehouse_staff", "Warehouse receiver");
+    requesterUserId = await ensureTestUser("e2e_requester", "viewer", "Requester");
+    apManagerUserId = await ensureTestUser("e2e_ap_manager", "manager", "AP user");
 
     const adminCookie = (await loginForTests("admin", TEST_PASSWORD)) ?? "";
     expect(adminCookie).toBeTruthy();
@@ -87,7 +93,7 @@ test.describe("core workflow permission controls", () => {
   });
 
   test("warehouse receiver can access and post receiving while requester is blocked", async ({ page }) => {
-    await loginAs(page, "e2e_receiver");
+    await loginAs(page, "e2e_receiver", receiverUserId);
     await page.goto(`/m/receive/${encodeURIComponent(receiverPoNumber)}`, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("mobile-receive-detail")).toBeVisible();
 
@@ -119,14 +125,14 @@ test.describe("core workflow permission controls", () => {
     expect(JSON.stringify(denied.json)).toContain("PO_RECEIVE_FORBIDDEN");
 
     const requesterPage = await page.context().newPage();
-    await loginAs(requesterPage, "e2e_requester");
+    await loginAs(requesterPage, "e2e_requester", requesterUserId);
     await requesterPage.goto(`/m/receive/${encodeURIComponent(requesterPoNumber)}`, { waitUntil: "domcontentloaded" });
     await expect(requesterPage.getByTestId("mobile-receive-detail")).toBeVisible();
     await expect(requesterPage.getByTestId("mobile-receive-post-button")).toBeDisabled();
   });
 
   test("AP and master-data controls enforce role boundaries", async ({ page }) => {
-    await loginAs(page, "e2e_ap_manager");
+    await loginAs(page, "e2e_ap_manager", apManagerUserId);
     await page.goto("/finance/accounts-payable/payments", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("accounts-payable-page")).toBeVisible();
     await expect(page.getByText(/Create payment batch/i)).toBeVisible();
@@ -159,7 +165,7 @@ test.describe("core workflow permission controls", () => {
     });
     expect(settingsDenied.status).toBe(403);
 
-    await loginAs(page, "admin");
+    await loginAs(page, "admin", 1);
     await page.goto("/admin/master-data", { waitUntil: "domcontentloaded" });
     await expect(page.getByText(/Master Data/i)).toBeVisible();
 
