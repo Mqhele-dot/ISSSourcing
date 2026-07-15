@@ -41,6 +41,7 @@ const checks = [
   [/ProductionWarehousesPage/.test(router) && /ProductionAccountsPayablePage/.test(router) && /ProductionMobileCountsPage/.test(router), "bookmarked post-v1 UI routes remain production gated"],
   [/SupplierSourcingWorkspace/.test(supplierPortal) && /Submit structured quote/.test(supplierPortal) && /Clarifications/.test(supplierPortal), "supplier portal exposes live structured RFQ and clarification controls"],
   [/EvaluationAndAwardPanel/.test(buyerWorkspace) && /Save evaluation/.test(buyerWorkspace) && /Convert award to PO/.test(buyerWorkspace), "buyer workspace exposes evaluation, award, approval, and conversion controls"],
+  [/\["EVALUATING", "AWARDED"\]\.includes\(detailsQuery\.data\.event\.status\)/.test(buyerWorkspace), "approved awards remain visible for authorized PO conversion"],
   [/ensureDemoTenantMemberships/.test(seed) && /supplierPortalMappings/.test(seed), "fresh development seeds include tenant memberships and supplier portal mapping"],
   [/sourcingEvents/.test(schema) && /supplierQuotes/.test(schema) && /sourcingAwards/.test(schema) && /workflowIdempotency/.test(schema), "strategic sourcing has first-class persisted entities"],
 ];
