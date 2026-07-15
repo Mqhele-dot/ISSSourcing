@@ -198,7 +198,7 @@ test.describe("procurement to AP browser workflow", () => {
     const matchedInvoiceRow = page.getByRole("row").filter({ hasText: matchedInvoiceNumber });
     await expect(matchedInvoiceRow).toBeVisible({ timeout: 20_000 });
     await expect(matchedInvoiceRow.getByText("Receipt evidence: PO/GRN match checked", { exact: true })).toBeVisible();
-    await expect(matchedInvoiceRow.getByText(/PAYMENT READY|MATCHED/, { exact: true })).toBeVisible();
+    await expect(matchedInvoiceRow.getByText("PAYMENT READY", { exact: true })).toBeVisible();
 
     const exceptionInvoiceRow = page.getByRole("row").filter({ hasText: exceptionInvoiceNumber });
     await expect(exceptionInvoiceRow).toBeVisible();
