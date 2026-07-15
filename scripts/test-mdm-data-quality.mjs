@@ -28,5 +28,10 @@ assertIncludes(control, "SUPPLIER_COMPLIANCE_EXPIRED", "runtime expired complian
 assertIncludes(control, "INVALID_UOM_CONVERSION", "runtime invalid UOM conversion scan");
 assertIncludes(control, "affectedEntityType", "data-quality issue affected entity");
 assertIncludes(control, "recommendedAction", "data-quality recommended action");
+assertIncludes(control, "persistMdmDataQualityIssue", "concurrency-safe issue persistence");
+assertIncludes(control, "isPostgresUniqueViolation", "concurrent scan retry guard");
+if (control.includes("ON CONFLICT (organization_id, issue_code")) {
+  throw new Error("Data-quality persistence must not rely on PostgreSQL functional-index conflict inference.");
+}
 
 console.log("MDM data-quality contracts passed.");

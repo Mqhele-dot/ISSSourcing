@@ -70,6 +70,75 @@ type MdmDataQualityIssueInput = {
   recommendedAction: string;
 };
 
+function isPostgresUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
+}
+
+async function updateMdmDataQualityIssue(organizationId: number, issue: MdmDataQualityIssueInput): Promise<boolean> {
+  const result = await pool.query(
+    `
+      UPDATE mdm_data_quality_issues
+      SET domain = $2,
+          severity = $3,
+          title = $5,
+          message = $6,
+          recommended_action = $9,
+          status = 'open',
+          last_seen_at = NOW(),
+          resolved_at = NULL
+      WHERE organization_id = $1
+        AND issue_code = $4
+        AND COALESCE(affected_entity_type, '') = COALESCE($7::text, '')
+        AND COALESCE(affected_entity_id, 0) = COALESCE($8::integer, 0)
+    `,
+    [
+      organizationId,
+      issue.domain,
+      issue.severity,
+      issue.issueCode,
+      issue.title,
+      issue.message,
+      issue.affectedEntityType ?? null,
+      issue.affectedEntityId ?? null,
+      issue.recommendedAction,
+    ],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+async function persistMdmDataQualityIssue(organizationId: number, issue: MdmDataQualityIssueInput): Promise<void> {
+  if (await updateMdmDataQualityIssue(organizationId, issue)) return;
+
+  const values = [
+    organizationId,
+    issue.domain,
+    issue.severity,
+    issue.issueCode,
+    issue.title,
+    issue.message,
+    issue.affectedEntityType ?? null,
+    issue.affectedEntityId ?? null,
+    issue.recommendedAction,
+  ];
+
+  try {
+    await pool.query(
+      `
+        INSERT INTO mdm_data_quality_issues (
+          organization_id, domain, severity, issue_code, title, message,
+          affected_entity_type, affected_entity_id, recommended_action, status, last_seen_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', NOW())
+      `,
+      values,
+    );
+  } catch (error) {
+    if (!isPostgresUniqueViolation(error) || !(await updateMdmDataQualityIssue(organizationId, issue))) {
+      throw error;
+    }
+  }
+}
+
 const mdmDomains = {
   "legal-entities": {
     table: "mdm_legal_entities",
@@ -821,36 +890,7 @@ export async function scanMdmDataQuality(organizationId: number) {
     organizationId,
   ]);
   for (const issue of issues) {
-    await pool.query(
-      `
-        INSERT INTO mdm_data_quality_issues (
-          organization_id, domain, severity, issue_code, title, message,
-          affected_entity_type, affected_entity_id, recommended_action, status, last_seen_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', NOW())
-        ON CONFLICT (organization_id, issue_code, (COALESCE(affected_entity_type, '')), (COALESCE(affected_entity_id, 0)))
-        DO UPDATE SET
-          domain = EXCLUDED.domain,
-          severity = EXCLUDED.severity,
-          title = EXCLUDED.title,
-          message = EXCLUDED.message,
-          recommended_action = EXCLUDED.recommended_action,
-          status = 'open',
-          last_seen_at = NOW(),
-          resolved_at = NULL
-      `,
-      [
-        organizationId,
-        issue.domain,
-        issue.severity,
-        issue.issueCode,
-        issue.title,
-        issue.message,
-        issue.affectedEntityType ?? null,
-        issue.affectedEntityId ?? null,
-        issue.recommendedAction,
-      ],
-    );
+    await persistMdmDataQualityIssue(organizationId, issue);
   }
 
   const issueCounts = issues.reduce(

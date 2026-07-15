@@ -80,6 +80,10 @@ test("supplier submits a structured quote and buyer sees it for evaluation", asy
   await page.getByLabel("Independent approval reason").fill("Independent commercial review completed and approved.");
   await page.getByRole("button", { name: "Approve award" }).click();
   await expect(page.getByText("Award approved", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+  await login(page, "admin");
+  await page.goto(`/procurement/sourcing/${fixture.eventId}`, { waitUntil: "load" });
+  await expect(page.getByTestId("sourcing-evaluation-award-panel")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Convert award to PO" }).click();
   await expect(page.getByText("Purchase order created", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("This award has been converted to controlled purchase order records.")).toBeVisible();
