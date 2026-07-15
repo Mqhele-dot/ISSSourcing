@@ -157,8 +157,11 @@ test.describe("subscription admin workflow", () => {
     await expect(page.getByText(/Exports/i).first()).toBeVisible();
 
     await page.getByTestId("subscription-change-plan-standard").click();
-    await expect(page.getByText(/Subscription updated/i)).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId("subscription-plan-standard").getByText(/Current/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Subscription updated", { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("subscription-change-plan-standard")).toHaveText("Current plan", {
+      timeout: 10_000,
+    });
+    await expect(page.getByTestId("subscription-change-plan-standard")).toBeDisabled();
   });
 
   test("viewer can inspect subscription state but cannot manage lifecycle", async ({ page }) => {
