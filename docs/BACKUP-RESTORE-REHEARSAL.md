@@ -36,7 +36,7 @@ Equivalent manual dump and restore commands:
 
 ```bash
 pg_dump --format=custom --no-owner --no-privileges --file isssourcing.dump "$BACKUP_RESTORE_SOURCE_URL"
-createdb --maintenance-db="$BACKUP_RESTORE_TARGET_URL" invtrack_restore_rehearsal
+createdb --maintenance-db="postgresql://USER:PASSWORD@HOST:5432/postgres" invtrack_restore_rehearsal
 pg_restore --no-owner --no-privileges --exit-on-error --dbname "$BACKUP_RESTORE_TARGET_URL" isssourcing.dump
 ```
 
@@ -65,6 +65,26 @@ Use the automated command for release evidence because it validates target safet
 - No source records are changed by the rehearsal.
 - The temporary dump and disposable target are removed after validation.
 
+## Candidate Rehearsal Evidence
+
+The automated rehearsal passed in [Playwright Release Gate run 29383670960](https://github.com/Mqhele-dot/ISSSourcing/actions/runs/29383670960) on 2026-07-15.
+
+| Field | Evidence |
+|---|---|
+| Candidate source SHA | `b8164e178126dc8c8943b165e1f95a06d47bb9a5` |
+| PR merge SHA checked by workflow | `545ffce7c71dab15f0469674383e699ebe719874` |
+| Source database | Disposable `invtrack_e2e_gate` |
+| Restore target | Distinct disposable `invtrack_restore_rehearsal` |
+| Dump format | PostgreSQL custom format |
+| Migration preflight | Passed |
+| Restore execution | Passed |
+| Required schema comparison | Passed |
+| Critical row-count comparison | Passed |
+| Restored audit-chain verification | Passed |
+| Target and temporary dump cleanup | Passed |
+
+This rehearsal proves the automated recovery mechanics for the candidate. It does not replace an operator-led recovery rehearsal using the intended production backup storage, encryption keys, retention policy, document/object storage, and recovery-time objectives.
+
 ## Required Sign-Off
 
 | Role | Responsibility | Sign-off |
@@ -73,5 +93,4 @@ Use the automated command for release evidence because it validates target safet
 | Database/operations owner | Confirms dump, restore, counts, recovery order, and retention | Pending |
 | Security/technical approver | Confirms tenant isolation, audit integrity, secrets handling, and security gates | Pending |
 
-Production approval is blocked until all three roles sign the release record.
-
+Automated recovery evidence is green. Production approval remains pending until all three roles sign the release record.

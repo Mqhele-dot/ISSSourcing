@@ -52,7 +52,7 @@ Wave 6A adds production-mode boundary, audit-chain integrity, and commercial mig
 | Purchase-order endpoints | `npm run test:purchase-order-endpoints` | Yes | Prove PO endpoint behavior, including supplier/contract currency override blocking. | Passing via delta gate | Tests expect structured supplier/contract currency override failures. |
 | AP workflow | `npm run test:ap-workflow` | Yes | Prove AP invoice/capture/receipt workflow remains connected. | Passing via delta gate | Expected negative-path errors may appear in logs while assertions pass. |
 | Production workflow proof | `npm run test:production-workflow-proof` | Yes | Prove the core Master Data to Requisition to PO to GRN to Inventory to AP chain has route, validation, dependency, receipt, payment, and audit controls wired in source. | Added to delta gate | Source-level proof complements live API tests without depending on the browser bridge. |
-| Commercial procurement foundation | `npm run test:commercial-procurement-foundation` | Yes | Prove fail-closed tenancy, tenant-scoped operational aliases, sourcing persistence, country packs, audit chaining, supplier isolation, governed PO actions, and production boundaries remain wired. | Passing locally (22 controls) | Source contract for the procurement-only commercial release. |
+| Commercial procurement foundation | `npm run test:commercial-procurement-foundation` | Yes | Prove fail-closed tenancy, tenant-scoped operational aliases, sourcing persistence, country packs, audit chaining, supplier isolation, governed PO actions, and production boundaries remain wired. | Passing locally (23 controls) | Source contract for the procurement-only commercial release. |
 | Commercial production boundary runtime | `npm run test:commercial-production-boundary-runtime` | Yes | Exercise the real release-boundary middleware over HTTP in production/procurement mode. | Passing locally | Procurement and sourcing remain available; inventory, receiving, logistics, finance, and mobile operations return `FEATURE_NOT_PRODUCTION_APPROVED`. |
 | Audit-chain integrity | `npm run test:audit-chain-integrity` | Yes | Prove real event append, chain verification, tamper detection, and critical diagnostics without persistent test records. | Passing locally | Uses a test-owned transaction and rolls it back. |
 | Commercial migration rehearsal | `npm run test:commercial-migration-rehearsal` | Yes | Verify required schema, tenant indexes, memberships, append-only audit trigger, and non-destructive migration posture. | Passing locally | Verified 21 tables, 6 tenant unique indexes, the audit trigger, active memberships, and destructive-DDL posture. |
@@ -101,15 +101,26 @@ Remaining marker-level production blockers are tracked in [Core Blocking Risk Re
 
 ## Latest Commercial Procurement Evidence
 
+Immutable candidate source SHA: `b8164e178126dc8c8943b165e1f95a06d47bb9a5`
+
+| Hosted gate | Result | Reference |
+|---|---|---|
+| Playwright Release Gate | Passed | [Run 29383670960](https://github.com/Mqhele-dot/ISSSourcing/actions/runs/29383670960) |
+| CI | Passed | [Run 29383670968](https://github.com/Mqhele-dot/ISSSourcing/actions/runs/29383670968) |
+| Codespaces Compatibility | Passed | [Run 29383670958](https://github.com/Mqhele-dot/ISSSourcing/actions/runs/29383670958) |
+| Security supply chain | Passed | [Run 29383670961](https://github.com/Mqhele-dot/ISSSourcing/actions/runs/29383670961) |
+
+The PR Playwright workflow checked merge SHA `545ffce7c71dab15f0469674383e699ebe719874`, which incorporates the immutable candidate source SHA above. The source SHA separately passed `npm run verify:release:secure` locally in 462.5 seconds. Technical status is `CANDIDATE`; human production approval remains pending.
+
 | Command | Result | Notes |
 |---|---|---|
-| `npm run test:commercial-procurement-foundation` | Passed locally | 22 controls cover fail-closed tenancy, supplier isolation, sourcing persistence, governed PO actions, country packs, audit chaining, and the procurement-only production boundary. |
+| `npm run test:commercial-procurement-foundation` | Passed locally | 23 controls cover fail-closed tenancy, supplier isolation, sourcing persistence, governed PO actions, country packs, audit chaining, approved-award conversion visibility, and the procurement-only production boundary. |
 | `npm run test:local:sourcing` | Passed locally | Live PostgreSQL/API proof covers RFQ publication, mapped supplier quote submission, reporting-currency comparison, evaluation, self-approval denial, independent award approval, award-to-PO conversion, and audit-chain verification. |
 | `npm run test:subscription-runtime-flow` | Passed locally | Tenant member addition now uses a permission, 2FA, plan-limit, and audit-protected organization membership endpoint; public registration creates a new tenant instead of relying on organization 1. |
 | `npm run test:local:delta` | Passed locally | Full live release delta completed after the tenant-membership and legacy test-contract fixes. |
 | `npm run build` | Passed locally | Vite built 3,635 modules and the server build completed with the repository's Windows OneDrive fallback. |
 | `npm run security:audit` | Passed locally | `npm audit --audit-level=high` reported 0 vulnerabilities. |
-| `npm run test:e2e:sourcing` | Blocked locally at Chromium launch | API preflight passed, then the Windows sandbox returned `browserType.launch: spawn EPERM`. `.github/workflows/playwright-release-gate.yml` remains the required browser evidence path. |
+| `npm run test:e2e:sourcing` | Passed in GitHub | Playwright run 29383670960 proved mapped supplier quote submission, evaluation, independent planner approval, and authorized award-to-PO conversion. Local Chromium remains unavailable because Windows returns `spawn EPERM`. |
 | `npm run audit:production` | Passed locally | Latest generated audit reports 0 core blockers, 0 marker-level blockers, and 33 explicitly gated procurement-release exclusions. |
 
 ## Latest Wave 3C Evidence
