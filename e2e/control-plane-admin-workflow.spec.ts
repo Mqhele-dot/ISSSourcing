@@ -37,18 +37,23 @@ async function ensureTestUser(username: string, role: string, workPersona: strin
     [username, password, email, `E2E ${workPersona}`, role, workPersona],
   );
 
-  await pool.query("DELETE FROM organization_members WHERE organization_id = 1 AND user_id = $1", [result.rows[0].id]);
   await pool.query(
     `
-      INSERT INTO organization_members (organization_id, user_id, role)
-      VALUES (1, $1, 'member')
+      INSERT INTO organization_members (organization_id, user_id, role, application_role)
+      VALUES (1, $1, 'member', $2)
+      ON CONFLICT (organization_id, user_id) DO UPDATE SET
+        role = EXCLUDED.role,
+        application_role = EXCLUDED.application_role
     `,
-    [result.rows[0].id],
+    [result.rows[0].id, role],
   );
   return result.rows[0].id;
 }
 
-async function loginAs(page: Page, username: string) {
+async function loginAs(page: Page, username: string, userId: number) {
+  await page.addInitScript((id) => {
+    window.localStorage.setItem(`invtrack:first-run-coach:v1:${id}`, "done");
+  }, userId);
   await page.context().clearCookies();
   await page.goto("/auth", { waitUntil: "load" });
   await expect(page.getByPlaceholder("Enter your username")).toBeVisible({ timeout: 25_000 });
@@ -77,12 +82,14 @@ async function expectActivity(action: string, referenceType: string) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("control-plane production controls", () => {
+  let requesterUserId: number;
+
   test.beforeAll(async () => {
-    await ensureTestUser("e2e_control_requester", "viewer", "Requester");
+    requesterUserId = await ensureTestUser("e2e_control_requester", "viewer", "Requester");
   });
 
   test("admin can change safe settings and requester cannot", async ({ page }) => {
-    await loginAs(page, "admin");
+    await loginAs(page, "admin", 1);
     await page.goto("/admin/settings", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("settings-control-plane")).toBeVisible();
 
@@ -91,10 +98,10 @@ test.describe("control-plane production controls", () => {
     await page.getByTestId("settings-control-currency").fill("ZAR");
     await page.getByTestId("settings-control-low-stock").fill("12");
     await page.getByTestId("settings-control-save").click();
-    await expect(page.getByText(/settings updated/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Settings updated", { exact: true })).toBeVisible({ timeout: 10_000 });
     await expectActivity("SETTINGS_UPDATED", "settings");
 
-    await loginAs(page, "e2e_control_requester");
+    await loginAs(page, "e2e_control_requester", requesterUserId);
     await page.goto("/admin/settings", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("settings-control-denied")).toBeVisible();
     await expect(page.getByTestId("settings-control-save")).toBeDisabled();
@@ -109,7 +116,7 @@ test.describe("control-plane production controls", () => {
   });
 
   test("admin can view real user access and requester cannot update roles", async ({ page }) => {
-    await loginAs(page, "admin");
+    await loginAs(page, "admin", 1);
     await page.goto("/admin/user-roles", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("user-roles-page")).toBeVisible();
     await expect(page.getByTestId("role-manager-users-card")).toBeVisible();
@@ -139,7 +146,7 @@ test.describe("control-plane production controls", () => {
   });
 
   test("admin can create approval policy and audit captures it", async ({ page }) => {
-    await loginAs(page, "admin");
+    await loginAs(page, "admin", 1);
     await page.goto("/finance/approval-policies", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("approval-policies-page")).toBeVisible();
 
@@ -149,11 +156,11 @@ test.describe("control-plane production controls", () => {
     await page.getByTestId("approval-policy-max").fill("2000100");
     await page.getByTestId("approval-policy-level").fill("1");
     await page.getByTestId("approval-policy-save").click();
-    await expect(page.getByText(/policy created/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Policy created", { exact: true })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(policyName)).toBeVisible();
     await expectActivity("APPROVAL_POLICY_CREATED", "approval_policy");
 
-    await loginAs(page, "e2e_control_requester");
+    await loginAs(page, "e2e_control_requester", requesterUserId);
     await page.goto("/finance/approval-policies", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("approval-policies-denied")).toBeVisible();
     await expect(page.getByTestId("approval-policy-save")).toBeDisabled();
