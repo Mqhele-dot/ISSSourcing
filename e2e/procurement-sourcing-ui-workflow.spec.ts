@@ -1,10 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 import { pool } from "../server/db";
-import { gotoAuthed } from "./test-helpers";
 
 let fixture: { eventId: number; title: string; supplierName: string };
+const userIds = new Map<string, number>();
 
 async function login(page: Page, username: string) {
+  const userId = userIds.get(username);
+  if (!userId) throw new Error(`Missing sourcing E2E identity for ${username}.`);
+  await page.addInitScript((id) => {
+    window.localStorage.setItem(`invtrack:first-run-coach:v1:${id}`, "done");
+  }, userId);
   await page.context().clearCookies();
   await page.goto("/auth", { waitUntil: "load" });
   await page.getByPlaceholder("Enter your username").fill(username);
@@ -21,6 +26,7 @@ test.beforeAll(async () => {
   const supplierUser = users.rows.find((row) => row.username === "supplierdemo");
   if (!admin || !planner || !supplierUser) throw new Error("admin, planner, and supplierdemo seed users are required for sourcing E2E");
   for (const user of [admin, planner, supplierUser]) {
+    userIds.set(user.username, user.id);
     await pool.query("INSERT INTO organization_members (organization_id, user_id, role, application_role, active, status) VALUES (1, $1, $2, $3, TRUE, 'active') ON CONFLICT (organization_id, user_id) DO UPDATE SET application_role = EXCLUDED.application_role, active = TRUE, status = 'active'", [user.id, user.username === "admin" ? "owner" : "member", user.role]);
     await pool.query("UPDATE users SET default_organization_id = 1 WHERE id = $1", [user.id]);
   }
@@ -55,7 +61,7 @@ test("supplier submits a structured quote and buyer sees it for evaluation", asy
   await expect(page.getByText("Quote submitted", { exact: true })).toBeVisible({ timeout: 20_000 });
 
   await login(page, "admin");
-  await gotoAuthed(page, `/procurement/sourcing/${fixture.eventId}`);
+  await page.goto(`/procurement/sourcing/${fixture.eventId}`, { waitUntil: "load" });
   await expect(page.getByTestId("sourcing-event-detail")).toContainText(fixture.title);
   await expect(page.getByTestId("sourcing-event-detail")).toContainText(fixture.supplierName);
   await page.getByRole("button", { name: "Close for evaluation" }).click();
