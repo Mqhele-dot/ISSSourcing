@@ -169,10 +169,11 @@ test.describe("core workflow permission controls", () => {
 
     await loginAs(page, "admin", 1);
     await page.goto("/admin/master-data", { waitUntil: "domcontentloaded" });
-    await expect(page.getByText(/Master Data/i)).toBeVisible();
+    await expect(page.getByTestId("master-data-page")).toBeVisible();
 
     await page.goto("/admin/user-roles", { waitUntil: "domcontentloaded" });
-    await expect(page.getByText(/Role & Permission Management/i)).toBeVisible();
+    await expect(page.getByTestId("user-roles-page")).toBeVisible();
+    await expect(page.getByTestId("role-manager-card")).toBeVisible();
 
     await page.context().clearCookies();
     const anonymous = await page.context().newPage();
