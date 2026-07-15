@@ -128,6 +128,22 @@ export async function ensureSuppliersTaxIdColumn(): Promise<void> {
   }
 }
 
+/** Keep the persisted RBAC resource enum aligned with the server permission catalog. */
+export async function ensurePermissionResourceEnumValues(): Promise<void> {
+  const requiredValues = ["invoices", "billing", "taxes", "payments", "master_data"];
+  try {
+    const type = await pool.query<{ exists: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'resource') AS exists",
+    );
+    if (!type.rows[0]?.exists) return;
+    for (const value of requiredValues) {
+      await pool.query(`ALTER TYPE resource ADD VALUE IF NOT EXISTS '${value}'`);
+    }
+  } catch (err) {
+    console.warn("Could not align permission resource enum:", err instanceof Error ? err.message : err);
+  }
+}
+
 /** Add fail-closed tenancy and audit-chain columns without rewriting historical business records. */
 export async function ensureTenantSecurityColumns(): Promise<void> {
   try {
@@ -1806,6 +1822,7 @@ export async function initializeDatabase(): Promise<boolean> {
   console.log('Initializing database schema...');
 
   await ensureSessionTable();
+  await ensurePermissionResourceEnumValues();
   await ensureDefaultOrganization();
   await ensureOrganizationSubscriptionColumns();
   await ensureContractDateConstraint();

@@ -828,7 +828,7 @@ export async function scanMdmDataQuality(organizationId: number) {
           affected_entity_type, affected_entity_id, recommended_action, status, last_seen_at
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', NOW())
-        ON CONFLICT (organization_id, issue_code, COALESCE(affected_entity_type, ''), COALESCE(affected_entity_id, 0))
+        ON CONFLICT (organization_id, issue_code, (COALESCE(affected_entity_type, '')), (COALESCE(affected_entity_id, 0)))
         DO UPDATE SET
           domain = EXCLUDED.domain,
           severity = EXCLUDED.severity,

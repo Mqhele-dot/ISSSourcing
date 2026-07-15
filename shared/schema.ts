@@ -60,7 +60,8 @@ export const resourceEnum = pgEnum("resource", [
   "inventory", "purchases", "suppliers", "categories", "warehouses", 
   "reports", "users", "settings", "reorder_requests", "stock_movements",
   "analytics", "dashboards", "notifications", "audit_logs", "user_profiles",
-  "documents", "custom_roles", "activity_logs", "import_export", "system"
+  "documents", "custom_roles", "activity_logs", "import_export", "system",
+  "invoices", "billing", "taxes", "payments", "master_data"
 ]);
 
 // Permissions schema
@@ -1649,7 +1650,8 @@ export enum ResourceEnum {
   INVOICES = "invoices",
   BILLING = "billing",
   TAXES = "taxes",
-  PAYMENTS = "payments"
+  PAYMENTS = "payments",
+  MASTER_DATA = "master_data"
 }
 
 // Types
