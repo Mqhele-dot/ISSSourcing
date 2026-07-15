@@ -2,7 +2,11 @@ import { randomBytes, scrypt } from "node:crypto";
 import { promisify } from "node:util";
 import { expect, test, type Page } from "@playwright/test";
 import { apiJsonRequest, loginForTests } from "../scripts/test-http.ts";
-import { createSentWorkflowPo, ensureWorkflowFixture } from "../scripts/workflow-proof-fixtures.ts";
+import {
+  createSentWorkflowPo,
+  ensureWorkflowFixture,
+  type WorkflowFixture,
+} from "../scripts/workflow-proof-fixtures.ts";
 import { pool } from "../server/db.ts";
 
 const scryptAsync = promisify(scrypt);
@@ -64,6 +68,7 @@ async function loginAs(page: Page, username: string) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("core workflow permission controls", () => {
+  let receiverFixture: WorkflowFixture;
   let receiverPoNumber: string;
   let requesterPoNumber: string;
 
@@ -75,7 +80,7 @@ test.describe("core workflow permission controls", () => {
     const adminCookie = (await loginForTests("admin", TEST_PASSWORD)) ?? "";
     expect(adminCookie).toBeTruthy();
 
-    const receiverFixture = await ensureWorkflowFixture("perm-rec");
+    receiverFixture = await ensureWorkflowFixture("perm-rec");
     receiverPoNumber = (await createSentWorkflowPo(adminCookie, receiverFixture, 1)).poNumber;
     const requesterFixture = await ensureWorkflowFixture("perm-deny");
     requesterPoNumber = (await createSentWorkflowPo(adminCookie, requesterFixture, 1)).poNumber;
@@ -85,7 +90,19 @@ test.describe("core workflow permission controls", () => {
     await loginAs(page, "e2e_receiver");
     await page.goto(`/m/receive/${encodeURIComponent(receiverPoNumber)}`, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("mobile-receive-detail")).toBeVisible();
+
+    await page.getByTestId("mobile-receive-warehouse-select").click();
+    await page.getByRole("option", { name: new RegExp(`Workflow Warehouse ${receiverFixture.suffix}`) }).click();
+    await page.getByTestId("mobile-receive-aisle-select").click();
+    await page.getByRole("option", { name: "A1" }).click();
+    await page.getByTestId("mobile-receive-bin-select").click();
+    await page.getByRole("option", { name: "B1" }).click();
+    await page.getByLabel("Receiver name").fill("E2E Warehouse Receiver");
+    await page.getByLabel("GRN number").fill(`GRN-PERM-${receiverFixture.suffix}`);
+    await page.getByTestId(`mobile-receive-qty-${receiverFixture.sku}`).fill("1");
     await expect(page.getByTestId("mobile-receive-post-button")).toBeEnabled();
+    await page.getByTestId("mobile-receive-post-button").click();
+    await expect(page.getByText("Receipt posted", { exact: true })).toBeVisible({ timeout: 20_000 });
 
     const requesterCookie = (await loginForTests("e2e_requester", TEST_PASSWORD)) ?? "";
     const denied = await apiJsonRequest(`/purchase/orders/${encodeURIComponent(requesterPoNumber)}/receive`, {
