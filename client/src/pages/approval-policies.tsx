@@ -163,6 +163,7 @@ export default function ApprovalPoliciesPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (!form.name.trim()) throw new Error("Policy name is required");
       const amountMin = Number(form.amountMin);
       if (!Number.isFinite(amountMin) || amountMin < 0) throw new Error("Minimum amount must be ≥ 0");
       const amountMaxRaw = form.amountMax.trim();
@@ -174,7 +175,7 @@ export default function ApprovalPoliciesPage() {
       if (!Number.isFinite(level) || level < 1) throw new Error("Approval level must be ≥ 1");
 
       const body = {
-        name: form.name.trim() || "Unnamed policy",
+        name: form.name.trim(),
         entityType: form.entityType,
         amountMin,
         amountMax: amountMaxRaw === "" ? null : amountMax,

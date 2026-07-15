@@ -79,9 +79,24 @@ test.describe("button and action smoke", () => {
     const orders = await apiJsonRequest("/purchase-orders", { cookie });
     const rows = Array.isArray(orders.json) ? orders.json : (orders.json as { data?: unknown[] }).data ?? [];
     test.skip(rows.length === 0, "No purchase order fixture available for commercial smoke");
-    const poNumber = String((rows[0] as { poNumber?: string; po_number?: string }).poNumber ?? (rows[0] as { po_number?: string }).po_number);
+    const editableOrder =
+      rows.find((row) =>
+        ["draft", "open", "approved"].includes(
+          String((row as { status?: string }).status ?? "").toLowerCase(),
+        ),
+      ) ?? rows[0];
+    const poNumber = String(
+      (editableOrder as { orderNumber?: string }).orderNumber ??
+        (editableOrder as { order_number?: string }).order_number ??
+        (editableOrder as { poNumber?: string }).poNumber ??
+        (editableOrder as { po_number?: string }).po_number,
+    );
+    expect(poNumber).not.toBe("undefined");
     await gotoAuthed(page, `/procurement/orders/${encodeURIComponent(poNumber)}`);
-    await page.getByTestId("po-commercial-save-button").click();
+    const saveTerms = page.getByTestId("po-commercial-save-button");
+    await expect(saveTerms).toBeVisible({ timeout: 20_000 });
+    await expect(saveTerms).toBeEnabled();
+    await saveTerms.click();
     await expect(page.getByTestId("po-commercial-error")).toContainText("Contract currency controls this purchase order");
     await expect(page.getByTestId("po-use-contract-currency")).toBeVisible();
     await expect(page.getByTestId("po-clear-contract")).toBeVisible();
@@ -132,9 +147,10 @@ test.describe("button and action smoke", () => {
     expect(response.status()).toBe(400);
     const payload = await response.json();
     expect(JSON.stringify(payload)).toContain("AP_INVOICE_PO_LINK_REQUIRED");
-    await expect(
-      page.getByText("Link this invoice to a purchase order before matching or submitting for approval."),
-    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByLabel("Notifications (F8)")).toContainText(
+      "Link this invoice to a purchase order before matching or submitting for approval.",
+      { timeout: 20_000 },
+    );
   });
 
   test("system diagnostics scan and export actions remain usable", async ({ page }) => {
@@ -153,7 +169,7 @@ test.describe("button and action smoke", () => {
     await expect(page.getByTestId("admin-settings-page")).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("settings-control-low-stock").fill("10");
     await page.getByTestId("settings-control-save").click();
-    await expect(page.getByText("Settings updated")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("Settings updated", { exact: true })).toBeVisible({ timeout: 20_000 });
   });
 
   test("master-data add action reports validation instead of silently failing", async ({ page }) => {
@@ -169,6 +185,7 @@ test.describe("button and action smoke", () => {
     await expect(page.getByTestId("approval-policies-page")).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("approval-policy-name").fill("");
     await page.getByTestId("approval-policy-save").click();
-    await expect(page.getByText(/Save failed|Policy name|required/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("Save failed", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByLabel("Notifications (F8)")).toContainText("Policy name is required");
   });
 });
