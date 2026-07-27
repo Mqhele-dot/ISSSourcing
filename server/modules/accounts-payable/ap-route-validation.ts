@@ -70,7 +70,9 @@ export const apPaymentBatchCreateSchema = z.object({
 
 /** POST /api/invoices/:invoiceId/items */
 export const legacyInvoiceItemCreateSchema = z.object({
-  itemId: z.coerce.number().int().positive(),
+  itemId: z.coerce.number().int().positive().nullable().optional(),
+  purchaseOrderItemId: z.coerce.number().int().positive().nullable().optional(),
+  lineType: z.enum(["CATALOG", "NON_STOCK", "SERVICE"]).default("CATALOG"),
   description: z.string().optional(),
   quantity: z.coerce.number().positive(),
   unitPrice: z.coerce.number().nonnegative(),
@@ -78,6 +80,14 @@ export const legacyInvoiceItemCreateSchema = z.object({
   taxRate: z.coerce.number().nonnegative().optional(),
   taxAmount: z.coerce.number().nonnegative().optional(),
   totalPrice: z.coerce.number().nonnegative(),
+}).superRefine((line, context) => {
+  if (!line.itemId && !line.purchaseOrderItemId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["itemId"],
+      message: "Select a catalogue item or linked purchase-order line.",
+    });
+  }
 });
 
 /** PATCH /api/invoices/:invoiceId/items/:itemId */
@@ -90,6 +100,8 @@ export const legacyInvoiceItemPatchSchema = z
     taxAmount: z.coerce.number().optional(),
     totalPrice: z.coerce.number().optional(),
     description: z.string().optional(),
+    purchaseOrderItemId: z.coerce.number().int().positive().nullable().optional(),
+    lineType: z.enum(["CATALOG", "NON_STOCK", "SERVICE"]).optional(),
   })
   .strict()
   .refine((o) => Object.keys(o).length > 0, { message: "At least one field is required to update a line." });

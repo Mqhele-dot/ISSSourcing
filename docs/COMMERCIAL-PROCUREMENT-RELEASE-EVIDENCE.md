@@ -1,10 +1,15 @@
 # Commercial Procurement Release Evidence
 
-## Release Decision
+## Release Decisions
 
-**Current decision: SUPERSEDED / BLOCKED while the expanded application boundary is being hardened.**
+These are two separate decisions. They must not be combined or inherited by later commits.
 
-The procurement-only candidate recorded below remains historical evidence for its immutable SHA. It does not approve the current expanded build. Inventory, receiving, logistics, exceptions, AP, reports, notifications, and mobile operations are now visible for controlled implementation and require their own clean runtime, tenant-isolation, security, and browser evidence before the current branch can return to candidate status.
+| Build | Immutable reference | Decision | Meaning |
+|---|---|---|---|
+| Historical procurement-only candidate | `b8164e178126dc8c8943b165e1f95a06d47bb9a5` | **CANDIDATE (historical evidence preserved)** | Procurement-only evidence was complete enough for human approval review at that SHA. |
+| Current branch head | `cursor/project-codespace-compatibility-b14c` | **EXPANDED HARDENING - BLOCKED** | The branch now exposes and changes modules outside procurement. It is not approved and is not candidate-ready until expanded module evidence passes. |
+
+The historical decision is immutable evidence, not a status granted to descendants. Inventory, receiving, logistics, exceptions, AP, reports, notifications, diagnostics, and mobile operations require their own runtime, tenant-isolation, permission/security, audit, and browser evidence.
 
 This is not full ERP production approval. Receiving, inventory operations, logistics, mobile warehouse operations, AP, invoices, payment control, and direct bank payment initiation are not approved by this evidence pack. Formal production approval still requires the named human sign-offs and branch-protection approval.
 
@@ -13,7 +18,7 @@ This is not full ERP production approval. Receiving, inventory operations, logis
 | Branch | `cursor/project-codespace-compatibility-b14c` |
 | Immutable candidate source SHA | `b8164e178126dc8c8943b165e1f95a06d47bb9a5` |
 | Evidence packaging commit | This documentation-only commit; resolve with `git log -1 --format=%H` after checkout |
-| Historical production scope | Procurement only; superseded for the current expanded build |
+| Historical production scope | Procurement only; applies only to the immutable candidate SHA |
 | GitHub workflow | **Playwright Release Gate** (`.github/workflows/playwright-release-gate.yml`) |
 | Workflow run | [Run 29383670960](https://github.com/Mqhele-dot/ISSSourcing/actions/runs/29383670960) |
 | Workflow conclusion | `success` |
@@ -113,6 +118,9 @@ GitHub `pull_request` workflows check the generated PR merge commit. Run 2938367
 | Required GitHub check failures | 0 |
 | Human production sign-offs | 3 pending |
 
-## Final Decision
+## Final Decisions
 
-The immutable source is a **commercial-procurement production approval candidate**. It is not `APPROVED` until the release owner, database/operations owner, and security/technical approver sign off. It is never evidence of full-suite ERP production readiness, and excluded operational/finance areas remain server-gated.
+- Historical SHA `b8164e178126dc8c8943b165e1f95a06d47bb9a5`: **CANDIDATE**, procurement-only, pending the recorded human sign-offs.
+- Current branch head: **BLOCKED**, expanded ERP hardening. It is neither approved nor candidate-ready.
+
+No wording, test result, workflow link, or zero-blocker count in this historical pack grants full-suite ERP production readiness to the current branch.

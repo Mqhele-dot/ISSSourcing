@@ -44,6 +44,8 @@ The commercial procurement increment also adds `test:e2e:sourcing` to this gate.
 
 Wave 6A adds production-mode boundary, audit-chain integrity, and commercial migration rehearsals to `release:gate:delta`. Backup/restore is deliberately excluded from the normal local delta gate because it requires PostgreSQL client utilities and a disposable target database. It runs in **Playwright Release Gate** before browser proof.
 
+Wave 7A separates the immutable procurement-only candidate from the current expanded application. The current branch is **EXPANDED HARDENING - BLOCKED** until every enabled module has its own runtime, tenant-isolation, permission, audit, and browser evidence. `prerelease:gate:delta` must pass against a disposable `TEST_DATABASE_URL` before the expanded runtime suites are accepted.
+
 `test:local:delta` starts the local app, waits for `/api/ready`, and then runs the focused workflow checks that require a live server, including master-data propagation, master-data integration, purchase-order endpoints, AP workflow, diagnostics, route diagnostics, and `release:gate:delta`.
 
 ## Gate Matrix
@@ -66,6 +68,11 @@ Wave 6A adds production-mode boundary, audit-chain integrity, and commercial mig
 | Commercial production boundary runtime | `npm run test:commercial-production-boundary-runtime` | Yes | Exercise the real release-boundary middleware over HTTP in production/procurement mode. | Passing locally | Procurement and sourcing remain available; inventory, receiving, logistics, finance, and mobile operations return `FEATURE_NOT_PRODUCTION_APPROVED`. |
 | Audit-chain integrity | `npm run test:audit-chain-integrity` | Yes | Prove real event append, chain verification, tamper detection, and critical diagnostics without persistent test records. | Passing locally | Uses a test-owned transaction and rolls it back. |
 | Commercial migration rehearsal | `npm run test:commercial-migration-rehearsal` | Yes | Verify required schema, tenant indexes, memberships, append-only audit trigger, and non-destructive migration posture. | Passing locally | Verified 21 tables, 6 tenant unique indexes, the audit trigger, active memberships, and destructive-DDL posture. |
+| Expanded prerelease safety | `npm run prerelease:gate:delta` | Yes for expanded hardening | Refuse unsafe mutation databases and prove fixture-hygiene and high-volume contracts before runtime evidence is accepted. | Passing on disposable Wave 7 database | Includes `test:database-safety`, `test:data-hygiene-controls`, and `test:high-volume-stability`. |
+| Manual procurement lines runtime | `npm run test:manual-procurement-lines-runtime` | Yes for expanded hardening | Prove catalogue, non-stock, and service validation, PO conversion snapshots, service confirmation policy, and AP PO-line linkage. | Passing on disposable Wave 7 database | Uses real HTTP APIs and PostgreSQL; refuses the normal application database. |
+| Procurement reporting runtime | `npm run test:procurement-reporting-runtime` | Yes for expanded hardening | Prove one-row-per-line reports, no-line quality rows, paginated previews, authenticated short-lived download tokens, and export diagnostics. | Passing on disposable Wave 7 database | Covers catalogue, non-stock, and service rows through the canonical report service. |
+| Approval policy runtime hardening | `npm run test:approval-policy-runtime-hardening` | Yes for expanded hardening | Prove overlap filtering, structured ambiguity prevention, stale-version rejection, tenant isolation, and audit evidence. | Passing on disposable Wave 7 database | Open-ended ranges use typed PostgreSQL infinity instead of an overflowing numeric sentinel. |
+| Diagnostics runtime workspaces | `npm run test:diagnostics-runtime-workspaces` | Yes for expanded hardening | Prove summary, findings, safe probes, and evidence for exports, notifications, policy overlap, and fixture pollution. | Passing on disposable Wave 7 database | UI workspace navigation is source-contract proven; browser proof remains in the expanded E2E gate. |
 | Backup/restore rehearsal | `npm run test:backup-restore-rehearsal` | Yes before approval | Prove a custom PostgreSQL dump restores into a disposable database with matching schema, counts, and audit chains. | GitHub workflow required | Not part of `release:gate:delta`; runs in `.github/workflows/playwright-release-gate.yml`. |
 | Live sourcing workflow | `npm run test:sourcing-workflow` | Yes | Prove RFQ publication, mapped supplier quote, FX-normalized comparison, evaluation, self-approval denial, independent award approval, PO conversion, MDM propagation, and audit-chain validity. | Passing locally | Runs with a real local server through `npm run test:local:sourcing`; also included in `release:gate:delta`. |
 | Sourcing browser workflow | `npm run test:e2e:sourcing` | Yes before production approval | Prove supplier and buyer sourcing actions through the browser, including independent approval and PO conversion. | Added to formal E2E gate | Run through the Playwright Release Gate when the local Chromium sandbox is unavailable. |
@@ -108,6 +115,21 @@ A feature or route is not production-ready unless it uses real data, has backend
 The complete procurement-only boundary is defined in [Commercial Procurement Release Boundary](COMMERCIAL-PROCUREMENT-BOUNDARY.md). Receiving, inventory operations, mobile warehouse work, logistics, exceptions, AP, payment control, and their non-procurement analytics remain later-release modules. Production navigation and direct route access must keep these areas gated until their route-specific evidence is complete.
 
 Remaining marker-level production blockers are tracked in [Core Blocking Risk Register](core-blocking-risk-register.md). The current audit reports **0 core blockers**, **0 marker-level blockers**, and **33 procurement-release route exclusions**. Those exclusions are an intentional commercial boundary, not unresolved procurement blockers.
+
+## Latest Wave 7A Expanded-Hardening Evidence
+
+These results apply to the expanded branch and do not promote it to production candidate status.
+
+| Command | Result | Notes |
+|---|---|---|
+| `npm run prerelease:gate:delta` | Passed locally | Disposable database safety, fixture-hygiene controls, and high-volume stability contracts passed. |
+| `npm run test:manual-procurement-lines-runtime` | Passed locally | Real API/PostgreSQL proof for catalogue, non-stock, and service lines through PO conversion and AP PO-line linkage. |
+| `npm run test:procurement-reporting-runtime` | Passed locally | Real report rows, no-line quality rows, preview pagination, authenticated one-hour-or-less token renewal, and controlled export diagnostics passed. |
+| `npm run test:approval-policy-runtime-hardening` | Passed locally | Real overlap, stale-version, audit, and cross-tenant mutation controls passed. |
+| `npm run test:diagnostics-runtime-workspaces` | Passed locally | Summary, findings, safe probes, and integrations/notifications/business-rule/consistency findings passed. |
+| Expanded browser evidence | Required | Diagnostics navigation has source-contract proof only in this wave; expanded-app browser approval remains outstanding. |
+
+Current expanded decision: **BLOCKED**. See [Expanded ERP Release Status](EXPANDED-ERP-RELEASE-STATUS.md) and [Expanded ERP Release Roadmap](EXPANDED-ERP-RELEASE-ROADMAP.md).
 
 ## Latest Commercial Procurement Evidence
 

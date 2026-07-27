@@ -54,6 +54,29 @@ function expectStatus(name: string, expected: number, actual: number): boolean {
   return false;
 }
 
+function expectApprovalPolicyReady(
+  name: string,
+  response: { status: number; json: unknown },
+): boolean {
+  if (response.status === 201) {
+    console.log("  ok %s -> created", name);
+    return true;
+  }
+  const body = asRecord(response.json);
+  const error = asRecord(body.error);
+  if (response.status === 409 && error.code === "APPROVAL_POLICY_OVERLAP") {
+    console.log("  ok %s -> compatible active policy already covers this range", name);
+    return true;
+  }
+  console.log(
+    "  X %s -> expected 201 or structured APPROVAL_POLICY_OVERLAP, got %d (%s)",
+    name,
+    response.status,
+    String(error.code ?? "unknown"),
+  );
+  return false;
+}
+
 async function main() {
   const BASE_URL = getTestBaseUrl();
   console.log("AP workflow test (BASE_URL=%s)\n", BASE_URL);
@@ -112,7 +135,7 @@ async function main() {
       isActive: true,
     },
   });
-  if (!expectStatus("POST /api/approval-policies (invoice)", 201, invoicePolicyRes.status)) failures++;
+  if (!expectApprovalPolicyReady("POST /api/approval-policies (invoice)", invoicePolicyRes)) failures++;
 
   const batchPolicyRes = await apiJsonRequest("/approval-policies", {
     method: "POST",
@@ -127,7 +150,7 @@ async function main() {
       isActive: true,
     },
   });
-  if (!expectStatus("POST /api/approval-policies (payment_batch)", 201, batchPolicyRes.status)) failures++;
+  if (!expectApprovalPolicyReady("POST /api/approval-policies (payment_batch)", batchPolicyRes)) failures++;
 
   const captureRes = await apiJsonRequest("/ap/captures", {
     method: "POST",

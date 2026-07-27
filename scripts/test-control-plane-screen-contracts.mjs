@@ -35,8 +35,20 @@ const approvalPolicies = read("client/src/pages/approval-policies.tsx");
 assertIncludes(approvalPolicies, "approval-policies-page", "/finance/approval-policies");
 assertIncludes(approvalPolicies, "approval-policies-denied", "/finance/approval-policies");
 assertIncludes(approvalPolicies, "approval-policy-save", "/finance/approval-policies");
-assertIncludes(approvalPolicies, 'requestJson<unknown>("GET", "/api/approval-policies")', "/finance/approval-policies");
+assertIncludes(
+  approvalPolicies,
+  'requestJson<unknown>("GET", `/api/approval-policies?${params.toString()}`)',
+  "/finance/approval-policies",
+);
+assertIncludes(approvalPolicies, "page: String(page)", "/finance/approval-policies");
+assertIncludes(approvalPolicies, 'params.set("overlapOnly", "true")', "/finance/approval-policies");
+assertIncludes(approvalPolicies, "approval-policies-loading", "/finance/approval-policies");
+assertIncludes(approvalPolicies, "approval-policies-error", "/finance/approval-policies");
+assertIncludes(approvalPolicies, "approval-policies-empty", "/finance/approval-policies");
+assertIncludes(approvalPolicies, "formatMutationError", "/finance/approval-policies");
 assertIncludes(approvalPolicies, 'requestJson<ApprovalPolicy>("PATCH"', "/finance/approval-policies");
+assertIncludes(approvalPolicies, "expectedVersion: editingVersion", "/finance/approval-policies");
+assertIncludes(approvalPolicies, "changeReason", "/finance/approval-policies");
 
 const masterData = read("client/src/pages/master-data.tsx");
 assertIncludes(masterData, "Master Data & Control Centre", "/admin/master-data");

@@ -135,8 +135,8 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
               AND a.approval_level = b.approval_level
               AND COALESCE(a.is_active, true) = true
               AND COALESCE(b.is_active, true) = true
-              AND a.amount_min <= COALESCE(b.amount_max, 1e100)
-              AND b.amount_min <= COALESCE(a.amount_max, 1e100)
+              AND a.amount_min <= COALESCE(b.amount_max, 'Infinity'::real)
+              AND b.amount_min <= COALESCE(a.amount_max, 'Infinity'::real)
             WHERE a.organization_id = $1`,
       evaluate: (rows) => {
         const total = Number(rows[0]?.total ?? 0);
@@ -163,7 +163,7 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
       organizationId,
       sql: `SELECT SUM(match_count)::text AS total FROM (
               SELECT COUNT(*) AS match_count FROM suppliers WHERE organization_id = $1 AND name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Supplier '
-              UNION ALL SELECT COUNT(*) FROM inventory_items WHERE organization_id = $1 AND (name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)')
+              UNION ALL SELECT COUNT(*) FROM inventory_items WHERE organization_id::text = $1::text AND (name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)')
               UNION ALL SELECT COUNT(*) FROM approval_policies WHERE organization_id = $1 AND name ~ '^(AP Workflow|AP Test|AP Invalid)'
             ) fixture_matches`,
       evaluate: (rows) => {

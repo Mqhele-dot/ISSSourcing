@@ -130,7 +130,8 @@ export async function getScopedExportJob(id: number): Promise<ExportJobRow | nul
 
 export async function refreshScopedExportDownloadToken(id: number): Promise<ExportJobRow | null> {
   const token = randomBytes(24).toString("hex");
-  const tokenExpiry = new Date(Date.now() + appEnv.exportDownloadTokenTtlMinutes * 60_000);
+  const tokenTtlMinutes = Math.min(appEnv.exportDownloadTokenTtlMinutes, 60);
+  const tokenExpiry = new Date(Date.now() + tokenTtlMinutes * 60_000);
   const result = await pool.query(
     `UPDATE export_jobs
      SET download_token = $3,
@@ -177,7 +178,8 @@ export async function markExportJobSucceeded(input: {
   rowCount: number;
 }): Promise<void> {
   const downloadToken = randomBytes(24).toString("hex");
-  const tokenExpiry = new Date(Date.now() + appEnv.exportDownloadTokenTtlMinutes * 60_000);
+  const tokenTtlMinutes = Math.min(appEnv.exportDownloadTokenTtlMinutes, 60);
+  const tokenExpiry = new Date(Date.now() + tokenTtlMinutes * 60_000);
   const retentionExpiry = new Date(Date.now() + appEnv.exportRetentionDays * 24 * 60 * 60_000);
   await pool.query(
     `

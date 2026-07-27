@@ -108,7 +108,9 @@ export async function getProcurementLineReportRows(input: {
        FROM purchase_orders po
        LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.organization_id = po.organization_id
        LEFT JOIN purchase_order_items poi ON poi.order_id = po.id
-       LEFT JOIN inventory_items ii ON ii.id = poi.item_id AND ii.organization_id = po.organization_id
+       LEFT JOIN inventory_items ii
+         ON ii.id = poi.item_id
+        AND ii.organization_id::text = po.organization_id::text
        LEFT JOIN units_of_measure uom ON uom.id = poi.unit_of_measure_id
        LEFT JOIN tax_codes tc ON tc.id = poi.tax_code_id
        LEFT JOIN mdm_cost_centres cc ON cc.id = poi.cost_centre_id AND cc.organization_id = po.organization_id
@@ -150,7 +152,9 @@ export async function getProcurementLineReportRows(input: {
      FROM purchase_requisitions pr
      LEFT JOIN suppliers s ON s.id = pr.supplier_id AND s.organization_id = pr.organization_id
      LEFT JOIN purchase_requisition_items pri ON pri.requisition_id = pr.id
-     LEFT JOIN inventory_items ii ON ii.id = pri.item_id AND ii.organization_id = pr.organization_id
+     LEFT JOIN inventory_items ii
+       ON ii.id = pri.item_id
+      AND ii.organization_id::text = pr.organization_id::text
      LEFT JOIN units_of_measure uom ON uom.id = pri.unit_of_measure_id
      LEFT JOIN tax_codes tc ON tc.id = pri.tax_code_id
      LEFT JOIN mdm_cost_centres cc ON cc.id = pri.cost_centre_id AND cc.organization_id = pr.organization_id

@@ -9,6 +9,7 @@
  *   BASE_URL=http://127.0.0.1:5000 npx tsx scripts/test-master-data-propagation.ts
  */
 import { exitTest } from "./test-exit.ts";
+import { randomUUID } from "node:crypto";
 import {
   apiJsonRequest,
   expectRequestId,
@@ -52,6 +53,8 @@ function dateOnly(value: unknown): string {
   const parsed = value instanceof Date ? value : new Date(String(value ?? ""));
   return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
 }
+
+const runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
 
 function expectStatus(name: string, expected: number, actual: number): boolean {
   if (actual === expected) {
@@ -237,6 +240,7 @@ async function main() {
     method: "POST",
     cookie: adminCookie,
     body: {
+      orderNumber: `PO-PROP-${runId}`,
       supplierId,
       notes: "Master-data propagation direct PO",
       items: [

@@ -127,11 +127,15 @@ async function main() {
     },
   });
   assert.equal(createPolicy.status, 201, `create policy failed: ${JSON.stringify(createPolicy.json)}`);
-  const policy = unwrapData<{ id: number }>(createPolicy.json, "policy");
+  const policy = unwrapData<{ id: number; version: number }>(createPolicy.json, "policy");
   const updatePolicy = await apiJsonRequest(`/approval-policies/${policy.id}`, {
     method: "PATCH",
     cookie: adminCookie,
-    body: { amountMax: 1000001 },
+    body: {
+      amountMax: 1000001,
+      expectedVersion: policy.version,
+      changeReason: "Control-plane runtime proof",
+    },
   });
   assert.equal(updatePolicy.status, 200, `update policy failed: ${JSON.stringify(updatePolicy.json)}`);
   await assertActivity("APPROVAL_POLICY_CREATED", "approval_policy", "approval policy creation");

@@ -1097,8 +1097,8 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
             AND other.approval_level = ${approvalPolicies.approvalLevel}
             AND COALESCE(other.is_active, true) = true
             AND COALESCE(${approvalPolicies.isActive}, true) = true
-            AND other.amount_min <= COALESCE(${approvalPolicies.amountMax}, 1e100)
-            AND ${approvalPolicies.amountMin} <= COALESCE(other.amount_max, 1e100)
+            AND other.amount_min <= COALESCE(${approvalPolicies.amountMax}, 'Infinity'::real)
+            AND ${approvalPolicies.amountMin} <= COALESCE(other.amount_max, 'Infinity'::real)
         )`);
       }
       const where = and(...clauses);

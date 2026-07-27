@@ -1,4 +1,5 @@
 import { exitTest } from "./test-exit.ts";
+import { pool } from "../server/db";
 import {
   apiJsonRequest,
   getTestBaseUrl,
@@ -20,6 +21,13 @@ function unwrapData<T>(value: unknown): T {
     return (value as { data: T }).data;
   }
   return value as T;
+}
+
+function isPolicyReady(response: { status: number; json: unknown }): boolean {
+  if (response.status === 201) return true;
+  const body = asRecord(response.json);
+  const error = asRecord(body.error);
+  return response.status === 409 && error.code === "APPROVAL_POLICY_OVERLAP";
 }
 
 function expectPass(name: string, pass: boolean): number {
@@ -99,7 +107,8 @@ async function main() {
       isActive: true,
     },
   });
-  failures += expectPass("Create valid invoice policy", validInvoicePolicyRes.status === 201);
+  failures += expectPass("Invoice approval policy is configured", isPolicyReady(validInvoicePolicyRes));
+  const validInvoicePolicy = asRecord(unwrapData<unknown>(validInvoicePolicyRes.json));
 
   const validBatchPolicyRes = await apiJsonRequest("/approval-policies", {
     method: "POST",
@@ -114,23 +123,19 @@ async function main() {
       isActive: true,
     },
   });
-  failures += expectPass("Create valid batch policy", validBatchPolicyRes.status === 201);
+  failures += expectPass("Payment-batch approval policy is configured", isPolicyReady(validBatchPolicyRes));
+  const validBatchPolicy = asRecord(unwrapData<unknown>(validBatchPolicyRes.json));
 
-  const invalidPolicyRes = await apiJsonRequest("/approval-policies", {
-    method: "POST",
-    cookie: adminCookie,
-    body: {
-      name: "AP Invalid Approver Policy",
-      entityType: "invoice",
-      amountMin: 11,
-      amountMax: 11,
-      approvalLevel: 99,
-      approverUserId: 999999,
-      isActive: true,
-    },
-  });
-  failures += expectPass("Create invalid approver policy", invalidPolicyRes.status === 201);
-  const invalidPolicyId = Number(asRecord(unwrapData<unknown>(invalidPolicyRes.json)).id ?? 0);
+  const invalidPolicyFixture = await pool.query<{ id: number; version: number }>(
+    `INSERT INTO approval_policies (
+       organization_id, name, entity_type, amount_min, amount_max, approval_level,
+       approver_user_id, is_active, version, created_at, updated_at
+     ) VALUES (1, $1, 'invoice', 11, 11, 99, 999999, TRUE, 1, NOW(), NOW())
+     RETURNING id, version`,
+    [`AP Invalid Approver Policy ${Date.now()}`],
+  );
+  const invalidPolicyId = invalidPolicyFixture.rows[0].id;
+  failures += expectPass("Install test-owned invalid approver fixture", invalidPolicyId > 0);
 
   const selfInvoiceId = await createInvoice(adminCookie, supplierId, itemId, 20, "SELF");
   await apiJsonRequest(`/invoices/${selfInvoiceId}`, {
@@ -198,11 +203,7 @@ async function main() {
   failures += expectPass("Invalid approver blocked by policy", invalidApproverAttempt.status >= 400);
 
   if (invalidPolicyId > 0) {
-    await apiJsonRequest(`/approval-policies/${invalidPolicyId}`, {
-      method: "PATCH",
-      cookie: adminCookie,
-      body: { isActive: false },
-    });
+    await pool.query(`DELETE FROM approval_policies WHERE id = $1`, [invalidPolicyId]);
   }
 
   const historyRes = await apiJsonRequest(`/approval-history/invoice/${selfInvoiceId}`, {
@@ -330,15 +331,31 @@ async function main() {
   });
   failures += expectPass("Illegal invoice transition is blocked", illegalApprove.status >= 400);
 
+  for (const policy of [validInvoicePolicy, validBatchPolicy]) {
+    const id = Number(policy.id ?? 0);
+    if (!id) continue;
+    await apiJsonRequest(`/approval-policies/${id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: {
+        isActive: false,
+        expectedVersion: Number(policy.version ?? 1),
+        changeReason: "AP controls test cleanup",
+      },
+    });
+  }
+
   console.log("\nAP controls result: %d failure(s)", failures);
   exitTest(failures > 0 ? 1 : 0);
 }
 
-main().catch((err) => {
-  if (isConnectionRefused(err)) {
-    exitTest(reportConnectionRefused(getTestBaseUrl()));
-    return;
-  }
-  console.error(err);
-  exitTest(1);
-});
+main()
+  .catch((err) => {
+    if (isConnectionRefused(err)) {
+      exitTest(reportConnectionRefused(getTestBaseUrl()));
+      return;
+    }
+    console.error(err);
+    exitTest(1);
+  })
+  .finally(async () => pool.end().catch(() => undefined));

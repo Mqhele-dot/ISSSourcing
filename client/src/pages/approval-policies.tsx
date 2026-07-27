@@ -101,7 +101,13 @@ export default function ApprovalPoliciesPage() {
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
-  const { data: policyPage, isLoading } = useQuery<PolicyPage>({
+  const {
+    data: policyPage,
+    isLoading,
+    isError: isPolicyListError,
+    error: policyListError,
+    refetch: refetchPolicies,
+  } = useQuery<PolicyPage>({
     queryKey: ["/api/approval-policies", { search, entityFilter, statusFilter, overlapOnly, page, pageSize }],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -677,9 +683,19 @@ export default function ApprovalPoliciesPage() {
             </Alert>
           ) : null}
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <p className="text-sm text-muted-foreground" data-testid="approval-policies-loading">Loading…</p>
+          ) : isPolicyListError ? (
+            <Alert variant="destructive" data-testid="approval-policies-error">
+              <AlertTitle>Approval policies could not be loaded</AlertTitle>
+              <AlertDescription className="space-y-3">
+                <p>{policyListError instanceof Error ? policyListError.message : "Retry the request or review System Diagnostics."}</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => void refetchPolicies()}>
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
           ) : sortedPolicies.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No policies yet. Add one to gate approvals by amount.</p>
+            <p className="text-sm text-muted-foreground" data-testid="approval-policies-empty">No policies yet. Add one to gate approvals by amount.</p>
           ) : (
             <div className="overflow-hidden rounded-md border">
             <div className="overflow-x-auto">

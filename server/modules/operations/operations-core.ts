@@ -341,12 +341,9 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
   const params: Array<string | number> = [];
   const orgId = getActiveOrganizationId();
   params.push(orgId);
-  if (orgId === 1) {
-    // Backward compatibility for legacy seed rows created before org_id backfill.
-    whereClauses.push(`(i.organization_id = $${params.length} OR i.organization_id IS NULL)`);
-  } else {
-    whereClauses.push(`i.organization_id = $${params.length}`);
-  }
+  // Never expose legacy unscoped rows. Schema migration/backfill owns assigning
+  // organization_id; runtime reads remain fail-closed for tenant isolation.
+  whereClauses.push(`i.organization_id = $${params.length}`);
 
   if (filters.q && filters.q.trim().length > 0) {
     params.push(`%${filters.q.trim().toLowerCase()}%`);
