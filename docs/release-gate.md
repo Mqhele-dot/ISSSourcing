@@ -127,9 +127,17 @@ These results apply to the expanded branch and do not promote it to production c
 | `npm run test:procurement-reporting-runtime` | Passed locally | Real report rows, no-line quality rows, preview pagination, authenticated one-hour-or-less token renewal, and controlled export diagnostics passed. |
 | `npm run test:approval-policy-runtime-hardening` | Passed locally | Real overlap, stale-version, audit, and cross-tenant mutation controls passed. |
 | `npm run test:diagnostics-runtime-workspaces` | Passed locally | Summary, findings, safe probes, and integrations/notifications/business-rule/consistency findings passed. |
+| `npm run check` | Passed on `ad63e0d` | TypeScript completed against the final Wave 7A code state. |
+| `npm run lint` | Passed on `ad63e0d` | ESLint 10 and TypeScript ESLint completed without errors. |
+| `npm run build` | Passed on `ad63e0d` | Client and server production builds completed. |
+| `npm run audit:production` | Passed as an audit command on `ad63e0d` | Inspected 80 routes, 426 endpoints, 121 tables, and 611 classified markers. Passing the generator does not approve the expanded release. |
+| `npm run verify:release` | Passed on `ad63e0d` | Full non-browser release verification passed with the Wave 7A runtime suites wired into `release:gate:delta`. |
+| `npm run verify:release:secure` | Passed on `ad63e0d` | Package manifests, lifecycle controls, SBOM, 1,052 registry signatures, 128 attestations, and the high-severity audit gate passed; npm reported 0 vulnerabilities. |
 | Expanded browser evidence | Required | Diagnostics navigation has source-contract proof only in this wave; expanded-app browser approval remains outstanding. |
 
-Current expanded decision: **BLOCKED**. See [Expanded ERP Release Status](EXPANDED-ERP-RELEASE-STATUS.md) and [Expanded ERP Release Roadmap](EXPANDED-ERP-RELEASE-ROADMAP.md).
+Wave 7A source commits: `bfbbb12` (implementation), `0965438` (dependency remediation), and `ad63e0d` (deterministic export-token evidence).
+
+Current expanded decision: **BLOCKED**. The stable non-browser gates are green, but current-SHA expanded E2E and complete module evidence remain mandatory. See [Expanded ERP Release Status](EXPANDED-ERP-RELEASE-STATUS.md) and [Expanded ERP Release Roadmap](EXPANDED-ERP-RELEASE-ROADMAP.md).
 
 ## Latest Commercial Procurement Evidence
 
