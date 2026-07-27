@@ -97,7 +97,10 @@ async function main() {
   const token = unwrapData<{ downloadUrl: string; expiresAt: string }>(tokenResponse.json, "fresh export token");
   const ttlMs = Date.parse(token.expiresAt) - Date.now();
   assert.ok(token.downloadUrl.includes(`/api/export/download/${exportJob.rows[0].id}?token=`));
-  assert.ok(ttlMs > 0 && ttlMs <= 60 * 60_000, "export token must remain short-lived");
+  assert.ok(
+    ttlMs > 0 && ttlMs <= 60 * 60_000,
+    `export token must remain short-lived (expiresAt=${token.expiresAt}, ttlMs=${ttlMs})`,
+  );
 
   await pool.query(
     `INSERT INTO export_jobs (
