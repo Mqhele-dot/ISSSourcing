@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { pool } from "../../db";
 import { appEnv } from "../../config/env";
-import { getActiveOrganizationId } from "../../organization-context";
+import { getActiveOrganizationId, getTenantContext } from "../../organization-context";
 import { incrementMetric } from "../../observability/metrics";
 import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
 
@@ -101,34 +101,39 @@ export async function createExportJob(input: CreateExportJobInput): Promise<Expo
 }
 
 export async function listExportJobs(limit = 50): Promise<ExportJobRow[]> {
+  const tenant = getTenantContext();
   const result = await pool.query(
     `
       SELECT *
       FROM export_jobs
       WHERE organization_id = $1
+        AND created_by = $2
       ORDER BY created_at DESC
-      LIMIT $2
+      LIMIT $3
     `,
-    [getActiveOrganizationId(), limit],
+    [tenant.organizationId, tenant.userId, limit],
   );
   return result.rows.map(mapExportJobRow);
 }
 
 export async function getScopedExportJob(id: number): Promise<ExportJobRow | null> {
+  const tenant = getTenantContext();
   const result = await pool.query(
     `
       SELECT *
       FROM export_jobs
       WHERE id = $1
         AND organization_id = $2
+        AND created_by = $3
       LIMIT 1
     `,
-    [id, getActiveOrganizationId()],
+    [id, tenant.organizationId, tenant.userId],
   );
   return result.rows[0] ? mapExportJobRow(result.rows[0]) : null;
 }
 
 export async function refreshScopedExportDownloadToken(id: number): Promise<ExportJobRow | null> {
+  const tenant = getTenantContext();
   const token = randomBytes(24).toString("hex");
   const tokenTtlMinutes = Math.min(appEnv.exportDownloadTokenTtlMinutes, 55);
   const tokenExpiry = new Date(Date.now() + tokenTtlMinutes * 60_000);
@@ -139,11 +144,12 @@ export async function refreshScopedExportDownloadToken(id: number): Promise<Expo
          updated_at = NOW()
      WHERE id = $1
        AND organization_id = $2
+       AND created_by = $5
        AND status = 'succeeded'
        AND file_path IS NOT NULL
        AND (retention_expires_at IS NULL OR retention_expires_at > NOW())
      RETURNING *`,
-    [id, getActiveOrganizationId(), token, tokenExpiry],
+    [id, tenant.organizationId, token, tokenExpiry, tenant.userId],
   );
   return result.rows[0] ? mapExportJobRow(result.rows[0]) : null;
 }
@@ -246,6 +252,7 @@ export async function markExportJobFailed(id: number, message: string): Promise<
 }
 
 export async function requeueExportJob(id: number): Promise<void> {
+  const tenant = getTenantContext();
   await pool.query(
     `
       UPDATE export_jobs
@@ -264,8 +271,9 @@ export async function requeueExportJob(id: number): Promise<void> {
           updated_at = NOW()
       WHERE id = $1
         AND organization_id = $2
+        AND created_by = $3
     `,
-    [id, getActiveOrganizationId()],
+    [id, tenant.organizationId, tenant.userId],
   );
   incrementMetric("exports.jobs.queued");
 }

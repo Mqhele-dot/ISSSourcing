@@ -565,6 +565,12 @@ const LEGACY_ORG_SCOPED_TABLES: readonly {
     uniqueIndexCols: "(organization_id, serial_number)",
     fkName: "inventory_serials_organization_id_organizations_id_fk",
   },
+  {
+    table: "custom_roles",
+    uniqueIndexName: "custom_roles_org_name_uidx",
+    uniqueIndexCols: "(organization_id, name)",
+    fkName: "custom_roles_organization_id_organizations_id_fk",
+  },
 ];
 
 /** Tables that need `organization_id` + FK but have no composite unique on (org, …) in legacy repair. */
@@ -1906,23 +1912,10 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
 export async function initializeDatabase(): Promise<boolean> {
   console.log('Initializing database schema...');
 
-  await ensureSessionTable();
-  await ensurePermissionResourceEnumValues();
-  await ensureDefaultOrganization();
-  await ensureOrganizationSubscriptionColumns();
-  await ensureContractDateConstraint();
-  await ensureSuppliersTaxIdColumn();
-  await ensureTenantSecurityColumns();
-  await ensureLegacyOrgIdColumnsForSeed();
-  await ensurePurchaseRequisitionsTables();
-  await ensureProfessionalSupplyChainTables();
-  await ensureStrategicSourcingTables();
-
   try {
     // Check if users table exists by trying to query it
     const userCount = await db.select().from(users).limit(1);
     console.log(`Database already initialized with tables existing`);
-    return true;
   } catch (error) {
     console.log('Tables do not exist, creating schema...');
     
@@ -1938,8 +1931,6 @@ export async function initializeDatabase(): Promise<boolean> {
         if (stderr) {
           console.warn('Schema push warnings:', stderr);
         }
-        
-        return true;
       } catch (error) {
         if (error instanceof Error) {
           console.error('Failed to execute drizzle-kit push:', error.message);
@@ -1954,4 +1945,18 @@ export async function initializeDatabase(): Promise<boolean> {
       return false;
     }
   }
+
+  await ensureSessionTable();
+  await ensurePermissionResourceEnumValues();
+  await ensureDefaultOrganization();
+  await ensureOrganizationSubscriptionColumns();
+  await ensureContractDateConstraint();
+  await ensureSuppliersTaxIdColumn();
+  await ensureTenantSecurityColumns();
+  await ensureLegacyOrgIdColumnsForSeed();
+  await ensurePurchaseRequisitionsTables();
+  await ensureProfessionalSupplyChainTables();
+  await ensureStrategicSourcingTables();
+
+  return true;
 }

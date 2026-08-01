@@ -779,8 +779,9 @@ export async function fetchException(id: string | number): Promise<OperationalEx
 export async function updateExceptionStatus(
   id: string | number,
   toStatus: string,
+  note?: string,
 ): Promise<OperationalException> {
-  return apiMutate<OperationalException>("POST", `/api/exceptions/${id}/status`, { toStatus });
+  return apiMutate<OperationalException>("POST", `/api/exceptions/${id}/status`, { toStatus, note });
 }
 
 export async function assignException(

@@ -37,7 +37,11 @@ const logistics = read("client/src/pages/logistics.tsx");
 const exceptions = read("client/src/pages/exceptions.tsx");
 assert(!/run the demo|Overview \/ Demo|logistics-outbound-placeholder/i.test(logistics), "logistics route removes production demo wording");
 assert(logistics.includes("logistics-outbound-v1-excluded"), "logistics outbound path is explicitly v1-excluded");
+assert(logistics.includes("Operational review route"), "logistics route uses review-state wording instead of blanket non-production copy");
+assert(logistics.includes("live shipment, carrier, and related purchase-order data"), "logistics route explains the live inbound review scope");
 assert(!/run the demo|Overview \/ Demo/i.test(exceptions), "exceptions route removes production demo wording");
+assert(exceptions.includes("Operational review route"), "exceptions route uses review-state wording instead of blanket non-production copy");
+assert(exceptions.includes("live operational exception records for review, triage, and linked-record navigation"), "exceptions route explains the live review scope");
 
 const operationsCore = read("server/modules/operations/operations-core.ts");
 assert(!/Create demo purchase order|DEMO-WALKTHROUGH|PO-DEMO|Demo Carrier|Demo walkthrough/i.test(operationsCore), "operations walkthrough avoids production demo labels");

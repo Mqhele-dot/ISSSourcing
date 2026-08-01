@@ -456,10 +456,23 @@ export function useRequisitionForm(params: {
         current.glAccountCode = selected?.glAccountCode ?? current.glAccountCode ?? null;
         current.lineCurrencyCode = currencyCode;
       }
+      if (field === "costCentreId") {
+        const selectedCostCentre = effectiveCostCentres.find(
+          (costCentre) => Number(costCentre.id) === Number(value),
+        ) as (typeof effectiveCostCentres)[number] & { glAccountCode?: string | null } | undefined;
+        current.glAccountCode = selectedCostCentre?.glAccountCode ?? current.glAccountCode ?? null;
+      }
       next[idx] = current;
       return next;
     });
-  }, [currencyCode, effectiveInventoryItems, effectiveSuppliers, mdmContext?.organizationDefaults?.taxCodeId, supplierId]);
+  }, [
+    currencyCode,
+    effectiveCostCentres,
+    effectiveInventoryItems,
+    effectiveSuppliers,
+    mdmContext?.organizationDefaults?.taxCodeId,
+    supplierId,
+  ]);
 
   const handleSubmit = useCallback(() => {
     if (isLocked) {

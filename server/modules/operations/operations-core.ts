@@ -18,6 +18,7 @@ import {
   normalizeShipmentSourceType,
 } from "@shared/logistics-shipment-filters";
 import { resolveSupplierCommercialDefaults } from "../procurement/supplier-defaults";
+import { validateExceptionStatusTransition } from "./exception-status-policy";
 
 type InventoryFilterInput = {
   location?: string;
@@ -887,8 +888,13 @@ type PurchaseOrderListItem = {
 
 type PurchaseOrderLine = {
   id: number;
-  itemId: number;
-  sku: string;
+  itemId: number | null;
+  lineType: "CATALOG" | "NON_STOCK" | "SERVICE";
+  description: string | null;
+  manualEntryReason: string | null;
+  receiptRequired: boolean;
+  lineNumber: number | null;
+  sku: string | null;
   itemName: string;
   supplierPartNumber: string | null;
   commodityCode: string | null;
@@ -1263,7 +1269,12 @@ export async function createOperationalShipment(input: {
 async function getPurchaseOrderLines(orderId: number): Promise<PurchaseOrderLine[]> {
   const lineResult = await pool.query<{
     id: number;
-    item_id: number;
+    item_id: number | null;
+    line_type: "CATALOG" | "NON_STOCK" | "SERVICE" | null;
+    description: string | null;
+    manual_entry_reason: string | null;
+    receipt_required: boolean | null;
+    line_number: number | null;
     quantity: number;
     received_quantity: number | null;
     unit_price: number;
@@ -1277,6 +1288,11 @@ async function getPurchaseOrderLines(orderId: number): Promise<PurchaseOrderLine
     SELECT
       pol.id,
       pol.item_id,
+      pol.line_type,
+      pol.description,
+      pol.manual_entry_reason,
+      pol.receipt_required,
+      pol.line_number,
       pol.quantity,
       pol.received_quantity,
       pol.unit_price,
@@ -1300,8 +1316,13 @@ async function getPurchaseOrderLines(orderId: number): Promise<PurchaseOrderLine
     return {
       id: line.id,
       itemId: line.item_id,
-      sku: line.sku ?? `ITEM-${line.item_id}`,
-      itemName: line.item_name ?? `Item #${line.item_id}`,
+      lineType: line.line_type === "NON_STOCK" || line.line_type === "SERVICE" ? line.line_type : "CATALOG",
+      description: line.description ?? null,
+      manualEntryReason: line.manual_entry_reason ?? null,
+      receiptRequired: line.receipt_required !== false,
+      lineNumber: line.line_number ?? null,
+      sku: line.sku ?? null,
+      itemName: line.item_name ?? line.description ?? "Unresolved purchase order line",
       supplierPartNumber: line.supplier_part_number ?? null,
       commodityCode: line.commodity_code ?? null,
       commodityDescription: line.commodity_description ?? null,
@@ -1321,6 +1342,7 @@ async function syncPurchaseOrderAllocations(orderId: number): Promise<void> {
   await pool.query(`DELETE FROM inventory_allocations WHERE order_id = $1 AND status = 'reserved'`, [orderId]);
   const lines = await getPurchaseOrderLines(orderId);
   for (const line of lines) {
+    if (line.itemId == null || line.lineType !== "CATALOG") continue;
     const remaining = Math.max(0, line.qtyOrdered - line.qtyReceived);
     if (remaining <= 0) continue;
     const whRes = await pool.query<{ default_warehouse_id: number | null }>(
@@ -1825,7 +1847,11 @@ export async function receiveOperationalPurchaseOrder(
   const putaway = await resolveReceivePutaway(effectiveReceiveMeta);
 
   const currentLines = await getPurchaseOrderLines(order.id);
-  const lineBySku = new Map(currentLines.map((line) => [line.sku, line]));
+  const receivableCatalogLines = currentLines.filter(
+    (line): line is PurchaseOrderLine & { itemId: number; sku: string } =>
+      line.lineType === "CATALOG" && line.itemId != null && Boolean(line.sku),
+  );
+  const lineBySku = new Map(receivableCatalogLines.map((line) => [line.sku, line]));
 
   const apReceiptLines: Array<{ purchaseOrderItemId: number; itemId: number; acceptedQty: number }> = [];
 
@@ -2985,31 +3011,18 @@ export async function getOperationalExceptionDetail(idOrRef: string) {
   return mapOperationalExceptionSqlRow(row);
 }
 
-const EXCEPTION_TRANSITIONS: Record<string, string[]> = {
-  open: ["in_progress", "resolved", "closed"],
-  in_progress: ["resolved", "closed", "open"],
-  resolved: ["closed", "open"],
-  closed: ["open"],
-};
-
 export async function transitionOperationalExceptionStatus(
   idOrRef: string,
   toStatusInput: string,
+  noteInput?: string | null,
   actor = "system",
 ) {
   const detail = await getOperationalExceptionDetail(idOrRef);
-  const toStatus = toStatusInput.toLowerCase();
-  const currentStatus = detail.status.toLowerCase();
-
-  if (!toStatus) {
-    throw new Error("invalid_target_status");
-  }
-  if (toStatus !== currentStatus) {
-    const allowed = EXCEPTION_TRANSITIONS[currentStatus] ?? [];
-    if (!allowed.includes(toStatus)) {
-      throw new Error("invalid_transition");
-    }
-  }
+  const { currentStatus, toStatus, note } = validateExceptionStatusTransition({
+    currentStatus: detail.status,
+    toStatus: toStatusInput,
+    note: noteInput,
+  });
 
   await pool.query(
     `
@@ -3029,8 +3042,17 @@ export async function transitionOperationalExceptionStatus(
       exceptionId: detail.id,
       fromStatus: currentStatus,
       toStatus,
+      note: note || null,
     },
   });
+
+  if (note) {
+    await addOperationalExceptionComment({
+      idOrRef: String(detail.id),
+      author: actor,
+      comment: note,
+    });
+  }
 
   return getOperationalExceptionDetail(String(detail.id));
 }

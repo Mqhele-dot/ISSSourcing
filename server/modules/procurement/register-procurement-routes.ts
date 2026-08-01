@@ -440,6 +440,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
   // Purchase Requisition & Purchase Order — RBAC: viewer read-only; manager/admin for create/update/delete/approve
   const poRead = [auth.ensureAuthenticated];
   const poWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "planner", "admin"])];
+  const poCreate = [auth.ensureAuthenticated, auth.ensurePermission("purchases", "create")];
   const poApprove = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("purchases", "approve")];
     app.get("/api/purchase-requisitions", ...poRead, async (_req: Request, res: Response) => {
     try {
@@ -474,7 +475,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     }
   });
 
-  app.post("/api/purchase-requisitions", ...poWrite, async (req: Request, res: Response) => {
+  app.post("/api/purchase-requisitions", ...poCreate, async (req: Request, res: Response) => {
     try {
       if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
         return sendFunctionError(res, 400, "createPurchaseRequisition", "At least one item is required");
@@ -806,7 +807,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     }
   });
 
-  app.post("/api/purchase-requisitions/:id/approve", ...poWrite, async (req: Request, res: Response) => {
+  app.post("/api/purchase-requisitions/:id/approve", ...poApprove, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -887,7 +888,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     }
   });
 
-  app.post("/api/purchase-requisitions/:id/reject", ...poWrite, async (req: Request, res: Response) => {
+  app.post("/api/purchase-requisitions/:id/reject", ...poApprove, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -1086,7 +1087,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (isNaN(reqId)) {
         return sendError(res, 400, "INVALID_REQUISITION_ID", "Invalid purchase requisition ID");
       }
-      
+
+      const requisition = await storage.getPurchaseRequisition(reqId);
+      if (!requisition) {
+        return sendError(res, 404, "REQUISITION_NOT_FOUND", "Purchase requisition not found");
+      }
+
       const items = await storage.getPurchaseRequisitionItems(reqId);
       return sendOk(res, items);
     } catch (error) {

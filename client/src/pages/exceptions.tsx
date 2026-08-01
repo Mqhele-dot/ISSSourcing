@@ -51,6 +51,11 @@ import {
   type OperationalException,
 } from "@/api/client";
 import type { FallbackKind } from "@/components/ui/data-state";
+import {
+  hasExceptionAssigneeChanged,
+  normalizeExceptionAssigneeInput,
+  shouldSubmitExceptionQuickUpdate,
+} from "@/pages/exceptions-workflow";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -63,11 +68,11 @@ function ExceptionsV1ExclusionNotice() {
   return (
     <Alert className="border-amber-200 bg-amber-50 text-amber-950">
       <AlertTriangle className="h-4 w-4" aria-hidden />
-      <AlertTitle>Non-production v1 route</AlertTitle>
+      <AlertTitle>Operational review route</AlertTitle>
       <AlertDescription>
-        Operations exceptions remain excluded from production approval until route-specific browser proof, permission
-        proof, and audit evidence are complete. Use System Diagnostics and the proven AP/procurement workflows for
-        approved production exception controls.
+        This queue uses live operational exception records for review, triage, and linked-record navigation. Status,
+        assignment, and comment actions remain role-gated, and production change approval still depends on attached
+        disposable-database workflow evidence.
       </AlertDescription>
     </Alert>
   );
@@ -97,6 +102,10 @@ function slaStatusLabel(s: string | undefined) {
     default:
       return "—";
   }
+}
+
+function exceptionStatusNeedsNote(status: string) {
+  return status === "resolved" || status === "closed";
 }
 
 /** Matches types emitted by runOperationalExceptionChecks / ops rules */
@@ -156,6 +165,7 @@ function ExceptionListView() {
   const [quickException, setQuickException] = useState<OperationalException | null>(null);
   const [quickStatus, setQuickStatus] = useState("in_progress");
   const [quickAssignee, setQuickAssignee] = useState("");
+  const [quickNote, setQuickNote] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
 
   useEffect(() => {
@@ -167,6 +177,7 @@ function ExceptionListView() {
   useEffect(() => {
     if (quickException) {
       setQuickAssignee(quickException.assignee?.trim() || "");
+      setQuickNote("");
       setQuickStatus(
         ["open", "in_progress", "resolved", "closed"].includes(quickException.status)
           ? quickException.status
@@ -179,6 +190,20 @@ function ExceptionListView() {
     (id: number) => `${APP_ROUTES.operations.exceptions}/${id}`,
     [],
   );
+  const quickStatusRequiresNote = exceptionStatusNeedsNote(quickStatus);
+  const quickAssigneeChanged = quickException
+    ? hasExceptionAssigneeChanged(quickException.assignee, quickAssignee)
+    : false;
+  const quickCanSubmit = quickException
+    ? shouldSubmitExceptionQuickUpdate({
+        currentStatus: quickException.status,
+        nextStatus: quickStatus,
+        currentAssignee: quickException.assignee,
+        nextAssigneeInput: quickAssignee,
+        note: quickNote,
+        statusRequiresNote: quickStatusRequiresNote,
+      })
+    : false;
 
   const handleExportCsv = () => {
     try {
@@ -470,7 +495,22 @@ function ExceptionListView() {
                   id="quick-assignee"
                   value={quickAssignee}
                   onChange={(e) => setQuickAssignee(e.target.value)}
-                  placeholder="User or team name"
+                  placeholder="User or team name (leave blank to clear)"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quick-note">
+                  {quickStatusRequiresNote ? "Resolution note" : "Status note"}
+                </Label>
+                <Input
+                  id="quick-note"
+                  value={quickNote}
+                  onChange={(e) => setQuickNote(e.target.value)}
+                  placeholder={
+                    quickStatusRequiresNote
+                      ? "Required when resolving or closing"
+                      : "Optional handoff or context note"
+                  }
                 />
               </div>
             </div>
@@ -489,14 +529,23 @@ function ExceptionListView() {
               </Button>
               <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
                 <Button
-                  disabled={!quickException || quickSaving}
+                  disabled={
+                    !quickException ||
+                    quickSaving ||
+                    !quickCanSubmit
+                  }
                   onClick={async () => {
                     if (!quickException) return;
                     setQuickSaving(true);
                     try {
-                      await updateExceptionStatus(quickException.id, quickStatus);
-                      if (quickAssignee.trim()) {
-                        await assignException(quickException.id, quickAssignee.trim());
+                      if (quickException.status !== quickStatus) {
+                        await updateExceptionStatus(quickException.id, quickStatus, quickNote.trim() || undefined);
+                      }
+                      if (quickAssigneeChanged) {
+                        await assignException(
+                          quickException.id,
+                          normalizeExceptionAssigneeInput(quickAssignee) ?? "",
+                        );
                       }
                       toast({ title: "Exception updated" });
                       setQuickException(null);
@@ -529,6 +578,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
   const { toast } = useToast();
   const [nextStatus, setNextStatus] = useState("in_progress");
   const [assignee, setAssignee] = useState("");
+  const [statusNote, setStatusNote] = useState("");
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -547,6 +597,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
   useEffect(() => {
     if (!data) return;
     setAssignee(data.assignee?.trim() || "");
+    setStatusNote("");
     setNextStatus(
       ["open", "in_progress", "resolved", "closed"].includes(data.status) ? data.status : "in_progress",
     );
@@ -570,6 +621,8 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
     }
     return links;
   }, [data]);
+  const detailStatusRequiresNote = exceptionStatusNeedsNote(nextStatus);
+  const detailAssigneeChanged = hasExceptionAssigneeChanged(data?.assignee, assignee);
 
   const runWithToast = async (action: () => Promise<void>) => {
     setSaving(true);
@@ -677,7 +730,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
               <CardHeader>
                 <CardTitle>Lifecycle actions</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-[220px_1fr_auto]">
+              <CardContent className="grid gap-4 md:grid-cols-[220px_1fr] lg:grid-cols-[220px_1fr_1fr_auto]">
                 <Select value={nextStatus} onValueChange={setNextStatus}>
                   <SelectTrigger>
                     <SelectValue placeholder="Status" />
@@ -692,16 +745,30 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                 <Input
                   value={assignee}
                   onChange={(event) => setAssignee(event.target.value)}
-                  placeholder="Assign to user"
+                  placeholder="Assign to user (leave blank to clear)"
+                />
+                <Input
+                  value={statusNote}
+                  onChange={(event) => setStatusNote(event.target.value)}
+                  placeholder={
+                    detailStatusRequiresNote
+                      ? "Resolution note required for resolve/close"
+                      : "Optional status note"
+                  }
                 />
                 <div className="flex gap-2">
                   <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
                     <Button
                       variant="outline"
-                      disabled={saving}
+                      disabled={
+                        saving ||
+                        nextStatus === exception.status ||
+                        (detailStatusRequiresNote && !statusNote.trim())
+                      }
                       onClick={() =>
                         runWithToast(async () => {
-                          await updateExceptionStatus(exception.id, nextStatus);
+                          await updateExceptionStatus(exception.id, nextStatus, statusNote.trim() || undefined);
+                          setStatusNote("");
                         })
                       }
                     >
@@ -710,10 +777,10 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                   </Can>
                   <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
                     <Button
-                      disabled={saving}
+                      disabled={saving || !detailAssigneeChanged}
                       onClick={() =>
                         runWithToast(async () => {
-                          await assignException(exception.id, assignee);
+                          await assignException(exception.id, normalizeExceptionAssigneeInput(assignee) ?? "");
                         })
                       }
                     >

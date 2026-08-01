@@ -17,14 +17,16 @@ import {
   ReportsInventoryTabPanel,
   ReportsInvoicesTabPanel,
   ReportsLowStockTabPanel,
-  ReportsPurchaseOrdersTabPanel,
-  ReportsPurchaseRequisitionsTabPanel,
   ReportsReorderRequestsTabPanel,
   ReportsShipmentsTabPanel,
   ReportsSuppliersTabPanel,
   ReportsValueTabPanel,
   type ReportsTabPanelsProps,
 } from "@/pages/reports/reports-tab-panels";
+import {
+  ReportsPurchaseOrdersTabPanel,
+  ReportsPurchaseRequisitionsTabPanel,
+} from "@/pages/reports/procurement-line-report-panels";
 import { APP_ROUTES, REPORT_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { SectionNav } from "@/components/section-nav";

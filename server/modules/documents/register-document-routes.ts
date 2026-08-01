@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, ilike, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import { documents } from "@shared/schema";
@@ -14,20 +14,48 @@ export function registerDocumentRoutes(app: Express, auth: AuthBundle): void {
   app.get("/api/documents", ...masterRead, async (req: Request, res: Response) => {
     try {
       const orgId = getActiveOrganizationId();
-      const orgScope = eq(documents.organizationId, orgId);
       const entityType = typeof req.query.entityType === "string" ? req.query.entityType : undefined;
       const entityId = typeof req.query.entityId === "string" ? Number(req.query.entityId) : undefined;
-      let rows;
-      if (entityType && entityId != null && !isNaN(entityId)) {
-        rows = await db
-          .select()
-          .from(documents)
-          .where(and(orgScope, eq(documents.entityType, entityType), eq(documents.entityId, entityId)));
-      } else if (entityType) {
-        rows = await db.select().from(documents).where(and(orgScope, eq(documents.entityType, entityType)));
-      } else {
-        rows = await db.select().from(documents).where(orgScope);
+      const archived =
+        req.query.archived === "include" || req.query.archived === "only"
+          ? req.query.archived
+          : "exclude";
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : NaN;
+      const offsetRaw = typeof req.query.offset === "string" ? Number(req.query.offset) : NaN;
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 100;
+      const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.trunc(offsetRaw)) : 0;
+
+      const filters = [eq(documents.organizationId, orgId)];
+      if (entityType) {
+        filters.push(eq(documents.entityType, entityType));
       }
+      if (entityId != null && !Number.isNaN(entityId)) {
+        filters.push(eq(documents.entityId, entityId));
+      }
+      if (archived === "exclude") {
+        filters.push(isNull(documents.archivedAt));
+      } else if (archived === "only") {
+        filters.push(isNotNull(documents.archivedAt));
+      }
+      if (q) {
+        const pattern = `%${q}%`;
+        filters.push(
+          or(
+            ilike(documents.fileName, pattern),
+            ilike(documents.entityType, pattern),
+            ilike(documents.fileUrl, pattern),
+          )!,
+        );
+      }
+
+      const rows = await db
+        .select()
+        .from(documents)
+        .where(and(...filters))
+        .orderBy(desc(documents.uploadedAt), desc(documents.id))
+        .limit(limit)
+        .offset(offset);
       res.json(rows);
     } catch (error) {
       console.error("Error fetching documents:", error);

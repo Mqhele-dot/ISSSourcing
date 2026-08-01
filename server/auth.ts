@@ -128,7 +128,10 @@ function ensureRole(role: string | string[]) {
       403,
       "FORBIDDEN_ROLE_REQUIRED",
       `Forbidden: Required role not found. Need one of: ${roles.join(", ")}`,
-      { details: { requiredRoles: roles, currentRole: req.user.role, functionName: "ensureRole" } },
+      {
+        hint: "Ask an organization administrator to assign an authorized role for this action.",
+        details: { requiredRoles: roles, currentRole: req.user.role, functionName: "ensureRole" },
+      },
     );
   };
 }
@@ -184,7 +187,10 @@ function ensurePermission(resource: string, permissionType: string) {
         403,
         "FORBIDDEN_PERMISSION_REQUIRED",
         `Forbidden: You don't have ${permissionType} permission for ${resource}`,
-        { details: { resource, permissionType, functionName: "ensurePermission" } },
+        {
+          hint: `Ask an organization administrator for ${resource}:${permissionType} access if this action is part of your role.`,
+          details: { resource, permissionType, functionName: "ensurePermission" },
+        },
       );
     } catch (error) {
       console.error("Permission check error:", error);

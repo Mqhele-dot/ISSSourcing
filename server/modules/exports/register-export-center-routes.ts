@@ -11,7 +11,10 @@ import { storage } from "../../storage";
 import { createExportJob, getScopedExportJob, listExportJobs, refreshScopedExportDownloadToken, requeueExportJob } from "./export-jobs";
 import { removeExportFile } from "./export-file-store";
 import { exportRateLimiter } from "../../services/security-service";
-import { getProcurementLineReportRows } from "../../services/procurement-line-report-service";
+import {
+  getProcurementLineReportRows,
+  type ProcurementLineReportFilters,
+} from "../../services/procurement-line-report-service";
 import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
 
 const createSavedReportSchema = z.object({
@@ -113,7 +116,31 @@ function zodFieldIssues(error: unknown): Record<string, string[]> | undefined {
   );
 }
 
-async function buildCustomDatasetRows(dataset: string, limit: number, offset = 0): Promise<Array<Record<string, unknown>>> {
+function procurementFilters(filters: Record<string, unknown> = {}): ProcurementLineReportFilters {
+  const numberOrNull = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+  const stringOrNull = (value: unknown) => {
+    const parsed = typeof value === "string" ? value.trim() : "";
+    return parsed && parsed.toLowerCase() !== "all" ? parsed : null;
+  };
+  return {
+    documentNumber: stringOrNull(filters.documentNumber ?? filters.q),
+    supplierId: numberOrNull(filters.supplierId),
+    projectId: numberOrNull(filters.projectId),
+    status: stringOrNull(filters.status),
+    startDate: stringOrNull(filters.startDate ?? filters.fromDate),
+    endDate: stringOrNull(filters.endDate ?? filters.toDate),
+  };
+}
+
+async function buildCustomDatasetRows(
+  dataset: string,
+  limit: number,
+  offset = 0,
+  filters: Record<string, unknown> = {},
+): Promise<Array<Record<string, unknown>>> {
   const orgId = getActiveOrganizationId();
   if (dataset === "inventory") {
     const categories = await storage.getAllCategories();
@@ -127,10 +154,22 @@ async function buildCustomDatasetRows(dataset: string, limit: number, offset = 0
     return (await storage.getAllSuppliers()).slice(offset, offset + limit);
   }
   if (dataset === "purchase_orders") {
-    return getProcurementLineReportRows({ organizationId: orgId, dataset, limit, offset });
+    return getProcurementLineReportRows({
+      organizationId: orgId,
+      dataset,
+      filters: procurementFilters(filters),
+      limit,
+      offset,
+    });
   }
   if (dataset === "purchase_requisitions") {
-    return getProcurementLineReportRows({ organizationId: orgId, dataset, limit, offset });
+    return getProcurementLineReportRows({
+      organizationId: orgId,
+      dataset,
+      filters: procurementFilters(filters),
+      limit,
+      offset,
+    });
   }
   if (dataset === "reorder_requests") {
     const items = await storage.getAllInventoryItems();
@@ -225,12 +264,13 @@ export function registerExportCenterRoutes(
   },
 ): void {
   const exportAccess = [auth.ensureAuthenticated, auth.ensurePermission("reports", "export")];
+  const reportPreviewAccess = [auth.ensureAuthenticated, auth.ensurePermission("reports", "read")];
 
-  app.get("/api/export-center/datasets", ...exportAccess, (_req: Request, res: Response) => {
+  app.get("/api/export-center/datasets", ...reportPreviewAccess, (_req: Request, res: Response) => {
     sendOk(res, getExportDatasetRegistry());
   });
 
-  app.post("/api/export-center/custom-preview", ...exportAccess, async (req: Request, res: Response) => {
+  app.post("/api/export-center/custom-preview", ...reportPreviewAccess, async (req: Request, res: Response) => {
     try {
       const parsed = customPreviewSchema.parse(req.body);
       const registry = getExportDatasetRegistry();
@@ -245,7 +285,7 @@ export function registerExportCenterRoutes(
       if (columns.length === 0) {
         return sendError(res, 400, "REPORT_COLUMNS_INVALID", "Select at least one valid column.");
       }
-      const rows = await buildCustomDatasetRows(parsed.dataset, parsed.limit);
+      const rows = await buildCustomDatasetRows(parsed.dataset, parsed.limit, 0, parsed.filters);
       sendOk(res, {
         dataset: parsed.dataset,
         label: entry.label,
@@ -263,7 +303,7 @@ export function registerExportCenterRoutes(
     }
   });
 
-  app.post("/api/reports/preview", ...exportAccess, async (req: Request, res: Response) => {
+  app.post("/api/reports/preview", ...reportPreviewAccess, async (req: Request, res: Response) => {
     try {
       const parsed = reportsPreviewSchema.parse(req.body);
       const entry = getExportDatasetRegistry().find((item) => item.key === parsed.dataset);
@@ -278,22 +318,38 @@ export function registerExportCenterRoutes(
         return sendError(res, 400, "REPORT_COLUMNS_INVALID", "Select at least one valid column.");
       }
       const offset = (parsed.page - 1) * parsed.pageSize;
-      const fetched = await buildCustomDatasetRows(parsed.dataset, parsed.pageSize + 1, offset);
-      const hasNext = fetched.length > parsed.pageSize;
-      const rows = fetched.slice(0, parsed.pageSize);
-      if (parsed.sortBy && selectedKeys.includes(parsed.sortBy)) {
-        rows.sort((left, right) => {
+      const shouldSortBeforePaging = Boolean(parsed.sortBy && selectedKeys.includes(parsed.sortBy));
+      const fetched = await buildCustomDatasetRows(
+        parsed.dataset,
+        shouldSortBeforePaging ? 10_000 : parsed.pageSize + 1,
+        shouldSortBeforePaging ? 0 : offset,
+        parsed.filters,
+      );
+      const sorted = [...fetched];
+      if (shouldSortBeforePaging && parsed.sortBy) {
+        sorted.sort((left, right) => {
+          const leftMissingLines = left.dataQualityStatus === "DOCUMENT_HAS_NO_LINES";
+          const rightMissingLines = right.dataQualityStatus === "DOCUMENT_HAS_NO_LINES";
+          if (leftMissingLines !== rightMissingLines) {
+            return leftMissingLines ? -1 : 1;
+          }
           const result = String(left[parsed.sortBy!] ?? "").localeCompare(String(right[parsed.sortBy!] ?? ""), undefined, {
             numeric: true,
           });
           return parsed.sortDirection === "desc" ? -result : result;
         });
       }
+      const windowed = shouldSortBeforePaging ? sorted.slice(offset, offset + parsed.pageSize + 1) : sorted;
+      const hasNext = windowed.length > parsed.pageSize;
+      const rows = windowed.slice(0, parsed.pageSize);
       return sendOk(res, {
         dataset: parsed.dataset,
         label: entry.label,
         columns: selectedKeys.map((key) => allowedColumns.get(key)),
-        rows: rows.map((row) => Object.fromEntries(selectedKeys.map((key) => [key, row[key] ?? ""]))),
+        rows: rows.map((row) => ({
+          ...row,
+          ...Object.fromEntries(selectedKeys.map((key) => [key, row[key] ?? ""])),
+        })),
         page: parsed.page,
         pageSize: parsed.pageSize,
         hasNext,
@@ -325,7 +381,7 @@ export function registerExportCenterRoutes(
       if (columns.length === 0) {
         return sendError(res, 400, "REPORT_COLUMNS_INVALID", "Select at least one valid column.");
       }
-      const rows = await buildCustomDatasetRows(parsed.dataset, 10_000);
+      const rows = await buildCustomDatasetRows(parsed.dataset, 10_000, 0, parsed.filters);
       const visibleRows = rows.map((row) => Object.fromEntries(columns.map((column) => [column, row[column] ?? ""])));
       const csv = toCsv(columns, visibleRows);
       const compressed = gzipSync(csv, { level: 9 });

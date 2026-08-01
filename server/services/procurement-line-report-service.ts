@@ -3,6 +3,7 @@ import { pool } from "../db";
 export type ProcurementLineReportDataset = "purchase_orders" | "purchase_requisitions";
 
 export type ProcurementLineReportFilters = {
+  documentNumber?: string | null;
   supplierId?: number | null;
   status?: string | null;
   projectId?: number | null;
@@ -42,6 +43,11 @@ function buildFilterSql(
   values: unknown[],
 ): string {
   const clauses: string[] = [];
+  if (filters.documentNumber) {
+    values.push(`%${filters.documentNumber}%`);
+    const numberColumn = alias === "po" ? "order_number" : "requisition_number";
+    clauses.push(`${alias}.${numberColumn} ILIKE $${values.length}`);
+  }
   if (filters.supplierId) {
     values.push(filters.supplierId);
     clauses.push(`${alias}.supplier_id = $${values.length}`);

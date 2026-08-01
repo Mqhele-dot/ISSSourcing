@@ -47,7 +47,9 @@ contextBridge.exposeInMainWorld('electron', {
       'update-downloaded',
       'menu:export-excel',
       'menu:export-csv',
-      'menu:export-pdf'
+      'menu:export-pdf',
+      'sync-progress',
+      'database-status-changed'
     ];
     
     if (validReceiveChannels.includes(channel)) {
@@ -84,7 +86,10 @@ contextBridge.exposeInMainWorld('electron', {
       'dialog:save-file',
       'barcode:scan',
       'database:create-backup',
-      'database:restore'
+      'database:restore',
+      'get-database-info',
+      'sync-database',
+      'check-network-status'
     ];
     
     if (validInvokeChannels.includes(channel)) {

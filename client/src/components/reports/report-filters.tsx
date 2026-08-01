@@ -102,6 +102,14 @@ export function ReportFilters({
     setDateRange({ from: undefined, to: undefined });
   };
 
+  const isProcurementReport = ["purchase-orders", "purchase_orders", "purchase-requisitions", "purchase_requisitions"].includes(reportTypeKey);
+  const procurementDocumentLabel = ["purchase-orders", "purchase_orders"].includes(reportTypeKey)
+    ? "PO contains"
+    : "Requisition contains";
+  const procurementDocumentPlaceholder = ["purchase-orders", "purchase_orders"].includes(reportTypeKey)
+    ? "PO number"
+    : "Requisition number";
+
   // Radix Select disallows value=""; use sentinel and normalize to undefined
   const ALL_SENTINEL = "__all__";
   const norm = (v: string) => (v === ALL_SENTINEL || v === "" ? undefined : v);
@@ -110,7 +118,7 @@ export function ReportFilters({
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-4 mb-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-medium">Report Filters</h3>
-        {(filter.startDate || filter.categoryId || filter.warehouseId || filter.supplierId || filter.projectId || filter.status || filter.shipmentPo || filter.shipmentCarrier || filter.shipmentRisk || (filter.tags && filter.tags.length > 0)) && (
+        {(filter.startDate || filter.categoryId || filter.warehouseId || filter.supplierId || filter.projectId || filter.status || filter.documentNumber || filter.shipmentPo || filter.shipmentCarrier || filter.shipmentRisk || (filter.tags && filter.tags.length > 0)) && (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
             Clear all
           </Button>
@@ -296,6 +304,23 @@ export function ReportFilters({
               </Select>
             </div>
           )}
+
+        {isProcurementReport && (
+          <div>
+            <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">{procurementDocumentLabel}</div>
+            <Input
+              value={filter.documentNumber ?? ""}
+              placeholder={procurementDocumentPlaceholder}
+              onChange={(event) =>
+                setFilter({
+                  ...filter,
+                  documentNumber: event.target.value || undefined,
+                })
+              }
+              data-testid="reports-filter-document-number"
+            />
+          </div>
+        )}
         
         {/* Status filter - for orders, requisitions, and reorder requests */}
         {(["purchase-orders", "purchase_orders", "purchase-requisitions", "purchase_requisitions", "reorder-requests", "reorder_requests", "invoices", "shipments"].includes(reportTypeKey)) && (
@@ -413,7 +438,7 @@ export function ReportFilters({
       </div>
       
       {/* Active filters display */}
-      {(filter.startDate || filter.categoryId || filter.warehouseId || filter.supplierId || filter.projectId || filter.status || filter.shipmentPo || filter.shipmentCarrier || filter.shipmentRisk || (filter.tags && filter.tags.length > 0)) && (
+      {(filter.startDate || filter.categoryId || filter.warehouseId || filter.supplierId || filter.projectId || filter.status || filter.documentNumber || filter.shipmentPo || filter.shipmentCarrier || filter.shipmentRisk || (filter.tags && filter.tags.length > 0)) && (
         <div className="mt-4 flex flex-wrap gap-2">
           {filter.startDate && filter.endDate && (
             <Badge variant="outline" className="flex items-center gap-1">
@@ -497,6 +522,20 @@ export function ReportFilters({
                 onClick={() => setFilter({ ...filter, status: undefined })}
               >
                 ×
+              </Button>
+            </Badge>
+          )}
+
+          {filter.documentNumber && (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <span>{procurementDocumentLabel.replace(" contains", "")}: {filter.documentNumber}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 p-0 ml-1"
+                onClick={() => setFilter({ ...filter, documentNumber: undefined })}
+              >
+                Ã—
               </Button>
             </Badge>
           )}

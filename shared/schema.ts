@@ -1798,6 +1798,8 @@ export interface ReportFilter {
   status?: string;
   tags?: string[];
   search?: string;
+  /** Procurement line reports: partial PO / requisition document number. */
+  documentNumber?: string;
   /** Shipment list export: partial PO number (matches logistics filters). */
   shipmentPo?: string;
   shipmentCarrier?: string;

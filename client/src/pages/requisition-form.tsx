@@ -100,7 +100,7 @@ export default function RequisitionFormPage() {
           />
 
           <div className="flex gap-2">
-            <Button onClick={f.handleSubmit} disabled={f.isPending || f.isLocked}>
+            <Button onClick={f.handleSubmit} disabled={f.isPending || f.isLocked} data-testid="requisition-save-button">
               {f.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isNew ? "Create" : "Update"}
             </Button>

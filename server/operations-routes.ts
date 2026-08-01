@@ -42,6 +42,7 @@ import {
   normalizeShipmentFilters,
   normalizeShipmentSourceType,
 } from "@shared/logistics-shipment-filters";
+import { validateExceptionStatusTransition } from "./modules/operations/exception-status-policy";
 
 type AuthGuards = {
   ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => void;
@@ -55,13 +56,6 @@ const INVENTORY_ROUTE_RESERVED_SEGMENTS = new Set([
   "bulk-import",
   "find-by-barcode",
 ]);
-
-const EXCEPTION_STATUS_TRANSITIONS: Record<string, string[]> = {
-  open: ["in_progress", "resolved", "closed"],
-  in_progress: ["resolved", "closed", "open"],
-  resolved: ["closed", "open"],
-  closed: ["open"],
-};
 
 function parseBooleanFlag(value: unknown): boolean {
   if (typeof value !== "string") {
@@ -1346,21 +1340,20 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
       }
       const toStatus = typeof req.body?.toStatus === "string" ? req.body.toStatus : "";
+      const note = typeof req.body?.note === "string" ? req.body.note : "";
       try {
         const current = await withTimeout(
           getOperationalExceptionDetail(req.params.id),
           OPERATIONS_QUERY_TIMEOUT_MS,
         );
-        const currentStatus = current.status.toLowerCase();
-        const normalizedTarget = toStatus.trim().toLowerCase();
-        const allowedTargets = EXCEPTION_STATUS_TRANSITIONS[currentStatus] ?? [];
-
-        if (!normalizedTarget) {
-          throw contractError(400, "INVALID_TARGET_STATUS", "toStatus is required");
-        }
+        const validated = validateExceptionStatusTransition({
+          currentStatus: current.status,
+          toStatus,
+          note,
+        });
         if (
-          normalizedTarget !== currentStatus &&
-          !allowedTargets.includes(normalizedTarget)
+          validated.toStatus !== validated.currentStatus &&
+          !validated.allowedTargets.includes(validated.toStatus)
         ) {
           throw contractError(
             400,
@@ -1368,9 +1361,9 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             "Invalid exception status transition",
             "Use one of the allowed targets.",
             {
-              currentStatus,
-              requestedStatus: normalizedTarget,
-              allowedTargets,
+              currentStatus: validated.currentStatus,
+              requestedStatus: validated.toStatus,
+              allowedTargets: validated.allowedTargets,
             },
           );
         }
@@ -1378,7 +1371,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const detail = await withTimeout(
           transitionOperationalExceptionStatus(
             req.params.id,
-            normalizedTarget,
+            validated.toStatus,
+            validated.note,
             resolveActor(req),
           ),
           OPERATIONS_QUERY_TIMEOUT_MS,
@@ -1563,18 +1557,15 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
-      const stubOverview = {
-        kpis: {
-          exceptionsBySeverity: {} as Record<string, number>,
-          lateShipments: 0,
-          posAwaitingAction: 0,
-          lowStockSkus: 0,
-        },
-        activity: [] as Array<{ id: string; eventType: string; title: string; details: string | null; relatedRefs: Record<string, unknown>; createdAt: string }>,
-      };
       if (isOperationsDegraded()) {
         res.setHeader("X-InvTrack-Fallback", "degraded");
-        return respondOk(res, stubOverview, 200, { fallback: "degraded" });
+        throw contractError(
+          503,
+          "CONTROL_TOWER_UNAVAILABLE",
+          "Control Tower overview is temporarily unavailable.",
+          "Check System Diagnostics and operational data sources before retrying.",
+          { fallback: "degraded" },
+        );
       }
       try {
         const overview = await withTimeout(
@@ -1585,7 +1576,13 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       } catch (err) {
         logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
-        respondOk(res, stubOverview, 200, { fallback: getFallbackValue(err) });
+        throw contractError(
+          503,
+          "CONTROL_TOWER_UNAVAILABLE",
+          "Control Tower overview is temporarily unavailable.",
+          "Check System Diagnostics and operational data sources before retrying.",
+          { fallback: getFallbackValue(err) },
+        );
       }
     }),
   );
@@ -1607,13 +1604,20 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           ? req.query.area.trim().toLowerCase()
           : "all";
 
-      const stub = buildEmptyControlTowerDashboard(orgId, trendDays, businessArea);
-
       if (isOperationsDegraded()) {
         res.setHeader("X-InvTrack-Fallback", "degraded");
-        return respondOk(res, { ...stub, meta: { ...stub.meta, queryMs: Date.now() - start } }, 200, {
-          fallback: "degraded",
-        });
+        throw contractError(
+          503,
+          "CONTROL_TOWER_UNAVAILABLE",
+          "Control Tower dashboard is temporarily unavailable.",
+          "Check System Diagnostics and operational data sources before retrying.",
+          {
+            fallback: "degraded",
+            organizationId: orgId,
+            trendDays,
+            businessArea,
+          },
+        );
       }
 
       try {
@@ -1625,9 +1629,18 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       } catch (err) {
         logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
-        respondOk(res, { ...stub, meta: { ...stub.meta, queryMs: Date.now() - start } }, 200, {
-          fallback: getFallbackValue(err),
-        });
+        throw contractError(
+          503,
+          "CONTROL_TOWER_UNAVAILABLE",
+          "Control Tower dashboard is temporarily unavailable.",
+          "Check System Diagnostics and operational data sources before retrying.",
+          {
+            fallback: getFallbackValue(err),
+            organizationId: orgId,
+            trendDays,
+            businessArea,
+          },
+        );
       }
     }),
   );

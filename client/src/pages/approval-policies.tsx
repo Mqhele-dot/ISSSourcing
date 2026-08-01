@@ -90,6 +90,7 @@ export default function ApprovalPoliciesPage() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingVersion, setEditingVersion] = useState(1);
+  const [stalePolicy, setStalePolicy] = useState(false);
   const [changeReason, setChangeReason] = useState("");
   const [conflictingPolicies, setConflictingPolicies] = useState<Array<{ id: number; name: string; amountMin: number; amountMax: number | null; approvalLevel: number }>>([]);
   const [previewEntity, setPreviewEntity] = useState<(typeof ENTITY_TYPES)[number]["value"]>("requisition");
@@ -246,11 +247,15 @@ export default function ApprovalPoliciesPage() {
       setEditingId(null);
       setChangeReason("");
       setConflictingPolicies([]);
+      setStalePolicy(false);
     },
     onError: (e) => {
       const apiError = e as Error & { code?: string; details?: { conflicts?: Array<{ id: number; name: string; amountMin: number; amountMax: number | null; approvalLevel: number }> } };
       if (apiError.code === "APPROVAL_POLICY_OVERLAP") {
         setConflictingPolicies(apiError.details?.conflicts ?? []);
+      }
+      if (apiError.code === "APPROVAL_POLICY_STALE") {
+        setStalePolicy(true);
       }
       toast({
         title: "Save failed",
@@ -296,6 +301,7 @@ export default function ApprovalPoliciesPage() {
     setEditingVersion(Number(p.version ?? 1));
     setChangeReason("");
     setConflictingPolicies([]);
+    setStalePolicy(false);
     setForm({
       name: p.name ?? "",
       entityType: (p.entityType as (typeof ENTITY_TYPES)[number]["value"]) ?? "requisition",
@@ -306,6 +312,16 @@ export default function ApprovalPoliciesPage() {
       approverUserId: p.approverUserId != null ? String(p.approverUserId) : "none",
       isActive: Boolean(p.isActive ?? true),
     });
+  };
+
+  const reloadEditedPolicy = async () => {
+    if (editingId == null) return;
+    const result = await refetchPolicies();
+    const latest = result.data?.items.find((policy) => policy.id === editingId);
+    if (latest) {
+      startEdit(latest);
+      toast({ title: "Latest policy loaded", description: `Now editing version ${Number(latest.version ?? 1)}.` });
+    }
   };
 
   if (!isLgUp) {
@@ -337,6 +353,7 @@ export default function ApprovalPoliciesPage() {
             setForm(emptyForm);
             setChangeReason("");
             setConflictingPolicies([]);
+            setStalePolicy(false);
           }
         }}
       >
@@ -357,11 +374,28 @@ export default function ApprovalPoliciesPage() {
             </div>
             <div className="flex items-center gap-2"><Switch id="edit-ap-active" checked={form.isActive} onCheckedChange={(checked) => setForm((current) => ({ ...current, isActive: checked }))} disabled={!canManagePolicies} /><Label htmlFor="edit-ap-active">Active</Label></div>
             <div className="space-y-2"><Label htmlFor="edit-ap-reason">Change reason</Label><Textarea id="edit-ap-reason" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} placeholder="Why is this approval control changing?" disabled={!canManagePolicies} data-testid="approval-policy-change-reason" /></div>
+            {stalePolicy ? (
+              <Alert variant="destructive" data-testid="approval-policy-stale-guidance">
+                <AlertTitle>This policy changed while you were editing</AlertTitle>
+                <AlertDescription className="space-y-3">
+                  <p>Reload the latest version before applying another change. Your unsaved values will be replaced.</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void reloadEditedPolicy()}
+                    data-testid="approval-policy-reload-latest"
+                  >
+                    Reload latest policy
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {conflictingPolicies.length > 0 ? <Alert className="border-amber-300 bg-amber-50"><AlertTitle>Conflicting active policies</AlertTitle><AlertDescription><ul className="mt-2 space-y-2">{conflictingPolicies.map((policy) => <li key={policy.id} className="flex items-center justify-between gap-3"><span>{policy.name} (L{policy.approvalLevel}, {policy.amountMin.toLocaleString()} to {policy.amountMax == null ? "no cap" : policy.amountMax.toLocaleString()})</span><Button type="button" size="sm" variant="outline" onClick={() => { setSearch(policy.name); setEditingId(null); }}>Find policy</Button></li>)}</ul><p className="mt-3">You can still deactivate this policy or correct its name/approver without changing the overlapping band.</p></AlertDescription></Alert> : null}
           </div>
           <SheetFooter>
             <Button type="button" variant="outline" onClick={() => setEditingId(null)}>Cancel</Button>
-            <Button type="button" onClick={() => saveMutation.mutate()} disabled={!canManagePolicies || saveMutation.isPending}>{saveMutation.isPending ? "Saving..." : "Save policy"}</Button>
+            <Button type="button" onClick={() => saveMutation.mutate()} disabled={!canManagePolicies || saveMutation.isPending || stalePolicy} data-testid="approval-policy-edit-save">{saveMutation.isPending ? "Saving..." : "Save policy"}</Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
@@ -666,7 +700,7 @@ export default function ApprovalPoliciesPage() {
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
-              <Button type="button" variant={overlapOnly ? "default" : "outline"} onClick={() => setOverlapOnly((value) => !value)}>
+              <Button type="button" variant={overlapOnly ? "default" : "outline"} onClick={() => setOverlapOnly((value) => !value)} data-testid="approval-policy-overlap-filter">
                 Overlaps only
               </Button>
             </div>
@@ -674,7 +708,7 @@ export default function ApprovalPoliciesPage() {
         </CardHeader>
         <CardContent>
           {overlappingPolicyIds.size > 0 ? (
-            <Alert variant="default" className="mb-4 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+            <Alert variant="default" className="mb-4 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30" data-testid="approval-policy-overlap-warning">
               <AlertTitle>Overlapping amount bands</AlertTitle>
               <AlertDescription>
                 Multiple active policies share overlapping amount ranges on the same entity type (see highlighted rows).
@@ -716,6 +750,7 @@ export default function ApprovalPoliciesPage() {
                   <TableRow
                     key={p.id}
                     className={overlappingPolicyIds.has(p.id) ? "bg-amber-50/80 dark:bg-amber-950/20" : undefined}
+                    data-testid={`approval-policy-row-${p.id}`}
                   >
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="text-xs">{p.entityType}</TableCell>
@@ -731,7 +766,7 @@ export default function ApprovalPoliciesPage() {
                     </TableCell>
                     <TableCell>{p.isActive ? "Yes" : "No"}</TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Button size="sm" variant="outline" onClick={() => startEdit(p)} disabled={!canManagePolicies}>
+                      <Button size="sm" variant="outline" onClick={() => startEdit(p)} disabled={!canManagePolicies} data-testid={`approval-policy-edit-${p.id}`}>
                         Edit
                       </Button>
                       <Button
@@ -739,6 +774,7 @@ export default function ApprovalPoliciesPage() {
                         variant="destructive"
                         onClick={() => deleteMutation.mutate(p.id)}
                         disabled={!canManagePolicies || deleteMutation.isPending}
+                        data-testid={`approval-policy-delete-${p.id}`}
                       >
                         Delete
                       </Button>
@@ -753,10 +789,10 @@ export default function ApprovalPoliciesPage() {
                 Page {page} of {totalPages}
               </span>
               <div className="flex gap-2">
-                <Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                <Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} data-testid="approval-policy-previous-page">
                   Previous
                 </Button>
-                <Button type="button" size="sm" variant="outline" disabled={!policyPage?.hasNext} onClick={() => setPage((value) => value + 1)}>
+                <Button type="button" size="sm" variant="outline" disabled={!policyPage?.hasNext} onClick={() => setPage((value) => value + 1)} data-testid="approval-policy-next-page">
                   Next
                 </Button>
               </div>

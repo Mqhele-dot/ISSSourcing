@@ -58,7 +58,7 @@ export class ElectronBridge {
   }
 
   async getDatabaseInfo<T = any>(): Promise<T> {
-    return this.invoke<T>('db:get-info');
+    return this.invoke<T>('get-database-info');
   }
 
   async createDatabaseBackup<T = any>(): Promise<T> {
@@ -66,11 +66,11 @@ export class ElectronBridge {
   }
 
   async syncDatabase<T = { success: boolean } | void>(): Promise<T> {
-    return this.invoke<T>('db:sync');
+    return this.invoke<T>('sync-database');
   }
 
   async checkNetworkStatus(): Promise<boolean> {
-    return this.invoke<boolean>('network:status');
+    return this.invoke<boolean>('check-network-status');
   }
 }
 

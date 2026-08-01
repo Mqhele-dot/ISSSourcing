@@ -854,6 +854,65 @@ export async function listInvoiceItems(invoiceId: number) {
 }
 
 export async function addInvoiceItemRecord(item: InsertInvoiceItem) {
+  const invoice = await storage.getInvoice(Number(item.invoiceId));
+  if (!invoice) {
+    throw new ApStructuredError("INVOICE_NOT_FOUND", "Invoice not found.", 404);
+  }
+
+  if (item.purchaseOrderItemId != null) {
+    const [linkedLine] = await db
+      .select({
+        lineId: purchaseOrderItems.id,
+        orderId: purchaseOrderItems.orderId,
+      })
+      .from(purchaseOrderItems)
+      .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderItems.orderId))
+      .where(
+        and(
+          eq(purchaseOrderItems.id, Number(item.purchaseOrderItemId)),
+          eq(purchaseOrders.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .limit(1);
+
+    if (!linkedLine) {
+      throw new ApStructuredError(
+        "AP_PURCHASE_ORDER_LINE_NOT_FOUND",
+        "The selected purchase-order line is not available in the active organization.",
+        404,
+        { hint: "Select a purchase-order line from this invoice's organization." },
+      );
+    }
+    if (invoice.purchaseOrderId == null || Number(invoice.purchaseOrderId) !== Number(linkedLine.orderId)) {
+      throw new ApStructuredError(
+        "AP_INVOICE_PO_LINE_MISMATCH",
+        "The selected purchase-order line does not belong to the invoice purchase order.",
+        409,
+        { hint: "Use a line from the purchase order linked to this invoice." },
+      );
+    }
+  }
+
+  if (item.itemId != null) {
+    const [linkedItem] = await db
+      .select({ id: inventoryItems.id })
+      .from(inventoryItems)
+      .where(
+        and(
+          eq(inventoryItems.id, Number(item.itemId)),
+          eq(inventoryItems.organizationId, getActiveOrganizationId()),
+        ),
+      )
+      .limit(1);
+    if (!linkedItem) {
+      throw new ApStructuredError(
+        "AP_INVENTORY_ITEM_NOT_FOUND",
+        "The selected item is not available in the active organization.",
+        404,
+        { hint: "Select an item from the active organization." },
+      );
+    }
+  }
   return storage.addInvoiceItem(item);
 }
 

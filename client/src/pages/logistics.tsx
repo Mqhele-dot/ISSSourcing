@@ -103,11 +103,11 @@ function LogisticsV1ExclusionNotice() {
   return (
     <Alert className="border-amber-200 bg-amber-50 text-amber-950">
       <AlertTriangle className="h-4 w-4" aria-hidden />
-      <AlertTitle>Non-production v1 route</AlertTitle>
+      <AlertTitle>Operational review route</AlertTitle>
       <AlertDescription>
-        Logistics remains excluded from production approval until route-specific browser proof, permission proof, and
-        audit evidence are complete. Use this workspace for connected review only, not as an approved production
-        dispatch workflow.
+        This workspace uses live shipment, carrier, and related purchase-order data for inbound monitoring and detail
+        review. Outbound issue-document dispatch remains explicitly excluded, and production change approval still
+        depends on attached disposable-database workflow evidence.
       </AlertDescription>
     </Alert>
   );

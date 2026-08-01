@@ -140,7 +140,12 @@ export type PurchaseOrderListItem = {
 
 export type PurchaseOrderDetailLine = {
   id: number;
-  itemId: number;
+  itemId: number | null;
+  lineType: "CATALOG" | "NON_STOCK" | "SERVICE";
+  description: string | null;
+  manualEntryReason: string | null;
+  receiptRequired: boolean;
+  lineNumber: number | null;
   sku: string;
   itemName: string;
   /** From inventory master (supplier part #) */

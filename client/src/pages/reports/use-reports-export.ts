@@ -3,6 +3,7 @@ import type { ReportsExportDeps } from "./reports-types";
 import { getExportReportType, getReportTitle } from "./reports-types";
 import { requestJson } from "@/lib/queryClient";
 import { downloadExportJob } from "@/lib/export-job-download";
+import { normalizeProcurementDocumentNumberFilter } from "./procurement-line-report-filters";
 
 type ExportJob = {
   id: number;
@@ -72,6 +73,12 @@ export function useReportsExport({
       }
       if (filter.status) {
         filters.status = filter.status;
+      }
+      if (activeTab === "purchase-orders" || activeTab === "purchase-requisitions") {
+        const documentNumber = normalizeProcurementDocumentNumberFilter(filter.documentNumber ?? filter.search);
+        if (documentNumber) {
+          filters.documentNumber = documentNumber;
+        }
       }
       if (activeTab === "shipments") {
         if (filter.shipmentPo?.trim()) {

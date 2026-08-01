@@ -105,7 +105,15 @@ export function RequisitionLinesEditor({
             <div className="space-y-2">
               <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1" aria-label={`Line ${idx + 1} type`}>
                 {(["CATALOG", "NON_STOCK", "SERVICE"] as const).map((type) => (
-                  <Button key={type} type="button" size="sm" variant={item.lineType === type ? "default" : "ghost"} onClick={() => onUpdateRow(idx, "lineType", type)} disabled={readOnly}>
+                  <Button
+                    key={type}
+                    type="button"
+                    size="sm"
+                    variant={item.lineType === type ? "default" : "ghost"}
+                    onClick={() => onUpdateRow(idx, "lineType", type)}
+                    disabled={readOnly}
+                    data-testid={`requisition-line-type-${lineKey}-${type.toLowerCase()}`}
+                  >
                     {type === "CATALOG" ? "Catalog" : type === "NON_STOCK" ? "Non-stock" : "Service"}
                   </Button>
                 ))}
@@ -134,7 +142,13 @@ export function RequisitionLinesEditor({
                 <>
                   <Input value={item.manualEntryReason ?? ""} onChange={(event) => onUpdateRow(idx, "manualEntryReason", event.target.value)} placeholder="Business reason for manual entry *" disabled={readOnly} data-testid={`requisition-line-reason-${lineKey}`} />
                   <div className="flex items-center gap-2">
-                    <Switch id={`req-evidence-${lineKey}`} checked={item.receiptRequired !== false} onCheckedChange={(checked) => onUpdateRow(idx, "receiptRequired", checked)} disabled={readOnly} />
+                    <Switch
+                      id={`req-evidence-${lineKey}`}
+                      checked={item.receiptRequired !== false}
+                      onCheckedChange={(checked) => onUpdateRow(idx, "receiptRequired", checked)}
+                      disabled={readOnly}
+                      data-testid={`requisition-line-evidence-${lineKey}`}
+                    />
                     <Label htmlFor={`req-evidence-${lineKey}`} className="text-xs font-normal">{item.lineType === "SERVICE" ? "Service confirmation required" : "Goods receipt required"}</Label>
                   </div>
                 </>

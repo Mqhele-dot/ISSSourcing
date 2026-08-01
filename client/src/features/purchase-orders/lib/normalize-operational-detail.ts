@@ -36,9 +36,20 @@ function normalizeDetailLine(ln: Record<string, unknown>): PurchaseOrderDetailLi
 
   return {
     id: pickNum(ln.id ?? ln.line_id, 0),
-    itemId: pickNum(ln.itemId ?? ln.item_id, 0),
+    itemId: pickNumOrNull(ln.itemId ?? ln.item_id),
+    lineType: (() => {
+      const lineType = pickStr(ln.lineType ?? ln.line_type, "CATALOG").toUpperCase();
+      return lineType === "NON_STOCK" || lineType === "SERVICE" ? lineType : "CATALOG";
+    })(),
+    description: pickNullableStr(ln.description),
+    manualEntryReason: pickNullableStr(ln.manualEntryReason ?? ln.manual_entry_reason),
+    receiptRequired: (ln.receiptRequired ?? ln.receipt_required) !== false,
+    lineNumber: pickNumOrNull(ln.lineNumber ?? ln.line_number),
     sku: pickStr(ln.sku),
-    itemName: pickStr(ln.itemName ?? ln.item_name ?? ln.name),
+    itemName: pickStr(
+      ln.itemName ?? ln.item_name ?? ln.name ?? ln.description,
+      "Unresolved purchase order line",
+    ),
     supplierPartNumber: pickNullableStr(ln.supplierPartNumber ?? ln.supplier_part_number),
     commodityCode: pickNullableStr(ln.commodityCode ?? ln.commodity_code),
     commodityDescription: pickNullableStr(ln.commodityDescription ?? ln.commodity_description),

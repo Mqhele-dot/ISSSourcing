@@ -788,6 +788,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       }
       return sendOk(res, await addInvoiceItemRecord({ ...line, invoiceId }), 201);
     } catch (error) {
+      const structured = sendApStructuredError(res, error);
+      if (structured) return structured;
       if (trySendDbConstraintError(res, error)) return;
       return sendError(res, 500, "CREATE_INVOICE_ITEM_FAILED", error instanceof Error ? error.message : "Failed to create invoice item");
     }

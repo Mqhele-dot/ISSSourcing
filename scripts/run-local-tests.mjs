@@ -12,6 +12,19 @@ const suites = {
     ["run", "test:commercial-procurement-foundation"],
     ["run", "test:sourcing-workflow"],
   ],
+  expandedWave7: [
+    ["run", "test:database-settings-hardening"],
+    ["run", "test:exception-assignment-client"],
+    ["run", "test:exception-status-policy"],
+    ["run", "test:procurement-line-report-filters"],
+    ["run", "test:control-tower-degraded-contract"],
+    ["run", "test:manual-procurement-lines-runtime"],
+    ["run", "test:procurement-reporting-runtime"],
+    ["run", "test:approval-policy-runtime-hardening"],
+    ["run", "test:diagnostics-runtime-workspaces"],
+    ["run", "test:expanded-cross-tenant-proof"],
+    ["run", "test:expanded-permission-matrix"],
+  ],
   quick: [
     ["run", "check"],
     ["run", "lint"],
@@ -61,6 +74,7 @@ function hasFlag(name) {
 }
 
 function suiteName() {
+  if (hasFlag("--expanded-wave7")) return "expandedWave7";
   if (hasFlag("--sourcing")) return "sourcing";
   if (hasFlag("--production-smoke")) return "productionSmoke";
   if (hasFlag("--delta")) return "delta";
@@ -159,7 +173,7 @@ try {
   console.log(`Base URL: ${BASE_URL}`);
   console.log(`Suite: ${selectedSuite}`);
 
-  if (["sourcing", "delta", "productionSmoke"].includes(selectedSuite)) {
+  if (["sourcing", "expandedWave7", "delta", "productionSmoke"].includes(selectedSuite)) {
     assertDisposableTestDatabase(runtimeDatabaseUrl);
   }
 

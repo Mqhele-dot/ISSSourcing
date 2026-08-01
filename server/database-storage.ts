@@ -3465,8 +3465,10 @@ export class DatabaseStorage implements IStorage {
     }
     const payload = {
       invoiceId: Number(item.invoiceId),
-      itemId: Number(item.itemId),
-      description: item.description ?? `Item #${item.itemId}`,
+      itemId: item.itemId == null ? null : Number(item.itemId),
+      purchaseOrderItemId: item.purchaseOrderItemId == null ? null : Number(item.purchaseOrderItemId),
+      lineType: item.lineType ?? "CATALOG",
+      description: item.description ?? (item.itemId == null ? "Linked purchase-order line" : `Item #${item.itemId}`),
       quantity: Number(item.quantity ?? 1),
       unitPrice: Number(item.unitPrice ?? 0),
       discount: Number(item.discount ?? 0),

@@ -16,4 +16,12 @@ test.describe("Settings", () => {
     await expect(page).toHaveURL(/\/admin\/settings\/billing$/);
     await expect(page.getByText(/billing/i).first()).toBeVisible();
   });
+
+  test("database settings fail closed in the browser build", async ({ page }) => {
+    await gotoAuthed(page, "/admin/settings/database");
+    await expect(page).toHaveURL(/\/admin\/settings\/database$/);
+    await expect(page.getByTestId("database-settings-web-only")).toBeVisible();
+    await expect(page.getByTestId("database-settings-unsupported-config")).toContainText(/desktop shell/i);
+    await expect(page.getByText(/no longer pretends to save database credentials/i)).toBeVisible();
+  });
 });

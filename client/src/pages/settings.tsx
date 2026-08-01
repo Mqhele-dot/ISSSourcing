@@ -32,6 +32,8 @@ import { ForecastingSettingsForm } from "@/components/settings/forecasting-setti
 import { TaxSettingsForm } from "@/components/settings/tax-settings-form";
 import { BillingSettingsForm } from "@/components/settings/billing-settings-form";
 import { CompanyConfigurationCenter } from "@/components/settings/company-configuration-center";
+import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import {
   Settings,
   UserCircle,
@@ -49,6 +51,19 @@ import {
 } from "lucide-react";
 import { APP_ROUTES, SETTINGS_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
+
+const settingsSections = [
+  { value: "general", label: "General", icon: UserCircle, description: "Organization profile, locale, and base defaults." },
+  { value: "inventory", label: "Inventory", icon: Package, description: "Stock controls, locations, and replenishment defaults." },
+  { value: "realtime", label: "Real-Time", icon: Activity, description: "Live refresh behaviour and event-driven updates." },
+  { value: "database", label: "Database", icon: Database, description: "Connectivity and sync behaviour for local installs." },
+  { value: "forecasting", label: "Forecasting", icon: BarChart3, description: "Demand planning and prediction defaults." },
+  { value: "tax", label: "Tax", icon: Receipt, description: "VAT, jurisdiction, and reporting defaults." },
+  { value: "billing", label: "Billing", icon: CreditCard, description: "Subscription, payment, and invoice behaviour." },
+  { value: "configuration", label: "Configuration", icon: SlidersHorizontal, description: "Company-level control-centre settings." },
+  { value: "warehouses", label: "Warehouses", icon: Building, description: "Site defaults, receiving policies, and storage setup." },
+  { value: "security", label: "Security", icon: Shield, description: "Authentication, 2FA, and operational guardrails." },
+] as const;
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -98,32 +113,29 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="container py-10 max-w-6xl" data-testid="admin-settings-page">
-      <div className="mb-8">
-        <div className="flex items-center mb-4">
-          <Settings className="h-6 w-6 mr-2 text-primary" />
-          <h1 className="text-3xl font-bold" data-testid="page-title">
-            Settings
-          </h1>
-        </div>
-        <p className="text-muted-foreground">
-          Configure application settings to match your business needs
-        </p>
-      </div>
+    <PageShell className="py-8" data-testid="admin-settings-page">
+      <PageHeader
+        title="Settings"
+        titleTestId="page-title"
+        icon={Settings}
+        breadcrumb={<span>Admin / Settings</span>}
+        subtitle="Control centre for organization defaults, security posture, and operational configuration."
+        description="Separate tenant-governed controls from local reviewer preferences so administrators can make safe, auditable changes."
+      />
 
       <ModuleTrainingPanel moduleId="admin-settings" />
 
       {isDevMode && (
         <Card className="mb-6 border-dashed border-amber-400/60">
           <CardHeader>
-            <CardTitle className="text-base">Development Utilities</CardTitle>
+            <CardTitle className="text-base">Development-only reset utility</CardTitle>
             <CardDescription>
-              Reset demo data to a known-good baseline for reviews and demos.
+              Local seed reset for development and test environments only.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
-              This operation truncates current data and reseeds deterministic demo records.
+              This operation truncates current data and reseeds deterministic records. It is not a production control.
             </p>
             <Can roles={["admin"]} reason="Requires Admin">
               <Button
@@ -139,105 +151,138 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-base">Appearance studio</CardTitle>
-          <CardDescription>
-            Dynamic accent and density controls for reviewer demos.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="accent-hue">Hue ({Math.round(accentConfig.hue)})</Label>
-              <Input
-                id="accent-hue"
-                type="range"
-                min={0}
-                max={360}
-                value={accentConfig.hue}
-                onChange={(event) => setAccentConfig({ hue: Number(event.target.value) })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="accent-sat">Vividness ({Math.round(accentConfig.saturation)}%)</Label>
-              <Input
-                id="accent-sat"
-                type="range"
-                min={20}
-                max={100}
-                value={accentConfig.saturation}
-                onChange={(event) => setAccentConfig({ saturation: Number(event.target.value) })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="accent-light">Contrast ({Math.round(accentConfig.lightness)}%)</Label>
-              <Input
-                id="accent-light"
-                type="range"
-                min={25}
-                max={75}
-                value={accentConfig.lightness}
-                onChange={(event) => setAccentConfig({ lightness: Number(event.target.value) })}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Use brand presets</Label>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { key: "blue", label: "Ocean" },
-                { key: "teal", label: "Teal" },
-                { key: "purple", label: "Violet" },
-                { key: "orange", label: "Sunset" },
-                { key: "rose", label: "Rose" },
-              ].map((preset) => (
-                <Button
-                  key={preset.key}
+      <div className="mb-6 grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Organization controls</CardTitle>
+            <CardDescription>
+              Changes in the settings sections below persist to the active organization and affect live workflows.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>Use the production control panel for shared defaults, then open a settings area for deeper configuration.</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {settingsSections.slice(0, 6).map(({ value, label, description, icon: Icon }) => (
+                <button
+                  key={value}
                   type="button"
-                  variant={accent === preset.key ? "default" : "outline"}
-                  onClick={() => setPreset(preset.key as "blue" | "teal" | "purple" | "orange" | "rose")}
+                  className="rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
+                  onClick={() => setLocation(APP_ROUTES.admin.settingsSection(value))}
                 >
-                  {preset.label}
-                </Button>
+                  <div className="mb-2 flex items-center gap-2 text-foreground">
+                    <Icon className="h-4 w-4 text-primary" />
+                    <span className="font-medium">{label}</span>
+                  </div>
+                  <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+                </button>
               ))}
             </div>
-          </div>
+          </CardContent>
+        </Card>
 
-          <div className="space-y-2">
-            <Label>Density mode</Label>
-            <div className="flex flex-wrap gap-2">
-              {(["compact", "comfortable", "spacious"] as const).map((mode) => (
-                <Button
-                  key={mode}
-                  type="button"
-                  variant={density === mode ? "default" : "outline"}
-                  onClick={() => setDensity(mode)}
-                >
-                  {mode}
-                </Button>
-              ))}
+        <Card data-testid="settings-local-preferences">
+          <CardHeader>
+            <CardTitle className="text-base">Workspace preferences</CardTitle>
+            <CardDescription>
+              Saved in this browser only. These controls change your view of the app, not organization policy.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="accent-hue">Hue ({Math.round(accentConfig.hue)})</Label>
+                <Input
+                  id="accent-hue"
+                  type="range"
+                  min={0}
+                  max={360}
+                  value={accentConfig.hue}
+                  onChange={(event) => setAccentConfig({ hue: Number(event.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="accent-sat">Vividness ({Math.round(accentConfig.saturation)}%)</Label>
+                <Input
+                  id="accent-sat"
+                  type="range"
+                  min={20}
+                  max={100}
+                  value={accentConfig.saturation}
+                  onChange={(event) => setAccentConfig({ saturation: Number(event.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="accent-light">Contrast ({Math.round(accentConfig.lightness)}%)</Label>
+                <Input
+                  id="accent-light"
+                  type="range"
+                  min={25}
+                  max={75}
+                  value={accentConfig.lightness}
+                  onChange={(event) => setAccentConfig({ lightness: Number(event.target.value) })}
+                />
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-base">What can I do?</CardTitle>
-          <CardDescription>
-            Signed in as <span className="font-medium uppercase">{user?.role || "viewer"}</span>.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            {roleCapabilities.map((capability) => (
-              <li key={capability}>{capability}</li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+            <div className="space-y-2">
+              <Label>Use workspace presets</Label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: "blue", label: "Ocean" },
+                  { key: "teal", label: "Teal" },
+                  { key: "purple", label: "Violet" },
+                  { key: "orange", label: "Sunset" },
+                  { key: "rose", label: "Rose" },
+                ].map((preset) => (
+                  <Button
+                    key={preset.key}
+                    type="button"
+                    variant={accent === preset.key ? "default" : "outline"}
+                    onClick={() => setPreset(preset.key as "blue" | "teal" | "purple" | "orange" | "rose")}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Density mode</Label>
+              <div className="flex flex-wrap gap-2">
+                {(["compact", "comfortable", "spacious"] as const).map((mode) => (
+                  <Button
+                    key={mode}
+                    type="button"
+                    variant={density === mode ? "default" : "outline"}
+                    onClick={() => setDensity(mode)}
+                  >
+                    {mode}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="settings-role-guidance">
+          <CardHeader>
+            <CardTitle className="text-base">Role guidance</CardTitle>
+            <CardDescription>
+              Signed in as <span className="font-medium uppercase">{user?.role || "viewer"}</span>.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Common responsibilities for this role. Server-side permissions still apply to every write action.
+            </p>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+              {roleCapabilities.map((capability) => (
+                <li key={capability}>{capability}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      </div>
 
       <ProductionControlPlanePanel isAdmin={roleKey === "admin"} />
 
@@ -247,46 +292,12 @@ export default function SettingsPage() {
         className="space-y-6"
       >
         <TabsList className="grid h-auto grid-cols-2 gap-2 md:grid-cols-5 lg:grid-cols-10">
-          <TabsTrigger value="general" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <UserCircle className="h-4 w-4" />
-            <span>General</span>
-          </TabsTrigger>
-          <TabsTrigger value="inventory" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <Package className="h-4 w-4" />
-            <span>Inventory</span>
-          </TabsTrigger>
-          <TabsTrigger value="realtime" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <Activity className="h-4 w-4" />
-            <span>Real-Time</span>
-          </TabsTrigger>
-          <TabsTrigger value="database" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <Database className="h-4 w-4" />
-            <span>Database</span>
-          </TabsTrigger>
-          <TabsTrigger value="forecasting" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <BarChart3 className="h-4 w-4" />
-            <span>Forecasting</span>
-          </TabsTrigger>
-          <TabsTrigger value="tax" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <Receipt className="h-4 w-4" />
-            <span>Tax</span>
-          </TabsTrigger>
-          <TabsTrigger value="billing" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <CreditCard className="h-4 w-4" />
-            <span>Billing</span>
-          </TabsTrigger>
-          <TabsTrigger value="configuration" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <SlidersHorizontal className="h-4 w-4" />
-            <span>Configuration</span>
-          </TabsTrigger>
-          <TabsTrigger value="warehouses" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <Building className="h-4 w-4" />
-            <span>Warehouses</span>
-          </TabsTrigger>
-          <TabsTrigger value="security" className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
-            <Shield className="h-4 w-4" />
-            <span>Security</span>
-          </TabsTrigger>
+          {settingsSections.map(({ value, label, icon: Icon }) => (
+            <TabsTrigger key={value} value={value} className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
+              <Icon className="h-4 w-4" />
+              <span>{label}</span>
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
@@ -348,7 +359,7 @@ export default function SettingsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }
 

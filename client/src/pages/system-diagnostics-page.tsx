@@ -8,6 +8,7 @@ import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
 import { getReadinessClientSnapshot } from "@/lib/readiness-client-snapshot";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RefreshCw, Copy, Download, ExternalLink, PlayCircle, ShieldCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
@@ -97,6 +98,13 @@ function DiagnosticsWorkspacePanel({
   onRetry: () => void;
 }) {
   const workspace = DIAGNOSTIC_WORKSPACES[category];
+  const [severityFilter, setSeverityFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const visibleFindings = findings.filter(
+    (finding) =>
+      (severityFilter === "all" || finding.severity === severityFilter) &&
+      (statusFilter === "all" || finding.status === statusFilter),
+  );
   return (
     <Card data-testid={`diagnostics-workspace-${category}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
@@ -104,25 +112,56 @@ function DiagnosticsWorkspacePanel({
           <CardTitle className="text-base">{workspace.label}</CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">{workspace.description}</p>
         </div>
-        <Button type="button" size="sm" variant="outline" disabled={probing} onClick={onRunProbes}>
+        <Button type="button" size="sm" variant="outline" disabled={probing} onClick={onRunProbes} data-testid={`diagnostics-run-probes-${category}`}>
           <RefreshCw className={`mr-2 h-4 w-4 ${probing ? "animate-spin" : ""}`} />
           Run safe probes
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
-        {loading ? <p className="text-sm text-muted-foreground">Loading observed evidence...</p> : null}
+        <div className="flex flex-wrap gap-2" data-testid={`diagnostics-filters-${category}`}>
+          <Select value={severityFilter} onValueChange={setSeverityFilter}>
+            <SelectTrigger className="w-40" data-testid={`diagnostics-severity-filter-${category}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All severities</SelectItem>
+              <SelectItem value="critical">Critical</SelectItem>
+              <SelectItem value="error">Error</SelectItem>
+              <SelectItem value="warning">Warning</SelectItem>
+              <SelectItem value="info">Information</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-44" data-testid={`diagnostics-status-filter-${category}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All evidence states</SelectItem>
+              <SelectItem value="working">Working</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="degraded">Degraded</SelectItem>
+              <SelectItem value="disabled_by_configuration">Disabled by configuration</SelectItem>
+              <SelectItem value="not_exercised">Not exercised</SelectItem>
+              <SelectItem value="not_applicable">Not applicable</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="self-center text-xs text-muted-foreground" data-testid={`diagnostics-visible-count-${category}`}>
+            {visibleFindings.length} of {findings.length} findings
+          </span>
+        </div>
+        {loading ? <p className="text-sm text-muted-foreground" data-testid={`diagnostics-loading-${category}`}>Loading observed evidence...</p> : null}
         {error ? (
-          <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+          <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm" data-testid={`diagnostics-error-${category}`}>
             <span>{error}</span>
             <Button type="button" size="sm" variant="outline" onClick={onRetry}>Retry</Button>
           </div>
         ) : null}
-        {!loading && !error && findings.length === 0 && localEvents.length === 0 ? (
-          <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+        {!loading && !error && visibleFindings.length === 0 && localEvents.length === 0 ? (
+          <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground" data-testid={`diagnostics-empty-${category}`}>
             No evidence has been recorded for this workspace. This means not exercised, not automatically healthy.
           </div>
         ) : null}
-        {findings.map((row) => (
+        {visibleFindings.map((row) => (
           <div key={row.id} className="rounded-md border p-3" data-testid={`diagnostic-finding-${row.code}`}>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={row.severity === "critical" || row.severity === "error" ? "destructive" : "outline"}>{row.severity}</Badge>
@@ -164,7 +203,7 @@ const DIAGNOSTICS_GUIDANCE: Record<ScanCategory, DiagnosticsGuidance> = {
     title: "Database repair guidance",
     description: "Checks the app settings record and core inventory indexes used by the live inventory screens.",
     automatic: ["Initialize missing app settings.", "Create safe inventory indexes when PostgreSQL allows it."],
-    manual: ["If this still reports issues, confirm DATABASE_URL and run the migration/check scripts in Codespaces."],
+    manual: ["If this still reports issues, confirm the database connection settings and run the migration/check scripts in Codespaces."],
     links: [
       { label: "Open setup", href: "/admin/settings" },
       { label: "Open diagnostics", href: "/admin/system-diagnostics" },
@@ -492,7 +531,7 @@ export default function SystemDiagnosticsPage() {
       <Tabs value={activeWorkspace} onValueChange={(value) => setActiveWorkspace(value as DiagnosticCategory)} className="space-y-4" data-testid="diagnostics-tabs">
         <TabsList className="grid h-auto grid-cols-2 gap-1 md:grid-cols-5">
           {diagnosticCategories.map((category) => (
-            <TabsTrigger key={category} value={category}>
+            <TabsTrigger key={category} value={category} data-testid={`diagnostics-tab-${category}`}>
               {DIAGNOSTIC_WORKSPACES[category].label}
               {summaryQuery.data?.byCategory[category] ? <span className="ml-1 text-xs">({summaryQuery.data.byCategory[category]})</span> : null}
             </TabsTrigger>
@@ -734,8 +773,8 @@ export default function SystemDiagnosticsPage() {
           <ul className="list-disc space-y-2 pl-5">
             <li>
               <span className="text-foreground font-medium">Setup status fails but pages load:</span> confirm the API
-              process is running, <code className="rounded bg-muted px-1 text-xs">DATABASE_URL</code> points at a live
-              Postgres instance, and migrations have been applied (
+              process is running, the configured database connection points at a live Postgres instance, and migrations
+              have been applied (
               <span className="text-foreground">Drizzle count</span> in the summary below should be non-zero after a
               fresh install).
             </li>

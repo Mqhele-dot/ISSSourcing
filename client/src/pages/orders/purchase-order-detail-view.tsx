@@ -17,6 +17,7 @@ import {
   Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
@@ -740,7 +741,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
             { href: "#po-summary", label: "Summary", icon: ClipboardList },
             { href: "#po-document", label: "Official PDF", icon: FileBadge },
             { href: "#po-commercial", label: "Commercial", icon: Briefcase },
-            { href: "#po-receive", label: "Lines & GRN", icon: Package },
+            { href: "#po-lines", label: "Order lines", icon: Package },
+            { href: "#po-receive", label: "GRN", icon: Package },
             { href: "#po-shipments", label: "Shipments", icon: Truck },
             { href: "#po-approval-history", label: "Approvals", icon: ShieldCheck },
             { href: "#po-activity", label: "Activity", icon: Activity },
@@ -996,10 +998,65 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                     />
                   </div>
 
+                  <Card id="po-lines" className="scroll-mt-36" data-testid="po-line-evidence">
+                    <CardHeader>
+                      <CardTitle>Order lines</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Line</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Item or description</TableHead>
+                            <TableHead>Evidence</TableHead>
+                            <TableHead className="text-right">Qty</TableHead>
+                            <TableHead className="text-right">Unit price</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {detail.lines.map((line, index) => (
+                            <TableRow
+                              key={line.id}
+                              data-testid={`po-line-${line.lineType.toLowerCase()}-${line.lineNumber ?? index + 1}`}
+                            >
+                              <TableCell>{line.lineNumber ?? index + 1}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{line.lineType.replace("_", " ")}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{line.itemName}</div>
+                                {line.sku ? <div className="text-xs text-muted-foreground">{line.sku}</div> : null}
+                                {line.manualEntryReason ? (
+                                  <div className="text-xs text-muted-foreground">
+                                    Reason: {line.manualEntryReason}
+                                  </div>
+                                ) : null}
+                              </TableCell>
+                              <TableCell>
+                                {line.lineType === "SERVICE"
+                                  ? line.receiptRequired
+                                    ? "Service confirmation required"
+                                    : "No service confirmation required"
+                                  : line.receiptRequired
+                                    ? "Goods receipt required"
+                                    : "No goods receipt required"}
+                              </TableCell>
+                              <TableCell className="text-right">{line.qtyOrdered}</TableCell>
+                              <TableCell className="text-right">
+                                {poMoneyFormatter.formatMoney(line.unitPrice)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+
                   <PoReceivePanel
                     sectionId="po-receive"
                     className="scroll-mt-36"
-                    detail={detail}
+                    detail={{ ...detail, lines: detail.lines.filter((line) => line.lineType === "CATALOG") }}
                     canReceive={canReceive(detail.status)}
                     receiveState={receiveState}
                     setReceiveState={setReceiveState}
