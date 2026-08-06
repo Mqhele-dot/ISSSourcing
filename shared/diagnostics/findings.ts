@@ -38,6 +38,8 @@ export type DiagnosticFinding = {
   firstSeen: string;
   lastSeen: string;
   affectedRoute?: string;
+  /** Safe in-app route that opens the workspace where this finding can be investigated. */
+  targetRoute?: string;
   affectedAction?: string;
   remediation?: string;
 };

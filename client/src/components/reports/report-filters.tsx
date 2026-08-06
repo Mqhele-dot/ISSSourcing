@@ -449,7 +449,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1" 
                 onClick={() => setFilter({ ...filter, startDate: undefined, endDate: undefined })}
               >
-                ×
+                x
               </Button>
             </Badge>
           )}
@@ -463,7 +463,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1" 
                 onClick={() => setFilter({ ...filter, categoryId: undefined })}
               >
-                ×
+                x
               </Button>
             </Badge>
           )}
@@ -477,7 +477,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1" 
                 onClick={() => setFilter({ ...filter, warehouseId: undefined })}
               >
-                ×
+                x
               </Button>
             </Badge>
           )}
@@ -491,7 +491,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1" 
                 onClick={() => setFilter({ ...filter, supplierId: undefined })}
               >
-                ×
+                x
               </Button>
             </Badge>
           )}
@@ -507,7 +507,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1"
                 onClick={() => setFilter({ ...filter, projectId: undefined })}
               >
-                ×
+                x
               </Button>
             </Badge>
           )}
@@ -521,7 +521,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1" 
                 onClick={() => setFilter({ ...filter, status: undefined })}
               >
-                ×
+                x
               </Button>
             </Badge>
           )}
@@ -535,7 +535,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1"
                 onClick={() => setFilter({ ...filter, documentNumber: undefined })}
               >
-                Ã—
+                x
               </Button>
             </Badge>
           )}
@@ -549,7 +549,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1"
                 onClick={() => setFilter({ ...filter, shipmentPo: undefined })}
               >
-                ×
+                x
               </Button>
             </Badge>
           )}
@@ -563,7 +563,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1"
                 onClick={() => setFilter({ ...filter, shipmentCarrier: undefined })}
               >
-                ×
+                x
               </Button>
             </Badge>
           )}
@@ -577,7 +577,7 @@ export function ReportFilters({
                 className="h-4 w-4 p-0 ml-1"
                 onClick={() => setFilter({ ...filter, shipmentRisk: undefined })}
               >
-                ×
+                x
               </Button>
             </Badge>
           )}
@@ -594,7 +594,7 @@ export function ReportFilters({
                   tags: filter.tags?.filter(t => t !== tag) 
                 })}
               >
-                ×
+                x
               </Button>
             </Badge>
           ))}

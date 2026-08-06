@@ -47,7 +47,7 @@ export default function MobilePickPage() {
       <PageHeader
         title="Pick / low-stock (mobile)"
         subtitle="Large rows for floor use. Opens SKU detail for location and adjustments."
-        breadcrumb={<Link href="/warehouse-operations">← Warehouse ops</Link>}
+        breadcrumb={<Link href={APP_ROUTES.inventory.warehouseOperations}>← Warehouse ops</Link>}
       />
 
       <p className="mb-4 text-xs text-muted-foreground md:text-sm">

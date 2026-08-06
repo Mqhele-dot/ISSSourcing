@@ -1640,6 +1640,7 @@ export const bulkImportInventorySchema = z.array(
 export enum UserRoleEnum {
   ADMIN = "admin",
   MANAGER = "manager",
+  PLANNER = "planner",
   WAREHOUSE_STAFF = "warehouse_staff",
   SALES = "sales",
   AUDITOR = "auditor",
@@ -1656,7 +1657,8 @@ export enum PermissionTypeEnum {
   APPROVE = "approve",
   EXPORT = "export",
   IMPORT = "import",
-  ASSIGN = "assign"
+  ASSIGN = "assign",
+  EXECUTE = "execute"
 }
 
 export enum ResourceEnum {
@@ -1742,6 +1744,55 @@ export type PurchaseRequisitionItem = typeof purchaseRequisitionItems.$inferSele
 export type InsertPurchaseRequisitionItem = z.infer<typeof insertPurchaseRequisitionItemSchema>;
 
 export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
+/** Standard contract for bounded collection endpoints. */
+export type PaginatedResponse<T, TSummary = never> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
+  summary?: TSummary;
+};
+
+export type InventorySummary = {
+  totalSkus: number;
+  lowStock: number;
+  negativeAvailability: number;
+  totalOnHand: number;
+  totalAllocated: number;
+  totalAvailable: number;
+};
+
+export type OperationalInventoryListItem = {
+  id: number;
+  name: string;
+  sku: string;
+  categoryId: number | null;
+  quantity: number;
+  price: number;
+  lowStockThreshold: number;
+  onHand: number;
+  allocated: number;
+  available: number;
+  location: string | null;
+  warehouseQuantity: number;
+  unassignedQuantity: number;
+  warehousePositionCount: number;
+  hasQuantityMismatch: boolean;
+  lastMovementAt: string | Date | null;
+  lastMovementReason: string | null;
+  updatedAt: string | Date | null;
+};
+
+export type UniversalSearchResult = {
+  type: "inventory" | "supplier" | "purchase-order" | "requisition" | "rfq" | "shipment" | "exception";
+  id: number | string;
+  title: string;
+  subtitle: string;
+  status: string | null;
+  href: string;
+};
 export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
 export type PurchaseOrderForm = z.infer<typeof purchaseOrderFormSchema>;
 
@@ -2511,6 +2562,9 @@ export const insertInventoryBatchSchema = createInsertSchema(inventoryBatches)
     updatedAt: true,
   })
   .superRefine((val, ctx) => {
+    if (typeof val.warehouseId !== "number" || !Number.isInteger(val.warehouseId) || val.warehouseId < 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "warehouseId is required", path: ["warehouseId"] });
+    }
     const recv = val.quantityReceived ?? 0;
     const oh = val.quantityOnHand ?? 0;
     if (recv < 1) {
@@ -2535,6 +2589,9 @@ export const insertInventorySerialSchema = createInsertSchema(inventorySerials)
     updatedAt: true,
   })
   .superRefine((val, ctx) => {
+    if (typeof val.warehouseId !== "number" || !Number.isInteger(val.warehouseId) || val.warehouseId < 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "warehouseId is required", path: ["warehouseId"] });
+    }
     if (typeof val.itemId !== "number" || !Number.isFinite(val.itemId) || val.itemId < 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -2558,6 +2615,9 @@ export const insertInventoryAllocationSchema = createInsertSchema(inventoryAlloc
     updatedAt: true,
   })
   .superRefine((val, ctx) => {
+    if (typeof val.warehouseId !== "number" || !Number.isInteger(val.warehouseId) || val.warehouseId < 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "warehouseId is required", path: ["warehouseId"] });
+    }
     if (typeof val.itemId !== "number" || !Number.isFinite(val.itemId) || val.itemId < 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -2566,7 +2626,7 @@ export const insertInventoryAllocationSchema = createInsertSchema(inventoryAlloc
       });
     }
     const q = val.quantity;
-    if (typeof q !== "number" || !Number.isFinite(q) || q < 1) {
+    if (typeof q !== "number" || !Number.isInteger(q) || q < 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "quantity must be at least 1",
@@ -3833,6 +3893,149 @@ export const gasExchangeTransactions = pgTable("gas_exchange_transactions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+/** Fuel and LPG station operations. Quantities are stored in litres except cylinder weights (kg). */
+export const fuelStations = pgTable(
+  "fuel_stations",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    address: text("address"),
+    managerName: text("manager_name"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("fuel_stations_org_code_uidx").on(t.organizationId, t.code)],
+);
+
+export const fuelTanks = pgTable(
+  "fuel_tanks",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    stationId: integer("station_id").notNull().references(() => fuelStations.id),
+    code: text("code").notNull(),
+    productType: text("product_type").notNull(),
+    storageType: text("storage_type").notNull().default("underground_tank"),
+    capacityLitres: real("capacity_litres").notNull(),
+    currentLevelLitres: real("current_level_litres").notNull().default(0),
+    reorderLevelLitres: real("reorder_level_litres").notNull().default(0),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("fuel_tanks_station_code_uidx").on(t.stationId, t.code)],
+);
+
+export const fuelPumps = pgTable(
+  "fuel_pumps",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    stationId: integer("station_id").notNull().references(() => fuelStations.id),
+    tankId: integer("tank_id").notNull().references(() => fuelTanks.id),
+    code: text("code").notNull(),
+    currentMeterLitres: real("current_meter_litres").notNull().default(0),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("fuel_pumps_station_code_uidx").on(t.stationId, t.code)],
+);
+
+export const fuelTankReadings = pgTable("fuel_tank_readings", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  stationId: integer("station_id").notNull().references(() => fuelStations.id),
+  tankId: integer("tank_id").notNull().references(() => fuelTanks.id),
+  levelLitres: real("level_litres").notNull(),
+  waterLevelMm: real("water_level_mm").notNull().default(0),
+  temperatureC: real("temperature_c"),
+  source: text("source").notNull().default("manual"),
+  recordedBy: integer("recorded_by"),
+  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+});
+
+export const fuelDeliveries = pgTable("fuel_deliveries", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  stationId: integer("station_id").notNull().references(() => fuelStations.id),
+  tankId: integer("tank_id").notNull().references(() => fuelTanks.id),
+  supplierId: integer("supplier_id").references(() => suppliers.id),
+  deliveryReference: text("delivery_reference").notNull(),
+  quantityLitres: real("quantity_litres").notNull(),
+  unitCost: real("unit_cost"),
+  status: text("status").notNull().default("received"),
+  deliveredAt: timestamp("delivered_at").defaultNow().notNull(),
+  receivedBy: integer("received_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const fuelShiftReconciliations = pgTable("fuel_shift_reconciliations", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  stationId: integer("station_id").notNull().references(() => fuelStations.id),
+  pumpId: integer("pump_id").notNull().references(() => fuelPumps.id),
+  openingMeterLitres: real("opening_meter_litres").notNull(),
+  closingMeterLitres: real("closing_meter_litres").notNull(),
+  measuredSalesLitres: real("measured_sales_litres").notNull(),
+  reportedSalesLitres: real("reported_sales_litres").notNull(),
+  salesAmount: real("sales_amount").notNull().default(0),
+  varianceLitres: real("variance_litres").notNull().default(0),
+  status: text("status").notNull().default("balanced"),
+  shiftStartedAt: timestamp("shift_started_at").notNull(),
+  shiftEndedAt: timestamp("shift_ended_at").notNull(),
+  recordedBy: integer("recorded_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const fuelPrices = pgTable("fuel_prices", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  stationId: integer("station_id").notNull().references(() => fuelStations.id),
+  productType: text("product_type").notNull(),
+  pricePerLitre: real("price_per_litre").notNull(),
+  effectiveFrom: timestamp("effective_from").defaultNow().notNull(),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const fuelSafetyInspections = pgTable("fuel_safety_inspections", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  stationId: integer("station_id").notNull().references(() => fuelStations.id),
+  tankId: integer("tank_id").references(() => fuelTanks.id),
+  inspectionType: text("inspection_type").notNull(),
+  result: text("result").notNull(),
+  checklist: jsonb("checklist"),
+  notes: text("notes"),
+  nextDueAt: timestamp("next_due_at"),
+  inspectedAt: timestamp("inspected_at").defaultNow().notNull(),
+  inspectorId: integer("inspector_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const fuelCylinders = pgTable(
+  "fuel_cylinders",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    stationId: integer("station_id").notNull().references(() => fuelStations.id),
+    serialNumber: text("serial_number").notNull(),
+    gasFamily: text("gas_family").notNull().default("LPG"),
+    capacityKg: real("capacity_kg").notNull(),
+    tareWeightKg: real("tare_weight_kg"),
+    status: text("status").notNull().default("full"),
+    testDueAt: timestamp("test_due_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("fuel_cylinders_org_serial_uidx").on(t.organizationId, t.serialNumber)],
+);
+
 export type Project = typeof projects.$inferSelect;
 export type Site = typeof sites.$inferSelect;
 export type TrackedAsset = typeof trackedAssets.$inferSelect;
@@ -3840,6 +4043,15 @@ export type AssetEvent = typeof assetEvents.$inferSelect;
 export type GasAssetProfile = typeof gasAssetProfiles.$inferSelect;
 export type GasProduct = typeof gasProducts.$inferSelect;
 export type GasExchangeTransaction = typeof gasExchangeTransactions.$inferSelect;
+export type FuelStation = typeof fuelStations.$inferSelect;
+export type FuelTank = typeof fuelTanks.$inferSelect;
+export type FuelPump = typeof fuelPumps.$inferSelect;
+export type FuelTankReading = typeof fuelTankReadings.$inferSelect;
+export type FuelDelivery = typeof fuelDeliveries.$inferSelect;
+export type FuelShiftReconciliation = typeof fuelShiftReconciliations.$inferSelect;
+export type FuelPrice = typeof fuelPrices.$inferSelect;
+export type FuelSafetyInspection = typeof fuelSafetyInspections.$inferSelect;
+export type FuelCylinder = typeof fuelCylinders.$inferSelect;
 
 export type MdmLegalEntity = typeof mdmLegalEntities.$inferSelect;
 export type MdmSite = typeof mdmSites.$inferSelect;

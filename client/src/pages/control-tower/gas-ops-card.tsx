@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Flame, Loader2 } from "lucide-react";
+import { Link } from "wouter";
 import {
   ApiError,
   fetchGasDashboardSummaryEnvelope,
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 type GasQueryResult =
   | { status: "disabled" }
@@ -149,6 +151,9 @@ export function GasOpsCard() {
             )}
           </Button>
         ) : null}
+        <Button asChild type="button" variant="secondary" size="sm">
+          <Link href={APP_ROUTES.operations.fuel}>Open workspace</Link>
+        </Button>
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-3 text-sm">
         <div>

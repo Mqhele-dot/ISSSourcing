@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +23,6 @@ import {
 import { requestJson } from "@/lib/queryClient";
 import { downloadCsv } from "@/lib/csv-download";
 import { Download } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 
 type ActivityLog = {
   id: number;
@@ -35,6 +34,33 @@ type ActivityLog = {
   summary: Record<string, unknown> | null;
 };
 
+type ActivityPage = {
+  items: ActivityLog[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
+};
+
+type ActivityFilters = {
+  entityType: string;
+  entityId: string;
+  actor: string;
+  action: string;
+  from: string;
+  to: string;
+};
+
+const EMPTY_FILTERS: ActivityFilters = {
+  entityType: "",
+  entityId: "",
+  actor: "",
+  action: "",
+  from: "",
+  to: "",
+};
+const EMPTY_ACTIVITY_LOGS: ActivityLog[] = [];
+
 const ENTITY_TYPE_PRESETS = [
   { value: "any", label: "Any entity" },
   { value: "purchase_order", label: "Purchase order" },
@@ -45,45 +71,48 @@ const ENTITY_TYPE_PRESETS = [
 ];
 
 export default function AuditLogsPage() {
-  const { toast } = useToast();
   const [entityType, setEntityType] = useState("");
   const [entityId, setEntityId] = useState("");
   const [actor, setActor] = useState("");
   const [actionFilter, setActionFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [appliedFilters, setAppliedFilters] = useState<ActivityFilters>(EMPTY_FILTERS);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
-  const { data: logs = [], isLoading, refetch } = useQuery({
-    queryKey: ["/api/activity", entityType, entityId, actor, actionFilter, fromDate, toDate],
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
+    queryKey: ["/api/v2/activity", appliedFilters, page, pageSize],
     queryFn: () => {
       const search = new URLSearchParams();
-      search.set("limit", "200");
-      if (entityType.trim()) search.set("entity_type", entityType.trim());
-      if (entityId.trim()) search.set("entity_id", entityId.trim());
-      if (actor.trim()) search.set("actor", actor.trim());
-      if (actionFilter.trim()) search.set("action", actionFilter.trim());
-      if (fromDate.trim()) search.set("from", fromDate.trim());
-      if (toDate.trim()) search.set("to", toDate.trim());
-      return requestJson<ActivityLog[]>("GET", `/api/activity?${search.toString()}`);
+      search.set("page", String(page));
+      search.set("pageSize", String(pageSize));
+      if (appliedFilters.entityType) search.set("entity_type", appliedFilters.entityType);
+      if (appliedFilters.entityId) search.set("entity_id", appliedFilters.entityId);
+      if (appliedFilters.actor) search.set("actor", appliedFilters.actor);
+      if (appliedFilters.action) search.set("action", appliedFilters.action);
+      if (appliedFilters.from) search.set("from", appliedFilters.from);
+      if (appliedFilters.to) search.set("to", appliedFilters.to);
+      return requestJson<ActivityPage>("GET", `/api/v2/activity?${search.toString()}`);
     },
+    placeholderData: keepPreviousData,
   });
 
-  const runComplianceReminders = useMutation({
-    mutationFn: () => requestJson("POST", "/api/compliance/run-reminders"),
-    onSuccess: (result: any) => {
-      toast({
-        title: "Compliance reminders run",
-        description: `Suppliers: ${result.insuranceExpiring}, Contracts: ${result.contractsExpiring}`,
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Compliance reminders failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive",
-      });
-    },
-  });
+  const logs = data?.items ?? EMPTY_ACTIVITY_LOGS;
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const applyFilters = () => {
+    setAppliedFilters({
+      entityType: entityType.trim(),
+      entityId: entityId.trim(),
+      actor: actor.trim(),
+      action: actionFilter.trim(),
+      from: fromDate.trim(),
+      to: toDate.trim(),
+    });
+    setPage(1);
+  };
 
   const rows = useMemo(
     () =>
@@ -183,14 +212,7 @@ export default function AuditLogsPage() {
             <Input id="audit-to" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
           </div>
           <div className="flex items-end gap-2">
-            <Button onClick={() => refetch()}>Apply</Button>
-            <Button
-              variant="outline"
-              onClick={() => runComplianceReminders.mutate()}
-              disabled={runComplianceReminders.isPending}
-            >
-              Run reminders
-            </Button>
+            <Button onClick={applyFilters}>Apply</Button>
             <Button
               variant="outline"
               onClick={() =>
@@ -202,7 +224,7 @@ export default function AuditLogsPage() {
               disabled={logs.length === 0}
             >
               <Download className="mr-2 h-4 w-4" />
-              Export CSV
+              Export current page CSV
             </Button>
           </div>
         </CardContent>
@@ -210,12 +232,21 @@ export default function AuditLogsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Entries ({logs.length})</CardTitle>
+          <CardTitle>Entries ({total})</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="text-sm text-muted-foreground">Loading audit logs...</div>
+          ) : isError ? (
+            <div className="space-y-3 text-sm">
+              <p className="text-destructive">Audit logs could not be loaded.</p>
+              <Button variant="outline" onClick={() => refetch()}>Retry</Button>
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No audit entries match the applied filters.</div>
           ) : (
+            <div className="space-y-4">
+            {isFetching ? <p className="text-sm text-muted-foreground" role="status">Refreshing audit logs...</p> : null}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -235,13 +266,42 @@ export default function AuditLogsPage() {
                       {log.entityType}:{log.entityId}
                     </TableCell>
                     <TableCell>{log.action}</TableCell>
-                    <TableCell className="max-w-[420px] truncate">
-                      {log.summary ? JSON.stringify(log.summary) : "-"}
+                    <TableCell className="max-w-[420px]">
+                      {log.summary ? (
+                        <div className="space-y-1">
+                          {typeof log.summary.title === "string" ? <div className="font-medium">{log.summary.title}</div> : null}
+                          <div className="line-clamp-2 text-muted-foreground">
+                            {typeof log.summary.details === "string"
+                              ? log.summary.details
+                              : Object.entries(log.summary)
+                                  .filter(([key]) => key !== "title" && key !== "details" && key !== "relatedRefs")
+                                  .map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`)
+                                  .join(" · ") || "Recorded event"}
+                          </div>
+                        </div>
+                      ) : "-"}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+              <span className="text-muted-foreground">
+                {total === 0 ? "0 results" : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <Label htmlFor="audit-page-size" className="sr-only">Rows per page</Label>
+                <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
+                  <SelectTrigger id="audit-page-size" className="w-24"><SelectValue /></SelectTrigger>
+                  <SelectContent>{[25, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} rows</SelectItem>)}</SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(1)}>First</Button>
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
+                <Button variant="outline" size="sm" disabled={!data?.hasNext} onClick={() => setPage((value) => value + 1)}>Next</Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(totalPages)}>Last</Button>
+              </div>
+            </div>
+            </div>
           )}
         </CardContent>
       </Card>

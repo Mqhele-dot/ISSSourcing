@@ -61,7 +61,7 @@ export default function GetEducatedModulePage() {
             {mod.title}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {mod.category} · ~{mod.estimatedMinutes} minutes · {mod.whoUsesIt}
+            {mod.category} | ~{mod.estimatedMinutes} minutes | {mod.whoUsesIt}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -79,7 +79,7 @@ export default function GetEducatedModulePage() {
               toggleModuleUnderstood(mod.id);
             }}
           >
-            {understood ? "Marked understood ✓" : "Mark as understood"}
+            {understood ? "Marked understood" : "Mark as understood"}
           </Button>
         </div>
       </div>
@@ -199,7 +199,7 @@ export default function GetEducatedModulePage() {
                   <p className="text-sm text-green-700 dark:text-green-400">{q.explanation}</p>
                 ) : null}
                 {showQuizResult[idx] === "wrong" ? (
-                  <p className="text-sm text-destructive">Not quite — review the lesson and try again.</p>
+                  <p className="text-sm text-destructive">Not quite - review the lesson and try again.</p>
                 ) : null}
               </CardContent>
             </Card>
@@ -208,7 +208,7 @@ export default function GetEducatedModulePage() {
       ) : null}
 
       <p className="text-xs text-muted-foreground">
-        Local progress: {progress.lessonsOpened.length} lesson(s) opened · {progress.quizzesCompleted.length} quiz item(s) ·{" "}
+        Local progress: {progress.lessonsOpened.length} lesson(s) opened | {progress.quizzesCompleted.length} quiz item(s) |{" "}
         {progress.markedUnderstood.length} understood.
       </p>
 

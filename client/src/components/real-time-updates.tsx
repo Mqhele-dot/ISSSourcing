@@ -31,7 +31,6 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
   const [updates, setUpdates] = useState<UpdateItem[]>([]);
   const [alerts, setAlerts] = useState<UpdateItem[]>([]);
   const [activeTab, setActiveTab] = useState('updates');
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
   const { toast } = useToast();
 
   // Handle inventory updates
@@ -90,8 +89,6 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
 
   // Handle connection status changes
   const handleConnectionStatus = (connected: boolean) => {
-    setConnectionStatus(connected ? 'connected' : 'disconnected');
-    
     if (connected) {
       toast({
         title: 'Real-Time Connected',
@@ -109,7 +106,7 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
   };
 
   // Connect to WebSocket
-  const { isConnected, connect, webSocketsEnabled } = useWebSocket({
+  const { isConnected, connectionState, connect, webSocketsEnabled } = useWebSocket({
     warehouses: [], // Subscribe to all warehouses
     onInventoryUpdate: isListening ? handleInventoryUpdate : undefined,
     onStockAlert: isListening ? handleStockAlert : undefined,
@@ -136,7 +133,6 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
   // Reconnect manually
   const handleReconnect = () => {
     if (!isConnected) {
-      setConnectionStatus('connecting');
       connect();
     }
   };
@@ -185,9 +181,9 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
               variant={
                 !webSocketsEnabled && !isElectronEnvironment()
                   ? 'outline'
-                  : connectionStatus === 'connected'
+                  : connectionState === 'connected'
                     ? 'default'
-                    : connectionStatus === 'connecting'
+                    : connectionState === 'connecting' || connectionState === 'reconnecting'
                       ? 'outline'
                       : 'destructive'
               }
@@ -200,10 +196,10 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
                 </>
               ) : (
                 <>
-                  {connectionStatus === 'connected' && <Zap className="h-3 w-3" />}
-                  {connectionStatus === 'connecting' && <RefreshCw className="h-3 w-3 animate-spin" />}
-                  {connectionStatus === 'disconnected' && <AlertTriangle className="h-3 w-3" />}
-                  {connectionStatus === 'connected' ? 'Live' : connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+                  {connectionState === 'connected' && <Zap className="h-3 w-3" />}
+                  {(connectionState === 'connecting' || connectionState === 'reconnecting') && <RefreshCw className="h-3 w-3 animate-spin" />}
+                  {connectionState === 'disconnected' && <AlertTriangle className="h-3 w-3" />}
+                  {connectionState === 'connected' ? 'Inventory live' : connectionState === 'reconnecting' ? 'Inventory reconnecting...' : connectionState === 'connecting' ? 'Inventory connecting...' : 'Inventory disconnected'}
                 </>
               )}
             </Badge>

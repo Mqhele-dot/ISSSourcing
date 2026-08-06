@@ -67,6 +67,19 @@ export function TaxSettingsForm() {
     },
   });
 
+  React.useEffect(() => {
+    form.reset({
+      enableVat: settings.enableVat ?? false,
+      defaultVatCountry: settings.defaultVatCountry || "US",
+      showPricesWithVat: settings.showPricesWithVat ?? true,
+    });
+  }, [
+    form,
+    settings.defaultVatCountry,
+    settings.enableVat,
+    settings.showPricesWithVat,
+  ]);
+
   // Submit handler
   function onSubmit(data: TaxSettingsFormType) {
     updateSettings.mutate(data);
@@ -99,6 +112,7 @@ export function TaxSettingsForm() {
                   </div>
                   <FormControl>
                     <Switch
+                      data-testid="tax-settings-enable-vat"
                       checked={field.value}
                       onCheckedChange={field.onChange}
                     />
@@ -120,6 +134,7 @@ export function TaxSettingsForm() {
                   </div>
                   <FormControl>
                     <Switch
+                      data-testid="tax-settings-show-prices-with-vat"
                       checked={field.value}
                       onCheckedChange={field.onChange}
                       disabled={!form.watch("enableVat")}
@@ -142,7 +157,7 @@ export function TaxSettingsForm() {
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select country" />
+                        <SelectValue data-testid="tax-settings-default-region-value" placeholder="Select country" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>

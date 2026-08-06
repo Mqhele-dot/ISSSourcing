@@ -10,6 +10,7 @@ export type { PurchaseOrderSendBody } from "./operational-purchase-orders.api";
 export {
   fetchPurchaseOrders,
   fetchPurchaseOrdersEnvelope,
+  fetchPurchaseOrdersPageEnvelope,
   fetchPurchaseOrder,
   downloadPurchaseOrderSignedPdf,
   submitPurchaseOrderForApproval,

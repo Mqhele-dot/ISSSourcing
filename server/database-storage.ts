@@ -395,16 +395,27 @@ export class DatabaseStorage implements IStorage {
   
   async getUserCustomRoleId(userId: number): Promise<number | null> {
     const [user] = await db
-      .select({ role: users.role, preferences: users.preferences })
+      .select({ preferences: users.preferences })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
-    if (!user || user.role !== "custom") return null;
+    if (!user) return null;
     const prefs = user.preferences && typeof user.preferences === "object"
       ? (user.preferences as { customRoleId?: unknown })
       : null;
     const customRoleId = Number(prefs?.customRoleId);
-    if (Number.isFinite(customRoleId) && customRoleId > 0) return customRoleId;
+    if (Number.isFinite(customRoleId) && customRoleId > 0) {
+      const [activeRole] = await db
+        .select({ id: customRoles.id })
+        .from(customRoles)
+        .where(and(
+          eq(customRoles.id, customRoleId),
+          eq(customRoles.organizationId, getActiveOrganizationId()),
+          eq(customRoles.isActive, true),
+        ))
+        .limit(1);
+      return activeRole?.id ?? null;
+    }
     return null;
   }
   
@@ -499,11 +510,16 @@ export class DatabaseStorage implements IStorage {
   }
   
   async deleteCustomRole(id: number): Promise<boolean> {
-    const result = await db
-      .delete(customRoles)
-      .where(and(eq(customRoles.id, id), eq(customRoles.organizationId, getActiveOrganizationId())))
-      .returning({ id: customRoles.id });
-    return result.length > 0;
+    const role = await this.getCustomRole(id);
+    if (!role) return false;
+    return db.transaction(async (tx) => {
+      await tx.delete(customRolePermissions).where(eq(customRolePermissions.roleId, id));
+      const result = await tx
+        .delete(customRoles)
+        .where(and(eq(customRoles.id, id), eq(customRoles.organizationId, getActiveOrganizationId())))
+        .returning({ id: customRoles.id });
+      return result.length > 0;
+    });
   }
   
   async getRolePermissions(role: keyof typeof UserRoleEnum): Promise<Permission[]> {

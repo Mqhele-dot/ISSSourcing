@@ -50,7 +50,6 @@ export const MASTER_DATA_SECTION_SLUGS = [
 export const DOCUMENT_EXTRACTOR_SECTION_SLUGS = [
   "single",
   "batch",
-  "url",
   "import",
   "options",
 ] as const;
@@ -74,6 +73,7 @@ export const APP_ROUTES = {
     /** Desktop page that explains and links into the `/m/*` mobile workflow shell. */
     mobileWorkflows: "/operations/mobile-workflows",
     controlTower: "/operations/control-tower",
+    fuel: "/operations/fuel",
     logistics: "/operations/logistics",
     shipment: (id: string | number) => `/operations/logistics/${id}`,
     exceptions: "/operations/exceptions",

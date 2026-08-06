@@ -12,6 +12,8 @@ import { useQuery } from "@tanstack/react-query";
 import { requestJson } from "@/lib/queryClient";
 import { useTheme } from "@/components/theme-provider";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useAuth } from "@/hooks/use-auth";
+import { hasProfileNavigationAccess } from "@/lib/access/profile-navigation-access";
 import {
   Activity,
   AlertTriangle,
@@ -26,6 +28,7 @@ import {
   Database,
   FileSpreadsheet,
   FolderOpen,
+  Fuel,
   GraduationCap,
   Home,
   IdCard,
@@ -67,7 +70,8 @@ interface SidebarProps {
 
 export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: SidebarProps) {
   const [location] = useLocation();
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, toggleTheme } = useTheme();
+  const { user } = useAuth();
   const isDesktopNav = useMediaQuery("(min-width: 1024px)");
   const { data: releaseScope } = useQuery<{
     boundary: "procurement" | "full";
@@ -95,6 +99,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
     download: ArrowDownToLine,
     "file-spreadsheet": FileSpreadsheet,
     "folder-open": FolderOpen,
+    fuel: Fuel,
     "graduation-cap": GraduationCap,
     home: Home,
     "id-card": IdCard,
@@ -204,7 +209,8 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
   );
 
   const showNavPath = (path: string, desktopOnly?: boolean) =>
-    isDesktopNav || (!NAV_DESKTOP_ONLY_PATHS.has(path) && !desktopOnly);
+    (isDesktopNav || (!NAV_DESKTOP_ONLY_PATHS.has(path) && !desktopOnly)) &&
+    hasProfileNavigationAccess(user?.role, user?.preferences as { allowedNavPaths?: string[] } | null, path);
 
   const productionAreaForSection = (key: string): string | null => {
     if (key === "operations") return "logistics";
@@ -346,9 +352,9 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
             title={collapsed ? "Theme" : undefined}
             data-help-title="Theme toggle"
             data-help-description="Switch between light and dark mode."
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                onClick={toggleTheme}
           >
-            {theme === "dark" ? (
+            {resolvedTheme === "dark" ? (
               <>
                 <Sun className={cn("h-5 w-5", !collapsed && "mr-2")} />
                 <span className={cn(collapsed && "md:sr-only")}>Light Mode</span>

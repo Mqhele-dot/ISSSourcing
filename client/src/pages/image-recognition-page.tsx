@@ -6,7 +6,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { requestJson } from '@/lib/queryClient';
 import { ImageRecognitionUpload } from '@/components/inventory/image-recognition-upload';
 import ImageRecognitionStatus from '@/components/inventory/image-recognition-status';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +20,12 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function ImageRecognitionPage() {
   const { toast } = useToast();
+  const { data: recognitionStatus } = useQuery<{ status?: string }>({
+    queryKey: ['/api/image-recognition/status'],
+    queryFn: () => requestJson('GET', '/api/image-recognition/status'),
+    staleTime: 5 * 60 * 1000,
+  });
+  const simulationMode = recognitionStatus?.status !== 'operational';
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -27,10 +33,12 @@ export default function ImageRecognitionPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center">
             <Camera className="mr-2 h-6 w-6" />
-            AI Image Recognition
+            {simulationMode ? 'Image Recognition Preview' : 'AI Image Recognition'}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Use AI to identify products and add them to inventory from images
+            {simulationMode
+              ? 'Preview the workflow with sample catalogue matches; no AI calls or inventory creation occur.'
+              : 'Use AI to identify products and add them to inventory from images.'}
           </p>
         </div>
       </div>
@@ -41,7 +49,7 @@ export default function ImageRecognitionPage() {
       {/* Main content */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
-          <ImageRecognitionUpload standalone={true} />
+          <ImageRecognitionUpload standalone={true} simulationMode={simulationMode} />
         </div>
         
         <div>
@@ -52,7 +60,9 @@ export default function ImageRecognitionPage() {
                 How It Works
               </CardTitle>
               <CardDescription>
-                Understanding AI image recognition for inventory
+                {simulationMode
+                  ? 'Understanding the sample recognition workflow'
+                  : 'Understanding AI image recognition for inventory'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -76,9 +86,11 @@ export default function ImageRecognitionPage() {
                     <Zap className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-medium">AI Analyzes Image</h3>
+                    <h3 className="font-medium">{simulationMode ? 'Sample Match Is Selected' : 'AI Analyzes Image'}</h3>
                     <p className="text-sm text-muted-foreground">
-                      Our AI recognizes the product and extracts key attributes
+                      {simulationMode
+                        ? 'The preview returns a fixed catalogue example without analyzing the image'
+                        : 'Our AI recognizes the product and extracts key attributes'}
                     </p>
                   </div>
                 </div>
@@ -104,9 +116,11 @@ export default function ImageRecognitionPage() {
                     <Database className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-medium">Add to Inventory</h3>
+                    <h3 className="font-medium">{simulationMode ? 'Inventory Creation Stays Disabled' : 'Add to Inventory'}</h3>
                     <p className="text-sm text-muted-foreground">
-                      Save the identified product to your inventory system
+                      {simulationMode
+                        ? 'Configure a real provider before identified products can be saved'
+                        : 'Save the identified product to your inventory system'}
                     </p>
                   </div>
                 </div>

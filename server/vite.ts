@@ -69,8 +69,9 @@ export async function setupVite(app: Express, server: Server) {
             host: hmrHost,
             protocol: "wss",
             clientPort: 443,
+            path: "/__vite_hmr",
           }
-        : { server },
+        : { server, clientPort: Number(process.env.PORT ?? 5000), path: "/__vite_hmr" },
     allowedHosts: true as const,
     ...(publicOrigin != null ? { origin: publicOrigin } : {}),
   };

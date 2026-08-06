@@ -1,5 +1,6 @@
 import type { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { registerWebSocketUpgradeRoute } from './websocket-upgrade-router';
 import { v4 as uuidv4 } from 'uuid';
 import type { IStorage } from './storage';
 import * as zlib from 'zlib';
@@ -73,8 +74,7 @@ export function initializeRealTimeSyncService(server: HttpServer, storageInstanc
 
   // Create WebSocket server - attach to existing HTTP server
   syncWss = new WebSocketServer({
-    server, // Use existing HTTP server
-    path: '/sync', // Use different path from inventory WebSocket
+    noServer: true,
     clientTracking: true,
     perMessageDeflate: {
       zlibDeflateOptions: {
@@ -89,6 +89,7 @@ export function initializeRealTimeSyncService(server: HttpServer, storageInstanc
       threshold: 1024 // Only compress messages larger than 1KB
     }
   });
+  registerWebSocketUpgradeRoute(server, '/sync', syncWss);
 
   console.log('Real-time sync WebSocket service initialized');
 

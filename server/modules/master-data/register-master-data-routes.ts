@@ -1,7 +1,7 @@
 import type { Express, Request, RequestHandler, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { and, desc, eq, ilike, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, ilike, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { storage } from "../../storage";
 import { sendError, sendOk } from "../../api-response";
@@ -37,6 +37,8 @@ import {
   inventoryAllocations,
   inventoryBatches,
   inventorySerials,
+  warehouseInventory,
+  warehouses,
   paymentTerms,
   purchaseOrders,
   purchaseOrderItems,
@@ -806,7 +808,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 25) || 25));
         const q = String(req.query.q ?? "").trim();
         const status = String(req.query.status ?? "all").trim();
-        const clauses: any[] = [];
+        const clauses: any[] = table.organizationId ? [eq(table.organizationId, getActiveOrganizationId())] : [];
         const searchColumns = [table.code, table.name, table.description].filter(Boolean);
         if (q && searchColumns.length > 0) {
           clauses.push(or(...searchColumns.map((column: any) => ilike(column, `%${q}%`))));
@@ -837,7 +839,8 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       try {
         const id = Number(req.params.id);
         if (isNaN(id)) return sendError(res, 400, "INVALID_ID", "Invalid ID");
-        const rows = (await db.select().from(table).where(eq(table.id, id))) as any[];
+        const rowScope = table.organizationId ? and(eq(table.id, id), eq(table.organizationId, getActiveOrganizationId())) : eq(table.id, id);
+        const rows = (await db.select().from(table).where(rowScope)) as any[];
         const row = rows[0];
         if (!row) return sendError(res, 404, "NOT_FOUND", "Record not found");
         if (req.query.deleteCheck === "true") {
@@ -872,7 +875,26 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
                 symbol: String((req.body as { code?: unknown }).code ?? "").trim().slice(0, 3) || "$",
               }
             : req.body;
-        const payload = insertSchema.parse(normalizedBody) as any;
+        const scopedBody = table.organizationId && normalizedBody && typeof normalizedBody === "object"
+          ? { ...(normalizedBody as Record<string, unknown>), organizationId: getActiveOrganizationId() }
+          : normalizedBody;
+        const payload = insertSchema.parse(scopedBody) as any;
+        if (["/api/inventory-batches", "/api/inventory-serials", "/api/inventory-allocations", "/api/cycle-counts"].includes(basePath)) {
+          const orgId = getActiveOrganizationId();
+          const warehouseId = Number(payload.warehouseId);
+          const [warehouse] = await db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, warehouseId), eq(warehouses.organizationId, orgId))).limit(1);
+          if (!warehouse) return sendError(res, 400, "INVALID_WAREHOUSE", "Warehouse is required and must belong to the active organization");
+          if (basePath !== "/api/cycle-counts") {
+            const itemId = Number(payload.itemId);
+            const [item] = await db.select({ id: inventoryItems.id }).from(inventoryItems).where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.organizationId, orgId))).limit(1);
+            if (!item) return sendError(res, 400, "INVALID_ITEM", "Item must belong to the active organization");
+            if (basePath === "/api/inventory-allocations") {
+              const [stock] = await db.select({ quantity: warehouseInventory.quantity }).from(warehouseInventory).where(and(eq(warehouseInventory.organizationId, orgId), eq(warehouseInventory.warehouseId, warehouseId), eq(warehouseInventory.itemId, itemId))).limit(1);
+              const [reserved] = await db.select({ quantity: sql<number>`coalesce(sum(${inventoryAllocations.quantity}), 0)::int` }).from(inventoryAllocations).where(and(eq(inventoryAllocations.organizationId, orgId), eq(inventoryAllocations.warehouseId, warehouseId), eq(inventoryAllocations.itemId, itemId), eq(inventoryAllocations.status, "reserved")));
+              if (Number(payload.quantity) > Number(stock?.quantity ?? 0) - Number(reserved?.quantity ?? 0)) return sendError(res, 400, "INSUFFICIENT_AVAILABILITY", "Allocation quantity exceeds available warehouse stock");
+            }
+          }
+        }
         const createdRows = (await db.insert(table).values(payload).returning()) as any[];
         const created = createdRows[0];
         return sendOk(res, created, 201);
@@ -939,7 +961,8 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
           }
         }
         const payload = (insertSchema as any).partial().parse(patchBody);
-        const updatedRows = (await db.update(table).set(payload).where(eq(table.id, id)).returning()) as any[];
+        const updateScope = table.organizationId ? and(eq(table.id, id), eq(table.organizationId, getActiveOrganizationId())) : eq(table.id, id);
+        const updatedRows = (await db.update(table).set(payload).where(updateScope).returning()) as any[];
         const updated = updatedRows[0];
         if (!updated) return sendError(res, 404, "NOT_FOUND", "Record not found");
         return sendOk(res, updated);
@@ -974,7 +997,8 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
             },
           );
         }
-        const deleted = (await db.delete(table).where(eq(table.id, id)).returning({ id: table.id })) as any[];
+        const deleteScope = table.organizationId ? and(eq(table.id, id), eq(table.organizationId, getActiveOrganizationId())) : eq(table.id, id);
+        const deleted = (await db.delete(table).where(deleteScope).returning({ id: table.id })) as any[];
         if (deleted.length === 0) return sendError(res, 404, "NOT_FOUND", "Record not found");
         return res.status(204).send();
       } catch (error) {
@@ -992,6 +1016,90 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       }
     });
   };
+
+  app.get("/api/v2/inventory-allocations", ...masterRead, async (req: Request, res: Response) => {
+    const parsePositiveInteger = (value: unknown, fallback: number) => {
+      if (value == null || value === "") return fallback;
+      const raw = String(value);
+      if (!/^\d+$/.test(raw)) return null;
+      const parsed = Number(raw);
+      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+    };
+
+    const page = parsePositiveInteger(req.query.page, 1);
+    const pageSize = parsePositiveInteger(req.query.pageSize, 25);
+    const status = String(req.query.status ?? "reserved").trim().toLowerCase();
+    const q = String(req.query.q ?? "").trim();
+    if (page == null || pageSize == null || ![25, 50, 100].includes(pageSize)) {
+      return sendError(res, 400, "INVALID_PAGINATION", "page must be a positive integer and pageSize must be 25, 50, or 100");
+    }
+    if (!["reserved", "fulfilled", "cancelled", "all"].includes(status)) {
+      return sendError(res, 400, "INVALID_FILTER", "status must be reserved, fulfilled, cancelled, or all");
+    }
+
+    try {
+      const organizationId = getActiveOrganizationId();
+      const clauses = [
+        eq(inventoryAllocations.organizationId, organizationId),
+        gt(inventoryAllocations.quantity, 0),
+      ];
+      if (status !== "all") clauses.push(eq(inventoryAllocations.status, status));
+      if (q) {
+        clauses.push(or(
+          ilike(inventoryItems.sku, `%${q}%`),
+          ilike(inventoryItems.name, `%${q}%`),
+          ilike(warehouses.name, `%${q}%`),
+        )!);
+      }
+      const where = and(...clauses);
+      const itemJoin = and(
+        eq(inventoryItems.id, inventoryAllocations.itemId),
+        eq(inventoryItems.organizationId, organizationId),
+      );
+      const warehouseJoin = and(
+        eq(warehouses.id, inventoryAllocations.warehouseId),
+        eq(warehouses.organizationId, organizationId),
+      );
+      const rows = await db
+        .select({
+          id: inventoryAllocations.id,
+          itemId: inventoryAllocations.itemId,
+          warehouseId: inventoryAllocations.warehouseId,
+          quantity: inventoryAllocations.quantity,
+          orderId: inventoryAllocations.orderId,
+          requisitionId: inventoryAllocations.requisitionId,
+          status: inventoryAllocations.status,
+          createdAt: inventoryAllocations.createdAt,
+          itemSku: inventoryItems.sku,
+          itemName: inventoryItems.name,
+          warehouseName: warehouses.name,
+        })
+        .from(inventoryAllocations)
+        .leftJoin(inventoryItems, itemJoin)
+        .leftJoin(warehouses, warehouseJoin)
+        .where(where)
+        .orderBy(desc(inventoryAllocations.createdAt), desc(inventoryAllocations.id))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize);
+      const [countRow] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(inventoryAllocations)
+        .leftJoin(inventoryItems, itemJoin)
+        .leftJoin(warehouses, warehouseJoin)
+        .where(where);
+      const total = Number(countRow?.count ?? 0);
+      return sendOk(res, {
+        items: rows,
+        total,
+        page,
+        pageSize,
+        hasNext: page * pageSize < total,
+      });
+    } catch (error) {
+      console.error("Error fetching paginated inventory allocations:", error);
+      return sendError(res, 500, "INVENTORY_ALLOCATIONS_LIST_FAILED", "Failed to fetch inventory allocations");
+    }
+  });
 
   registerMasterDataCrud("/api/units-of-measure", unitsOfMeasure, insertUnitOfMeasureSchema as any);
   registerMasterDataCrud("/api/currencies", currencies, insertCurrencySchema as any);

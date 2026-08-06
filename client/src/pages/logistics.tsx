@@ -884,7 +884,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
               />
             </Button>
           </CollapsibleTrigger>
-          <Can roles={["manager", "admin"]}>
+          <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
             <Button
               type="button"
               variant="default"
@@ -1209,7 +1209,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                         <FileDown className="h-3.5 w-3.5" />
                         Delivery PDF
                       </Button>
-                      <Can roles={["manager", "admin"]}>
+                      <Can resource="inventory" permissionType="delete" reason="Requires inventory:delete permission">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1650,7 +1650,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                     />
                   </div>
                 </div>
-                <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
+                <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
                   <Button onClick={() => void submitMeta()} disabled={metaSaving}>
                     Save metadata
                   </Button>
@@ -1680,7 +1680,7 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
                     onChange={(event) => setNote(event.target.value)}
                     placeholder="Optional note"
                   />
-                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                  <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
                     <Button onClick={submitStatus} disabled={updating}>
                       Update
                     </Button>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -77,8 +77,12 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const [shareOpen, setShareOpen] = useState(false);
   const [selectedReq, setSelectedReq] = useState<PurchaseRequisition | null>(null);
   const [shareUserIds, setShareUserIds] = useState<number[]>([]);
-  const [search, setSearch] = useState("");
-  const { queryState, setQueryState } = useQueryState({ status: "" });
+  const { queryState, setQueryState } = useQueryState({ status: "", q: "", page: "1", pageSize: "25" });
+  const [search, setSearch] = useState(String(queryState.q || ""));
+  useEffect(() => {
+    const timer = window.setTimeout(() => { if (String(queryState.q || "") !== search) setQueryState({ q: search, page: "1" }); }, 300);
+    return () => window.clearTimeout(timer);
+  }, [queryState.q, search, setQueryState]);
   const [previewReq, setPreviewReq] = useState<PurchaseRequisition | null>(null);
   const [rejectDialogReq, setRejectDialogReq] = useState<PurchaseRequisition | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -109,24 +113,13 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
       >("GET", `/api/approval-history/requisition/${historyDialogReq?.id}`),
   });
 
-  const { data: requisitionsRaw, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["/api/purchase-requisitions"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/purchase-requisitions");
-      if (Array.isArray(raw)) return raw as PurchaseRequisitionListEntry[];
-      if (raw && typeof raw === "object" && "data" in raw && Array.isArray((raw as { data: unknown }).data)) {
-        return (raw as { data: PurchaseRequisitionListEntry[] }).data;
-      }
-      if (raw && typeof raw === "object" && "ok" in raw && (raw as { ok?: boolean }).ok === false) {
-        throw new Error("Requisitions request failed");
-      }
-      if (raw !== null && raw !== undefined && typeof raw === "object" && !Array.isArray(raw)) {
-        throw new Error("Unexpected requisitions response shape");
-      }
-      return [];
-    },
+  const page = Math.max(1, Number(queryState.page) || 1);
+  const pageSize = [25, 50, 100].includes(Number(queryState.pageSize)) ? Number(queryState.pageSize) : 25;
+  const { data: requisitionPage, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ["/api/v2/procurement/requisitions", queryState.status, queryState.q, page, pageSize],
+    queryFn: () => requestJson<{ items: PurchaseRequisitionListEntry[]; total: number; page: number; pageSize: number; hasNext: boolean; summary?: { totalAmount: number; byStatus: Record<string, number> } }>("GET", `/api/v2/procurement/requisitions?page=${page}&pageSize=${pageSize}&status=${encodeURIComponent(String(queryState.status || ""))}&q=${encodeURIComponent(String(queryState.q || ""))}`),
   });
-  const requisitions = Array.isArray(requisitionsRaw) ? requisitionsRaw : EMPTY_REQUISITIONS;
+  const requisitions = requisitionPage?.items ?? EMPTY_REQUISITIONS;
 
   const {
     data: users = [],
@@ -174,25 +167,18 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
 
   const statusFilter = String(queryState.status || "").trim().toUpperCase();
   const searchFilter = search.trim();
-  const filtered = requisitions.filter((r) => {
-    if (statusFilter && String(r.status || "").toUpperCase() !== statusFilter) return false;
-    return (
-      !searchFilter ||
-      r.requisitionNumber?.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      String(r.id).includes(searchFilter)
-    );
-  });
+  const filtered = requisitions;
   const requisitionKpis = useMemo(() => {
     const norm = (value: unknown) => String(value || "").toUpperCase();
     return {
-      total: requisitions.length,
-      draft: requisitions.filter((r) => norm(r.status) === "DRAFT").length,
-      pending: requisitions.filter((r) => norm(r.status) === "PENDING").length,
-      approved: requisitions.filter((r) => norm(r.status) === "APPROVED").length,
-      rejected: requisitions.filter((r) => norm(r.status) === "REJECTED").length,
-      converted: requisitions.filter((r) => norm(r.status) === "CONVERTED").length,
+      total: requisitionPage?.total ?? 0,
+      draft: Number(requisitionPage?.summary?.byStatus.DRAFT ?? 0),
+      pending: Number(requisitionPage?.summary?.byStatus.PENDING ?? 0),
+      approved: Number(requisitionPage?.summary?.byStatus.APPROVED ?? 0),
+      rejected: Number(requisitionPage?.summary?.byStatus.REJECTED ?? 0),
+      converted: Number(requisitionPage?.summary?.byStatus.CONVERTED ?? 0),
     };
-  }, [requisitions]);
+  }, [requisitionPage]);
   const hasActiveFilters = Boolean(searchFilter || statusFilter);
   const supplierNameFor = (req: PurchaseRequisition) =>
     suppliers.find((s) => s.id === req.supplierId)?.name ?? (req.supplierId ? "Supplier #" + req.supplierId : "-");
@@ -222,7 +208,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   };
   const clearFilter = (key: "search" | "status") => {
     if (key === "search") setSearch("");
-    if (key === "status") setQueryState({ status: "" });
+    if (key === "status") setQueryState({ status: "", page: "1" });
   };
 
   const approveMutation = useMutation({
@@ -337,7 +323,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
             />
             <Select
               value={String(queryState.status || "") || "all"}
-              onValueChange={(value) => setQueryState({ status: value === "all" ? "" : value })}
+              onValueChange={(value) => setQueryState({ status: value === "all" ? "" : value, page: "1" })}
             >
               <SelectTrigger className="w-full sm:w-[200px]" data-testid="requisition-status-filter">
                 <SelectValue placeholder="All statuses" />
@@ -622,6 +608,13 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
               ))}
             </TableBody>
           </Table>
+          {requisitionPage ? <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-sm">
+            <span className="text-muted-foreground">{requisitionPage.total === 0 ? "0 results" : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, requisitionPage.total)} of ${requisitionPage.total}`}</span>
+            <div className="flex items-center gap-2">
+              <Select value={String(pageSize)} onValueChange={(value) => setQueryState({ pageSize: value, page: "1" })}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent>{[25, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} rows</SelectItem>)}</SelectContent></Select>
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setQueryState({ page: "1" })}>First</Button><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setQueryState({ page: String(page - 1) })}>Previous</Button><Button variant="outline" size="sm" disabled={!requisitionPage.hasNext} onClick={() => setQueryState({ page: String(page + 1) })}>Next</Button><Button variant="outline" size="sm" disabled={!requisitionPage.hasNext} onClick={() => setQueryState({ page: String(Math.max(1, Math.ceil(requisitionPage.total / pageSize))) })}>Last</Button>
+            </div>
+          </div> : null}
           </div>
         )}
       </DataState>

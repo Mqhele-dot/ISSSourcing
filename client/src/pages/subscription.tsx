@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link } from "wouter";
 import { AlertCircle, CheckCircle2, CreditCard, Crown, LockKeyhole, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -6,6 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
 import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
@@ -106,6 +117,7 @@ async function postSubscriptionAction(path: string, body?: unknown) {
 }
 
 export default function SubscriptionPage() {
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const { toast } = useToast();
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const { data: plansData, isLoading: plansLoading, error: plansError } = useQuery<PlansResponse>({
@@ -137,6 +149,11 @@ export default function SubscriptionPage() {
   const canManageSubscription = hasPermission("settings", "configure");
   const manageSubscriptionMessage = "You need settings:configure permission to manage subscription.";
   const actionDisabled = actionMutation.isPending || permissionsLoading || !canManageSubscription;
+  const normalizedStatus = String(current?.status ?? "").toLowerCase();
+  const cancellationPending = Boolean(current?.lifecycle?.cancelAtPeriodEnd);
+  const canStartTrial = !["active", "trialing"].includes(normalizedStatus);
+  const canCancel = ["active", "trialing"].includes(normalizedStatus) && !cancellationPending;
+  const canResume = normalizedStatus === "canceled" || cancellationPending;
   const isLoading = plansLoading || currentLoading || permissionsLoading;
   const error = plansError || currentError;
 
@@ -371,7 +388,7 @@ export default function SubscriptionPage() {
           <Button
           type="button"
           variant="outline"
-          disabled={actionDisabled}
+          disabled={actionDisabled || !canStartTrial}
           title={!canManageSubscription ? manageSubscriptionMessage : undefined}
           data-testid="subscription-start-trial"
           onClick={() =>
@@ -386,7 +403,7 @@ export default function SubscriptionPage() {
           <Button
           type="button"
           variant="outline"
-          disabled={actionDisabled}
+          disabled={actionDisabled || !canResume}
           title={!canManageSubscription ? manageSubscriptionMessage : undefined}
           data-testid="subscription-resume"
           onClick={() => actionMutation.mutate({ path: "/api/subscription/resume" })}
@@ -396,15 +413,34 @@ export default function SubscriptionPage() {
           <Button
           type="button"
           variant="destructive"
-          disabled={actionDisabled}
+          disabled={actionDisabled || !canCancel}
           title={!canManageSubscription ? manageSubscriptionMessage : undefined}
           data-testid="subscription-cancel"
-          onClick={() => actionMutation.mutate({ path: "/api/subscription/cancel" })}
+          onClick={() => setCancelConfirmOpen(true)}
           >
-            Cancel subscription
+            {cancellationPending ? "Cancellation scheduled" : "Cancel subscription"}
           </Button>
         </CardContent>
       </Card>
+
+      <AlertDialog open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Schedule subscription cancellation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Access remains active until the current period ends. You can resume before that date.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep subscription</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => actionMutation.mutate({ path: "/api/subscription/cancel" })}
+            >
+              Schedule cancellation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

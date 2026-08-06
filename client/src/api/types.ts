@@ -76,6 +76,9 @@ export type InventoryListItem = {
   available: number;
   location: string | null;
   warehouseQuantity?: number;
+  unassignedQuantity?: number;
+  warehousePositionCount?: number;
+  hasQuantityMismatch?: boolean;
   positionCount?: number;
   lastMovementAt?: string | Date | null;
   lastMovementReason?: string | null;

@@ -2,8 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { useLocation } from "wouter";
 import { useDropzone } from 'react-dropzone';
 import { useMutation } from '@tanstack/react-query';
-import type { File} from 'lucide-react';
-import { Loader2, FileText, Upload, Database, Check, ChevronDown, X, FilePlus, Link, Wrench } from 'lucide-react';
+import { Loader2, FileText, Upload, Database, Check, ChevronDown, X, Wrench } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -87,7 +86,8 @@ async function postFormData(url: string, formData: FormData) {
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed (${response.status})`);
+    const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+    throw new Error(payload?.error ?? payload?.message ?? `Request failed (${response.status})`);
   }
 
   return response.json();
@@ -145,6 +145,17 @@ type ProcessingOptions = {
   columnMapping?: Record<string, string>;
 };
 
+type ImportPreview = {
+  success: boolean;
+  preview: true;
+  fileName: string;
+  fileType: string;
+  columns: string[];
+  totalRows: number;
+  sampleRows: Array<Record<string, unknown>>;
+  validationErrors: Array<{ row: number; message: string }>;
+};
+
 const DocumentExtractorPage: React.FC = () => {
   const { toast } = useToast();
   const [location, navigate] = useLocation();
@@ -159,8 +170,6 @@ const DocumentExtractorPage: React.FC = () => {
     sheetIndex: 0,
     exportFormat: 'json',
   });
-  const [urlInput, setUrlInput] = useState('');
-  const [urls, setUrls] = useState<string[]>([]);
 
   // State for extraction results
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
@@ -170,6 +179,8 @@ const DocumentExtractorPage: React.FC = () => {
 
   // Column mapping for database import
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
 
   // Fetch supported formats when component mounts
   React.useEffect(() => {
@@ -222,31 +233,6 @@ const DocumentExtractorPage: React.FC = () => {
     },
   });
 
-  // URL processing mutation
-  const urlProcessingMutation = useMutation({
-    mutationFn: async () => {
-      return requestJson<BatchExtractionResult>('POST', '/api/document-extractor/from-urls', {
-        urls,
-        options,
-      });
-    },
-    onSuccess: (data: BatchExtractionResult) => {
-      setBatchExtractionResult(data);
-      toast({
-        title: 'URL processing completed!',
-        description: `Successfully processed ${data.data.successfulFiles} of ${data.data.totalFiles} URLs`,
-        variant: 'default',
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Error processing URLs',
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
-
   // Database import mutation
   const databaseImportMutation = useMutation({
     mutationFn: async (formData: FormData) => {
@@ -259,6 +245,24 @@ const DocumentExtractorPage: React.FC = () => {
         variant: 'destructive',
       });
     },
+  });
+
+  const importPreviewMutation = useMutation({
+    mutationFn: async (formData: FormData) => postFormData('/api/document-extractor/import-to-database', formData) as Promise<ImportPreview>,
+    onSuccess: (data) => {
+      setImportPreview(data);
+      setColumnMapping((current) => {
+        const next = { ...current };
+        for (const field of getDefaultColumnMapping()) {
+          if (next[field]) continue;
+          const match = data.columns.find((column) => column.toLowerCase().replaceAll(/[^a-z0-9]/g, '') === field.toLowerCase());
+          if (match) next[field] = match;
+        }
+        return next;
+      });
+      toast({ title: 'Import preview ready', description: `${data.totalRows} row(s) found in ${data.fileName}. Review mappings before importing.` });
+    },
+    onError: (error: Error) => toast({ title: 'Could not preview import', description: error.message, variant: 'destructive' }),
   });
 
   // Dropzone for single file
@@ -277,8 +281,8 @@ const DocumentExtractorPage: React.FC = () => {
     maxFiles: 1,
     accept: {
       'application/pdf': ['.pdf'],
-      'application/vnd.ms-excel': ['.xls'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
       'text/csv': ['.csv'],
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
@@ -302,27 +306,14 @@ const DocumentExtractorPage: React.FC = () => {
     onDrop: onBatchFilesDrop,
     accept: {
       'application/pdf': ['.pdf'],
-      'application/vnd.ms-excel': ['.xls'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
       'text/csv': ['.csv'],
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
       'image/tiff': ['.tiff', '.tif']
     }
   });
-
-  // Handle URL addition
-  const handleAddUrl = () => {
-    if (urlInput && !urls.includes(urlInput)) {
-      setUrls([...urls, urlInput]);
-      setUrlInput('');
-    }
-  };
-
-  // Handle URL removal
-  const handleRemoveUrl = (url: string) => {
-    setUrls(urls.filter(u => u !== url));
-  };
 
   // Handle database import (stable callback for dropzone)
   const handleDatabaseImport = useCallback((file: File) => {
@@ -345,16 +336,24 @@ const DocumentExtractorPage: React.FC = () => {
   // Dropzone for database import
   const onDatabaseImportDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles && acceptedFiles.length > 0) {
-      handleDatabaseImport(acceptedFiles[0]);
+      const file = acceptedFiles[0];
+      setImportFile(file);
+      setImportPreview(null);
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('targetSchema', targetSchema);
+      formData.append('columnMapping', JSON.stringify(columnMapping));
+      formData.append('previewOnly', 'true');
+      importPreviewMutation.mutate(formData);
     }
-  }, [handleDatabaseImport]);
+  }, [columnMapping, importPreviewMutation, targetSchema]);
 
   const { getRootProps: getDatabaseImportRootProps, getInputProps: getDatabaseImportInputProps } = useDropzone({
     onDrop: onDatabaseImportDrop,
     maxFiles: 1,
     accept: {
-      'application/vnd.ms-excel': ['.xls'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
       'text/csv': ['.csv'],
     }
   });
@@ -401,8 +400,7 @@ const DocumentExtractorPage: React.FC = () => {
     
     try {
       const formData = new FormData();
-      const blob = new Blob([JSON.stringify(extractionResult.data)], { type: 'application/json' });
-      formData.append('data', blob);
+      formData.append('data', JSON.stringify(extractionResult.data));
       formData.append('format', 'csv');
       
       const headers = await buildRequestHeaders("POST");
@@ -445,7 +443,6 @@ const DocumentExtractorPage: React.FC = () => {
           <TabsList>
             <TabsTrigger value="single">Single File</TabsTrigger>
             <TabsTrigger value="batch">Batch Processing</TabsTrigger>
-            <TabsTrigger value="url">From URLs</TabsTrigger>
             <TabsTrigger value="import">Database Import</TabsTrigger>
             <TabsTrigger value="options">Options</TabsTrigger>
           </TabsList>
@@ -840,169 +837,6 @@ const DocumentExtractorPage: React.FC = () => {
             )}
           </TabsContent>
 
-          {/* URL Tab */}
-          <TabsContent value="url" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Process from URLs</CardTitle>
-                <CardDescription>
-                  Enter URLs to PDF, Excel, or CSV files to process them remotely.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex space-x-2">
-                    <Input 
-                      placeholder="https://example.com/document.pdf" 
-                      value={urlInput}
-                      onChange={(e) => setUrlInput(e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button onClick={handleAddUrl} type="button">
-                      <FilePlus className="h-4 w-4 mr-2" />
-                      Add
-                    </Button>
-                  </div>
-                  
-                  {urls.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="p-2 border rounded-md max-h-40 overflow-y-auto">
-                        {urls.map((url, index) => (
-                          <div key={index} className="flex justify-between items-center p-1 hover:bg-muted">
-                            <span className="text-sm truncate">{url}</span>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handleRemoveUrl(url)}
-                              className="h-6 w-6"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                      
-                      <Button 
-                        className="w-full" 
-                        disabled={urlProcessingMutation.isPending}
-                        onClick={() => urlProcessingMutation.mutate()}
-                      >
-                        {urlProcessingMutation.isPending ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <Link className="h-4 w-4 mr-2" />
-                            Process {urls.length} URLs
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {batchExtractionResult && urlProcessingMutation.isSuccess && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>URL Processing Results</CardTitle>
-                  <CardDescription>
-                    Processed {batchExtractionResult.data.totalFiles} URLs with {batchExtractionResult.data.totalRecords} total records.
-                  </CardDescription>
-                  <div className="flex space-x-2 mt-2">
-                    <Badge variant="outline" className="bg-green-50 text-green-800">
-                      {batchExtractionResult.data.successfulFiles} successful
-                    </Badge>
-                    {batchExtractionResult.data.failedFiles > 0 && (
-                      <Badge variant="outline" className="bg-red-50 text-red-800">
-                        {batchExtractionResult.data.failedFiles} failed
-                      </Badge>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <Accordion type="single" collapsible className="w-full">
-                    {batchExtractionResult.data.results.map((result, index) => (
-                      <AccordionItem key={index} value={`item-${index}`}>
-                        <AccordionTrigger className="hover:no-underline group">
-                          <div className="flex items-center space-x-2 text-left">
-                            {result.success ? (
-                              <Check className="h-4 w-4 text-green-600" />
-                            ) : (
-                              <X className="h-4 w-4 text-red-600" />
-                            )}
-                            <span>{result.fileName}</span>
-                            {result.success && result.records && (
-                              <Badge variant="outline" className="ml-2">
-                                {result.records} records
-                              </Badge>
-                            )}
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          {result.success ? (
-                            <div className="space-y-2">
-                              <div className="rounded-md border overflow-hidden">
-                                <div className="max-h-60 overflow-auto">
-                                  {result.data && result.data.data && result.data.data.length > 0 ? (
-                                    <Table>
-                                      <TableHeader>
-                                        <TableRow>
-                                          {result.data.columns ? (
-                                            result.data.columns.map((column: string, colIndex: number) => (
-                                              <TableHead key={colIndex}>{column}</TableHead>
-                                            ))
-                                          ) : (
-                                            Object.keys(result.data.data[0]).map((key, colIndex) => (
-                                              <TableHead key={colIndex}>{key}</TableHead>
-                                            ))
-                                          )}
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {result.data.data.slice(0, 5).map((row: Record<string, unknown>, rowIndex: number) => (
-                                          <TableRow key={rowIndex}>
-                                            {Object.entries(row).map(([key, value], cellIndex) => (
-                                              <TableCell key={cellIndex}>
-                                                {typeof value === 'object' && value !== null
-                                                  ? JSON.stringify(value)
-                                                  : String(value)}
-                                              </TableCell>
-                                            ))}
-                                          </TableRow>
-                                        ))}
-                                      </TableBody>
-                                    </Table>
-                                  ) : (
-                                    <div className="p-4 text-center text-sm text-muted-foreground">
-                                      No structured data found
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                              {result.data && result.data.data && result.data.data.length > 5 && (
-                                <p className="text-sm text-muted-foreground">
-                                  Showing 5 of {result.data.data.length} records
-                                </p>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="p-2 rounded bg-red-50 text-red-800">
-                              {result.error}
-                            </div>
-                          )}
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))}
-                  </Accordion>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
           {/* Database Import Tab */}
           <TabsContent value="import" className="space-y-4">
             <Card>
@@ -1079,22 +913,65 @@ const DocumentExtractorPage: React.FC = () => {
                       className="border-2 border-dashed rounded-md border-gray-300 p-8 text-center hover:border-primary cursor-pointer"
                     >
                       <input {...getDatabaseImportInputProps()} />
-                      {databaseImportMutation.isPending ? (
+                      {databaseImportMutation.isPending || importPreviewMutation.isPending ? (
                         <div className="flex flex-col items-center justify-center">
                           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                          <p className="mt-2">Importing data...</p>
+                          <p className="mt-2">{databaseImportMutation.isPending ? 'Importing data...' : 'Reading workbook preview...'}</p>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center justify-center">
                           <Database className="h-8 w-8 text-muted-foreground mb-2" />
                           <p className="text-md font-medium">Drag & drop a file here, or click to select</p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Excel and CSV formats supported
+                            Excel (.xlsx/.xlsm) and CSV formats supported
                           </p>
                         </div>
                       )}
                     </div>
                   </div>
+
+                  {importPreview ? (
+                    <Card data-testid="document-import-preview">
+                      <CardHeader>
+                        <CardTitle className="text-base">Review before import</CardTitle>
+                        <CardDescription>{importPreview.fileName} · {importPreview.totalRows} rows · showing up to 20</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {importPreview.validationErrors.length > 0 ? (
+                          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                            {importPreview.validationErrors.length} row validation issue(s) found. Update the column mapping and upload the preview again.
+                          </div>
+                        ) : null}
+                        <div className="max-h-72 overflow-auto rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>{importPreview.columns.map((column) => <TableHead key={column}>{column}</TableHead>)}</TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {importPreview.sampleRows.map((row, rowIndex) => (
+                                <TableRow key={rowIndex}>{importPreview.columns.map((column) => <TableCell key={column}>{String(row[column] ?? '')}</TableCell>)}</TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button type="button" disabled={!importFile || importPreview.validationErrors.length > 0 || databaseImportMutation.isPending}>Import {importPreview.totalRows} rows</Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Import validated workbook rows?</AlertDialogTitle>
+                              <AlertDialogDescription>This creates records in {targetSchema}. Duplicate and database constraints remain authoritative.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => importFile && handleDatabaseImport(importFile)}>Confirm import</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </CardContent>
+                    </Card>
+                  ) : null}
 
                   <div className="bg-muted rounded-md p-4">
                     <h3 className="text-sm font-medium mb-2">Import Guidelines</h3>

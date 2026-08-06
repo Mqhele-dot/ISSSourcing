@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
 import { isFeatureEnabled } from '@/lib/config';
+import { publishInventoryConnectionState, removeInventoryConnectionState, useSharedInventoryConnectionState, type InventoryConnectionState } from '@/lib/realtime/inventory-connection-status';
 
 export type WebSocketMessage = {
   type: 'inventory_update' | 'stock_transfer' | 'stock_alert' | 'connection' | 'warehouse_update' | 'error' | 'item_subscribe' | 'item_unsubscribe' | 'capabilities';
@@ -27,13 +28,33 @@ export function useWebSocket({
   onConnectionStatus,
   forceEnabled = false,
 }: UseWebSocketParams = {}) {
+  const webSocketsEnabled = forceEnabled || isFeatureEnabled('enableWebSockets');
   const [isConnected, setIsConnected] = useState(false);
+  const connectionIdRef = useRef(`inventory-${Math.random().toString(36).slice(2)}`);
+  const connectionState = useSharedInventoryConnectionState();
+  const setConnectionState = useCallback((state: InventoryConnectionState) => publishInventoryConnectionState(connectionIdRef.current, state), []);
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const { toast } = useToast();
-  
-  // Check if WebSockets are enabled via feature flag
-  const webSocketsEnabled = forceEnabled || isFeatureEnabled('enableWebSockets');
+  const mountedRef = useRef(false);
+  const manualCloseRef = useRef(false);
+  const connectRef = useRef<() => void>(() => undefined);
+  const handlersRef = useRef({
+    onInventoryUpdate,
+    onStockAlert,
+    onStockTransfer,
+    onConnectionStatus,
+    warehouses,
+    toast,
+  });
+  handlersRef.current = {
+    onInventoryUpdate,
+    onStockAlert,
+    onStockTransfer,
+    onConnectionStatus,
+    warehouses,
+    toast,
+  };
   
   // Reconnect logic
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -66,8 +87,9 @@ export function useWebSocket({
   const connect = useCallback(() => {
     // If WebSockets are disabled via feature flag, don't connect
     if (!webSocketsEnabled) {
+      setConnectionState('disabled');
       console.log('WebSockets are disabled by feature flag. Not connecting.');
-      onConnectionStatus?.(false);
+      handlersRef.current.onConnectionStatus?.(false);
       return;
     }
     
@@ -83,6 +105,8 @@ export function useWebSocket({
     }
     
     try {
+      manualCloseRef.current = false;
+      setConnectionState(reconnectCount.current > 0 ? 'reconnecting' : 'connecting');
       // Close any existing connection
       if (socketRef.current) {
         try {
@@ -103,16 +127,18 @@ export function useWebSocket({
       socketRef.current.onopen = (event) => {
         console.log('WebSocket connected successfully:', event);
         setIsConnected(true);
-        onConnectionStatus?.(true);
+        setConnectionState('connected');
+        handlersRef.current.onConnectionStatus?.(true);
         reconnectCount.current = 0; // Reset reconnect counter
         clearReconnectTimeout();
         
         // Subscribe to specific warehouses (if any)
-        if (warehouses.length > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
+        const subscribedWarehouses = handlersRef.current.warehouses;
+        if (subscribedWarehouses.length > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
           try {
             socketRef.current.send(JSON.stringify({
               type: 'warehouse_update',
-              payload: { warehouses }
+              payload: { warehouses: subscribedWarehouses }
             }));
           } catch (err) {
             console.error('Error sending warehouse subscription:', err);
@@ -128,13 +154,13 @@ export function useWebSocket({
           // Handle different message types
           switch (message.type) {
             case 'inventory_update':
-              onInventoryUpdate?.(message.payload);
+              handlersRef.current.onInventoryUpdate?.(message.payload);
               break;
             case 'stock_alert':
-              onStockAlert?.(message.payload);
+              handlersRef.current.onStockAlert?.(message.payload);
               if (message.payload.alertType === 'LOW_STOCK') {
                 const { item, currentLevel, reorderThreshold } = message.payload;
-                toast({
+                handlersRef.current.toast({
                   title: 'Low Stock Alert',
                   description: `${item.name || 'Item'} is running low (${currentLevel}/${reorderThreshold})`,
                   variant: 'destructive'
@@ -142,11 +168,11 @@ export function useWebSocket({
               }
               break;
             case 'stock_transfer':
-              onStockTransfer?.(message.payload);
+              handlersRef.current.onStockTransfer?.(message.payload);
               break;
             case 'error':
               console.error('WebSocket error message received:', message.payload);
-              toast({
+              handlersRef.current.toast({
                 title: 'Connection Error',
                 description: message.payload.message || 'Unknown error occurred',
                 variant: 'destructive'
@@ -162,21 +188,25 @@ export function useWebSocket({
         console.log('WebSocket disconnected with code:', event.code, 'reason:', event.reason || 'No reason');
         console.log('WebSocket was clean close?', event.wasClean);
         
+        if (!mountedRef.current) return;
+
         setIsConnected(false);
-        onConnectionStatus?.(false);
+        const shouldReconnect = !manualCloseRef.current && !event.wasClean && reconnectCount.current < MAX_RECONNECT_ATTEMPTS;
+        setConnectionState(shouldReconnect ? 'reconnecting' : 'disconnected');
+        handlersRef.current.onConnectionStatus?.(false);
         
         // Only attempt to reconnect if it wasn't a clean close and we haven't exceeded attempts
-        if (!event.wasClean && reconnectCount.current < MAX_RECONNECT_ATTEMPTS) {
+        if (shouldReconnect) {
           reconnectCount.current += 1;
           
           console.log(`Scheduling reconnect attempt ${reconnectCount.current}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_INTERVAL}ms`);
           reconnectTimeoutRef.current = setTimeout(() => {
             console.log(`Attempting to reconnect (${reconnectCount.current}/${MAX_RECONNECT_ATTEMPTS})...`);
-            connect();
+            connectRef.current();
           }, RECONNECT_INTERVAL);
-        } else if (reconnectCount.current >= MAX_RECONNECT_ATTEMPTS) {
+        } else if (!manualCloseRef.current && reconnectCount.current >= MAX_RECONNECT_ATTEMPTS) {
           console.log('Maximum reconnect attempts reached, giving up');
-          toast({
+          handlersRef.current.toast({
             title: 'Connection Lost',
             description: 'Could not reconnect to real-time inventory updates.',
             variant: 'destructive'
@@ -193,13 +223,15 @@ export function useWebSocket({
       
     } catch (error) {
       console.error('Error setting up WebSocket connection:', error);
-      toast({
+      handlersRef.current.toast({
         title: 'Connection Error',
         description: 'Failed to establish real-time connection',
         variant: 'destructive'
       });
     }
-  }, [getWebSocketUrl, onConnectionStatus, onInventoryUpdate, onStockAlert, onStockTransfer, warehouses, toast, clearReconnectTimeout, webSocketsEnabled]);
+  }, [getWebSocketUrl, clearReconnectTimeout, setConnectionState, webSocketsEnabled]);
+
+  connectRef.current = connect;
   
   // Send a message to the WebSocket server
   const sendMessage = useCallback((message: WebSocketMessage) => {
@@ -212,24 +244,34 @@ export function useWebSocket({
   
   // Disconnect from the WebSocket server
   const disconnect = useCallback(() => {
+    manualCloseRef.current = true;
+    clearReconnectTimeout();
     if (socketRef.current) {
       socketRef.current.close();
       socketRef.current = null;
     }
-    clearReconnectTimeout();
     setIsConnected(false);
-    onConnectionStatus?.(false);
-  }, [clearReconnectTimeout, onConnectionStatus]);
+    setConnectionState(webSocketsEnabled ? 'disconnected' : 'disabled');
+    handlersRef.current.onConnectionStatus?.(false);
+  }, [clearReconnectTimeout, setConnectionState, webSocketsEnabled]);
   
   // Connect when the component mounts
   useEffect(() => {
+    const connectionId = connectionIdRef.current;
+    mountedRef.current = true;
     connect();
     
     // Clean up the WebSocket connection when the component unmounts
     return () => {
-      disconnect();
+      mountedRef.current = false;
+      manualCloseRef.current = true;
+      clearReconnectTimeout();
+      const socket = socketRef.current;
+      socketRef.current = null;
+      if (socket) socket.close();
+      removeInventoryConnectionState(connectionId);
     };
-  }, [connect, disconnect]);
+  }, [clearReconnectTimeout, connect]);
   
   // Update warehouse subscriptions when the warehouses prop changes
   useEffect(() => {
@@ -243,6 +285,7 @@ export function useWebSocket({
   
   return {
     isConnected,
+    connectionState,
     lastMessage,
     sendMessage,
     connect,

@@ -7,6 +7,11 @@ import { RouteLoadingBoundary } from "@/app/route-loading-boundary";
 import AuthPage from "@/pages/auth-page";
 import { withProductionBoundary } from "@/components/production-boundary";
 
+function LegacyRedirect({ to }: { to: string }) {
+  const suffix = typeof window !== "undefined" ? window.location.search : "";
+  return <Redirect to={`${to}${suffix && !to.includes("?") ? suffix : ""}`} />;
+}
+
 const NotFound = lazy(() => import("@/pages/not-found"));
 const Home = lazy(() => import("@/pages/home"));
 const Inventory = lazy(() => import("@/pages/inventory"));
@@ -27,7 +32,6 @@ const BarcodeScannerPage = lazy(() => import("@/pages/barcode-scanner-page"));
 const RealTimeUpdatesPage = lazy(() => import("@/pages/real-time-updates-page"));
 const SyncTestPage = lazy(() => import("@/pages/sync-test-page"));
 const SyncDashboard = lazy(() => import("@/pages/sync-dashboard"));
-const DownloadPage = lazy(() => import("@/pages/download"));
 const ProfilePage = lazy(() => import("@/pages/profile"));
 const EmployeeProfilesPage = lazy(() => import("@/pages/employee-profiles"));
 const ImageRecognitionPage = lazy(() => import("@/pages/image-recognition-page"));
@@ -47,6 +51,7 @@ const SourcingPage = lazy(() => import("@/pages/sourcing"));
 const DocumentsPage = lazy(() => import("@/pages/documents"));
 const UploadsPathRedirect = lazy(() => import("@/pages/uploads-redirect"));
 const ControlTowerPage = lazy(() => import("@/pages/control-tower"));
+const FuelOperationsPage = lazy(() => import("@/pages/fuel-operations"));
 const AccountsPayablePage = lazy(() => import("@/pages/accounts-payable"));
 const AccountsPayableRedirectToIntake = lazy(() => import("@/pages/accounts-payable/accounts-payable-redirect-to-intake"));
 const AnalyticsWorkspacePage = lazy(() => import("@/pages/analytics-workspace"));
@@ -59,7 +64,6 @@ const MobileReceivePage = lazy(() => import("@/pages/mobile-receive"));
 const MobilePickPage = lazy(() => import("@/pages/mobile-pick"));
 const MobileCountsPage = lazy(() => import("@/pages/mobile-counts"));
 const MobileHubHome = lazy(() => import("@/pages/mobile-hub-home"));
-const MobileHubTasks = lazy(() => import("@/pages/mobile-hub-tasks"));
 const MobileHubMore = lazy(() => import("@/pages/mobile-hub-more"));
 const MobileApprovalsPage = lazy(() => import("@/pages/mobile-approvals"));
 const OperationsOverviewPage = lazy(() => import("@/pages/operations-overview-page"));
@@ -85,10 +89,10 @@ const ProductionBarcodeScannerPage = withProductionBoundary(BarcodeScannerPage, 
 const ProductionMobileCountsPage = withProductionBoundary(MobileCountsPage, "mobile_operations");
 const ProductionMobilePickPage = withProductionBoundary(MobilePickPage, "mobile_operations");
 const ProductionMobileHubHome = withProductionBoundary(MobileHubHome, "mobile_operations");
-const ProductionMobileHubTasks = withProductionBoundary(MobileHubTasks, "mobile_operations");
 const ProductionMobileHubMore = withProductionBoundary(MobileHubMore, "mobile_operations");
 const ProductionOperationsOverviewPage = withProductionBoundary(OperationsOverviewPage, "logistics");
 const ProductionControlTowerPage = withProductionBoundary(ControlTowerPage, "logistics");
+const ProductionFuelOperationsPage = withProductionBoundary(FuelOperationsPage, "logistics");
 const ProductionInventoryAnalyticsPage = withProductionBoundary(AnalyticsWorkspacePage, "inventory");
 const ProductionFinanceAnalyticsPage = withProductionBoundary(AnalyticsWorkspacePage, "finance");
 const ProductionLogisticsAnalyticsPage = withProductionBoundary(AnalyticsWorkspacePage, "logistics");
@@ -100,7 +104,9 @@ export function AppRouter() {
     <RouteLoadingBoundary>
       <Switch>
         <ProtectedRoute path={APP_ROUTES.operations.mobileHub} component={ProductionMobileHubHome} />
-        <ProtectedRoute path={APP_ROUTES.operations.mobileTasks} component={ProductionMobileHubTasks} />
+        <Route path={APP_ROUTES.operations.mobileTasks}>
+          <LegacyRedirect to={APP_ROUTES.operations.mobileHub} />
+        </Route>
         <ProtectedRoute path={APP_ROUTES.operations.mobileCountSpot} component={ProductionMobileCountsPage} />
         <ProtectedRoute path="/m/counts/:id/review" component={ProductionMobileCountsPage} />
         <ProtectedRoute path="/m/counts/:id" component={ProductionMobileCountsPage} />
@@ -113,7 +119,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.operations.mobilePick} component={ProductionMobilePickPage} />
 
         <ProtectedRoute path={APP_ROUTES.setup.product} component={ProductSetupPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.systemDiagnostics} component={SystemDiagnosticsPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.systemDiagnostics} component={SystemDiagnosticsPage} allowedRoles={["admin"]} />
 
         <ProtectedRoute path={APP_ROUTES.home} component={Home} />
         <ProtectedRoute path="/get-educated/:moduleId" component={GetEducatedModulePage} />
@@ -132,6 +138,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.operations.mobileWorkflows} component={MobileWorkflowsLauncherPage} />
         <ProtectedRoute path={APP_ROUTES.operations.root} component={ProductionOperationsOverviewPage} />
         <ProtectedRoute path={APP_ROUTES.operations.controlTower} component={ProductionControlTowerPage} />
+        <ProtectedRoute path={APP_ROUTES.operations.fuel} component={ProductionFuelOperationsPage} />
         <ProtectedRoute path={APP_ROUTES.operations.logistics} component={ProductionLogisticsPage} />
         <ProtectedRoute path={`${APP_ROUTES.operations.logistics}/:id`} component={ProductionLogisticsPage} />
         <ProtectedRoute path={APP_ROUTES.operations.exceptions} component={ProductionExceptionsPage} />
@@ -166,46 +173,48 @@ export function AppRouter() {
           <Redirect to={APP_ROUTES.finance.invoices} />
         </Route>
 
-        <ProtectedRoute path={APP_ROUTES.admin.integrations} component={IntegrationsPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.masterData} component={MasterDataPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.masterDataSection(":section")} component={MasterDataPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.auditLogs} component={AuditLogsPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.documents} component={DocumentsPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.integrations} component={IntegrationsPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.masterData} component={MasterDataPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.masterDataSection(":section")} component={MasterDataPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.auditLogs} component={AuditLogsPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.documents} component={DocumentsPage} allowedRoles={["manager", "admin"]} />
         <ProtectedRoute path="/uploads/*" component={UploadsPathRedirect} />
         <ProtectedRoute path="/Uploads/*" component={UploadsPathRedirect} />
-        <ProtectedRoute path={APP_ROUTES.admin.realTimeUpdates} component={RealTimeUpdatesPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.syncTest} component={SyncTestPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.syncDashboard} component={SyncDashboard} />
-        <ProtectedRoute path={APP_ROUTES.admin.downloads} component={DownloadPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.onboarding} component={OnboardingPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.settings} component={SettingsPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.settingsSection(":section")} component={SettingsPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.userRoles} component={UserRolesPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.subscription} component={SubscriptionPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.realTimeUpdates} component={RealTimeUpdatesPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.syncTest} component={SyncTestPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.syncDashboard} component={SyncDashboard} allowedRoles={["admin"]} />
+        <Route path={APP_ROUTES.admin.downloads}>
+          <Redirect to={APP_ROUTES.analytics.exportCenter} />
+        </Route>
+        <ProtectedRoute path={APP_ROUTES.admin.onboarding} component={OnboardingPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.settings} component={SettingsPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.settingsSection(":section")} component={SettingsPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.userRoles} component={UserRolesPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.subscription} component={SubscriptionPage} allowedRoles={["admin"]} />
         <ProtectedRoute path={APP_ROUTES.admin.profile} component={ProfilePage} />
-        <ProtectedRoute path={APP_ROUTES.admin.employeeProfiles} component={EmployeeProfilesPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.employeeProfiles} component={EmployeeProfilesPage} allowedRoles={["manager", "admin"]} />
         <ProtectedRoute path={APP_ROUTES.admin.imageRecognition} component={ImageRecognitionPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.documentExtractor} component={DocumentExtractorPage} />
-        <ProtectedRoute path={APP_ROUTES.admin.documentExtractorMode(":mode")} component={DocumentExtractorPage} />
+        <ProtectedRoute path={APP_ROUTES.admin.documentExtractor} component={DocumentExtractorPage} allowedRoles={["manager", "admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.documentExtractorMode(":mode")} component={DocumentExtractorPage} allowedRoles={["manager", "admin"]} />
 
         {LEGACY_REDIRECT_RULES.map((rule) => {
           if (rule.kind === "static") {
             return (
               <Route key={`s:${rule.path}`} path={rule.path}>
-                <Redirect to={rule.to} />
+                <LegacyRedirect to={rule.to} />
               </Route>
             );
           }
           if (rule.kind === "idParam") {
             return (
               <Route key={`i:${rule.path}`} path={rule.path}>
-                {(params) => <Redirect to={rule.to(params as { id: string })} />}
+                {(params) => <LegacyRedirect to={rule.to(params as { id: string })} />}
               </Route>
             );
           }
           return (
             <Route key={`p:${rule.path}`} path={rule.path}>
-              {(params) => <Redirect to={rule.to(params as { po: string })} />}
+              {(params) => <LegacyRedirect to={rule.to(params as { po: string })} />}
             </Route>
           );
         })}

@@ -79,10 +79,40 @@ async function expectActivity(action: string, referenceType: string) {
     .toBeGreaterThan(0);
 }
 
+async function expectSettingsAudit(companyName: string) {
+  const row = await expect
+    .poll(async () => {
+      const result = await pool.query<{
+        after_company_name: string | null;
+        after_currency_code: string | null;
+        event_hash: string | null;
+      }>(
+        `
+          SELECT
+            details -> 'after' ->> 'companyName' AS after_company_name,
+            details -> 'after' ->> 'currencyCode' AS after_currency_code,
+            event_hash
+          FROM audit_logs
+          WHERE action = 'SETTINGS_UPDATED'
+            AND resource_type = 'settings'
+          ORDER BY id DESC
+          LIMIT 1
+        `,
+      );
+      return result.rows[0] ?? null;
+    })
+    .toMatchObject({
+      after_company_name: companyName,
+      after_currency_code: "ZAR",
+    });
+  expect(row?.event_hash).toBeTruthy();
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.describe("control-plane production controls", () => {
   let requesterUserId: number;
+  let adminCookie = "";
 
   test.beforeAll(async () => {
     requesterUserId = await ensureTestUser("e2e_control_requester", "viewer", "Requester");
@@ -95,11 +125,22 @@ test.describe("control-plane production controls", () => {
 
     const companyName = `InvTrack Control E2E ${Date.now()}`;
     await page.getByTestId("settings-control-company-name").fill(companyName);
-    await page.getByTestId("settings-control-currency").fill("ZAR");
+    await page.getByTestId("settings-control-currency").click();
+    await page.getByRole("option", { name: "ZAR" }).click();
     await page.getByTestId("settings-control-low-stock").fill("12");
     await page.getByTestId("settings-control-save").click();
     await expect(page.getByText("Settings updated", { exact: true })).toBeVisible({ timeout: 10_000 });
     await expectActivity("SETTINGS_UPDATED", "settings");
+    await expectSettingsAudit(companyName);
+
+    adminCookie = (await loginForTests("admin", TEST_PASSWORD)) ?? "";
+    const invalidCurrency = await apiJsonRequest("/settings", {
+      method: "PUT",
+      cookie: adminCookie,
+      body: { currencyCode: "ZZZ" },
+    });
+    expect(invalidCurrency.status).toBe(400);
+    expect(invalidCurrency.text).toContain("INVALID_CURRENCY");
 
     await loginAs(page, "e2e_control_requester", requesterUserId);
     await page.goto("/admin/settings", { waitUntil: "domcontentloaded" });
@@ -122,7 +163,6 @@ test.describe("control-plane production controls", () => {
     await expect(page.getByTestId("role-manager-users-card")).toBeVisible();
     await expect(page.getByTestId("role-user-row-admin")).toBeVisible();
 
-    const adminCookie = (await loginForTests("admin", TEST_PASSWORD)) ?? "";
     const requesterCookie = (await loginForTests("e2e_control_requester", TEST_PASSWORD)) ?? "";
     const users = await apiJsonRequest("/users", { cookie: adminCookie });
     const rows = Array.isArray(users.json) ? users.json : (users.json as { data?: Array<{ id: number; username: string }> })?.data ?? [];

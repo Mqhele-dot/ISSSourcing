@@ -15,6 +15,7 @@ import {
   FileText,
   FileUp,
   FolderOpen,
+  Fuel,
   Home,
   IdCard,
   Landmark,
@@ -53,20 +54,15 @@ import {
 } from "@/lib/routes/section-metadata";
 import { invTrackFetch, queryClient } from "@/lib/queryClient";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { getGlobalSearchTypeLabel, useGlobalSearch } from "@/features/global-search/use-global-search";
+import { useAuth } from "@/hooks/use-auth";
+import { hasProfileNavigationAccess } from "@/lib/access/profile-navigation-access";
 
-/** Dispatched to open the palette from header or other chrome without prop drilling. */
 export const OPEN_COMMAND_PALETTE_EVENT = "invtrack:open-command-palette";
 
 export function requestOpenCommandPalette(): void {
   window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT));
 }
-
-type NavEntry = {
-  label: string;
-  path: string;
-  keywords?: string;
-  icon: React.ReactNode;
-};
 
 const ICONS = {
   activity: <Activity className="h-4 w-4" />,
@@ -82,6 +78,7 @@ const ICONS = {
   download: <ArrowDownToLine className="h-4 w-4" />,
   "file-spreadsheet": <FileText className="h-4 w-4" />,
   "folder-open": <FolderOpen className="h-4 w-4" />,
+  fuel: <Fuel className="h-4 w-4" />,
   home: <Home className="h-4 w-4" />,
   "id-card": <IdCard className="h-4 w-4" />,
   landmark: <Landmark className="h-4 w-4" />,
@@ -103,7 +100,6 @@ const ICONS = {
   users: <Users className="h-4 w-4" />,
 } as const;
 
-/** Warm cache for high-traffic lists when user opens the palette (enterprise “feel”). */
 function prefetchPrimaryData(): void {
   const warm: { queryKey: string[] }[] = [
     { queryKey: ["/api/inventory"] },
@@ -122,16 +118,23 @@ function prefetchPrimaryData(): void {
         staleTime: 60_000,
       })
       .catch(() => {
-        /* ignore — session or RBAC may block prefetch */
+        /* ignore */
       });
   }
 }
 
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
   const [, navigate] = useLocation();
-  /** Match master-data and other wide-layout admin pages (lg+). */
   const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const { user } = useAuth();
+  const globalSearch = useGlobalSearch(searchInput, { limit: 5, enabled: open });
+  const trimmedSearch = searchInput.trim();
+  const globalResults = (globalSearch.data ?? []).filter((result) =>
+    hasProfileNavigationAccess(user?.role, user?.preferences as { allowedNavPaths?: string[] } | null, result.href),
+  );
+
   const sections = useMemo(() => {
     const mapItem = (item: (typeof APP_NAV_SECTIONS)[number]["items"][number]) => ({
       label: item.label,
@@ -148,19 +151,22 @@ export function CommandMenu() {
       heading: group.heading,
       items: group.items.map(mapItem),
     }));
-    const merged = [...primary, ...secondary];
+    const merged = [...primary, ...secondary].map((section) => ({
+      ...section,
+      items: section.items.filter((item) => hasProfileNavigationAccess(user?.role, user?.preferences as { allowedNavPaths?: string[] } | null, item.path)),
+    }));
     if (isDesktop) return merged;
     return merged.map((section) => ({
       ...section,
       items: section.items.filter((item) => !NAV_DESKTOP_ONLY_PATHS.has(item.path) && !item.desktopOnly),
     }));
-  }, [isDesktop]);
+  }, [isDesktop, user?.preferences, user?.role]);
 
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setOpen((o) => !o);
+    const down = (event: KeyboardEvent) => {
+      if ((event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setOpen((value) => !value);
       }
     };
     document.addEventListener("keydown", down);
@@ -179,11 +185,13 @@ export function CommandMenu() {
   const onOpenChange = useCallback((next: boolean) => {
     setOpen(next);
     if (next) prefetchPrimaryData();
+    if (!next) setSearchInput("");
   }, []);
 
   const run = useCallback(
     (path: string) => {
       setOpen(false);
+      setSearchInput("");
       navigate(path);
     },
     [navigate],
@@ -191,9 +199,45 @@ export function CommandMenu() {
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Jump to module… (try “req”, “invoice”, “warehouse”)" />
+      <CommandInput
+        placeholder="Search records or jump to module..."
+        value={searchInput}
+        onValueChange={setSearchInput}
+      />
       <CommandList>
         <CommandEmpty>No matching destination.</CommandEmpty>
+        {trimmedSearch.length >= 2 ? (
+          <CommandGroup heading="Global Search">
+            {globalSearch.isLoading ? (
+              <CommandItem disabled value={`${trimmedSearch} loading`}>
+                <Search className="h-4 w-4" />
+                <span className="ml-2">Searching records...</span>
+              </CommandItem>
+            ) : globalSearch.isError ? (
+              <CommandItem disabled value={`${trimmedSearch} error`}>
+                <AlertTriangle className="h-4 w-4" />
+                <span className="ml-2">Global search is temporarily unavailable</span>
+              </CommandItem>
+            ) : globalResults.length === 0 ? (
+              <CommandItem disabled value={`${trimmedSearch} no results`}>
+                <Search className="h-4 w-4" />
+                <span className="ml-2">No matching records</span>
+              </CommandItem>
+            ) : (
+              globalResults.map((result) => (
+                <CommandItem
+                  key={`${result.type}:${result.id}`}
+                  value={`${result.title} ${result.subtitle} ${result.status ?? ""} ${getGlobalSearchTypeLabel(result.type)}`}
+                  onSelect={() => run(result.href)}
+                >
+                  <Search className="h-4 w-4" />
+                  <span className="ml-2">{result.title}</span>
+                  <CommandShortcut>{getGlobalSearchTypeLabel(result.type)}</CommandShortcut>
+                </CommandItem>
+              ))
+            )}
+          </CommandGroup>
+        ) : null}
         {sections.map((section) => (
           <CommandGroup key={section.heading} heading={section.heading}>
             {section.items.map((item) => (
@@ -204,17 +248,17 @@ export function CommandMenu() {
               >
                 {item.icon}
                 <span className="ml-2">{item.label}</span>
-                <CommandShortcut className="hidden sm:inline">↵</CommandShortcut>
+                <CommandShortcut className="hidden sm:inline">Enter</CommandShortcut>
               </CommandItem>
             ))}
           </CommandGroup>
         ))}
         <CommandSeparator />
         <CommandGroup heading="Shortcuts">
-          <CommandItem onSelect={() => run("/inventory")}>
+          {hasProfileNavigationAccess(user?.role, user?.preferences as { allowedNavPaths?: string[] } | null, "/inventory") ? <CommandItem onSelect={() => run("/inventory")}>
             <Search className="h-4 w-4" />
             <span className="ml-2">Inventory search hub</span>
-          </CommandItem>
+          </CommandItem> : null}
           <CommandItem onSelect={() => setOpen(false)}>
             <CommandIcon className="h-4 w-4" />
             <span className="ml-2">Close</span>

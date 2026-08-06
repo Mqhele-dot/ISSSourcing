@@ -38,7 +38,7 @@ export default function GetEducatedPage() {
     <div className="mx-auto max-w-5xl space-y-6" data-testid="get-educated-page">
       <PageHeader
         title="Get Educated"
-        subtitle="Short lessons for ISSSourcing—written for newcomers, junior staff, and anyone new to procurement and supply chain."
+        subtitle="Short lessons for ISSSourcing, written for newcomers, junior staff, and anyone new to procurement and supply chain."
         breadcrumb={<span>Learning / Overview</span>}
       />
 
@@ -46,8 +46,8 @@ export default function GetEducatedPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Suggested learning paths</CardTitle>
           <CardDescription>
-            Paths follow a typical source-to-pay flow (plan → source → make → deliver → return), similar to SCOR /
-            APICS vocabulary—so onboarding matches how work actually hands off between teams.
+            Paths follow a typical source-to-pay flow (plan -&gt; source -&gt; make -&gt; deliver -&gt; return), similar to
+            SCOR / APICS vocabulary, so onboarding matches how work actually hands off between teams.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 text-sm sm:grid-cols-3">
@@ -55,19 +55,31 @@ export default function GetEducatedPage() {
             <p className="font-medium text-foreground">Operations and stock integrity</p>
             <ul className="list-disc space-y-1.5 pl-4 text-muted-foreground">
               <li>
-                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("control-tower")}>
+                <Link
+                  className="text-primary underline-offset-4 hover:underline"
+                  href={APP_ROUTES.training.getEducatedModule("control-tower")}
+                >
                   Control Tower
-                </Link> — priorities and risk signals
+                </Link>{" "}
+                - priorities and risk signals
               </li>
               <li>
-                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("inventory")}>
+                <Link
+                  className="text-primary underline-offset-4 hover:underline"
+                  href={APP_ROUTES.training.getEducatedModule("inventory")}
+                >
                   Inventory
-                </Link> — on-hand truth
+                </Link>{" "}
+                - on-hand truth
               </li>
               <li>
-                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("warehouse-operations")}>
+                <Link
+                  className="text-primary underline-offset-4 hover:underline"
+                  href={APP_ROUTES.training.getEducatedModule("warehouse-operations")}
+                >
                   Warehouse operations
-                </Link> — floor execution
+                </Link>{" "}
+                - floor execution
               </li>
             </ul>
           </div>
@@ -75,17 +87,26 @@ export default function GetEducatedPage() {
             <p className="font-medium text-foreground">Procurement</p>
             <ul className="list-disc space-y-1.5 pl-4 text-muted-foreground">
               <li>
-                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("requisitions")}>
+                <Link
+                  className="text-primary underline-offset-4 hover:underline"
+                  href={APP_ROUTES.training.getEducatedModule("requisitions")}
+                >
                   Requisitions
                 </Link>
               </li>
               <li>
-                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("purchase-orders")}>
+                <Link
+                  className="text-primary underline-offset-4 hover:underline"
+                  href={APP_ROUTES.training.getEducatedModule("purchase-orders")}
+                >
                   Purchase orders
                 </Link>
               </li>
               <li>
-                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("suppliers")}>
+                <Link
+                  className="text-primary underline-offset-4 hover:underline"
+                  href={APP_ROUTES.training.getEducatedModule("suppliers")}
+                >
                   Suppliers
                 </Link>
               </li>
@@ -95,17 +116,26 @@ export default function GetEducatedPage() {
             <p className="font-medium text-foreground">Finance and insight</p>
             <ul className="list-disc space-y-1.5 pl-4 text-muted-foreground">
               <li>
-                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("accounts-payable")}>
+                <Link
+                  className="text-primary underline-offset-4 hover:underline"
+                  href={APP_ROUTES.training.getEducatedModule("accounts-payable")}
+                >
                   Accounts payable
                 </Link>
               </li>
               <li>
-                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("payments")}>
+                <Link
+                  className="text-primary underline-offset-4 hover:underline"
+                  href={APP_ROUTES.training.getEducatedModule("payments")}
+                >
                   Payments
                 </Link>
               </li>
               <li>
-                <Link className="text-primary underline-offset-4 hover:underline" href={APP_ROUTES.training.getEducatedModule("analytics")}>
+                <Link
+                  className="text-primary underline-offset-4 hover:underline"
+                  href={APP_ROUTES.training.getEducatedModule("analytics")}
+                >
                   Analytics
                 </Link>
               </li>
@@ -119,7 +149,7 @@ export default function GetEducatedPage() {
           <Input
             aria-label="Search training modules"
             data-testid="training-search-input"
-            placeholder="Search modules, e.g. AP, invoice, PO, requisition, stock…"
+            placeholder="Search modules, e.g. AP, invoice, PO, requisition, stock..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pr-3"
@@ -149,8 +179,8 @@ export default function GetEducatedPage() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Progress (this browser): {progress.lessonsOpened.length} lesson(s) opened · {progress.markedUnderstood.length}{" "}
-        marked “understood” · stored locally only.
+        Progress (this browser): {progress.lessonsOpened.length} lesson(s) opened | {progress.markedUnderstood.length}{" "}
+        marked "understood" | stored locally only.
       </p>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -170,16 +200,14 @@ export default function GetEducatedPage() {
                     </Badge>
                   ) : null}
                 </div>
-                <CardDescription>
-                  ~{m.estimatedMinutes} min · {m.whoUsesIt}
-                </CardDescription>
+                <CardDescription>~{m.estimatedMinutes} min | {m.whoUsesIt}</CardDescription>
               </CardHeader>
               <CardContent className="mt-auto flex flex-1 flex-col gap-3 pt-0">
                 <p className="text-sm text-muted-foreground">{m.beginnerSummary}</p>
                 <p className="text-xs text-muted-foreground">
                   <span className="font-medium text-foreground">Why it matters: </span>
                   {m.workplacePurpose.slice(0, 200)}
-                  {m.workplacePurpose.length > 200 ? "…" : ""}
+                  {m.workplacePurpose.length > 200 ? "..." : ""}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" asChild data-testid="training-start-button">
@@ -196,7 +224,7 @@ export default function GetEducatedPage() {
       </div>
 
       {modules.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No modules match that search. Try “PO”, “AP”, or “stock”.</p>
+        <p className="text-sm text-muted-foreground">No modules match that search. Try "PO", "AP", or "stock".</p>
       ) : null}
     </div>
   );

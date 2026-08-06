@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
@@ -75,18 +75,20 @@ export default function ContractsPage() {
   const { settings } = useSettings();
   const { currencyCode: reportingCurrency } = useReportingMoney();
   const [supplierFilter, setSupplierFilter] = useState<string>("all");
+  const [contractSearch, setContractSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [formOpen, setFormOpen] = useState(false);
   const [viewContract, setViewContract] = useState<SupplierContract | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteConfirmContract, setDeleteConfirmContract] = useState<SupplierContract | null>(null);
 
-  const { data: contracts = [], isLoading } = useQuery<SupplierContract[]>({
-    queryKey: ["/api/contracts", supplierFilter],
-    queryFn: async () => {
-      const url = supplierFilter === "all" ? "/api/contracts" : `/api/contracts?supplierId=${supplierFilter}`;
-      return requestJson("GET", url);
-    },
+  const { data: contractPage, isLoading } = useQuery<{ items: SupplierContract[]; total: number; page: number; pageSize: number; hasNext: boolean }>({
+    queryKey: ["/api/v2/contracts", supplierFilter, statusFilter, contractSearch, page, pageSize],
+    queryFn: () => requestJson("GET", `/api/v2/contracts?page=${page}&pageSize=${pageSize}&q=${encodeURIComponent(contractSearch)}&status=${statusFilter === "all" ? "" : statusFilter}&supplierId=${supplierFilter === "all" ? "" : supplierFilter}`),
   });
+  const contracts = contractPage?.items ?? [];
 
   const {
     data: suppliers = [],
@@ -98,23 +100,20 @@ export default function ContractsPage() {
     throwOnError: false,
   });
 
-  const defaultFormValues = useMemo((): Partial<SupplierContractForm> => {
-    const code = reportingCurrency;
-    return {
-      supplierId: undefined,
-      title: "",
-      contractType: "master",
-      referenceNumber: "",
-      startDate: new Date(),
-      endDate: undefined,
-      value: undefined,
-      currency: code,
-      summary: "",
-      status: "active",
-      notes: "",
-      attachments: [],
-    };
-  }, [reportingCurrency]);
+  const defaultFormValues: Partial<SupplierContractForm> = {
+    supplierId: undefined,
+    title: "",
+    contractType: "master",
+    referenceNumber: "",
+    startDate: new Date(),
+    endDate: undefined,
+    value: undefined,
+    currency: reportingCurrency,
+    summary: "",
+    status: "active",
+    notes: "",
+    attachments: [],
+  };
 
   const createContract = useMutation({
     mutationFn: (data: SupplierContractForm) => requestJson<SupplierContract>("POST", "/api/contracts", data),
@@ -261,17 +260,55 @@ export default function ContractsPage() {
               <CardTitle>Contracts</CardTitle>
               <CardDescription>All supplier contracts. Filter by supplier below.</CardDescription>
             </div>
-            <Select value={supplierFilter} onValueChange={setSupplierFilter}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="All suppliers" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All suppliers</SelectItem>
-                {suppliers.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                className="w-[220px]"
+                value={contractSearch}
+                onChange={(event) => {
+                  setContractSearch(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search contracts"
+              />
+              <Select
+                value={statusFilter}
+                onValueChange={(value) => {
+                  setStatusFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={supplierFilter}
+                onValueChange={(value) => {
+                  setSupplierFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="All suppliers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All suppliers</SelectItem>
+                  {suppliers.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -300,7 +337,8 @@ export default function ContractsPage() {
               </Can>
             </div>
           ) : (
-            <Table>
+            <>
+              <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Title</TableHead>
@@ -359,6 +397,8 @@ export default function ContractsPage() {
                 ))}
               </TableBody>
             </Table>
+            {contractPage ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-sm"><span className="text-muted-foreground">{contractPage.total === 0 ? "0 results" : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, contractPage.total)} of ${contractPage.total}`}</span><div className="flex items-center gap-2"><Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent>{[25, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} rows</SelectItem>)}</SelectContent></Select><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(1)}>First</Button><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={!contractPage.hasNext} onClick={() => setPage(page + 1)}>Next</Button><Button variant="outline" size="sm" disabled={!contractPage.hasNext} onClick={() => setPage(Math.max(1, Math.ceil(contractPage.total / pageSize)))}>Last</Button></div></div> : null}
+            </>
           )}
         </CardContent>
       </Card>

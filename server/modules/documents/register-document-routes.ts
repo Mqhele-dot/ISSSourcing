@@ -1,10 +1,39 @@
 import type { Express, Request, Response } from "express";
+import fs from "node:fs";
+import path from "node:path";
 import { and, desc, eq, ilike, isNotNull, isNull, or } from "drizzle-orm";
-import { db } from "../../db";
+import { db, pool } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import { documents } from "@shared/schema";
-import { documentUpload } from "../../http/upload-config";
+import { documentUpload, documentsDir } from "../../http/upload-config";
 import type { AuthBundle } from "../procurement/types";
+
+const DOCUMENT_ENTITY_TABLES: Record<string, string> = {
+  purchase_order: "purchase_orders",
+  requisition: "purchase_requisitions",
+  invoice: "invoices",
+  supplier: "suppliers",
+  warehouse: "warehouses",
+  contract: "supplier_contracts",
+};
+
+function storedDocumentPath(fileUrl: string): string | null {
+  const fileName = path.basename(String(fileUrl ?? ""));
+  if (!fileName) return null;
+  const root = path.resolve(documentsDir);
+  const candidate = path.resolve(root, fileName);
+  return path.dirname(candidate) === root ? candidate : null;
+}
+
+async function documentEntityExists(organizationId: number, entityType: string, entityId: number): Promise<boolean> {
+  const table = DOCUMENT_ENTITY_TABLES[entityType];
+  if (!table || !Number.isInteger(entityId) || entityId <= 0) return false;
+  const result = await pool.query(`SELECT 1 FROM ${table} WHERE organization_id = $1 AND id = $2 LIMIT 1`, [
+    organizationId,
+    entityId,
+  ]);
+  return (result.rowCount ?? 0) > 0;
+}
 
 /** Document metadata, upload, soft-delete (archive). */
 export function registerDocumentRoutes(app: Express, auth: AuthBundle): void {
@@ -56,7 +85,10 @@ export function registerDocumentRoutes(app: Express, auth: AuthBundle): void {
         .orderBy(desc(documents.uploadedAt), desc(documents.id))
         .limit(limit)
         .offset(offset);
-      res.json(rows);
+      res.json(rows.map((row) => {
+        const storedPath = storedDocumentPath(row.fileUrl);
+        return { ...row, fileAvailable: Boolean(storedPath && fs.existsSync(storedPath)) };
+      }));
     } catch (error) {
       console.error("Error fetching documents:", error);
       res.status(500).json({ message: "Failed to fetch documents" });
@@ -78,6 +110,9 @@ export function registerDocumentRoutes(app: Express, auth: AuthBundle): void {
         return res.status(400).json({ message: "entityType, entityId, fileUrl and fileName are required" });
       }
       const orgId = getActiveOrganizationId();
+      if (!(await documentEntityExists(orgId, payload.entityType, Number(payload.entityId)))) {
+        return res.status(400).json({ message: "The selected business record does not exist in this organization." });
+      }
       const orgScope = eq(documents.organizationId, orgId);
       const existing = await db
         .select()
@@ -108,12 +143,17 @@ export function registerDocumentRoutes(app: Express, auth: AuthBundle): void {
       if (!req.file) return res.status(400).json({ message: "File is required" });
       const entityType = typeof req.body?.entityType === "string" ? req.body.entityType : "";
       const entityId = Number(req.body?.entityId);
-      if (!entityType || !Number.isFinite(entityId)) {
+      if (!entityType || !Number.isInteger(entityId) || entityId <= 0) {
+        if (req.file?.path) fs.rmSync(req.file.path, { force: true });
         return res.status(400).json({ message: "entityType and entityId are required" });
       }
 
-      const fileUrl = `/uploads/documents/${req.file.filename}`;
       const orgId = getActiveOrganizationId();
+      if (!(await documentEntityExists(orgId, entityType, entityId))) {
+        fs.rmSync(req.file.path, { force: true });
+        return res.status(400).json({ message: "The selected business record does not exist in this organization." });
+      }
+      const fileUrl = `/uploads/documents/${req.file.filename}`;
       const orgScope = eq(documents.organizationId, orgId);
       const existing = await db
         .select()
@@ -138,6 +178,27 @@ export function registerDocumentRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       console.error("Error uploading document:", error);
       res.status(500).json({ message: "Failed to upload document" });
+    }
+  });
+
+  app.get("/api/documents/:id/download", ...masterRead, async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid document ID" });
+      const [document] = await db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.id, id), eq(documents.organizationId, getActiveOrganizationId())))
+        .limit(1);
+      if (!document) return res.status(404).json({ message: "Document not found" });
+      const storedPath = storedDocumentPath(document.fileUrl);
+      if (!storedPath || !fs.existsSync(storedPath)) {
+        return res.status(410).json({ message: "The stored file is unavailable. Its metadata remains for audit history." });
+      }
+      return res.download(storedPath, document.fileName);
+    } catch (error) {
+      console.error("Error downloading document:", error);
+      return res.status(500).json({ message: "Failed to download document" });
     }
   });
 

@@ -26,7 +26,7 @@ import { Loader2 } from "lucide-react";
 import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallback";
 
 /** Common ISO 4217 codes for reporting; users can extend via API if needed later. */
-const REPORTING_CURRENCY_CODES = [
+const REPORTING_CURRENCY_CODES = Array.from(new Set([
   REPORTING_CURRENCY_FALLBACK_CODE,
   "EUR",
   "GBP",
@@ -46,7 +46,7 @@ const REPORTING_CURRENCY_CODES = [
   "SGD",
   "HKD",
   "NZD",
-] as const;
+]));
 
 // Define form schema
 const generalSettingsSchema = z.object({
@@ -79,6 +79,27 @@ export function GeneralSettingsForm() {
       currencyCode: (settings.currencyCode || REPORTING_CURRENCY_FALLBACK_CODE).toUpperCase(),
     },
   });
+
+  React.useEffect(() => {
+    form.reset({
+      companyName: settings.companyName || "",
+      companyLogo: settings.companyLogo,
+      primaryColor: settings.primaryColor || "#0f766e",
+      dateFormat: settings.dateFormat || "YYYY-MM-DD",
+      timeFormat: settings.timeFormat || "HH:mm",
+      currencySymbol: settings.currencySymbol || "$",
+      currencyCode: (settings.currencyCode || REPORTING_CURRENCY_FALLBACK_CODE).toUpperCase(),
+    });
+  }, [
+    form,
+    settings.companyLogo,
+    settings.companyName,
+    settings.currencyCode,
+    settings.currencySymbol,
+    settings.dateFormat,
+    settings.primaryColor,
+    settings.timeFormat,
+  ]);
 
   // Submit handler
   function onSubmit(data: z.infer<typeof generalSettingsSchema>) {
@@ -153,6 +174,7 @@ export function GeneralSettingsForm() {
                         <Input type="color" {...field} className="w-12 h-10 p-1" />
                       </FormControl>
                       <Input
+                        aria-label="Primary color hex value"
                         value={field.value}
                         onChange={(e) => field.onChange(e.target.value)}
                         className="flex-1"

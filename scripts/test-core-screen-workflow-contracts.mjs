@@ -19,7 +19,8 @@ function assertNotIncludes(text, needle, label) {
 }
 
 const mobileReceive = read("client/src/pages/mobile-receive.tsx");
-assertIncludes(mobileReceive, "fetchPurchaseOrdersEnvelope", "/m/receive");
+assertIncludes(mobileReceive, "fetchPurchaseOrdersPageEnvelope", "/m/receive");
+assertIncludes(mobileReceive, 'statuses: ["approved", "sent", "partially_received"]', "/m/receive");
 assertIncludes(mobileReceive, "usePurchaseOrderOperationalDetailQuery", "/m/receive/:po");
 assertIncludes(mobileReceive, "useReceivePurchaseOrderMutation", "/m/receive/:po");
 assertIncludes(mobileReceive, "validateReceiveLines", "/m/receive/:po");
@@ -30,8 +31,9 @@ assertNotIncludes(mobileReceive, "fallback={fallback}", "/m/receive");
 
 const mobileTasks = read("client/src/pages/mobile-hub-tasks.tsx");
 assertIncludes(mobileTasks, "requestJson<MobileCountsResponse>(\"GET\", \"/api/mobile/counts/assigned\")", "/m/tasks");
-assertIncludes(mobileTasks, "fetchInventory({ lowStock: true })", "/m/tasks");
-assertIncludes(mobileTasks, "fetchPurchaseOrdersEnvelope({ status: \"approved\" })", "/m/tasks");
+assertIncludes(mobileTasks, "fetchInventoryPage({ low: true", "/m/tasks");
+assertIncludes(mobileTasks, "fetchPurchaseOrdersPageEnvelope", "/m/tasks");
+assertIncludes(mobileTasks, 'statuses: ["approved", "sent", "partially_received"]', "/m/tasks");
 assertIncludes(mobileTasks, "requestJson<ApprovalQueueResponse>(\"GET\", \"/api/ap/approval-queue\")", "/m/tasks");
 assertIncludes(mobileTasks, "data-testid={`mobile-task-card-${key}`}", "/m/tasks");
 assertIncludes(mobileTasks, "mobile-tasks-partial-error", "/m/tasks");

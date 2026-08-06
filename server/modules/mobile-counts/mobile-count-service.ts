@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
 import { getEffectiveCompanyConfigurationValue } from "../../company-configuration-resolver";
@@ -10,6 +10,8 @@ import {
   stockCountSessions,
   stockCountTargets,
   stockCountVariances,
+  warehouses,
+  warehouseInventory,
 } from "@shared/schema";
 
 export class MobileCountDomainError extends Error {
@@ -128,6 +130,38 @@ export async function createMobileCountSession(input: {
     .limit(1);
   if (existing[0]) return { duplicate: true, idempotencyKey: input.idempotencyKey };
 
+  const [warehouse] = await db
+    .select({ id: warehouses.id })
+    .from(warehouses)
+    .where(and(eq(warehouses.organizationId, input.organizationId), eq(warehouses.id, input.data.warehouseId)))
+    .limit(1);
+  if (!warehouse) {
+    throw new MobileCountDomainError("MOBILE_COUNT_WAREHOUSE_INVALID", "Select a warehouse owned by the active organization.", 400);
+  }
+
+  const targetItemIds = [...new Set(input.data.targets.map((target) => target.itemId))];
+  const ownedItems = targetItemIds.length
+    ? await db.select({ id: inventoryItems.id }).from(inventoryItems).where(and(
+        eq(inventoryItems.organizationId, input.organizationId),
+        inArray(inventoryItems.id, targetItemIds),
+      ))
+    : [];
+  if (ownedItems.length !== targetItemIds.length) {
+    throw new MobileCountDomainError("MOBILE_COUNT_TARGET_INVALID", "Every count target must belong to the active organization.", 400);
+  }
+
+  const canonicalPositions = targetItemIds.length
+    ? await db.select({ itemId: warehouseInventory.itemId, quantity: sql<number>`coalesce(sum(${warehouseInventory.quantity}), 0)::int` })
+        .from(warehouseInventory)
+        .where(and(
+          eq(warehouseInventory.organizationId, input.organizationId),
+          eq(warehouseInventory.warehouseId, input.data.warehouseId),
+          inArray(warehouseInventory.itemId, targetItemIds),
+        ))
+        .groupBy(warehouseInventory.itemId)
+    : [];
+  const canonicalQuantityByItem = new Map(canonicalPositions.map((position) => [position.itemId, Number(position.quantity ?? 0)]));
+
   return db.transaction(async (tx) => {
     const [session] = await tx
       .insert(stockCountSessions)
@@ -156,7 +190,7 @@ export async function createMobileCountSession(input: {
               locationId: target.locationId ?? null,
               lotId: target.lotId ?? null,
               serialId: target.serialId ?? null,
-              systemQtySnapshot: target.systemQtySnapshot,
+              systemQtySnapshot: canonicalQuantityByItem.get(target.itemId) ?? 0,
               blindMode: target.blindMode ?? input.data.mode === "blind",
             })),
           )

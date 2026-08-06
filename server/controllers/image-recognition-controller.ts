@@ -7,7 +7,7 @@
  * - Creating inventory items from recognized images
  * - Managing training data for image recognition models
  */
-import type { Request, Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -19,6 +19,7 @@ import {
   analyzeProductImage, 
   getServiceStatus 
 } from '../services/image-recognition-service';
+import type { AuthBundle } from '../modules/procurement/types';
 
 // Set up multer for file uploads
 const upload = multer({
@@ -58,22 +59,24 @@ const upload = multer({
  * Register image recognition routes
  * @param app - Express application
  */
-export function registerImageRecognitionRoutes(app: any) {
+export function registerImageRecognitionRoutes(app: Express, auth: AuthBundle) {
+  const inventoryRead = [auth.ensureAuthenticated, auth.ensurePermission('inventory', 'read')];
+  const inventoryCreate = [auth.ensureAuthenticated, auth.ensurePermission('inventory', 'create')];
   // Route to analyze an image and return recognized items
-  app.post('/api/image-recognition/analyze', upload.single('image'), analyzeProductImageHandler);
+  app.post('/api/image-recognition/analyze', ...inventoryRead, upload.single('image'), analyzeProductImageHandler);
   // Backward-compatible alias used by older clients
-  app.post('/api/inventory/image-recognition/analyze', upload.single('image'), analyzeProductImageHandler);
+  app.post('/api/inventory/image-recognition/analyze', ...inventoryRead, upload.single('image'), analyzeProductImageHandler);
   
   // Route to create an inventory item from recognized image data
-  app.post('/api/image-recognition/create-item', createItemFromImageHandler);
+  app.post('/api/image-recognition/create-item', ...inventoryCreate, createItemFromImageHandler);
   // Backward-compatible alias used by older clients
-  app.post('/api/inventory/image-recognition/create', createItemFromImageHandler);
+  app.post('/api/inventory/image-recognition/create', ...inventoryCreate, createItemFromImageHandler);
   
   // Route to get analysis history for an inventory item
-  app.get('/api/image-recognition/item/:id/history', getItemAnalysisHistoryHandler);
+  app.get('/api/image-recognition/item/:id/history', ...inventoryRead, getItemAnalysisHistoryHandler);
   
   // Route to check if image recognition is properly configured
-  app.get('/api/image-recognition/status', getImageRecognitionStatusHandler);
+  app.get('/api/image-recognition/status', ...inventoryRead, getImageRecognitionStatusHandler);
 }
 
 /**

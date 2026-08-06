@@ -93,6 +93,29 @@ export function WarehouseSettingsForm() {
     },
   });
 
+  React.useEffect(() => {
+    form.reset({
+      defaultWarehouseId: settings.defaultWarehouseId,
+      requireLocationForItems: settings.requireLocationForItems ?? true,
+      allowTransfersBetweenWarehouses: settings.allowTransfersBetweenWarehouses ?? true,
+      autoUpdateStockLevels: true,
+      trackInventoryByLocation: false,
+      enableBinLocations: false,
+      requireApprovalForTransfers: false,
+      lowStockNotificationsEnabled: true,
+      transferNotificationsEnabled: true,
+      autoGenerateReorderRequests: settings.autoReorderEnabled ?? false,
+      defaultBinNamingConvention: "ZONE-AISLE-SHELF-BIN",
+      warehouseCodePrefix: "WH",
+    });
+  }, [
+    form,
+    settings.allowTransfersBetweenWarehouses,
+    settings.autoReorderEnabled,
+    settings.defaultWarehouseId,
+    settings.requireLocationForItems,
+  ]);
+
   // Submit handler
   function onSubmit(data: WarehouseSettingsFormType) {
     updateSettings.mutate({

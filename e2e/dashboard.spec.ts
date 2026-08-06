@@ -51,4 +51,77 @@ test.describe("Control Tower dashboard", () => {
 
     await expect(page.getByTestId("control-tower-page")).toBeVisible();
   });
+
+  test("shows controlled degraded guidance when some dashboard feeds fall back", async ({ page }) => {
+    await page.route("**/api/dashboard/control-tower**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          data: {
+            generatedAt: "2026-08-02T09:00:00.000Z",
+            meta: {
+              organizationId: 1,
+              trendDays: 7,
+              valueBasisLabel: "Estimated value",
+              businessArea: "all",
+              dataFreshness: {
+                inventory: "2026-08-02T08:55:00.000Z",
+                shipments: "2026-08-02T08:54:00.000Z",
+              },
+              partialFailures: [
+                {
+                  area: "spotlight_shipments",
+                  code: "QUERY_FAILED",
+                  message: "Delayed shipments spotlight failed",
+                  fallbackUsed: true,
+                },
+              ],
+              filtersApplied: {
+                trendDays: 7,
+                businessArea: "all",
+              },
+            },
+            kpis: {
+              inventoryValue: 125000,
+              inventoryValueTrendPct: 5.2,
+              lowStockItems: 3,
+              openRequisitions: 4,
+              openPurchaseOrders: 6,
+              delayedShipments: 2,
+              apInvoicesDueOrOverdue: 1,
+              operationalExceptions: 2,
+              supplierRiskAlerts: 1,
+            },
+            procurementPipeline: [],
+            inventoryHealth: [],
+            stockValueByCategory: [],
+            apAging: [],
+            logisticsRisk: [],
+            supplierPerformance: [],
+            operationsTrend: [],
+            needsAttention: [],
+            recentActivity: [],
+            spotlight: {
+              delayedShipments: [],
+              oldestOpenExceptions: [],
+              supplierRisks: [],
+            },
+          },
+        }),
+      });
+    });
+
+    await gotoAuthed(page, CONTROL_TOWER);
+    await expect(page.getByTestId("control-tower-page")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("control-tower-partial-failures-banner")).toContainText(
+      "Some control tower feeds are degraded",
+    );
+    await expect(page.getByTestId("control-tower-partial-failures-list")).toContainText(
+      "spotlight_shipments: Delayed shipments spotlight failed",
+    );
+    await expect(page.getByTestId("control-tower-data-freshness")).toContainText("Inventory:");
+    await expect(page.getByRole("link", { name: /open diagnostics/i })).toBeVisible();
+  });
 });

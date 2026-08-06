@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { storage } from "../../storage";
-import { sendError, sendFunctionError } from "../../api-response";
+import { sendError, sendFunctionError, sendOk } from "../../api-response";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
 import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
@@ -130,9 +130,16 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/suppliers/performance", ...supplierRead, async (_req: Request, res: Response) => {
+  app.get(["/api/suppliers/performance", "/api/v2/suppliers/performance"], ...supplierRead, async (req: Request, res: Response) => {
     try {
-      const supplierList = await supplierRepo.findAll();
+      const requestedIds = req.path.startsWith("/api/v2/")
+        ? String(req.query.ids ?? "").split(",").filter(Boolean).map(Number)
+        : [];
+      if (req.path.startsWith("/api/v2/") && (requestedIds.length === 0 || requestedIds.length > 100 || requestedIds.some((id) => !Number.isInteger(id) || id <= 0))) {
+        return sendError(res, 400, "INVALID_SUPPLIER_IDS", "ids must contain between 1 and 100 comma-separated supplier IDs");
+      }
+      const allSuppliers = await supplierRepo.findAll();
+      const supplierList = requestedIds.length ? allSuppliers.filter((supplier) => requestedIds.includes(supplier.id)) : allSuppliers;
       const purchaseOrders = await storage.getAllPurchaseOrders();
       const stockMovements = await storage.getAllStockMovements();
       const invoices = await storage.getAllInvoices();
@@ -181,7 +188,7 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
         };
       });
 
-      res.json(performance);
+      return req.path.startsWith("/api/v2/") ? sendOk(res, performance) : res.json(performance);
     } catch (error) {
       console.error("Error fetching supplier performance:", error);
       res.status(500).json({ message: "Failed to fetch supplier performance" });
@@ -248,6 +255,11 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
 
   app.post("/api/suppliers", ...supplierWrite, async (req: Request, res: Response) => {
     try {
+      if (["bankName", "bankAccountNumber", "bankSwift"].some((field) => Object.prototype.hasOwnProperty.call(req.body ?? {}, field))) {
+        return sendError(res, 409, "SUPPLIER_BANK_GOVERNANCE_REQUIRED", "Supplier banking details must be created through the governed supplier-bank workflow.", {
+          hint: "Create the supplier first, then submit a supplier-bank Master Data change request for independent verification and approval.",
+        });
+      }
       const validatedData = insertSupplierSchema.parse(req.body);
 
       // Check if supplier with this name already exists
@@ -287,6 +299,11 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
       const validatedData = insertSupplierSchema.partial().parse(req.body);
+      if (["bankName", "bankAccountNumber", "bankSwift"].some((field) => Object.prototype.hasOwnProperty.call(req.body ?? {}, field))) {
+        return sendError(res, 409, "SUPPLIER_BANK_GOVERNANCE_REQUIRED", "Supplier banking details must be changed through the governed supplier-bank workflow.", {
+          hint: "Create a supplier-bank Master Data change request for independent verification and approval.",
+        });
+      }
       const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
       const orgId = getActiveOrganizationId();
       const existingSupplier = await supplierRepo.findById(id);

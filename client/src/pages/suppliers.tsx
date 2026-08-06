@@ -4,6 +4,8 @@ import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { queryClient, requestJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus } from "lucide-react";
 import { type Supplier, type SupplierLogo } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -50,6 +52,10 @@ export default function SuppliersPage() {
   const [deleteConfirmSupplier, setDeleteConfirmSupplier] = useState<Supplier | null>(null);
   const [removeLogoConfirm, setRemoveLogoConfirm] = useState(false);
   const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [supplierStatus, setSupplierStatus] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const productSetupComplete = useProductSetupComplete();
   const {
@@ -62,8 +68,9 @@ export default function SuppliersPage() {
     departmentsQuery,
     contractsQuery,
     performanceQuery,
-  } = useSuppliersCoreQueries();
-  const { data: suppliers, isLoading, isError, error, refetch } = suppliersQuery;
+  } = useSuppliersCoreQueries({ q: supplierSearch, status: supplierStatus, page, pageSize });
+  const { data: supplierPage, isLoading, isError, error, refetch } = suppliersQuery;
+  const suppliers = supplierPage?.items;
   const {
     data: paymentTerms = [],
     isError: paymentTermsError,
@@ -400,9 +407,11 @@ export default function SuppliersPage() {
     pickupSite: data.pickupSite?.trim() || null,
     deliverySite: data.deliverySite?.trim() || null,
     taxIdentificationNumber: data.taxIdentificationNumber?.trim() || null,
-    bankName: data.bankName?.trim() || null,
-    bankAccountNumber: data.bankAccountNumber?.trim() || null,
-    bankSwift: data.bankSwift?.trim() || null,
+    // Governed supplier-bank records are managed through Master Data and must
+    // never be submitted by this generic supplier profile form.
+    bankName: undefined,
+    bankAccountNumber: undefined,
+    bankSwift: undefined,
     paymentTermsId: data.paymentTermsId ?? null,
     defaultCurrencyCode: data.defaultCurrencyCode?.trim() || null,
     taxCodeId: data.taxCodeId ?? null,
@@ -543,6 +552,7 @@ export default function SuppliersPage() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-6">
+        <div className="flex flex-wrap items-center gap-2"><Input className="max-w-sm" value={supplierSearch} onChange={(event) => { setSupplierSearch(event.target.value); setPage(1); }} placeholder="Search suppliers" /><Select value={supplierStatus} onValueChange={(value) => { setSupplierStatus(value); setPage(1); }}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="blocked">Blocked</SelectItem></SelectContent></Select></div>
         <SuppliersListCard
           isLoading={isLoading}
           isError={isError}
@@ -560,6 +570,7 @@ export default function SuppliersPage() {
           onDeleteSupplier={handleDeleteSupplier}
           onOpenLogoDialog={handleOpenLogoDialog}
         />
+        {supplierPage ? <div className="flex flex-wrap items-center justify-between gap-3 text-sm"><span className="text-muted-foreground">{supplierPage.total === 0 ? "0 results" : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, supplierPage.total)} of ${supplierPage.total}`}</span><div className="flex items-center gap-2"><Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent>{[25, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} rows</SelectItem>)}</SelectContent></Select><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(1)}>First</Button><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={!supplierPage.hasNext} onClick={() => setPage(page + 1)}>Next</Button><Button variant="outline" size="sm" disabled={!supplierPage.hasNext} onClick={() => setPage(Math.max(1, Math.ceil(supplierPage.total / pageSize)))}>Last</Button></div></div> : null}
       </div>
 
       <SupplierFormSheet

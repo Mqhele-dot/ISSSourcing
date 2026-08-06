@@ -10,10 +10,9 @@ import {
   Truck,
   Lock,
 } from "lucide-react";
-import { SecurityPolicyPanel } from "@/components/admin/security-policy-panel";
 import { CustomKPIBuilder } from "@/components/dashboard/custom-kpi-builder";
 import { PredictiveAnalyticsPanel } from "@/components/dashboard/predictive-analytics-panel";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
@@ -158,7 +157,15 @@ export default function AdminControlPanelPage() {
 
         {/* Security Tab */}
         <TabsContent value="security" className="mt-6">
-          <SecurityPolicyPanel />
+          <Card>
+            <CardHeader>
+              <CardTitle>Security policy</CardTitle>
+              <CardDescription>Security policy is managed from Admin Settings.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild><a href="/admin/settings/security">Open Security Settings</a></Button>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Analytics Tab */}

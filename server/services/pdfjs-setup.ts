@@ -59,8 +59,8 @@ const loadPDFjs = async () => {
   if (!PDFjs) {
     try {
       // Use ES module version instead of legacy
-      const pdfModule = await import('pdfjs-dist');
-      PDFjs = pdfModule.default;
+      const pdfModule = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      PDFjs = pdfModule;
     } catch (err) {
       console.error('Error loading pdfjs-dist:', err);
       throw new Error(`Failed to load PDF.js: ${err}`);

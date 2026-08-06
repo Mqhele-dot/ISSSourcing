@@ -10,15 +10,14 @@ import {
   getOperationalPurchaseOrderDetail,
   getOperationalShipmentDetail,
   listOperationalActivity,
+  listOperationalActivityPage,
   listOperationalExceptions,
-  listOperationalIntegrationRuns,
   listOperationalInventory,
   listOperationalPurchaseOrders,
   listOperationalShipments,
   patchOperationalShipmentMeta,
   runOperationalExceptionChecks,
   receiveOperationalPurchaseOrder,
-  runOperationalConnector,
   runOperationalDemoWalkthrough,
   transitionOperationalExceptionStatus,
   transitionOperationalPurchaseOrderStatus,
@@ -46,6 +45,10 @@ import { validateExceptionStatusTransition } from "./modules/operations/exceptio
 
 type AuthGuards = {
   ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => void;
+  ensurePermission: (
+    resource: string,
+    permissionType: string,
+  ) => (req: Request, res: Response, next: NextFunction) => void;
 };
 
 const INVENTORY_ROUTE_RESERVED_SEGMENTS = new Set([
@@ -922,6 +925,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
 
   app.get(
     "/api/logistics/shipments",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "read"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -985,6 +990,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.post(
     "/api/logistics/shipments",
     auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "update"),
     withApiContract(async (req: Request, res: Response) => {
       const body = req.body ?? {};
       const poNumber = typeof body.poNumber === "string" ? body.poNumber.trim() : "";
@@ -1076,6 +1082,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.patch(
     "/api/logistics/shipments/:id",
     auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "update"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1175,6 +1182,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
 
   app.get(
     "/api/logistics/shipments/:id",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "read"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1202,6 +1211,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.post(
     "/api/logistics/shipments/:id/status",
     auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "update"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1237,6 +1247,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.delete(
     "/api/logistics/shipments/:id",
     auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "delete"),
     withApiContract(async (req: Request, res: Response) => {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) {
@@ -1252,6 +1263,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
 
   app.get(
     "/api/exceptions",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "read"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1279,6 +1292,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.post(
     "/api/exceptions/run-checks",
     auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "execute"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1305,6 +1319,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
 
   app.get(
     "/api/exceptions/:id",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "read"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1332,6 +1348,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.post(
     "/api/exceptions/:id/status",
     auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "update"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1392,6 +1409,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.post(
     "/api/exceptions/:id/assign",
     auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "update"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1420,6 +1438,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.post(
     "/api/exceptions/:id/comment",
     auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "update"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1451,7 +1470,68 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   );
 
   app.get(
+    "/api/v2/activity",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("activity_logs", "read"),
+    withApiContract(async (req: Request, res: Response) => {
+      const start = Date.now();
+      setEndpointHeader(res, req.path);
+
+      const page = req.query.page === undefined ? 1 : Number(req.query.page);
+      const pageSize = req.query.pageSize === undefined ? 25 : Number(req.query.pageSize);
+      if (!Number.isInteger(page) || page < 1) {
+        throw contractError(400, "INVALID_PAGE", "page must be a positive integer.");
+      }
+      if (![25, 50, 100].includes(pageSize)) {
+        throw contractError(400, "INVALID_PAGE_SIZE", "pageSize must be one of 25, 50, or 100.");
+      }
+
+      const parseDate = (value: unknown, name: string, endOfDay = false): Date | undefined => {
+        if (typeof value !== "string" || value.trim() === "") return undefined;
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          throw contractError(400, "INVALID_DATE", `${name} must be a valid date.`);
+        }
+        if (endOfDay && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          parsed.setUTCHours(23, 59, 59, 999);
+        }
+        return parsed;
+      };
+
+      const emptyPage = { items: [], total: 0, page, pageSize, hasNext: false };
+      if (isOperationsDegraded()) {
+        res.setHeader("X-InvTrack-Fallback", "degraded");
+        return respondOk(res, emptyPage, 200, { fallback: "degraded" });
+      }
+
+      try {
+        const result = await withTimeout(
+          listOperationalActivityPage({
+            page,
+            pageSize,
+            entityType: typeof req.query.entity_type === "string" ? req.query.entity_type : "",
+            entityId: typeof req.query.entity_id === "string" ? req.query.entity_id : "",
+            actor: typeof req.query.actor === "string" ? req.query.actor : "",
+            action: typeof req.query.action === "string" ? req.query.action : "",
+            from: parseDate(req.query.from, "from"),
+            to: parseDate(req.query.to, "to", true),
+          }),
+          OPERATIONS_QUERY_TIMEOUT_MS,
+        );
+        respondOk(res, result);
+      } catch (err) {
+        if (err instanceof ApiContractError) throw err;
+        logOperationalError(req.path, Date.now() - start, err);
+        setFallbackHeader(res, err);
+        respondOk(res, emptyPage, 200, { fallback: getFallbackValue(err) });
+      }
+    }),
+  );
+
+  app.get(
     "/api/activity",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("activity_logs", "read"),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1474,17 +1554,13 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             entityType,
             entityId,
             action,
+            actor,
+            from: from && !Number.isNaN(from.getTime()) ? from : undefined,
+            to: to && !Number.isNaN(to.getTime()) ? to : undefined,
           }),
           OPERATIONS_QUERY_TIMEOUT_MS,
         );
-        const filtered = records.filter((record) => {
-          if (actor && !String(record.actor ?? "").toLowerCase().includes(actor)) return false;
-          const createdAt = record.createdAt ? new Date(record.createdAt) : null;
-          if (from && createdAt && createdAt < from) return false;
-          if (to && createdAt && createdAt > to) return false;
-          return true;
-        });
-        respondOk(res, filtered);
+        respondOk(res, records);
       } catch (err) {
         logOperationalError(req.path, Date.now() - start, err);
         setFallbackHeader(res, err);
@@ -1495,60 +1571,27 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
 
   app.get(
     "/api/integrations/runs",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("settings", "configure"),
     withApiContract(async (req: Request, res: Response) => {
-      const start = Date.now();
       setEndpointHeader(res, req.path);
-      if (isOperationsDegraded()) {
-        res.setHeader("X-InvTrack-Fallback", "degraded");
-        return respondOk(res, [], 200, { fallback: "degraded" });
-      }
-      try {
-        const runs = await withTimeout(
-          listOperationalIntegrationRuns(20),
-          OPERATIONS_QUERY_TIMEOUT_MS,
-        );
-        respondOk(res, runs);
-      } catch (err) {
-        logOperationalError(req.path, Date.now() - start, err);
-        setFallbackHeader(res, err);
-        respondOk(res, [], 200, { fallback: getFallbackValue(err) });
-      }
+      res.setHeader("X-InvTrack-Fallback", "disabled_by_configuration");
+      respondOk(res, [], 200, { fallback: "disabled_by_configuration" });
     }),
   );
 
   app.post(
     "/api/integrations/:connector/run",
     auth.ensureAuthenticated,
+    auth.ensurePermission("settings", "configure"),
     withApiContract(async (req: Request, res: Response) => {
-      const start = Date.now();
       setEndpointHeader(res, req.path);
-      if (isOperationsDegraded()) {
-        res.setHeader("X-InvTrack-Fallback", "degraded");
-        throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
-      }
-      try {
-        const run = await withTimeout(
-          runOperationalConnector(req.params.connector),
-          OPERATIONS_QUERY_TIMEOUT_MS,
-        );
-        respondOk(res, run, 201);
-      } catch (error) {
-        const message = toErrorMessage(error);
-        if (message === "OPERATIONS_QUERY_TIMEOUT") {
-          logOperationalError(req.path, Date.now() - start, error);
-          setFallbackHeader(res, error);
-          throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
-        }
-        if (message === "unsupported_connector") {
-          throw contractError(
-            400,
-            "UNSUPPORTED_CONNECTOR",
-            "Unsupported connector",
-            "Supported connectors: erp, wms, tms",
-          );
-        }
-        throw error;
-      }
+      throw contractError(
+        501,
+        "INTEGRATION_CONNECTOR_NOT_CONFIGURED",
+        "No executable integration connector is configured.",
+        "Configure a tenant-scoped connector adapter before starting a synchronization run.",
+      );
     }),
   );
 

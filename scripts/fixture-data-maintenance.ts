@@ -24,7 +24,11 @@ const targets: TargetDefinition[] = [
     reason: "purchase orders converted from runtime workflow requisitions",
     predicate: "requisition_id IN (SELECT id FROM purchase_requisitions WHERE requisition_number LIKE 'REQ-WF-%' OR notes ILIKE '%workflow proof%' OR notes ILIKE 'AP workflow smoke test%' OR justification ILIKE 'Runtime dependency proof%')",
   },
-  { table: "invoices", reason: "AP runtime invoices", predicate: "invoice_number ~ '^(AP-INV-|AP-CTRL-|AP-DUP-)'" },
+  {
+    table: "invoices",
+    reason: "AP runtime and browser invoices",
+    predicate: "invoice_number ~ '^(AP-INV-|AP-CTRL-|AP-DUP-|INV-MATCH-ap-|INV-UI-MATCH-uie2e-ap-)'",
+  },
   { table: "inventory_items", reason: "dependency/workflow items", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)'" },
   { table: "suppliers", reason: "dependency/workflow suppliers", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Supplier '" },
   { table: "departments", reason: "dependency/workflow departments", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Department '" },
@@ -55,16 +59,31 @@ const targets: TargetDefinition[] = [
   },
   {
     table: "notifications",
-    reason: "duplicate notifications (newest copy retained)",
-    predicate: `id IN (
-      SELECT id FROM (
-        SELECT id, row_number() OVER (
-          PARTITION BY organization_id, user_id, type, title, COALESCE(body, ''), COALESCE(entity_type, ''), COALESCE(entity_id, 0)
-          ORDER BY created_at DESC, id DESC
-        ) AS duplicate_number
-        FROM notifications
-      ) duplicates WHERE duplicate_number > 1
-    )`,
+    reason: "duplicate notifications (newest copy retained) and AP fixture notifications",
+    predicate: `(id IN (
+        SELECT id FROM (
+          SELECT id, row_number() OVER (
+            PARTITION BY organization_id, user_id, type, title, COALESCE(body, ''), COALESCE(entity_type, ''), COALESCE(entity_id, 0)
+            ORDER BY created_at DESC, id DESC
+          ) AS duplicate_number
+          FROM notifications
+        ) duplicates WHERE duplicate_number > 1
+      )
+      OR (
+        type IN ('ap_invoice_approved', 'ap_invoice_pending_approval')
+        AND entity_type = 'invoice'
+        AND (
+          entity_id IN (
+            SELECT id FROM invoices
+            WHERE invoice_number ~ '^(AP-INV-|AP-CTRL-|AP-DUP-|INV-MATCH-ap-|INV-UI-MATCH-uie2e-ap-)'
+          )
+          OR NOT EXISTS (
+            SELECT 1 FROM invoices
+            WHERE invoices.id = notifications.entity_id
+              AND invoices.organization_id = notifications.organization_id
+          )
+        )
+      ))`,
   },
 ];
 

@@ -86,6 +86,8 @@ export async function fetchPurchaseOrdersEnvelope(
     status?: string;
     supplier?: string;
     q?: string;
+    page?: number;
+    pageSize?: number;
   },
   options?: PoHttpOptions,
 ): Promise<ApiEnvelopeResult<PurchaseOrderListItem[]>> {
@@ -95,6 +97,17 @@ export async function fetchPurchaseOrdersEnvelope(
   if (params?.q) search.set("q", params.q);
   const url = procurementPoOperationalListUrl(search);
   const { data, meta } = await invTrackFetch<PurchaseOrderListItem[]>("GET", url, undefined, options);
+  return { data, meta };
+}
+
+export async function fetchPurchaseOrdersPageEnvelope(params: { status?: string; statuses?: string[]; supplier?: string; q?: string; sort?: string; page: number; pageSize: number }, options?: PoHttpOptions): Promise<ApiEnvelopeResult<{ items: PurchaseOrderListItem[]; total: number; page: number; pageSize: number; hasNext: boolean; summary?: { totalAmount: number; byStatus: Record<string, number> } }>> {
+  const search = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize) });
+  if (params.status) search.set("status", params.status);
+  if (params.statuses?.length) search.set("statuses", params.statuses.join(","));
+  if (params.supplier) search.set("supplier", params.supplier);
+  if (params.q) search.set("q", params.q);
+  if (params.sort) search.set("sort", params.sort);
+  const { data, meta } = await invTrackFetch<{ items: PurchaseOrderListItem[]; total: number; page: number; pageSize: number; hasNext: boolean; summary?: { totalAmount: number; byStatus: Record<string, number> } }>("GET", `/api/v2/procurement/purchase-orders?${search}`, undefined, options);
   return { data, meta };
 }
 

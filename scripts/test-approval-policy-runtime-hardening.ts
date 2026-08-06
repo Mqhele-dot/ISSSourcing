@@ -94,6 +94,15 @@ async function main() {
   assert.ok(Number(audit.rows[0].user_id) > 0);
   assert.match(audit.rows[0].description, /Old value:.*New value:.*Reason:/);
 
+  // Development seeds use explicit organization IDs, so synchronize the
+  // disposable database sequence before creating the foreign-tenant fixture.
+  await pool.query(
+    `SELECT setval(
+       pg_get_serial_sequence('organizations', 'id'),
+       GREATEST(COALESCE((SELECT MAX(id) FROM organizations), 0), 1),
+       TRUE
+     )`,
+  );
   const secondOrg = await pool.query<{ id: number }>(
     `INSERT INTO organizations (name, slug, active, country_code, default_currency_code, locale, timezone)
      VALUES ($1, $2, TRUE, 'ZA', 'ZAR', 'en-ZA', 'Africa/Johannesburg')

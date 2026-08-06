@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { Suspense, useCallback, useState } from "react";
 import { Link } from "wouter";
-import { BarcodeScanner, BarcodeGenerator } from "@/components/barcode";
+import { BarcodeScanner } from "@/components/barcode/barcode-scanner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,6 +15,10 @@ import { enqueueOfflineAction } from "@/lib/offline-queue";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { resolveMobileScan, type MobileScanResolveResult } from "@/api/client";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+
+const BarcodeGenerator = React.lazy(() =>
+  import("@/components/barcode/barcode-generator").then((module) => ({ default: module.BarcodeGenerator })),
+);
 
 function ResolutionActions({ result }: { result: MobileScanResolveResult }) {
   if (result.kind === "item") {
@@ -85,7 +89,7 @@ export default function BarcodeScannerPage() {
   const [latestResolution, setLatestResolution] = useState<MobileScanResolveResult | null>(null);
   const { toast } = useToast();
 
-  const handleScan = async (result: ScanResult) => {
+  const handleScan = useCallback(async (result: ScanResult) => {
     setScanHistory((prevHistory) => [result, ...prevHistory]);
     const value = result.text.trim();
     const queuedPayload = {
@@ -130,7 +134,7 @@ export default function BarcodeScannerPage() {
         description: "Could not resolve the scan live; the mobile scan payload was queued for replay.",
       });
     }
-  };
+  }, [toast]);
 
   const clearHistory = () => {
     setScanHistory([]);
@@ -161,7 +165,17 @@ export default function BarcodeScannerPage() {
             </TabsContent>
 
             <TabsContent value="generate">
-              <BarcodeGenerator />
+              <Suspense
+                fallback={
+                  <Card className="mx-auto w-full max-w-md">
+                    <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                      Loading code generator...
+                    </CardContent>
+                  </Card>
+                }
+              >
+                <BarcodeGenerator />
+              </Suspense>
             </TabsContent>
           </Tabs>
 

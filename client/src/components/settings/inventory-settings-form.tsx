@@ -42,6 +42,21 @@ export function InventorySettingsForm() {
     },
   });
 
+  React.useEffect(() => {
+    form.reset({
+      lowStockDefaultThreshold: settings.lowStockDefaultThreshold ?? 10,
+      allowNegativeInventory: settings.allowNegativeInventory ?? false,
+      requireLocationForItems: settings.requireLocationForItems ?? true,
+      allowTransfersBetweenWarehouses: settings.allowTransfersBetweenWarehouses ?? true,
+    });
+  }, [
+    form,
+    settings.allowNegativeInventory,
+    settings.allowTransfersBetweenWarehouses,
+    settings.lowStockDefaultThreshold,
+    settings.requireLocationForItems,
+  ]);
+
   // Submit handler
   function onSubmit(data: InventorySettingsFormType) {
     updateSettings.mutate(data);
@@ -66,6 +81,7 @@ export function InventorySettingsForm() {
                   <FormLabel>Low Stock Threshold</FormLabel>
                   <FormControl>
                     <Input 
+                      data-testid="inventory-settings-low-stock-threshold"
                       type="number" 
                       {...field} 
                       onChange={(e) => field.onChange(Number(e.target.value))}
@@ -87,6 +103,7 @@ export function InventorySettingsForm() {
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                   <FormControl>
                     <Switch
+                      data-testid="inventory-settings-allow-negative"
                       checked={field.value}
                       onCheckedChange={field.onChange}
                     />
@@ -108,6 +125,7 @@ export function InventorySettingsForm() {
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                   <FormControl>
                     <Switch
+                      data-testid="inventory-settings-require-location"
                       checked={field.value}
                       onCheckedChange={field.onChange}
                     />
@@ -129,6 +147,7 @@ export function InventorySettingsForm() {
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                   <FormControl>
                     <Switch
+                      data-testid="inventory-settings-allow-transfers"
                       checked={field.value}
                       onCheckedChange={field.onChange}
                     />

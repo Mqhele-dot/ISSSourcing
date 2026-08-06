@@ -3,6 +3,8 @@
  * Run: npm run test:stabilization-client
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   actionErrorStore,
   inferActionErrorSeverity,
@@ -27,6 +29,7 @@ import {
 import { shouldInvalidateCachedQueriesOnUserIdTransition } from "../client/src/lib/auth-invalidate-policy.ts";
 
 const MOBILE_PATH = /^\/m(\/|$)/;
+const MOJIBAKE_PATTERN = /â€”|â€¦|â†’|â€œ|â€|âœ“|Â·|Ã—|Ãƒâ€”/;
 
 function main() {
   assert.equal(shouldInvalidateCachedQueriesOnUserIdTransition(null, 1), false);
@@ -125,8 +128,38 @@ function main() {
     assert.ok(registryPaths.has(p), `router static path must exist in APP_ROUTES registry: ${p}`);
   }
 
+  const navText = [
+    ...APP_NAV_SECTIONS.flatMap((section) => [
+      section.label,
+      ...section.items.flatMap((item) => [item.label, item.description, item.keywords ?? ""]),
+    ]),
+    ...COMMAND_MENU_SECONDARY_GROUPS.flatMap((group) => [
+      group.heading,
+      ...group.items.flatMap((item) => [item.label, item.description, item.keywords ?? ""]),
+    ]),
+  ].join("\n");
+  assert.equal(
+    MOJIBAKE_PATTERN.test(navText),
+    false,
+    "navigation metadata must not contain mojibake sequences",
+  );
+  for (const relativePath of [
+    "client/src/pages/mobile-workflows-launcher-page.tsx",
+    "client/src/pages/operations-overview-page.tsx",
+    "client/src/pages/get-educated.tsx",
+    "client/src/pages/get-educated-module.tsx",
+    "client/src/components/reports/report-filters.tsx",
+  ]) {
+    const fileText = readFileSync(path.resolve(relativePath), "utf8");
+    assert.equal(
+      MOJIBAKE_PATTERN.test(fileText),
+      false,
+      `client copy must not contain mojibake sequences: ${relativePath}`,
+    );
+  }
+
   assert.equal(APP_ROUTES.inventory.warehouse(":id"), "/inventory/warehouses/:id");
-  /** Wouter route patterns must use literal `:param` segments — never `encodeURIComponent` (use `item()` only for hrefs). */
+  /** Wouter route patterns must use literal `:param` segments - never `encodeURIComponent` (use `item()` only for hrefs). */
   assert.equal(`${APP_ROUTES.inventory.root}/:sku`, "/inventory/:sku");
   assert.equal(`${APP_ROUTES.procurement.orders}/:po`, "/procurement/orders/:po");
   assert.equal(APP_ROUTES.inventory.item(":sku"), "/inventory/%3Asku");

@@ -36,7 +36,11 @@ const ROUTE_MARKERS: Array<{ match: (path: string) => boolean; selectors: string
   { match: (path) => path.startsWith("/admin/document-extractor") || path.startsWith("/documents/extractor"), selectors: [`[data-testid="document-extractor-page"]`] },
   { match: (path) => path === "/admin/system-diagnostics", selectors: [`[data-testid="system-diagnostics-page"]`] },
   { match: (path) => path === "/operations/control-tower" || path === "/control-tower", selectors: [`[data-testid="control-tower-page"]`] },
-  { match: (path) => path.startsWith("/get-educated"), selectors: [`[data-testid="get-educated-page"]`] },
+  {
+    match: (path) => path.startsWith("/get-educated/"),
+    selectors: [`[data-testid="training-lesson-page"]`],
+  },
+  { match: (path) => path === "/get-educated", selectors: [`[data-testid="get-educated-page"]`] },
 ];
 
 export type RouteRenderHealth = {

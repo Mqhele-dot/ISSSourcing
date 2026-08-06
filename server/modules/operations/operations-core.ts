@@ -166,10 +166,15 @@ type ActivityInput = {
 
 type ActivityListFilters = {
   limit?: number;
+  page?: number;
+  pageSize?: number;
   entityType?: string;
   entityId?: string;
+  actor?: string;
   /** Case-insensitive substring match on action */
   action?: string;
+  from?: Date;
+  to?: Date;
 };
 
 async function logActivity(
@@ -219,10 +224,11 @@ async function logActivity(
 export async function recordActivity(input: ActivityInput) {
   await pool.query(
     `
-    INSERT INTO ops_activity (actor, entity_type, entity_id, action, summary_json)
-    VALUES ($1, $2, $3, $4, $5::jsonb)
+    INSERT INTO ops_activity (organization_id, actor, entity_type, entity_id, action, summary_json)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb)
     `,
     [
+      getActiveOrganizationId(),
       input.actor?.trim() || "system",
       input.entityType,
       String(input.entityId),
@@ -401,12 +407,12 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
   const movementBySku = new Map<string, { lastMovementAt: Date | null; lastMovementReason: string | null; lastReceiptRef: string | null }>();
 
   if (skus.length > 0) {
-    const positionParams: Array<string | string[]> = [skus];
+    const positionParams: Array<string | number | string[]> = [skus, orgId];
     let locationSql = "";
 
     if (filters.location && filters.location.trim().length > 0) {
       positionParams.push(filters.location.trim());
-      locationSql = `AND p.location = $2`;
+      locationSql = `AND COALESCE(wi.location, w.location) = $3`;
     }
 
     const positionsResult = await pool.query<{
@@ -418,15 +424,21 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
     }>(
       `
       SELECT
-        p.sku,
-        COALESCE(SUM(p.on_hand), 0)::int AS on_hand,
-        COALESCE(SUM(p.allocated), 0)::int AS allocated,
+        i.sku,
+        COALESCE(SUM(wi.quantity), 0)::int AS on_hand,
+        COALESCE(MAX(a.allocated), 0)::int AS allocated,
         COUNT(*)::int AS position_count,
-        MAX(p.updated_at) AS updated_at
-      FROM inventory_positions p
-      WHERE p.sku = ANY($1)
+        MAX(wi.updated_at) AS updated_at
+      FROM warehouse_inventory wi
+      JOIN warehouses w ON w.id::text = wi.warehouse_id::text AND w.organization_id::text = wi.organization_id::text
+      JOIN inventory_items i ON i.id::text = wi.item_id::text AND i.organization_id::text = wi.organization_id::text
+      LEFT JOIN (
+        SELECT item_id::text AS item_key, SUM(quantity)::int AS allocated
+        FROM inventory_allocations WHERE organization_id::text = $2::text AND status = 'reserved' GROUP BY item_id::text
+      ) a ON a.item_key = wi.item_id::text
+      WHERE i.sku = ANY($1) AND wi.organization_id::text = $2::text
       ${locationSql}
-      GROUP BY p.sku
+      GROUP BY i.sku
       `,
       positionParams,
     );
@@ -448,16 +460,17 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
       created_at: Date | null;
     }>(
       `
-      SELECT DISTINCT ON (m.sku)
-        m.sku,
-        m.reason,
-        m.ref,
-        m.created_at
-      FROM inventory_movements m
-      WHERE m.sku = ANY($1)
-      ORDER BY m.sku, m.created_at DESC NULLS LAST, m.id DESC
+      SELECT DISTINCT ON (i.sku)
+        i.sku,
+        sm.type::text AS reason,
+        CASE WHEN sm.reference_id IS NULL THEN NULL ELSE concat(sm.reference_type, ':', sm.reference_id) END AS ref,
+        sm.timestamp AS created_at
+      FROM stock_movements sm
+      JOIN inventory_items i ON i.id::text = sm.item_id::text AND i.organization_id::text = sm.organization_id::text
+      WHERE i.sku = ANY($1) AND sm.organization_id::text = $2::text
+      ORDER BY i.sku, sm.timestamp DESC NULLS LAST, sm.id DESC
       `,
-      [skus],
+      [skus, orgId],
     );
 
     for (const row of movementResult.rows) {
@@ -495,7 +508,10 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
         onHand,
         allocated,
         available,
-        warehouseQuantity: onHand,
+        warehouseQuantity: aggregate?.onHand ?? 0,
+        unassignedQuantity: aggregate ? Math.max(fallbackOnHand - aggregate.onHand, 0) : fallbackOnHand,
+        warehousePositionCount: aggregate?.positionCount ?? 0,
+        hasQuantityMismatch: Boolean(aggregate && aggregate.onHand !== fallbackOnHand),
         positionCount: aggregate?.positionCount ?? 0,
         lastMovementAt: movement?.lastMovementAt ?? null,
         lastMovementReason: movement?.lastMovementReason ?? null,
@@ -3197,8 +3213,17 @@ export async function runOperationalConnector(connectorInput: string) {
 }
 
 export async function listOperationalActivity(filters: ActivityListFilters = {}) {
-  const whereClauses: string[] = [];
-  const params: Array<string | number> = [];
+  const page = await listOperationalActivityPage({
+    ...filters,
+    page: 1,
+    pageSize: filters.limit ?? filters.pageSize,
+  });
+  return page.items;
+}
+
+export async function listOperationalActivityPage(filters: ActivityListFilters = {}) {
+  const whereClauses: string[] = ["organization_id = $1"];
+  const params: Array<string | number | Date> = [getActiveOrganizationId()];
 
   if (filters.entityType && filters.entityType.trim()) {
     params.push(filters.entityType.trim().toLowerCase());
@@ -3215,10 +3240,33 @@ export async function listOperationalActivity(filters: ActivityListFilters = {})
     whereClauses.push(`lower(action) LIKE $${params.length}`);
   }
 
-  const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
-  params.push(limit);
-  const limitParam = `$${params.length}`;
-  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  if (filters.actor && filters.actor.trim()) {
+    params.push(`%${filters.actor.trim().toLowerCase()}%`);
+    whereClauses.push(`lower(actor) LIKE $${params.length}`);
+  }
+
+  if (filters.from) {
+    params.push(filters.from);
+    whereClauses.push(`created_at >= $${params.length}`);
+  }
+
+  if (filters.to) {
+    params.push(filters.to);
+    whereClauses.push(`created_at <= $${params.length}`);
+  }
+
+  const page = Math.max(filters.page ?? 1, 1);
+  const pageSize = Math.min(Math.max(filters.pageSize ?? filters.limit ?? 50, 1), 100);
+  const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
+
+  const countResult = await pool.query<{ total: number }>(
+    `SELECT count(*)::int AS total FROM ops_activity ${whereSql}`,
+    params,
+  );
+
+  const queryParams = [...params, pageSize, (page - 1) * pageSize];
+  const limitParam = `$${params.length + 1}`;
+  const offsetParam = `$${params.length + 2}`;
 
   const result = await pool.query<{
     id: number;
@@ -3235,11 +3283,12 @@ export async function listOperationalActivity(filters: ActivityListFilters = {})
     ${whereSql}
     ORDER BY created_at DESC, id DESC
     LIMIT ${limitParam}
+    OFFSET ${offsetParam}
     `,
-    params,
+    queryParams,
   );
 
-  return result.rows.map((row) => ({
+  const items = result.rows.map((row) => ({
     id: row.id,
     createdAt: row.created_at,
     actor: row.actor,
@@ -3248,6 +3297,9 @@ export async function listOperationalActivity(filters: ActivityListFilters = {})
     action: row.action,
     summary: row.summary_json ?? {},
   }));
+
+  const total = countResult.rows[0]?.total ?? 0;
+  return { items, total, page, pageSize, hasNext: page * pageSize < total };
 }
 
 export async function getOperationalControlTowerOverview() {

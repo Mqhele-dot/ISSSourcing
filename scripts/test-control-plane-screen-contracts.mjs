@@ -54,7 +54,8 @@ assertIncludes(approvalPolicies, "expectedVersion: editingVersion", "/finance/ap
 assertIncludes(approvalPolicies, "changeReason", "/finance/approval-policies");
 
 const masterData = read("client/src/pages/master-data.tsx");
-assertIncludes(masterData, "Master Data & Control Centre", "/admin/master-data");
+assertIncludes(masterData, 'title="Master Data"', "/admin/master-data");
+assertIncludes(masterData, "Governance and data quality", "/admin/master-data");
 assertIncludes(masterData, "master-data-page", "/admin/master-data");
 assertIncludes(masterData, "master-data-permission-denied", "/admin/master-data");
 assertIncludes(masterData, "master-data-dependency-response", "/admin/master-data");

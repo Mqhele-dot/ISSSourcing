@@ -190,7 +190,7 @@ export function registerWarehouseRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/warehouse-inventory/:warehouseId", async (req: Request, res: Response) => {
+  app.get("/api/warehouse-inventory/:warehouseId", ...warehouseRead, async (req: Request, res: Response) => {
     try {
       const warehouseId = Number(req.params.warehouseId);
       if (isNaN(warehouseId)) {
@@ -205,7 +205,7 @@ export function registerWarehouseRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/warehouse-inventory/:warehouseId/:itemId", async (req: Request, res: Response) => {
+  app.get("/api/warehouse-inventory/:warehouseId/:itemId", ...warehouseRead, async (req: Request, res: Response) => {
     try {
       const warehouseId = Number(req.params.warehouseId);
       const itemId = Number(req.params.itemId);
@@ -226,55 +226,42 @@ export function registerWarehouseRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/warehouse-inventory", async (req: Request, res: Response) => {
-    try {
-      const validatedData = insertWarehouseInventorySchema.parse(req.body);
-      const newInventoryItem = await storage.createWarehouseInventory(validatedData);
-      res.status(201).json(newInventoryItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        res.status(400).json({ message: validationError.message });
-      } else {
-        console.error("Error creating warehouse inventory item:", error);
-        res.status(500).json({ message: "Failed to create warehouse inventory item" });
-      }
-    }
-  });
+  app.post("/api/warehouse-inventory", ...warehouseWrite, (_req: Request, res: Response) =>
+    res.status(410).json({
+      code: "STOCK_MOVEMENT_REQUIRED",
+      message: "Warehouse balances cannot be created directly.",
+      hint: "Use an authenticated receipt, issue, transfer, or adjustment workflow.",
+    }),
+  );
 
-  app.put("/api/warehouse-inventory/:id", async (req: Request, res: Response) => {
+  app.put("/api/warehouse-inventory/:id", ...warehouseWrite, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id < 1) {
         return res.status(400).json({ message: "Invalid warehouse inventory row ID" });
       }
 
-      const validatedData = insertWarehouseInventorySchema.partial().parse(req.body);
+      const allowedFields = new Set(["location", "aisle", "bin"]);
+      const rejectedFields = Object.keys(req.body ?? {}).filter((field) => !allowedFields.has(field));
+      if (rejectedFields.length > 0) {
+        return res.status(409).json({
+          code: "STOCK_MOVEMENT_REQUIRED",
+          message: "Only put-away location metadata can be edited on a warehouse balance.",
+          hint: "Use an authenticated stock movement to change quantity.",
+          details: { rejectedFields },
+        });
+      }
+      const validatedData = insertWarehouseInventorySchema.pick({ location: true, aisle: true, bin: true }).partial().parse(req.body);
 
       const previousItem = await storage.getWarehouseInventoryById(id);
       if (!previousItem) {
         return res.status(404).json({ message: "Warehouse inventory item not found" });
       }
 
-      const previousQuantity = previousItem.quantity;
       const updatedItem = await storage.updateWarehouseInventory(id, validatedData);
 
       if (!updatedItem) {
         return res.status(404).json({ message: "Warehouse inventory item not found" });
-      }
-
-      if (validatedData.quantity !== undefined && validatedData.quantity !== previousQuantity) {
-        try {
-          const { notifyInventoryUpdate } = await import("../../websocket-service");
-          notifyInventoryUpdate(
-            updatedItem.itemId,
-            updatedItem.warehouseId,
-            updatedItem.quantity,
-            previousQuantity,
-          );
-        } catch (wsError) {
-          console.error("Failed to notify inventory update via WebSocket:", wsError);
-        }
       }
 
       res.json(updatedItem);
@@ -289,25 +276,13 @@ export function registerWarehouseRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.delete("/api/warehouse-inventory/:id", async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id < 1) {
-        return res.status(400).json({ message: "Invalid warehouse inventory row ID" });
-      }
-
-      const success = await storage.deleteWarehouseInventory(id);
-
-      if (!success) {
-        return res.status(404).json({ message: "Warehouse inventory item not found" });
-      }
-
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting warehouse inventory item:", error);
-      res.status(500).json({ message: "Failed to delete warehouse inventory item" });
-    }
-  });
+  app.delete("/api/warehouse-inventory/:id", ...warehouseWrite, (_req: Request, res: Response) =>
+    res.status(410).json({
+      code: "STOCK_MOVEMENT_REQUIRED",
+      message: "Warehouse balances cannot be deleted directly.",
+      hint: "Use a controlled stock adjustment to bring the balance to zero while retaining its audit trail.",
+    }),
+  );
 
   app.get("/api/inventory/:itemId/warehouses", async (req: Request, res: Response) => {
     try {

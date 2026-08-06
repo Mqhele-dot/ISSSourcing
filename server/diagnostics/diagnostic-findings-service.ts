@@ -95,7 +95,11 @@ async function queryProbe<T>(input: {
   evaluate: (rows: T[]) => DiagnosticFinding;
 }): Promise<DiagnosticFinding> {
   try {
-    const result = await pool.query(input.sql, input.values ?? [input.organizationId]);
+    // Probes that are not tenant-scoped (for example `SELECT 1`) must not
+    // receive an implicit bind value. Tenant-scoped probes pass their values
+    // explicitly, which also makes accidental cross-tenant queries visible in
+    // review.
+    const result = await pool.query(input.sql, input.values ?? []);
     return input.evaluate(result.rows as T[]);
   } catch (error) {
     return finding({
@@ -138,9 +142,10 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
               AND a.amount_min <= COALESCE(b.amount_max, 'Infinity'::real)
               AND b.amount_min <= COALESCE(a.amount_max, 'Infinity'::real)
             WHERE a.organization_id = $1`,
+      values: [organizationId],
       evaluate: (rows) => {
         const total = Number(rows[0]?.total ?? 0);
-        return finding({ category: "business", severity: total ? "warning" : "info", status: total ? "degraded" : "working", code: "APPROVAL_POLICY_OVERLAP", title: "Approval policy overlap", message: total ? `${total} overlapping active policy pair(s) require review.` : "No conflicting active approval-policy bands were detected.", evidence: { total }, remediation: total ? "Open Approval Policies, filter to overlaps, and deactivate or correct conflicting rules." : undefined });
+        return finding({ category: "business", severity: total ? "warning" : "info", status: total ? "degraded" : "working", code: "APPROVAL_POLICY_OVERLAP", title: "Approval policy overlap", message: total ? `${total} overlapping active policy pair(s) require review.` : "No conflicting active approval-policy bands were detected.", evidence: { total }, targetRoute: "/finance/approval-policies", remediation: total ? "Open Approval Policies, filter to overlaps, and deactivate or correct conflicting rules." : undefined });
       },
     }),
     queryProbe<{ total: string; latest: string | null }>({
@@ -151,9 +156,10 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
       sql: `SELECT COUNT(*)::text AS total, MAX(updated_at)::text AS latest
             FROM export_jobs
             WHERE organization_id = $1 AND status = 'failed' AND updated_at > NOW() - INTERVAL '7 days'`,
+      values: [organizationId],
       evaluate: (rows) => {
         const total = Number(rows[0]?.total ?? 0);
-        return finding({ category: "integrations", severity: total ? "error" : "info", status: total ? "failed" : "working", code: "EXPORT_JOB_FAILURES", title: "Export service", message: total ? `${total} export job(s) failed in the last seven days.` : "No export job failures were recorded in the last seven days.", evidence: rows[0], remediation: total ? "Open Export Center, retry the job, and use its request ID in diagnostics." : undefined });
+        return finding({ category: "integrations", severity: total ? "error" : "info", status: total ? "failed" : "working", code: "EXPORT_JOB_FAILURES", title: "Export service", message: total ? `${total} export job(s) failed in the last seven days.` : "No export job failures were recorded in the last seven days.", evidence: rows[0], targetRoute: "/analytics/export-center", remediation: total ? "Open Export Center, retry the job, and use its request ID in diagnostics." : undefined });
       },
     }),
     queryProbe<{ total: string }>({
@@ -166,9 +172,10 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
               UNION ALL SELECT COUNT(*) FROM inventory_items WHERE organization_id::text = $1::text AND (name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)')
               UNION ALL SELECT COUNT(*) FROM approval_policies WHERE organization_id = $1 AND name ~ '^(AP Workflow|AP Test|AP Invalid)'
             ) fixture_matches`,
+      values: [organizationId],
       evaluate: (rows) => {
         const total = Number(rows[0]?.total ?? 0);
-        return finding({ category: "consistency", severity: total ? "warning" : "info", status: total ? "degraded" : "working", code: "TEST_FIXTURE_POLLUTION", title: "Automated fixture pollution", message: total ? `${total} probable test fixture record(s) are present.` : "No known test-fixture naming patterns were detected.", evidence: { total }, remediation: total ? "Run npm run data:fixture-audit. Review and back up the database before any explicit purge." : undefined });
+        return finding({ category: "consistency", severity: total ? "warning" : "info", status: total ? "degraded" : "working", code: "TEST_FIXTURE_POLLUTION", title: "Automated fixture pollution", message: total ? `${total} probable test fixture record(s) are present.` : "No known test-fixture naming patterns were detected.", evidence: { total }, targetRoute: "/admin/system-diagnostics?view=consistency", remediation: total ? "Run npm run data:fixture-audit. Review and back up the database before any explicit purge." : undefined });
       },
     }),
     queryProbe<{ unread: string; oldest: string | null }>({
@@ -179,10 +186,11 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
       sql: `SELECT COUNT(*) FILTER (WHERE read_at IS NULL)::text AS unread,
                    MIN(created_at) FILTER (WHERE read_at IS NULL)::text AS oldest
             FROM notifications WHERE organization_id = $1`,
+      values: [organizationId],
       evaluate: (rows) => {
         const unread = Number(rows[0]?.unread ?? 0);
         const degraded = unread > 100;
-        return finding({ category: "notifications", severity: degraded ? "warning" : "info", status: degraded ? "degraded" : "working", code: "NOTIFICATION_BACKLOG", title: "Notification backlog", message: degraded ? `${unread} unread notifications are accumulating.` : `${unread} unread notification(s); backlog is within the operational threshold.`, evidence: rows[0], remediation: degraded ? "Review duplicate event sources, mark resolved notifications read, and apply retention policy." : undefined });
+        return finding({ category: "notifications", severity: degraded ? "warning" : "info", status: degraded ? "degraded" : "working", code: "NOTIFICATION_BACKLOG", title: "Notification backlog", message: degraded ? `${unread} unread notifications are accumulating.` : `${unread} unread notification(s); backlog is within the operational threshold.`, evidence: rows[0], targetRoute: "/admin/system-diagnostics?view=notifications", remediation: degraded ? "Review duplicate event sources, mark resolved notifications read, and apply retention policy." : undefined });
       },
     }),
     queryProbe<{ total: string; latest: string | null }>({
@@ -191,17 +199,18 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
       title: "Audit timeline",
       organizationId,
       sql: `SELECT COUNT(*)::text AS total, MAX(created_at)::text AS latest FROM audit_logs WHERE organization_id = $1`,
+      values: [organizationId],
       evaluate: (rows) => {
         const total = Number(rows[0]?.total ?? 0);
-        return finding({ category: "audit", severity: total ? "info" : "warning", status: total ? "working" : "not_exercised", code: "AUDIT_TIMELINE", title: "Audit timeline", message: total ? `${total} tenant-scoped audit event(s) are available.` : "No audit events have been recorded for this organization.", evidence: rows[0], remediation: total ? undefined : "Exercise an audited administrative action and confirm the event appears here." });
+        return finding({ category: "audit", severity: total ? "info" : "warning", status: total ? "working" : "not_exercised", code: "AUDIT_TIMELINE", title: "Audit timeline", message: total ? `${total} tenant-scoped audit event(s) are available.` : "No audit events have been recorded for this organization.", evidence: rows[0], targetRoute: "/admin/audit-logs", remediation: total ? undefined : "Exercise an audited administrative action and confirm the event appears here." });
       },
     }),
   ]);
 
   const configuration: DiagnosticFinding[] = [
-    finding({ category: "integrations", severity: process.env.SMTP_HOST ? "info" : "warning", status: process.env.SMTP_HOST ? "working" : "disabled_by_configuration", code: "EMAIL_CONFIGURATION", title: "Email delivery", message: process.env.SMTP_HOST ? "Email delivery is configured." : "Email delivery is disabled because SMTP is not configured.", remediation: process.env.SMTP_HOST ? undefined : "Configure SMTP variables in the hosting environment and restart the app." }),
-    finding({ category: "integrations", severity: process.env.STRIPE_SECRET_KEY ? "info" : "warning", status: process.env.STRIPE_SECRET_KEY ? "working" : "disabled_by_configuration", code: "STRIPE_CONFIGURATION", title: "Stripe billing", message: process.env.STRIPE_SECRET_KEY ? "Stripe billing credentials are configured." : "Stripe billing is disabled by configuration.", remediation: process.env.STRIPE_SECRET_KEY ? undefined : "Configure Stripe only when hosted SaaS billing is ready." }),
-    finding({ category: "security", severity: "info", status: "not_exercised", code: "SECURITY_RELEASE_EVIDENCE", title: "Security release evidence", message: "Runtime diagnostics cannot infer that CI and supply-chain gates passed.", remediation: "Run npm run verify:release:secure and attach immutable CI evidence before release." }),
+    finding({ category: "integrations", severity: process.env.SMTP_HOST ? "info" : "warning", status: process.env.SMTP_HOST ? "working" : "disabled_by_configuration", code: "EMAIL_CONFIGURATION", title: "Email delivery", message: process.env.SMTP_HOST ? "Email delivery is configured." : "Email delivery is disabled because SMTP is not configured.", targetRoute: "/admin/integrations", remediation: process.env.SMTP_HOST ? undefined : "Configure SMTP variables in the hosting environment and restart the app." }),
+    finding({ category: "integrations", severity: process.env.STRIPE_SECRET_KEY ? "info" : "warning", status: process.env.STRIPE_SECRET_KEY ? "working" : "disabled_by_configuration", code: "STRIPE_CONFIGURATION", title: "Stripe billing", message: process.env.STRIPE_SECRET_KEY ? "Stripe billing credentials are configured." : "Stripe billing is disabled by configuration.", targetRoute: "/admin/subscription", remediation: process.env.STRIPE_SECRET_KEY ? undefined : "Configure Stripe only when hosted SaaS billing is ready." }),
+    finding({ category: "security", severity: "info", status: "not_exercised", code: "SECURITY_RELEASE_EVIDENCE", title: "Security release evidence", message: "Runtime diagnostics cannot infer that CI and supply-chain gates passed.", targetRoute: "/admin/system-diagnostics?view=security", remediation: "Run npm run verify:release:secure and attach immutable CI evidence before release." }),
   ];
 
   return [...serverEventFindings(organizationId), ...probes, ...configuration].sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));

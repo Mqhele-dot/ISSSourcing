@@ -600,13 +600,14 @@ export async function apiRequest(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
+      const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
       const headers = await buildRequestHeaders(method, undefined, {
-        contentType: data ? "application/json" : false,
+        contentType: data && !isFormData ? "application/json" : false,
       });
       const res = await fetch(url, {
         method,
         headers,
-        body: data ? JSON.stringify(data) : undefined,
+        body: data ? (isFormData ? data : JSON.stringify(data)) : undefined,
         credentials: "include",
         cache: "no-store",
         signal: controller.signal,

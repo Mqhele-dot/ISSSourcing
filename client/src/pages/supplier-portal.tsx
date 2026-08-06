@@ -23,6 +23,7 @@ import { PageShell } from "@/components/page-shell";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import type { PurchaseOrder } from "@/api/client";
 import { SupplierSourcingWorkspace } from "@/pages/supplier-sourcing-workspace";
+import { SearchableRecordCombobox } from "@/components/searchable-record-combobox";
 
 export default function SupplierPortalPage() {
   const { toast } = useToast();
@@ -87,7 +88,7 @@ export default function SupplierPortalPage() {
   const { data: supplierOptions = [] } = useQuery({
     queryKey: ["/api/suppliers", "portal-options"],
     enabled: canChooseSupplier,
-    queryFn: () => requestJson<Array<{ id: number; name: string }>>("GET", "/api/suppliers"),
+    queryFn: async () => (await requestJson<{ items: Array<{ id: number; name: string; supplierCode?: string | null }> }>("GET", "/api/v2/suppliers?page=1&pageSize=100&sort=name_asc")).items,
   });
 
   const { data: orders = [], isLoading } = useQuery({
@@ -263,18 +264,9 @@ export default function SupplierPortalPage() {
           <CardContent className="grid gap-3 md:grid-cols-[320px_1fr] md:items-end">
             <div className="space-y-1">
               <Label htmlFor="supplier-scope-select">View supplier account</Label>
-              <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-                <SelectTrigger id="supplier-scope-select">
-                  <SelectValue placeholder="Choose supplier" />
-                </SelectTrigger>
-                <SelectContent>
-                  {supplierOptions.map((supplier) => (
-                    <SelectItem key={supplier.id} value={String(supplier.id)}>
-                      {supplier.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableRecordCombobox id="supplier-scope-select" value={selectedSupplierId} onValueChange={setSelectedSupplierId}
+                options={supplierOptions.map((supplier) => ({ value: String(supplier.id), label: supplier.name, keywords: supplier.supplierCode ?? "" }))}
+                placeholder="Choose supplier" searchPlaceholder="Search suppliers…" emptyMessage="No matching supplier." maxSuggestions={25} />
             </div>
             <p className="text-sm text-muted-foreground">
               Managers/Admins must select a supplier to simulate supplier-portal access.

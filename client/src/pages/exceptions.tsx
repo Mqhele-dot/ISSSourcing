@@ -353,7 +353,7 @@ function ExceptionListView() {
             <Button variant="outline" data-testid="exceptions-refresh" onClick={refreshNow}>
               Refresh
             </Button>
-            <Can roles={["manager", "admin"]} reason="Requires Manager/Admin">
+            <Can resource="inventory" permissionType="execute" reason="Requires inventory:execute permission">
               <Button variant="outline" data-testid="exceptions-run-checks" onClick={handleRunChecks}>
                 Run checks
               </Button>
@@ -527,7 +527,7 @@ function ExceptionListView() {
               <Button variant="outline" onClick={() => setQuickException(null)}>
                 Cancel
               </Button>
-              <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+              <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
                 <Button
                   disabled={
                     !quickException ||
@@ -757,7 +757,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                   }
                 />
                 <div className="flex gap-2">
-                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                  <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
                     <Button
                       variant="outline"
                       disabled={
@@ -775,7 +775,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                       Update status
                     </Button>
                   </Can>
-                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                  <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
                     <Button
                       disabled={saving || !detailAssigneeChanged}
                       onClick={() =>
@@ -802,7 +802,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                     onChange={(event) => setComment(event.target.value)}
                     placeholder="Add comment"
                   />
-                  <Can roles={["planner", "admin"]} reason="Requires Planner/Admin">
+                  <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
                     <Button
                       disabled={saving || !comment.trim()}
                       onClick={() =>

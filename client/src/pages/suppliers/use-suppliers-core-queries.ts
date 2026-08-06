@@ -13,13 +13,12 @@ export type SupplierPerformanceRow = {
 };
 
 /** Primary list + reference data for the suppliers page (colocated hook). */
-export function useSuppliersCoreQueries() {
-  const suppliersQuery = useQuery({
-    queryKey: ["/api/suppliers"],
+export function useSuppliersCoreQueries(filters: { q: string; status: string; page: number; pageSize: number }) {
+  const suppliersQuery = useQuery<{ items: Supplier[]; total: number; page: number; pageSize: number; hasNext: boolean }>({
+    queryKey: ["/api/v2/suppliers", filters],
     retry: 1,
     queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/suppliers");
-      return normalizeApiListStrict<Supplier>(raw, "GET /api/suppliers");
+      return requestJson("GET", `/api/v2/suppliers?page=${filters.page}&pageSize=${filters.pageSize}&q=${encodeURIComponent(filters.q)}&status=${filters.status === "all" ? "" : filters.status}&sort=name_asc`);
     },
   });
 
@@ -65,9 +64,11 @@ export function useSuppliersCoreQueries() {
     throwOnError: false,
   });
 
+  const visibleIds = suppliersQuery.data?.items.map((supplier) => supplier.id) ?? [];
   const performanceQuery = useQuery<SupplierPerformanceRow[]>({
-    queryKey: ["/api/suppliers/performance"],
-    queryFn: () => requestJson("GET", "/api/suppliers/performance"),
+    queryKey: ["/api/v2/suppliers/performance", visibleIds],
+    enabled: visibleIds.length > 0,
+    queryFn: () => requestJson("GET", `/api/v2/suppliers/performance?ids=${visibleIds.join(",")}`),
     throwOnError: false,
   });
 

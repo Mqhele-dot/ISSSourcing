@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Truck, ChevronRight, Package, CheckCircle2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { PageHeader } from "@/components/page-header";
 import { DataState } from "@/components/ui/data-state";
@@ -18,11 +18,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Can } from "@/components/auth/can";
-import { useAsyncResource } from "@/hooks/use-async-resource";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { requestJson } from "@/lib/queryClient";
-import { fetchPurchaseOrdersEnvelope } from "@/features/purchase-orders";
+import { fetchPurchaseOrdersPageEnvelope } from "@/features/purchase-orders";
 import {
   normalizeBatchInput,
   normalizeSerialTokensCsv,
@@ -47,20 +46,24 @@ export default function MobileReceivePage() {
 }
 
 function MobileReceiveQueuePage() {
-  const fetcher = async (signal: AbortSignal) => {
-    const envApproved = await fetchPurchaseOrdersEnvelope({ status: "approved" }, { signal });
-    const envSent = await fetchPurchaseOrdersEnvelope({ status: "sent" }, { signal });
-    const envPartial = await fetchPurchaseOrdersEnvelope({ status: "partially_received" }, { signal });
-    const map = new Map<string, PurchaseOrderListItem>();
-    for (const order of [...(envApproved.data ?? []), ...(envSent.data ?? []), ...(envPartial.data ?? [])]) {
-      map.set(order.poNumber, order);
+  const queue = useInfiniteQuery({
+    queryKey: ["/api/v2/procurement/purchase-orders", "mobile-receive", "receivable"],
+    initialPageParam: 1,
+    queryFn: ({ pageParam, signal }) => fetchPurchaseOrdersPageEnvelope({
+      statuses: ["approved", "sent", "partially_received"],
+      page: pageParam,
+      pageSize: 25,
+      sort: "number_desc",
+    }, { signal }),
+    getNextPageParam: (lastPage) => lastPage.data.hasNext ? lastPage.data.page + 1 : undefined,
+  });
+  const rows = useMemo(() => {
+    const unique = new Map<string, PurchaseOrderListItem>();
+    for (const page of queue.data?.pages ?? []) {
+      for (const order of page.data.items) unique.set(order.poNumber, order);
     }
-    const merged = Array.from(map.values()).sort((a, b) => b.poNumber.localeCompare(a.poNumber));
-    return { data: merged };
-  };
-
-  const { loading, error, data: bundle, refetch } = useAsyncResource(fetcher, { abortable: true });
-  const rows = bundle?.data ?? [];
+    return [...unique.values()];
+  }, [queue.data?.pages]);
 
   return (
     <div className="mx-auto max-w-lg px-3 pb-24 pt-2 md:max-w-2xl" data-testid="mobile-receive-queue">
@@ -75,8 +78,8 @@ function MobileReceiveQueuePage() {
       </p>
 
       <DataState
-        loading={loading}
-        error={error}
+        loading={queue.isLoading}
+        error={queue.error instanceof Error ? queue.error : queue.error ? new Error(String(queue.error)) : null}
         data={rows}
         isEmpty={(list) => list.length === 0}
         emptyTitle="No POs ready for receipt"
@@ -89,9 +92,10 @@ function MobileReceiveQueuePage() {
             Go to purchase orders
           </Link>
         }
-        onRetry={refetch}
+        onRetry={() => void queue.refetch()}
       >
         {(list) => (
+          <div className="space-y-3">
           <ul className="flex flex-col gap-2">
             {list.map((po) => (
               <li key={po.poNumber}>
@@ -119,6 +123,13 @@ function MobileReceiveQueuePage() {
               </li>
             ))}
           </ul>
+          {queue.hasNextPage ? (
+            <Button className="min-h-11 w-full" variant="outline" onClick={() => void queue.fetchNextPage()} disabled={queue.isFetchingNextPage}>
+              {queue.isFetchingNextPage ? "Loading more..." : "Load more"}
+            </Button>
+          ) : null}
+          {queue.isFetching && !queue.isFetchingNextPage ? <p className="text-center text-xs text-muted-foreground">Refreshing queue...</p> : null}
+          </div>
         )}
       </DataState>
     </div>

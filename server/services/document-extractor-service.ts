@@ -18,10 +18,8 @@ import csvParser from 'csv-parser';
 import Excel from 'exceljs';
 import { createObjectCsvWriter } from 'csv-writer';
 import fetch from 'node-fetch';
-import * as https from 'https';
 import { getPdfLib } from './pdfjs-setup';
 import { createWorker } from 'tesseract.js';
-import { Readable } from 'stream';
 
 export type FileType = 'pdf' | 'excel' | 'csv' | 'image' | 'unknown';
 export type ExportFormat = 'json' | 'csv' | 'excel' | 'database';
@@ -76,7 +74,7 @@ export async function detectFileType(filePath: string): Promise<FileType> {
     return 'pdf';
   }
   
-  if (['.xls', '.xlsx', '.xlsm'].includes(ext)) {
+  if (['.xlsx', '.xlsm'].includes(ext)) {
     return 'excel';
   }
   
@@ -101,9 +99,9 @@ export async function detectFileType(filePath: string): Promise<FileType> {
     }
     
     // Excel signatures
-    // XLS (97-2003): D0 CF 11 E0 A1 B1 1A E1
+    // Legacy binary XLS is deliberately rejected: ExcelJS only reads OOXML workbooks.
     if (buffer[0] === 0xD0 && buffer[1] === 0xCF && buffer[2] === 0x11 && buffer[3] === 0xE0) {
-      return 'excel';
+      return 'unknown';
     }
     
     // XLSX: 50 4B 03 04 (PK..)
@@ -156,7 +154,11 @@ export async function extractFromPdf(
     // Load the PDF file
     const data = new Uint8Array(fs.readFileSync(filePath));
     const pdfjsLib = await getPdfLib();
-    const loadingTask = pdfjsLib.getDocument({ data });
+    const standardFontPath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'standard_fonts');
+    const loadingTask = pdfjsLib.getDocument({
+      data,
+      ...(fs.existsSync(standardFontPath) ? { standardFontDataUrl: `${standardFontPath.replace(/\\/g, '/')}/` } : {}),
+    });
     const pdf = await loadingTask.promise;
     
     const numPages = pdf.numPages;
@@ -329,8 +331,10 @@ export async function extractFromExcel(
     const headerRow = sheet.getRow(1);
     const headers: string[] = [];
     
-    headerRow.eachCell({ includeEmpty: false }, cell => {
-      headers.push(cell.value ? cell.value.toString() : `Column${cell.col}`);
+    headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const raw = cell.value;
+      const header = typeof raw === 'object' && raw && 'text' in raw ? String(raw.text) : String(raw ?? '').trim();
+      headers[colNumber - 1] = header || `Column${colNumber}`;
     });
     
     if (headers.length === 0) {
@@ -347,17 +351,19 @@ export async function extractFromExcel(
         
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           const header = headers[colNumber - 1] || `Column${colNumber}`;
-          let value = cell.value;
+          let value: unknown = cell.value;
           
           // Handle different cell types
           if (value !== null && value !== undefined) {
             if (value instanceof Date) {
               value = value.toISOString();
             } else if (typeof value === 'object') {
-              // Handle rich text and other complex objects (narrow for CellRichTextValue)
-              value = 'text' in value && typeof (value as { text: string }).text === 'string'
-                ? (value as { text: string }).text
-                : value.toString();
+              const complex = value as unknown as Record<string, unknown>;
+              if ('result' in complex) value = complex.result ?? null;
+              else if ('text' in complex) value = String(complex.text ?? '');
+              else if (Array.isArray(complex.richText)) value = complex.richText.map((part) => String((part as { text?: unknown }).text ?? '')).join('');
+              else if ('hyperlink' in complex) value = String(complex.text ?? complex.hyperlink ?? '');
+              else value = JSON.stringify(complex);
             }
           }
           
@@ -640,7 +646,7 @@ export async function processFile(
       case 'image':
         return await extractFromImage(filePath, fileName, options);
       default:
-        throw new Error(`Unsupported file type: ${fileType}`);
+        throw new Error(`Unsupported file type. Use PDF, CSV, an image, or a modern Excel workbook (.xlsx or .xlsm). Legacy .xls files must be saved as .xlsx first.`);
     }
   } catch (error) {
     console.error('Error processing file:', error);
@@ -905,108 +911,5 @@ export async function exportData(
   } catch (error) {
     console.error('Error exporting data:', error);
     throw new Error(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-/**
- * Insert extracted data into database
- * This is a placeholder implementation - replace with your actual database logic
- */
-async function insertIntoDatabase(data: any[], schemaName: string): Promise<number> {
-  try {
-    // This function should be implemented based on your database needs
-    // For example, use Drizzle ORM to insert data into the specified schema
-    
-    // Return the number of records inserted
-    return data.length;
-  } catch (error) {
-    console.error('Error inserting into database:', error);
-    throw new Error(`Database insert failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-/**
- * Process files from URLs
- */
-export async function processFromUrls(
-  urls: string[],
-  options: ProcessingOptions = {}
-): Promise<BatchProcessingResult> {
-  try {
-    const tmpDir = path.join(process.cwd(), 'tmp');
-    if (!fs.existsSync(tmpDir)) {
-      fs.mkdirSync(tmpDir);
-    }
-    
-    const result: BatchProcessingResult = {
-      totalFiles: urls.length,
-      successfulFiles: 0,
-      failedFiles: 0,
-      totalRecords: 0,
-      results: []
-    };
-    
-    // Process URLs one by one to avoid memory issues
-    for (const url of urls) {
-      try {
-        // Extract filename from URL
-        const urlObj = new URL(url);
-        const fileName = path.basename(urlObj.pathname) || 'download';
-        const filePath = path.join(tmpDir, `${Date.now()}-${fileName}`);
-        
-        // Download the file
-        const response = await fetch(url, {
-          agent: url.startsWith('https:') ? new https.Agent({
-            rejectUnauthorized: false
-          }) : undefined
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Failed to download file: HTTP ${response.status}`);
-        }
-        
-        // Save the file to disk
-        const fileStream = fs.createWriteStream(filePath);
-        if (response.body) {
-          await new Promise<void>((resolve, reject) => {
-            const stream = Readable.fromWeb(response.body as any);
-            stream.pipe(fileStream);
-            stream.on('error', reject);
-            fileStream.on('finish', resolve);
-          });
-        }
-        
-        // Process the file
-        const data = await processFile(filePath, fileName, options);
-        
-        result.results.push({
-          fileName,
-          success: true,
-          records: data.rows || data.data.length,
-          data
-        });
-        
-        result.successfulFiles++;
-        result.totalRecords += data.rows || data.data.length;
-        
-        // Clean up
-        fs.unlinkSync(filePath);
-      } catch (error) {
-        console.error(`Error processing URL ${url}:`, error);
-        
-        result.results.push({
-          fileName: url,
-          success: false,
-          error: error instanceof Error ? error.message : String(error)
-        });
-        
-        result.failedFiles++;
-      }
-    }
-    
-    return result;
-  } catch (error) {
-    console.error('Error processing URLs:', error);
-    throw new Error(`URL processing failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

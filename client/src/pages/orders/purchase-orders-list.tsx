@@ -98,13 +98,15 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
     status: "",
     supplier: "",
     q: "",
+    page: "1",
+    pageSize: "25",
   });
 
   const [qInput, setQInput] = useState(String(queryState.q || ""));
   useEffect(() => setQInput(String(queryState.q || "")), [queryState.q]);
   useEffect(() => {
     const handle = window.setTimeout(() => {
-      if (String(queryState.q || "") !== qInput) setQueryState({ q: qInput });
+      if (String(queryState.q || "") !== qInput) setQueryState({ q: qInput, page: "1" });
     }, 400);
     return () => window.clearTimeout(handle);
   }, [qInput, queryState.q, setQueryState]);
@@ -113,7 +115,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   useEffect(() => setSupplierInput(String(queryState.supplier || "")), [queryState.supplier]);
   useEffect(() => {
     const handle = window.setTimeout(() => {
-      if (String(queryState.supplier || "") !== supplierInput) setQueryState({ supplier: supplierInput });
+      if (String(queryState.supplier || "") !== supplierInput) setQueryState({ supplier: supplierInput, page: "1" });
     }, 400);
     return () => window.clearTimeout(handle);
   }, [supplierInput, queryState.supplier, setQueryState]);
@@ -125,6 +127,8 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
     status: String(queryState.status || ""),
     supplier: String(queryState.supplier || ""),
     q: String(queryState.q || ""),
+    page: Math.max(1, Number(queryState.page) || 1),
+    pageSize: [25, 50, 100].includes(Number(queryState.pageSize)) ? Number(queryState.pageSize) : 25,
   });
   const envelope = poListQuery.data;
   const loading = poListQuery.isLoading;
@@ -137,7 +141,8 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   const refetch = async () => {
     await poListQuery.refetch();
   };
-  const data = envelope?.data ?? null;
+  const pageData = envelope?.data;
+  const data = pageData?.items ?? null;
   const fallbackRaw = envelope?.meta?.fallback as FallbackKind | undefined;
   /** Do not show degraded/timeout empty copy when the list request itself failed. */
   const fallback = error ? undefined : fallbackRaw;
@@ -226,7 +231,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                 onValueChange={(value) => {
                   const next = value === "all" ? "" : value;
                   setStatusInput(next);
-                  setQueryState({ status: next });
+                  setQueryState({ status: next, page: "1" });
                 }}
               >
                 <SelectTrigger className="w-full sm:w-[220px]" data-testid="po-status-filter">
@@ -273,7 +278,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                   setQInput("");
                   setSupplierInput("");
                   setStatusInput("");
-                  setQueryState({ q: "", supplier: "", status: "" });
+                  setQueryState({ q: "", supplier: "", status: "", page: "1" });
                 }}
               >
                 Clear filters
@@ -368,13 +373,11 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
               if (sortBy === "progress-desc") return Number(b.receivedProgress ?? 0) - Number(a.receivedProgress ?? 0);
               return dateMs(b.requestedDate) - dateMs(a.requestedDate);
             });
+            const statusCount = (status: string) => Object.entries(pageData?.summary?.byStatus ?? {}).reduce((count, [key, value]) => normalizeStatus(key) === status ? count + Number(value) : count, 0);
             const kpis = {
-              total: sorted.length,
-              open: sorted.filter((order) => normalizeStatus(order.status) === "open").length,
-              approved: sorted.filter((order) => normalizeStatus(order.status) === "approved").length,
-              sent: sorted.filter((order) => normalizeStatus(order.status) === "sent").length,
-              received: sorted.filter((order) => normalizeStatus(order.status) === "received").length,
-              totalValue: sorted.reduce((sum, order) => sum + Number(order.totalAmount ?? 0), 0),
+              total: pageData?.total ?? sorted.length,
+              open: statusCount("open"), approved: statusCount("approved"), sent: statusCount("sent"), received: statusCount("received"),
+              totalValue: pageData?.summary?.totalAmount ?? 0,
             };
             return (
               <div className="space-y-4">
@@ -465,6 +468,18 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                   </TableBody>
                 </Table>
               </div>
+              {pageData ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-sm">
+                  <span className="text-muted-foreground">{pageData.total === 0 ? "0 results" : `${(pageData.page - 1) * pageData.pageSize + 1}–${Math.min(pageData.page * pageData.pageSize, pageData.total)} of ${pageData.total}`}</span>
+                  <div className="flex items-center gap-2">
+                    <Select value={String(pageData.pageSize)} onValueChange={(value) => setQueryState({ pageSize: value, page: "1" })}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent>{[25, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} rows</SelectItem>)}</SelectContent></Select>
+                    <Button variant="outline" size="sm" disabled={pageData.page <= 1} onClick={() => setQueryState({ page: "1" })}>First</Button>
+                    <Button variant="outline" size="sm" disabled={pageData.page <= 1} onClick={() => setQueryState({ page: String(pageData.page - 1) })}>Previous</Button>
+                    <Button variant="outline" size="sm" disabled={!pageData.hasNext} onClick={() => setQueryState({ page: String(pageData.page + 1) })}>Next</Button>
+                    <Button variant="outline" size="sm" disabled={!pageData.hasNext} onClick={() => setQueryState({ page: String(Math.max(1, Math.ceil(pageData.total / pageData.pageSize))) })}>Last</Button>
+                  </div>
+                </div>
+              ) : null}
               </div>
             );
           }}

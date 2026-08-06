@@ -6,7 +6,8 @@ function assertIncludes(text, needle, label) {
   if (!text.includes(needle)) throw new Error(`${label} missing: ${needle}`);
 }
 
-assertIncludes(ui, "Master Data & Control Centre", "control-centre title");
+assertIncludes(ui, 'title="Master Data"', "master-data title");
+assertIncludes(ui, "Governance and data quality", "control-centre entry point");
 assertIncludes(ui, "master-data-governance-dashboard", "governance dashboard");
 assertIncludes(ui, "master-data-change-requests", "change request queue");
 assertIncludes(ui, "master-data-standard-record-fields", "standard record model");

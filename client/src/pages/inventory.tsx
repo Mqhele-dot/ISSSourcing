@@ -39,7 +39,7 @@ import { useToast } from "@/hooks/use-toast";
 import { requestJson } from "@/lib/queryClient";
 import { downloadCsv } from "@/lib/csv-download";
 import { isLikelyCsvResponse, parseExportFailureMessage } from "@/lib/export-download";
-import { fetchInventory } from "@/api/client";
+import { fetchInventoryPage } from "@/api/client";
 import type { InventoryListItem } from "@/api/types";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
@@ -90,12 +90,6 @@ function formatUpdated(value: InventoryListItem["updatedAt"]): string {
   return Number.isNaN(parsed.getTime()) ? "-" : parsed.toLocaleString();
 }
 
-function updatedTime(value: InventoryListItem["updatedAt"]): number {
-  if (!value) return 0;
-  const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function inventoryStatus(item: InventoryListItem): "error" | "low" | "active" {
   const status = getInventoryAvailabilityStatus(item.available, item.lowStockThreshold);
   return status === "error" || status === "low" ? status : "active";
@@ -127,10 +121,16 @@ export default function InventoryPage() {
     location: "",
     category: "",
     low: "",
+    sort: "name-asc",
+    view: "table",
+    page: "1",
+    pageSize: "25",
   });
-  const [sortBy, setSortBy] = useState<InventorySort>("name-asc");
-  const [viewMode, setViewMode] = useState<InventoryViewMode>("table");
-  const [previewItem, setPreviewItem] = useState<InventoryListItem | null>(null);
+  const sortBy = (["name-asc", "sku-asc", "available-asc", "available-desc", "updated-desc", "updated-asc"] as string[]).includes(String(queryState.sort)) ? String(queryState.sort) as InventorySort : "name-asc";
+  const viewMode = queryState.view === "cards" ? "cards" : "table";
+  const page = Math.max(1, Number.parseInt(String(queryState.page), 10) || 1);
+  const pageSize = [25, 50, 100].includes(Number(queryState.pageSize)) ? Number(queryState.pageSize) : 25;
+  const [previewSku, setPreviewSku] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateInventoryForm>(() => emptyCreateInventoryForm());
   const [createError, setCreateError] = useState<string | null>(null);
@@ -145,7 +145,7 @@ export default function InventoryPage() {
     const current = String(queryState.q ?? "");
     if (next === current) return;
     const handle = window.setTimeout(() => {
-      setQueryState({ q: next });
+      setQueryState({ q: next, page: "1" });
     }, 350);
     return () => window.clearTimeout(handle);
   }, [queryState.q, searchInput, setQueryState]);
@@ -167,13 +167,18 @@ export default function InventoryPage() {
 
   const inventoryFetcher = useCallback(async () => {
     const lowEnabled = isLowFilterEnabled(String(queryState.low || ""));
-    return fetchInventory({
+    const sortMap: Record<InventorySort, string> = {
+      "name-asc": "name_asc", "sku-asc": "sku_asc", "available-asc": "available_asc",
+      "available-desc": "available_desc", "updated-desc": "updated_desc", "updated-asc": "updated_asc",
+    };
+    return fetchInventoryPage({
+      page, pageSize, sort: sortMap[sortBy],
       q: String(queryState.q ?? "").trim(),
       location: String(queryState.location || "").trim(),
       category: String(queryState.category || "").trim(),
-      lowStock: lowEnabled,
+      low: lowEnabled,
     });
-  }, [queryState.category, queryState.location, queryState.low, queryState.q]);
+  }, [page, pageSize, queryState.category, queryState.location, queryState.low, queryState.q, sortBy]);
 
   const {
     loading: inventoryLoading,
@@ -219,7 +224,7 @@ export default function InventoryPage() {
   );
 
   const runClientCsv = useCallback(() => {
-    const items = inventoryData ?? [];
+    const items = inventoryData?.items ?? [];
     const rows: string[][] = [
       ["sku", "name", "location", "on_hand", "allocated", "available", "updated_at"],
       ...items.map((item) => [
@@ -314,74 +319,44 @@ export default function InventoryPage() {
     for (const w of warehouses) {
       if (w.name?.trim()) locationSet.add(w.name.trim());
     }
-    for (const item of inventoryData ?? []) {
+    for (const item of inventoryData?.items ?? []) {
       if (item.location) {
         locationSet.add(item.location);
       }
     }
     return Array.from(locationSet).sort((a, b) => a.localeCompare(b));
-  }, [warehouses, inventoryData]);
+  }, [warehouses, inventoryData?.items]);
 
   const clearFilters = () => {
     setSearchInput("");
     setLocationFilter("");
     setCategoryFilter("");
     setLowFilter("");
-    setQueryState({ q: "", location: "", category: "", low: "" });
+    setQueryState({ q: "", location: "", category: "", low: "", page: "1" });
   };
 
-  const activeSearch = String(searchInput || "").trim();
-  const activeLocation = String(locationFilter || "").trim();
-  const activeCategory = String(categoryFilter || "").trim();
-  const activeLow = isLowFilterEnabled(String(lowFilter || ""));
-  const displayedItems = useMemo(() => {
-    const search = activeSearch.toLowerCase();
-    const location = activeLocation.toLowerCase();
-    const category = activeCategory.toLowerCase();
-    return (inventoryData ?? []).filter((item) => {
-      if (search && !`${item.sku} ${item.name}`.toLowerCase().includes(search)) return false;
-      if (location && String(item.location || "").toLowerCase() !== location) return false;
-      if (category) {
-        const categoryMatchesId = String(item.categoryId ?? "").toLowerCase() === category;
-        const categoryMatchesName = categoryNameFor(item).toLowerCase() === category;
-        if (!categoryMatchesId && !categoryMatchesName) return false;
-      }
-      if (activeLow && Number(item.available) > Number(item.lowStockThreshold)) return false;
-      return true;
-    });
-  }, [activeCategory, activeLocation, activeLow, activeSearch, categoryNameFor, inventoryData]);
+  const activeSearch = String(queryState.q || "").trim();
+  const activeLocation = String(queryState.location || "").trim();
+  const activeCategory = String(queryState.category || "").trim();
+  const activeLow = isLowFilterEnabled(String(queryState.low || ""));
+  const displayedItems = inventoryData?.items ?? [];
+  const previewItem = previewSku ? displayedItems.find((item) => item.sku === previewSku) ?? null : null;
   const hasActiveFilters = Boolean(activeSearch || activeLocation || activeCategory || activeLow);
   const activeCategoryName =
     activeCategory && Number.isFinite(Number(activeCategory))
       ? categoryNameById.get(Number(activeCategory)) ?? activeCategory
       : activeCategory;
-  const sortedItems = useMemo(() => {
-    return [...displayedItems].sort((a, b) => {
-      if (sortBy === "sku-asc") return a.sku.localeCompare(b.sku);
-      if (sortBy === "available-asc") return Number(a.available) - Number(b.available);
-      if (sortBy === "available-desc") return Number(b.available) - Number(a.available);
-      if (sortBy === "updated-desc") return updatedTime(b.updatedAt) - updatedTime(a.updatedAt);
-      if (sortBy === "updated-asc") return updatedTime(a.updatedAt) - updatedTime(b.updatedAt);
-      return a.name.localeCompare(b.name);
-    });
-  }, [displayedItems, sortBy]);
-  const kpis = useMemo(
-    () => ({
-      totalSkus: displayedItems.length,
-      lowStock: displayedItems.filter((item) => inventoryStatus(item) === "low").length,
-      negativeAvailability: displayedItems.filter((item) => Number(item.available) < 0).length,
-      totalOnHand: displayedItems.reduce((sum, item) => sum + Number(item.onHand || 0), 0),
-      totalAllocated: displayedItems.reduce((sum, item) => sum + Number(item.allocated || 0), 0),
-      totalAvailable: displayedItems.reduce((sum, item) => sum + Number(item.available || 0), 0),
-    }),
-    [displayedItems],
-  );
+  const sortedItems = displayedItems;
+  const kpis = inventoryData?.summary ?? { totalSkus: 0, lowStock: 0, negativeAvailability: 0, totalOnHand: 0, totalAllocated: 0, totalAvailable: 0 };
+  const totalPages = Math.max(1, Math.ceil((inventoryData?.total ?? 0) / pageSize));
+  const resultStart = (inventoryData?.total ?? 0) === 0 ? 0 : (page - 1) * pageSize + 1;
+  const resultEnd = Math.min(page * pageSize, inventoryData?.total ?? 0);
   const clearFilter = (key: "q" | "location" | "category" | "low") => {
     if (key === "q") setSearchInput("");
     if (key === "location") setLocationFilter("");
     if (key === "category") setCategoryFilter("");
     if (key === "low") setLowFilter("");
-    setQueryState({ [key]: "" });
+    setQueryState({ [key]: "", page: "1" });
   };
   const openFullItem = (sku: string) => {
     setLocation(APP_ROUTES.inventory.item(sku));
@@ -557,7 +532,7 @@ export default function InventoryPage() {
               onValueChange={(value) => {
                 const v = value === "all" ? "" : value;
                 setLocationFilter(v);
-                setQueryState({ location: v });
+                setQueryState({ location: v, page: "1" });
               }}
               disabled={warehousesLoading}
             >
@@ -579,7 +554,7 @@ export default function InventoryPage() {
               onValueChange={(value) => {
                 const v = value === "all" ? "" : value;
                 setCategoryFilter(v);
-                setQueryState({ category: v });
+                setQueryState({ category: v, page: "1" });
               }}
               disabled={categoriesLoading}
             >
@@ -599,7 +574,7 @@ export default function InventoryPage() {
         }
         right={
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={sortBy} onValueChange={(value) => setSortBy(value as InventorySort)}>
+            <Select value={sortBy} onValueChange={(value) => setQueryState({ sort: value, page: "1" })}>
               <SelectTrigger className="w-full sm:w-[190px]" data-testid="inventory-sort-select">
                 <SelectValue placeholder="Sort inventory" />
               </SelectTrigger>
@@ -617,7 +592,7 @@ export default function InventoryPage() {
                 type="button"
                 variant={viewMode === "table" ? "secondary" : "ghost"}
                 size="sm"
-                onClick={() => setViewMode("table")}
+                onClick={() => setQueryState({ view: "table" })}
                 data-testid="inventory-view-table-button"
                 className="gap-1"
               >
@@ -628,7 +603,7 @@ export default function InventoryPage() {
                 type="button"
                 variant={viewMode === "cards" ? "secondary" : "ghost"}
                 size="sm"
-                onClick={() => setViewMode("cards")}
+                onClick={() => setQueryState({ view: "cards" })}
                 data-testid="inventory-view-cards-button"
                 className="gap-1"
               >
@@ -646,7 +621,7 @@ export default function InventoryPage() {
                 onClick={() => {
                   const next = isLowFilterEnabled(lowFilter) ? "" : "1";
                   setLowFilter(next);
-                  setQueryState({ low: next });
+                  setQueryState({ low: next, page: "1" });
                 }}
               >
                 Low stock only
@@ -714,9 +689,22 @@ export default function InventoryPage() {
         </div>
       ) : null}
 
+      {inventoryLoading && inventoryData ? (
+        <p className="text-sm text-muted-foreground" role="status">Refreshing inventory results…</p>
+      ) : null}
+      {inventoryError && inventoryData ? (
+        <Alert className="border-amber-500/50 bg-amber-500/10">
+          <AlertTitle>Showing the last available results</AlertTitle>
+          <AlertDescription className="mt-2 flex items-center justify-between gap-3">
+            <span>{inventoryError.message}</span>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void refetchInventory()}>Retry</Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <DataState
-        loading={inventoryLoading}
-        error={inventoryError}
+        loading={inventoryLoading && !inventoryData}
+        error={inventoryData ? null : inventoryError}
         data={sortedItems}
         isEmpty={(items) => items.length === 0}
         emptyTitle="No inventory items found"
@@ -754,7 +742,7 @@ export default function InventoryPage() {
                   key={item.sku}
                   data-testid={`inventory-card-${item.sku}`}
                   className="cursor-pointer transition-colors hover:bg-muted/40"
-                  onClick={() => setPreviewItem(item)}
+                  onClick={() => setPreviewSku(item.sku)}
                 >
                   <CardHeader className="space-y-1 pb-2">
                     <div className="flex items-start justify-between gap-3">
@@ -777,8 +765,8 @@ export default function InventoryPage() {
                       <span>{categoryNameFor(item)}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Warehouse qty</span>
-                      <span className="tabular-nums">{item.warehouseQuantity ?? item.onHand}</span>
+                      <span className="text-muted-foreground">Warehouse / unassigned</span>
+                      <span className="tabular-nums">{item.warehouseQuantity ?? 0} / {item.unassignedQuantity ?? 0}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Last movement</span>
@@ -814,7 +802,7 @@ export default function InventoryPage() {
                         data-testid={`inventory-row-preview-${item.sku}`}
                         onClick={(event) => {
                           event.stopPropagation();
-                          setPreviewItem(item);
+                          setPreviewSku(item.sku);
                         }}
                       >
                         Preview
@@ -851,7 +839,7 @@ export default function InventoryPage() {
                     <span>On hand / Alloc / Avail</span>
                   </span>
                 </TableHead>
-                <TableHead className="w-[12%] text-right">Warehouse qty</TableHead>
+                <TableHead className="w-[12%] text-right">Warehouse / unassigned</TableHead>
                 <TableHead className="w-[12%]">Last movement</TableHead>
                 <TableHead className="w-[8%] text-right">Threshold</TableHead>
                 <TableHead className="w-[10%]">Status</TableHead>
@@ -865,7 +853,7 @@ export default function InventoryPage() {
                   key={item.sku}
                   data-testid={`inventory-row-${item.sku}`}
                   className="cursor-pointer"
-                  onClick={() => setPreviewItem(item)}
+                  onClick={() => setPreviewSku(item.sku)}
                 >
                   <TableCell className="align-top">
                     <div className="font-medium">{item.name}</div>
@@ -888,9 +876,9 @@ export default function InventoryPage() {
                     </span>
                   </TableCell>
                   <TableCell className="text-right align-top tabular-nums">
-                    <div>{item.warehouseQuantity ?? item.onHand}</div>
+                    <div>{item.warehouseQuantity ?? 0} / {item.unassignedQuantity ?? 0}</div>
                     <div className="text-xs text-muted-foreground">
-                      {item.positionCount ?? 0} position{(item.positionCount ?? 0) === 1 ? "" : "s"}
+                      {item.warehousePositionCount ?? 0} canonical position{(item.warehousePositionCount ?? 0) === 1 ? "" : "s"}
                     </div>
                   </TableCell>
                   <TableCell className="align-top text-xs text-muted-foreground">
@@ -915,7 +903,7 @@ export default function InventoryPage() {
                         data-testid={`inventory-row-preview-${item.sku}`}
                         onClick={(event) => {
                           event.stopPropagation();
-                          setPreviewItem(item);
+                          setPreviewSku(item.sku);
                         }}
                       >
                         <Eye className="h-4 w-4" aria-hidden />
@@ -945,6 +933,21 @@ export default function InventoryPage() {
           )
         )}
       </DataState>
+
+      <div className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between" data-testid="inventory-pagination">
+        <p className="text-sm text-muted-foreground">Showing {resultStart}-{resultEnd} of {inventoryData?.total ?? 0}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={String(pageSize)} onValueChange={(value) => setQueryState({ pageSize: value, page: "1" })}>
+            <SelectTrigger className="w-[110px]" aria-label="Rows per page"><SelectValue /></SelectTrigger>
+            <SelectContent>{[25, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} rows</SelectItem>)}</SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setQueryState({ page: "1" })}>First</Button>
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setQueryState({ page: String(page - 1) })}>Previous</Button>
+          <span className="min-w-20 text-center text-sm">Page {page} of {totalPages}</span>
+          <Button variant="outline" size="sm" disabled={!inventoryData?.hasNext} onClick={() => setQueryState({ page: String(page + 1) })}>Next</Button>
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setQueryState({ page: String(totalPages) })}>Last</Button>
+        </div>
+      </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent data-testid="inventory-create-item-dialog" className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
@@ -1092,7 +1095,7 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(previewItem)} onOpenChange={(open) => !open && setPreviewItem(null)}>
+      <Dialog open={Boolean(previewItem)} onOpenChange={(open) => !open && setPreviewSku(null)}>
         <DialogContent data-testid="inventory-item-preview" className="sm:max-w-2xl">
           {previewItem ? (
             <>
@@ -1149,7 +1152,7 @@ export default function InventoryPage() {
                   type="button"
                   variant="outline"
                   data-testid="inventory-item-preview-close"
-                  onClick={() => setPreviewItem(null)}
+                  onClick={() => setPreviewSku(null)}
                 >
                   Close
                 </Button>

@@ -133,10 +133,12 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
 
   app.post("/api/custom-roles", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("custom_roles", "create"), async (req: Request, res: Response) => {
     try {
-      const { name, description, isActive } = req.body;
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+      const description = typeof req.body?.description === "string" ? req.body.description.trim() || null : null;
+      const isActive = typeof req.body?.isActive === "boolean" ? req.body.isActive : true;
 
-      if (!name) {
-        return res.status(400).json({ message: "Name is required" });
+      if (name.length < 3) {
+        return sendError(res, 400, "CUSTOM_ROLE_NAME_INVALID", "Role name must contain at least three characters.");
       }
 
       const existingRole = await storage.getCustomRoleByName(name);
@@ -178,11 +180,19 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
         return res.status(400).json({ message: "Invalid role ID" });
       }
 
-      const { name, description, isActive } = req.body;
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : undefined;
+      const description = typeof req.body?.description === "string" ? req.body.description.trim() || null : undefined;
+      const isActive = typeof req.body?.isActive === "boolean" ? req.body.isActive : undefined;
 
       const existingRole = await storage.getCustomRole(roleId);
       if (!existingRole) {
         return res.status(404).json({ message: "Custom role not found" });
+      }
+      if (existingRole.isSystemRole) {
+        return sendError(res, 400, "SYSTEM_ROLE_IMMUTABLE", "System roles cannot be modified through custom-role controls.");
+      }
+      if (name !== undefined && name.length < 3) {
+        return sendError(res, 400, "CUSTOM_ROLE_NAME_INVALID", "Role name must contain at least three characters.");
       }
 
       if (name && name !== existingRole.name) {
@@ -229,6 +239,23 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
       const existingRole = await storage.getCustomRole(roleId);
       if (!existingRole) {
         return res.status(404).json({ message: "Custom role not found" });
+      }
+      if (existingRole.isSystemRole) {
+        return sendError(res, 400, "SYSTEM_ROLE_IMMUTABLE", "System roles cannot be deleted.");
+      }
+      if (existingRole.isActive !== false) {
+        return sendError(res, 409, "CUSTOM_ROLE_ACTIVE", "Deactivate this custom role before deleting it.");
+      }
+      const assignedUsers = (await storage.getAllUsers()).filter((user) => {
+        const preferences = user.preferences && typeof user.preferences === "object"
+          ? user.preferences as { customRoleId?: unknown }
+          : null;
+        return Number(preferences?.customRoleId) === roleId;
+      });
+      if (assignedUsers.length > 0) {
+        return sendError(res, 409, "CUSTOM_ROLE_ASSIGNED", "Remove this role from every profile before deleting it.", {
+          details: { assignedProfiles: assignedUsers.length },
+        });
       }
 
       const deleted = await storage.deleteCustomRole(roleId);

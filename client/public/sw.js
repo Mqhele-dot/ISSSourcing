@@ -1,10 +1,15 @@
 /* Offline-aware shell: caches app/mobile shells; API mutations stay in IndexedDB and replay via /api/sync/batch. */
-const CACHE = "invtrack-shell-v3";
+const CACHE = "invtrack-shell-v4";
 const SHELL_URLS = [
   "/",
+  "/operations",
   "/m/home",
   "/m/counts",
   "/m/scan",
+  "/m/receive",
+  "/m/pick",
+  "/m/approvals",
+  "/m/more",
   "/manifest.webmanifest",
   "/favicon.ico",
 ];

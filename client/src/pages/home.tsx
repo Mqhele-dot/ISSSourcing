@@ -219,7 +219,7 @@ export default function HomePage() {
               className="gap-2"
             >
               <PlayCircle className="h-4 w-4" />
-              Start Tutorial
+              Open learning panel
             </Button>
             <Button
               variant="outline"
@@ -268,7 +268,7 @@ export default function HomePage() {
                 <p>Demo login after reset: <span className="font-mono text-foreground">admin</span> / <span className="font-mono text-foreground">Admin123!</span></p>
                 <p>
                   After signing back in, use <strong className="text-foreground">Get Educated</strong> or the{" "}
-                  <strong className="text-foreground">Start Tutorial</strong> button on Control Tower to read how each
+                  <strong className="text-foreground">Open learning panel</strong> button on Control Tower to read how each
                   area ties to procurement, inventory, and payables — not just where to click next.
                 </p>
               </div>
@@ -475,7 +475,7 @@ export default function HomePage() {
                     <p className="text-sm text-muted-foreground">No open exceptions.</p>
                   ) : (
                     Object.entries(overview.kpis?.exceptionsBySeverity ?? {}).map(([severity, count]) => (
-                      <Link key={severity} href={`/exceptions?severity=${encodeURIComponent(severity)}&status=open`}>
+                      <Link key={severity} href={`${APP_ROUTES.operations.exceptions}?severity=${encodeURIComponent(severity)}&status=open`}>
                         <div className="flex cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 hover:bg-accent/40">
                           <span className="capitalize">{severity}</span>
                           <Badge variant="outline">{count}</Badge>

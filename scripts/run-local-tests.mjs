@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import "dotenv/config";
 import { assertDisposableTestDatabase } from "./test-database-safety.mjs";
 
@@ -22,6 +24,13 @@ const suites = {
     ["run", "test:procurement-reporting-runtime"],
     ["run", "test:approval-policy-runtime-hardening"],
     ["run", "test:diagnostics-runtime-workspaces"],
+    ["run", "test:expanded-cross-tenant-proof"],
+    ["run", "test:expanded-permission-matrix"],
+  ],
+  crossPath: [
+    ["run", "test:cross-path-contracts"],
+    ["run", "test:ap-controls"],
+    ["run", "test:sourcing-workflow"],
     ["run", "test:expanded-cross-tenant-proof"],
     ["run", "test:expanded-permission-matrix"],
   ],
@@ -74,6 +83,7 @@ function hasFlag(name) {
 }
 
 function suiteName() {
+  if (hasFlag("--cross-path")) return "crossPath";
   if (hasFlag("--expanded-wave7")) return "expandedWave7";
   if (hasFlag("--sourcing")) return "sourcing";
   if (hasFlag("--production-smoke")) return "productionSmoke";
@@ -120,6 +130,20 @@ async function waitForReady(timeoutMs = Number(process.env.LOCAL_TEST_READY_TIME
   throw new Error(`Local app did not become ready at ${BASE_URL}/api/ready within ${timeoutMs / 1000}s`);
 }
 
+async function existingDisposableServerIsReady() {
+  try {
+    const res = await fetch(`${BASE_URL}/api/ready`, { cache: "no-store" });
+    if (!res.ok || res.headers.get("x-test-database-mode") !== "disposable") return false;
+    if (selectedSuite === "delta") {
+      const staticProbe = await fetch(`${BASE_URL}/analytics/export-center`, { cache: "no-store" });
+      return staticProbe.ok && staticProbe.headers.get("content-type")?.includes("text/html") === true;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function startServer() {
   const serverEnv =
     selectedSuite === "delta"
@@ -148,15 +172,24 @@ function startServer() {
 
 async function stopServer(child) {
   if (!child || child.killed) return;
-  child.kill();
   if (process.platform === "win32" && child.pid) {
     await new Promise((resolve) => {
       const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
         shell: false,
         stdio: "ignore",
       });
-      killer.on("exit", resolve);
-      killer.on("error", resolve);
+      const timer = setTimeout(() => {
+        killer.kill();
+        resolve();
+      }, 5_000);
+      killer.on("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      killer.on("error", () => {
+        clearTimeout(timer);
+        resolve();
+      });
     });
     return;
   }
@@ -173,19 +206,45 @@ try {
   console.log(`Base URL: ${BASE_URL}`);
   console.log(`Suite: ${selectedSuite}`);
 
-  if (["sourcing", "expandedWave7", "delta", "productionSmoke"].includes(selectedSuite)) {
+  if (["sourcing", "expandedWave7", "crossPath", "delta", "productionSmoke"].includes(selectedSuite)) {
     assertDisposableTestDatabase(runtimeDatabaseUrl);
   }
 
   if (!hasFlag("--no-server")) {
-    server = startServer();
-    await waitForReady();
-    console.log("Local app is ready.");
+    if (await existingDisposableServerIsReady()) {
+      console.log("Using an existing disposable-database app at the requested BASE_URL.");
+    } else {
+      server = startServer();
+      await waitForReady();
+      console.log("Local app is ready.");
+    }
   }
 
   for (const args of selectedCommands) {
     console.log(`\n> ${npmCmd} ${args.join(" ")}`);
     await run(npmCmd, args);
+  }
+
+  if (selectedSuite === "crossPath") {
+    const evidence = {
+      schemaVersion: 1,
+      suite: "cross-path-runtime",
+      passed: true,
+      completedAt: new Date().toISOString(),
+      database: assertDisposableTestDatabase(runtimeDatabaseUrl),
+      baseUrl: BASE_URL,
+      proofs: [
+        "duplicate and legacy paths enforce the permission contracts locked by the AST suite",
+        "AP admin overrides use authenticated actor role plus an explicit reason",
+        "payment release and sourcing workflow requests are idempotent",
+        "alternate procurement, AP, diagnostics, report, and export routes deny cross-tenant access",
+        "equivalent governed mutations create tenant- and actor-scoped audit evidence",
+        "report preview and export use the same tenant-scoped dataset path",
+      ],
+    };
+    const evidencePath = path.join(process.cwd(), "artifacts", "cross-app-logic-runtime-evidence.json");
+    fs.mkdirSync(path.dirname(evidencePath), { recursive: true });
+    fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
   }
 
   console.log(`\nLocal ${selectedSuite} test suite passed.`);

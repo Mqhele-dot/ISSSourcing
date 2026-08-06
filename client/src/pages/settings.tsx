@@ -1,4 +1,5 @@
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -15,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { resetDemoData } from "@/api/client";
 import { Can } from "@/components/auth/can";
@@ -30,7 +32,6 @@ import { WarehouseSettingsForm } from "@/components/settings/warehouse-settings-
 import { SecuritySettingsForm } from "@/components/settings/security-settings-form";
 import { ForecastingSettingsForm } from "@/components/settings/forecasting-settings-form";
 import { TaxSettingsForm } from "@/components/settings/tax-settings-form";
-import { BillingSettingsForm } from "@/components/settings/billing-settings-form";
 import { CompanyConfigurationCenter } from "@/components/settings/company-configuration-center";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
@@ -51,6 +52,7 @@ import {
 } from "lucide-react";
 import { APP_ROUTES, SETTINGS_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
+import { currencyOptionsForSelect, fetchActiveMasterCurrencies } from "@/lib/currencies-query";
 
 const settingsSections = [
   { value: "general", label: "General", icon: UserCircle, description: "Organization profile, locale, and base defaults." },
@@ -325,7 +327,20 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="billing" className="space-y-4">
-          <BillingSettingsForm />
+          <Card>
+            <CardHeader>
+              <CardTitle>Billing controls moved</CardTitle>
+              <CardDescription>
+                SaaS plan and entitlement billing is managed under Subscription. Supplier invoices and payments are
+                managed in Accounts Payable. This prevents settings from appearing saved when no authoritative billing
+                configuration exists.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Button asChild><a href="/admin/subscription">Open Subscription</a></Button>
+              <Button asChild variant="outline"><a href="/finance/accounts-payable">Open Accounts Payable</a></Button>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="configuration" className="space-y-4">
@@ -365,6 +380,10 @@ export default function SettingsPage() {
 
 function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
   const { settings, isLoading, error, updateSettings } = useSettings();
+  const currenciesQuery = useQuery({
+    queryKey: ["/api/currencies", "settings-control-plane"],
+    queryFn: fetchActiveMasterCurrencies,
+  });
   const [form, setForm] = React.useState({
     companyName: settings.companyName ?? "ISSSourcing",
     currencyCode: (settings.currencyCode ?? "ZAR").toUpperCase(),
@@ -389,9 +408,15 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
     settings.requireLocationForItems,
   ]);
 
+  const currencyOptions = React.useMemo(
+    () => currencyOptionsForSelect(currenciesQuery.data ?? [], [form.currencyCode, settings.currencyCode]),
+    [currenciesQuery.data, form.currencyCode, settings.currencyCode],
+  );
+  const currencyReady = currenciesQuery.isSuccess && currencyOptions.length > 0;
+
   const save = () => {
     const threshold = Number(form.lowStockDefaultThreshold);
-    if (!Number.isFinite(threshold) || threshold < 1) return;
+    if (!Number.isFinite(threshold) || threshold < 1 || !currencyReady) return;
     updateSettings.mutate({
       companyName: form.companyName.trim() || "ISSSourcing",
       currencyCode: form.currencyCode.trim().toUpperCase(),
@@ -415,6 +440,11 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
             Settings failed to load. Retry the page before changing production controls.
           </div>
         ) : null}
+        {currenciesQuery.isError ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" data-testid="settings-control-currency-error">
+            Reporting currency options could not be loaded from Master Data. This control fails closed until currencies are available.
+          </div>
+        ) : null}
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="control-company-name">Organization profile</Label>
@@ -428,14 +458,22 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="control-currency">Reporting currency</Label>
-            <Input
-              id="control-currency"
-              data-testid="settings-control-currency"
-              maxLength={3}
+            <Select
               value={form.currencyCode}
-              disabled={!isAdmin || isLoading}
-              onChange={(event) => setForm((current) => ({ ...current, currencyCode: event.target.value.toUpperCase() }))}
-            />
+              onValueChange={(value) => setForm((current) => ({ ...current, currencyCode: value.toUpperCase() }))}
+              disabled={!isAdmin || isLoading || currenciesQuery.isLoading || currencyOptions.length === 0}
+            >
+              <SelectTrigger id="control-currency" data-testid="settings-control-currency">
+                <SelectValue placeholder={currenciesQuery.isLoading ? "Loading currencies..." : "Select currency"} />
+              </SelectTrigger>
+              <SelectContent>
+                {currencyOptions.map((currency) => (
+                  <SelectItem key={currency.code} value={currency.code}>
+                    {currency.code}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="control-low-stock">Low-stock threshold</Label>
@@ -481,7 +519,7 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
           type="button"
           data-testid="settings-control-save"
           onClick={save}
-          disabled={!isAdmin || isLoading || updateSettings.isPending}
+          disabled={!isAdmin || isLoading || updateSettings.isPending || !currencyReady}
         >
           {updateSettings.isPending ? "Saving controls..." : "Save production controls"}
         </Button>

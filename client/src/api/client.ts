@@ -510,6 +510,33 @@ export async function fetchInventory(params?: {
   });
 }
 
+export type InventoryPage = import("@shared/schema").PaginatedResponse<
+  InventoryListItem,
+  import("@shared/schema").InventorySummary
+>;
+
+export async function fetchInventoryPage(params: {
+  page?: number; pageSize?: number; q?: string; location?: string;
+  category?: string; low?: boolean; sort?: string;
+} = {}): Promise<InventoryPage> {
+  const search = new URLSearchParams();
+  if (params.page) search.set("page", String(params.page));
+  if (params.pageSize) search.set("pageSize", String(params.pageSize));
+  if (params.q) search.set("q", params.q);
+  if (params.location) search.set("location", params.location);
+  if (params.category) search.set("category", params.category);
+  if (params.low) search.set("low", "1");
+  if (params.sort) search.set("sort", params.sort);
+  const response = await apiFetch<InventoryPage>(`/api/v2/inventory?${search.toString()}`);
+  return { ...response, items: response.items.map((item) => ({
+    ...item,
+    onHand: Number(item.onHand), allocated: Number(item.allocated), available: Number(item.available),
+    quantity: Number(item.quantity ?? 0), price: Number(item.price ?? 0),
+    lowStockThreshold: Number(item.lowStockThreshold), warehouseQuantity: Number(item.warehouseQuantity ?? 0),
+    unassignedQuantity: Number(item.unassignedQuantity ?? 0), warehousePositionCount: Number(item.warehousePositionCount ?? 0),
+  })) };
+}
+
 export type ApprovalSuggestionsResult = {
   entityType: string;
   amount: number;

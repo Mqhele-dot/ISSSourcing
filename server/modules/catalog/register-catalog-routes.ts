@@ -94,7 +94,7 @@ export function registerCatalogRoutes(app: Express, auth: Auth): void {
     }
   });
 
-  app.get("/api/activity-logs", async (req: Request, res: Response) => {
+  app.get("/api/activity-logs", auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"]), async (req: Request, res: Response) => {
     try {
       const limit = req.query.limit ? Number(req.query.limit) : undefined;
       const logs = await storage.getAllActivityLogs(limit);
@@ -105,7 +105,7 @@ export function registerCatalogRoutes(app: Express, auth: Auth): void {
     }
   });
 
-  app.post("/api/activity-logs", async (req: Request, res: Response) => {
+  app.post("/api/activity-logs", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
       const validatedData = insertActivityLogSchema.parse(req.body);
       const newLog = await storage.createActivityLog(validatedData);

@@ -38,6 +38,8 @@ assert.match(
 assert.match(page, /subscription-permission-denied/, "Subscription page must render a permission denied state");
 assert.match(page, /lockedFeatures/, "Subscription page must show locked feature explanations");
 assert.match(page, /upgradeCta/, "Subscription page must show plan upgrade guidance");
+assert.match(page, /canStartTrial[\s\S]*canCancel[\s\S]*canResume/, "Subscription lifecycle controls must derive enabled state from the current lifecycle");
+assert.match(page, /Schedule subscription cancellation\?/, "Subscription cancellation must require explicit confirmation");
 assert.doesNotMatch(financeBilling, /\/api\/subscription\/change-plan/, "/finance/billing must not manage SaaS plans");
 assert.doesNotMatch(financeBilling, /\/api\/subscription\/start-trial/, "/finance/billing must not manage SaaS trials");
 

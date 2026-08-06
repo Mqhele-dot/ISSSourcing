@@ -5,6 +5,14 @@ import { Download, Server, Shield, Laptop, Cpu, Database, Wifi, WifiOff, Zap, Ch
 import { useToast } from '@/hooks/use-toast';
 import { isElectronEnvironment } from '@/lib/electron-bridge';
 
+const desktopReleaseBaseUrl = String(import.meta.env.VITE_DESKTOP_RELEASE_BASE_URL ?? '').replace(/\/$/, '');
+const supportUrl = String(import.meta.env.VITE_SUPPORT_URL ?? '').trim();
+const supportEmail = String(import.meta.env.VITE_SUPPORT_EMAIL ?? '').trim();
+
+function desktopReleaseUrl(fileName: string): string | null {
+  return desktopReleaseBaseUrl ? `${desktopReleaseBaseUrl}/${encodeURIComponent(fileName)}` : null;
+}
+
 // Define available platforms
 type Platform = 'windows' | 'mac' | 'linux';
 
@@ -13,7 +21,7 @@ const downloadInfo: Record<Platform, {
   displayName: string, 
   fileName: string, 
   icon: React.ReactNode, 
-  downloadUrl: string,
+  downloadUrl: string | null,
   fileSize: string,
   architectures: string[]
 }> = {
@@ -21,7 +29,7 @@ const downloadInfo: Record<Platform, {
     displayName: 'Windows',
     fileName: 'ISSSourcing-Setup-1.0.0.exe',
     icon: <svg className="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 14H10v7l-7-4V7l7-4v7H6.5C5.5 10 5 9.5 5 9s.5-1 1.5-1H10V1l-7 4v10l7 4v-7H6.5c-1 0-1.5-.5-1.5-1s.5-1 1.5-1Z"/><polyline points="15 1 22 1 22 8"/><polyline points="22 16 22 23 15 23"/><path d="M22 8v8H15"/><path d="M15 16V8h7"/></svg>,
-    downloadUrl: 'https://github.com/yourusername/isssourcing/releases/download/v1.0.0/ISSSourcing-Setup-1.0.0.exe',
+    downloadUrl: desktopReleaseUrl('ISSSourcing-Setup-1.0.0.exe'),
     fileSize: '75.4 MB',
     architectures: ['x64', 'arm64']
   },
@@ -29,7 +37,7 @@ const downloadInfo: Record<Platform, {
     displayName: 'macOS',
     fileName: 'ISSSourcing-1.0.0.dmg',
     icon: <svg className="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 10a6 6 0 0 1 6 -6"/><path d="M12 19c2 0 3 -1 3 -3"/><path d="M9 19c-2 0 -3 -1 -3 -3"/><path d="M9 19c0 1 0 2 2 3c2 -1 2 -2 2 -3"/><path d="M3 3l18 18"/><path d="M12 6a6 6 0 0 0 -6 6c0 3.5 2.5 6 6 6a6 6 0 0 0 6 -6c0 -3.5 -2.5 -6 -6 -6"/></svg>,
-    downloadUrl: 'https://github.com/yourusername/isssourcing/releases/download/v1.0.0/ISSSourcing-1.0.0.dmg',
+    downloadUrl: desktopReleaseUrl('ISSSourcing-1.0.0.dmg'),
     fileSize: '78.2 MB',
     architectures: ['x64', 'arm64 (M1/M2)']
   },
@@ -37,7 +45,7 @@ const downloadInfo: Record<Platform, {
     displayName: 'Linux',
     fileName: 'ISSSourcing-1.0.0.AppImage',
     icon: <svg className="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 14c3 0 3 2 3 2v2c0 1.5 1.5 1.5 1.5 1.5h3.5v-10l-5-5h-6l-4 4v10h3.5c1.5 0 1.5-1.5 1.5-1.5v-2s0-2 3-2Z"/><path d="M9 4v4a2 2 0 0 1-2 2h-2"/><path d="M14 4v4a2 2 0 0 0 2 2h2"/></svg>,
-    downloadUrl: 'https://github.com/yourusername/isssourcing/releases/download/v1.0.0/ISSSourcing-1.0.0.AppImage',
+    downloadUrl: desktopReleaseUrl('ISSSourcing-1.0.0.AppImage'),
     fileSize: '72.1 MB',
     architectures: ['x64', 'arm64']
   }
@@ -110,8 +118,17 @@ export default function DownloadPage() {
       return;
     }
     
-    // In a real app, track download analytics here
-    window.open(downloadInfo[platform].downloadUrl, '_blank');
+    const downloadUrl = downloadInfo[platform].downloadUrl;
+    if (!downloadUrl) {
+      toast({
+        title: 'Desktop build unavailable',
+        description: 'No published desktop release URL has been configured for this deployment.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    window.open(downloadUrl, '_blank', 'noopener,noreferrer');
     
     toast({
       title: 'Download Started',
@@ -142,11 +159,12 @@ export default function DownloadPage() {
                 </p>
               </div>
               <div className="ml-auto hidden md:block">
-                <Button 
+                <Button
                   variant="outline" 
-                  onClick={() => window.open('https://github.com/yourusername/invtrack/releases', '_blank')}
+                  disabled={!desktopReleaseBaseUrl}
+                  onClick={() => window.open(desktopReleaseBaseUrl, '_blank', 'noopener,noreferrer')}
                 >
-                  Check for Updates
+                  {desktopReleaseBaseUrl ? 'Check for Updates' : 'Updates Not Configured'}
                 </Button>
               </div>
             </div>
@@ -177,10 +195,14 @@ export default function DownloadPage() {
               <CardFooter>
                 <Button 
                   className="w-full" 
-                  onClick={() => handleDownload(platform as Platform)}
+                  disabled={!info.downloadUrl}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleDownload(platform as Platform);
+                  }}
                 >
                   <Download className="mr-2 h-4 w-4" />
-                  Download
+                  {info.downloadUrl ? 'Download' : 'Not Published'}
                 </Button>
               </CardFooter>
             </Card>
@@ -255,14 +277,22 @@ export default function DownloadPage() {
               If you encounter any issues with the desktop app, please visit our help center or contact support.
             </p>
           </div>
-          <div className="flex gap-4 ml-auto">
-            <Button variant="outline" onClick={() => window.open('https://help.invtrack.example.com', '_blank')}>
-              Help Center
-            </Button>
-            <Button onClick={() => window.open('mailto:support@invtrack.example.com')}>
-              Contact Support
-            </Button>
-          </div>
+          {supportUrl || supportEmail ? (
+            <div className="flex gap-4 ml-auto">
+              {supportUrl ? (
+                <Button variant="outline" onClick={() => window.open(supportUrl, '_blank', 'noopener,noreferrer')}>
+                  Help Center
+                </Button>
+              ) : null}
+              {supportEmail ? (
+                <Button onClick={() => window.open(`mailto:${supportEmail}`)}>
+                  Contact Support
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <p className="ml-auto text-sm text-muted-foreground">Support contact details are not configured.</p>
+          )}
         </div>
       </div>
     </div>

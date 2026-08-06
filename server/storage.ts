@@ -958,7 +958,7 @@ export class MemStorage implements IStorage {
   
   async getUserCustomRoleId(userId: number): Promise<number | null> {
     const user = await this.getUser(userId);
-    if (!user || user.role !== 'custom') {
+    if (!user) {
       return null;
     }
 
@@ -967,7 +967,8 @@ export class MemStorage implements IStorage {
       : null;
     const directCustomRoleId = Number(directPreferences?.customRoleId);
     if (Number.isFinite(directCustomRoleId) && directCustomRoleId > 0) {
-      return directCustomRoleId;
+      const role = await this.getCustomRole(directCustomRoleId);
+      return role?.isActive !== false ? directCustomRoleId : null;
     }
     
     // Look for a custom role assignment in user preferences (stored in dashboardLayout or notifications)
@@ -975,7 +976,8 @@ export class MemStorage implements IStorage {
     if (userPrefs) {
       const prefs = (userPrefs.dashboardLayout ?? userPrefs.notifications) as { customRoleId?: number } | null;
       if (prefs && typeof prefs === 'object' && typeof prefs.customRoleId === 'number') {
-        return prefs.customRoleId;
+        const role = await this.getCustomRole(prefs.customRoleId);
+        return role?.isActive !== false ? prefs.customRoleId : null;
       }
     }
     
@@ -1984,6 +1986,24 @@ export class MemStorage implements IStorage {
       { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.READ },
       { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.EXPORT }
     ];
+
+    // Planner role permissions (procurement control plus logistics follow-through)
+    const plannerPermissions: Array<{resource: InsertCustomRolePermission['resource']; permissionType: InsertCustomRolePermission['permissionType']}> = [
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.INVENTORY, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.SUPPLIERS, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.WAREHOUSES, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.REPORTS, permissionType: PermissionTypeEnum.EXPORT },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.UPDATE },
+      { resource: ResourceEnum.PURCHASES, permissionType: PermissionTypeEnum.APPROVE },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.READ },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.CREATE },
+      { resource: ResourceEnum.STOCK_MOVEMENTS, permissionType: PermissionTypeEnum.EXECUTE }
+    ];
     
     // Warehouse Staff role permissions (focused on inventory operations)
     const warehouseStaffPermissions: Array<{resource: InsertCustomRolePermission['resource']; permissionType: InsertCustomRolePermission['permissionType']}> = [
@@ -2126,7 +2146,16 @@ export class MemStorage implements IStorage {
         permissionType: permission.permissionType
       });
     }
-    
+
+    // Create planner permissions
+    for (const permission of plannerPermissions) {
+      this.createPermission({
+        role: UserRoleEnum.PLANNER,
+        resource: permission.resource,
+        permissionType: permission.permissionType
+      });
+    }
+
     // Create warehouse staff permissions
     for (const permission of warehouseStaffPermissions) {
       this.createPermission({

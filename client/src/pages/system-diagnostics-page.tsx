@@ -52,6 +52,7 @@ import {
   type DiagnosticsSummary,
 } from "@shared/diagnostics/findings";
 import { requestJson } from "@/lib/queryClient";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type ScanCategory = keyof DiagnosticsScanResult;
 
@@ -78,6 +79,23 @@ function statusLabel(status: DiagnosticFinding["status"]): string {
   return status.replaceAll("_", " ");
 }
 
+function findingTargetRoute(finding: DiagnosticFinding): string | null {
+  if (finding.targetRoute?.startsWith("/")) return finding.targetRoute;
+  if (finding.affectedRoute?.startsWith("/") && !finding.affectedRoute.startsWith("/api/")) return finding.affectedRoute;
+  const fallback: Partial<Record<DiagnosticCategory, string>> = {
+    frontend: "/admin/system-diagnostics?view=frontend",
+    backend: "/admin/system-diagnostics?view=backend",
+    "user-errors": "/admin/system-diagnostics?view=user-errors",
+    business: "/operations/exceptions",
+    integrations: "/admin/integrations",
+    consistency: "/admin/master-data",
+    notifications: "/admin/system-diagnostics?view=notifications",
+    security: "/admin/settings/security",
+    audit: "/admin/audit-logs",
+  };
+  return fallback[finding.category] ?? null;
+}
+
 function DiagnosticsWorkspacePanel({
   category,
   findings,
@@ -100,6 +118,7 @@ function DiagnosticsWorkspacePanel({
   const workspace = DIAGNOSTIC_WORKSPACES[category];
   const [severityFilter, setSeverityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([]);
   const visibleFindings = findings.filter(
     (finding) =>
       (severityFilter === "all" || finding.severity === severityFilter) &&
@@ -118,6 +137,18 @@ function DiagnosticsWorkspacePanel({
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
+        {selectedFindingIds.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3">
+            <span className="text-sm">{selectedFindingIds.length} issue(s) selected</span>
+            <Button type="button" size="sm" onClick={() => {
+              const selected = visibleFindings.find((finding) => selectedFindingIds.includes(finding.id));
+              const target = selected ? findingTargetRoute(selected) : null;
+              if (target?.startsWith("/")) window.location.assign(target);
+            }} disabled={!visibleFindings.some((finding) => selectedFindingIds.includes(finding.id) && Boolean(findingTargetRoute(finding)))}>
+              Open selected problem
+            </Button>
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-2" data-testid={`diagnostics-filters-${category}`}>
           <Select value={severityFilter} onValueChange={setSeverityFilter}>
             <SelectTrigger className="w-40" data-testid={`diagnostics-severity-filter-${category}`}>
@@ -164,6 +195,11 @@ function DiagnosticsWorkspacePanel({
         {visibleFindings.map((row) => (
           <div key={row.id} className="rounded-md border p-3" data-testid={`diagnostic-finding-${row.code}`}>
             <div className="flex flex-wrap items-center gap-2">
+              <Checkbox
+                checked={selectedFindingIds.includes(row.id)}
+                onCheckedChange={(checked) => setSelectedFindingIds((current) => checked ? [...new Set([...current, row.id])] : current.filter((id) => id !== row.id))}
+                aria-label={`Select ${row.title}`}
+              />
               <Badge variant={row.severity === "critical" || row.severity === "error" ? "destructive" : "outline"}>{row.severity}</Badge>
               <Badge variant="secondary" className="capitalize">{statusLabel(row.status)}</Badge>
               <span className="font-medium">{row.title}</span>
@@ -172,6 +208,14 @@ function DiagnosticsWorkspacePanel({
             <p className="mt-2 text-sm text-muted-foreground">{row.message}</p>
             {row.affectedRoute || row.affectedAction ? <p className="mt-1 text-xs text-muted-foreground">{row.affectedAction ?? "Action"} {row.affectedRoute ?? ""}</p> : null}
             {row.remediation ? <p className="mt-2 text-sm"><span className="font-medium">Next step:</span> {row.remediation}</p> : null}
+            {findingTargetRoute(row) ? (
+              <Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => {
+                const target = findingTargetRoute(row);
+                if (target?.startsWith("/")) window.location.assign(target);
+              }}>
+                <ExternalLink className="mr-2 h-4 w-4" /> Open problem tab
+              </Button>
+            ) : null}
           </div>
         ))}
         {localEvents.map((event) => (
@@ -256,14 +300,6 @@ const DIAGNOSTICS_GUIDANCE: Record<ScanCategory, DiagnosticsGuidance> = {
     ],
   },
 };
-
-function JsonBlock({ value }: { value: unknown }) {
-  return (
-    <pre className="max-h-[420px] overflow-auto rounded-md border bg-muted/40 p-3 text-xs leading-relaxed">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
-}
 
 function SummaryTile({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -625,8 +661,10 @@ export default function SystemDiagnosticsPage() {
           {events.length === 0 ? (
             <p className="text-sm text-muted-foreground">No live diagnostics events captured in this browser yet.</p>
           ) : (
-            <div className="max-h-[420px] space-y-2 overflow-auto">
-              {events.slice(0, 75).map((event) => (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Showing the 20 most recent unresolved events. Resolved history is omitted from this operational view.</p>
+              <div className="max-h-[420px] space-y-2 overflow-auto">
+              {events.filter((event) => !event.resolved).slice(0, 20).map((event) => (
                 <div key={event.id} data-testid="diagnostics-event-row" className="rounded-lg border bg-muted/20 p-3 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
@@ -650,6 +688,7 @@ export default function SystemDiagnosticsPage() {
                   </p>
                 </div>
               ))}
+              </div>
             </div>
           )}
         </CardContent>
@@ -868,24 +907,6 @@ export default function SystemDiagnosticsPage() {
           ) : (
             <p className="text-sm text-muted-foreground">Load setup status to see the summary.</p>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Authenticated setup status</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {setup ? <JsonBlock value={setup} /> : <p className="text-sm text-muted-foreground">Loading…</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Public readiness (/api/ready)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {ready ? <JsonBlock value={ready} /> : <p className="text-sm text-muted-foreground">Loading…</p>}
         </CardContent>
       </Card>
 

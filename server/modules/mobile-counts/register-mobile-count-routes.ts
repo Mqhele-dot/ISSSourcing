@@ -104,6 +104,9 @@ export function registerMobileCountRoutes(app: Express, auth: Auth): void {
           details: error.flatten(),
         });
       }
+      if (error instanceof MobileCountDomainError) {
+        return sendError(res, error.status, error.code, error.message, { details: error.details });
+      }
       console.error("POST /api/mobile/counts:", error);
       return sendError(res, 500, "MOBILE_COUNT_SESSION_CREATE_FAILED", "Failed to create mobile count session.");
     }

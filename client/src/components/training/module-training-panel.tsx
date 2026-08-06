@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { ChevronDown, ChevronUp, GraduationCap, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ export function ModuleTrainingPanel({ moduleId }: Props) {
   const mod = getTrainingModuleById(moduleId);
   const { focusedModuleId, clearTrainingFocus } = useTrainingPanel();
   const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [dismissed, setDismissed] = useState(() => {
     try {
       return typeof localStorage !== "undefined" && localStorage.getItem(dismissedStorageKey(moduleId)) === "1";
@@ -38,6 +39,10 @@ export function ModuleTrainingPanel({ moduleId }: Props) {
         /* ignore */
       }
       clearTrainingFocus();
+      window.requestAnimationFrame(() => {
+        panelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        panelRef.current?.focus({ preventScroll: true });
+      });
     }
   }, [focusedModuleId, moduleId, clearTrainingFocus]);
 
@@ -57,7 +62,7 @@ export function ModuleTrainingPanel({ moduleId }: Props) {
     .slice(0, 5);
 
   return (
-    <Card className="border-primary/25 bg-muted/30" data-testid="module-training-panel">
+    <Card ref={panelRef} tabIndex={-1} aria-live="polite" className="border-primary/25 bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="module-training-panel">
       <Collapsible open={open} onOpenChange={setOpen}>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0 py-3">
           <div className="flex items-start gap-2">

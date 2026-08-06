@@ -9,7 +9,9 @@
  * - Otherwise starts `npm run dev`, waits for both URLs, runs tests, then stops only the server we started.
  */
 import { spawn, spawnSync } from "node:child_process";
+import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { probeUrl } from "./e2e-http-probe.mjs";
 
 const PORT = process.env.PORT || "5000";
@@ -18,6 +20,18 @@ const AUTH_URL = process.env.PLAYWRIGHT_E2E_AUTH_URL || `http://127.0.0.1:${PORT
 const START_TIMEOUT_MS = Number(process.env.PLAYWRIGHT_E2E_SERVER_TIMEOUT_MS || 120_000);
 const POLL_MS = 500;
 const DEV_COMMAND = process.env.PLAYWRIGHT_E2E_DEV_COMMAND || "npm run dev";
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const tsxCli = path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");
+const playwrightCli = path.join(repoRoot, "node_modules", "playwright", "cli.js");
+
+function runTsx(scriptPath) {
+  return spawnSync(process.execPath, [tsxCli, scriptPath], {
+    cwd: repoRoot,
+    stdio: "inherit",
+    shell: false,
+    env: process.env,
+  });
+}
 
 function logBanner(lines) {
   console.log("\n--- E2E dev server wrapper ---");
@@ -113,7 +127,8 @@ try {
     console.log(`[E2E] Command: ${DEV_COMMAND}`);
     console.log("[E2E] (stdio from dev server follows)\n");
 
-    devProc = spawn(process.platform === "win32" ? "cmd.exe" : DEV_COMMAND, process.platform === "win32" ? ["/d", "/s", "/c", DEV_COMMAND] : [], {
+    devProc = spawn(process.execPath, [tsxCli, "server/index.ts"], {
+      cwd: repoRoot,
       stdio: "inherit",
       shell: false,
       env: process.env,
@@ -143,43 +158,35 @@ try {
   }
 
   console.log("[E2E] Running npm run test:purchase-order-endpoints (server is up)...\n");
-  const poEndpoints = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", "npm run test:purchase-order-endpoints"] : ["run", "test:purchase-order-endpoints"], {
-    stdio: "inherit",
-    shell: false,
-    env: process.env,
-  });
+  const poEndpoints = runTsx("scripts/test-purchase-order-endpoints.ts");
   if (poEndpoints.status !== 0) {
     process.exit(poEndpoints.status ?? 1);
   }
 
   console.log("[E2E] Running npm run test:dashboard-data (server is up)...\n");
-  const dashData = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", "npm run test:dashboard-data"] : ["run", "test:dashboard-data"], {
-    stdio: "inherit",
-    shell: false,
-    env: process.env,
-  });
+  const dashData = runTsx("scripts/test-dashboard-data.ts");
   if (dashData.status !== 0) {
     process.exit(dashData.status ?? 1);
   }
 
-  for (const label of ["test:logistics-filters", "test:control-tower-dashboard", "test:exceptions-workflow"]) {
+  for (const scriptPath of [
+    "scripts/test-logistics-filters.ts",
+    "scripts/test-control-tower-dashboard.ts",
+    "scripts/test-exceptions-workflow.ts",
+  ]) {
+    const label = path.basename(scriptPath, path.extname(scriptPath));
     console.log(`[E2E] Running npm run ${label} (server is up)...\n`);
-    const sub = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", `npm run ${label}`] : ["run", label], {
-      stdio: "inherit",
-      shell: false,
-      env: process.env,
-    });
+    const sub = runTsx(scriptPath);
     if (sub.status !== 0) {
       process.exit(sub.status ?? 1);
     }
   }
 
   const testResult = spawnSync(
-    process.platform === "win32" ? "cmd.exe" : "npx",
-    process.platform === "win32"
-      ? ["/d", "/s", "/c", `npx playwright test -c playwright.config.ts ${process.argv.slice(2).join(" ")}`.trim()]
-      : ["playwright", "test", "-c", "playwright.config.ts", ...process.argv.slice(2)],
+    process.execPath,
+    [playwrightCli, "test", "-c", "playwright.config.ts", ...process.argv.slice(2)],
     {
+      cwd: repoRoot,
       stdio: "inherit",
       shell: false,
       env: {

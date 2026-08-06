@@ -20,7 +20,7 @@ export function BarcodeScanner({
 }: BarcodeScannerProps) {
   const [tab, setTab] = useState<ScannerType>(defaultTab);
   const [scannerElementId] = useState(`scanner-${Math.random().toString(36).substring(2, 11)}`);
-  const { isScanning, lastScan, error, startScanning, stopScanning } = useBarcodeScanner();
+  const { isScanning, status, lastScan, error, startScanning, stopScanning } = useBarcodeScanner();
 
   // Handle scan result
   useEffect(() => {
@@ -100,11 +100,11 @@ export function BarcodeScanner({
           id={scannerElementId} 
           className={`relative w-full aspect-square bg-gray-100 dark:bg-gray-800 rounded-md overflow-hidden flex items-center justify-center mb-4 ${isScanning ? '' : 'border-2 border-dashed border-gray-300 dark:border-gray-700'}`}
         >
-          {!isScanning && !isElectronEnvironment() && (
+          {!isScanning && !error && !isElectronEnvironment() && (
             <div className="text-center p-4">
               <Camera className="h-12 w-12 mx-auto mb-2 text-gray-400" />
               <p className="text-sm text-muted-foreground">
-                Click 'Start Scanning' to activate camera
+                {status === 'requesting' ? 'Requesting camera permission…' : "Tap 'Start Scanning' to activate camera"}
               </p>
             </div>
           )}
@@ -132,7 +132,7 @@ export function BarcodeScanner({
                   variant="outline" 
                   size="sm" 
                   className="mt-2"
-                  onClick={() => stopScanning()}
+                  onClick={handleStartScanning}
                 >
                   Retry
                 </Button>
@@ -174,12 +174,12 @@ export function BarcodeScanner({
             variant="default" 
             className="flex-1" 
             onClick={handleStartScanning}
-            disabled={isScanning}
+            disabled={isScanning || status === 'requesting'}
           >
-            {isScanning ? (
+            {isScanning || status === 'requesting' ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Scanning...
+                {status === 'requesting' ? 'Requesting permission…' : 'Scanning...'}
               </>
             ) : 'Start Scanning'}
           </Button>

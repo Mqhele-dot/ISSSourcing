@@ -108,4 +108,25 @@ assertContains(
   "organization membership creation must enforce 2FA, tenant plan limits, and audit evidence",
 );
 
+assertContains(
+  "server/routes.ts",
+  /function safeUserResponse[\s\S]*password:[\s\S]*twoFactorSecret:[\s\S]*passwordResetToken:[\s\S]*failedLoginAttempts:[\s\S]*accountLocked:/,
+  "general user APIs must strip credential and lockout fields from every response",
+);
+assertContains(
+  "server/routes.ts",
+  /\/api\/diagnostics\/snapshot[\s\S]{0,200}ensureAuthenticated[\s\S]{0,200}ensureRole/,
+  "diagnostics snapshot must require an authenticated admin",
+);
+assertContains(
+  "server/routes.ts",
+  /\/api\/diagnostics\/fix[\s\S]{0,250}ensureAuthenticated[\s\S]{0,250}ensureTwoFactorAuthenticated[\s\S]{0,250}ensureRole/,
+  "diagnostics repair must require authenticated admin 2FA",
+);
+assertContains(
+  "client/src/lib/protected-route.tsx",
+  /allowedRoles[\s\S]*protected\.role-denied[\s\S]*Access denied/,
+  "admin navigation must enforce a role-aware route boundary",
+);
+
 console.log("live diagnostics regression source checks passed");

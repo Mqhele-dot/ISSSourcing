@@ -1,10 +1,12 @@
-import { Link } from "wouter";
-import { AlertTriangle, Home, LayoutDashboard, Radar, Smartphone, Truck } from "lucide-react";
+import { Link, Redirect } from "wouter";
+import { AlertTriangle, Fuel, Home, LayoutDashboard, Radar, Smartphone, Truck } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { PHONE_OPERATIONS_MEDIA_QUERY, phoneOperationsTarget } from "@/lib/layout/phone-operations-entry";
 
 const desktopLinks = [
   {
@@ -12,6 +14,12 @@ const desktopLinks = [
     title: "Control tower",
     description: "Operational KPIs, alerts, and execution signals.",
     icon: Radar,
+  },
+  {
+    href: APP_ROUTES.operations.fuel,
+    title: "Fuel operations",
+    description: "Fuel stations, LPG stock, pumps, pricing, reconciliation, and safety.",
+    icon: Fuel,
   },
   {
     href: APP_ROUTES.operations.logistics,
@@ -29,6 +37,11 @@ const desktopLinks = [
 
 /** Desktop-first entry for the Operations area (does not switch to the mobile shell). */
 export default function OperationsOverviewPage() {
+  const isPhone = useMediaQuery(PHONE_OPERATIONS_MEDIA_QUERY);
+  if (isPhone) {
+    return <Redirect to={phoneOperationsTarget(typeof window === "undefined" ? "" : window.location.search)} />;
+  }
+
   return (
     <PageShell>
       <PageHeader
@@ -58,13 +71,12 @@ export default function OperationsOverviewPage() {
             <CardTitle className="text-base">Frontline mobile workflows</CardTitle>
           </div>
           <CardDescription>
-            The mobile shell uses a separate layout optimized for tasks on the floor. Open the launcher to choose a
-            mobile route—this avoids jumping into mobile mode from the main sidebar without context.
+            Preview the live phone dashboard and open any frontline workflow in this browser for training or testing.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button asChild variant="secondary">
-            <Link href={APP_ROUTES.operations.mobileWorkflows}>Open mobile workflows launcher</Link>
+            <Link href={APP_ROUTES.operations.mobileWorkflows}>Preview phone workflows</Link>
           </Button>
         </CardContent>
       </Card>

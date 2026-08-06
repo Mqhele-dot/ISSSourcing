@@ -18,7 +18,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, requestJson } from "@/lib/queryClient";
 import { runRetentionJob, uploadDocumentFile } from "@/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +31,7 @@ type DocumentRow = {
   version: number;
   archivedAt?: string | null;
   uploadedAt?: string | null;
+  fileAvailable?: boolean;
 };
 
 type ArchiveFilter = "exclude" | "include" | "only";
@@ -53,8 +53,8 @@ export default function DocumentsPage() {
   const [entityId, setEntityId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [processingReference, setProcessingReference] = useState("");
-  const [processingNotes, setProcessingNotes] = useState("");
+  const [archiveCandidate, setArchiveCandidate] = useState<DocumentRow | null>(null);
+  const [retentionConfirmOpen, setRetentionConfirmOpen] = useState(false);
   const [filterEntityType, setFilterEntityType] = useState<string>("__all__");
   const [filterEntityId, setFilterEntityId] = useState("");
   const [filterArchived, setFilterArchived] = useState<ArchiveFilter>("exclude");
@@ -94,16 +94,13 @@ export default function DocumentsPage() {
   const uploadReady =
     file != null &&
     Number.isFinite(Number(entityId)) &&
-    Number(entityId) > 0 &&
-    processingReference.trim().length > 0;
+    Number(entityId) > 0;
 
   const upload = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error("Select a file first");
       const id = Number(entityId);
       if (!Number.isFinite(id) || id <= 0) throw new Error("Entity ID must be a positive number");
-      const ref = processingReference.trim();
-      if (!ref) throw new Error("Enter a processing reference before upload.");
       const formData = new FormData();
       formData.append("file", file);
       formData.append("entityType", entityType);
@@ -112,11 +109,10 @@ export default function DocumentsPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+      setArchiveCandidate(null);
       setFile(null);
       setEntityId("");
       setUploadDialogOpen(false);
-      setProcessingReference("");
-      setProcessingNotes("");
       toast({ title: "Uploaded", description: "Document version was saved successfully." });
     },
     onError: (uploadError) => {
@@ -157,6 +153,7 @@ export default function DocumentsPage() {
     mutationFn: runRetentionJob,
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+      setRetentionConfirmOpen(false);
       toast({
         title: "Retention run completed",
         description: `Archived ${result.archivedCount} document(s).`,
@@ -261,13 +258,58 @@ export default function DocumentsPage() {
               </Button>
             </Can>
             <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to run retention">
-              <Button variant="outline" onClick={() => runRetention.mutate()} disabled={runRetention.isPending}>
+              <Button variant="outline" onClick={() => setRetentionConfirmOpen(true)} disabled={runRetention.isPending}>
                 Run retention
               </Button>
             </Can>
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={retentionConfirmOpen} onOpenChange={setRetentionConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Run document retention?</DialogTitle>
+            <DialogDescription>
+              This archives every active document older than its configured retention period. Archived files remain in
+              history, but active workflows will no longer include them.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRetentionConfirmOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => runRetention.mutate()}
+              disabled={runRetention.isPending}
+            >
+              Confirm retention run
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={archiveCandidate !== null} onOpenChange={(open) => !open && setArchiveCandidate(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Archive document?</DialogTitle>
+            <DialogDescription>
+              {archiveCandidate
+                ? `${archiveCandidate.fileName} (version ${archiveCandidate.version}) will be removed from active workflows and kept in archived history.`
+                : "The document will be kept in archived history."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setArchiveCandidate(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={archiveDocument.isPending || archiveCandidate === null}
+              onClick={() => archiveCandidate && archiveDocument.mutate(archiveCandidate.id)}
+            >
+              Archive document
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -296,31 +338,7 @@ export default function DocumentsPage() {
               </div>
             </div>
             <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
-              Uploads create a new version for this entity. Archive later when a document must stay retained but should
-              no longer appear in active operational history.
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="doc-processing-ref">
-                Reference / tracking ID <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="doc-processing-ref"
-                placeholder="e.g. PO-12345, contract amendment, ticket #"
-                value={processingReference}
-                onChange={(event) => setProcessingReference(event.target.value)}
-                autoComplete="off"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="doc-processing-notes">Handling notes (optional)</Label>
-              <Textarea
-                id="doc-processing-notes"
-                placeholder="Who requested this, what changed, retention hint..."
-                rows={3}
-                value={processingNotes}
-                onChange={(event) => setProcessingNotes(event.target.value)}
-                className="resize-none"
-              />
+              The server verifies that this business record exists in your organization before creating a new version.
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -428,18 +446,22 @@ export default function DocumentsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Button asChild size="sm" variant="outline">
-                    <a href={doc.fileUrl} target="_blank" rel="noreferrer">
-                      Open
-                    </a>
-                  </Button>
+                  {doc.fileAvailable ? (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={`/api/documents/${doc.id}/download`}>Download</a>
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" disabled title="The stored file is unavailable.">
+                      File unavailable
+                    </Button>
+                  )}
                   {!doc.archivedAt ? (
                     <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to archive">
                       <Button
                         size="sm"
                         variant="ghost"
                         className="gap-2"
-                        onClick={() => archiveDocument.mutate(doc.id)}
+                        onClick={() => setArchiveCandidate(doc)}
                         disabled={archiveDocument.isPending}
                       >
                         <Archive className="h-4 w-4" />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -328,50 +329,15 @@ export function SupplierFormSheet({
                 </TabsContent>
 
                 <TabsContent value="commercial" className="space-y-4 pt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="bankName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel htmlFor="supplier-bank-name">Bank name</FormLabel>
-                          <FormControl>
-                            <Input id="supplier-bank-name" aria-label="Bank name" placeholder="Bank name" {...field} value={field.value || ""} />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="bankAccountNumber"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel htmlFor="supplier-bank-account">Bank account number</FormLabel>
-                          <FormControl>
-                            <Input
-                              id="supplier-bank-account"
-                              aria-label="Bank account number"
-                              placeholder="Account number"
-                              {...field}
-                              value={field.value || ""}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
+                  <div className="rounded-md border bg-muted/40 p-4 text-sm">
+                    <p className="font-medium">Banking details use controlled Master Data</p>
+                    <p className="mt-1 text-muted-foreground">
+                      Create, verify, or replace supplier bank accounts through the supplier-bank maker-checker workflow.
+                    </p>
+                    <Button asChild type="button" variant="outline" size="sm" className="mt-3">
+                      <Link href="/admin/master-data/supplier-banks">Open supplier-bank records</Link>
+                    </Button>
                   </div>
-                  <FormField
-                    control={form.control}
-                    name="bankSwift"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel htmlFor="supplier-bank-swift">SWIFT/BIC</FormLabel>
-                        <FormControl>
-                          <Input id="supplier-bank-swift" aria-label="SWIFT/BIC" placeholder="SWIFT/BIC code" {...field} value={field.value || ""} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
                   <FormField
                     control={form.control}
                     name="paymentTermsId"

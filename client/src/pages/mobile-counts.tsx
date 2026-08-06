@@ -54,6 +54,7 @@ type CountVariance = {
 };
 
 type InventoryItem = { id: number; sku: string; name: string; quantity?: number; defaultWarehouseId?: number | null };
+type Warehouse = { id: number; name: string; isDefault?: boolean | null };
 type ScanResolution = {
   value: string;
   status: "empty" | "not_found" | "resolved" | "ambiguous";
@@ -121,7 +122,7 @@ export default function MobileCountsPage() {
   const [binCode, setBinCode] = useState("");
   const [resolvedItem, setResolvedItem] = useState<ScanResolution["item"]>(null);
   const [scanMessage, setScanMessage] = useState("");
-  const [warehouseId, setWarehouseId] = useState("1");
+  const [warehouseId, setWarehouseId] = useState("");
   const [mode, setMode] = useState<"blind" | "guided" | "spot" | "recount">("guided");
 
   const online = typeof navigator === "undefined" ? true : navigator.onLine;
@@ -138,6 +139,19 @@ export default function MobileCountsPage() {
     queryFn: async () => normalizeApiList<InventoryItem>(await requestJson<unknown>("GET", "/api/inventory")),
     throwOnError: false,
   });
+
+  const warehouses = useQuery({
+    queryKey: ["/api/warehouses", "mobile-counts"],
+    queryFn: () => requestJson<Warehouse[]>("GET", "/api/warehouses"),
+    enabled: !sessionId,
+    throwOnError: false,
+  });
+
+  useEffect(() => {
+    if (warehouseId || !warehouses.data?.length) return;
+    const preferred = warehouses.data.find((warehouse) => warehouse.isDefault) ?? warehouses.data[0];
+    setWarehouseId(String(preferred.id));
+  }, [warehouseId, warehouses.data]);
 
   const queue = useQuery({
     queryKey: ["offline-queue-peek", loc],
@@ -203,7 +217,6 @@ export default function MobileCountsPage() {
             ? [
                 {
                   itemId: firstItem.id,
-                  systemQtySnapshot: Number(firstItem.quantity ?? 0),
                   blindMode: mode === "blind",
                 },
               ]
@@ -338,6 +351,7 @@ export default function MobileCountsPage() {
 
   if (!sessionId) {
     const sessions = assigned.data?.sessions ?? [];
+    const canCreate = online && Boolean(warehouseId) && !warehouses.isLoading && !warehouses.isError && !createSession.isPending;
     return (
       <div className="space-y-4 p-4" data-testid="mobile-counts-page">
         <PageHeader title="Stock counts" description="Scan-first warehouse counting" />
@@ -350,10 +364,32 @@ export default function MobileCountsPage() {
               </Badge>
               <Badge variant="outline">{queue.data?.length ?? 0} pending sync</Badge>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            {!online ? (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">Existing cached sessions remain available offline. Connect to verify a warehouse before starting a new count.</p>
+            ) : null}
+            {warehouses.isError ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+                Warehouses could not be loaded. <button type="button" className="font-medium underline" onClick={() => void warehouses.refetch()}>Retry</button>
+              </div>
+            ) : null}
+            {!warehouses.isLoading && !warehouses.isError && warehouses.data?.length === 0 ? (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                Configure a warehouse before creating counts. <Link className="font-medium underline" href={APP_ROUTES.inventory.warehouses}>Open warehouse administration</Link>
+              </div>
+            ) : null}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
                 <Label>Warehouse</Label>
-                <Input value={warehouseId} inputMode="numeric" onChange={(event) => setWarehouseId(event.target.value)} />
+                <Select value={warehouseId || undefined} onValueChange={setWarehouseId} disabled={warehouses.isLoading || warehouses.isError || !online}>
+                  <SelectTrigger data-testid="mobile-count-warehouse-select">
+                    <SelectValue placeholder={warehouses.isLoading ? "Loading warehouses..." : "Select warehouse"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(warehouses.data ?? []).map((warehouse) => (
+                      <SelectItem key={warehouse.id} value={String(warehouse.id)}>{warehouse.name}{warehouse.isDefault ? " (default)" : ""}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>Mode</Label>
@@ -371,11 +407,11 @@ export default function MobileCountsPage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Button onClick={() => createSession.mutate(false)} disabled={createSession.isPending}>
+              <Button onClick={() => createSession.mutate(false)} disabled={!canCreate}>
                 <ClipboardList className="mr-2 h-4 w-4" />
                 New count
               </Button>
-              <Button variant="outline" onClick={() => createSession.mutate(true)} disabled={createSession.isPending}>
+              <Button variant="outline" onClick={() => createSession.mutate(true)} disabled={!canCreate}>
                 <ScanLine className="mr-2 h-4 w-4" />
                 Spot count
               </Button>

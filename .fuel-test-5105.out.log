@@ -1,0 +1,42 @@
+
+> rest-express@1.0.0 dev
+> tsx server/index.ts
+
+{"timestamp":"2026-08-06T19:24:59.053Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"development","ssl":false,"disposableTestDatabase":false}}
+No email credentials found; using local JSON email transport.
+{"timestamp":"2026-08-06T19:25:06.139Z","level":"info","message":"Database connection successful","meta":{"build":{"version":"1.0.0","commitSha":null,"buildId":null,"builtAt":null,"runtimeProfile":"development","deploymentMode":"development"}}}
+Session table (connect-pg-simple) ready
+Initializing database schema...
+Database already initialized with tables existing
+Session table (connect-pg-simple) ready
+Tenant security and audit chain columns ready
+categories.organization_id column and index ready
+departments.organization_id column and index ready
+carriers.organization_id column and index ready
+warehouses.organization_id column and index ready
+inventory_items.organization_id column and index ready
+suppliers.organization_id column and index ready
+app_settings.organization_id column and index ready
+reorder_requests.organization_id column and index ready
+purchase_requisitions.organization_id column and index ready
+purchase_orders.organization_id column and index ready
+inventory_serials.organization_id column and index ready
+custom_roles.organization_id column and index ready
+Purchase requisitions tables ready
+Professional supply chain tables and columns ready
+Strategic sourcing tables ready
+{"timestamp":"2026-08-06T19:25:06.809Z","level":"info","message":"Database seed check completed","meta":{"seeded":false}}
+{"timestamp":"2026-08-06T19:25:06.922Z","level":"info","message":"Development bootstrap completed","meta":{"opSeed":{"purchaseOrders":506,"shipments":157,"exceptions":111,"integrationRuns":16,"activity":1626}}}
+WebSocket server initialized for inventory sync
+Real-time sync WebSocket service initialized
+WebSocket servers initialized for real-time inventory synchronization
+{"timestamp":"2026-08-06T19:25:06.964Z","level":"info","message":"Export worker started"}
+{"timestamp":"2026-08-06T19:25:07.056Z","level":"info","message":"Setting up low stock alert checks","meta":{"checkFrequencyMinutes":30}}
+Running scheduled low stock check...
+Found 1 items with low stock
+[2m21:25:07[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing dependencies because vite config has changed
+[2m21:25:10[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [optimizer] scanning dependencies...
+[2m21:25:13[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [optimizer] bundling dependencies...
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0

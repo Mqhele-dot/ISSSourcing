@@ -25,6 +25,15 @@ type ForeignFixture = {
 
 async function seedForeignFixture(suffix: string): Promise<ForeignFixture> {
   const admin = await getSeededAdmin();
+  // The development seed uses explicit organization IDs, which can leave the
+  // serial sequence behind on a newly bootstrapped disposable database.
+  await pool.query(
+    `SELECT setval(
+       pg_get_serial_sequence('organizations', 'id'),
+       GREATEST(COALESCE((SELECT MAX(id) FROM organizations), 0), 1),
+       TRUE
+     )`,
+  );
   const organization = await pool.query<{ id: number }>(
     `INSERT INTO organizations (
        name, slug, active, country_code, default_currency_code, locale, timezone, created_at, updated_at

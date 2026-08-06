@@ -1,6 +1,7 @@
 import type { Server as HttpServer } from 'http';
 import type WebSocket from 'ws';
 import { WebSocketServer } from 'ws';
+import { registerWebSocketUpgradeRoute } from './websocket-upgrade-router';
 import * as zlib from 'zlib';
 import { v4 as uuidv4 } from 'uuid';
 import type { IStorage } from './storage';
@@ -111,8 +112,7 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
 
   // Create WebSocket server with more robust configuration
   wss = new WebSocketServer({ 
-    server,
-    path: '/ws',
+    noServer: true,
     // Increase timeouts and add more robust handling
     clientTracking: true,
     perMessageDeflate: {
@@ -128,6 +128,7 @@ export function initializeWebSocketService(server: HttpServer, storageInstance: 
       threshold: 1024 // Only compress messages larger than 1KB
     }
   });
+  registerWebSocketUpgradeRoute(server, '/ws', wss);
 
   console.log('WebSocket server initialized for inventory sync');
 

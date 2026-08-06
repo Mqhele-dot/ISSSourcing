@@ -1,4 +1,4 @@
-import { Link, useRoute } from "wouter";
+import { useLocation, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { requestJson } from "@/lib/queryClient";
@@ -11,6 +11,7 @@ import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { parseSupplierRouteId, SUPPLIER_DETAIL_ROUTE_PATTERN } from "@/lib/supplier-detail-route";
 
 export default function SupplierDetailPage() {
+  const [, setLocation] = useLocation();
   const [, params] = useRoute<{ id: string }>(SUPPLIER_DETAIL_ROUTE_PATTERN);
   const parsed = parseSupplierRouteId(params?.id);
   const id = parsed.ok ? parsed.id : NaN;
@@ -32,27 +33,41 @@ export default function SupplierDetailPage() {
         <p className="font-mono text-xs text-muted-foreground">
           Expected path: {SUPPLIER_DETAIL_ROUTE_PATTERN.replace(":id", "<id>")}
         </p>
-        <Button asChild variant="outline" className="mt-2">
-          <Link href={APP_ROUTES.procurement.suppliers}>Back to suppliers</Link>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-2"
+          onClick={() => setLocation(APP_ROUTES.procurement.suppliers)}
+        >
+          Back to suppliers
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-6" data-testid="supplier-detail-page">
       <PageHeader
         title={isLoading ? "Supplier" : data?.name ?? "Supplier"}
-        description="Read-only profile — use the list to edit."
+        description="Read-only profile. Use the suppliers list for edits."
         breadcrumb={
-          <Link href={APP_ROUTES.procurement.suppliers} className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => setLocation(APP_ROUTES.procurement.suppliers)}
+          >
             <ArrowLeft className="h-4 w-4" />
             Suppliers
-          </Link>
+          </button>
         }
         actions={
-          <Button asChild variant="outline" size="sm">
-            <Link href={APP_ROUTES.procurement.suppliers}>Back to list</Link>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setLocation(APP_ROUTES.procurement.suppliers)}
+          >
+            Back to list
           </Button>
         }
       />
@@ -78,22 +93,22 @@ export default function SupplierDetailPage() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <p>
-              <span className="text-muted-foreground">Contact:</span> {data.contactName ?? "—"}
+              <span className="text-muted-foreground">Contact:</span> {data.contactName ?? "-"}
             </p>
             <p>
-              <span className="text-muted-foreground">Email:</span> {data.email ?? "—"}
+              <span className="text-muted-foreground">Email:</span> {data.email ?? "-"}
             </p>
             <p>
-              <span className="text-muted-foreground">Phone:</span> {data.phone ?? "—"}
+              <span className="text-muted-foreground">Phone:</span> {data.phone ?? "-"}
             </p>
             <p>
-              <span className="text-muted-foreground">Address:</span> {data.address ?? "—"}
+              <span className="text-muted-foreground">Address:</span> {data.address ?? "-"}
             </p>
             <p>
-              <span className="text-muted-foreground">Tax ID:</span> {data.taxIdentificationNumber ?? "—"}
+              <span className="text-muted-foreground">Tax ID:</span> {data.taxIdentificationNumber ?? "-"}
             </p>
             <p>
-              <span className="text-muted-foreground">Default currency:</span> {data.defaultCurrencyCode ?? "—"}
+              <span className="text-muted-foreground">Default currency:</span> {data.defaultCurrencyCode ?? "-"}
             </p>
           </CardContent>
         </Card>

@@ -120,10 +120,13 @@ export default function EmployeeProfilesPage() {
     if (!isLgUp) setLocation("/m/home");
   }, [isLgUp, setLocation]);
   const [search, setSearch] = useState("");
+  const [employeePage, setEmployeePage] = useState(1);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [draft, setDraft] = useState<Partial<Employee>>({});
 
-  const canManageEmployees = String(user?.role ?? "").toLowerCase() === "admin" || String(user?.role ?? "").toLowerCase() === "manager";
+  const effectiveRole = String(user?.role ?? "").toLowerCase();
+  const canManageEmployees = effectiveRole === "admin" || effectiveRole === "manager";
+  const canEditEmployees = effectiveRole === "admin";
 
   const { data: employees = [], isLoading } = useQuery({
     queryKey: ["/api/users", "employee-profiles"],
@@ -144,9 +147,9 @@ export default function EmployeeProfilesPage() {
   });
 
   const { data: activityLogs = [] } = useQuery({
-    queryKey: ["/api/activity-logs", "employee-profiles"],
-    enabled: canManageEmployees,
-    queryFn: () => requestJson<ActivityLogRow[]>("GET", "/api/activity-logs?limit=300"),
+    queryKey: ["/api/activity-logs", "employee-profiles", selectedEmployeeId],
+    enabled: canManageEmployees && selectedEmployeeId !== null,
+    queryFn: () => requestJson<ActivityLogRow[]>("GET", "/api/activity-logs?limit=100"),
   });
 
   const filteredEmployees = useMemo(() => {
@@ -160,9 +163,20 @@ export default function EmployeeProfilesPage() {
     );
   }, [employees, search]);
 
+  const employeePageSize = 25;
+  const employeePageCount = Math.max(1, Math.ceil(filteredEmployees.length / employeePageSize));
+  const visibleEmployees = filteredEmployees.slice(
+    (employeePage - 1) * employeePageSize,
+    employeePage * employeePageSize,
+  );
+
+  useEffect(() => {
+    setEmployeePage(1);
+  }, [search]);
+
   const selectedEmployee = useMemo(() => {
-    return filteredEmployees.find((employee) => employee.id === selectedEmployeeId) ?? null;
-  }, [filteredEmployees, selectedEmployeeId]);
+    return employees.find((employee) => employee.id === selectedEmployeeId) ?? null;
+  }, [employees, selectedEmployeeId]);
 
   const selectedRecentActivity = useMemo(() => {
     if (!selectedEmployee) return [];
@@ -228,7 +242,9 @@ export default function EmployeeProfilesPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Employee Profiles</h1>
         <p className="text-muted-foreground">
-          Manage role assignments, profile details, permissions, and user activity.
+          {canEditEmployees
+            ? "Manage role assignments, profile details, permissions, and user activity."
+            : "View employee profiles, permissions, and recent activity. Access changes require an administrator."}
         </p>
       </div>
 
@@ -254,7 +270,7 @@ export default function EmployeeProfilesPage() {
               ) : filteredEmployees.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No matching employees.</p>
               ) : (
-                filteredEmployees.map((employee) => (
+                visibleEmployees.map((employee) => (
                   <button
                     key={employee.id}
                     type="button"
@@ -285,6 +301,17 @@ export default function EmployeeProfilesPage() {
                 ))
               )}
             </div>
+            {filteredEmployees.length > employeePageSize ? (
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  {(employeePage - 1) * employeePageSize + 1}–{Math.min(employeePage * employeePageSize, filteredEmployees.length)} of {filteredEmployees.length}
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={employeePage <= 1} onClick={() => setEmployeePage((value) => value - 1)}>Previous</Button>
+                  <Button variant="outline" size="sm" disabled={employeePage >= employeePageCount} onClick={() => setEmployeePage((value) => value + 1)}>Next</Button>
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -306,6 +333,7 @@ export default function EmployeeProfilesPage() {
                     <Label htmlFor="employee-full-name">Full name</Label>
                     <Input
                       id="employee-full-name"
+                      disabled={!canEditEmployees}
                       value={String(draft.fullName ?? "")}
                       onChange={(event) => setDraft((current) => ({ ...current, fullName: event.target.value }))}
                     />
@@ -315,6 +343,7 @@ export default function EmployeeProfilesPage() {
                     <Input
                       id="employee-email"
                       type="email"
+                      disabled={!canEditEmployees}
                       value={String(draft.email ?? "")}
                       onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))}
                     />
@@ -324,6 +353,7 @@ export default function EmployeeProfilesPage() {
                     <Input
                       id="employee-phone"
                       type="tel"
+                      disabled={!canEditEmployees}
                       placeholder="E.164 or local"
                       value={String(draft.phone ?? "")}
                       onChange={(event) => setDraft((current) => ({ ...current, phone: event.target.value }))}
@@ -335,6 +365,7 @@ export default function EmployeeProfilesPage() {
                       Optional label for org charts and training; permissions still follow <strong>Role</strong> above.
                     </p>
                     <Select
+                      disabled={!canEditEmployees}
                       value={draft.workPersona?.trim() ? String(draft.workPersona) : "none"}
                       onValueChange={(value) =>
                         setDraft((current) => ({
@@ -358,6 +389,7 @@ export default function EmployeeProfilesPage() {
                   <div className="space-y-2">
                     <Label htmlFor="employee-role">Role</Label>
                     <Select
+                      disabled={!canEditEmployees}
                       value={String(draft.role ?? "viewer")}
                       onValueChange={(value) => setDraft((current) => ({ ...current, role: value }))}
                     >
@@ -376,6 +408,7 @@ export default function EmployeeProfilesPage() {
                   <div className="space-y-2">
                     <Label htmlFor="employee-warehouse">Warehouse</Label>
                     <Select
+                      disabled={!canEditEmployees}
                       value={String(draft.warehouseId ?? "none")}
                       onValueChange={(value) =>
                         setDraft((current) => ({ ...current, warehouseId: value === "none" ? null : Number(value) }))
@@ -400,6 +433,7 @@ export default function EmployeeProfilesPage() {
                       For users with role <strong>supplier</strong>, selects which supplier account the portal APIs use.
                     </p>
                     <Select
+                      disabled={!canEditEmployees}
                       value={String(draft.supplierId ?? "none")}
                       onValueChange={(value) =>
                         setDraft((current) => ({ ...current, supplierId: value === "none" ? null : Number(value) }))
@@ -427,6 +461,7 @@ export default function EmployeeProfilesPage() {
                     <Input
                       id="employee-approver-cap"
                       type="number"
+                      disabled={!canEditEmployees}
                       min={0}
                       step="0.01"
                       placeholder="e.g. 50000"
@@ -448,6 +483,7 @@ export default function EmployeeProfilesPage() {
                       </p>
                     </div>
                     <Button
+                      disabled={!canEditEmployees}
                       variant={draft.active === false ? "outline" : "default"}
                       onClick={() => setDraft((current) => ({ ...current, active: !(current.active ?? true) }))}
                     >
@@ -457,6 +493,7 @@ export default function EmployeeProfilesPage() {
                   <div className="md:col-span-2 flex justify-end gap-2">
                     <Button
                       variant="outline"
+                      disabled={!canEditEmployees}
                       onClick={() =>
                         setDraft({
                           fullName: selectedEmployee.fullName ?? "",
@@ -474,7 +511,7 @@ export default function EmployeeProfilesPage() {
                       Reset
                     </Button>
                     <Button
-                      disabled={updateMutation.isPending}
+                      disabled={!canEditEmployees || updateMutation.isPending}
                       onClick={() =>
                         updateMutation.mutate({
                           id: selectedEmployee.id,
@@ -566,4 +603,3 @@ export default function EmployeeProfilesPage() {
     </div>
   );
 }
-

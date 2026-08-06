@@ -40,6 +40,19 @@ export function RealtimeSettingsForm() {
     },
   });
 
+  React.useEffect(() => {
+    form.reset({
+      realTimeUpdatesEnabled: settings.realTimeUpdatesEnabled ?? true,
+      lowStockAlertFrequency: settings.lowStockAlertFrequency ?? 30,
+      autoReorderEnabled: settings.autoReorderEnabled ?? false,
+    });
+  }, [
+    form,
+    settings.autoReorderEnabled,
+    settings.lowStockAlertFrequency,
+    settings.realTimeUpdatesEnabled,
+  ]);
+
   // Submit handler
   function onSubmit(data: RealtimeSettingsFormType) {
     updateSettings.mutate(data);
@@ -63,6 +76,7 @@ export function RealtimeSettingsForm() {
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                   <FormControl>
                     <Switch
+                      data-testid="realtime-settings-enabled"
                       checked={field.value}
                       onCheckedChange={field.onChange}
                     />
@@ -85,6 +99,7 @@ export function RealtimeSettingsForm() {
                   <FormLabel>Low Stock Alert Frequency (minutes)</FormLabel>
                   <FormControl>
                     <Input 
+                      data-testid="realtime-settings-alert-frequency"
                       type="number" 
                       {...field} 
                       onChange={(e) => field.onChange(Number(e.target.value))}
@@ -108,6 +123,7 @@ export function RealtimeSettingsForm() {
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                   <FormControl>
                     <Switch
+                      data-testid="realtime-settings-auto-reorder"
                       checked={field.value}
                       onCheckedChange={field.onChange}
                       disabled={!form.watch("realTimeUpdatesEnabled")}

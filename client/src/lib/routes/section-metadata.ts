@@ -34,7 +34,7 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         label: "Overview",
         path: APP_ROUTES.operations.root,
         icon: "layout-dashboard",
-        description: "Desktop operations hub—control tower, logistics, exceptions, and mobile launcher.",
+        description: "Desktop operations hub - control tower, logistics, exceptions, and mobile launcher.",
         keywords: "operations overview hub",
       },
       {
@@ -43,6 +43,13 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         icon: "radar",
         description: "Operational KPIs, alerts, and recent execution signals.",
         keywords: "operations monitoring",
+      },
+      {
+        label: "Fuel operations",
+        path: APP_ROUTES.operations.fuel,
+        icon: "fuel",
+        description: "Fuel stations, LPG, tanks, pumps, deliveries, pricing, reconciliation, and safety.",
+        keywords: "fuel petrol diesel gas lpg station tank pump cylinder forecourt",
       },
       {
         label: "Logistics",
@@ -286,20 +293,20 @@ export const NAV_DESKTOP_ONLY_PATHS = new Set<string>([
 /** Command palette secondary groups (frontline + admin utilities). */
 export const COMMAND_MENU_SECONDARY_GROUPS: { heading: string; items: AppNavItem[] }[] = [
   {
-    heading: "Frontline — mobile shell",
+    heading: "Frontline - mobile shell",
     items: [
       {
         label: "Mobile workflows launcher",
         path: APP_ROUTES.operations.mobileWorkflows,
         icon: "smartphone",
         description:
-          "Desktop page that links into the mobile workflow shell (/m/…). Use for floor tasks; layout switches to mobile.",
+          "Desktop page that links into the mobile workflow shell (/m/...). Use for floor tasks; layout switches to mobile.",
         keywords: "mobile frontline m tasks scan receive pick",
       },
     ],
   },
   {
-    heading: "Admin — Files & recognition",
+    heading: "Admin - Files & recognition",
     items: [
       {
         label: "Documents",
@@ -307,13 +314,6 @@ export const COMMAND_MENU_SECONDARY_GROUPS: { heading: string; items: AppNavItem
         icon: "folder-open",
         description: "Document repository and upload workspace.",
         keywords: "documents uploads",
-      },
-      {
-        label: "Downloads",
-        path: APP_ROUTES.admin.downloads,
-        icon: "arrow-down-to-line",
-        description: "File downloads and generated artifacts.",
-        keywords: "downloads files",
       },
       {
         label: "Image recognition",
@@ -325,7 +325,7 @@ export const COMMAND_MENU_SECONDARY_GROUPS: { heading: string; items: AppNavItem
     ],
   },
   {
-    heading: "Admin — People & access",
+    heading: "Admin - People & access",
     items: [
       {
         label: "Employee profiles",
@@ -346,7 +346,7 @@ export const COMMAND_MENU_SECONDARY_GROUPS: { heading: string; items: AppNavItem
     ],
   },
   {
-    heading: "Admin — System & profile",
+    heading: "Admin - System & profile",
     items: [
       {
         label: "System diagnostics",
@@ -372,5 +372,5 @@ export const SIDEBAR_ADMIN_SECONDARY_GROUPS = COMMAND_MENU_SECONDARY_GROUPS.filt
 );
 
 export function sidebarAdminSubgroupLabel(fullHeading: string): string {
-  return fullHeading.replace(/^Admin — /u, "").trim();
+  return fullHeading.replace(/^Admin - /u, "").trim();
 }

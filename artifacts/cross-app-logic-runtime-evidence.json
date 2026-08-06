@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "suite": "cross-path-runtime",
+  "passed": true,
+  "completedAt": "2026-08-06T18:53:02.743Z",
+  "database": "isssourcing_logic_test_20260806_11",
+  "baseUrl": "http://127.0.0.1:5103",
+  "proofs": [
+    "duplicate and legacy paths enforce the permission contracts locked by the AST suite",
+    "AP admin overrides use authenticated actor role plus an explicit reason",
+    "payment release and sourcing workflow requests are idempotent",
+    "alternate procurement, AP, diagnostics, report, and export routes deny cross-tenant access",
+    "equivalent governed mutations create tenant- and actor-scoped audit evidence",
+    "report preview and export use the same tenant-scoped dataset path"
+  ]
+}

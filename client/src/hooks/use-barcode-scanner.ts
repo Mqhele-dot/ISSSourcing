@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export type ScannerType = 'barcode' | 'qrcode' | 'auto';
 export type ScanResult = ElectronScanResult;
+export type ScannerStatus = 'idle' | 'requesting' | 'denied' | 'unavailable' | 'active' | 'error';
 
 // Define QrDimensions and QrDimensionFunction types for use in the component
 interface QrDimensions {
@@ -16,6 +17,7 @@ type QrDimensionFunction = (viewfinderWidth: number, viewfinderHeight: number) =
 
 interface UseBarcodeScanner {
   isScanning: boolean;
+  status: ScannerStatus;
   lastScan: ScanResult | null;
   error: Error | null;
   startScanning: (elementId: string, type?: ScannerType) => Promise<void>;
@@ -40,6 +42,7 @@ declare module 'html5-qrcode' {
 
 export function useBarcodeScanner(): UseBarcodeScanner {
   const [isScanning, setIsScanning] = useState(false);
+  const [status, setStatus] = useState<ScannerStatus>('idle');
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const scannerRef = useRef<any>(null);
@@ -59,6 +62,7 @@ export function useBarcodeScanner(): UseBarcodeScanner {
   const startScanning = useCallback(async (elementId: string, type: ScannerType = 'auto') => {
     try {
       setError(null);
+      setStatus('requesting');
       
       // In Electron environment, use the Electron-specific scanner via IPC
       if (isElectronEnvironment()) {
@@ -78,6 +82,7 @@ export function useBarcodeScanner(): UseBarcodeScanner {
         // Start the native scanner
         await window.electron.invoke('start-barcode-scanner', { type });
         setIsScanning(true);
+        setStatus('active');
         
         // Store the listener removal function in the ref for cleanup
         scannerRef.current = { type: 'electron', cleanup: removeListener };
@@ -91,13 +96,18 @@ export function useBarcodeScanner(): UseBarcodeScanner {
 
         try {
           // Request camera permission explicitly first
-          await navigator.mediaDevices.getUserMedia({ 
+          if (!navigator.mediaDevices?.getUserMedia) {
+            setStatus('unavailable');
+            throw new Error('No camera is available in this browser or device.');
+          }
+          const permissionStream = await navigator.mediaDevices.getUserMedia({ 
             video: { 
               facingMode: "environment",
               width: { ideal: 1280 },
               height: { ideal: 720 }
             } 
           });
+          permissionStream.getTracks().forEach((track) => track.stop());
           
           // Dynamically import to avoid issues with SSR
           const { Html5Qrcode } = await import('html5-qrcode');
@@ -178,14 +188,25 @@ export function useBarcodeScanner(): UseBarcodeScanner {
           // Store the scanner instance in the ref for cleanup
           scannerRef.current = { type: 'web', scanner: html5QrCode };
           setIsScanning(true);
+          setStatus('active');
         } catch (cameraErr: unknown) {
-          const msg = cameraErr instanceof Error ? cameraErr.message : String(cameraErr);
-          throw new Error(`Camera access denied: ${msg}`);
+          const cameraError = cameraErr instanceof Error ? cameraErr : new Error(String(cameraErr));
+          if (cameraError.name === 'NotAllowedError' || /denied|permission/i.test(cameraError.message)) {
+            setStatus('denied');
+            throw new Error('Camera permission was denied. Allow camera access in browser settings, then retry.');
+          }
+          if (cameraError.name === 'NotFoundError' || /no camera|not found|unavailable/i.test(cameraError.message)) {
+            setStatus('unavailable');
+            throw new Error('No usable camera was found on this device.');
+          }
+          setStatus('error');
+          throw cameraError;
         }
       }
     } catch (err) {
       console.error('Error starting scanner:', err);
       setError(err instanceof Error ? err : new Error(String(err)));
+      setStatus((current) => current === 'denied' || current === 'unavailable' ? current : 'error');
       toast({
         title: 'Scanner Error',
         description: err instanceof Error ? err.message : String(err),
@@ -216,12 +237,14 @@ export function useBarcodeScanner(): UseBarcodeScanner {
     } finally {
       scannerRef.current = null;
       setIsScanning(false);
+      setStatus('idle');
     }
    
   }, []);
 
   return {
     isScanning,
+    status,
     lastScan,
     error,
     startScanning,

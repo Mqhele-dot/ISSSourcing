@@ -696,6 +696,12 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
       }
       const parsed = trialSchema.parse(req.body);
       const orgId = getActiveOrganizationId();
+      const current = await getOrgSubscriptionForActiveOrg();
+      if (["active", "trialing"].includes(String(current.lifecycle.subscriptionStatus).toLowerCase())) {
+        return sendError(res, 409, "SUBSCRIPTION_TRANSITION_INVALID", "A trial cannot start while the subscription is active or already trialing.", {
+          details: { currentStatus: current.lifecycle.subscriptionStatus, requestedStatus: "trialing" },
+        });
+      }
       const now = new Date();
       const trialEndsAt = new Date(now.getTime() + parsed.days * 24 * 60 * 60 * 1000);
       await upsertOrganizationSubscriptionState({
@@ -734,9 +740,15 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
       }
       const orgId = getActiveOrganizationId();
       const current = await getOrgSubscriptionForActiveOrg();
+      const currentStatus = String(current.lifecycle.subscriptionStatus).toLowerCase();
+      if (!["active", "trialing"].includes(currentStatus) || current.lifecycle?.cancelAtPeriodEnd) {
+        return sendError(res, 409, "SUBSCRIPTION_TRANSITION_INVALID", "Only an active subscription that is not already scheduled for cancellation can be canceled.", {
+          details: { currentStatus: current.lifecycle.subscriptionStatus, cancelAtPeriodEnd: Boolean(current.lifecycle?.cancelAtPeriodEnd) },
+        });
+      }
       await upsertOrganizationSubscriptionState({
         organizationId: orgId,
-        subscriptionStatus: "canceled",
+        subscriptionStatus: currentStatus,
         billingProvider: "local",
         cancelAtPeriodEnd: true,
       });
@@ -763,6 +775,12 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
       }
       const orgId = getActiveOrganizationId();
       const current = await getOrgSubscriptionForActiveOrg();
+      const currentStatus = String(current.lifecycle.subscriptionStatus).toLowerCase();
+      if (!current.lifecycle?.cancelAtPeriodEnd && currentStatus !== "canceled") {
+        return sendError(res, 409, "SUBSCRIPTION_TRANSITION_INVALID", "Resume is available only for a canceled subscription or a pending period-end cancellation.", {
+          details: { currentStatus: current.lifecycle.subscriptionStatus, cancelAtPeriodEnd: Boolean(current.lifecycle?.cancelAtPeriodEnd) },
+        });
+      }
       await upsertOrganizationSubscriptionState({
         organizationId: orgId,
         subscriptionStatus: "active",

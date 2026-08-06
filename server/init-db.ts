@@ -194,6 +194,11 @@ export async function ensureTenantSecurityColumns(): Promise<void> {
       CROSS JOIN unnest(ARRAY['create','read','update','approve','manage','print','download','upload','view_reports']::permission_type[]) AS permission_value
       ON CONFLICT (role, resource, permission_type) DO NOTHING;
       INSERT INTO permissions (role, resource, permission_type)
+      SELECT 'planner'::user_role, resource_value, permission_value
+      FROM unnest(ARRAY['inventory','warehouses','stock_movements']::resource[]) AS resource_value
+      CROSS JOIN unnest(ARRAY['read','update','execute','scan','download']::permission_type[]) AS permission_value
+      ON CONFLICT (role, resource, permission_type) DO NOTHING;
+      INSERT INTO permissions (role, resource, permission_type)
       SELECT 'warehouse_staff'::user_role, resource_value, permission_value
       FROM unnest(ARRAY['inventory','warehouses','stock_movements','reorder_requests','documents']::resource[]) AS resource_value
       CROSS JOIN unnest(ARRAY['create','read','update','execute','transfer','scan','upload','download']::permission_type[]) AS permission_value

@@ -22,6 +22,7 @@ import {
   Truck,
   Wallet,
   Package,
+  Plus,
   MoreHorizontal,
   RefreshCw,
   type LucideIcon,
@@ -405,6 +406,8 @@ function MasterTable({
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [dependencyResponse, setDependencyResponse] = useState<string | null>(null);
   const [whereUsedResponse, setWhereUsedResponse] = useState<string | null>(null);
   const endpoint = config.endpoint ?? "";
@@ -469,6 +472,7 @@ function MasterTable({
       setCode("");
       setName("");
       setExtraValues({});
+      setShowEditor(false);
       toast({ title: `${config.label} created` });
     },
     onError: (e) => {
@@ -491,6 +495,7 @@ function MasterTable({
       setCode("");
       setName("");
       setExtraValues({});
+      setShowEditor(false);
       toast({ title: `${config.label} updated` });
     },
     onError: (e) => {
@@ -606,6 +611,7 @@ function MasterTable({
     setName("");
     setExtraValues({});
     setWhereUsedResponse(null);
+    setShowEditor(false);
   }
 
   function buildPayload() {
@@ -651,20 +657,23 @@ function MasterTable({
             </div>
             <p className="max-w-3xl text-sm text-muted-foreground">{config.description}</p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={() => queryClient.invalidateQueries({ queryKey: [endpoint] })}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowDetails((value) => !value)}>
+              {showDetails ? "Hide details" : "About this data"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => queryClient.invalidateQueries({ queryKey: [endpoint] })}>
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+            <Button type="button" size="sm" className="gap-2" disabled={!canCreateMasterData} onClick={() => { resetForm(); setShowEditor(true); }}>
+              <Plus className="h-4 w-4" />
+              Add record
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 pt-4 md:grid-cols-3">
+        {showDetails ? <div className="grid gap-3 pt-4 md:grid-cols-3">
           <div className="rounded-md border bg-background p-3">
             <div className="text-xs font-medium uppercase text-muted-foreground">Used by</div>
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -690,14 +699,14 @@ function MasterTable({
               {inactiveCount > 0 ? <Badge variant="outline">{inactiveCount} inactive</Badge> : null}
             </div>
           </div>
-        </div>
+        </div> : null}
 
-        <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+        {showDetails ? <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
           Access mode: {canReadMasterData ? "read" : "limited"}
           {canSubmitChangeRequest ? " + submit change request" : ""}
           {canApproveChangeRequest ? " + approve/reject" : ""}
           {canAdminOverride ? " + admin override" : ""}.
-        </div>
+        </div> : null}
 
         {!canCreateMasterData && !canUpdateMasterData ? (
           <div
@@ -727,7 +736,7 @@ function MasterTable({
           </div>
         ) : null}
 
-        <form
+        {showEditor ? <form
           className="rounded-md border bg-card p-3"
           onSubmit={(e) => {
             e.preventDefault();
@@ -802,7 +811,7 @@ function MasterTable({
                 </Button>
               )}
           </div>
-        </form>
+        </form> : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="relative min-w-[18rem] flex-1">
@@ -890,6 +899,7 @@ function MasterTable({
                               disabled={!canUpdateMasterData || updateRecord.isPending || deleteRecord.isPending}
                               onSelect={() => {
                                 setEditingId(row.id);
+                                setShowEditor(true);
                                 setCode(row.code);
                                 setName(recordDisplayName(row, config) === "-" ? "" : recordDisplayName(row, config));
                                 const nextExtras: Record<string, string> = {};
@@ -971,6 +981,31 @@ function MasterTable({
 function WarehouseMasterPanel() {
   const crud = useWarehouseCrud();
   const [createWarehouseFormVariant, setCreateWarehouseFormVariant] = useState<"quick" | "full">("quick");
+  const [showWarehouseDetails, setShowWarehouseDetails] = useState(false);
+  const [warehouseSearch, setWarehouseSearch] = useState("");
+  const [warehousePage, setWarehousePage] = useState(1);
+  const warehousePageSize = 10;
+  const filteredWarehouses = useMemo(() => {
+    const query = warehouseSearch.trim().toLowerCase();
+    if (!query) return crud.list;
+    return crud.list.filter((warehouse) =>
+      [warehouse.name, warehouse.location, warehouse.address, warehouse.contactPerson, warehouse.contactPhone]
+        .some((value) => value?.toLowerCase().includes(query)),
+    );
+  }, [crud.list, warehouseSearch]);
+  const warehousePageCount = Math.max(1, Math.ceil(filteredWarehouses.length / warehousePageSize));
+  const visibleWarehouses = useMemo(
+    () => filteredWarehouses.slice((warehousePage - 1) * warehousePageSize, warehousePage * warehousePageSize),
+    [filteredWarehouses, warehousePage],
+  );
+
+  useEffect(() => {
+    setWarehousePage(1);
+  }, [warehouseSearch]);
+
+  useEffect(() => {
+    setWarehousePage((current) => Math.min(current, warehousePageCount));
+  }, [warehousePageCount]);
 
   return (
     <Card className="overflow-hidden">
@@ -987,14 +1022,19 @@ function WarehouseMasterPanel() {
               receiving, cycle counts, and transfers stay in Warehouse Operations.
             </p>
           </div>
-          <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => crud.refetch()}>
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowWarehouseDetails((value) => !value)}>
+              {showWarehouseDetails ? "Hide details" : "About this data"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => crud.refetch()}>
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 pt-4 md:grid-cols-3">
+        {showWarehouseDetails ? <div className="grid gap-3 pt-4 md:grid-cols-3">
           <div className="rounded-md border bg-background p-3">
             <div className="text-xs font-medium uppercase text-muted-foreground">Used by</div>
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1019,7 +1059,7 @@ function WarehouseMasterPanel() {
               <span className="pb-1 text-sm text-muted-foreground">configured locations</span>
             </div>
           </div>
-        </div>
+        </div> : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card p-3">
           <div className="text-sm text-muted-foreground">
@@ -1050,15 +1090,64 @@ function WarehouseMasterPanel() {
           </div>
         </div>
 
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={warehouseSearch}
+            onChange={(event) => setWarehouseSearch(event.target.value)}
+            placeholder="Search warehouses by name, location, address, or contact..."
+            className="pl-9"
+            aria-label="Search warehouses"
+          />
+        </div>
+
         <PageDataState
           isLoading={crud.isLoading}
           error={crud.isError ? (crud.error instanceof Error ? crud.error : new Error(String(crud.error))) : null}
-          isEmpty={!crud.isLoading && !crud.isError && crud.list.length === 0}
+          isEmpty={!crud.isLoading && !crud.isError && filteredWarehouses.length === 0}
           errorTitle="Failed to load warehouses"
           onRetry={() => crud.refetch()}
-          emptyView={<div className="rounded-md border p-4 text-sm text-muted-foreground">No warehouses yet.</div>}
+          emptyView={
+            <div className="rounded-md border p-4 text-sm text-muted-foreground">
+              {crud.list.length === 0 ? "No warehouses yet." : "No warehouses match this search."}
+            </div>
+          }
         >
-          <WarehouseTable list={crud.list} onEdit={crud.openEditDialog} onDelete={crud.openDeleteDialog} />
+          <div className="overflow-hidden rounded-md border">
+            <div className="max-w-full overflow-x-auto">
+              <WarehouseTable list={visibleWarehouses} onEdit={crud.openEditDialog} onDelete={crud.openDeleteDialog} />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t px-3 py-2 text-sm">
+              <span className="text-muted-foreground">
+                Showing {(warehousePage - 1) * warehousePageSize + 1}-{Math.min(warehousePage * warehousePageSize, filteredWarehouses.length)} of {filteredWarehouses.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={warehousePage <= 1}
+                  onClick={() => setWarehousePage((page) => Math.max(1, page - 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <span className="min-w-20 text-center text-muted-foreground">
+                  Page {warehousePage} of {warehousePageCount}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={warehousePage >= warehousePageCount}
+                  onClick={() => setWarehousePage((page) => Math.min(warehousePageCount, page + 1))}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
         </PageDataState>
 
         <WarehouseDialogs
@@ -1513,6 +1602,7 @@ function ControlCentreGovernancePanel({
 export default function MasterDataPage() {
   const { toast } = useToast();
   const [location, setLocation] = useLocation();
+  const [showGovernance, setShowGovernance] = useState(false);
   const isLgUp = useMediaQuery("(min-width: 1024px)");
   const activeSection = asSectionSlug(location.split("/")[3], MASTER_DATA_SECTION_SLUGS, "units");
   const activeConfig = sectionBySlug(activeSection);
@@ -1528,18 +1618,21 @@ export default function MasterDataPage() {
     queryKey: ["/api/mdm/data-quality/issues"],
     queryFn: () => requestJson<MdmQualityIssue[]>("GET", "/api/mdm/data-quality/issues"),
     staleTime: 60_000,
+    enabled: showGovernance,
   });
 
   const mdmRegistry = useQuery({
     queryKey: ["/api/mdm/domain-registry"],
     queryFn: () => requestJson<MdmDomainRegistryEntry[]>("GET", "/api/mdm/domain-registry"),
     staleTime: 300_000,
+    enabled: showGovernance,
   });
 
   const mdmChangeRequests = useQuery({
     queryKey: ["/api/mdm/change-requests"],
     queryFn: () => requestJson<MdmChangeRequest[]>("GET", "/api/mdm/change-requests"),
     staleTime: 60_000,
+    enabled: showGovernance,
   });
 
   const scanDataQuality = useMutation({
@@ -1610,8 +1703,8 @@ export default function MasterDataPage() {
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6" data-testid="master-data-page">
       <PageHeader
-        title="Master Data & Control Centre"
-        subtitle="The single source of truth for suppliers, items, units, currency, tax, approvals, warehouses, documents, finance mapping, and reports."
+        title="Master Data"
+        subtitle="Maintain the reference values used across operations, procurement, finance, and governance."
       />
       <div className="grid gap-3 md:grid-cols-4">
         <Card>
@@ -1628,7 +1721,7 @@ export default function MasterDataPage() {
             <CheckCircle2 className="h-8 w-8 text-primary" />
             <div>
               <div className="text-2xl font-semibold">{summaryQueries.isLoading ? "-" : totalActive}</div>
-              <div className="text-sm text-muted-foreground">active legacy values</div>
+              <div className="text-sm text-muted-foreground">active reference records</div>
             </div>
           </CardContent>
         </Card>
@@ -1651,7 +1744,16 @@ export default function MasterDataPage() {
           </CardContent>
         </Card>
       </div>
-      {health?.sections?.length ? (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
+        <div>
+          <div className="font-medium">Governance and data quality</div>
+          <p className="text-sm text-muted-foreground">Open advanced ownership, maker-checker, dependency, and quality controls only when needed.</p>
+        </div>
+        <Button type="button" variant="outline" onClick={() => setShowGovernance((value) => !value)}>
+          {showGovernance ? "Hide governance" : "Show governance"}
+        </Button>
+      </div>
+      {showGovernance && health?.sections?.length ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Control Centre map</CardTitle>
@@ -1684,12 +1786,16 @@ export default function MasterDataPage() {
           </CardContent>
         </Card>
       ) : null}
-      <ControlCentreGovernancePanel registry={registry} changeRequests={changeRequests} health={health} />
-      <ControlCentreIssuePanel
-        issues={issues}
-        onScan={() => scanDataQuality.mutate()}
-        isScanning={scanDataQuality.isPending || mdmHealth.isFetching || dataQualityIssues.isFetching}
-      />
+      {showGovernance ? (
+        <>
+          <ControlCentreGovernancePanel registry={registry} changeRequests={changeRequests} health={health} />
+          <ControlCentreIssuePanel
+            issues={issues}
+            onScan={() => scanDataQuality.mutate()}
+            isScanning={scanDataQuality.isPending || mdmHealth.isFetching || dataQualityIssues.isFetching}
+          />
+        </>
+      ) : null}
       <Tabs
         value={activeSection}
         onValueChange={(value) => setLocation(APP_ROUTES.admin.masterDataSection(value as typeof activeSection))}

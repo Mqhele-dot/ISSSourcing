@@ -41,6 +41,19 @@ export function ForecastingSettingsForm() {
     },
   });
 
+  React.useEffect(() => {
+    form.reset({
+      forecastingEnabled: settings.forecastingEnabled ?? true,
+      forecastDays: settings.forecastDays ?? 30,
+      seasonalAdjustmentEnabled: settings.seasonalAdjustmentEnabled ?? true,
+    });
+  }, [
+    form,
+    settings.forecastDays,
+    settings.forecastingEnabled,
+    settings.seasonalAdjustmentEnabled,
+  ]);
+
   // Submit handler
   function onSubmit(data: ForecastingSettingsFormType) {
     updateSettings.mutate(data);
@@ -73,6 +86,7 @@ export function ForecastingSettingsForm() {
                   </div>
                   <FormControl>
                     <Switch
+                      data-testid="forecasting-settings-enabled"
                       checked={field.value}
                       onCheckedChange={field.onChange}
                     />
@@ -94,6 +108,7 @@ export function ForecastingSettingsForm() {
                   </div>
                   <FormControl>
                     <Switch
+                      data-testid="forecasting-settings-seasonal-adjustment"
                       checked={field.value}
                       onCheckedChange={field.onChange}
                       disabled={!form.watch("forecastingEnabled")}
@@ -111,6 +126,7 @@ export function ForecastingSettingsForm() {
                   <FormLabel>Forecast Period (Days)</FormLabel>
                   <FormControl>
                     <Input 
+                      data-testid="forecasting-settings-days"
                       type="number" 
                       placeholder="30" 
                       {...field} 

@@ -49,6 +49,17 @@ type AllocationRow = {
   orderId: number | null;
   requisitionId: number | null;
   status: string;
+  itemSku: string | null;
+  itemName: string | null;
+  warehouseName: string | null;
+};
+
+type AllocationPage = {
+  items: AllocationRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
 };
 
 type BatchRow = {
@@ -90,6 +101,8 @@ export default function WarehouseOperationsPage() {
   const [issueBatchId, setIssueBatchId] = useState("none");
   const [issueBatchQty, setIssueBatchQty] = useState("1");
   const [issueSerialId, setIssueSerialId] = useState("none");
+  const [allocationPageNumber, setAllocationPageNumber] = useState(1);
+  const [allocationStatus, setAllocationStatus] = useState("reserved");
 
   const {
     data: warehouses = [],
@@ -114,19 +127,25 @@ export default function WarehouseOperationsPage() {
   });
 
   const {
-    data: allocations = [],
+    data: allocationPage,
     isLoading: allocLoading,
+    isFetching: allocFetching,
     isError: allocError,
     error: allocErr,
     refetch: refetchAllocations,
   } = useQuery({
-    queryKey: ["/api/inventory-allocations"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/inventory-allocations");
-      return normalizeApiList<AllocationRow>(raw);
-    },
+    queryKey: ["/api/v2/inventory-allocations", allocationPageNumber, allocationStatus],
+    queryFn: () => requestJson<AllocationPage>(
+      "GET",
+      `/api/v2/inventory-allocations?page=${allocationPageNumber}&pageSize=25&status=${allocationStatus}`,
+    ),
+    placeholderData: (previous) => previous,
     throwOnError: false,
   });
+
+  const allocations = allocationPage?.items ?? [];
+  const allocationTotal = allocationPage?.total ?? 0;
+  const allocationPageCount = Math.max(1, Math.ceil(allocationTotal / 25));
 
   const {
     data: whInventory = [],
@@ -201,6 +220,7 @@ export default function WarehouseOperationsPage() {
   const createAlloc = useMutation({
     mutationFn: () => {
       if (allocItem === "none") throw new Error("Item is required");
+      if (allocWh === "none") throw new Error("Warehouse is required");
       const qty = Number(allocQty);
       if (!Number.isFinite(qty) || qty < 1) throw new Error("Quantity must be ≥ 1");
       let orderId: number | null = null;
@@ -217,7 +237,7 @@ export default function WarehouseOperationsPage() {
       }
       return requestJson("POST", "/api/inventory-allocations", {
         itemId: Number(allocItem),
-        warehouseId: allocWh === "none" ? null : Number(allocWh),
+        warehouseId: Number(allocWh),
         quantity: qty,
         orderId,
         requisitionId,
@@ -225,6 +245,7 @@ export default function WarehouseOperationsPage() {
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v2/inventory-allocations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/inventory-allocations"] });
       void invalidateInventoryDomain(queryClient);
       toast({ title: "Allocation created" });
@@ -262,13 +283,14 @@ export default function WarehouseOperationsPage() {
   const createBatch = useMutation({
     mutationFn: () => {
       if (batchItem === "none" || !batchNumber.trim()) throw new Error("Item and batch number required");
+      if (batchWh === "none") throw new Error("Warehouse is required");
       const q = Number(batchQty);
       if (!Number.isFinite(q) || q < 1 || !Number.isInteger(q)) {
         throw new Error("Quantity must be a positive whole number");
       }
       return requestJson("POST", "/api/inventory-batches", {
         itemId: Number(batchItem),
-        warehouseId: batchWh === "none" ? null : Number(batchWh),
+        warehouseId: Number(batchWh),
         batchNumber: batchNumber.trim(),
         quantityReceived: q,
         quantityOnHand: q,
@@ -292,9 +314,10 @@ export default function WarehouseOperationsPage() {
   const createSerial = useMutation({
     mutationFn: () => {
       if (serialItem === "none" || !serialNumber.trim()) throw new Error("Item and serial required");
+      if (serialWh === "none") throw new Error("Warehouse is required");
       return requestJson("POST", "/api/inventory-serials", {
         itemId: Number(serialItem),
-        warehouseId: serialWh === "none" ? null : Number(serialWh),
+        warehouseId: Number(serialWh),
         serialNumber: serialNumber.trim(),
         status: "available",
       });
@@ -453,10 +476,10 @@ export default function WarehouseOperationsPage() {
               <Label>Warehouse</Label>
               <Select value={allocWh} onValueChange={setAllocWh}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Optional" />
+                  <SelectValue placeholder="Select warehouse" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Any</SelectItem>
+                  <SelectItem value="none">Select warehouse</SelectItem>
                   {warehouses.map((w) => (
                     <SelectItem key={w.id} value={String(w.id)}>
                       {w.name}
@@ -480,10 +503,39 @@ export default function WarehouseOperationsPage() {
           </div>
           <Button
             onClick={() => createAlloc.mutate()}
-            disabled={createAlloc.isPending || allocItem === "none"}
+            disabled={createAlloc.isPending || warehouses.length === 0 || allocItem === "none" || allocWh === "none" || !Number.isInteger(Number(allocQty)) || Number(allocQty) < 1}
           >
             Reserve (create allocation)
           </Button>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div className="w-full max-w-xs space-y-1">
+              <Label>Allocation status</Label>
+              <Select
+                value={allocationStatus}
+                onValueChange={(value) => {
+                  setAllocationStatus(value);
+                  setAllocationPageNumber(1);
+                }}
+              >
+                <SelectTrigger data-testid="allocation-status-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="reserved">Reserved</SelectItem>
+                  <SelectItem value="fulfilled">Fulfilled</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="all">All positive allocations</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              {allocFetching && !allocLoading ? "Updating... " : ""}
+              {allocationTotal === 0
+                ? "No matching allocations"
+                : `Showing ${(allocationPageNumber - 1) * 25 + 1}-${Math.min(allocationPageNumber * 25, allocationTotal)} of ${allocationTotal}`}
+            </p>
+          </div>
 
           {allocLoading ? (
             <p className="text-sm text-muted-foreground">Loading allocations…</p>
@@ -505,9 +557,15 @@ export default function WarehouseOperationsPage() {
                 {allocations.map((a) => (
                   <TableRow key={a.id}>
                     <TableCell>{a.id}</TableCell>
-                    <TableCell className="text-xs">{itemLabel.get(a.itemId) ?? a.itemId}</TableCell>
+                    <TableCell className="text-xs">
+                      {a.itemSku
+                        ? `${a.itemSku}${a.itemName ? ` — ${a.itemName}` : ""}`
+                        : itemLabel.get(a.itemId) ?? "Unresolved legacy item"}
+                    </TableCell>
                     <TableCell>
-                      {a.warehouseId != null ? whName.get(a.warehouseId) ?? a.warehouseId : "—"}
+                      {a.warehouseId != null
+                        ? a.warehouseName ?? whName.get(a.warehouseId) ?? `Warehouse #${a.warehouseId}`
+                        : "—"}
                     </TableCell>
                     <TableCell>{a.quantity}</TableCell>
                     <TableCell className="text-xs">
@@ -520,6 +578,23 @@ export default function WarehouseOperationsPage() {
               </TableBody>
             </Table>
           )}
+          {allocationTotal > 0 ? (
+            <div className="flex flex-wrap items-center justify-end gap-2" aria-label="Allocation pagination">
+              <Button type="button" size="sm" variant="outline" onClick={() => setAllocationPageNumber(1)} disabled={allocationPageNumber <= 1 || allocFetching}>
+                First
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setAllocationPageNumber((page) => Math.max(1, page - 1))} disabled={allocationPageNumber <= 1 || allocFetching}>
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">Page {allocationPageNumber} of {allocationPageCount}</span>
+              <Button type="button" size="sm" variant="outline" onClick={() => setAllocationPageNumber((page) => Math.min(allocationPageCount, page + 1))} disabled={allocationPageNumber >= allocationPageCount || allocFetching}>
+                Next
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setAllocationPageNumber(allocationPageCount)} disabled={allocationPageNumber >= allocationPageCount || allocFetching}>
+                Last
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -627,10 +702,10 @@ export default function WarehouseOperationsPage() {
             </Select>
             <Select value={batchWh} onValueChange={setBatchWh}>
               <SelectTrigger>
-                <SelectValue placeholder="Warehouse (optional)" />
+                <SelectValue placeholder="Select warehouse" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Any</SelectItem>
+                <SelectItem value="none">Select warehouse</SelectItem>
                 {warehouses.map((w) => (
                   <SelectItem key={w.id} value={String(w.id)}>
                     {w.name}
@@ -646,7 +721,7 @@ export default function WarehouseOperationsPage() {
               value={batchQty}
               onChange={(e) => setBatchQty(e.target.value)}
             />
-            <Button onClick={() => createBatch.mutate()} disabled={createBatch.isPending}>
+            <Button onClick={() => createBatch.mutate()} disabled={createBatch.isPending || warehouses.length === 0 || batchItem === "none" || batchWh === "none" || !batchNumber.trim() || !Number.isInteger(Number(batchQty)) || Number(batchQty) < 1}>
               Save batch
             </Button>
           </CardContent>
@@ -686,10 +761,10 @@ export default function WarehouseOperationsPage() {
             </Select>
             <Select value={serialWh} onValueChange={setSerialWh}>
               <SelectTrigger>
-                <SelectValue placeholder="Warehouse (optional)" />
+                <SelectValue placeholder="Select warehouse" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Any</SelectItem>
+                <SelectItem value="none">Select warehouse</SelectItem>
                 {warehouses.map((w) => (
                   <SelectItem key={w.id} value={String(w.id)}>
                     {w.name}
@@ -698,7 +773,7 @@ export default function WarehouseOperationsPage() {
               </SelectContent>
             </Select>
             <Input placeholder="Serial number" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} />
-            <Button onClick={() => createSerial.mutate()} disabled={createSerial.isPending}>
+            <Button onClick={() => createSerial.mutate()} disabled={createSerial.isPending || warehouses.length === 0 || serialItem === "none" || serialWh === "none" || !serialNumber.trim()}>
               Save serial
             </Button>
           </CardContent>
@@ -742,7 +817,7 @@ export default function WarehouseOperationsPage() {
                 onChange={(e) => setIssueBatchQty(e.target.value)}
               />
             </div>
-            <Button onClick={() => issueBatch.mutate()} disabled={issueBatch.isPending || issuableBatches.length === 0}>
+            <Button onClick={() => issueBatch.mutate()} disabled={issueBatch.isPending || issuableBatches.length === 0 || issueBatchId === "none" || !Number.isInteger(Number(issueBatchQty)) || Number(issueBatchQty) < 1}>
               Issue from batch
             </Button>
           </div>
@@ -764,7 +839,7 @@ export default function WarehouseOperationsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={() => issueSerial.mutate()} disabled={issueSerial.isPending || issuableSerials.length === 0}>
+            <Button onClick={() => issueSerial.mutate()} disabled={issueSerial.isPending || issuableSerials.length === 0 || issueSerialId === "none"}>
               Issue serial
             </Button>
           </div>

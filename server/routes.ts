@@ -6,7 +6,7 @@ import { pool } from "./db";
 import { db } from "./db";
 import { getDemoDataSummary, getSchemaStatus, resetAndSeedDemoData } from "./seed";
 import { seedOperationalIfEmpty } from "./seed-operational";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { Buffer } from "buffer";
 import { setupAuth } from "./auth";
@@ -78,6 +78,7 @@ import {
   organizationSettings,
   organizationMembers,
   projects,
+  currencies,
 } from "@shared/schema";
 import { appendAuditEvent } from "./services/audit-chain-service";
 import { getProcurementLineReportRows } from "./services/procurement-line-report-service";
@@ -879,15 +880,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // App Settings endpoints
-  app.get("/api/settings", async (_req: Request, res: Response) => {
+  app.get("/api/settings", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
     try {
       const settings = await storage.getAppSettings();
-      if (!settings) {
-        // Return default settings if none exist
-        const defaultSettings = await storage.updateAppSettings({});
-        return res.json(defaultSettings);
-      }
-      res.json(settings);
+      res.json(settings ?? {});
     } catch (error) {
       console.error("Error fetching app settings:", error);
       res.status(500).json({ message: "Failed to fetch app settings" });
@@ -901,6 +897,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...(before ?? {}),
         ...(req.body ?? {}),
       });
+      const [activeCurrency] = await db
+        .select({ code: currencies.code })
+        .from(currencies)
+        .where(and(eq(currencies.code, validatedData.currencyCode), eq(currencies.active, true)))
+        .limit(1);
+      if (!activeCurrency) {
+        return sendError(
+          res,
+          400,
+          "INVALID_CURRENCY",
+          `${validatedData.currencyCode} is not an active Master Data currency.`,
+          { hint: "Activate the reporting currency in Master Data before saving organization settings." },
+        );
+      }
       const updatedSettings = await storage.updateAppSettings(validatedData);
       if (req.user) {
         await storage.createActivityLog({
@@ -909,6 +919,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId: req.user.id,
           referenceType: "settings",
           referenceId: updatedSettings.id,
+        });
+        await appendAuditEvent({
+          organizationId: getActiveOrganizationId(),
+          actor: { userId: req.user.id },
+          action: "SETTINGS_UPDATED",
+          resourceType: "settings",
+          resourceId: updatedSettings.id,
+          before,
+          after: updatedSettings,
+          reason: typeof req.body?.reason === "string" ? req.body.reason : "Administrator updated application settings",
+          requestId: String(res.locals.requestId ?? "unknown-request-id"),
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent") ?? null,
         });
       }
       res.json(updatedSettings);
@@ -960,7 +983,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/diagnostics/snapshot", async (_req: Request, res: Response) => {
+  app.get("/api/diagnostics/snapshot", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (_req: Request, res: Response) => {
     try {
       const routerStack = (app as unknown as { _router?: { stack?: unknown[] } })._router?.stack ?? [];
       res.json({
@@ -1005,7 +1028,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Diagnostics: scan for issues
-  app.get("/api/diagnostics/scan", async (_req: Request, res: Response) => {
+  app.get("/api/diagnostics/scan", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (_req: Request, res: Response) => {
     const result: { database: string[]; configuration: string[]; data: string[]; system: string[] } = {
       database: [],
       configuration: [],
@@ -1102,7 +1125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               WHERE organization_id = $1 AND name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Supplier '
             UNION ALL
             SELECT COUNT(*) FROM inventory_items
-              WHERE organization_id = $1 AND (name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)')
+              WHERE organization_id::text = $1::text AND (name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)')
             UNION ALL
             SELECT COUNT(*) FROM approval_policies
               WHERE organization_id = $1 AND name ~ '^(AP Workflow|AP Test|AP Invalid)'
@@ -1139,7 +1162,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Diagnostics: fix issues by category
-  app.post("/api/diagnostics/fix", async (req: Request, res: Response) => {
+  app.post("/api/diagnostics/fix", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     const category = typeof req.body?.category === "string" ? req.body.category : "";
     const result: { success: boolean; message?: string; fixed?: string[] } = { success: false };
 
@@ -1685,6 +1708,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .limit(1);
     return membership ?? null;
   }
+
+  function safeUserResponse<T extends Record<string, unknown>>(user: T) {
+    const {
+      password: _password,
+      twoFactorSecret: _twoFactorSecret,
+      passwordResetToken: _passwordResetToken,
+      passwordResetExpires: _passwordResetExpires,
+      failedLoginAttempts: _failedLoginAttempts,
+      accountLocked: _accountLocked,
+      lockoutUntil: _lockoutUntil,
+      ...safeUser
+    } = user;
+    return safeUser;
+  }
+
+  app.patch("/api/user/profile", auth.ensureAuthenticated, async (req: Request, res: Response) => {
+    try {
+      if (!req.user) return sendError(res, 401, "AUTH_REQUIRED", "Authentication required.");
+      const payload = z.object({
+        fullName: z.string().trim().min(1).max(160).nullable().optional(),
+        email: z.string().trim().email().optional(),
+        warehouseId: z.number().int().positive().nullable().optional(),
+        profilePicture: z.string().url().nullable().optional(),
+      }).parse(req.body ?? {});
+      const updated = await storage.updateUser(req.user.id, payload);
+      if (!updated) return sendError(res, 404, "USER_NOT_FOUND", "User not found.");
+      await storage.logUserAccess({
+        userId: req.user.id,
+        action: "profile_update",
+        ipAddress: typeof req.ip === "string" ? req.ip : null,
+        userAgent: req.headers["user-agent"] || null,
+      });
+      return res.json(safeUserResponse(updated));
+    } catch (error) {
+      if (error instanceof z.ZodError) return sendError(res, 400, "PROFILE_UPDATE_INVALID", "Invalid profile update.", { details: error.flatten() });
+      return sendError(res, 500, "PROFILE_UPDATE_FAILED", "Profile update failed.");
+    }
+  });
+
+  app.get("/api/user/security-preferences", auth.ensureAuthenticated, async (req: Request, res: Response) => {
+    if (!req.user) return sendError(res, 401, "AUTH_REQUIRED", "Authentication required.");
+    const preferences = req.user.preferences && typeof req.user.preferences === "object"
+      ? req.user.preferences as Record<string, unknown>
+      : {};
+    return res.json({
+      twoFactorEnabled: Boolean(req.user.twoFactorEnabled),
+      emailNotifications: preferences.securityEmailNotifications !== false,
+      sessionTimeout: Number(preferences.sessionTimeoutMinutes ?? 60),
+    });
+  });
+
+  app.patch("/api/user/security-preferences", auth.ensureAuthenticated, async (req: Request, res: Response) => {
+    try {
+      if (!req.user) return sendError(res, 401, "AUTH_REQUIRED", "Authentication required.");
+      const parsed = z.object({
+        twoFactorEnabled: z.boolean().optional(),
+        emailNotifications: z.boolean(),
+        sessionTimeout: z.number().int().min(15).max(1440),
+      }).parse(req.body ?? {});
+      if (parsed.twoFactorEnabled !== undefined && parsed.twoFactorEnabled !== Boolean(req.user.twoFactorEnabled)) {
+        return sendError(res, 409, "TWO_FACTOR_SETUP_REQUIRED", "Two-factor authentication can only be changed through the verified setup or disable flow.");
+      }
+      const existing = req.user.preferences && typeof req.user.preferences === "object"
+        ? req.user.preferences as Record<string, unknown>
+        : {};
+      const updated = await storage.updateUser(req.user.id, {
+        preferences: {
+          ...existing,
+          securityEmailNotifications: parsed.emailNotifications,
+          sessionTimeoutMinutes: parsed.sessionTimeout,
+        },
+      });
+      if (!updated) return sendError(res, 404, "USER_NOT_FOUND", "User not found.");
+      return res.json({
+        twoFactorEnabled: Boolean(updated.twoFactorEnabled),
+        emailNotifications: parsed.emailNotifications,
+        sessionTimeout: parsed.sessionTimeout,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) return sendError(res, 400, "SECURITY_PREFERENCES_INVALID", "Invalid security preferences.", { details: error.flatten() });
+      return sendError(res, 500, "SECURITY_PREFERENCES_UPDATE_FAILED", "Security preferences update failed.");
+    }
+  });
   
   app.get("/api/users", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
     try {
@@ -1696,7 +1802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const orgRoleByUser = new Map(memberships.rows.map((row) => [row.user_id, row.role]));
       res.json(
         users.filter((user) => orgRoleByUser.has(user.id)).map((user) => ({
-          ...user,
+          ...safeUserResponse(user),
           organizationRole: orgRoleByUser.get(user.id) ?? null,
         })),
       );
@@ -1719,7 +1825,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
       
-      res.json(user);
+      res.json(safeUserResponse(user));
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -1737,6 +1843,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const before = await storage.getUser(id);
       if (!membership || !before) return sendError(res, 404, "USER_NOT_FOUND", "User not found in this organization.");
       const allowedFields = new Set([
+        "fullName",
+        "email",
+        "phone",
         "role",
         "workPersona",
         "active",
@@ -1753,6 +1862,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const requestedRole = typeof updatePayload.role === "string" ? updatePayload.role : undefined;
       const requestedActive = typeof updatePayload.active === "boolean" ? updatePayload.active : undefined;
+      if (req.user?.id === id && (requestedRole && requestedRole !== "admin")) {
+        return sendError(
+          res,
+          400,
+          "SELF_ADMIN_DEMOTION_BLOCKED",
+          "You cannot remove your own administrator role. Ask another administrator to change it.",
+        );
+      }
+      if (req.user?.id === id && requestedActive === false) {
+        return sendError(
+          res,
+          400,
+          "SELF_DEACTIVATION_BLOCKED",
+          "You cannot deactivate your own account. Ask another administrator to change it.",
+        );
+      }
       delete updatePayload.role;
       delete updatePayload.active;
       if (requestedRole !== undefined || requestedActive !== undefined) {
@@ -1824,7 +1949,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      res.json(updatedUser);
+      res.json(safeUserResponse(updatedUser));
     } catch (error) {
       console.error("Error updating user:", error);
       res.status(500).json({ message: "Failed to update user" });
@@ -2352,7 +2477,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Tax rates routes
-  app.get("/api/tax-rates", async (req, res) => {
+  app.get("/api/tax-rates", auth.ensureAuthenticated, async (req, res) => {
     try {
       const taxRates = await storage.getAllTaxRates();
       return sendOk(res, taxRates);
@@ -2362,7 +2487,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tax-rates/default", async (req, res) => {
+  app.get("/api/tax-rates/default", auth.ensureAuthenticated, async (req, res) => {
     try {
       const defaultTaxRate = await storage.getDefaultTaxRate();
       if (!defaultTaxRate) {
@@ -2375,7 +2500,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tax-rates/:id", async (req, res) => {
+  app.get("/api/tax-rates/:id", auth.ensureAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const taxRate = await storage.getTaxRate(id);
@@ -2391,85 +2516,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tax-rates", async (req, res) => {
-    try {
-      const taxRate = await storage.createTaxRate(req.body);
-      return sendOk(res, taxRate, 201);
-    } catch (error) {
-      console.error("Error creating tax rate:", error);
-      return sendError(res, 500, "CREATE_TAX_RATE_FAILED", "Failed to create tax rate");
-    }
-  });
+  const rejectLegacyTaxMutation = (_req: Request, res: Response) =>
+    sendError(
+      res,
+      410,
+      "GOVERNED_TAX_WORKFLOW_REQUIRED",
+      "Direct tax-rate mutations have been retired.",
+      { hint: "Create and approve a Tax Codes change request in Master Data." },
+    );
 
-  app.patch("/api/tax-rates/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      
-      // Validate tax rate exists
-      const existingTaxRate = await storage.getTaxRate(id);
-      if (!existingTaxRate) {
-        return sendError(res, 404, "TAX_RATE_NOT_FOUND", "Tax rate not found");
-      }
-      
-      // Update tax rate
-      const updatedTaxRate = await storage.updateTaxRate(id, req.body);
-      
-      return sendOk(res, updatedTaxRate);
-    } catch (error) {
-      console.error("Error updating tax rate:", error);
-      return sendError(res, 500, "UPDATE_TAX_RATE_FAILED", "Failed to update tax rate");
-    }
-  });
-
-  app.delete("/api/tax-rates/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      
-      // Validate tax rate exists
-      const existingTaxRate = await storage.getTaxRate(id);
-      if (!existingTaxRate) {
-        return sendError(res, 404, "TAX_RATE_NOT_FOUND", "Tax rate not found");
-      }
-      
-      // Check if it's the default tax rate
-      if (existingTaxRate.isDefault) {
-        return sendError(
-          res,
-          400,
-          "DELETE_DEFAULT_TAX_RATE_NOT_ALLOWED",
-          "Cannot delete the default tax rate. Set another tax rate as default first.",
-        );
-      }
-      
-      // Delete tax rate
-      await storage.deleteTaxRate(id);
-      
-      return sendOk(res, { success: true });
-    } catch (error) {
-      console.error("Error deleting tax rate:", error);
-      return sendError(res, 500, "DELETE_TAX_RATE_FAILED", "Failed to delete tax rate");
-    }
-  });
-
-  app.post("/api/tax-rates/:id/set-default", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      
-      // Validate tax rate exists
-      const existingTaxRate = await storage.getTaxRate(id);
-      if (!existingTaxRate) {
-        return sendError(res, 404, "TAX_RATE_NOT_FOUND", "Tax rate not found");
-      }
-      
-      // Set as default
-      const updatedTaxRate = await storage.setDefaultTaxRate(id);
-      
-      return sendOk(res, updatedTaxRate);
-    } catch (error) {
-      console.error("Error setting default tax rate:", error);
-      return sendError(res, 500, "SET_DEFAULT_TAX_RATE_FAILED", "Failed to set default tax rate");
-    }
-  });
+  app.post("/api/tax-rates", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), rejectLegacyTaxMutation);
+  app.patch("/api/tax-rates/:id", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), rejectLegacyTaxMutation);
+  app.delete("/api/tax-rates/:id", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), rejectLegacyTaxMutation);
+  app.post("/api/tax-rates/:id/set-default", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), rejectLegacyTaxMutation);
 
   // Discount routes
   app.get("/api/discounts", async (req, res) => {
@@ -2755,10 +2814,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/document-extractor", auth.ensureAuthenticated);
   
   // Initialize image recognition routes
-  registerImageRecognitionRoutes(app);
+  registerImageRecognitionRoutes(app, auth);
   
   // Register document extractor routes
-  registerDocumentExtractorRoutes(app);
+  registerDocumentExtractorRoutes(app, auth);
   
   // Profile picture routes
   app.post('/api/profile/picture', auth.ensureAuthenticated, profilePictureUpload.single('profilePicture'), uploadProfilePicture);

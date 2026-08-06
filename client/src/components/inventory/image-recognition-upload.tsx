@@ -16,7 +16,6 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel } from '@/components/ui/form';
@@ -27,6 +26,7 @@ import { z } from 'zod';
 interface ImageRecognitionUploadProps {
   onItemCreated?: (newItem: unknown) => void;
   standalone?: boolean;
+  simulationMode?: boolean;
 }
 
 export interface RecognizedItem {
@@ -52,7 +52,11 @@ const additionalItemDataSchema = z.object({
   notes: z.string().optional(),
 });
 
-export function ImageRecognitionUpload({ onItemCreated, standalone = false }: ImageRecognitionUploadProps) {
+export function ImageRecognitionUpload({
+  onItemCreated,
+  standalone = false,
+  simulationMode = false,
+}: ImageRecognitionUploadProps) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [recognizedData, setRecognizedData] = useState<RecognizedItem | null>(null);
@@ -113,8 +117,10 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
       const payload = data as { recognizedItem?: RecognizedItem };
       setRecognizedData(payload.recognizedItem ?? null);
       toast({
-        title: 'Image Analyzed',
-        description: 'Image successfully analyzed by AI.',
+        title: simulationMode ? 'Simulation completed' : 'Image analyzed',
+        description: simulationMode
+          ? 'A sample catalogue match was generated. It cannot create inventory.'
+          : 'Image successfully analyzed by AI.',
       });
     },
     onError: (error: Error) => {
@@ -241,10 +247,12 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
       <CardHeader>
         <CardTitle className="text-xl flex items-center">
           <ImageIcon className="mr-2 h-5 w-5" />
-          AI Image Recognition
+          {simulationMode ? 'Recognition Workflow Preview' : 'AI Image Recognition'}
         </CardTitle>
         <CardDescription>
-          Upload an image to automatically identify inventory items
+          {simulationMode
+            ? 'Upload an image to preview the recognition workflow with sample catalogue data.'
+            : 'Upload an image to automatically identify inventory items.'}
         </CardDescription>
       </CardHeader>
       
@@ -311,9 +319,11 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
               
               <div className="flex items-center justify-between">
                 <div>
-                  <Label htmlFor="generate-description">Generate Description</Label>
+                  <Label htmlFor="generate-description">
+                    {simulationMode ? 'Include Sample Description' : 'Generate Description'}
+                  </Label>
                   <p className="text-xs text-muted-foreground">
-                    AI creates a detailed description
+                    {simulationMode ? 'Adds a catalogue sample description' : 'AI creates a detailed description'}
                   </p>
                 </div>
                 <Switch 
@@ -361,7 +371,14 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
         {/* Recognition results */}
         {recognizedData && (
           <div className="mt-4 border rounded-lg p-4">
-            <div className="font-medium mb-2">Recognition Results</div>
+            <div className="font-medium mb-2">
+              {simulationMode ? 'Simulation Result' : 'Recognition Results'}
+            </div>
+            {simulationMode ? (
+              <p className="mb-3 text-sm text-amber-700 dark:text-amber-300">
+                This is a sample match, not an AI identification. Review only; inventory creation is disabled.
+              </p>
+            ) : null}
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -529,41 +546,23 @@ export function ImageRecognitionUpload({ onItemCreated, standalone = false }: Im
           Reset
         </Button>
         
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button 
-              disabled={!recognizedData} 
-              onClick={handleCreateItem}
-            >
-              {createItemMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <Check className="mr-2 h-4 w-4" />
-                  Create Item
-                </>
-              )}
-            </Button>
-          </SheetTrigger>
-          <SheetContent>
-            <SheetHeader>
-              <SheetTitle>Item Created Successfully</SheetTitle>
-              <SheetDescription>
-                The following inventory item has been created based on image recognition:
-              </SheetDescription>
-            </SheetHeader>
-            <div className="py-4">
-              {/* This would show details of the created item */}
-              <div className="border rounded p-4 mt-4">
-                <p className="font-medium">{recognizedData?.name}</p>
-                <p className="text-sm text-muted-foreground">{recognizedData?.description}</p>
-              </div>
-            </div>
-          </SheetContent>
-        </Sheet>
+        <Button
+          disabled={!recognizedData || simulationMode || createItemMutation.isPending}
+          onClick={handleCreateItem}
+          title={simulationMode ? 'Inventory creation is disabled while recognition is in simulation mode.' : undefined}
+        >
+          {createItemMutation.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            <>
+              <Check className="mr-2 h-4 w-4" />
+              {simulationMode ? 'Create Item Unavailable' : 'Create Item'}
+            </>
+          )}
+        </Button>
       </CardFooter>
     </Card>
   );

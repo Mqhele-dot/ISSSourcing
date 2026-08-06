@@ -79,6 +79,7 @@ export default function CycleCountsPage() {
   });
   const {
     data: warehouses = [],
+    isLoading: warehousesLoading,
     isError: warehousesError,
     error: warehousesErr,
     refetch: refetchWarehouses,
@@ -283,7 +284,7 @@ export default function CycleCountsPage() {
             <Input id="cycle-zone" value={zone} onChange={(e) => setZone(e.target.value)} placeholder="Optional zone/aisle" />
           </div>
           <div className="flex items-end">
-            <Button onClick={() => createCycleCount.mutate()} disabled={createCycleCount.isPending}>
+            <Button onClick={() => createCycleCount.mutate()} disabled={createCycleCount.isPending || warehousesLoading || warehousesError || warehouses.length === 0 || warehouseId === "none"}>
               Create count
             </Button>
           </div>

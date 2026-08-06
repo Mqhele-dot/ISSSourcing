@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
@@ -66,18 +67,7 @@ export default function ProfilePage() {
   // Fetch user security preferences
   const { data: securityPreferences, isLoading: loadingPreferences } = useQuery<SecurityPreferences>({
     queryKey: ["/api/user/security-preferences"],
-    queryFn: async () => {
-      try {
-        return await requestJson<SecurityPreferences>("GET", "/api/user/security-preferences");
-      } catch (error) {
-        // Return default preferences if not set yet
-        return {
-          twoFactorEnabled: false,
-          emailNotifications: true,
-          sessionTimeout: 60
-        };
-      }
-    },
+    queryFn: () => requestJson<SecurityPreferences>("GET", "/api/user/security-preferences"),
     enabled: !!user, // Only run if user is logged in
   });
 
@@ -210,7 +200,7 @@ export default function ProfilePage() {
   // Password change mutation
   const changePasswordMutation = useMutation({
     mutationFn: async (data: z.infer<typeof userPasswordChangeSchema>) => {
-      return await requestJson("POST", "/api/user/change-password", data);
+      return await requestJson("POST", "/api/change-password", data);
     },
     onSuccess: () => {
       passwordForm.reset();
@@ -259,6 +249,12 @@ export default function ProfilePage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold tracking-tight">Profile</h1>
+        <p className="text-muted-foreground">
+          Manage your personal information and security preferences.
+        </p>
+      </div>
       <div className="flex flex-col md:flex-row md:space-x-8">
         <div className="md:w-1/4 mb-6 md:mb-0">
           <Card>
@@ -304,15 +300,11 @@ export default function ProfilePage() {
             <CardContent className="text-sm space-y-3">
               <div>
                 <div className="text-muted-foreground">Last login</div>
-                <div>Today, 8:26 AM</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Login location</div>
-                <div>San Francisco, USA</div>
+                <div>{user.lastLogin ? new Date(user.lastLogin).toLocaleString() : "Not recorded"}</div>
               </div>
               <div>
                 <div className="text-muted-foreground">Account created</div>
-                <div>January 5, 2024</div>
+                <div>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "Not recorded"}</div>
               </div>
             </CardContent>
           </Card>
@@ -667,26 +659,18 @@ export default function ProfilePage() {
               <CardContent>
                 <Form {...securityForm}>
                   <form onSubmit={handleSecurityPreferencesUpdate} className="space-y-6">
-                    <FormField
-                      control={securityForm.control}
-                      name="twoFactorEnabled"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">Two-Factor Authentication</FormLabel>
-                            <FormDescription>
-                              Enhance your account security with two-factor authentication
-                            </FormDescription>
-                          </div>
-                          <FormControl>
-                            <Switch 
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
+                    <div className="flex flex-row items-center justify-between gap-4 rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <p className="text-base font-medium">Two-Factor Authentication</p>
+                        <p className="text-sm text-muted-foreground">
+                          Status is read-only here. Setup and disabling require the verified authentication flow and
+                          cannot be changed as an ordinary preference.
+                        </p>
+                      </div>
+                      <Badge variant={securityPreferences?.twoFactorEnabled ? "default" : "secondary"}>
+                        {securityPreferences?.twoFactorEnabled ? "Enabled" : "Not enabled"}
+                      </Badge>
+                    </div>
                     
                     <FormField
                       control={securityForm.control}
