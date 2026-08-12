@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-06T19:08:21.232Z",
+  "generatedAt": "2026-08-12T15:35:36.341Z",
   "releaseStatus": "PASS",
   "summary": {
-    "uiRoutes": 83,
-    "serverRoutes": 501,
-    "mutatingRoutes": 288,
-    "clientConnections": 801,
-    "schemaTables": 72,
-    "findings": 12,
+    "uiRoutes": 84,
+    "serverRoutes": 512,
+    "mutatingRoutes": 298,
+    "clientConnections": 815,
+    "schemaTables": 77,
+    "findings": 13,
     "critical": 0,
     "high": 0
   },
@@ -17,499 +17,505 @@
       "path": "APP_ROUTES.operations.mobileHub",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 104
+      "line": 106
     },
     {
       "path": "APP_ROUTES.operations.mobileTasks",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 105
+      "line": 107
     },
     {
       "path": "APP_ROUTES.operations.mobileCountSpot",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 108
+      "line": 110
     },
     {
       "path": "/m/counts/:id/review",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 109
+      "line": 111
     },
     {
       "path": "/m/counts/:id",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 110
+      "line": 112
     },
     {
       "path": "APP_ROUTES.operations.mobileCounts",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 111
+      "line": 113
     },
     {
       "path": "APP_ROUTES.operations.mobileScan",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 112
+      "line": 114
     },
     {
       "path": "APP_ROUTES.operations.mobileApprovals",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 113
+      "line": 115
     },
     {
       "path": "APP_ROUTES.operations.mobileMore",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 114
+      "line": 116
     },
     {
       "path": "/m/receive/:po",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 115
+      "line": 117
     },
     {
       "path": "APP_ROUTES.operations.mobileReceive",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 116
+      "line": 118
     },
     {
       "path": "APP_ROUTES.operations.mobilePick",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 117
+      "line": 119
     },
     {
       "path": "APP_ROUTES.setup.product",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 119
+      "line": 121
     },
     {
       "path": "APP_ROUTES.admin.systemDiagnostics",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 120
+      "line": 122
     },
     {
       "path": "APP_ROUTES.home",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 122
+      "line": 124
     },
     {
       "path": "/get-educated/:moduleId",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 123
+      "line": 125
     },
     {
       "path": "APP_ROUTES.training.getEducated",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 124
+      "line": 126
     },
     {
       "path": "APP_ROUTES.analytics.overview",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 126
+      "line": 128
     },
     {
       "path": "APP_ROUTES.analytics.inventory",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 127
+      "line": 129
     },
     {
       "path": "APP_ROUTES.analytics.procurement",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 128
+      "line": 130
     },
     {
       "path": "APP_ROUTES.analytics.finance",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 129
+      "line": 131
     },
     {
       "path": "APP_ROUTES.analytics.logistics",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 130
+      "line": 132
     },
     {
       "path": "APP_ROUTES.analytics.reports",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 131
+      "line": 133
     },
     {
       "path": "/analytics/reports/:tab",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 132
+      "line": 134
     },
     {
       "path": "APP_ROUTES.analytics.savedReports",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 133
+      "line": 135
     },
     {
       "path": "APP_ROUTES.analytics.exportCenter",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 134
+      "line": 136
     },
     {
       "path": "APP_ROUTES.operations.mobileWorkflows",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 136
+      "line": 138
     },
     {
       "path": "APP_ROUTES.operations.root",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 137
+      "line": 139
     },
     {
       "path": "APP_ROUTES.operations.controlTower",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 138
-    },
-    {
-      "path": "APP_ROUTES.operations.logistics",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
-      "line": 139
-    },
-    {
-      "path": "`${APP_ROUTES.operations.logistics}/:id`",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
       "line": 140
     },
     {
-      "path": "APP_ROUTES.operations.exceptions",
+      "path": "APP_ROUTES.operations.fuel",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 141
     },
     {
-      "path": "`${APP_ROUTES.operations.exceptions}/:id`",
+      "path": "APP_ROUTES.operations.logistics",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 142
     },
     {
-      "path": "APP_ROUTES.inventory.warehouses",
+      "path": "`${APP_ROUTES.operations.logistics}/:id`",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 143
+    },
+    {
+      "path": "APP_ROUTES.operations.exceptions",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 144
     },
     {
-      "path": "APP_ROUTES.inventory.warehouse(\":id\")",
+      "path": "`${APP_ROUTES.operations.exceptions}/:id`",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 145
     },
     {
-      "path": "APP_ROUTES.inventory.cycleCounts",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
-      "line": 146
-    },
-    {
-      "path": "APP_ROUTES.inventory.reorder",
+      "path": "APP_ROUTES.inventory.warehouses",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 147
     },
     {
-      "path": "APP_ROUTES.inventory.barcodeScanner",
+      "path": "APP_ROUTES.inventory.warehouse(\":id\")",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 148
     },
     {
-      "path": "APP_ROUTES.inventory.warehouseOperations",
+      "path": "APP_ROUTES.inventory.cycleCounts",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 149
     },
     {
-      "path": "`${APP_ROUTES.inventory.root}/:sku`",
+      "path": "APP_ROUTES.inventory.reorder",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 150
     },
     {
-      "path": "APP_ROUTES.inventory.root",
+      "path": "APP_ROUTES.inventory.barcodeScanner",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 151
     },
     {
-      "path": "`${APP_ROUTES.procurement.sourcing}/:id`",
+      "path": "APP_ROUTES.inventory.warehouseOperations",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 152
+    },
+    {
+      "path": "`${APP_ROUTES.inventory.root}/:sku`",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 153
     },
     {
-      "path": "APP_ROUTES.procurement.sourcing",
+      "path": "APP_ROUTES.inventory.root",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 154
     },
     {
-      "path": "APP_ROUTES.procurement.orders",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
-      "line": 155
-    },
-    {
-      "path": "`${APP_ROUTES.procurement.orders}/:po`",
+      "path": "`${APP_ROUTES.procurement.sourcing}/:id`",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 156
     },
     {
-      "path": "APP_ROUTES.procurement.requisitions",
+      "path": "APP_ROUTES.procurement.sourcing",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 157
     },
     {
-      "path": "APP_ROUTES.procurement.requisitionNew",
+      "path": "APP_ROUTES.procurement.orders",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 158
     },
     {
-      "path": "APP_ROUTES.procurement.requisition(\":id\")",
+      "path": "`${APP_ROUTES.procurement.orders}/:po`",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 159
     },
     {
-      "path": "APP_ROUTES.procurement.suppliers",
+      "path": "APP_ROUTES.procurement.requisitions",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 160
     },
     {
-      "path": "APP_ROUTES.procurement.supplier(\":id\")",
+      "path": "APP_ROUTES.procurement.requisitionNew",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 161
     },
     {
-      "path": "APP_ROUTES.procurement.contracts",
+      "path": "APP_ROUTES.procurement.requisition(\":id\")",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 162
     },
     {
-      "path": "APP_ROUTES.procurement.supplierPortal",
+      "path": "APP_ROUTES.procurement.suppliers",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 163
     },
     {
-      "path": "APP_ROUTES.finance.invoices",
+      "path": "APP_ROUTES.procurement.supplier(\":id\")",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 164
+    },
+    {
+      "path": "APP_ROUTES.procurement.contracts",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 165
     },
     {
-      "path": "/finance/accounts-payable/:section",
+      "path": "APP_ROUTES.procurement.supplierPortal",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 166
     },
     {
-      "path": "APP_ROUTES.finance.accountsPayable",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
-      "line": 167
-    },
-    {
-      "path": "APP_ROUTES.finance.approvalPolicies",
+      "path": "APP_ROUTES.finance.invoices",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 168
     },
     {
-      "path": "APP_ROUTES.finance.billing",
+      "path": "/finance/accounts-payable/:section",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 169
     },
     {
+      "path": "APP_ROUTES.finance.accountsPayable",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 170
+    },
+    {
+      "path": "APP_ROUTES.finance.approvalPolicies",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 171
+    },
+    {
+      "path": "APP_ROUTES.finance.billing",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 172
+    },
+    {
       "path": "APP_ROUTES.admin.integrations",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
-      "line": 173
-    },
-    {
-      "path": "APP_ROUTES.admin.masterData",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
-      "line": 174
-    },
-    {
-      "path": "APP_ROUTES.admin.masterDataSection(\":section\")",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
-      "line": 175
-    },
-    {
-      "path": "APP_ROUTES.admin.auditLogs",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 176
     },
     {
-      "path": "APP_ROUTES.admin.documents",
+      "path": "APP_ROUTES.admin.masterData",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 177
     },
     {
-      "path": "/uploads/*",
+      "path": "APP_ROUTES.admin.masterDataSection(\":section\")",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 178
     },
     {
-      "path": "/Uploads/*",
+      "path": "APP_ROUTES.admin.auditLogs",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 179
     },
     {
-      "path": "APP_ROUTES.admin.realTimeUpdates",
+      "path": "APP_ROUTES.admin.documents",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 180
     },
     {
-      "path": "APP_ROUTES.admin.syncTest",
+      "path": "/uploads/*",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 181
     },
     {
-      "path": "APP_ROUTES.admin.syncDashboard",
+      "path": "/Uploads/*",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 182
     },
     {
-      "path": "APP_ROUTES.admin.downloads",
+      "path": "APP_ROUTES.admin.realTimeUpdates",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 183
     },
     {
-      "path": "APP_ROUTES.admin.onboarding",
+      "path": "APP_ROUTES.admin.syncTest",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 184
+    },
+    {
+      "path": "APP_ROUTES.admin.syncDashboard",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 185
+    },
+    {
+      "path": "APP_ROUTES.admin.downloads",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 186
     },
     {
-      "path": "APP_ROUTES.admin.settings",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
-      "line": 187
-    },
-    {
-      "path": "APP_ROUTES.admin.settingsSection(\":section\")",
-      "component": "unknown",
-      "file": "client/src/router.tsx",
-      "line": 188
-    },
-    {
-      "path": "APP_ROUTES.admin.userRoles",
+      "path": "APP_ROUTES.admin.onboarding",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 189
     },
     {
-      "path": "APP_ROUTES.admin.subscription",
+      "path": "APP_ROUTES.admin.settings",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 190
     },
     {
-      "path": "APP_ROUTES.admin.profile",
+      "path": "APP_ROUTES.admin.settingsSection(\":section\")",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 191
     },
     {
-      "path": "APP_ROUTES.admin.employeeProfiles",
+      "path": "APP_ROUTES.admin.userRoles",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 192
     },
     {
-      "path": "APP_ROUTES.admin.imageRecognition",
+      "path": "APP_ROUTES.admin.subscription",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 193
     },
     {
-      "path": "APP_ROUTES.admin.documentExtractor",
+      "path": "APP_ROUTES.admin.profile",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 194
     },
     {
-      "path": "APP_ROUTES.admin.documentExtractorMode(\":mode\")",
+      "path": "APP_ROUTES.admin.employeeProfiles",
       "component": "unknown",
       "file": "client/src/router.tsx",
       "line": 195
     },
     {
-      "path": "rule.path",
+      "path": "APP_ROUTES.admin.imageRecognition",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 200
+      "line": 196
+    },
+    {
+      "path": "APP_ROUTES.admin.documentExtractor",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 197
+    },
+    {
+      "path": "APP_ROUTES.admin.documentExtractorMode(\":mode\")",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 198
     },
     {
       "path": "rule.path",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 207
+      "line": 203
     },
     {
       "path": "rule.path",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 213
+      "line": 210
+    },
+    {
+      "path": "rule.path",
+      "component": "unknown",
+      "file": "client/src/router.tsx",
+      "line": 216
     },
     {
       "path": "/dev-test",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 218
+      "line": 221
     },
     {
       "path": "/auth",
       "component": "unknown",
       "file": "client/src/router.tsx",
-      "line": 219
+      "line": 222
     }
   ],
   "capabilityMap": [
@@ -1492,7 +1498,7 @@
         {
           "endpoint": "/api/inventory",
           "file": "client/src/components/command-menu.tsx",
-          "line": 103,
+          "line": 105,
           "mutation": false,
           "invalidates": false
         },
@@ -9281,6 +9287,332 @@
       "clientEntryPoints": []
     },
     {
+      "capability": "fuel.create",
+      "entryPoints": [
+        {
+          "method": "POST",
+          "route": "/api/fuel/cylinders",
+          "capability": "fuel.create",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 225,
+          "middleware": [],
+          "validator": [
+            "cylinderSchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        },
+        {
+          "method": "POST",
+          "route": "/api/fuel/deliveries",
+          "capability": "fuel.create",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 201,
+          "middleware": [],
+          "validator": [
+            "deliverySchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        },
+        {
+          "method": "POST",
+          "route": "/api/fuel/inspections",
+          "capability": "fuel.create",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 219,
+          "middleware": [],
+          "validator": [
+            "inspectionSchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        },
+        {
+          "method": "POST",
+          "route": "/api/fuel/prices",
+          "capability": "fuel.create",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 213,
+          "middleware": [],
+          "validator": [
+            "priceSchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        },
+        {
+          "method": "POST",
+          "route": "/api/fuel/pumps",
+          "capability": "fuel.create",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 189,
+          "middleware": [],
+          "validator": [
+            "pumpSchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        },
+        {
+          "method": "POST",
+          "route": "/api/fuel/readings",
+          "capability": "fuel.create",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 195,
+          "middleware": [],
+          "validator": [
+            "readingSchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        },
+        {
+          "method": "POST",
+          "route": "/api/fuel/reconciliations",
+          "capability": "fuel.create",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 207,
+          "middleware": [],
+          "validator": [
+            "reconciliationSchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        },
+        {
+          "method": "POST",
+          "route": "/api/fuel/stations",
+          "capability": "fuel.create",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 177,
+          "middleware": [],
+          "validator": [
+            "stationSchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        },
+        {
+          "method": "POST",
+          "route": "/api/fuel/tanks",
+          "capability": "fuel.create",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 183,
+          "middleware": [],
+          "validator": [
+            "tankSchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        }
+      ],
+      "clientEntryPoints": [
+        {
+          "endpoint": "/api/fuel/stations",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 141,
+          "mutation": true,
+          "invalidates": false
+        },
+        {
+          "endpoint": "/api/fuel/tanks",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 142,
+          "mutation": true,
+          "invalidates": true
+        },
+        {
+          "endpoint": "/api/fuel/pumps",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 143,
+          "mutation": true,
+          "invalidates": true
+        },
+        {
+          "endpoint": "/api/fuel/readings",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 144,
+          "mutation": true,
+          "invalidates": true
+        },
+        {
+          "endpoint": "/api/fuel/deliveries",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 145,
+          "mutation": true,
+          "invalidates": true
+        },
+        {
+          "endpoint": "/api/fuel/reconciliations",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 146,
+          "mutation": true,
+          "invalidates": true
+        },
+        {
+          "endpoint": "/api/fuel/prices",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 147,
+          "mutation": true,
+          "invalidates": true
+        },
+        {
+          "endpoint": "/api/fuel/cylinders",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 148,
+          "mutation": true,
+          "invalidates": true
+        },
+        {
+          "endpoint": "/api/fuel/inspections",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 149,
+          "mutation": true,
+          "invalidates": true
+        }
+      ]
+    },
+    {
+      "capability": "fuel.update",
+      "entryPoints": [
+        {
+          "method": "PATCH",
+          "route": "/api/fuel/cylinders/:id/status",
+          "capability": "fuel.update",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 231,
+          "middleware": [],
+          "validator": [
+            "cylinderStatusSchema"
+          ],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": true
+        }
+      ],
+      "clientEntryPoints": [
+        {
+          "endpoint": "/api/fuel/cylinders/:param/status",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 196,
+          "mutation": true,
+          "invalidates": true
+        }
+      ]
+    },
+    {
+      "capability": "fuel.read",
+      "entryPoints": [
+        {
+          "method": "GET",
+          "route": "/api/fuel/workspace",
+          "capability": "fuel.read",
+          "file": "server/modules/gas/register-gas-routes.ts",
+          "line": 173,
+          "middleware": [],
+          "validator": [],
+          "services": [],
+          "tables": [],
+          "statusChanges": [],
+          "auditEvidence": false,
+          "cacheInvalidation": false,
+          "transaction": false,
+          "idempotency": false,
+          "mutating": false
+        }
+      ],
+      "clientEntryPoints": [
+        {
+          "endpoint": "/api/fuel/workspace",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 155,
+          "mutation": false,
+          "invalidates": false
+        },
+        {
+          "endpoint": "/api/fuel/workspace",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 189,
+          "mutation": false,
+          "invalidates": true
+        },
+        {
+          "endpoint": "/api/fuel/workspace",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 190,
+          "mutation": false,
+          "invalidates": true
+        },
+        {
+          "endpoint": "/api/fuel/workspace",
+          "file": "client/src/pages/fuel-operations.tsx",
+          "line": 197,
+          "mutation": false,
+          "invalidates": false
+        }
+      ]
+    },
+    {
       "capability": "gas.read",
       "entryPoints": [
         {
@@ -9288,10 +9620,8 @@
           "route": "/api/gas/dashboard-summary",
           "capability": "gas.read",
           "file": "server/modules/gas/register-gas-routes.ts",
-          "line": 12,
-          "middleware": [
-            "auth.ensureAuthenticated"
-          ],
+          "line": 155,
+          "middleware": [],
           "validator": [],
           "services": [],
           "tables": [],
@@ -9314,14 +9644,14 @@
         {
           "endpoint": "/api/gas/dashboard-summary",
           "file": "client/src/pages/control-tower/gas-ops-card.tsx",
-          "line": 47,
+          "line": 49,
           "mutation": false,
           "invalidates": true
         },
         {
           "endpoint": "/api/gas/dashboard-summary",
           "file": "client/src/pages/control-tower/gas-ops-card.tsx",
-          "line": 69,
+          "line": 71,
           "mutation": false,
           "invalidates": true
         }
@@ -9335,10 +9665,8 @@
           "route": "/api/gas/run-compliance-alerts",
           "capability": "gas.create",
           "file": "server/modules/gas/register-gas-routes.ts",
-          "line": 21,
-          "middleware": [
-            "auth.ensureAuthenticated"
-          ],
+          "line": 163,
+          "middleware": [],
           "validator": [],
           "services": [],
           "tables": [],
@@ -10198,7 +10526,7 @@
         {
           "endpoint": "/api/inventory",
           "file": "client/src/components/command-menu.tsx",
-          "line": 103,
+          "line": 105,
           "mutation": false,
           "invalidates": false
         },
@@ -12726,7 +13054,7 @@
         {
           "endpoint": "/api/notifications",
           "file": "client/src/pages/control-tower/gas-ops-card.tsx",
-          "line": 70,
+          "line": 72,
           "mutation": false,
           "invalidates": false
         }
@@ -13389,7 +13717,7 @@
         {
           "endpoint": "/api/procurement/purchase-orders/records",
           "file": "client/src/components/command-menu.tsx",
-          "line": 105,
+          "line": 107,
           "mutation": false,
           "invalidates": false
         },
@@ -14773,14 +15101,14 @@
         {
           "endpoint": "/api/release-scope",
           "file": "client/src/components/sidebar.tsx",
-          "line": 81,
+          "line": 82,
           "mutation": false,
           "invalidates": false
         },
         {
           "endpoint": "/api/release-scope",
           "file": "client/src/components/sidebar.tsx",
-          "line": 82,
+          "line": 83,
           "mutation": false,
           "invalidates": false
         }
@@ -15947,7 +16275,7 @@
         {
           "endpoint": "/api/suppliers",
           "file": "client/src/components/command-menu.tsx",
-          "line": 104,
+          "line": 106,
           "mutation": false,
           "invalidates": false
         },
@@ -16566,7 +16894,7 @@
         {
           "endpoint": "/api/suppliers",
           "file": "client/src/components/command-menu.tsx",
-          "line": 104,
+          "line": 106,
           "mutation": false,
           "invalidates": false
         },
@@ -19821,7 +20149,7 @@
         {
           "endpoint": "/api/warehouses",
           "file": "client/src/components/command-menu.tsx",
-          "line": 106,
+          "line": 108,
           "mutation": false,
           "invalidates": false
         },
@@ -20110,7 +20438,7 @@
         {
           "endpoint": "/api/warehouses",
           "file": "client/src/components/command-menu.tsx",
-          "line": 106,
+          "line": 108,
           "mutation": false,
           "invalidates": false
         },
@@ -21234,28 +21562,28 @@
     {
       "endpoint": "/api/inventory",
       "file": "client/src/components/command-menu.tsx",
-      "line": 103,
+      "line": 105,
       "mutation": false,
       "invalidates": false
     },
     {
       "endpoint": "/api/suppliers",
       "file": "client/src/components/command-menu.tsx",
-      "line": 104,
+      "line": 106,
       "mutation": false,
       "invalidates": false
     },
     {
       "endpoint": "/api/procurement/purchase-orders/records",
       "file": "client/src/components/command-menu.tsx",
-      "line": 105,
+      "line": 107,
       "mutation": false,
       "invalidates": false
     },
     {
       "endpoint": "/api/warehouses",
       "file": "client/src/components/command-menu.tsx",
-      "line": 106,
+      "line": 108,
       "mutation": false,
       "invalidates": false
     },
@@ -21766,14 +22094,14 @@
     {
       "endpoint": "/api/release-scope",
       "file": "client/src/components/sidebar.tsx",
-      "line": 81,
+      "line": 82,
       "mutation": false,
       "invalidates": false
     },
     {
       "endpoint": "/api/release-scope",
       "file": "client/src/components/sidebar.tsx",
-      "line": 82,
+      "line": 83,
       "mutation": false,
       "invalidates": false
     },
@@ -23250,21 +23578,21 @@
     {
       "endpoint": "/api/gas/dashboard-summary",
       "file": "client/src/pages/control-tower/gas-ops-card.tsx",
-      "line": 47,
+      "line": 49,
       "mutation": false,
       "invalidates": true
     },
     {
       "endpoint": "/api/gas/dashboard-summary",
       "file": "client/src/pages/control-tower/gas-ops-card.tsx",
-      "line": 69,
+      "line": 71,
       "mutation": false,
       "invalidates": true
     },
     {
       "endpoint": "/api/notifications",
       "file": "client/src/pages/control-tower/gas-ops-card.tsx",
-      "line": 70,
+      "line": 72,
       "mutation": false,
       "invalidates": false
     },
@@ -23637,6 +23965,104 @@
       "file": "client/src/pages/export-center.tsx",
       "line": 159,
       "mutation": true,
+      "invalidates": false
+    },
+    {
+      "endpoint": "/api/fuel/stations",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 141,
+      "mutation": true,
+      "invalidates": false
+    },
+    {
+      "endpoint": "/api/fuel/tanks",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 142,
+      "mutation": true,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/pumps",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 143,
+      "mutation": true,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/readings",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 144,
+      "mutation": true,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/deliveries",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 145,
+      "mutation": true,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/reconciliations",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 146,
+      "mutation": true,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/prices",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 147,
+      "mutation": true,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/cylinders",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 148,
+      "mutation": true,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/inspections",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 149,
+      "mutation": true,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/workspace",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 155,
+      "mutation": false,
+      "invalidates": false
+    },
+    {
+      "endpoint": "/api/fuel/workspace",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 189,
+      "mutation": false,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/workspace",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 190,
+      "mutation": false,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/cylinders/:param/status",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 196,
+      "mutation": true,
+      "invalidates": true
+    },
+    {
+      "endpoint": "/api/fuel/workspace",
+      "file": "client/src/pages/fuel-operations.tsx",
+      "line": 197,
+      "mutation": false,
       "invalidates": false
     },
     {
@@ -27070,6 +27496,36 @@
       "table": "gas_exchange_transactions",
       "file": "shared/schema.ts",
       "line": 3881
+    },
+    {
+      "symbol": "fuelTankReadings",
+      "table": "fuel_tank_readings",
+      "file": "shared/schema.ts",
+      "line": 3948
+    },
+    {
+      "symbol": "fuelDeliveries",
+      "table": "fuel_deliveries",
+      "file": "shared/schema.ts",
+      "line": 3961
+    },
+    {
+      "symbol": "fuelShiftReconciliations",
+      "table": "fuel_shift_reconciliations",
+      "file": "shared/schema.ts",
+      "line": 3976
+    },
+    {
+      "symbol": "fuelPrices",
+      "table": "fuel_prices",
+      "file": "shared/schema.ts",
+      "line": 3994
+    },
+    {
+      "symbol": "fuelSafetyInspections",
+      "table": "fuel_safety_inspections",
+      "file": "shared/schema.ts",
+      "line": 4006
     }
   ],
   "findings": [
@@ -27607,15 +28063,62 @@
       ],
       "canonicalPath": "fetchPurchaseOrdersPageEnvelope -> GET /api/v2/procurement/purchase-orders with receivable statuses",
       "disposition": "resolved; retain paginated v2 path and update the release contract when the canonical client abstraction changes"
+    },
+    {
+      "id": "LOGIC-013",
+      "severity": "info",
+      "classification": "resolved control",
+      "capability": "master_data.govern",
+      "entryPoints": [
+        "Admin Master Data page header and governance expander",
+        "release control-plane screen contract"
+      ],
+      "locations": [
+        "client/src/pages/master-data.tsx:1705",
+        "client/src/pages/master-data.tsx:1747",
+        "scripts/test-control-plane-screen-contracts.mjs:57"
+      ],
+      "routes": [
+        "/admin/master-data",
+        "/api/mdm/control-centre/health",
+        "/api/mdm/data-quality/issues"
+      ],
+      "permissions": [
+        "master-data read/steward/approver/admin controls",
+        "release-time source contract"
+      ],
+      "services": [
+        "MasterDataPage",
+        "MDM control-centre and data-quality services"
+      ],
+      "tables": [
+        "mdm_change_requests",
+        "master-data domain tables"
+      ],
+      "expectedRule": "The control-plane release contract verifies stable governance behavior and connections without requiring obsolete presentation copy.",
+      "actualBehavior": "The page title was simplified from Master Data & Control Centre to Master Data while the governed controls remained available under the explicit Governance and data quality expander. The stale contract rejected the removed heading; it now verifies both the current page title and the still-visible governance entry point.",
+      "rationale": "A copy-only assertion does not prove the control plane is connected and can falsely block a safe information-architecture improvement; the contract should anchor the governance affordance and API evidence.",
+      "impact": "The stale assertion blocked release verification despite the maker-checker, dependency, quality, permission, and invalidation evidence remaining present.",
+      "reproduction": [
+        "Run npm run verify:release after the Master Data header simplification",
+        "Observe test:control-plane-screen-contracts require the retired heading",
+        "Confirm the Governance and data quality expander and MDM API connections remain in the page"
+      ],
+      "testEvidence": [
+        "verify:release: stale Master Data heading contract reproduced",
+        "test:control-plane-screen-contracts: current title plus governance entry point"
+      ],
+      "canonicalPath": "/admin/master-data -> Governance and data quality -> governed /api/mdm routes",
+      "disposition": "resolved; retain the simplified page title and behavior-oriented contract"
     }
   ],
   "runtimeEvidence": {
     "schemaVersion": 1,
     "suite": "cross-path-runtime",
     "passed": true,
-    "completedAt": "2026-08-06T18:53:02.743Z",
+    "completedAt": "2026-08-06T19:59:42.918Z",
     "database": "isssourcing_logic_test_20260806_11",
-    "baseUrl": "http://127.0.0.1:5103",
+    "baseUrl": "http://127.0.0.1:5106",
     "proofs": [
       "duplicate and legacy paths enforce the permission contracts locked by the AST suite",
       "AP admin overrides use authenticated actor role plus an explicit reason",

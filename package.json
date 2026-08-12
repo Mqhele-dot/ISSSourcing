@@ -118,6 +118,7 @@
     "test:global-search-runtime": "tsx scripts/test-global-search-runtime.ts",
     "test:inventory-reliability": "node scripts/test-inventory-reliability-contracts.mjs",
     "test:fuel-operations": "tsx scripts/test-fuel-operations.ts",
+    "test:guided-learning": "tsx scripts/test-guided-learning.ts",
     "test:phone-operations-reliability": "tsx scripts/test-phone-operations-reliability.ts",
     "test:access-diagnostics-document-upgrade": "tsx scripts/test-access-diagnostics-document-upgrade.ts",
     "test:documents-hardening": "tsx scripts/test-documents-hardening.ts",

@@ -2,6 +2,7 @@
 import { useRef, useLayoutEffect } from "react";
 import { useTutorial } from "@/contexts/tutorial-context";
 import { FULL_APP_TOUR_STEPS, PAGE_TOUR_DEFINITIONS } from "@/components/tutorial/tutorial-page-tours-data";
+import { buildGuidedLearningTour, GUIDED_LEARNING_TOPICS } from "@/lib/training/guided-learning";
 
 /**
  * Component to register all available tutorials in the application.
@@ -399,6 +400,9 @@ export function TutorialSteps() {
     registerTutorial("full-app", FULL_APP_TOUR_STEPS);
     for (const [tourId, steps] of Object.entries(PAGE_TOUR_DEFINITIONS)) {
       registerTutorial(tourId, steps);
+    }
+    for (const topic of GUIDED_LEARNING_TOPICS) {
+      registerTutorial(topic.tourId, buildGuidedLearningTour(topic));
     }
 
     // Setup wizard: task-oriented onboarding flow

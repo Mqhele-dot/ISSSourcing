@@ -7,12 +7,16 @@ import { Label } from "@/components/ui/label";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { getTrainingModuleById } from "@/lib/training/training-content";
 import { useTrainingProgress } from "@/hooks/use-training-progress";
+import { useTutorial } from "@/contexts/tutorial-context";
+import { getGuidedLearningTopicForRoute } from "@/lib/training/guided-learning";
+import { AlertTriangle, CheckCircle2, PlayCircle } from "lucide-react";
 
 export default function GetEducatedModulePage() {
   const [, params] = useRoute<{ moduleId: string }>("/get-educated/:moduleId");
   const moduleId = params?.moduleId ? decodeURIComponent(params.moduleId) : "";
   const mod = moduleId ? getTrainingModuleById(moduleId) : undefined;
-  const { recordLessonOpened, recordQuizCompleted, toggleModuleUnderstood, progress, isModuleUnderstood } =
+  const { startTutorial } = useTutorial();
+  const { recordLessonOpened, recordQuizCompleted, recordGuidedTopicStarted, toggleModuleUnderstood, progress, isModuleUnderstood } =
     useTrainingProgress();
   const [quizSelections, setQuizSelections] = useState<Record<number, string>>({});
   const [showQuizResult, setShowQuizResult] = useState<Record<number, "correct" | "wrong" | null>>({});
@@ -24,6 +28,7 @@ export default function GetEducatedModulePage() {
 
   const quizzes = mod?.quickQuiz ?? [];
   const understood = mod ? isModuleUnderstood(mod.id) : false;
+  const guidedTopic = mod ? getGuidedLearningTopicForRoute(mod.route) : undefined;
 
   if (!moduleId) {
     return <Redirect to={APP_ROUTES.training.getEducated} />;
@@ -71,6 +76,18 @@ export default function GetEducatedModulePage() {
           <Button size="sm" asChild>
             <Link href={mod.route}>Go to this module</Link>
           </Button>
+          {guidedTopic ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                if (startTutorial(guidedTopic.tourId)) recordGuidedTopicStarted(guidedTopic.id);
+              }}
+              data-testid="training-guided-tour-button"
+            >
+              <PlayCircle className="mr-2 h-4 w-4" />Tour this tab
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="sm"
@@ -107,6 +124,35 @@ export default function GetEducatedModulePage() {
         <h2 className="text-lg font-medium">What decisions does it support?</h2>
         <p className="text-muted-foreground">{mod.decisionsSupported}</p>
       </section>
+
+      {guidedTopic ? (
+        <Card className="border-primary/25 bg-primary/5" data-testid="training-tab-instructions">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Instructions for the live tab</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-5 text-sm md:grid-cols-2">
+            <div>
+              <p className="flex items-center gap-2 font-medium"><CheckCircle2 className="h-4 w-4 text-primary" />Working sequence</p>
+              <ol className="mt-2 list-decimal space-y-2 pl-5 text-muted-foreground">
+                {guidedTopic.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
+              </ol>
+            </div>
+            <div>
+              <p className="flex items-center gap-2 font-medium"><AlertTriangle className="h-4 w-4 text-amber-600" />Control check</p>
+              <p className="mt-2 text-muted-foreground">{guidedTopic.watchFor}</p>
+              <Button
+                type="button"
+                className="mt-4"
+                onClick={() => {
+                  if (startTutorial(guidedTopic.tourId)) recordGuidedTopicStarted(guidedTopic.id);
+                }}
+              >
+                <PlayCircle className="mr-2 h-4 w-4" />Show me on the live tab
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <section className="space-y-2 text-sm">
         <h2 className="text-lg font-medium">Key terms</h2>
@@ -209,7 +255,7 @@ export default function GetEducatedModulePage() {
 
       <p className="text-xs text-muted-foreground">
         Local progress: {progress.lessonsOpened.length} lesson(s) opened | {progress.quizzesCompleted.length} quiz item(s) |{" "}
-        {progress.markedUnderstood.length} understood.
+        {progress.markedUnderstood.length} understood | {progress.guidedTopicsStarted.length} guided topic(s) started.
       </p>
 
       <div className="flex flex-wrap gap-2 border-t pt-6">

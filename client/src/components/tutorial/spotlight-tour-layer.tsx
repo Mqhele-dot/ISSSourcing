@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useLayoutEffect, useState, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
@@ -26,15 +26,55 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 
-function tooltipStyle(rect: DOMRect | null, placement: TourPlacement): CSSProperties {
+type TooltipSize = { width: number; height: number };
+
+export function getSpotlightTooltipPosition(
+  rect: Pick<DOMRect, "top" | "right" | "bottom" | "left" | "width" | "height"> | null,
+  placement: TourPlacement,
+  viewport: { width: number; height: number },
+  tooltip: TooltipSize,
+): { left: number; top: number; horizontalTransform: boolean } | null {
   const margin = 12;
-  const width = 340;
+  const width = Math.min(tooltip.width, Math.max(0, viewport.width - margin * 2));
+  const height = Math.min(tooltip.height, Math.max(0, viewport.height - margin * 2));
+  if (!rect) return null;
+
+  const centeredLeft = clamp(rect.left + rect.width / 2, margin + width / 2, viewport.width - width / 2 - margin);
+  const clampTop = (top: number) => clamp(top, margin, Math.max(margin, viewport.height - height - margin));
+  const fitsBelow = rect.bottom + margin + height <= viewport.height - margin;
+  const fitsAbove = rect.top - margin - height >= margin;
+
+  if (placement === "bottom" || placement === "top") {
+    const preferBelow = placement === "bottom";
+    const useBelow = preferBelow ? fitsBelow || !fitsAbove : !fitsAbove && fitsBelow;
+    const desiredTop = useBelow ? rect.bottom + margin : rect.top - margin - height;
+    return { left: centeredLeft, top: clampTop(desiredTop), horizontalTransform: true };
+  }
+
+  const centeredTop = clampTop(rect.top + rect.height / 2 - height / 2);
+  const fitsLeft = rect.left - margin - width >= margin;
+  const fitsRight = rect.right + margin + width <= viewport.width - margin;
+  const preferLeft = placement === "left";
+  const useLeft = preferLeft ? fitsLeft || !fitsRight : !fitsRight && fitsLeft;
+  const desiredLeft = useLeft ? rect.left - margin - width : rect.right + margin;
+  return {
+    left: clamp(desiredLeft, margin, Math.max(margin, viewport.width - width - margin)),
+    top: centeredTop,
+    horizontalTransform: false,
+  };
+}
+
+function tooltipStyle(rect: DOMRect | null, placement: TourPlacement, tooltipSize: TooltipSize): CSSProperties {
+  const margin = 12;
+  const width = Math.min(340, Math.max(0, (typeof window !== "undefined" ? window.innerWidth : 1200) - margin * 2));
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
   const base: CSSProperties = {
     position: "fixed",
     width,
     maxWidth: "calc(100vw - 24px)",
+    maxHeight: "calc(100vh - 24px)",
+    overflowY: "auto",
     zIndex: OVERLAY_Z + 2,
   };
   if (!rect) {
@@ -45,35 +85,18 @@ function tooltipStyle(rect: DOMRect | null, placement: TourPlacement): CSSProper
       transform: "translate(-50%, -50%)",
     };
   }
-  if (placement === "bottom") {
-    return {
-      ...base,
-      left: clamp(rect.left + rect.width / 2, margin + width / 2, vw - width / 2 - margin),
-      top: rect.bottom + margin,
-      transform: "translate(-50%, 0)",
-    };
-  }
-  if (placement === "top") {
-    return {
-      ...base,
-      left: clamp(rect.left + rect.width / 2, margin + width / 2, vw - width / 2 - margin),
-      top: rect.top - margin,
-      transform: "translate(-50%, -100%)",
-    };
-  }
-  if (placement === "left") {
-    return {
-      ...base,
-      left: clamp(rect.left - width - margin, margin, vw - width - margin),
-      top: clamp(rect.top + rect.height / 2, margin + 80, vh - margin),
-      transform: "translate(0, -50%)",
-    };
-  }
+  const position = getSpotlightTooltipPosition(
+    rect,
+    placement,
+    { width: vw, height: vh },
+    { width, height: tooltipSize.height || 220 },
+  );
+  if (!position) return base;
   return {
     ...base,
-    left: clamp(rect.right + margin, margin, vw - width - margin),
-    top: clamp(rect.top + rect.height / 2, margin + 80, vh - margin),
-    transform: "translate(0, -50%)",
+    left: position.left,
+    top: position.top,
+    transform: position.horizontalTransform ? "translateX(-50%)" : undefined,
   };
 }
 
@@ -93,9 +116,27 @@ export function SpotlightTourLayer({
   onDismiss,
 }: Props) {
   const [mounted, setMounted] = useState(false);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const [tooltipSize, setTooltipSize] = useState<TooltipSize>({ width: 340, height: 220 });
   useLayoutEffect(() => {
     setMounted(true);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    const node = tooltipRef.current;
+    if (!node) return;
+    const update = () => {
+      const next = { width: node.offsetWidth, height: node.offsetHeight };
+      setTooltipSize((current) =>
+        Math.abs(current.width - next.width) < 1 && Math.abs(current.height - next.height) < 1 ? current : next,
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [mounted, title, description, stepIndex]);
 
   if (!mounted || typeof document === "undefined") return null;
 
@@ -141,8 +182,9 @@ export function SpotlightTourLayer({
       )}
 
       <Card
+        ref={tooltipRef}
         className="pointer-events-auto shadow-xl border-primary/20"
-        style={tooltipStyle(rect, placement)}
+        style={tooltipStyle(rect, placement, tooltipSize)}
         role="dialog"
         aria-modal="true"
         aria-labelledby="tutorial-spotlight-title"

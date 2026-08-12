@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getTrainingProgress,
+  recordGuidedTopicStarted as persistGuidedTopicStarted,
   recordLessonOpened as persistLessonOpened,
   recordQuizCompleted as persistQuizCompleted,
   toggleModuleUnderstood as persistToggleUnderstood,
@@ -45,6 +46,14 @@ export function useTrainingProgress() {
     [refresh],
   );
 
+  const recordGuidedTopicStarted = useCallback(
+    (topicId: string) => {
+      persistGuidedTopicStarted(topicId);
+      refresh();
+    },
+    [refresh],
+  );
+
   const toggleModuleUnderstood = useCallback(
     (moduleId: string) => {
       const on = persistToggleUnderstood(moduleId);
@@ -61,9 +70,10 @@ export function useTrainingProgress() {
       refreshProgress: refresh,
       recordLessonOpened,
       recordQuizCompleted,
+      recordGuidedTopicStarted,
       toggleModuleUnderstood,
       isModuleUnderstood: (moduleId: string) => progress.markedUnderstood.includes(moduleId),
     }),
-    [progress, refresh, recordLessonOpened, recordQuizCompleted, toggleModuleUnderstood],
+    [progress, refresh, recordLessonOpened, recordQuizCompleted, recordGuidedTopicStarted, toggleModuleUnderstood],
   );
 }

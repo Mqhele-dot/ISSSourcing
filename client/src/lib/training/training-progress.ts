@@ -6,12 +6,17 @@ export type TrainingProgressState = {
   lessonsOpened: string[];
   quizzesCompleted: string[];
   markedUnderstood: string[];
+  guidedTopicsStarted: string[];
   updatedAt: string;
 };
 
+function emptyProgress(): TrainingProgressState {
+  return { lessonsOpened: [], quizzesCompleted: [], markedUnderstood: [], guidedTopicsStarted: [], updatedAt: new Date().toISOString() };
+}
+
 function read(): TrainingProgressState {
   if (typeof localStorage === "undefined") {
-    return { lessonsOpened: [], quizzesCompleted: [], markedUnderstood: [], updatedAt: new Date().toISOString() };
+    return emptyProgress();
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -21,10 +26,11 @@ function read(): TrainingProgressState {
       lessonsOpened: Array.isArray(p.lessonsOpened) ? p.lessonsOpened : [],
       quizzesCompleted: Array.isArray(p.quizzesCompleted) ? p.quizzesCompleted : [],
       markedUnderstood: Array.isArray(p.markedUnderstood) ? p.markedUnderstood : [],
+      guidedTopicsStarted: Array.isArray(p.guidedTopicsStarted) ? p.guidedTopicsStarted : [],
       updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : new Date().toISOString(),
     };
   } catch {
-    return { lessonsOpened: [], quizzesCompleted: [], markedUnderstood: [], updatedAt: new Date().toISOString() };
+    return emptyProgress();
   }
 }
 
@@ -50,6 +56,14 @@ export function recordQuizCompleted(moduleId: string, questionIndex: number): vo
   const s = read();
   if (!s.quizzesCompleted.includes(key)) {
     s.quizzesCompleted = [...s.quizzesCompleted, key];
+    write(s);
+  }
+}
+
+export function recordGuidedTopicStarted(topicId: string): void {
+  const s = read();
+  if (!s.guidedTopicsStarted.includes(topicId)) {
+    s.guidedTopicsStarted = [...s.guidedTopicsStarted, topicId];
     write(s);
   }
 }
