@@ -13,7 +13,16 @@ export type EmitNotificationPayload = {
   body?: string;
   entityType?: string;
   entityId?: number;
+  targetPath?: string;
+  findingCode?: string;
 };
+
+function safeInternalTargetPath(value: string | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.includes("\\") || /[\r\n]/.test(trimmed)) return null;
+  return trimmed;
+}
 
 async function upsertInAppNotification(payload: EmitNotificationPayload): Promise<{ created: boolean }> {
   const organizationId = getActiveOrganizationId();
@@ -46,6 +55,8 @@ async function upsertInAppNotification(payload: EmitNotificationPayload): Promis
         body: payload.body ?? null,
         entityType: payload.entityType ?? null,
         entityId: payload.entityId ?? null,
+        targetPath: safeInternalTargetPath(payload.targetPath),
+        findingCode: payload.findingCode ?? null,
         occurrenceCount: sql`${notifications.occurrenceCount} + 1`,
         lastOccurredAt: new Date(),
         readAt: null,
@@ -68,6 +79,8 @@ async function upsertInAppNotification(payload: EmitNotificationPayload): Promis
     body: payload.body ?? null,
     entityType: payload.entityType ?? null,
     entityId: payload.entityId ?? null,
+    targetPath: safeInternalTargetPath(payload.targetPath),
+    findingCode: payload.findingCode ?? null,
     occurrenceCount: 1,
     lastOccurredAt: new Date(),
   } as typeof notifications.$inferInsert);

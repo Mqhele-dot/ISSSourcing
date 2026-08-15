@@ -93,6 +93,8 @@ export type InventoryItem = InventoryListItem;
 export type InventoryDetail = {
   item: InventoryListItem;
   positions: Array<{
+    warehouseId: number;
+    warehouseName: string;
     location: string;
     onHand: number;
     allocated: number;
@@ -123,6 +125,10 @@ export type InventoryDetailBySku = {
   summary: { onHand: number; allocated: number; available: number };
   positions: InventoryDetail["positions"];
   movements: InventoryDetail["movements"];
+  warehouses: Array<{ id: number; name: string }>;
+  warehouseQuantity: number;
+  unassignedQuantity: number;
+  quantityMismatch: boolean;
   location?: string | null;
 };
 
@@ -135,6 +141,10 @@ export type PurchaseOrderListItem = {
   requestedDate: string | null;
   createdAt: string | null;
   totalAmount: number;
+  currencyCode?: string;
+  reportingCurrencyCode?: string;
+  reportingExchangeRate?: number | null;
+  reportingTotal?: number | null;
   linesCount: number;
   qtyOrdered: number;
   qtyReceived: number;
@@ -190,6 +200,10 @@ export type PurchaseOrderDetail = {
   requestedDate: string | null;
   createdAt: string | null;
   totalAmount: number;
+  currencyCode: string;
+  reportingCurrencyCode: string;
+  reportingExchangeRate: number | null;
+  reportingTotal: number | null;
   lines: PurchaseOrderDetailLine[];
   shipments: PurchaseOrderShipment[];
   progress: {
@@ -456,9 +470,15 @@ export type ControlTowerDashboardData = {
 export type ActivityItem = ControlTowerOverview["activity"][number];
 
 export type GasDashboardSummary = {
+  state: "ready" | "setup_required" | "degraded";
   productCount: number;
+  stationCount: number;
   openExchanges: number;
   profilesDueForTest30d: number;
+  channels: {
+    fuel: "ready" | "setup_required";
+    lpGas: "ready" | "degraded";
+  };
 };
 
 export type GasComplianceAlertsResult = {
@@ -500,6 +520,8 @@ export type ActivityRecord = {
 };
 
 export type DemoWalkthroughResult = {
+  requestId: string;
+  prepared: { organizationId: number; createdPo: boolean; refreshedExisting: boolean };
   steps: Array<{
     id: string;
     label: string;

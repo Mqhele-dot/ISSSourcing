@@ -39,6 +39,7 @@ type RequisitionLinesEditorProps = {
   exchangeRateToZar: number;
   reportingCurrencyCode: string;
   fieldError?: string;
+  rules?: { requiresCostCentre?: boolean; requiresTaxCode?: boolean };
   onAddRow: () => void;
   onRemoveRow: (idx: number) => void;
   onUpdateRow: (idx: number, field: keyof ReqLineDraft, value: number | string | boolean | null) => void;
@@ -56,6 +57,7 @@ export function RequisitionLinesEditor({
   exchangeRateToZar,
   reportingCurrencyCode,
   fieldError,
+  rules,
   onAddRow,
   onRemoveRow,
   onUpdateRow,
@@ -101,7 +103,11 @@ export function RequisitionLinesEditor({
               : null,
           ].filter(Boolean);
           return (
-          <div key={lineKey} className="grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(240px,1.5fr)_92px_140px_140px_140px_160px_44px]" data-testid={`requisition-line-row-${lineKey}`}>
+          <div
+            key={lineKey}
+            className="grid min-w-0 gap-4 rounded-md border p-4 lg:grid-cols-2 xl:grid-cols-[minmax(260px,1.7fr)_minmax(84px,.55fr)_minmax(130px,.85fr)_minmax(130px,.85fr)_minmax(130px,.85fr)_minmax(180px,1fr)_40px]"
+            data-testid={`requisition-line-row-${lineKey}`}
+          >
             <div className="space-y-2">
               <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1" aria-label={`Line ${idx + 1} type`}>
                 {(["CATALOG", "NON_STOCK", "SERVICE"] as const).map((type) => (
@@ -168,7 +174,7 @@ export function RequisitionLinesEditor({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor={"req-uom-" + idx}>Purchase UOM</Label>
+              <Label htmlFor={"req-uom-" + idx}>Purchase UOM *</Label>
               <SearchableRecordCombobox
                 value={item.unitOfMeasureId ? String(item.unitOfMeasureId) : ""}
                 onValueChange={(value) => onUpdateRow(idx, "unitOfMeasureId", Number(value))}
@@ -201,7 +207,7 @@ export function RequisitionLinesEditor({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor={"req-tax-" + idx}>Tax code</Label>
+              <Label htmlFor={"req-tax-" + idx}>Tax code{rules?.requiresTaxCode ? " *" : ""}</Label>
               <SearchableRecordCombobox
                 value={item.taxCodeId ? String(item.taxCodeId) : ""}
                 onValueChange={(value) => onUpdateRow(idx, "taxCodeId", Number(value))}
@@ -231,13 +237,13 @@ export function RequisitionLinesEditor({
                   value={item.costCentreId ? String(item.costCentreId) : ""}
                   onValueChange={(value) => onUpdateRow(idx, "costCentreId", value === "__none__" ? null : Number(value))}
                   options={[
-                    { value: "__none__", label: "No cost centre" },
+                    ...(rules?.requiresCostCentre ? [] : [{ value: "__none__", label: "No cost centre" }]),
                     ...costCentres.filter((costCentre) => costCentre.active !== false).map((costCentre) => ({
                       value: String(costCentre.id),
                       label: `${costCentre.code} - ${costCentre.name}`,
                     })),
                   ]}
-                  placeholder="Cost centre"
+                  placeholder={rules?.requiresCostCentre ? "Cost centre *" : "Cost centre"}
                   searchPlaceholder="Search cost centre..."
                   disabled={readOnly}
                   ariaLabel={"Select cost centre for line " + (idx + 1)}
@@ -252,6 +258,7 @@ export function RequisitionLinesEditor({
               <Button
                 variant="ghost"
                 size="icon"
+                className="justify-self-end self-start lg:col-span-2 xl:col-span-1"
                 onClick={() => onRemoveRow(idx)}
                 aria-label={"Remove item line " + (idx + 1)}
               >
@@ -259,7 +266,7 @@ export function RequisitionLinesEditor({
               </Button>
             ) : null}
             {warnings.length > 0 ? (
-              <div className="md:col-span-7 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <div className="lg:col-span-2 xl:col-span-7 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 {warnings.join(" ")}
               </div>
             ) : null}

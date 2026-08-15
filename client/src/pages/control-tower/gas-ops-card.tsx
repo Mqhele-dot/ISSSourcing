@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Flame, Loader2 } from "lucide-react";
+import { AlertTriangle, Flame, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import {
   ApiError,
@@ -126,6 +126,21 @@ export function GasOpsCard() {
 
   const s = gasState.data.summary;
 
+  if (s.state === "setup_required") {
+    return (
+      <Card className="border-dashed" data-testid="gas-ops-setup-required">
+        <CardHeader className="flex flex-row items-center gap-2 pb-2">
+          <Flame className="h-4 w-4 text-orange-600" />
+          <CardTitle className="text-sm font-medium">Fuel Operations setup required</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>Add at least one active fuel product and station before operational totals can be shown.</p>
+          <Button asChild type="button" variant="secondary" size="sm"><Link href={APP_ROUTES.operations.fuel}>Open setup</Link></Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card data-tour="control-tower-gas">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
@@ -156,6 +171,11 @@ export function GasOpsCard() {
         </Button>
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-3 text-sm">
+        {s.state === "degraded" ? (
+          <div className="col-span-full flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+            <AlertTriangle className="h-4 w-4" /> Fuel totals are current; optional LP-gas compliance data is unavailable.
+          </div>
+        ) : null}
         <div>
           <p className="text-xs text-muted-foreground">Products</p>
           <p className="text-lg font-semibold tabular-nums">{s.productCount}</p>

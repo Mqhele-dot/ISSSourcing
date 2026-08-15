@@ -15,15 +15,21 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { Capture, Supplier } from "./types";
+import { SearchableRecordCombobox } from "@/components/searchable-record-combobox";
+import type { ApPage, Capture, Supplier } from "./types";
 import type { ApCapturePayload } from "./use-ap-workspace-mutations";
 import type { UseMutationResult } from "@tanstack/react-query";
 
 type Props = {
   suppliers: Supplier[];
   captures: Capture[];
+  capturePage: ApPage<Capture>;
+  captureQuery: string;
+  onCaptureQueryChange: (value: string) => void;
+  onCapturePageChange: (page: number) => void;
   captureSupplierId: string;
   setCaptureSupplierId: (v: string) => void;
+  onSupplierSearchChange: (value: string) => void;
   captureSource: string;
   setCaptureSource: (v: string) => void;
   captureInvoiceNumber: string;
@@ -44,8 +50,13 @@ type Props = {
 export function ApIntakePanel({
   suppliers,
   captures,
+  capturePage,
+  captureQuery,
+  onCaptureQueryChange,
+  onCapturePageChange,
   captureSupplierId,
   setCaptureSupplierId,
+  onSupplierSearchChange,
   captureSource,
   setCaptureSource,
   captureInvoiceNumber,
@@ -86,19 +97,17 @@ export function ApIntakePanel({
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Supplier</Label>
-            <Select value={captureSupplierId} onValueChange={setCaptureSupplierId}>
-              <SelectTrigger aria-invalid={intakeErrors.some((e) => e.includes("supplier"))}>
-                <SelectValue placeholder="Choose supplier" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Choose supplier</SelectItem>
-                {suppliers.map((supplier) => (
-                  <SelectItem key={supplier.id} value={String(supplier.id)}>
-                    {supplier.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableRecordCombobox
+              value={captureSupplierId}
+              onValueChange={setCaptureSupplierId}
+              onSearchChange={onSupplierSearchChange}
+              serverFiltered
+              maxSuggestions={25}
+              ariaLabel="Supplier for invoice capture"
+              placeholder="Choose supplier"
+              searchPlaceholder="Search suppliers"
+              options={[{ value: "none", label: "Choose supplier" }, ...suppliers.map((supplier) => ({ value: String(supplier.id), label: supplier.name }))]}
+            />
           </div>
           <div className="space-y-2">
             <Label>Source</Label>
@@ -163,6 +172,10 @@ export function ApIntakePanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          <div className="mb-4">
+            <Label htmlFor="capture-search" className="sr-only">Search invoice captures</Label>
+            <Input id="capture-search" value={captureQuery} onChange={(event) => onCaptureQueryChange(event.target.value)} placeholder="Search invoice, supplier, or source" />
+          </div>
           {captures.length === 0 ? (
             <p className="text-sm text-muted-foreground">No AP captures staged yet.</p>
           ) : (
@@ -209,8 +222,26 @@ export function ApIntakePanel({
               </TableBody>
             </Table>
           )}
+          {capturePage.total > 0 ? <CapturePageControls page={capturePage} onPage={onCapturePageChange} /> : null}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function CapturePageControls({ page, onPage }: { page: ApPage<Capture>; onPage: (page: number) => void }) {
+  const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
+  const first = page.total === 0 ? 0 : (page.page - 1) * page.pageSize + 1;
+  const last = Math.min(page.total, page.page * page.pageSize);
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <span className="text-muted-foreground">{first}–{last} of {page.total} captures</span>
+      <div className="flex flex-wrap gap-2" aria-label="Capture pagination">
+        <Button type="button" size="sm" variant="outline" disabled={page.page <= 1} onClick={() => onPage(1)}>First</Button>
+        <Button type="button" size="sm" variant="outline" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)}>Previous</Button>
+        <Button type="button" size="sm" variant="outline" disabled={!page.hasNext} onClick={() => onPage(page.page + 1)}>Next</Button>
+        <Button type="button" size="sm" variant="outline" disabled={page.page >= lastPage} onClick={() => onPage(lastPage)}>Last</Button>
+      </div>
     </div>
   );
 }

@@ -30,7 +30,7 @@ export function ThemeProvider({
   storageKey = "invtrack-theme",
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(() => {
+  const [theme, setThemeValue] = useState<Theme>(() => {
     if (typeof window !== "undefined") {
       const storedTheme = localStorage.getItem(storageKey);
       return storedTheme ? (storedTheme as Theme) : defaultTheme;
@@ -59,19 +59,21 @@ export function ThemeProvider({
     return () => media.removeEventListener("change", apply);
   }, [resolveTheme]);
 
+  const updateTheme = useCallback((nextTheme: Theme) => {
+    localStorage.setItem(storageKey, nextTheme);
+    setThemeValue(nextTheme);
+  }, [storageKey]);
+
+  const toggleTheme = useCallback(() => {
+    updateTheme(resolvedTheme === "dark" ? "light" : "dark");
+  }, [resolvedTheme, updateTheme]);
+
   const value = useMemo(() => ({
     theme,
     resolvedTheme,
-    setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme);
-      setTheme(theme);
-    },
-    toggleTheme: () => {
-      const next = resolvedTheme === "dark" ? "light" : "dark";
-      localStorage.setItem(storageKey, next);
-      setTheme(next);
-    },
-  }), [resolvedTheme, storageKey, theme]);
+    setTheme: updateTheme,
+    toggleTheme,
+  }), [resolvedTheme, theme, toggleTheme, updateTheme]);
 
   return (
     <ThemeProviderContext.Provider {...props} value={value}>

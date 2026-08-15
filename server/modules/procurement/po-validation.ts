@@ -1,4 +1,5 @@
 import { pool } from "../../db";
+import { getCanonicalReportingCurrencyCode } from "../../lib/org-reporting-money";
 
 export type PurchaseOrderValidationLine = {
   itemId?: number | null;
@@ -112,11 +113,7 @@ async function hasGlMapping(params: {
 }
 
 async function hasActiveFxRate(organizationId: number, currencyCode: string): Promise<boolean> {
-  const organization = await pool.query<{ default_currency_code: string }>(
-    "SELECT default_currency_code FROM organizations WHERE id = $1 AND active = TRUE LIMIT 1",
-    [organizationId],
-  );
-  const reportingCurrency = String(organization.rows[0]?.default_currency_code ?? "ZAR").toUpperCase();
+  const reportingCurrency = await getCanonicalReportingCurrencyCode(organizationId);
   if (!currencyCode || currencyCode.toUpperCase() === reportingCurrency) return true;
   const rows = await pool.query<{ id: number }>(
     `
@@ -184,8 +181,7 @@ export async function validatePurchaseOrderWorkflowReadiness(
   }
 
   if (policy.requireFxRate && !(await hasActiveFxRate(input.organizationId, String(input.currencyCode ?? "")))) {
-    const organization = await pool.query<{ default_currency_code: string }>("SELECT default_currency_code FROM organizations WHERE id = $1 LIMIT 1", [input.organizationId]);
-    const reportingCurrency = String(organization.rows[0]?.default_currency_code ?? "ZAR").toUpperCase();
+    const reportingCurrency = await getCanonicalReportingCurrencyCode(input.organizationId);
     return {
       ok: false,
       status: 409,

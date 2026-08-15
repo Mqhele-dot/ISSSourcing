@@ -1,5 +1,5 @@
 import { and, count, eq, isNotNull, lte, or, sql } from "drizzle-orm";
-import { db } from "../../db";
+import { db, pool } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { gasAssetProfiles, gasExchangeTransactions, gasProducts } from "@shared/schema";
@@ -24,12 +24,19 @@ export async function getGasDashboardSummary() {
   const horizon = new Date();
   horizon.setDate(horizon.getDate() + 30);
 
-  try {
-    const [productRow] = await db
-      .select({ c: count() })
-      .from(gasProducts)
-      .where(eq(gasProducts.organizationId, orgId));
+  const canonical = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::int FROM fuel_products WHERE organization_id = $1 AND active = true) AS product_count,
+       (SELECT COUNT(*)::int FROM fuel_stations WHERE organization_id = $1 AND status = 'active') AS station_count`,
+    [orgId],
+  );
+  const productCount = Number(canonical.rows[0]?.product_count ?? 0);
+  const stationCount = Number(canonical.rows[0]?.station_count ?? 0);
+  let lpGasState: "ready" | "degraded" = "ready";
+  let openExchanges = 0;
+  let profilesDueForTest30d = 0;
 
+  try {
     const [exchangeRow] = await db
       .select({ c: count() })
       .from(gasExchangeTransactions)
@@ -55,22 +62,29 @@ export async function getGasDashboardSummary() {
         ),
       );
 
-    return {
-      productCount: Number(productRow?.c ?? 0),
-      openExchanges: Number(exchangeRow?.c ?? 0),
-      profilesDueForTest30d: Number(dueRow?.c ?? 0),
-    };
+    openExchanges = Number(exchangeRow?.c ?? 0);
+    profilesDueForTest30d = Number(dueRow?.c ?? 0);
   } catch (e) {
     if (isMissingGasRelationError(e)) {
-      console.warn("[gas] gas_* tables are not in the database yet; run `npm run db:push`. Returning empty summary.");
-      return {
-        productCount: 0,
-        openExchanges: 0,
-        profilesDueForTest30d: 0,
-      };
+      lpGasState = "degraded";
+      console.warn("[gas] optional gas_* compliance tables are unavailable; canonical fuel summary remains active.");
+    } else {
+      throw e;
     }
-    throw e;
   }
+
+  const setupRequired = productCount === 0 || stationCount === 0;
+  return {
+    state: setupRequired ? "setup_required" : lpGasState === "degraded" ? "degraded" : "ready",
+    productCount,
+    stationCount,
+    openExchanges,
+    profilesDueForTest30d,
+    channels: {
+      fuel: setupRequired ? "setup_required" : "ready",
+      lpGas: lpGasState,
+    },
+  };
 }
 
 /** Emit in-app notifications to managers/admins when gas profiles need attention. */

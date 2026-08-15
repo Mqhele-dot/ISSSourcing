@@ -27,7 +27,7 @@ function canApproveAmount(user: User, amount: number): boolean {
  * Users who may approve the given amount for an entity type, derived from active approval_policies.
  */
 export async function getApprovalSuggestions(
-  entityType: "requisition" | "purchase_order" | "invoice" | "payment_batch",
+  entityType: import("./services/approval-workflow-service").GovernedApprovalEntityType,
   amount: number,
 ): Promise<{
   entityType: string;
@@ -84,7 +84,14 @@ export async function getApprovalSuggestions(
     } else if (p.approverRole && String(p.approverRole).trim()) {
       const want = String(p.approverRole).trim().toLowerCase();
       for (const u of allUsers.map((row) => row.user)) {
-        if (String(u.role ?? "").toLowerCase() === want) candidates.push(u);
+        const preferences = u.preferences && typeof u.preferences === "object"
+          ? u.preferences as { customRoleId?: unknown }
+          : null;
+        const custom = /^custom:(\d+)$/i.exec(want);
+        if (
+          (custom && String(u.role ?? "").toLowerCase() === "custom" && Number(preferences?.customRoleId) === Number(custom[1])) ||
+          (!custom && String(u.role ?? "").toLowerCase() === want)
+        ) candidates.push(u);
       }
     }
 

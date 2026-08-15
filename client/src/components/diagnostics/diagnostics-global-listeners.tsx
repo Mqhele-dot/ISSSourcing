@@ -20,14 +20,18 @@ function valueToMessage(value: unknown): string {
 
 function logConsole(level: "error" | "warn", args: unknown[]) {
   const [first] = args;
-  addDiagnosticEvent({
-    severity: level === "error" ? "error" : "warning",
-    source: "console",
+  const event = {
+    severity: level === "error" ? "error" as const : "warning" as const,
+    source: "console" as const,
     title: level === "error" ? "Console error" : "Console warning",
     message: args.map(valueToMessage).join(" ").slice(0, 1_000) || "Console event",
     stack: first instanceof Error ? first.stack : undefined,
     details: args,
-  });
+  };
+  // React invokes console.error while rendering development warnings. Deferring
+  // the external-store write avoids updating DiagnosticsStatusIndicator during
+  // a different component's render phase.
+  queueMicrotask(() => addDiagnosticEvent(event));
 }
 
 export function DiagnosticsGlobalListeners() {

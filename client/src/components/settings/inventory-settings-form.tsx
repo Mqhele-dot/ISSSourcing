@@ -17,6 +17,7 @@ import {
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { z } from "zod";
+import { SettingsAuthorityState } from "./settings-authority-state";
 
 // Define form schema
 const inventorySettingsSchema = z.object({
@@ -29,38 +30,36 @@ const inventorySettingsSchema = z.object({
 type InventorySettingsFormType = z.infer<typeof inventorySettingsSchema>;
 
 export function InventorySettingsForm() {
-  const { settings, updateSettings } = useSettings();
+  const { settings, isLoading, error, refetch, updateSettings } = useSettings();
 
   // Create form
   const form = useForm<InventorySettingsFormType>({
     resolver: zodResolver(inventorySettingsSchema),
     defaultValues: {
-      lowStockDefaultThreshold: settings.lowStockDefaultThreshold ?? 10,
-      allowNegativeInventory: settings.allowNegativeInventory ?? false,
-      requireLocationForItems: settings.requireLocationForItems ?? true,
-      allowTransfersBetweenWarehouses: settings.allowTransfersBetweenWarehouses ?? true,
+      lowStockDefaultThreshold: settings?.lowStockDefaultThreshold ?? 10,
+      allowNegativeInventory: settings?.allowNegativeInventory ?? false,
+      requireLocationForItems: settings?.requireLocationForItems ?? false,
+      allowTransfersBetweenWarehouses: settings?.allowTransfersBetweenWarehouses ?? false,
     },
   });
 
   React.useEffect(() => {
+    if (!settings) return;
     form.reset({
-      lowStockDefaultThreshold: settings.lowStockDefaultThreshold ?? 10,
-      allowNegativeInventory: settings.allowNegativeInventory ?? false,
-      requireLocationForItems: settings.requireLocationForItems ?? true,
-      allowTransfersBetweenWarehouses: settings.allowTransfersBetweenWarehouses ?? true,
+      lowStockDefaultThreshold: settings?.lowStockDefaultThreshold ?? 10,
+      allowNegativeInventory: settings?.allowNegativeInventory ?? false,
+      requireLocationForItems: settings?.requireLocationForItems ?? false,
+      allowTransfersBetweenWarehouses: settings?.allowTransfersBetweenWarehouses ?? false,
     });
-  }, [
-    form,
-    settings.allowNegativeInventory,
-    settings.allowTransfersBetweenWarehouses,
-    settings.lowStockDefaultThreshold,
-    settings.requireLocationForItems,
-  ]);
+  }, [form, settings]);
 
   // Submit handler
   function onSubmit(data: InventorySettingsFormType) {
+    if (!settings) return;
     updateSettings.mutate(data);
   }
+
+  if (!settings) return <SettingsAuthorityState loading={isLoading} error={error} onRetry={() => void refetch()} />;
 
   return (
     <Card>

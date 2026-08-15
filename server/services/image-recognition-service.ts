@@ -74,15 +74,17 @@ export async function analyzeProductImage(imageBuffer: Buffer): Promise<Recogniz
       // Use actual AI analysis if OpenAI is configured
       console.log('Using OpenAI for image analysis');
       return await openaiService.analyzeProductImage(imageBuffer);
-    } else {
-      // Fall back to simulation mode
-      console.log('OpenAI not configured. Using simulation mode for image analysis');
+    } else if (String(process.env.DEMO_MODE ?? '').toLowerCase() === 'true') {
+      console.log('Recognition provider not configured. Using explicit demo-mode analysis');
       return await simulateImageAnalysis(imageBuffer);
+    } else {
+      throw Object.assign(new Error('Image recognition provider is not configured.'), {
+        code: 'IMAGE_RECOGNITION_NOT_CONFIGURED',
+      });
     }
   } catch (error) {
     console.error("Error in image analysis:", error);
-    // In case of an error, return a placeholder item rather than failing completely
-    return generatePlaceholderItem();
+    throw error;
   }
 }
 

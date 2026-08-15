@@ -18,6 +18,7 @@ import {
 } from "@shared/schema";
 import type { AuthBundle } from "../procurement/types";
 import { registerInventoryV2Routes } from "./register-inventory-v2-routes";
+import { getReportingFx, reportingAmount } from "../../lib/reporting-fx";
 
 const pageSchema = z.coerce.number().int().min(1).default(1);
 const pageSizeSchema = z.coerce.number().int().min(1).max(100).default(25);
@@ -91,11 +92,13 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
     const orgId = getActiveOrganizationId();
     const search = query.q ? `%${query.q}%` : undefined;
     const supplierNumber = query.supplier && /^\d+$/.test(query.supplier) ? Number(query.supplier) : undefined;
+    const supplierSearch = query.supplier && supplierNumber == null ? `%${query.supplier}%` : undefined;
     const where = conditions(
       eq(purchaseOrders.organizationId, orgId),
-      query.status && query.status !== "all" ? eq(purchaseOrders.status, query.status) : undefined,
-      query.statuses ? inArray(purchaseOrders.status, query.statuses) : undefined,
+      query.status && query.status !== "all" ? sql`lower(${purchaseOrders.status}) = ${query.status.toLowerCase()}` : undefined,
+      query.statuses ? sql`lower(${purchaseOrders.status}) = ANY(${query.statuses}::text[])` : undefined,
       supplierNumber ? eq(purchaseOrders.supplierId, supplierNumber) : undefined,
+      supplierSearch ? ilike(suppliers.name, supplierSearch) : undefined,
       search ? or(ilike(purchaseOrders.orderNumber, search), ilike(suppliers.name, search)) : undefined,
     );
     const order = ({
@@ -112,11 +115,39 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
           .where(where).orderBy(...order).limit(query.pageSize).offset((query.page - 1) * query.pageSize),
         db.select({ value: count() }).from(purchaseOrders)
           .leftJoin(suppliers, and(eq(suppliers.id, purchaseOrders.supplierId), eq(suppliers.organizationId, orgId))).where(where),
-        db.select({ status: purchaseOrders.status, count: count(), amount: sql<number>`coalesce(sum(${purchaseOrders.totalAmount}), 0)` })
-          .from(purchaseOrders).where(eq(purchaseOrders.organizationId, orgId)).groupBy(purchaseOrders.status),
+        db.select({ status: purchaseOrders.status, currencyCode: purchaseOrders.currencyCode, count: count(), amount: sql<number>`coalesce(sum(${purchaseOrders.totalAmount}), 0)` })
+          .from(purchaseOrders)
+          .leftJoin(suppliers, and(eq(suppliers.id, purchaseOrders.supplierId), eq(suppliers.organizationId, orgId)))
+          .where(where).groupBy(purchaseOrders.status, purchaseOrders.currencyCode),
       ]);
-      const summary = { totalAmount: summaries.reduce((sum, row) => sum + Number(row.amount), 0), byStatus: Object.fromEntries(summaries.map((row) => [row.status, Number(row.count)])) };
-      return sendOk(res, paginated(items.map(({ order: item, supplierName, linesCount: lines, receivedProgress: progress }) => ({ ...item, poNumber: item.orderNumber, supplierName, requestedDate: item.orderDate, linesCount: Number(lines), receivedProgress: Number(progress) })), Number(totals[0]?.value ?? 0), query.page, query.pageSize, summary));
+      const fx = await getReportingFx(orgId, [
+        ...items.map(({ order: item }) => item.currencyCode),
+        ...summaries.map((row) => row.currencyCode),
+      ]);
+      const byStatus: Record<string, number> = {};
+      let totalAmount = 0;
+      let missingFxCount = 0;
+      for (const row of summaries) {
+        byStatus[row.status] = (byStatus[row.status] ?? 0) + Number(row.count);
+        const converted = reportingAmount(row.amount, row.currencyCode, fx);
+        if (converted == null) missingFxCount += Number(row.count);
+        else totalAmount += converted;
+      }
+      const summary = { totalAmount, reportingCurrencyCode: fx.reportingCurrencyCode, missingFxCount, byStatus };
+      return sendOk(res, paginated(items.map(({ order: item, supplierName, linesCount: lines, receivedProgress: progress }) => {
+        const rate = fx.rates.get(String(item.currencyCode).toUpperCase()) ?? null;
+        return {
+          ...item,
+          poNumber: item.orderNumber,
+          supplierName,
+          requestedDate: item.orderDate,
+          linesCount: Number(lines),
+          receivedProgress: Number(progress),
+          reportingCurrencyCode: fx.reportingCurrencyCode,
+          reportingExchangeRate: rate,
+          reportingTotal: rate == null ? null : Number(item.totalAmount) * rate,
+        };
+      }), Number(totals[0]?.value ?? 0), query.page, query.pageSize, summary));
     } catch (error) { return sendError(res, 500, "PURCHASE_ORDERS_FETCH_FAILED", "Failed to fetch purchase orders", { details: String(error) }); }
   });
 
@@ -125,7 +156,7 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
     if (!query) return;
     const orgId = getActiveOrganizationId();
     const search = query.q ? `%${query.q}%` : undefined;
-    const where = conditions(eq(purchaseRequisitions.organizationId, orgId), query.status && query.status !== "all" ? eq(purchaseRequisitions.status, query.status) : undefined,
+    const where = conditions(eq(purchaseRequisitions.organizationId, orgId), query.status && query.status !== "all" ? sql`lower(${purchaseRequisitions.status}) = ${query.status.toLowerCase()}` : undefined,
       search ? or(ilike(purchaseRequisitions.requisitionNumber, search), ilike(purchaseRequisitions.notes, search), ilike(purchaseRequisitions.justification, search)) : undefined);
     const order = ({
       created_desc: [desc(purchaseRequisitions.createdAt), desc(purchaseRequisitions.id)], created_asc: [asc(purchaseRequisitions.createdAt), asc(purchaseRequisitions.id)],
@@ -137,10 +168,33 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
       const [items, totals, summaries] = await Promise.all([
         db.select({ requisition: purchaseRequisitions, lineCount }).from(purchaseRequisitions).where(where).orderBy(...order).limit(query.pageSize).offset((query.page - 1) * query.pageSize),
         db.select({ value: count() }).from(purchaseRequisitions).where(where),
-        db.select({ status: purchaseRequisitions.status, count: count(), amount: sql<number>`coalesce(sum(${purchaseRequisitions.totalAmount}), 0)` }).from(purchaseRequisitions).where(eq(purchaseRequisitions.organizationId, orgId)).groupBy(purchaseRequisitions.status),
+        db.select({ status: purchaseRequisitions.status, currencyCode: purchaseRequisitions.currencyCode, count: count(), amount: sql<number>`coalesce(sum(${purchaseRequisitions.totalAmount}), 0)` })
+          .from(purchaseRequisitions).where(where).groupBy(purchaseRequisitions.status, purchaseRequisitions.currencyCode),
       ]);
-      const summary = { totalAmount: summaries.reduce((sum, row) => sum + Number(row.amount), 0), byStatus: Object.fromEntries(summaries.map((row) => [row.status, Number(row.count)])) };
-      return sendOk(res, paginated(items.map(({ requisition, lineCount: lines }) => ({ ...requisition, lineCount: Number(lines) })), Number(totals[0]?.value ?? 0), query.page, query.pageSize, summary));
+      const fx = await getReportingFx(orgId, [
+        ...items.map(({ requisition }) => requisition.currencyCode),
+        ...summaries.map((row) => row.currencyCode),
+      ]);
+      const byStatus: Record<string, number> = {};
+      let totalAmount = 0;
+      let missingFxCount = 0;
+      for (const row of summaries) {
+        byStatus[row.status] = (byStatus[row.status] ?? 0) + Number(row.count);
+        const converted = reportingAmount(row.amount, row.currencyCode, fx);
+        if (converted == null) missingFxCount += Number(row.count);
+        else totalAmount += converted;
+      }
+      const summary = { totalAmount, reportingCurrencyCode: fx.reportingCurrencyCode, missingFxCount, byStatus };
+      return sendOk(res, paginated(items.map(({ requisition, lineCount: lines }) => {
+        const rate = fx.rates.get(String(requisition.currencyCode).toUpperCase()) ?? null;
+        return {
+          ...requisition,
+          lineCount: Number(lines),
+          reportingCurrencyCode: fx.reportingCurrencyCode,
+          reportingExchangeRate: rate,
+          reportingTotal: rate == null ? null : Number(requisition.totalAmount) * rate,
+        };
+      }), Number(totals[0]?.value ?? 0), query.page, query.pageSize, summary));
     } catch (error) { return sendError(res, 500, "REQUISITIONS_FETCH_FAILED", "Failed to fetch requisitions", { details: String(error) }); }
   });
 

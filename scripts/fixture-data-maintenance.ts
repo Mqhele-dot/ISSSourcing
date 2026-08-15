@@ -7,6 +7,11 @@ type TargetDefinition = { table: string; reason: string; predicate: string };
 type ForeignKeyEdge = { parentTable: string; childTable: string; childColumn: string };
 
 const targets: TargetDefinition[] = [
+  {
+    table: "users",
+    reason: "interrupted subscription runtime starter-user fixtures",
+    predicate: "username ~ '^subrt-[0-9]+-[a-f0-9]{8}-' AND full_name = 'Blocked Starter User'",
+  },
   { table: "supplier_contracts", reason: "RBAC test contracts", predicate: "title = 'RBAC test contract'" },
   { table: "approval_policies", reason: "AP workflow/control policies", predicate: "name ~ '^(AP Workflow|AP Test|AP Invalid)'" },
   {
@@ -17,23 +22,46 @@ const targets: TargetDefinition[] = [
   {
     table: "purchase_requisitions",
     reason: "runtime workflow requisitions",
-    predicate: "requisition_number LIKE 'REQ-WF-%' OR notes ILIKE '%workflow proof%' OR notes ILIKE 'AP workflow smoke test%' OR justification ILIKE 'Runtime dependency proof%'",
+    predicate: "requisition_number LIKE 'REQ-WF-%' OR requisition_number ~ '^(SUBRT-|RT-|RUNTIME-)' OR notes ILIKE '%workflow proof%' OR notes ILIKE 'AP workflow smoke test%' OR justification ILIKE 'Runtime dependency proof%'",
   },
   {
     table: "purchase_orders",
     reason: "purchase orders converted from runtime workflow requisitions",
-    predicate: "requisition_id IN (SELECT id FROM purchase_requisitions WHERE requisition_number LIKE 'REQ-WF-%' OR notes ILIKE '%workflow proof%' OR notes ILIKE 'AP workflow smoke test%' OR justification ILIKE 'Runtime dependency proof%')",
+    predicate: "order_number ~ '^(SUBRT-|RT-|RUNTIME-)' OR requisition_id IN (SELECT id FROM purchase_requisitions WHERE requisition_number LIKE 'REQ-WF-%' OR requisition_number ~ '^(SUBRT-|RT-|RUNTIME-)' OR notes ILIKE '%workflow proof%' OR notes ILIKE 'AP workflow smoke test%' OR justification ILIKE 'Runtime dependency proof%')",
   },
   {
     table: "invoices",
     reason: "AP runtime and browser invoices",
-    predicate: "invoice_number ~ '^(AP-INV-|AP-CTRL-|AP-DUP-|INV-MATCH-ap-|INV-UI-MATCH-uie2e-ap-)'",
+    predicate: "invoice_number ~ '^(AP-INV-|AP-CTRL-|AP-DUP-|INV-MATCH-ap-|INV-UI-MATCH-uie2e-ap-|SUBRT-|RT-|RUNTIME-)'",
+  },
+  {
+    table: "ap_payment_batches",
+    reason: "payment batches containing only AP runtime fixture invoices",
+    predicate: `EXISTS (
+        SELECT 1 FROM ap_payment_batch_items item
+        JOIN invoices invoice ON invoice.id = item.invoice_id
+        WHERE item.batch_id = ap_payment_batches.id
+          AND invoice.invoice_number ~ '^(AP-INV-|AP-CTRL-|AP-DUP-|INV-MATCH-ap-|INV-UI-MATCH-uie2e-ap-)'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM ap_payment_batch_items item
+        JOIN invoices invoice ON invoice.id = item.invoice_id
+        WHERE item.batch_id = ap_payment_batches.id
+          AND invoice.invoice_number !~ '^(AP-INV-|AP-CTRL-|AP-DUP-|INV-MATCH-ap-|INV-UI-MATCH-uie2e-ap-)'
+      )`,
+  },
+  {
+    table: "ap_payment_batch_items",
+    reason: "payment batch lines for AP runtime fixture invoices",
+    predicate: `invoice_id IN (
+        SELECT id FROM invoices
+        WHERE invoice_number ~ '^(AP-INV-|AP-CTRL-|AP-DUP-|INV-MATCH-ap-|INV-UI-MATCH-uie2e-ap-)'
+      )`,
   },
   { table: "inventory_items", reason: "dependency/workflow items", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)'" },
-  { table: "suppliers", reason: "dependency/workflow suppliers", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Supplier '" },
+  { table: "suppliers", reason: "dependency/workflow suppliers", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Supplier ' OR supplier_code ~* '^subrt-'" },
   { table: "departments", reason: "dependency/workflow departments", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Department '" },
-  { table: "warehouses", reason: "workflow warehouses", predicate: "name ~ '^(Workflow|Runtime|Propagation|Sourcing) Warehouse '" },
-  { table: "units_of_measure", reason: "dependency/workflow UOMs", predicate: "code ~ '^(DEP-(EA|BOX)-|EA-(ap|apx|rcv|over)-)'" },
+  { table: "warehouses", reason: "workflow warehouses", predicate: "name ~ '^(Workflow|Runtime|Propagation|Sourcing) Warehouse ' OR code ~* '^subrt-'" },
+  { table: "units_of_measure", reason: "dependency/workflow UOMs", predicate: "code ~ '^(DEP-(EA|BOX)-|EA-(ap|apx|rcv|over)-|EA-[0-9]{8}$)'" },
   { table: "tax_codes", reason: "dependency/workflow tax codes", predicate: "code ~ '^(DEP-VAT-|VAT-(ap|apx|rcv|over)-)'" },
   { table: "mdm_cost_centres", reason: "dependency/workflow cost centres", predicate: "code ~ '^(DEP-CC|CC-(ap|apx|rcv|over)-)'" },
   {

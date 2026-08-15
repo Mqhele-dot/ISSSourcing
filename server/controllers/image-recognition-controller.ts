@@ -91,6 +91,19 @@ async function analyzeProductImageHandler(req: Request, res: Response) {
       return res.status(400).json({ message: 'No image file uploaded' });
     }
 
+    const serviceStatus = getServiceStatus();
+    const demoMode = String(process.env.DEMO_MODE ?? '').toLowerCase() === 'true';
+    if (!serviceStatus.status.configured && !demoMode) {
+      return res.status(409).json({
+        ok: false,
+        error: {
+          code: 'IMAGE_RECOGNITION_NOT_CONFIGURED',
+          message: 'Image recognition is not configured for this deployment.',
+          hint: 'Configure the recognition provider or enable explicit demo mode for sample results.',
+        },
+      });
+    }
+
     // Read file buffer
     const imageBuffer = fs.readFileSync(req.file.path);
     
@@ -225,24 +238,30 @@ async function getImageRecognitionStatusHandler(_req: Request, res: Response) {
     const status = getServiceStatus();
     
     // Return the status with additional information
+    const demoMode = String(process.env.DEMO_MODE ?? '').toLowerCase() === 'true';
+    const operational = status.status.configured;
     res.json({
       success: true,
-      status: status.status.configured ? 'operational' : 'simulation',
-      aiProvider: status.status.provider,
-      mode: status.status.mode,
-      message: status.status.configured 
+      status: operational ? 'operational' : demoMode ? 'simulation' : 'unavailable',
+      provider: operational ? status.status.provider : demoMode ? 'demo' : null,
+      mode: operational ? 'ai' : demoMode ? 'simulation' : null,
+      message: operational
         ? 'Image recognition service is using real AI analysis'
-        : 'Image recognition service is running in simulation mode. Configure OpenAI API key to enable real AI analysis.'
+        : demoMode
+          ? 'Image recognition is using explicit demo-mode sample results.'
+          : 'Image recognition is not configured. Configure a provider before analyzing images.'
     });
   } catch (error: unknown) {
     console.error('Error checking image recognition status:', error);
-    // Return 200 with simulation status so the UI does not show a red error banner
+    const demoMode = String(process.env.DEMO_MODE ?? '').toLowerCase() === 'true';
     res.status(200).json({
       success: true,
-      status: 'simulation',
-      aiProvider: 'none',
-      mode: 'simulation',
-      message: 'Image recognition is available in simulation mode. Configure OpenAI API key for real AI analysis.',
+      status: demoMode ? 'simulation' : 'unavailable',
+      provider: demoMode ? 'demo' : null,
+      mode: demoMode ? 'simulation' : null,
+      message: demoMode
+        ? 'Image recognition is available with demo sample results.'
+        : 'Image recognition is not configured for this deployment.',
     });
   }
 }

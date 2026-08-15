@@ -1,5 +1,4 @@
 import { pool } from "../../db";
-import { seedDatabase } from "../../seed";
 import { initializeOperationalData } from "./operational-ddl";
 import { refsMatch, toNumber, toString } from "./operational-utils";
 import {
@@ -19,6 +18,7 @@ import {
 } from "@shared/logistics-shipment-filters";
 import { resolveSupplierCommercialDefaults } from "../procurement/supplier-defaults";
 import { validateExceptionStatusTransition } from "./exception-status-policy";
+import { getReportingFx, reportingAmount } from "../../lib/reporting-fx";
 
 type InventoryFilterInput = {
   location?: string;
@@ -48,6 +48,8 @@ type PositionAggregate = {
 };
 
 type InventoryPositionRecord = {
+  warehouseId: number;
+  warehouseName: string;
   location: string;
   onHand: number;
   allocated: number;
@@ -74,12 +76,11 @@ type InventorySummary = {
 
 type AdjustInventoryInput = {
   skuOrId: string;
-  location: string;
+  warehouseId: number;
   delta: number;
   reason: string;
   ref?: string;
   createdBy?: string;
-  skipLocationValidation?: boolean;
 };
 
 type ExceptionPayload = {
@@ -618,64 +619,6 @@ async function findInventoryItemByIdentifier(identifier: string): Promise<Invent
   };
 }
 
-async function getInventoryPositionsForSku(sku: string): Promise<InventoryPositionRecord[]> {
-  const result = await pool.query<{
-    location: string;
-    on_hand: number;
-    allocated: number;
-    updated_at: Date | null;
-  }>(
-    `
-    SELECT location, on_hand, allocated, updated_at
-    FROM inventory_positions
-    WHERE sku = $1
-    ORDER BY location ASC
-    `,
-    [sku],
-  );
-
-  return result.rows.map((row) => ({
-    location: row.location,
-    onHand: toNumber(row.on_hand),
-    allocated: toNumber(row.allocated),
-    available: toNumber(row.on_hand) - toNumber(row.allocated),
-    updatedAt: row.updated_at,
-  }));
-}
-
-async function getInventoryMovementsForSku(sku: string): Promise<InventoryMovementRecord[]> {
-  const result = await pool.query<{
-    id: number;
-    sku: string;
-    location: string;
-    delta: number;
-    reason: string;
-    ref: string | null;
-    created_by: string | null;
-    created_at: Date | null;
-  }>(
-    `
-    SELECT id, sku, location, delta, reason, ref, created_by, created_at
-    FROM inventory_movements
-    WHERE sku = $1
-    ORDER BY created_at DESC
-    LIMIT 50
-    `,
-    [sku],
-  );
-
-  return result.rows.map((row) => ({
-    id: row.id,
-    sku: row.sku,
-    location: row.location,
-    delta: toNumber(row.delta),
-    reason: row.reason,
-    ref: row.ref,
-    createdBy: row.created_by,
-    createdAt: row.created_at,
-  }));
-}
-
 function summarizePositions(positions: InventoryPositionRecord[]): InventorySummary {
   return positions.reduce<InventorySummary>(
     (acc, position) => ({
@@ -693,152 +636,164 @@ export async function getOperationalInventoryDetail(skuOrId: string) {
     return null;
   }
 
-  let positions = await getInventoryPositionsForSku(item.sku);
-  if (positions.length === 0) {
-    const fallbackLocation = item.defaultLocation || item.location || "Main Warehouse";
-    positions = [
-      {
-        location: fallbackLocation,
-        onHand: item.quantity,
-        allocated: 0,
-        available: item.quantity,
-        updatedAt: item.updatedAt,
-      },
-    ];
-  }
-
-  const movements = await getInventoryMovementsForSku(item.sku);
+  const orgId = getActiveOrganizationId();
+  const [warehouseRows, positionRows, movementRows] = await Promise.all([
+    pool.query<{ id: number; name: string }>(
+      `SELECT id, name FROM warehouses WHERE organization_id = $1 ORDER BY name, id`,
+      [orgId],
+    ),
+    pool.query<{ warehouse_id: number; warehouse_name: string; location: string | null; quantity: number; allocated: number; updated_at: Date | null }>(
+      `SELECT wi.warehouse_id, w.name AS warehouse_name, wi.location, wi.quantity,
+              COALESCE(SUM(ia.quantity) FILTER (WHERE ia.status = 'reserved'), 0)::int AS allocated,
+              wi.updated_at
+       FROM warehouse_inventory wi
+       JOIN warehouses w ON w.id = wi.warehouse_id AND w.organization_id = wi.organization_id
+       LEFT JOIN inventory_allocations ia ON ia.organization_id = wi.organization_id
+         AND ia.item_id = wi.item_id AND ia.warehouse_id = wi.warehouse_id
+       WHERE wi.organization_id = $1 AND wi.item_id = $2
+       GROUP BY wi.id, wi.warehouse_id, w.name, wi.location, wi.quantity, wi.updated_at
+       ORDER BY w.name, wi.warehouse_id`,
+      [orgId, item.id],
+    ),
+    pool.query<{ id: number; warehouse_name: string | null; quantity: number; notes: string | null; reference_type: string | null; created_by: string | null; created_at: Date | null }>(
+      `SELECT sm.id, w.name AS warehouse_name, sm.quantity, sm.notes, sm.reference_type,
+              COALESCE(u.username, u.email, 'system') AS created_by, sm.created_at
+       FROM stock_movements sm
+       LEFT JOIN warehouses w ON w.id = sm.warehouse_id AND w.organization_id = sm.organization_id
+       LEFT JOIN users u ON u.id = sm.user_id
+       WHERE sm.organization_id = $1 AND sm.item_id = $2
+       ORDER BY sm.created_at DESC, sm.id DESC LIMIT 50`,
+      [orgId, item.id],
+    ),
+  ]);
+  const positions: InventoryPositionRecord[] = positionRows.rows.map((row) => ({
+    warehouseId: row.warehouse_id,
+    warehouseName: row.warehouse_name,
+    location: row.location ? `${row.warehouse_name} — ${row.location}` : row.warehouse_name,
+    onHand: toNumber(row.quantity),
+    allocated: toNumber(row.allocated),
+    available: toNumber(row.quantity) - toNumber(row.allocated),
+    updatedAt: row.updated_at,
+  }));
+  const warehouseQuantity = positions.reduce((sum, position) => sum + position.onHand, 0);
+  const unassignedQuantity = positions.length === 0 ? item.quantity : 0;
+  const movements: InventoryMovementRecord[] = movementRows.rows.map((row) => ({
+    id: row.id,
+    sku: item.sku,
+    location: row.warehouse_name ?? "Unassigned",
+    delta: toNumber(row.quantity),
+    reason: row.notes ?? row.reference_type ?? "Inventory movement",
+    ref: row.reference_type,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  }));
   const summary = summarizePositions(positions);
+  summary.onHand += unassignedQuantity;
+  summary.available += unassignedQuantity;
 
   return {
     ...item,
-    location: item.defaultLocation || item.location,
+    location: null,
     onHand: summary.onHand,
     allocated: summary.allocated,
     available: summary.available,
     positions,
     movements,
+    warehouses: warehouseRows.rows,
+    warehouseQuantity,
+    unassignedQuantity,
+    quantityMismatch: positions.length > 0 && item.quantity !== warehouseQuantity,
     summary,
   };
 }
 
 export async function adjustOperationalInventory(input: AdjustInventoryInput) {
-  if (!Number.isFinite(input.delta) || input.delta === 0) {
+  if (!Number.isInteger(input.delta) || input.delta === 0) {
     throw new Error("delta_must_be_non_zero");
   }
-
-  const normalizedLocation = input.location.trim();
-  if (!normalizedLocation) {
-    throw new Error("location_required");
-  }
+  if (!Number.isInteger(input.warehouseId) || input.warehouseId <= 0) throw new Error("warehouse_required");
 
   const item = await findInventoryItemByIdentifier(input.skuOrId);
   if (!item) {
     throw new Error("sku_not_found");
   }
 
-  if (!input.skipLocationValidation) {
-    const locationValidation = await pool.query(
-      `
-      SELECT 1
-      FROM warehouses
-      WHERE lower(name) = lower($1)
-      LIMIT 1
-      `,
-      [normalizedLocation],
+  const orgId = getActiveOrganizationId();
+  const client = await pool.connect();
+  let movement: { id: number; createdAt: Date | null };
+  let position: InventoryPositionRecord;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [orgId, item.id]);
+    const warehouseResult = await client.query<{ id: number; name: string }>(
+      `SELECT id, name FROM warehouses WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+      [input.warehouseId, orgId],
     );
-
-    const existingPositionValidation = await pool.query(
-      `
-      SELECT 1
-      FROM inventory_positions
-      WHERE sku = $1
-        AND lower(location) = lower($2)
-      LIMIT 1
-      `,
-      [item.sku, normalizedLocation],
+    const warehouse = warehouseResult.rows[0];
+    if (!warehouse) throw new Error("warehouse_not_found");
+    const allRows = await client.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM warehouse_inventory WHERE organization_id = $1 AND item_id = $2`,
+      [orgId, item.id],
     );
-
-    const matchesItemDefault =
-      (item.defaultLocation ?? item.location ?? "").toLowerCase() ===
-      normalizedLocation.toLowerCase();
-
-    if (
-      locationValidation.rows.length === 0 &&
-      existingPositionValidation.rows.length === 0 &&
-      !matchesItemDefault
-    ) {
-      throw new Error("location_not_found");
+    const targetRows = await client.query<{ id: number; quantity: number; location: string | null }>(
+      `SELECT id, quantity, location FROM warehouse_inventory
+       WHERE organization_id = $1 AND item_id = $2 AND warehouse_id = $3
+       ORDER BY id LIMIT 1 FOR UPDATE`,
+      [orgId, item.id, input.warehouseId],
+    );
+    const seedQuantity = Number(allRows.rows[0]?.count ?? 0) === 0 ? item.quantity : 0;
+    const currentQuantity = targetRows.rows[0] ? toNumber(targetRows.rows[0].quantity) : seedQuantity;
+    const allocatedRows = await client.query<{ allocated: number }>(
+      `SELECT COALESCE(SUM(quantity), 0)::int AS allocated FROM inventory_allocations
+       WHERE organization_id = $1 AND item_id = $2 AND warehouse_id = $3 AND status = 'reserved'`,
+      [orgId, item.id, input.warehouseId],
+    );
+    const allocated = toNumber(allocatedRows.rows[0]?.allocated);
+    const nextQuantity = currentQuantity + input.delta;
+    const policyRows = await client.query<{ allow_negative_inventory: boolean | null }>(
+      `SELECT allow_negative_inventory FROM app_settings WHERE organization_id = $1 ORDER BY id LIMIT 1`,
+      [orgId],
+    );
+    if (nextQuantity - allocated < 0 && policyRows.rows[0]?.allow_negative_inventory !== true) {
+      throw new Error("insufficient_available_stock");
     }
+    let updatedAt: Date | null;
+    if (targetRows.rows[0]) {
+      const updated = await client.query<{ updated_at: Date | null }>(
+        `UPDATE warehouse_inventory SET quantity = $1, updated_at = now() WHERE id = $2 RETURNING updated_at`,
+        [nextQuantity, targetRows.rows[0].id],
+      );
+      updatedAt = updated.rows[0]?.updated_at ?? null;
+    } else {
+      const inserted = await client.query<{ updated_at: Date | null }>(
+        `INSERT INTO warehouse_inventory (organization_id, item_id, warehouse_id, quantity, updated_at)
+         VALUES ($1, $2, $3, $4, now()) RETURNING updated_at`,
+        [orgId, item.id, input.warehouseId, nextQuantity],
+      );
+      updatedAt = inserted.rows[0]?.updated_at ?? null;
+    }
+    const totals = await client.query<{ quantity: number }>(
+      `SELECT COALESCE(SUM(quantity), 0)::int AS quantity FROM warehouse_inventory WHERE organization_id = $1 AND item_id = $2`,
+      [orgId, item.id],
+    );
+    await client.query(`UPDATE inventory_items SET quantity = $1, updated_at = now() WHERE id = $2 AND organization_id = $3`, [toNumber(totals.rows[0]?.quantity), item.id, orgId]);
+    const movementResult = await client.query<{ id: number; created_at: Date | null }>(
+      `INSERT INTO stock_movements (organization_id, item_id, warehouse_id, type, quantity, reference_type, notes, previous_quantity, new_quantity, warehouse_location, created_at)
+       VALUES ($1, $2, $3, 'ADJUSTMENT', $4, $5, $6, $7, $8, $9, now()) RETURNING id, created_at`,
+      [orgId, item.id, input.warehouseId, input.delta, input.ref ?? "inventory_adjustment", input.reason, currentQuantity, nextQuantity, warehouse.name],
+    );
+    movement = { id: movementResult.rows[0].id, createdAt: movementResult.rows[0].created_at };
+    position = { warehouseId: warehouse.id, warehouseName: warehouse.name, location: warehouse.name, onHand: nextQuantity, allocated, available: nextQuantity - allocated, updatedAt };
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
 
-  const existingPositions = await getInventoryPositionsForSku(item.sku);
-  const seedOnHand = existingPositions.length === 0 ? toNumber(item.quantity, 0) : 0;
-
-  await pool.query(
-    `
-    INSERT INTO inventory_positions (sku, location, on_hand, allocated, updated_at)
-    VALUES ($1, $2, $3, 0, now())
-    ON CONFLICT (sku, location) DO NOTHING
-    `,
-    [item.sku, normalizedLocation, seedOnHand],
-  );
-
-  const updatedPositionResult = await pool.query<{
-    location: string;
-    on_hand: number;
-    allocated: number;
-    updated_at: Date | null;
-  }>(
-    `
-    UPDATE inventory_positions
-    SET on_hand = on_hand + $3,
-        updated_at = now()
-    WHERE sku = $1
-      AND location = $2
-    RETURNING location, on_hand, allocated, updated_at
-    `,
-    [item.sku, normalizedLocation, input.delta],
-  );
-
-  const updatedPositionRow = updatedPositionResult.rows[0];
-  const position = {
-    location: updatedPositionRow.location,
-    onHand: toNumber(updatedPositionRow.on_hand),
-    allocated: toNumber(updatedPositionRow.allocated),
-    available: toNumber(updatedPositionRow.on_hand) - toNumber(updatedPositionRow.allocated),
-    updatedAt: updatedPositionRow.updated_at,
-  };
-
-  const movementResult = await pool.query<{ id: number; created_at: Date | null }>(
-    `
-    INSERT INTO inventory_movements (sku, location, delta, reason, ref, created_by)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    RETURNING id, created_at
-    `,
-    [
-      item.sku,
-      normalizedLocation,
-      input.delta,
-      input.reason,
-      input.ref ?? null,
-      input.createdBy ?? "system",
-    ],
-  );
-
-  const allPositions = await getInventoryPositionsForSku(item.sku);
-  const summary = summarizePositions(allPositions);
-
-  await pool.query(
-    `
-    UPDATE inventory_items
-    SET quantity = $2,
-        default_location = COALESCE(default_location, $3),
-        updated_at = now()
-    WHERE id = $1
-    `,
-    [item.id, summary.onHand, normalizedLocation],
-  );
+  const refreshed = await getOperationalInventoryDetail(item.sku);
+  const summary = refreshed?.summary ?? { onHand: position.onHand, allocated: position.allocated, available: position.available };
 
   let shortageException = null as null | { id: number; created: boolean };
   if (summary.available < 0) {
@@ -849,7 +804,7 @@ export async function adjustOperationalInventory(input: AdjustInventoryInput) {
       description: `Available stock is ${summary.available} after adjustment`,
       relatedRefs: {
         sku: item.sku,
-        location: normalizedLocation,
+        warehouseId: input.warehouseId,
       },
       slaHours: 4,
     });
@@ -863,7 +818,7 @@ export async function adjustOperationalInventory(input: AdjustInventoryInput) {
     summary: {
       sku: item.sku,
       delta: input.delta,
-      location: normalizedLocation,
+      warehouseId: input.warehouseId,
       reason: input.reason,
       ref: input.ref ?? null,
       available: summary.available,
@@ -875,11 +830,11 @@ export async function adjustOperationalInventory(input: AdjustInventoryInput) {
   return {
     sku: item.sku,
     movement: {
-      id: movementResult.rows[0].id,
+      id: movement.id,
       delta: input.delta,
       reason: input.reason,
       ref: input.ref ?? null,
-      createdAt: movementResult.rows[0].created_at,
+      createdAt: movement.createdAt,
     },
     position,
     summary,
@@ -978,9 +933,10 @@ async function resolvePurchaseOrder(poOrId: string) {
         order_date: Date | null;
         created_at: Date | null;
         total_amount: number | null;
+        currency_code: string;
       }>(
         `
-        SELECT id, order_number, supplier_id, status, order_date, created_at, total_amount
+        SELECT id, order_number, supplier_id, status, order_date, created_at, total_amount, currency_code
         FROM purchase_orders
         WHERE id = $1 AND organization_id = $2
         LIMIT 1
@@ -1001,9 +957,10 @@ async function resolvePurchaseOrder(poOrId: string) {
     order_date: Date | null;
     created_at: Date | null;
     total_amount: number | null;
+    currency_code: string;
   }>(
     `
-    SELECT id, order_number, supplier_id, status, order_date, created_at, total_amount
+    SELECT id, order_number, supplier_id, status, order_date, created_at, total_amount, currency_code
     FROM purchase_orders
     WHERE order_number = $1 AND organization_id = $2
     LIMIT 1
@@ -1541,6 +1498,9 @@ export async function getOperationalPurchaseOrderDetail(poOrId: string) {
   const shipments = await getPurchaseOrderShipments(order.order_number);
   const qtyOrdered = lines.reduce((sum, line) => sum + line.qtyOrdered, 0);
   const qtyReceived = lines.reduce((sum, line) => sum + line.qtyReceived, 0);
+  const fx = await getReportingFx(getActiveOrganizationId(), [order.currency_code]);
+  const convertedTotal = reportingAmount(order.total_amount, order.currency_code, fx);
+  const reportingExchangeRate = fx.rates.get(String(order.currency_code).toUpperCase()) ?? null;
 
   return {
     id: order.id,
@@ -1551,6 +1511,10 @@ export async function getOperationalPurchaseOrderDetail(poOrId: string) {
     requestedDate: order.order_date,
     createdAt: order.created_at,
     totalAmount: toNumber(order.total_amount, 0),
+    currencyCode: String(order.currency_code).toUpperCase(),
+    reportingCurrencyCode: fx.reportingCurrencyCode,
+    reportingExchangeRate,
+    reportingTotal: convertedTotal,
     lines,
     shipments,
     progress: {
@@ -1932,34 +1896,17 @@ export async function receiveOperationalPurchaseOrder(
         itemId: line.itemId,
         acceptedQty: receiveNow,
       });
-      const itemLocationResult = await pool.query<{
-        default_location: string | null;
-        location: string | null;
-      }>(
-        `
-        SELECT default_location, location
-        FROM inventory_items
-        WHERE id = $1
-        LIMIT 1
-        `,
-        [line.itemId],
-      );
-
-      const itemFallback =
-        itemLocationResult.rows[0]?.default_location ||
-        itemLocationResult.rows[0]?.location ||
-        "Main Warehouse";
-      const location = putaway.locationFromPutaway ?? itemFallback;
       const receiveWarehouseId = putaway.warehouseId;
+      if (!receiveWarehouseId) throw new Error("warehouse_required");
+      const location = putaway.locationFromPutaway ?? `Warehouse #${receiveWarehouseId}`;
 
       const adjustment = await adjustOperationalInventory({
         skuOrId: line.sku,
-        location,
+        warehouseId: receiveWarehouseId,
         delta: receiveNow,
         reason: "PO Receive",
         ref: order.order_number,
         createdBy: "po-receive",
-        skipLocationValidation: true,
       });
 
       inventoryChanges.push({
@@ -3441,189 +3388,74 @@ export async function getOperationalControlTowerOverview() {
   };
 }
 
-export async function runOperationalDemoWalkthrough(actor: string) {
+export async function runOperationalDemoWalkthrough(actor: string, requestId: string) {
   const orgId = getActiveOrganizationId();
   const steps: Array<{ id: string; label: string; completed: boolean; details?: string }> = [];
-
-  const seedSummary = await seedDatabase();
-  await initializeOperationalData();
-  steps.push({
-    id: "verify-demo-data",
-    label: "Verify guided-workflow data",
-    completed: true,
-    details: `Users ${seedSummary.users}, Items ${seedSummary.items}`,
-  });
-
-  const inventoryItems = await listOperationalInventory({});
-  const firstInventoryItem = inventoryItems[0];
-  if (!firstInventoryItem) {
-    throw new Error("inventory_empty");
-  }
-
-  const shortageDelta = -Math.max(firstInventoryItem.available + 1, 1);
-  const shortageAdjustment = await adjustOperationalInventory({
-    skuOrId: firstInventoryItem.sku,
-    location: firstInventoryItem.location ?? "Main Warehouse",
-    delta: shortageDelta,
-    reason: "Guided setup - force shortage",
-    ref: "GUIDED-SETUP",
-    createdBy: actor,
-    skipLocationValidation: true,
-  });
-  const shortageExceptionId = shortageAdjustment.exception?.id ?? null;
-  steps.push({
-    id: "create-shortage",
-    label: "Create inventory shortage",
-    completed: true,
-    details:
-      shortageExceptionId !== null
-        ? `Exception #${shortageExceptionId}`
-        : `Available ${shortageAdjustment.summary.available}`,
-  });
-
-  const supplierResult = await pool.query<{ id: number }>(
-    `
-    SELECT id
-    FROM suppliers
-    WHERE organization_id = $1
-    ORDER BY id ASC
-    LIMIT 1
-    `,
-    [orgId],
-  );
-  const supplierId = supplierResult.rows[0]?.id;
-  if (!supplierId) {
-    throw new Error("supplier_not_found");
-  }
-
-  const itemLookup = await pool.query<{ id: number; price: number }>(
-    `
-    SELECT id, price
-    FROM inventory_items
-    WHERE organization_id = $1
-      AND sku = $2
-    LIMIT 1
-    `,
-    [orgId, firstInventoryItem.sku],
-  );
-  const itemId = itemLookup.rows[0]?.id;
-  const itemPrice = toNumber(itemLookup.rows[0]?.price, 10);
-  if (!itemId) {
-    throw new Error("item_not_found");
-  }
-
-  const now = Date.now();
-  const poNumber = `PO-GUIDED-${now}`;
+  const poNumber = `PO-GUIDED-ORG-${orgId}`;
   const lineQuantity = 10;
-  const lineUnitPrice = Math.max(itemPrice, 1);
-  const lineTotal = lineQuantity * lineUnitPrice;
-
-  const poInsert = await pool.query<{ id: number; order_number: string }>(
-    `
-    INSERT INTO purchase_orders (
-      organization_id,
-      order_number,
-      supplier_id,
-      status,
-      order_date,
-      total_amount,
-      created_at,
-      updated_at
-    )
-    VALUES ($1, $2, $3, 'sent', now(), $4, now(), now())
-    RETURNING id, order_number
-    `,
-    [orgId, poNumber, supplierId, lineTotal],
-  );
-  const poId = poInsert.rows[0].id;
-
-  await pool.query(
-    `
-    INSERT INTO purchase_order_items (
-      order_id,
-      item_id,
-      quantity,
-      unit_price,
-      total_price,
-      received_quantity
-    )
-    VALUES ($1, $2, $3, $4, $5, 0)
-    `,
-    [poId, itemId, lineQuantity, lineUnitPrice, lineTotal],
-  );
-  steps.push({
-    id: "create-po",
-    label: "Create guided purchase order",
-    completed: true,
-    details: poNumber,
-  });
-
-  const shipmentInsert = await pool.query<{ id: number }>(
-    `
-    INSERT INTO shipments (organization_id, po_number, carrier, status, eta, created_at, updated_at)
-    VALUES ($1, $2, 'Guided Setup Carrier', 'created', now() + interval '2 days', now(), now())
-    RETURNING id
-    `,
-    [getActiveOrganizationId(), poNumber],
-  );
-  const shipmentId = shipmentInsert.rows[0].id;
-
-  await updateOperationalShipmentStatus({
-    shipmentId: String(shipmentId),
-    toStatus: "in_transit",
-    note: "Guided setup status update",
-    actor,
-  });
-  steps.push({
-    id: "flip-shipment",
-    label: "Flip shipment status",
-    completed: true,
-    details: `Shipment #${shipmentId} -> in_transit`,
-  });
-
-  const receiveResult = await receiveOperationalPurchaseOrder(
-    poNumber,
-    [
-      {
-        sku: firstInventoryItem.sku,
-        qty_received_now: 4,
-      },
-    ],
-    {},
-    actor,
-  );
-  steps.push({
-    id: "partial-receive",
-    label: "Partial receive",
-    completed: true,
-    details: `Received 4 of ${lineQuantity} ordered (exceptions ${receiveResult.mismatchExceptions.length})`,
-  });
-
-  const chosenExceptionId = shortageExceptionId;
-  if (chosenExceptionId !== null) {
-    await getOperationalExceptionDetail(String(chosenExceptionId));
-    steps.push({
-      id: "open-exception",
-      label: "Open created exception detail",
-      completed: true,
-      details: `Exception #${chosenExceptionId}`,
-    });
+  const client = await pool.connect();
+  let sku = "";
+  let shipmentId = 0;
+  let shipmentStatus = "in_transit";
+  let createdPo = false;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [orgId, 94731]);
+    const supplierResult = await client.query<{ id: number }>(`SELECT id FROM suppliers WHERE organization_id = $1 AND COALESCE(active, true) = true ORDER BY id LIMIT 1`, [orgId]);
+    if (!supplierResult.rows[0]) throw new Error("supplier_not_found");
+    const itemResult = await client.query<{ id: number; sku: string; price: number }>(`SELECT id, sku, price FROM inventory_items WHERE organization_id = $1 ORDER BY id LIMIT 1`, [orgId]);
+    const item = itemResult.rows[0];
+    if (!item) throw new Error("inventory_empty");
+    sku = item.sku;
+    const lineUnitPrice = Math.max(toNumber(item.price, 10), 1);
+    const lineTotal = lineQuantity * lineUnitPrice;
+    const existingPo = await client.query<{ id: number }>(`SELECT id FROM purchase_orders WHERE organization_id = $1 AND order_number = $2 ORDER BY id LIMIT 1 FOR UPDATE`, [orgId, poNumber]);
+    let poId = existingPo.rows[0]?.id;
+    if (poId) {
+      await client.query(`UPDATE purchase_orders SET updated_at = now() WHERE id = $1 AND organization_id = $2`, [poId, orgId]);
+    } else {
+      const inserted = await client.query<{ id: number }>(`INSERT INTO purchase_orders (organization_id, order_number, supplier_id, status, order_date, total_amount, created_at, updated_at) VALUES ($1, $2, $3, 'sent', now(), $4, now(), now()) RETURNING id`, [orgId, poNumber, supplierResult.rows[0].id, lineTotal]);
+      poId = inserted.rows[0].id;
+      createdPo = true;
+    }
+    const existingLines = await client.query<{ count: number }>(`SELECT count(*)::int AS count FROM purchase_order_items WHERE order_id = $1`, [poId]);
+    if (Number(existingLines.rows[0]?.count ?? 0) === 0) {
+      await client.query(`INSERT INTO purchase_order_items (order_id, item_id, quantity, unit_price, total_price, received_quantity) VALUES ($1, $2, $3, $4, $5, 0)`, [poId, item.id, lineQuantity, lineUnitPrice, lineTotal]);
+    }
+    const existingShipment = await client.query<{ id: number; status: string }>(`SELECT id, status FROM shipments WHERE organization_id = $1 AND po_number = $2 AND carrier = 'Guided Walkthrough' ORDER BY id LIMIT 1 FOR UPDATE`, [orgId, poNumber]);
+    if (existingShipment.rows[0]) {
+      shipmentId = existingShipment.rows[0].id;
+      shipmentStatus = existingShipment.rows[0].status;
+      await client.query(`UPDATE shipments SET updated_at = now() WHERE id = $1 AND organization_id = $2`, [shipmentId, orgId]);
+    } else {
+      const insertedShipment = await client.query<{ id: number }>(`INSERT INTO shipments (organization_id, po_number, carrier, status, eta, created_at, updated_at) VALUES ($1, $2, 'Guided Walkthrough', 'in_transit', now() + interval '2 days', now(), now()) RETURNING id`, [orgId, poNumber]);
+      shipmentId = insertedShipment.rows[0].id;
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
+  steps.push({ id: "prepare-po", label: "Prepare guided purchase order", completed: true, details: `${poNumber} (${createdPo ? "created" : "refreshed"})` });
+  steps.push({ id: "prepare-shipment", label: "Prepare guided shipment", completed: true, details: `Shipment #${shipmentId} (${shipmentStatus})` });
 
   return {
+    requestId,
+    prepared: { organizationId: orgId, createdPo, refreshedExisting: !createdPo },
     steps,
     context: {
-      sku: firstInventoryItem.sku,
+      sku,
       poNumber,
       shipmentId,
-      exceptionId: chosenExceptionId,
+      exceptionId: null,
     },
     links: {
-      inventory: `/inventory/${encodeURIComponent(firstInventoryItem.sku)}`,
-      purchase: `/purchase/${encodeURIComponent(poNumber)}`,
-      logistics: `/logistics/${shipmentId}`,
-      exception:
-        chosenExceptionId !== null ? `/exceptions/${chosenExceptionId}` : null,
+      inventory: `/inventory/${encodeURIComponent(sku)}`,
+      purchase: `/procurement/orders/${encodeURIComponent(poNumber)}`,
+      logistics: `/operations/logistics/${shipmentId}`,
+      exception: null,
     },
   };
 }

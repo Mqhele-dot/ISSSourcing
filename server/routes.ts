@@ -44,7 +44,7 @@ import { registerAnalyticsRoutes } from "./modules/reports/register-analytics-ro
 import { registerSetupRoutes } from "./modules/setup/register-setup-routes";
 import { getActiveOrganizationId, runWithTenantContext } from "./organization-context";
 import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisabled } from "./org-features";
-import { readiness } from "./readiness";
+import { readiness, setDbReady, setSchemaReady, setSessionStoreReady } from "./readiness";
 import { sendError, sendOk, sendFunctionError } from "./api-response";
 import { emitNotification, emitNotificationToRoles } from "./services/notification-emitter";
 import { eq, and, isNull, gte, lte, asc } from "drizzle-orm";
@@ -79,6 +79,8 @@ import {
   organizationMembers,
   projects,
   currencies,
+  appSettings,
+  organizations,
 } from "@shared/schema";
 import { appendAuditEvent } from "./services/audit-chain-service";
 import { getProcurementLineReportRows } from "./services/procurement-line-report-service";
@@ -98,9 +100,10 @@ import { csvBufferForExcel, workbookToBuffer } from "./http/export-helpers";
 import { appEnv } from "./config/env";
 import { isDisposableDatabaseUrl } from "./config/database-safety";
 import { getProductBootstrapHints } from "./lib/product-bootstrap";
+import { isAssignableNavigationPath } from "@shared/authority-catalogs";
 import { getBuildInfo } from "./lib/build-info";
 import { getReportingCurrencyCode } from "./lib/org-reporting-money";
-import { allowDevOnlyRoutes } from "./lib/deployment-behavior";
+import { allowDevOnlyRoutes, areDeveloperToolsEnabled, isDemoModeEnabled, isDemoWalkthroughEnabled } from "./lib/deployment-behavior";
 import { analyticsRateLimiter, exportRateLimiter, uploadRateLimiter } from "./services/security-service";
 import { getServerDiagnosticEvents, recordServerDiagnosticEvent } from "./diagnostics/server-diagnostics-store";
 import { collectDiagnosticFindings, summarizeDiagnosticFindings } from "./diagnostics/diagnostic-findings-service";
@@ -173,6 +176,17 @@ function pathStatus(targetPath: string) {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   mountUploadsStatic(app);
+  app.get("/api/runtime-capabilities", (_req, res) => {
+    res.json({
+      ok: true,
+      data: {
+        demoMode: isDemoModeEnabled(),
+        demoWalkthroughEnabled: isDemoWalkthroughEnabled(),
+        developerToolsEnabled: areDeveloperToolsEnabled(),
+        testLoginEnabled: appEnv.devTestLoginEnabled,
+      },
+    });
+  });
   app.use("/api/reports/analytics", analyticsRateLimiter);
   app.use("/api/export", exportRateLimiter);
   app.use("/api/export-jobs", exportRateLimiter);
@@ -892,15 +906,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/settings", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
+      const organizationId = getActiveOrganizationId();
       const before = await storage.getAppSettings();
       const validatedData = appSettingsFormSchema.parse({
         ...(before ?? {}),
         ...(req.body ?? {}),
+        organizationId,
       });
       const [activeCurrency] = await db
         .select({ code: currencies.code })
         .from(currencies)
-        .where(and(eq(currencies.code, validatedData.currencyCode), eq(currencies.active, true)))
+        .where(and(
+          eq(currencies.organizationId, organizationId),
+          eq(currencies.code, validatedData.currencyCode),
+          eq(currencies.active, true),
+        ))
         .limit(1);
       if (!activeCurrency) {
         return sendError(
@@ -911,7 +931,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           { hint: "Activate the reporting currency in Master Data before saving organization settings." },
         );
       }
-      const updatedSettings = await storage.updateAppSettings(validatedData);
+      const updatedSettings = await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(appSettings)
+          .set({ ...validatedData, organizationId, updatedAt: new Date() })
+          .where(eq(appSettings.organizationId, organizationId))
+          .returning();
+        if (!updated) throw new Error("Tenant settings row was not found");
+        const [updatedOrganization] = await tx
+          .update(organizations)
+          .set({
+            name: validatedData.companyName,
+            defaultCurrencyCode: validatedData.currencyCode,
+            updatedAt: new Date(),
+          })
+          .where(eq(organizations.id, organizationId))
+          .returning({ id: organizations.id });
+        if (!updatedOrganization) throw new Error("Active organization was not found");
+        return updated;
+      });
       if (req.user) {
         await storage.createActivityLog({
           action: "SETTINGS_UPDATED",
@@ -921,7 +959,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           referenceId: updatedSettings.id,
         });
         await appendAuditEvent({
-          organizationId: getActiveOrganizationId(),
+          organizationId,
           actor: { userId: req.user.id },
           action: "SETTINGS_UPDATED",
           resourceType: "settings",
@@ -968,6 +1006,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       recordServerDiagnosticEvent({ severity: "error", source: "system", title: "Diagnostics findings failed", message: error instanceof Error ? error.message : String(error), details: error });
       return sendError(res, 500, "DIAGNOSTICS_FINDINGS_FAILED", "Diagnostics findings could not be loaded.", { hint: "Retry the workspace and use the request ID if it continues to fail." });
+    }
+  });
+
+  app.get("/api/v2/diagnostics/scan", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (_req: Request, res: Response) => {
+    try {
+      const findings = await collectDiagnosticFindings(getActiveOrganizationId());
+      const byCategory = Object.fromEntries(
+        diagnosticCategories.map((category) => [category, findings.filter((finding) => finding.category === category).length]),
+      );
+      return res.json({ findings, byCategory, scannedAt: new Date().toISOString() });
+    } catch (error) {
+      recordServerDiagnosticEvent({ severity: "error", source: "system", title: "Diagnostics scan failed", message: error instanceof Error ? error.message : String(error), details: error });
+      return sendError(res, 500, "DIAGNOSTICS_SCAN_FAILED", "Diagnostics scan could not be completed.", { hint: "Retry the scan and use the request ID if it continues to fail." });
     }
   });
 
@@ -1857,11 +1908,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatePayload = Object.fromEntries(
         Object.entries(req.body ?? {}).filter(([key]) => allowedFields.has(key)),
       );
+      const changeReason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+      if (changeReason.length < 5) {
+        return sendError(res, 400, "USER_CHANGE_REASON_REQUIRED", "Explain why the employee profile is changing (at least 5 characters).");
+      }
       if (Object.keys(updatePayload).length === 0) {
         return sendError(res, 400, "USER_UPDATE_EMPTY", "No permitted user control fields were supplied.");
       }
+      if (updatePayload.preferences && typeof updatePayload.preferences === "object") {
+        const preferences = updatePayload.preferences as Record<string, unknown>;
+        if (preferences.allowedNavPaths !== undefined) {
+          if (!Array.isArray(preferences.allowedNavPaths)) {
+            return sendError(res, 400, "NAVIGATION_PATHS_INVALID", "Navigation access must be an array of canonical application paths.");
+          }
+          const invalidPaths = preferences.allowedNavPaths.filter((path) => !isAssignableNavigationPath(path));
+          if (invalidPaths.length > 0) {
+            return sendError(res, 400, "NAVIGATION_PATH_UNKNOWN", "One or more navigation paths are not assignable.", {
+              details: { invalidPaths },
+              hint: "Reload the navigation catalog and remove legacy or unknown paths before saving.",
+            });
+          }
+          preferences.allowedNavPaths = [...new Set(preferences.allowedNavPaths)];
+        }
+      }
       const requestedRole = typeof updatePayload.role === "string" ? updatePayload.role : undefined;
       const requestedActive = typeof updatePayload.active === "boolean" ? updatePayload.active : undefined;
+      if (requestedRole === "custom") {
+        const preferences = updatePayload.preferences && typeof updatePayload.preferences === "object"
+          ? updatePayload.preferences as { customRoleId?: unknown }
+          : null;
+        const customRoleId = Number(preferences?.customRoleId);
+        const customRole = Number.isInteger(customRoleId) && customRoleId > 0
+          ? await storage.getCustomRole(customRoleId)
+          : null;
+        if (!customRole || customRole.isActive === false) {
+          return sendError(res, 400, "CUSTOM_ROLE_INACTIVE", "Select an active custom role from the role catalog before saving this profile.");
+        }
+      }
       if (req.user?.id === id && (requestedRole && requestedRole !== "admin")) {
         return sendError(
           res,
@@ -1932,17 +2015,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
           resourceId: membership.id,
           before: {
             userId: id,
+            fullName: before.fullName,
+            email: before.email,
+            phone: before.phone,
             role: before.role,
             active: before.active,
             workPersona: before.workPersona,
+            warehouseId: before.warehouseId,
+            supplierId: before.supplierId,
+            approverAmountLimit: before.approverAmountLimit,
+            preferences: before.preferences,
           },
           after: {
             userId: id,
+            fullName: updatedUser.fullName,
+            email: updatedUser.email,
+            phone: updatedUser.phone,
             role: updatedUser.role,
             active: updatedUser.active,
             workPersona: updatedUser.workPersona,
+            warehouseId: updatedUser.warehouseId,
+            supplierId: updatedUser.supplierId,
+            approverAmountLimit: updatedUser.approverAmountLimit,
+            preferences: updatedUser.preferences,
           },
-          reason: typeof req.body?.reason === "string" ? req.body.reason : "Administrator access-control update",
+          reason: changeReason,
           requestId: String(res.locals.requestId ?? "unknown-request-id"),
           ipAddress: req.ip,
           userAgent: req.get("user-agent") ?? null,
@@ -2303,7 +2400,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // WebSocket test endpoint for real-time inventory updates
-  app.post("/api/inventory-sync/test", auth.ensureAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/inventory-sync/test", auth.ensureAuthenticated, auth.ensureAdmin, async (req: Request, res: Response) => {
+    if (!areDeveloperToolsEnabled()) return sendError(res, 404, "DEVELOPER_TOOLS_DISABLED", "Developer tools are not enabled for this deployment.");
     try {
       const { type, itemId, warehouseId, quantity, reason, userId, entity, action, data } =
         req.body as {
@@ -2676,6 +2774,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e) {
       console.error("[READY] EMAIL_READY_PROBE_FAILED", e instanceof Error ? e.message : e);
       emailOk = false;
+    }
+
+    // Development can begin in recovery mode while PostgreSQL is still
+    // starting. Re-probe here so readiness heals without requiring an app
+    // restart after the database becomes available.
+    try {
+      const [, schemaStatus, sessionTable] = await Promise.all([
+        pool.query("SELECT 1"),
+        getSchemaStatus(),
+        pool.query<{ session_table: string | null }>("SELECT to_regclass('public.session')::text AS session_table"),
+      ]);
+      setDbReady(true);
+      setSchemaReady(schemaStatus.ok);
+      setSessionStoreReady(appEnv.devTestLoginEnabled || Boolean(sessionTable.rows[0]?.session_table));
+    } catch {
+      setDbReady(false);
+      setSchemaReady(false);
+      setSessionStoreReady(appEnv.devTestLoginEnabled);
     }
 
     const basePayload = {

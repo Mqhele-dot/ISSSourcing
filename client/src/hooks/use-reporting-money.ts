@@ -8,7 +8,7 @@ import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallb
  */
 export function useReportingMoney() {
   const { settings } = useSettings();
-  const currencyCode = settings.currencyCode?.trim() || REPORTING_CURRENCY_FALLBACK_CODE;
+  const currencyCode = settings?.currencyCode?.trim() || REPORTING_CURRENCY_FALLBACK_CODE;
 
   return useMemo(() => {
     const formatter = createReportingMoneyFormatter(currencyCode);

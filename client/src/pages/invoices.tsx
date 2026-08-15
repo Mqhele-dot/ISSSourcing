@@ -60,6 +60,7 @@ import { PanelInlineError } from "@/components/panel-inline-error";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { procurementPoRecordItemsUrl, PROCUREMENT_PURCHASE_ORDER_RECORDS_PATH } from "@/api/procurement-purchase-order-paths";
 import { Separator } from "@/components/ui/separator";
+import { useQueryState } from "@/hooks/use-query-state";
 
 function queryErrorDetail(e: unknown): string {
   if (e == null) return "";
@@ -71,7 +72,8 @@ function queryErrorDetail(e: unknown): string {
 
 type Invoice = {
   id: number;
-  invoiceNumber: string;
+  invoiceNumber: string | null;
+  supplierName?: string | null;
   supplierId: number | null;
   purchaseOrderId: number | null;
   status: string;
@@ -84,6 +86,15 @@ type Invoice = {
     createdAt?: string | null;
     updatedAt?: string | null;
   } | null;
+};
+
+type InvoicePage = {
+  items: Invoice[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
+  summary?: { outstandingAmount?: number };
 };
 
 type Supplier = { id: number; name: string };
@@ -231,6 +242,19 @@ export default function InvoicesPage() {
   const [newLineUnitPrice, setNewLineUnitPrice] = useState("");
   const [newLineTaxRate, setNewLineTaxRate] = useState("0");
   const [invoiceExporting, setInvoiceExporting] = useState(false);
+  const { queryState, setQueryState } = useQueryState({ page: "1", pageSize: "25", q: "", status: "all", supplier: "all", from: "", to: "", sort: "created_desc" });
+  const invoicePageSize = [25, 50, 100].includes(Number(queryState.pageSize)) ? Number(queryState.pageSize) : 25;
+  const invoicePageNumber = Math.max(1, Number(queryState.page) || 1);
+  const invoiceListParams = new URLSearchParams({
+    page: String(invoicePageNumber),
+    pageSize: String(invoicePageSize),
+    q: String(queryState.q || ""),
+    status: String(queryState.status || "all"),
+    sort: String(queryState.sort || "created_desc"),
+  });
+  if (queryState.supplier && queryState.supplier !== "all") invoiceListParams.set("supplierId", String(queryState.supplier));
+  if (queryState.from) invoiceListParams.set("from", String(queryState.from));
+  if (queryState.to) invoiceListParams.set("to", String(queryState.to));
 
   const exportInvoices = async (format: "pdf" | "csv" | "excel" | "docx") => {
     if (invoiceExporting) return;
@@ -305,18 +329,20 @@ export default function InvoicesPage() {
   };
 
   const {
-    data: invoices = [],
+    data: invoicePage,
     isLoading,
     isError,
     error,
     refetch,
   } = useQuery({
-    queryKey: ["/api/invoices"],
-    queryFn: () => requestJson<Invoice[]>("GET", "/api/invoices"),
+    queryKey: ["/api/v2/ap/invoices", invoiceListParams.toString()],
+    queryFn: () => requestJson<InvoicePage>("GET", `/api/v2/ap/invoices?${invoiceListParams.toString()}`),
+    placeholderData: (previous) => previous,
   });
+  const invoices = invoicePage?.items ?? [];
   const suppliersQuery = useQuery({
     queryKey: ["/api/suppliers"],
-    queryFn: () => requestJson<Supplier[]>("GET", "/api/suppliers"),
+    queryFn: async () => (await requestJson<{ items: Supplier[] }>("GET", "/api/v2/suppliers?page=1&pageSize=100&status=active&sort=name_asc")).items,
     throwOnError: false,
   });
   const purchaseOrdersQuery = useQuery({
@@ -435,7 +461,7 @@ export default function InvoicesPage() {
         totalTax,
         totalAmount,
         balanceDue: totalAmount,
-        currency: currencyCode || settings.currencyCode,
+        currency: currencyCode || settings?.currencyCode || "",
         items: lines,
       });
     },
@@ -771,7 +797,36 @@ export default function InvoicesPage() {
         <CardHeader>
           <CardTitle>Invoice list</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <div className="xl:col-span-2">
+              <Label htmlFor="invoice-list-search" className="sr-only">Search invoices</Label>
+              <Input id="invoice-list-search" value={String(queryState.q || "")} onChange={(event) => setQueryState({ q: event.target.value, page: "1" })} placeholder="Search invoice or supplier" />
+            </div>
+            <Select value={String(queryState.status || "all")} onValueChange={(value) => setQueryState({ status: value, page: "1" })}>
+              <SelectTrigger aria-label="Filter invoices by status"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {['DRAFT','PENDING_APPROVAL','APPROVED','PARTIALLY_PAID','PAID','OVERDUE','DISPUTED'].map((status) => <SelectItem key={status} value={status}>{status.replaceAll('_', ' ')}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={String(queryState.supplier || "all")} onValueChange={(value) => setQueryState({ supplier: value, page: "1" })}>
+              <SelectTrigger aria-label="Filter invoices by supplier"><SelectValue placeholder="All suppliers" /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All suppliers</SelectItem>{suppliers.map((supplier) => <SelectItem key={supplier.id} value={String(supplier.id)}>{supplier.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Input aria-label="Invoices from date" type="date" value={String(queryState.from || "")} onChange={(event) => setQueryState({ from: event.target.value, page: "1" })} />
+            <Input aria-label="Invoices to date" type="date" value={String(queryState.to || "")} onChange={(event) => setQueryState({ to: event.target.value, page: "1" })} />
+          </div>
+          <div className="flex flex-wrap justify-end gap-3">
+            <Select value={String(queryState.sort || "created_desc")} onValueChange={(value) => setQueryState({ sort: value, page: "1" })}>
+              <SelectTrigger className="w-48" aria-label="Sort invoices"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="created_desc">Newest first</SelectItem><SelectItem value="created_asc">Oldest first</SelectItem><SelectItem value="number_asc">Invoice number A–Z</SelectItem><SelectItem value="due_asc">Due date ascending</SelectItem><SelectItem value="amount_desc">Highest amount</SelectItem></SelectContent>
+            </Select>
+            <Select value={String(invoicePageSize)} onValueChange={(value) => setQueryState({ pageSize: value, page: "1" })}>
+              <SelectTrigger className="w-32" aria-label="Invoice rows per page"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="25">25 rows</SelectItem><SelectItem value="50">50 rows</SelectItem><SelectItem value="100">100 rows</SelectItem></SelectContent>
+            </Select>
+          </div>
           <DataState
             loading={isLoading}
             error={isError ? (error instanceof Error ? error : new Error(String(error))) : null}
@@ -807,7 +862,7 @@ export default function InvoicesPage() {
                         : "-";
                     return (
                       <TableRow key={invoice.id}>
-                        <TableCell>{invoice.invoiceNumber}</TableCell>
+                        <TableCell>{invoice.invoiceNumber || `Invoice #${invoice.id}`}</TableCell>
                         <TableCell>
                           <div className="space-y-1">
                             <div className="font-medium">{supplierLabel}</div>
@@ -837,6 +892,19 @@ export default function InvoicesPage() {
                           <Button
                             size="sm"
                             variant="outline"
+                            onClick={() => window.open(`/api/ap/invoices/${invoice.id}/voucher.pdf`, "_blank", "noopener,noreferrer")}
+                          >
+                            Preview voucher
+                          </Button>
+                          <Button size="sm" variant="outline" className="ml-2" asChild>
+                            <a href={`/api/ap/invoices/${invoice.id}/voucher.pdf?download=1`} download>
+                              <Download className="mr-1 h-3.5 w-3.5" />Download
+                            </a>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="ml-2"
                             onClick={() => runMatch.mutate(invoice.id)}
                             disabled={runMatch.isPending}
                             title={!invoice.purchaseOrderId ? "Run match to show PO-link repair guidance." : undefined}
@@ -927,6 +995,9 @@ export default function InvoicesPage() {
               </Table>
             )}
           </DataState>
+          {invoicePage && invoicePage.total > 0 ? (
+            <InvoicePageControls page={invoicePage} onPage={(page) => setQueryState({ page: String(page) })} />
+          ) : null}
         </CardContent>
       </Card>
 
@@ -1323,6 +1394,23 @@ export default function InvoicesPage() {
         entityId={activeInvoiceId}
         title="Invoice Documents"
       />
+    </div>
+  );
+}
+
+function InvoicePageControls({ page, onPage }: { page: InvoicePage; onPage: (page: number) => void }) {
+  const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
+  const first = page.total === 0 ? 0 : (page.page - 1) * page.pageSize + 1;
+  const last = Math.min(page.total, page.page * page.pageSize);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+      <span className="text-muted-foreground">{first}–{last} of {page.total} invoices</span>
+      <div className="flex flex-wrap gap-2" aria-label="Invoice pagination">
+        <Button type="button" size="sm" variant="outline" disabled={page.page <= 1} onClick={() => onPage(1)}>First</Button>
+        <Button type="button" size="sm" variant="outline" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)}>Previous</Button>
+        <Button type="button" size="sm" variant="outline" disabled={!page.hasNext} onClick={() => onPage(page.page + 1)}>Next</Button>
+        <Button type="button" size="sm" variant="outline" disabled={page.page >= lastPage} onClick={() => onPage(lastPage)}>Last</Button>
+      </div>
     </div>
   );
 }

@@ -40,6 +40,7 @@ import { downloadBlobAsFile } from "@/lib/utils";
 import { formatDate } from "./purchase-order-shared";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
+import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
 
 type PoSort =
   | "requested-desc"
@@ -90,7 +91,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
   const productSetupComplete = useProductSetupComplete();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { formatMoney } = useReportingMoney();
+  const { formatMoney, currencyCode: reportingCurrencyCode } = useReportingMoney();
   const [exportingPo, setExportingPo] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<PoSort>("requested-desc");
   const [previewOrder, setPreviewOrder] = useState<PurchaseOrderListItem | null>(null);
@@ -419,7 +420,12 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                         <TableCell>{formatDate(order.requestedDate)}</TableCell>
                         <TableCell className="text-right">{order.linesCount}</TableCell>
                         <TableCell className="text-right">{order.receivedProgress}%</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(order.totalAmount)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          <div>{createReportingMoneyFormatter(order.currencyCode || reportingCurrencyCode).formatMoney(order.totalAmount)}</div>
+                          {order.reportingTotal != null && (order.currencyCode || reportingCurrencyCode) !== reportingCurrencyCode ? (
+                            <div className="text-xs text-muted-foreground">{formatMoney(order.reportingTotal)}</div>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
                           <div className="flex justify-end gap-1">
                           <Button
@@ -498,7 +504,17 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                 <div className="rounded-md border p-3"><div className="text-xs text-muted-foreground">Requested</div><div className="font-medium">{formatDate(previewOrder.requestedDate)}</div></div>
                 <div className="rounded-md border p-3"><div className="text-xs text-muted-foreground">Lines</div><div className="font-medium">{previewOrder.linesCount}</div></div>
                 <div className="rounded-md border p-3"><div className="text-xs text-muted-foreground">Received progress</div><div className="font-medium">{previewOrder.receivedProgress}%</div></div>
-                <div className="rounded-md border p-3 sm:col-span-2"><div className="text-xs text-muted-foreground">Total amount</div><div className="text-xl font-semibold" data-testid="po-preview-total">{formatMoney(previewOrder.totalAmount)}</div></div>
+                <div className="rounded-md border p-3 sm:col-span-2">
+                  <div className="text-xs text-muted-foreground">Total amount</div>
+                  <div className="text-xl font-semibold" data-testid="po-preview-total">
+                    {createReportingMoneyFormatter(previewOrder.currencyCode || reportingCurrencyCode).formatMoney(previewOrder.totalAmount)}
+                  </div>
+                  {previewOrder.reportingTotal != null ? (
+                    <div className="text-sm text-muted-foreground">Reporting value: {formatMoney(previewOrder.reportingTotal)}</div>
+                  ) : previewOrder.currencyCode && previewOrder.currencyCode !== reportingCurrencyCode ? (
+                    <div className="text-sm text-amber-700">No active {previewOrder.currencyCode}/{reportingCurrencyCode} Master Data rate.</div>
+                  ) : null}
+                </div>
               </div>
               <p className="rounded-md border bg-muted/30 p-3 text-sm">{poStatusExplanation(previewOrder.status)}</p>
               <DialogFooter>

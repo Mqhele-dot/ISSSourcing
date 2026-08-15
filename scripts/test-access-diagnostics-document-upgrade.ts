@@ -14,6 +14,11 @@ assert.equal(hasProfileNavigationAccess("custom", { allowedNavPaths: ["/inventor
 assert.equal(notificationTarget({ entityType: "shipment", entityId: 42 }), "/operations/logistics/42");
 assert.equal(notificationTarget({ entityType: "purchase_requisition", entityId: 7 }), "/procurement/requisitions/7");
 assert.equal(notificationTarget({ entityType: "invoice", entityId: 9 }), "/finance/accounts-payable");
+assert.equal(
+  notificationTarget({ entityType: "inventory_item", title: "Low stock alert" }),
+  "/inventory?low=1",
+);
+assert.equal(notificationTarget({ type: "low_stock" }), "/inventory?low=1");
 
 const workDir = await mkdtemp(path.join(tmpdir(), "iss-extractor-upgrade-"));
 try {

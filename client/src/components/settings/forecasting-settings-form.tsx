@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, BarChart3 } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
+import { SettingsAuthorityState } from "./settings-authority-state";
 
 // Define schema for form validation
 const forecastingSettingsSchema = z.object({
@@ -29,35 +30,34 @@ const forecastingSettingsSchema = z.object({
 type ForecastingSettingsFormType = z.infer<typeof forecastingSettingsSchema>;
 
 export function ForecastingSettingsForm() {
-  const { settings, updateSettings } = useSettings();
+  const { settings, isLoading, error, refetch, updateSettings } = useSettings();
 
   // Create form
   const form = useForm<ForecastingSettingsFormType>({
     resolver: zodResolver(forecastingSettingsSchema),
     defaultValues: {
-      forecastingEnabled: settings.forecastingEnabled ?? true,
-      forecastDays: settings.forecastDays ?? 30,
-      seasonalAdjustmentEnabled: settings.seasonalAdjustmentEnabled ?? true,
+      forecastingEnabled: settings?.forecastingEnabled ?? false,
+      forecastDays: settings?.forecastDays ?? 30,
+      seasonalAdjustmentEnabled: settings?.seasonalAdjustmentEnabled ?? false,
     },
   });
 
   React.useEffect(() => {
+    if (!settings) return;
     form.reset({
-      forecastingEnabled: settings.forecastingEnabled ?? true,
-      forecastDays: settings.forecastDays ?? 30,
-      seasonalAdjustmentEnabled: settings.seasonalAdjustmentEnabled ?? true,
+      forecastingEnabled: settings?.forecastingEnabled ?? false,
+      forecastDays: settings?.forecastDays ?? 30,
+      seasonalAdjustmentEnabled: settings?.seasonalAdjustmentEnabled ?? false,
     });
-  }, [
-    form,
-    settings.forecastDays,
-    settings.forecastingEnabled,
-    settings.seasonalAdjustmentEnabled,
-  ]);
+  }, [form, settings]);
 
   // Submit handler
   function onSubmit(data: ForecastingSettingsFormType) {
+    if (!settings) return;
     updateSettings.mutate(data);
   }
+
+  if (!settings) return <SettingsAuthorityState loading={isLoading} error={error} onRetry={() => void refetch()} />;
 
   return (
     <Card>

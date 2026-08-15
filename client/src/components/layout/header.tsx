@@ -16,15 +16,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { useFallbackState } from "@/hooks/use-fallback-state";
-import { Command as CommandPaletteIcon, LogOut, User, Settings, Bell, Moon, Palette, Search, Sun } from "lucide-react";
+import { Command as CommandPaletteIcon, LogOut, User, Settings, Bell, Palette, Search } from "lucide-react";
 import { requestOpenCommandPalette } from "@/components/command-menu";
-import { useTheme } from "@/components/theme-provider";
 import { useAccent } from "@/components/accent-provider";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { qk } from "@/lib/query-keys";
 import { queryClient, requestJson } from "@/lib/queryClient";
 import { getGlobalSearchTypeLabel } from "@/features/global-search/use-global-search";
 import { notificationTarget } from "@/lib/notifications/notification-target";
+import { ThemeToggleButton } from "@/components/theme-toggle-button";
 
 type Notification = {
   id: number;
@@ -37,6 +37,8 @@ type Notification = {
   occurrenceCount: number;
   entityType: string | null;
   entityId: number | null;
+  targetPath: string | null;
+  findingCode: string | null;
 };
 
 type NotificationResponse = {
@@ -64,7 +66,6 @@ export const Header: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeResult, setActiveResult] = useState(0);
   const { user, logoutMutation } = useAuth();
-  const { resolvedTheme, toggleTheme } = useTheme();
   const { accent, cycleAccent } = useAccent();
   const { badge: systemBadge } = useFallbackState();
   const environmentLabel = import.meta.env.DEV ? "DEV" : "PROD";
@@ -101,14 +102,20 @@ export const Header: React.FC = () => {
     navigateToResult(searchResults[activeResult] ?? searchResults[0]);
   };
 
-  const permissionSummaryByRole: Record<string, string> = {
-    admin: "Full access",
-    manager: "Planner privileges",
-    warehouse_staff: "Warehouse operations",
-    viewer: "Read only",
-  };
-  const permissionSummary =
-    permissionSummaryByRole[(user?.role || "viewer").toLowerCase()] || "Custom role";
+  const { data: myAccess } = useQuery<{
+    role: string;
+    customRoleId: number | null;
+    permissions: Record<string, Record<string, boolean>>;
+  }>({
+    queryKey: ["/api/permissions/me"],
+    queryFn: () => requestJson("GET", "/api/permissions/me"),
+    enabled: !!user,
+  });
+  const permissionCount = Object.values(myAccess?.permissions ?? {}).reduce(
+    (total, permissions) => total + Object.values(permissions).filter(Boolean).length,
+    0,
+  );
+  const permissionSummary = `${permissionCount} effective permission${permissionCount === 1 ? "" : "s"}`;
   const { data: notificationPage } = useQuery({
     queryKey: [...qk.notifications, "recent"],
     queryFn: () => requestJson<NotificationResponse>("GET", "/api/notifications?page=1&pageSize=8"),
@@ -166,6 +173,11 @@ export const Header: React.FC = () => {
             aria-autocomplete="list"
             aria-expanded={searchOpen && searchInput.trim().length >= 2}
             aria-controls="universal-search-results"
+            aria-activedescendant={
+              searchOpen && searchResults[activeResult]
+                ? `universal-search-option-${activeResult}`
+                : undefined
+            }
             onFocus={() => setSearchOpen(searchInput.trim().length >= 2)}
             onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)}
             onChange={(e) => {
@@ -175,6 +187,13 @@ export const Header: React.FC = () => {
               setActiveResult(0);
             }}
             onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (!universalSearch.isLoading && !universalSearch.isError) {
+                  navigateToResult(searchResults[activeResult] ?? searchResults[0]);
+                }
+                return;
+              }
               if (e.key === "ArrowDown" && searchResults.length) {
                 e.preventDefault();
                 setActiveResult((value) => (value + 1) % searchResults.length);
@@ -182,6 +201,14 @@ export const Header: React.FC = () => {
               if (e.key === "ArrowUp" && searchResults.length) {
                 e.preventDefault();
                 setActiveResult((value) => (value - 1 + searchResults.length) % searchResults.length);
+              }
+              if (e.key === "Home" && searchResults.length) {
+                e.preventDefault();
+                setActiveResult(0);
+              }
+              if (e.key === "End" && searchResults.length) {
+                e.preventDefault();
+                setActiveResult(searchResults.length - 1);
               }
               if (e.key === "Escape") {
                 setSearchOpen(false);
@@ -222,6 +249,7 @@ export const Header: React.FC = () => {
               {searchResults.map((result, index) => (
                 <button
                   key={`${result.type}:${result.id}`}
+                  id={`universal-search-option-${index}`}
                   type="button"
                   role="option"
                   aria-selected={index === activeResult}
@@ -273,19 +301,7 @@ export const Header: React.FC = () => {
           {roleLabel}
         </Badge>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={toggleTheme}
-        >
-          {resolvedTheme === "dark" ? (
-            <Sun className="h-5 w-5" />
-          ) : (
-            <Moon className="h-5 w-5" />
-          )}
-          <span className="sr-only">Toggle theme</span>
-        </Button>
+        <ThemeToggleButton compact className="text-muted-foreground hover:text-foreground" />
 
         <Button
           variant="ghost"

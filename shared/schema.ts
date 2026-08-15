@@ -9,6 +9,7 @@ import {
   pgEnum,
   jsonb,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -329,7 +330,8 @@ export const insertCategorySchema = createInsertSchema(categories).pick({
 // Master data tables used across procurement and finance
 export const unitsOfMeasure = pgTable("units_of_measure", {
   id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  code: text("code").notNull(),
   name: text("name").notNull(),
   symbol: text("symbol"),
   baseUnitId: integer("base_unit_id"),
@@ -341,7 +343,8 @@ export const unitsOfMeasure = pgTable("units_of_measure", {
 
 export const currencies = pgTable("currencies", {
   id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  code: text("code").notNull(),
   name: text("name").notNull(),
   symbol: text("symbol").notNull(),
   regionCode: text("region_code").default("ZA"),
@@ -356,7 +359,8 @@ export const currencies = pgTable("currencies", {
 
 export const taxCodes = pgTable("tax_codes", {
   id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  code: text("code").notNull(),
   name: text("name").notNull(),
   rate: real("rate").notNull().default(0),
   type: text("type").notNull().default("vat"), // vat, sales, withholding
@@ -368,7 +372,8 @@ export const taxCodes = pgTable("tax_codes", {
 
 export const commodityCodes = pgTable("commodity_codes", {
   id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  code: text("code").notNull(),
   description: text("description"),
   category: text("category"),
   active: boolean("active").default(true),
@@ -378,7 +383,8 @@ export const commodityCodes = pgTable("commodity_codes", {
 
 export const incoterms = pgTable("incoterms", {
   id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  code: text("code").notNull(),
   name: text("name").notNull(),
   description: text("description"),
   active: boolean("active").default(true),
@@ -388,7 +394,8 @@ export const incoterms = pgTable("incoterms", {
 
 export const paymentTerms = pgTable("payment_terms", {
   id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  code: text("code").notNull(),
   name: text("name").notNull(),
   netDays: integer("net_days").default(30).notNull(),
   discountDays: integer("discount_days"),
@@ -2303,6 +2310,26 @@ export const cycleCountLines = pgTable("cycle_count_lines", {
   variance: integer("variance").notNull().default(0),
 });
 
+/** Tenant-scoped monetary authority assigned to an individual approver by workflow. */
+export const userApprovalLimits = pgTable(
+  "user_approval_limits",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(),
+    amountLimit: real("amount_limit"),
+    currencyCode: text("currency_code").notNull().default("ZAR"),
+    updatedBy: integer("updated_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("user_approval_limits_org_user_entity_uidx").on(table.organizationId, table.userId, table.entityType),
+    index("user_approval_limits_org_entity_idx").on(table.organizationId, table.entityType, table.userId),
+  ],
+);
+
 export const stockCountSessions = pgTable(
   "stock_count_sessions",
   {
@@ -2964,6 +2991,7 @@ export const documents = pgTable("documents", {
   uploadedBy: integer("uploaded_by"),
   uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
   archivedAt: timestamp("archived_at"),
+  lastVerifiedAt: timestamp("last_verified_at"),
 });
 
 export const retentionPolicies = pgTable("retention_policies", {
@@ -2987,6 +3015,8 @@ export const notifications = pgTable("notifications", {
   body: text("body"),
   entityType: text("entity_type"),
   entityId: integer("entity_id"),
+  targetPath: text("target_path"),
+  findingCode: text("finding_code"),
   occurrenceCount: integer("occurrence_count").notNull().default(1),
   lastOccurredAt: timestamp("last_occurred_at").defaultNow().notNull(),
   readAt: timestamp("read_at"),
@@ -3910,6 +3940,23 @@ export const fuelStations = pgTable(
   (t) => [uniqueIndex("fuel_stations_org_code_uidx").on(t.organizationId, t.code)],
 );
 
+export const fuelProducts = pgTable(
+  "fuel_products",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    productClass: text("product_class").notNull(),
+    unit: text("unit").notNull().default("litre"),
+    applicableStorageTypes: text("applicable_storage_types").array().notNull().default([]),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("fuel_products_org_code_uidx").on(t.organizationId, t.code)],
+);
+
 export const fuelTanks = pgTable(
   "fuel_tanks",
   {
@@ -3917,6 +3964,7 @@ export const fuelTanks = pgTable(
     organizationId: integer("organization_id").notNull().references(() => organizations.id),
     stationId: integer("station_id").notNull().references(() => fuelStations.id),
     code: text("code").notNull(),
+    productId: integer("product_id").references(() => fuelProducts.id),
     productType: text("product_type").notNull(),
     storageType: text("storage_type").notNull().default("underground_tank"),
     capacityLitres: real("capacity_litres").notNull(),

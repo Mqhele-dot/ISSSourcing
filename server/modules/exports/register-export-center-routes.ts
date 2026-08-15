@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
 import type { Express, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
 import { pool } from "../../db";
@@ -8,8 +9,7 @@ import { getActiveOrganizationId } from "../../organization-context";
 import { getExportDatasetRegistry } from "../../services/export-registry";
 import { sendError, sendOk } from "../../api-response";
 import { storage } from "../../storage";
-import { createExportJob, getScopedExportJob, listExportJobs, refreshScopedExportDownloadToken, requeueExportJob } from "./export-jobs";
-import { removeExportFile } from "./export-file-store";
+import { createExportJob, getScopedExportJob, listExportJobs, refreshScopedExportDownloadToken } from "./export-jobs";
 import { exportRateLimiter } from "../../services/security-service";
 import {
   getProcurementLineReportRows,
@@ -116,6 +116,19 @@ function zodFieldIssues(error: unknown): Record<string, string[]> | undefined {
   );
 }
 
+function normalizeReportFilters(filters: Record<string, unknown>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(filters)
+      .filter(([, value]) => value != null && String(value).trim() !== "")
+      .map(([key, value]) => [key, String(value).trim()])
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function reportFilterFingerprint(dataset: string, filters: Record<string, string>): string {
+  return createHash("sha256").update(JSON.stringify({ dataset, filters })).digest("hex").slice(0, 24);
+}
+
 function procurementFilters(filters: Record<string, unknown> = {}): ProcurementLineReportFilters {
   const numberOrNull = (value: unknown) => {
     const parsed = Number(value);
@@ -145,13 +158,30 @@ async function buildCustomDatasetRows(
   if (dataset === "inventory") {
     const categories = await storage.getAllCategories();
     const categoryById = new Map(categories.map((category) => [category.id, category.name]));
-    return (await storage.getAllInventoryItems()).slice(offset, offset + limit).map((item) => ({
+    const q = String(filters.q ?? filters.search ?? "").trim().toLowerCase();
+    const categoryId = Number(filters.categoryId);
+    const status = String(filters.status ?? "").toLowerCase();
+    const rows = (await storage.getAllInventoryItems()).filter((item) => {
+      if (Number.isFinite(categoryId) && categoryId > 0 && Number(item.categoryId) !== categoryId) return false;
+      if (q && !`${item.sku ?? ""} ${item.name ?? ""}`.toLowerCase().includes(q)) return false;
+      if (status === "low_stock" && Number(item.quantity ?? 0) > Number(item.lowStockThreshold ?? 0)) return false;
+      return true;
+    });
+    return rows.slice(offset, offset + limit).map((item) => ({
       ...item,
       categoryName: item.categoryId != null ? categoryById.get(item.categoryId) ?? "" : "",
     }));
   }
   if (dataset === "suppliers") {
-    return (await storage.getAllSuppliers()).slice(offset, offset + limit);
+    const q = String(filters.q ?? filters.search ?? "").trim().toLowerCase();
+    const supplierId = Number(filters.supplierId);
+    const status = String(filters.status ?? "").trim().toLowerCase();
+    return (await storage.getAllSuppliers()).filter((supplier) => {
+      if (Number.isFinite(supplierId) && supplierId > 0 && supplier.id !== supplierId) return false;
+      if (q && !`${supplier.name ?? ""} ${supplier.email ?? ""}`.toLowerCase().includes(q)) return false;
+      if (status && status !== "all" && String(supplier.status ?? "").toLowerCase() !== status) return false;
+      return true;
+    }).slice(offset, offset + limit);
   }
   if (dataset === "purchase_orders") {
     return getProcurementLineReportRows({
@@ -318,15 +348,10 @@ export function registerExportCenterRoutes(
         return sendError(res, 400, "REPORT_COLUMNS_INVALID", "Select at least one valid column.");
       }
       const offset = (parsed.page - 1) * parsed.pageSize;
-      const shouldSortBeforePaging = Boolean(parsed.sortBy && selectedKeys.includes(parsed.sortBy));
-      const fetched = await buildCustomDatasetRows(
-        parsed.dataset,
-        shouldSortBeforePaging ? 10_000 : parsed.pageSize + 1,
-        shouldSortBeforePaging ? 0 : offset,
-        parsed.filters,
-      );
+      const normalizedFilters = normalizeReportFilters(parsed.filters);
+      const fetched = await buildCustomDatasetRows(parsed.dataset, 10_000, 0, normalizedFilters);
       const sorted = [...fetched];
-      if (shouldSortBeforePaging && parsed.sortBy) {
+      if (parsed.sortBy && selectedKeys.includes(parsed.sortBy)) {
         sorted.sort((left, right) => {
           const leftMissingLines = left.dataQualityStatus === "DOCUMENT_HAS_NO_LINES";
           const rightMissingLines = right.dataQualityStatus === "DOCUMENT_HAS_NO_LINES";
@@ -339,9 +364,10 @@ export function registerExportCenterRoutes(
           return parsed.sortDirection === "desc" ? -result : result;
         });
       }
-      const windowed = shouldSortBeforePaging ? sorted.slice(offset, offset + parsed.pageSize + 1) : sorted;
-      const hasNext = windowed.length > parsed.pageSize;
-      const rows = windowed.slice(0, parsed.pageSize);
+      const total = sorted.length;
+      const rows = sorted.slice(offset, offset + parsed.pageSize);
+      const hasNext = offset + rows.length < total;
+      const totalValue = sorted.reduce((sum, row) => sum + Number(row.lineTotal ?? row.total ?? row.documentTotal ?? 0), 0);
       return sendOk(res, {
         dataset: parsed.dataset,
         label: entry.label,
@@ -353,8 +379,12 @@ export function registerExportCenterRoutes(
         page: parsed.page,
         pageSize: parsed.pageSize,
         hasNext,
+        total,
         resultCount: rows.length,
-        appliedFilters: parsed.filters,
+        summary: { rowCount: total, totalValue },
+        appliedFilters: normalizedFilters,
+        normalizedFilters,
+        filterFingerprint: reportFilterFingerprint(parsed.dataset, normalizedFilters),
         generatedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -467,6 +497,13 @@ export function registerExportCenterRoutes(
 
   app.post("/api/export-jobs", ...exportAccess, exportRateLimiter, async (req: Request, res: Response) => {
     const parsed = createExportJobSchema.parse(req.body);
+    const dataset = getExportDatasetRegistry().find((entry) => entry.key === parsed.dataset);
+    if (!dataset) return sendError(res, 400, "EXPORT_DATASET_UNSUPPORTED", "The selected export dataset is not supported.");
+    if (!dataset.formats.includes(parsed.format)) {
+      return sendError(res, 400, "EXPORT_FORMAT_UNSUPPORTED", `${parsed.format.toUpperCase()} is not supported for ${dataset.label}.`, {
+        hint: `Choose one of: ${dataset.formats.join(", ")}.`,
+      });
+    }
     const job = await createExportJob({
       userId: currentUserId(req),
       dataset: parsed.dataset,
@@ -499,12 +536,19 @@ export function registerExportCenterRoutes(
     if (!job) {
       return sendError(res, 404, "EXPORT_JOB_NOT_FOUND", "Export job not found.");
     }
-    if (job.filePath) {
-      removeExportFile(job.filePath);
+    if (job.status !== "failed") {
+      return sendError(res, 409, "EXPORT_RETRY_INVALID_STATE", "Only failed export jobs can be retried.");
     }
-    await requeueExportJob(id);
-    const refreshed = await getScopedExportJob(id);
-    sendOk(res, refreshed ? withDownloadUrl(refreshed) : null);
+    const retry = await createExportJob({
+      userId: currentUserId(req),
+      dataset: job.dataset,
+      format: job.format,
+      filters: job.filters,
+      sourcePage: job.sourcePage,
+      reason: job.reason,
+      retryOfJobId: job.id,
+    });
+    sendOk(res, withDownloadUrl(retry), 202);
   });
 
   app.post("/api/export-jobs/:id/download-token", ...exportAccess, exportRateLimiter, async (req: Request, res: Response) => {

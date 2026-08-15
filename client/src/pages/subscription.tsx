@@ -232,30 +232,30 @@ export default function SubscriptionPage() {
           <CardContent className="py-8 text-sm text-muted-foreground">Loading subscription state...</CardContent>
         </Card>
       ) : current ? (
-        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center justify-between gap-3">
+              <CardTitle className="flex flex-wrap items-center justify-between gap-3">
                 Current plan
                 <Badge variant={current.access.restricted ? "destructive" : "default"}>{current.access.label}</Badge>
               </CardTitle>
               <CardDescription>{current.access.message}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-4">
-                <div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="min-w-0">
                   <p className="text-sm text-muted-foreground">Plan</p>
                   <p className="text-xl font-semibold">{current.plan.displayName}</p>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-muted-foreground">Status</p>
                   <p className="text-xl font-semibold uppercase">{current.status}</p>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-muted-foreground">Trial ends</p>
                   <p className="text-xl font-semibold">{formatDate(current.lifecycle?.trialEndsAt)}</p>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-muted-foreground">Period ends</p>
                   <p className="text-xl font-semibold">{formatDate(current.lifecycle?.currentPeriodEnd)}</p>
                 </div>
@@ -263,12 +263,12 @@ export default function SubscriptionPage() {
 
               <Separator />
 
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                 {current.usageLimits.map((entry) => (
-                  <div key={entry.key} className="rounded-lg border p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-medium">{entry.label}</p>
-                      <Badge variant={entry.overLimit ? "destructive" : entry.atLimit ? "secondary" : "outline"}>
+                  <div key={entry.key} className="min-w-0 rounded-lg border p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="min-w-0 break-words font-medium">{entry.label}</p>
+                      <Badge className="shrink-0" variant={entry.overLimit ? "destructive" : entry.atLimit ? "secondary" : "outline"}>
                         {entry.limit == null ? "Unlimited" : `${entry.current}/${entry.limit}`}
                       </Badge>
                     </div>

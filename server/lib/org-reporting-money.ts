@@ -1,7 +1,7 @@
 import type { AppSettings } from "@shared/schema";
 import type { IStorage } from "../storage";
 import { db } from "../db";
-import { organizations } from "@shared/schema";
+import { appSettings, organizations } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getActiveOrganizationId } from "../organization-context";
 
@@ -28,15 +28,36 @@ export function reportingCurrencyCodeFromAppSettings(settings: AppSettings | nul
   return REPORTING_CURRENCY_FALLBACK_CODE;
 }
 
-export async function getReportingCurrencyCode(storage: IStorage): Promise<string> {
-  try {
-    const [organization] = await db
+/**
+ * The Production Control Plane is the reporting-currency authority. Legacy
+ * organizations may temporarily disagree with app_settings after an upgrade,
+ * so reads prefer the tenant settings row until the next settings save repairs
+ * both records atomically.
+ */
+export async function getCanonicalReportingCurrencyCode(organizationId = getActiveOrganizationId()): Promise<string> {
+  const [settingsRows, organizationRows] = await Promise.all([
+    db
+      .select({ currencyCode: appSettings.currencyCode })
+      .from(appSettings)
+      .where(eq(appSettings.organizationId, organizationId))
+      .limit(1),
+    db
       .select({ defaultCurrencyCode: organizations.defaultCurrencyCode })
       .from(organizations)
-      .where(eq(organizations.id, getActiveOrganizationId()))
-      .limit(1);
-    const organizationCode = organization?.defaultCurrencyCode?.trim().toUpperCase() ?? "";
-    if (organizationCode && isValidIso4217(organizationCode)) return organizationCode;
+      .where(eq(organizations.id, organizationId))
+      .limit(1),
+  ]);
+  const settingsCode = settingsRows[0]?.currencyCode?.trim().toUpperCase() ?? "";
+  if (settingsCode && isValidIso4217(settingsCode)) return settingsCode;
+  const organizationCode = organizationRows[0]?.defaultCurrencyCode?.trim().toUpperCase() ?? "";
+  if (organizationCode && isValidIso4217(organizationCode)) return organizationCode;
+  return REPORTING_CURRENCY_FALLBACK_CODE;
+}
+
+export async function getReportingCurrencyCode(storage: IStorage): Promise<string> {
+  try {
+    const canonicalCode = await getCanonicalReportingCurrencyCode();
+    if (canonicalCode) return canonicalCode;
     const s = await storage.getAppSettings();
     return reportingCurrencyCodeFromAppSettings(s ?? undefined);
   } catch {

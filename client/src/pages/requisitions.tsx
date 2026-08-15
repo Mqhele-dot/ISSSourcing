@@ -66,7 +66,14 @@ interface RequisitionsPageProps {
   basePath?: string;
 }
 
-const EMPTY_REQUISITIONS: PurchaseRequisitionListEntry[] = [];
+type ReportingRequisitionListEntry = PurchaseRequisitionListEntry & {
+  currencyCode?: string | null;
+  reportingCurrencyCode?: string | null;
+  reportingExchangeRate?: number | null;
+  reportingTotal?: number | null;
+};
+
+const EMPTY_REQUISITIONS: ReportingRequisitionListEntry[] = [];
 
 export default function RequisitionsPage({ embedded, basePath = "/requisitions" }: RequisitionsPageProps = {}) {
   const productSetupComplete = useProductSetupComplete();
@@ -117,7 +124,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
   const pageSize = [25, 50, 100].includes(Number(queryState.pageSize)) ? Number(queryState.pageSize) : 25;
   const { data: requisitionPage, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/v2/procurement/requisitions", queryState.status, queryState.q, page, pageSize],
-    queryFn: () => requestJson<{ items: PurchaseRequisitionListEntry[]; total: number; page: number; pageSize: number; hasNext: boolean; summary?: { totalAmount: number; byStatus: Record<string, number> } }>("GET", `/api/v2/procurement/requisitions?page=${page}&pageSize=${pageSize}&status=${encodeURIComponent(String(queryState.status || ""))}&q=${encodeURIComponent(String(queryState.q || ""))}`),
+    queryFn: () => requestJson<{ items: ReportingRequisitionListEntry[]; total: number; page: number; pageSize: number; hasNext: boolean; summary?: { totalAmount: number; reportingCurrencyCode: string; missingFxCount: number; byStatus: Record<string, number> } }>("GET", `/api/v2/procurement/requisitions?page=${page}&pageSize=${pageSize}&status=${encodeURIComponent(String(queryState.status || ""))}&q=${encodeURIComponent(String(queryState.q || ""))}`),
   });
   const requisitions = requisitionPage?.items ?? EMPTY_REQUISITIONS;
 
@@ -309,6 +316,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
           breadcrumb={<span>Purchase / Requisitions</span>}
         />
       )}
+      {embedded ? <h1 className="sr-only">Purchase Requisitions</h1> : null}
 
       <Toolbar
         sticky
@@ -402,7 +410,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
       ) : null}
 
       <p className="text-sm text-muted-foreground" data-testid="requisition-results-count">
-        Showing {filtered.length} of {requisitions.length} requisitions
+        {requisitionPage?.total ? `${(page - 1) * pageSize + 1}–${Math.min(requisitionPage.total, page * pageSize)} of ${requisitionPage.total}` : "0 of 0"} requisitions
       </p>
 
       {usersError || suppliersError ? (
@@ -487,7 +495,14 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                   <TableCell>{departmentNameFor(req)}</TableCell>
                   <TableCell>{lineCountFor(req)}</TableCell>
                   <TableCell>{linkedPoFor(req)}</TableCell>
-                  <TableCell>{formatMoney(Number(req.totalAmount || 0))}</TableCell>
+                  <TableCell>
+                    <div>{req.currencyCode ?? "—"} {Number(req.totalAmount || 0).toFixed(2)}</div>
+                    {req.reportingTotal != null ? (
+                      <div className="text-xs text-muted-foreground">{formatMoney(req.reportingTotal)}</div>
+                    ) : req.currencyCode ? (
+                      <div className="text-xs text-amber-700">FX rate unavailable</div>
+                    ) : null}
+                  </TableCell>
                   <TableCell>{formatRequisitionDate(req.requiredDate)}</TableCell>
                   <TableCell>{formatRequisitionDate(req.createdAt)}</TableCell>
                   <TableCell className="text-right">
@@ -508,7 +523,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                               title="Suggested approvers"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                setApproverHelpAmount(Number(req.totalAmount ?? 0));
+                                setApproverHelpAmount(Number(req.reportingTotal ?? req.totalAmount ?? 0));
                               }}
                             >
                               <Users className="h-4 w-4 text-muted-foreground" />
@@ -666,7 +681,14 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                 </div>
                 <div className="rounded-md border p-3">
                   <div className="text-xs text-muted-foreground">Total</div>
-                  <div className="text-xl font-semibold tabular-nums">{formatMoney(Number(previewReq.totalAmount || 0))}</div>
+                  <div className="text-xl font-semibold tabular-nums">
+                    {(previewReq as ReportingRequisitionListEntry).currencyCode ?? "—"} {Number(previewReq.totalAmount || 0).toFixed(2)}
+                  </div>
+                  {(previewReq as ReportingRequisitionListEntry).reportingTotal != null ? (
+                    <div className="text-sm text-muted-foreground">
+                      Reporting value: {formatMoney(Number((previewReq as ReportingRequisitionListEntry).reportingTotal))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="rounded-md border p-3">
                   <div className="text-xs text-muted-foreground">Required date</div>

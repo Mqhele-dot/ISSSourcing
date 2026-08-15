@@ -13,6 +13,20 @@ export function allowDevOnlyRoutes(): boolean {
   return true;
 }
 
+export function isDemoModeEnabled(): boolean {
+  return String(process.env.DEMO_MODE ?? "").toLowerCase() === "true";
+}
+
+/** Mutating walkthroughs require two explicit switches, even in a demo deployment. */
+export function isDemoWalkthroughEnabled(): boolean {
+  return isDemoModeEnabled() && String(process.env.ENABLE_DEMO_WALKTHROUGH ?? "").toLowerCase() === "true";
+}
+
+/** Developer tools never become available in production or packaged builds. */
+export function areDeveloperToolsEnabled(): boolean {
+  return allowDevOnlyRoutes() && String(process.env.ENABLE_DEVELOPER_TOOLS ?? "").toLowerCase() === "true";
+}
+
 export function defaultLogVerbosity(): "debug" | "info" | "warn" | "error" {
   if (isPackagedDeployment() && appEnv.isProduction) return "warn";
   if (appEnv.isDevelopment) return "debug";

@@ -103,11 +103,10 @@ function LogisticsV1ExclusionNotice() {
   return (
     <Alert className="border-amber-200 bg-amber-50 text-amber-950">
       <AlertTriangle className="h-4 w-4" aria-hidden />
-      <AlertTitle>Operational review route</AlertTitle>
+      <AlertTitle>Controlled logistics workspace</AlertTitle>
       <AlertDescription>
-        This workspace uses live shipment, carrier, and related purchase-order data for inbound monitoring and detail
-        review. Outbound issue-document dispatch remains explicitly excluded, and production change approval still
-        depends on attached disposable-database workflow evidence.
+        Inbound purchase-order shipments and outbound inventory issue documents use separate controlled workflows.
+        Dispatch locks and deducts canonical warehouse stock and records a traceable ISSUE movement.
       </AlertDescription>
     </Alert>
   );
@@ -120,6 +119,95 @@ type Carrier = {
   contact?: string | null;
   active?: boolean | null;
 };
+
+type InventoryIssueListItem = {
+  id: number;
+  issueNumber: string;
+  status: "DRAFT" | "READY" | "DISPATCHED" | "DELIVERED" | "CANCELLED";
+  recipient: string;
+  destination: string;
+  warehouseName: string;
+  carrierName?: string | null;
+  trackingNumber?: string | null;
+  lineCount: number;
+  totalQuantity: number;
+  updatedAt: string;
+};
+
+type WarehouseOption = { id: number; name: string };
+type InventoryOption = { id: number; sku: string; name: string };
+
+function outboundIdempotency(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function OutboundIssuePanel() {
+  const { toast } = useToast();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [warehouseId, setWarehouseId] = useState("");
+  const [recipient, setRecipient] = useState("");
+  const [destination, setDestination] = useState("");
+  const [itemId, setItemId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+
+  const issues = useQuery({
+    queryKey: ["/api/logistics/inventory-issues", { page: 1, pageSize: 25 }],
+    queryFn: () => requestJson<{ items: InventoryIssueListItem[]; total: number }>("GET", "/api/logistics/inventory-issues?page=1&pageSize=25"),
+  });
+  const warehouses = useQuery({
+    queryKey: ["/api/warehouses"],
+    queryFn: () => requestJson<WarehouseOption[]>("GET", "/api/warehouses"),
+  });
+  const inventory = useQuery({
+    queryKey: ["/api/v2/inventory", { page: 1, pageSize: 100 }],
+    queryFn: () => requestJson<{ items: InventoryOption[] }>("GET", "/api/v2/inventory?page=1&pageSize=100&sort=sku_asc"),
+  });
+
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["/api/logistics/inventory-issues"] }),
+      invalidateLogisticsAndPurchaseOrders(queryClient),
+    ]);
+  };
+  const createIssue = useMutation({
+    mutationFn: () => requestJson("POST", "/api/logistics/inventory-issues", {
+      warehouseId: Number(warehouseId), recipient, destination,
+      lines: [{ itemId: Number(itemId), quantity: Number(quantity) }],
+    }, { headers: { "Idempotency-Key": outboundIdempotency("create") } }),
+    onSuccess: async () => {
+      setCreateOpen(false);
+      setRecipient(""); setDestination(""); setItemId(""); setQuantity("1");
+      await refresh();
+      toast({ title: "Inventory issue created", description: "Review it and mark it ready before dispatch." });
+    },
+    onError: (error: Error) => toast({ title: "Could not create issue", description: error.message, variant: "destructive" }),
+  });
+  const changeStatus = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: "READY" | "DELIVERED" | "CANCELLED" }) =>
+      requestJson("POST", `/api/logistics/inventory-issues/${id}/status`, { status }),
+    onSuccess: refresh,
+    onError: (error: Error) => toast({ title: "Status update failed", description: error.message, variant: "destructive" }),
+  });
+  const dispatch = useMutation({
+    mutationFn: (id: number) => requestJson("POST", `/api/logistics/inventory-issues/${id}/dispatch`, undefined, { headers: { "Idempotency-Key": outboundIdempotency("dispatch") } }),
+    onSuccess: async () => { await refresh(); toast({ title: "Inventory dispatched", description: "Warehouse stock and shipment history were updated atomically." }); },
+    onError: (error: Error) => toast({ title: "Dispatch failed", description: error.message, variant: "destructive" }),
+  });
+
+  const rows = issues.data?.items ?? [];
+  const noWarehouses = !warehouses.isLoading && (warehouses.data?.length ?? 0) === 0;
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div><h3 className="font-semibold">Outbound inventory issues</h3><p className="text-sm text-muted-foreground">Create, ready, dispatch, deliver, and audit warehouse issues.</p></div>
+      <Button onClick={() => setCreateOpen(true)} disabled={noWarehouses || warehouses.isError || inventory.isError}><Plus className="mr-2 h-4 w-4" />New inventory issue</Button>
+    </div>
+    {noWarehouses ? <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>Warehouse setup required</AlertTitle><AlertDescription>Configure an organization warehouse before creating outbound issues. <Link href={APP_ROUTES.admin.masterDataSection("warehouses")} className="underline">Open warehouse Master Data</Link>.</AlertDescription></Alert> : null}
+    <DataState loading={issues.isLoading} error={issues.error as Error | null} data={rows} isEmpty={(value) => value.length === 0} emptyTitle="No outbound issues" emptyDescription="Create an inventory issue to begin controlled dispatch." onRetry={() => issues.refetch()}>
+      {(value) => <Card><CardContent className="overflow-x-auto p-0"><Table><TableHeader><TableRow><TableHead>Issue</TableHead><TableHead>Warehouse</TableHead><TableHead>Recipient / destination</TableHead><TableHead>Lines / quantity</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{value.map((issue) => <TableRow key={issue.id}><TableCell className="font-medium">{issue.issueNumber}</TableCell><TableCell>{issue.warehouseName}</TableCell><TableCell><div>{issue.recipient}</div><div className="text-xs text-muted-foreground">{issue.destination}</div></TableCell><TableCell>{issue.lineCount} / {issue.totalQuantity}</TableCell><TableCell><StatusBadge status={issue.status} /></TableCell><TableCell><div className="flex flex-wrap justify-end gap-2">{issue.status === "DRAFT" ? <Button size="sm" variant="outline" onClick={() => changeStatus.mutate({ id: issue.id, status: "READY" })}>Mark ready</Button> : null}{issue.status === "READY" ? <Button size="sm" onClick={() => dispatch.mutate(issue.id)}>Dispatch</Button> : null}{issue.status === "DISPATCHED" ? <Button size="sm" variant="outline" onClick={() => changeStatus.mutate({ id: issue.id, status: "DELIVERED" })}>Delivered</Button> : null}{["DISPATCHED", "DELIVERED"].includes(issue.status) ? <Button size="sm" variant="outline" asChild><a href={`/api/logistics/inventory-issues/${issue.id}/delivery-note.pdf`} target="_blank" rel="noreferrer">Delivery note</a></Button> : null}</div></TableCell></TableRow>)}</TableBody></Table></CardContent></Card>}
+    </DataState>
+    <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent><DialogHeader><DialogTitle>New outbound inventory issue</DialogTitle><DialogDescription>All references are validated against the active organization. Dispatch is a separate irreversible step.</DialogDescription></DialogHeader><div className="grid gap-3"><div className="space-y-1"><Label>Warehouse</Label><Select value={warehouseId} onValueChange={setWarehouseId}><SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger><SelectContent>{(warehouses.data ?? []).map((warehouse) => <SelectItem key={warehouse.id} value={String(warehouse.id)}>{warehouse.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Recipient</Label><Input value={recipient} onChange={(event) => setRecipient(event.target.value)} /></div><div className="space-y-1"><Label>Destination</Label><Input value={destination} onChange={(event) => setDestination(event.target.value)} /></div><div className="space-y-1"><Label>Item</Label><Select value={itemId} onValueChange={setItemId}><SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{(inventory.data?.items ?? []).map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Quantity</Label><Input type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={() => createIssue.mutate()} disabled={!warehouseId || !recipient.trim() || !destination.trim() || !itemId || Number(quantity) <= 0 || createIssue.isPending}>{createIssue.isPending ? "Creating…" : "Create draft"}</Button></DialogFooter></DialogContent></Dialog>
+  </div>;
+}
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -777,6 +865,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                     <SelectContent>
                       <SelectItem value="all">All sources</SelectItem>
                       <SelectItem value="purchase_order">Purchase order</SelectItem>
+                      <SelectItem value="inventory_issue">Inventory issue</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1759,20 +1848,7 @@ export default function LogisticsPage() {
           <ShipmentListView listScope="inbound" />
         </TabsContent>
         <TabsContent value="outbound" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Outbound dispatch</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>
-                Outbound logistics is not yet tied to inventory issue documents. Use stock movements from inventory
-                operations for ISSUE flows until dispatch documents are linked here.
-              </p>
-              <Button type="button" variant="secondary" disabled data-testid="logistics-outbound-v1-excluded">
-                Outbound dispatch excluded from v1
-              </Button>
-            </CardContent>
-          </Card>
+          <OutboundIssuePanel />
         </TabsContent>
         <TabsContent value="carriers" className="space-y-4">
           <LogisticsCarriersPanel />

@@ -20,7 +20,7 @@ False positives are explicitly classified as `harmless alias` or `intentional sh
 
 The AST inventory and contract-model tests prove route discovery, duplicate-path middleware structure, documented contradictions, and shared report/export construction. `npm run test:cross-path-invariants` additionally starts an isolated app and runs AP, sourcing, tenant-isolation, permission, audit, idempotency, and report/export proof against a reachable `TEST_DATABASE_URL` whose database name is explicitly disposable.
 
-- Latest runtime proof: passed at 2026-08-06T19:59:42.918Z on disposable database `isssourcing_logic_test_20260806_11`
+- Latest runtime proof: passed at 2026-08-12T15:54:40.749Z on disposable database `isssourcing_logic_test_20260812_7c`
 - Runtime proof complements the static control inventory; release status is blocked only when critical or high contradictions remain.
 
 ## LOGIC-001 — INFO — resolved control

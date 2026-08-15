@@ -7,8 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Activity, Database, RefreshCw, Server, Settings, Zap } from 'lucide-react';
-import { useWebSocket } from '@/hooks/use-websocket';
+import { useWebSocket, type WebSocketMessage } from '@/hooks/use-websocket';
 import { useToast } from '@/hooks/use-toast';
+import { useQuery } from '@tanstack/react-query';
+import { requestJson } from '@/lib/queryClient';
+
+type WarehouseOption = { id: number; name: string };
+type InventoryOption = { id: number; name: string; sku: string; quantity?: number; lowStockThreshold?: number };
 
 export default function RealTimeUpdatesPage() {
   const [selectedTab, setSelectedTab] = useState<string>('overview');
@@ -18,6 +23,10 @@ export default function RealTimeUpdatesPage() {
   const [debugMessages, setDebugMessages] = useState<string[]>([]);
   
   const { toast } = useToast();
+  const warehousesQuery = useQuery<WarehouseOption[]>({ queryKey: ['/api/warehouses', 'developer-tools'], queryFn: () => requestJson('GET', '/api/warehouses') });
+  const inventoryQuery = useQuery<InventoryOption[]>({ queryKey: ['/api/inventory', 'developer-tools'], queryFn: () => requestJson('GET', '/api/inventory') });
+  const warehouses = warehousesQuery.data ?? [];
+  const inventory = inventoryQuery.data ?? [];
   
   // WebSocket connection setup
   const { isConnected, sendMessage, disconnect, connect } = useWebSocket({
@@ -52,18 +61,25 @@ export default function RealTimeUpdatesPage() {
       return;
     }
 
-    let payload: any = {};
+    const warehouse = warehouses.find((candidate) => String(candidate.id) === warehouseFilter);
+    const itemTerm = itemFilter.trim().toLowerCase();
+    const item = inventory.find((candidate) => !itemTerm || `${candidate.sku} ${candidate.name}`.toLowerCase().includes(itemTerm));
+    if (!warehouse || !item) {
+      toast({ title: 'Canonical records required', description: 'Select a tenant warehouse and enter an existing item name or SKU.', variant: 'destructive' });
+      return;
+    }
+    let payload: WebSocketMessage;
     
     switch (type) {
       case 'inventory_update':
         payload = {
           type: 'inventory_update',
           payload: {
-            item: { id: 101, name: 'Test Product', sku: 'TP-101' },
-            warehouse: { id: 1, name: 'Main Warehouse' },
-            quantity: 50,
-            previousQuantity: 45,
-            updatedBy: 'Test User',
+            item,
+            warehouse,
+            quantity: Number(item.quantity ?? 0),
+            previousQuantity: Number(item.quantity ?? 0),
+            updatedBy: 'Developer connectivity test',
             timestamp: new Date().toISOString(),
           }
         };
@@ -72,28 +88,35 @@ export default function RealTimeUpdatesPage() {
         payload = {
           type: 'stock_alert',
           payload: {
-            item: { id: 202, name: 'Low Stock Item', sku: 'LS-202' },
-            warehouse: { id: 1, name: 'Main Warehouse' },
-            currentQuantity: 5,
-            threshold: 10,
+            item,
+            warehouse,
+            currentQuantity: Number(item.quantity ?? 0),
+            threshold: Number(item.lowStockThreshold ?? 0),
             alertType: 'LOW_STOCK',
             timestamp: new Date().toISOString(),
           }
         };
         break;
       case 'stock_transfer':
+        const destinationWarehouse = warehouses.find((candidate) => candidate.id !== warehouse.id);
+        if (!destinationWarehouse) {
+          toast({ title: 'Second warehouse required', description: 'A transfer connectivity payload needs two tenant warehouses.', variant: 'destructive' });
+          return;
+        }
         payload = {
           type: 'stock_transfer',
           payload: {
-            item: { id: 303, name: 'Transferred Item', sku: 'TI-303' },
-            sourceWarehouse: { id: 1, name: 'Main Warehouse' },
-            destinationWarehouse: { id: 2, name: 'Secondary Warehouse' },
-            quantity: 15,
-            transferredBy: 'Test User',
+            item,
+            sourceWarehouse: warehouse,
+            destinationWarehouse,
+            quantity: 1,
+            transferredBy: 'Developer connectivity test',
             timestamp: new Date().toISOString(),
           }
         };
         break;
+      default:
+        return;
     }
     
     const success = sendMessage(payload);
@@ -176,10 +199,7 @@ export default function RealTimeUpdatesPage() {
                       <SelectValue placeholder="Select warehouse" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Warehouses</SelectItem>
-                      <SelectItem value="1">Main Warehouse</SelectItem>
-                      <SelectItem value="2">Secondary Warehouse</SelectItem>
-                      <SelectItem value="3">Distribution Center</SelectItem>
+                      {warehouses.map((warehouse) => <SelectItem key={warehouse.id} value={String(warehouse.id)}>{warehouse.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -187,7 +207,7 @@ export default function RealTimeUpdatesPage() {
                 <div className="space-y-2">
                   <div className="text-sm font-medium mb-2">Filter by Item</div>
                   <Input
-                    placeholder="Enter item name or SKU"
+                    placeholder={inventoryQuery.isLoading ? "Loading tenant items…" : "Enter existing item name or SKU"}
                     value={itemFilter}
                     onChange={(e) => setItemFilter(e.target.value)}
                   />

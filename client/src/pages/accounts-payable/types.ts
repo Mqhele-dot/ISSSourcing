@@ -1,7 +1,8 @@
 export type Supplier = { id: number; name: string };
 export type Invoice = {
   id: number;
-  invoiceNumber: string;
+  invoiceNumber: string | null;
+  supplierName?: string | null;
   supplierId: number | null;
   status: string;
   dueDate: string | null;
@@ -22,6 +23,7 @@ export type Capture = {
   source: string;
   status: string;
   supplierId: number | null;
+  supplierName?: string | null;
   invoiceNumber: string | null;
   totalAmount: number | null;
   confidenceScore: number | null;
@@ -43,9 +45,11 @@ export type PaymentBatch = {
   status: string;
   totalAmount: number;
   scheduledDate: string | null;
-  items: Array<{ id: number; invoiceId: number; amount: number; status: string }>;
+  itemCount: number;
+  items?: Array<{ id: number; invoiceId: number; amount: number; status: string }>;
   createdBy?: number | null;
 };
+export type ApPage<T> = { items: T[]; total: number; page: number; pageSize: number; hasNext: boolean };
 export type Overview = {
   invoiceCount: number;
   pendingApprovalCount: number;

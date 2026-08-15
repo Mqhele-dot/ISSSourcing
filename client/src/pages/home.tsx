@@ -32,6 +32,9 @@ import type { FallbackKind } from "@/components/ui/data-state";
 import { useTrainingPanel } from "@/contexts/training-panel-context";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
+import { requestJson } from "@/lib/queryClient";
 
 const LAST_WALKTHROUGH_KEY = "invtrack:lastWalkthrough";
 
@@ -98,6 +101,13 @@ function KpiCard({ title, value, href, icon }: KpiCardProps) {
 
 export default function HomePage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const runtimeCapabilities = useQuery<{ demoMode: boolean; demoWalkthroughEnabled: boolean; developerToolsEnabled: boolean }>({
+    queryKey: ["/api/runtime-capabilities"],
+    queryFn: () => requestJson("GET", "/api/runtime-capabilities"),
+    staleTime: 5 * 60_000,
+  });
+  const canRunWalkthrough = user?.role === "admin" && runtimeCapabilities.data?.demoWalkthroughEnabled === true;
   const fetcher = useCallback(() => fetchControlTowerOverviewEnvelope(), []);
   const { loading, error, data: envelope, refetch } = useAsyncResource(fetcher);
   const data = envelope?.data ?? null;
@@ -173,18 +183,16 @@ export default function HomePage() {
     setRunningWalkthrough(true);
     try {
       const result = await runDemoWalkthrough();
-      /** Server runs full demo reset (TRUNCATE public tables), which clears connect-pg-simple sessions — current cookie is dead. */
-      try {
-        sessionStorage.setItem(LAST_WALKTHROUGH_KEY, JSON.stringify(result));
-      } catch {
-        /* ignore quota */
-      }
-      queryClient.clear();
+      setWalkthrough(result);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/procurement"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/shipments"] }),
+      ]);
       toast({
         title: "Demo walkthrough complete",
-        description: "Database was reset and reseeded. Sign in again (e.g. admin / Admin123!) to continue.",
+        description: `Tenant-scoped walkthrough records are ready. Request ID: ${result.requestId ?? "not available"}.`,
       });
-      window.location.assign("/auth?reason=demo-walkthrough");
     } catch (walkthroughError) {
       const msg =
         walkthroughError instanceof Error ? walkthroughError.message : "Failed to run walkthrough";
@@ -221,14 +229,9 @@ export default function HomePage() {
               <PlayCircle className="h-4 w-4" />
               Open learning panel
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => setWalkthroughConfirmOpen(true)}
-              disabled={runningWalkthrough}
-              className="gap-2"
-            >
-              Run Demo Walkthrough
-            </Button>
+            {canRunWalkthrough ? (
+              <Button variant="outline" onClick={() => setWalkthroughConfirmOpen(true)} disabled={runningWalkthrough} className="gap-2">Run Demo Walkthrough</Button>
+            ) : null}
             <Button
               variant={autoRefreshEnabled ? "default" : "outline"}
               onClick={() => setAutoRefreshEnabled((current) => !current)}
@@ -257,15 +260,11 @@ export default function HomePage() {
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p>
-                  This runs a <strong className="text-foreground">full database reset</strong> (same as demo reseed):
-                  all public tables are truncated and demo data is recreated.
+                  This prepares or refreshes only tagged walkthrough records for the active organization.
                 </p>
                 <p>
-                  Your <strong className="text-foreground">login session is cleared</strong> because session rows are
-                  removed. After it finishes you will be sent to the sign-in page — that avoids broken API calls and
-                  error popups from a stale session.
+                  Existing users, inventory, purchase orders, sessions, and other operational records are not deleted.
                 </p>
-                <p>Demo login after reset: <span className="font-mono text-foreground">admin</span> / <span className="font-mono text-foreground">Admin123!</span></p>
                 <p>
                   After signing back in, use <strong className="text-foreground">Get Educated</strong> or the{" "}
                   <strong className="text-foreground">Open learning panel</strong> button on Control Tower to read how each
@@ -277,7 +276,7 @@ export default function HomePage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={runningWalkthrough}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => void handleRunWalkthrough()} disabled={runningWalkthrough}>
-              {runningWalkthrough ? "Running…" : "Reset DB & run walkthrough"}
+              {runningWalkthrough ? "Preparing…" : "Prepare walkthrough records"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

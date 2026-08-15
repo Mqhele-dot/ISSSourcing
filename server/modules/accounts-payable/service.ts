@@ -193,6 +193,7 @@ async function createApprovalHistoryEntry(input: {
   previousStatus?: string | null;
   newStatus?: string | null;
   comment?: string | null;
+  level?: number;
 }) {
   await db.insert(approvalHistory).values({
     organizationId: input.organizationId,
@@ -203,6 +204,7 @@ async function createApprovalHistoryEntry(input: {
     previousStatus: input.previousStatus ?? null,
     newStatus: input.newStatus ?? null,
     comment: input.comment ?? null,
+    level: input.level ?? 1,
   });
 }
 
@@ -636,6 +638,7 @@ export async function updateInvoiceStatus(
   status: NonNullable<InsertInvoice["status"]>,
   userId: number,
   comment?: string,
+  approvalLevel?: number,
 ) {
   const orgId = getActiveOrganizationId();
   const existing = await storage.getInvoice(invoiceId);
@@ -653,6 +656,7 @@ export async function updateInvoiceStatus(
     previousStatus: existing.status,
     newStatus: status,
     comment,
+    level: approvalLevel,
   }).catch(() => {});
 
   const prior = String(existing.status);
@@ -761,14 +765,35 @@ export async function approveInvoice(
     overrideExplicit: context.overrideExplicit,
     overrideReason: context.overrideReason,
   });
-  await enforceApprovalPolicy({
+  const workflowStep = await enforceApprovalPolicy({
     organizationId: orgId,
     entityType: "invoice",
+    entityId: invoiceId,
     amount: toNumber(existing.total ?? 0),
     actorUserId: userId,
     actorRole: context.actorRole,
   });
-  const updated = await updateInvoiceStatus(invoiceId, "APPROVED", userId, comment ?? context.overrideReason);
+  if (!workflowStep.isFinal) {
+    await createApprovalHistoryEntry({
+      organizationId: orgId,
+      entityType: "invoice",
+      entityId: invoiceId,
+      level: workflowStep.level,
+      action: "approved",
+      performedBy: userId,
+      previousStatus: existing.status,
+      newStatus: existing.status,
+      comment: comment ?? context.overrideReason,
+    });
+    return existing;
+  }
+  const updated = await updateInvoiceStatus(
+    invoiceId,
+    "APPROVED",
+    userId,
+    comment ?? context.overrideReason,
+    workflowStep.level,
+  );
   if (updated) {
     await emitApDomainEvent({
       organizationId: orgId,
@@ -816,14 +841,21 @@ export async function rejectInvoice(
   if (String(existing.status) !== "PENDING_APPROVAL") {
     throw new Error(`Invoice must be PENDING_APPROVAL before rejection; current status is ${existing.status}.`);
   }
-  await enforceApprovalPolicy({
+  const workflowStep = await enforceApprovalPolicy({
     organizationId: orgId,
     entityType: "invoice",
+    entityId: invoiceId,
     amount: toNumber(existing.total ?? 0),
     actorUserId: userId,
     actorRole: context.actorRole,
   });
-  return updateInvoiceStatus(invoiceId, "DISPUTED", userId, comment ?? context.overrideReason);
+  return updateInvoiceStatus(
+    invoiceId,
+    "DISPUTED",
+    userId,
+    comment ?? context.overrideReason,
+    workflowStep.level,
+  );
 }
 
 export async function listApprovalQueue() {
@@ -1852,13 +1884,29 @@ export async function approvePaymentBatch(
     overrideExplicit: context.overrideExplicit,
     overrideReason: context.overrideReason,
   });
-  await enforceApprovalPolicy({
+  const workflowStep = await enforceApprovalPolicy({
     organizationId: orgId,
     entityType: "payment_batch",
+    entityId: batchId,
     amount: toNumber(existing.totalAmount, 0),
     actorUserId: userId,
     actorRole: context.actorRole,
   });
+
+  if (!workflowStep.isFinal) {
+    await createApprovalHistoryEntry({
+      organizationId: orgId,
+      entityType: "payment_batch",
+      entityId: batchId,
+      level: workflowStep.level,
+      action: "approved",
+      performedBy: userId,
+      previousStatus: existing.status,
+      newStatus: existing.status,
+      comment: comment ?? context.overrideReason,
+    });
+    return existing;
+  }
 
   const [updated] = await db
     .update(apPaymentBatches)
@@ -1880,6 +1928,7 @@ export async function approvePaymentBatch(
     previousStatus: existing.status,
     newStatus: "APPROVED",
     comment: comment ?? context.overrideReason,
+    level: workflowStep.level,
   }).catch(() => {});
 
   await writeApAuditLog({

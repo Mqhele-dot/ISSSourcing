@@ -14,6 +14,7 @@ export type CreateExportJobInput = {
   filters: Record<string, unknown>;
   sourcePage?: string | null;
   reason?: string | null;
+  retryOfJobId?: number | null;
 };
 
 export type ExportJobRow = {
@@ -26,6 +27,7 @@ export type ExportJobRow = {
   status: ExportJobStatus;
   sourcePage: string | null;
   reason: string | null;
+  retryOfJobId: number | null;
   fileName: string | null;
   filePath: string | null;
   fileSize: number | null;
@@ -53,6 +55,7 @@ function mapExportJobRow(row: any): ExportJobRow {
     status: row.status as ExportJobStatus,
     sourcePage: row.source_page ?? null,
     reason: row.reason ?? null,
+    retryOfJobId: row.retry_of_job_id == null ? null : Number(row.retry_of_job_id),
     fileName: row.file_name ?? null,
     filePath: row.file_path ?? null,
     fileSize: row.file_size == null ? null : Number(row.file_size),
@@ -82,8 +85,9 @@ export async function createExportJob(input: CreateExportJobInput): Promise<Expo
         status,
         source_page,
         reason
+        , retry_of_job_id
       )
-      VALUES ($1, $2, $3, $4, $5::jsonb, 'queued', $6, $7)
+      VALUES ($1, $2, $3, $4, $5::jsonb, 'queued', $6, $7, $8)
       RETURNING *
     `,
     [
@@ -94,6 +98,7 @@ export async function createExportJob(input: CreateExportJobInput): Promise<Expo
       JSON.stringify(input.filters ?? {}),
       input.sourcePage ?? null,
       input.reason ?? null,
+      input.retryOfJobId ?? null,
     ],
   );
   incrementMetric("exports.jobs.queued");

@@ -19,12 +19,13 @@ import { useApWorkspaceQueries } from "./use-ap-workspace-queries";
 import { useApWorkspaceMutations } from "./use-ap-workspace-mutations";
 import { useApIntakeFormState } from "./use-ap-intake-form-state";
 import { parseApIntakeForSubmit, parsePaymentBatchForSubmit } from "./validation";
-import type { ApWorkspaceTab } from "./types";
+import type { ApWorkspaceTab, Invoice } from "./types";
 import { isApWorkspaceTab } from "./types";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { useAuth } from "@/hooks/use-auth";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { fromMoneyCents, sumSelectedInvoicePayableCents } from "@shared/functional-calculations";
+import { useQueryState } from "@/hooks/use-query-state";
 
 const TAB_TO_ROUTE: Record<ApWorkspaceTab, string> = {
   intake: APP_ROUTES.finance.accountsPayableIntake,
@@ -50,6 +51,7 @@ export default function AccountsPayableWorkspace() {
   const [paymentMethod, setPaymentMethod] = useState("BANK_TRANSFER");
   const [scheduledDate, setScheduledDate] = useState("");
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<number[]>([]);
+  const [selectedInvoiceSnapshot, setSelectedInvoiceSnapshot] = useState<Record<number, Invoice>>({});
   const [paymentBatchErrors, setPaymentBatchErrors] = useState<string[]>([]);
 
   const { intakeErrors, validateForSubmit } = useApIntakeFormState({
@@ -61,7 +63,19 @@ export default function AccountsPayableWorkspace() {
     notes: captureNotes,
   });
 
-  const queries = useApWorkspaceQueries();
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const { queryState, setQueryState } = useQueryState({ apInvoicePage: "1", apBatchPage: "1", apCapturePage: "1", apPageSize: "25", apQ: "", apCaptureQ: "", apBatchStatus: "" });
+  const apPageSize = [25, 50, 100].includes(Number(queryState.apPageSize)) ? Number(queryState.apPageSize) : 25;
+  const queries = useApWorkspaceQueries({
+    invoicePage: Math.max(1, Number(queryState.apInvoicePage) || 1),
+    batchPage: Math.max(1, Number(queryState.apBatchPage) || 1),
+    capturePage: Math.max(1, Number(queryState.apCapturePage) || 1),
+    pageSize: apPageSize,
+    q: String(queryState.apQ || ""),
+    status: String(queryState.apBatchStatus || ""),
+    captureQ: String(queryState.apCaptureQ || ""),
+    supplierQ: supplierSearch,
+  });
   const mutations = useApWorkspaceMutations({ toast });
   const canRunInvoiceApprovalActions = String(user?.role ?? "").toLowerCase() === "admin";
 
@@ -69,9 +83,12 @@ export default function AccountsPayableWorkspace() {
     overview,
     suppliers,
     captures,
+    capturePage,
     approvalQueue,
     exceptions,
     paymentBatches,
+    paymentBatchPage,
+    payableInvoicePage,
     invoices,
     readyForBatch,
     overviewQuery,
@@ -80,6 +97,7 @@ export default function AccountsPayableWorkspace() {
     approvalQueueQuery,
     exceptionsQuery,
     paymentBatchesQuery,
+    payableInvoicesQuery,
     invoicesQuery,
   } = queries;
 
@@ -95,19 +113,19 @@ export default function AccountsPayableWorkspace() {
       approvalQueueQuery.isError ||
       exceptionsQuery.isError ||
       paymentBatchesQuery.isError ||
-      invoicesQuery.isError);
+      invoicesQuery.isError || payableInvoicesQuery.isError);
 
   const section = params?.section;
   const activeTab = isApWorkspaceTab(section) ? section : null;
 
   const selectedBatchTotal = useMemo(
-    () => fromMoneyCents(sumSelectedInvoicePayableCents(readyForBatch, selectedInvoiceIds)),
-    [readyForBatch, selectedInvoiceIds],
+    () => fromMoneyCents(sumSelectedInvoicePayableCents(Object.values(selectedInvoiceSnapshot), selectedInvoiceIds)),
+    [selectedInvoiceSnapshot, selectedInvoiceIds],
   );
 
   const selectedBatchTotalCentsStr = useMemo(
-    () => String(sumSelectedInvoicePayableCents(readyForBatch, selectedInvoiceIds)),
-    [readyForBatch, selectedInvoiceIds],
+    () => String(sumSelectedInvoicePayableCents(Object.values(selectedInvoiceSnapshot), selectedInvoiceIds)),
+    [selectedInvoiceSnapshot, selectedInvoiceIds],
   );
 
   useEffect(() => {
@@ -115,6 +133,13 @@ export default function AccountsPayableWorkspace() {
   }, [selectedInvoiceIds, paymentMethod, scheduledDate]);
 
   const toggleInvoiceSelection = (invoiceId: number, checked: boolean) => {
+    setSelectedInvoiceSnapshot((current) => {
+      const next = { ...current };
+      const invoice = readyForBatch.find((candidate) => candidate.id === invoiceId);
+      if (checked && invoice) next[invoiceId] = invoice;
+      if (!checked) delete next[invoiceId];
+      return next;
+    });
     setSelectedInvoiceIds((current) => {
       const next = new Set(current);
       if (checked) next.add(invoiceId);
@@ -175,6 +200,7 @@ export default function AccountsPayableWorkspace() {
       {
         onSuccess: () => {
           setSelectedInvoiceIds([]);
+          setSelectedInvoiceSnapshot({});
           setScheduledDate("");
         },
       },
@@ -320,8 +346,13 @@ export default function AccountsPayableWorkspace() {
                 <ApIntakePanel
                   suppliers={suppliers}
                   captures={captures}
+                  capturePage={capturePage}
+                  captureQuery={String(queryState.apCaptureQ || "")}
+                  onCaptureQueryChange={(value) => setQueryState({ apCaptureQ: value, apCapturePage: "1" })}
+                  onCapturePageChange={(page) => setQueryState({ apCapturePage: String(page) })}
                   captureSupplierId={captureSupplierId}
                   setCaptureSupplierId={setCaptureSupplierId}
+                  onSupplierSearchChange={setSupplierSearch}
                   captureSource={captureSource}
                   setCaptureSource={setCaptureSource}
                   captureInvoiceNumber={captureInvoiceNumber}
@@ -385,14 +416,14 @@ export default function AccountsPayableWorkspace() {
         </TabsContent>
 
         <TabsContent value="payments" className="space-y-4">
-          {paymentBatchesQuery.isError || invoicesQuery.isError ? (
+          {paymentBatchesQuery.isError || payableInvoicesQuery.isError ? (
             <Alert>
               <AlertTitle>Some payments data failed to load</AlertTitle>
               <AlertDescription className="mt-2 flex flex-wrap gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => void paymentBatchesQuery.refetch()}>
                   Retry batches
                 </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => void invoicesQuery.refetch()}>
+                <Button type="button" size="sm" variant="outline" onClick={() => void payableInvoicesQuery.refetch()}>
                   Retry invoices
                 </Button>
               </AlertDescription>
@@ -400,7 +431,7 @@ export default function AccountsPayableWorkspace() {
           ) : null}
           <ApPaymentsPanel
                   readyForBatch={readyForBatch}
-                  invoicesLoadFailed={invoicesQuery.isError}
+                  invoicesLoadFailed={payableInvoicesQuery.isError}
                   batchesLoadFailed={paymentBatchesQuery.isError}
                   selectedInvoiceIds={selectedInvoiceIds}
                   toggleInvoiceSelection={toggleInvoiceSelection}
@@ -413,6 +444,10 @@ export default function AccountsPayableWorkspace() {
                   paymentBatchErrors={paymentBatchErrors}
                   formatMoney={formatMoney}
                   paymentBatches={paymentBatches}
+                  paymentBatchPage={paymentBatchPage}
+                  payableInvoicePage={payableInvoicePage}
+                  query={{ q: String(queryState.apQ || ""), status: String(queryState.apBatchStatus || ""), pageSize: apPageSize }}
+                  onQueryChange={(updates) => setQueryState(updates)}
                   createBatchMutation={mutations.createBatchMutation}
                   approveBatchMutation={mutations.approveBatchMutation}
                   releaseBatchMutation={mutations.releaseBatchMutation}

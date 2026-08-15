@@ -30,6 +30,7 @@ import {
   InfoIcon 
 } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
+import { SettingsAuthorityState } from "./settings-authority-state";
 import { useQuery } from "@tanstack/react-query";
 import {
   Select,
@@ -67,7 +68,7 @@ interface Warehouse {
 }
 
 export function WarehouseSettingsForm() {
-  const { settings, updateSettings } = useSettings();
+  const { settings, isLoading, error, refetch, updateSettings } = useSettings();
   
   // Fetch warehouses
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
@@ -78,46 +79,42 @@ export function WarehouseSettingsForm() {
   const form = useForm<WarehouseSettingsFormType>({
     resolver: zodResolver(warehouseSettingsSchema),
     defaultValues: {
-      defaultWarehouseId: settings.defaultWarehouseId,
-      requireLocationForItems: settings.requireLocationForItems ?? true,
-      allowTransfersBetweenWarehouses: settings.allowTransfersBetweenWarehouses ?? true,
+      defaultWarehouseId: settings?.defaultWarehouseId ?? null,
+      requireLocationForItems: settings?.requireLocationForItems ?? false,
+      allowTransfersBetweenWarehouses: settings?.allowTransfersBetweenWarehouses ?? false,
       autoUpdateStockLevels: true,
       trackInventoryByLocation: false,
       enableBinLocations: false,
       requireApprovalForTransfers: false,
       lowStockNotificationsEnabled: true, 
       transferNotificationsEnabled: true,
-      autoGenerateReorderRequests: settings.autoReorderEnabled ?? false,
+      autoGenerateReorderRequests: settings?.autoReorderEnabled ?? false,
       defaultBinNamingConvention: "ZONE-AISLE-SHELF-BIN",
       warehouseCodePrefix: "WH",
     },
   });
 
   React.useEffect(() => {
+    if (!settings) return;
     form.reset({
-      defaultWarehouseId: settings.defaultWarehouseId,
-      requireLocationForItems: settings.requireLocationForItems ?? true,
-      allowTransfersBetweenWarehouses: settings.allowTransfersBetweenWarehouses ?? true,
+      defaultWarehouseId: settings?.defaultWarehouseId ?? null,
+      requireLocationForItems: settings?.requireLocationForItems ?? false,
+      allowTransfersBetweenWarehouses: settings?.allowTransfersBetweenWarehouses ?? false,
       autoUpdateStockLevels: true,
       trackInventoryByLocation: false,
       enableBinLocations: false,
       requireApprovalForTransfers: false,
       lowStockNotificationsEnabled: true,
       transferNotificationsEnabled: true,
-      autoGenerateReorderRequests: settings.autoReorderEnabled ?? false,
+      autoGenerateReorderRequests: settings?.autoReorderEnabled ?? false,
       defaultBinNamingConvention: "ZONE-AISLE-SHELF-BIN",
       warehouseCodePrefix: "WH",
     });
-  }, [
-    form,
-    settings.allowTransfersBetweenWarehouses,
-    settings.autoReorderEnabled,
-    settings.defaultWarehouseId,
-    settings.requireLocationForItems,
-  ]);
+  }, [form, settings]);
 
   // Submit handler
   function onSubmit(data: WarehouseSettingsFormType) {
+    if (!settings) return;
     updateSettings.mutate({
       ...data,
       // Map any special cases from our form to the settings
@@ -126,6 +123,8 @@ export function WarehouseSettingsForm() {
   }
 
   const hasWarehouses = warehouses.length > 0;
+
+  if (!settings) return <SettingsAuthorityState loading={isLoading} error={error} onRetry={() => void refetch()} />;
 
   return (
     <Card>

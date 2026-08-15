@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useLocation } from "wouter";
-import { useDropzone } from 'react-dropzone';
+import { useDropzone, type FileRejection } from 'react-dropzone';
 import { useMutation } from '@tanstack/react-query';
 import { Loader2, FileText, Upload, Database, Check, ChevronDown, X, Wrench } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -160,6 +160,11 @@ const DocumentExtractorPage: React.FC = () => {
   const { toast } = useToast();
   const [location, navigate] = useLocation();
   const activeMode = asSectionSlug(location.split("/")[3], DOCUMENT_EXTRACTOR_SECTION_SLUGS, "single");
+  const reportRejectedFiles = useCallback((rejections: FileRejection[]) => {
+    if (!rejections.length) return;
+    const message = rejections.map(({ file, errors }) => `${file.name}: ${errors.map((error) => error.message).join(", ")}`).join("; ");
+    toast({ title: 'File rejected', description: message, variant: 'destructive' });
+  }, [toast]);
 
   // State for formats and options
   const [formats, setFormats] = useState<SupportedFormats | null>(null);
@@ -278,7 +283,10 @@ const DocumentExtractorPage: React.FC = () => {
 
   const { getRootProps: getSingleFileRootProps, getInputProps: getSingleFileInputProps } = useDropzone({
     onDrop: onSingleFileDrop,
+    onDropRejected: reportRejectedFiles,
+    multiple: false,
     maxFiles: 1,
+    maxSize: 10 * 1024 * 1024,
     accept: {
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
@@ -304,6 +312,10 @@ const DocumentExtractorPage: React.FC = () => {
 
   const { getRootProps: getBatchFilesRootProps, getInputProps: getBatchFilesInputProps } = useDropzone({
     onDrop: onBatchFilesDrop,
+    onDropRejected: reportRejectedFiles,
+    multiple: true,
+    maxFiles: 10,
+    maxSize: 10 * 1024 * 1024,
     accept: {
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
@@ -350,7 +362,10 @@ const DocumentExtractorPage: React.FC = () => {
 
   const { getRootProps: getDatabaseImportRootProps, getInputProps: getDatabaseImportInputProps } = useDropzone({
     onDrop: onDatabaseImportDrop,
+    onDropRejected: reportRejectedFiles,
+    multiple: false,
     maxFiles: 1,
+    maxSize: 10 * 1024 * 1024,
     accept: {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
       'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
@@ -461,7 +476,7 @@ const DocumentExtractorPage: React.FC = () => {
                   {...getSingleFileRootProps()} 
                   className="border-2 border-dashed rounded-md border-gray-300 p-10 text-center hover:border-primary cursor-pointer"
                 >
-                  <input {...getSingleFileInputProps()} />
+                  <input aria-label="Choose one document to extract" {...getSingleFileInputProps()} />
                   {singleFileUploadMutation.isPending ? (
                     <div className="flex flex-col items-center justify-center">
                       <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -720,7 +735,7 @@ const DocumentExtractorPage: React.FC = () => {
                   {...getBatchFilesRootProps()} 
                   className="border-2 border-dashed rounded-md border-gray-300 p-10 text-center hover:border-primary cursor-pointer"
                 >
-                  <input {...getBatchFilesInputProps()} />
+                  <input aria-label="Choose up to ten documents for batch extraction" {...getBatchFilesInputProps()} />
                   {batchFilesUploadMutation.isPending ? (
                     <div className="flex flex-col items-center justify-center">
                       <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -912,7 +927,7 @@ const DocumentExtractorPage: React.FC = () => {
                       {...getDatabaseImportRootProps()} 
                       className="border-2 border-dashed rounded-md border-gray-300 p-8 text-center hover:border-primary cursor-pointer"
                     >
-                      <input {...getDatabaseImportInputProps()} />
+                      <input aria-label="Choose one Excel or CSV file to preview for database import" {...getDatabaseImportInputProps()} />
                       {databaseImportMutation.isPending || importPreviewMutation.isPending ? (
                         <div className="flex flex-col items-center justify-center">
                           <Loader2 className="h-8 w-8 animate-spin text-primary" />

@@ -24,6 +24,7 @@ interface PageHeaderProps {
   };
   /** Optional stable selector for E2E / external testers (e.g. `"page-title"`). */
   titleTestId?: string;
+  headingLevel?: 1 | 2;
 }
 
 export function PageHeader({
@@ -36,6 +37,7 @@ export function PageHeader({
   action,
   secondaryAction,
   titleTestId,
+  headingLevel = 1,
 }: PageHeaderProps) {
   const hasLegacyActions = action || secondaryAction;
   const renderIcon = (): ReactNode => {
@@ -57,9 +59,10 @@ export function PageHeader({
         <div className="flex items-center gap-3">
           {icon ? <div className="h-8 w-8">{renderIcon()}</div> : null}
           <div>
-            <h1 className="text-2xl font-bold tracking-tight" data-testid={titleTestId ?? undefined}>
-              {title}
-            </h1>
+            {createElement(headingLevel === 1 ? "h1" : "h2", {
+              className: "text-2xl font-bold tracking-tight",
+              "data-testid": titleTestId ?? undefined,
+            }, title)}
             {subtitle ? (
               <p className="text-sm text-muted-foreground">{subtitle}</p>
             ) : null}

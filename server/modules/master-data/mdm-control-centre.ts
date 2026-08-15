@@ -1,4 +1,5 @@
 import { pool } from "../../db";
+import { getCanonicalReportingCurrencyCode } from "../../lib/org-reporting-money";
 import { MDM_DATA_QUALITY_CHECKS } from "./mdm-data-quality-engine";
 export { getMdmDomainRegistry } from "./mdm-domain-registry";
 
@@ -1037,9 +1038,9 @@ export async function getRequisitionContext(organizationId: number) {
   );
   const organization = organizationResult.rows[0];
   if (!organization) throw new Error("Active organization not found for requisition context");
-  const defaultCurrencyCode = String(organization.default_currency_code ?? "ZAR").trim().toUpperCase();
-  const [currencies, exchangeRates, departments, costCentres, taxCodes, uoms, suppliers, items, approvalRules, organizationTaxDefault] = await Promise.all([
-    pool.query("SELECT * FROM currencies WHERE COALESCE(active, TRUE) = TRUE ORDER BY code ASC"),
+  const defaultCurrencyCode = await getCanonicalReportingCurrencyCode(organizationId);
+  const [currencies, exchangeRates, departments, costCentres, taxCodes, uoms, suppliers, items, approvalRules, organizationTaxDefault, contracts, paymentTerms, incoterms] = await Promise.all([
+    pool.query("SELECT * FROM currencies WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code ASC", [organizationId]),
     pool.query(
       `
         SELECT DISTINCT ON (UPPER(from_currency_code))
@@ -1063,8 +1064,8 @@ export async function getRequisitionContext(organizationId: number) {
     pool.query("SELECT * FROM mdm_cost_centres WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code ASC", [
       organizationId,
     ]),
-    pool.query("SELECT * FROM tax_codes WHERE COALESCE(active, TRUE) = TRUE ORDER BY code ASC"),
-    pool.query("SELECT * FROM units_of_measure WHERE COALESCE(active, TRUE) = TRUE ORDER BY code ASC"),
+    pool.query("SELECT * FROM tax_codes WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code ASC", [organizationId]),
+    pool.query("SELECT * FROM units_of_measure WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code ASC", [organizationId]),
     pool.query(
       `
         SELECT id, name, supplier_code, status, default_currency_code, payment_terms_id, tax_code_id, default_department_id, risk_status
@@ -1078,7 +1079,8 @@ export async function getRequisitionContext(organizationId: number) {
     ),
     pool.query(
       `
-        SELECT ii.id, ii.sku, ii.name, ii.supplier_id, ii.price, ii.unit_of_measure, ii.unit_of_measure_id,
+        SELECT ii.id, ii.sku, ii.name, ii.supplier_id, ii.price, ii.unit_of_measure,
+          COALESCE(ii.unit_of_measure_id, default_uom.id) AS unit_of_measure_id,
           ii.commodity_code_id, ii.taxable, ii.status,
           mic.default_tax_code_id,
           mic.default_gl_account_code AS gl_account_code
@@ -1087,6 +1089,19 @@ export async function getRequisitionContext(organizationId: number) {
           ON mic.organization_id::text = ii.organization_id::text
           AND mic.id::text = NULLIF(TRIM(ii.category_id::text), '')
           AND COALESCE(mic.active, TRUE) = TRUE
+        LEFT JOIN LATERAL (
+          SELECT u.id
+          FROM units_of_measure u
+          WHERE u.organization_id = ii.organization_id
+            AND COALESCE(u.active, TRUE) = TRUE
+            AND LOWER(COALESCE(NULLIF(TRIM(ii.unit_of_measure), ''), 'each')) IN (
+              LOWER(COALESCE(u.code, '')),
+              LOWER(COALESCE(u.name, '')),
+              LOWER(COALESCE(u.symbol, ''))
+            )
+          ORDER BY CASE WHEN LOWER(u.code) = LOWER(COALESCE(NULLIF(TRIM(ii.unit_of_measure), ''), 'each')) THEN 0 ELSE 1 END, u.id
+          LIMIT 1
+        ) default_uom ON TRUE
         WHERE ii.organization_id::text = $1::text AND COALESCE(ii.status, 'active') = 'active'
         ORDER BY ii.sku ASC
         LIMIT 500
@@ -1103,6 +1118,7 @@ export async function getRequisitionContext(organizationId: number) {
         FROM app_settings s
         JOIN tax_codes tc
           ON COALESCE(tc.active, TRUE) = TRUE
+          AND tc.organization_id = s.organization_id
           AND (
             UPPER(COALESCE(tc.country_code, '')) = UPPER(COALESCE(s.default_vat_country, ''))
             OR tc.country_code IS NULL
@@ -1113,6 +1129,18 @@ export async function getRequisitionContext(organizationId: number) {
           tc.id ASC
         LIMIT 1
       `,
+      [organizationId],
+    ),
+    pool.query(
+      "SELECT id, supplier_id, title FROM supplier_contracts WHERE organization_id = $1 AND status = 'active' ORDER BY title ASC",
+      [organizationId],
+    ),
+    pool.query(
+      "SELECT id, code, name FROM payment_terms WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code ASC",
+      [organizationId],
+    ),
+    pool.query(
+      "SELECT id, code, name FROM incoterms WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code ASC",
       [organizationId],
     ),
   ]);
@@ -1138,6 +1166,9 @@ export async function getRequisitionContext(organizationId: number) {
     suppliers: suppliers.rows.map(rowToCamel),
     items: items.rows.map(rowToCamel),
     approvalRules: approvalRules.rows.map(rowToCamel),
+    contracts: contracts.rows.map(rowToCamel),
+    paymentTerms: paymentTerms.rows.map(rowToCamel),
+    incoterms: incoterms.rows.map(rowToCamel),
     organizationDefaults: {
       taxCodeId: Number(organizationTaxDefault.rows[0]?.id ?? 0) || null,
     },
@@ -1145,6 +1176,7 @@ export async function getRequisitionContext(organizationId: number) {
       requiresDepartment: true,
       requiresCostCentre: true,
       requiresTaxCode: true,
+      requiresUom: true,
       requiresCurrency: true,
       onceOffItemRequiresReason: true,
       approvalValueCurrency: defaultCurrencyCode,
@@ -1153,15 +1185,15 @@ export async function getRequisitionContext(organizationId: number) {
 }
 
 export async function getPurchaseOrderContext(organizationId: number) {
-  const [supplierDefaults, sequences, templates, policies] = await Promise.all([
+  const [supplierDefaults, sequences, templates, policies, requisitionContext, contracts, paymentTerms, incoterms, warehouses, carriers] = await Promise.all([
     pool.query(
       `
         SELECT s.id, s.name, s.status, s.default_currency_code, s.payment_terms_id, s.tax_code_id,
           s.incoterm_id, s.default_department_id, s.default_carrier_id, s.risk_status, s.compliance_status,
           pt.code AS payment_terms_code, tc.code AS tax_code
         FROM suppliers s
-        LEFT JOIN payment_terms pt ON pt.id = s.payment_terms_id
-        LEFT JOIN tax_codes tc ON tc.id = s.tax_code_id
+        LEFT JOIN payment_terms pt ON pt.id = s.payment_terms_id AND pt.organization_id = s.organization_id
+        LEFT JOIN tax_codes tc ON tc.id = s.tax_code_id AND tc.organization_id = s.organization_id
         WHERE s.organization_id = $1
         ORDER BY s.name ASC
       `,
@@ -1176,9 +1208,34 @@ export async function getPurchaseOrderContext(organizationId: number) {
     pool.query("SELECT * FROM mdm_procurement_policies WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE", [
       organizationId,
     ]),
+    getRequisitionContext(organizationId),
+    pool.query(
+      `SELECT id, title, supplier_id, currency, payment_terms_id, incoterm_id, default_tax_code_id, status
+       FROM supplier_contracts WHERE organization_id = $1 AND COALESCE(status, 'active') = 'active' ORDER BY title, id`,
+      [organizationId],
+    ),
+    pool.query("SELECT * FROM payment_terms WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code, id", [organizationId]),
+    pool.query("SELECT * FROM incoterms WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY code, id", [organizationId]),
+    pool.query("SELECT * FROM warehouses WHERE organization_id = $1 ORDER BY is_default DESC, name, id", [organizationId]),
+    pool.query("SELECT * FROM carriers WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY name, id", [organizationId]),
   ]);
   return {
+    revision: new Date().toISOString(),
     supplierDefaults: supplierDefaults.rows.map(rowToCamel),
+    suppliers: requisitionContext.suppliers,
+    items: requisitionContext.items,
+    currencies: requisitionContext.currencies,
+    departments: requisitionContext.departments,
+    costCentres: requisitionContext.costCentres,
+    taxCodes: requisitionContext.taxCodes,
+    unitsOfMeasure: requisitionContext.unitsOfMeasure,
+    approvalRules: requisitionContext.approvalRules,
+    organizationDefaults: requisitionContext.organizationDefaults,
+    contracts: contracts.rows.map(rowToCamel),
+    paymentTerms: paymentTerms.rows.map(rowToCamel),
+    incoterms: incoterms.rows.map(rowToCamel),
+    warehouses: warehouses.rows.map(rowToCamel),
+    carriers: carriers.rows.map(rowToCamel),
     documentSequences: sequences.rows.map(rowToCamel),
     documentTemplates: templates.rows.map(rowToCamel),
     procurementPolicies: policies.rows.map(rowToCamel),
@@ -1205,7 +1262,7 @@ export async function validateMdmTransaction(organizationId: number, body: Recor
     errors.push({ code: "INVALID_TRANSACTION_TYPE", message: "transactionType must be requisition, purchase_order, receipt, or invoice." });
   }
 
-  const currencyRows = await pool.query("SELECT code, active FROM currencies WHERE code = $1 LIMIT 1", [currencyCode]);
+  const currencyRows = await pool.query("SELECT code, active FROM currencies WHERE organization_id = $1 AND code = $2 LIMIT 1", [organizationId, currencyCode]);
   if (!currencyRows.rows[0] || currencyRows.rows[0].active === false) {
     errors.push({ code: "INVALID_CURRENCY", message: `${currencyCode} is not an active Master Data currency.` });
   }

@@ -2,11 +2,17 @@ import type { Express, Request, RequestHandler, Response } from "express";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { and, desc, eq, gt, ilike, isNull, lte, or, sql } from "drizzle-orm";
-import { db } from "../../db";
+import { db, pool } from "../../db";
 import { storage } from "../../storage";
 import { sendError, sendOk } from "../../api-response";
 import { getApprovalSuggestions } from "../../approval-suggestions";
+import {
+  getApprovalWorkflowProgress,
+  governedApprovalEntityTypes,
+  isGovernedApprovalEntityType,
+} from "../../services/approval-workflow-service";
 import { getActiveOrganizationId } from "../../organization-context";
+import { getCanonicalReportingCurrencyCode } from "../../lib/org-reporting-money";
 import {
   insertApprovalPolicySchema,
   insertCarrierSchema,
@@ -648,6 +654,103 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
+  app.get("/api/purchase-requisitions/:id/default-drift", ...masterRead, async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return sendError(res, 400, "INVALID_ID", "Invalid requisition ID");
+    const organizationId = getActiveOrganizationId();
+    const result = await pool.query(
+      `SELECT requisition.*, supplier.default_currency_code, supplier.default_department_id
+       FROM purchase_requisitions requisition
+       LEFT JOIN suppliers supplier ON supplier.id = requisition.supplier_id AND supplier.organization_id = requisition.organization_id
+       WHERE requisition.organization_id = $1 AND requisition.id = $2`,
+      [organizationId, id],
+    );
+    const row = result.rows[0];
+    if (!row) return sendError(res, 404, "REQUISITION_NOT_FOUND", "Requisition not found");
+    const changes = [
+      row.default_currency_code && row.default_currency_code !== row.currency_code ? { field: "currencyCode", current: row.currency_code, suggested: row.default_currency_code, source: "supplier" } : null,
+      row.default_department_id && Number(row.default_department_id) !== Number(row.department_id) ? { field: "departmentId", current: row.department_id, suggested: row.default_department_id, source: "supplier" } : null,
+    ].filter(Boolean);
+    return sendOk(res, { id, status: row.status, revision: new Date(row.updated_at).toISOString(), mutable: row.status === "DRAFT", changes });
+  });
+
+  app.post("/api/purchase-requisitions/:id/refresh-defaults", ...masterRead, requireMdmPermission("procurement-policies", "update"), async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    const expectedRevision = String(req.body?.expectedRevision ?? "");
+    const fields = Array.isArray(req.body?.fields) ? req.body.fields.map(String) : [];
+    if (!Number.isInteger(id) || id <= 0 || !expectedRevision) return sendError(res, 400, "INVALID_REFRESH_REQUEST", "A requisition ID and expectedRevision are required.");
+    const organizationId = getActiveOrganizationId();
+    const current = await pool.query(
+      `SELECT requisition.*, supplier.default_currency_code, supplier.default_department_id
+       FROM purchase_requisitions requisition LEFT JOIN suppliers supplier ON supplier.id = requisition.supplier_id AND supplier.organization_id = requisition.organization_id
+       WHERE requisition.organization_id = $1 AND requisition.id = $2 FOR UPDATE`, [organizationId, id],
+    );
+    const row = current.rows[0];
+    if (!row) return sendError(res, 404, "REQUISITION_NOT_FOUND", "Requisition not found");
+    if (row.status !== "DRAFT") return sendError(res, 409, "DOCUMENT_IMMUTABLE", "Submitted or completed requisitions preserve their Master Data snapshot.");
+    if (new Date(row.updated_at).toISOString() !== expectedRevision) return sendError(res, 409, "STALE_REVISION", "The requisition changed after drift review. Reload and review changes again.");
+    const allowed = new Set(["currencyCode", "departmentId"]);
+    if (fields.some((field: string) => !allowed.has(field))) return sendError(res, 400, "INVALID_REFRESH_FIELD", "Only reviewed Master Data fields can be refreshed.");
+    const updated = await pool.query(
+      `UPDATE purchase_requisitions SET
+        currency_code = CASE WHEN $3::boolean THEN COALESCE($4, currency_code) ELSE currency_code END,
+        department_id = CASE WHEN $5::boolean THEN COALESCE($6, department_id) ELSE department_id END,
+        updated_at = now()
+       WHERE organization_id = $1 AND id = $2 RETURNING *`,
+      [organizationId, id, fields.includes("currencyCode"), row.default_currency_code, fields.includes("departmentId"), row.default_department_id],
+    );
+    return sendOk(res, updated.rows[0]);
+  });
+
+  app.get("/api/procurement/purchase-orders/:id/default-drift", ...masterRead, async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    const organizationId = getActiveOrganizationId();
+    const result = await pool.query(
+      `SELECT purchase_order.*, supplier.default_currency_code, supplier.payment_terms_id AS supplier_payment_terms_id,
+        supplier.incoterm_id AS supplier_incoterm_id, supplier.default_department_id
+       FROM purchase_orders purchase_order JOIN suppliers supplier ON supplier.id = purchase_order.supplier_id AND supplier.organization_id = purchase_order.organization_id
+       WHERE purchase_order.organization_id = $1 AND purchase_order.id = $2`, [organizationId, id],
+    );
+    const row = result.rows[0];
+    if (!row) return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
+    const comparisons = [
+      ["currencyCode", row.currency_code, row.default_currency_code], ["paymentTermsId", row.payment_terms_id, row.supplier_payment_terms_id],
+      ["incotermId", row.incoterm_id, row.supplier_incoterm_id], ["departmentId", row.department_id, row.default_department_id],
+    ];
+    const changes = comparisons.filter(([, currentValue, suggested]) => suggested != null && String(currentValue ?? "") !== String(suggested)).map(([field, currentValue, suggested]) => ({ field, current: currentValue, suggested, source: "supplier" }));
+    return sendOk(res, { id, status: row.status, revision: Number(row.revision_number), mutable: row.status === "DRAFT", changes });
+  });
+
+  app.post("/api/procurement/purchase-orders/:id/refresh-defaults", ...masterRead, requireMdmPermission("procurement-policies", "update"), async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    const expectedRevision = Number(req.body?.expectedRevision);
+    const fields = Array.isArray(req.body?.fields) ? req.body.fields.map(String) : [];
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(expectedRevision)) return sendError(res, 400, "INVALID_REFRESH_REQUEST", "A purchase order ID and expectedRevision are required.");
+    const allowed = new Set(["currencyCode", "paymentTermsId", "incotermId", "departmentId"]);
+    if (fields.some((field: string) => !allowed.has(field))) return sendError(res, 400, "INVALID_REFRESH_FIELD", "Only reviewed Master Data fields can be refreshed.");
+    const organizationId = getActiveOrganizationId();
+    const result = await pool.query(
+      `UPDATE purchase_orders purchase_order SET
+        currency_code = CASE WHEN $4::boolean THEN COALESCE(supplier.default_currency_code, purchase_order.currency_code) ELSE purchase_order.currency_code END,
+        payment_terms_id = CASE WHEN $5::boolean THEN COALESCE(supplier.payment_terms_id, purchase_order.payment_terms_id) ELSE purchase_order.payment_terms_id END,
+        incoterm_id = CASE WHEN $6::boolean THEN COALESCE(supplier.incoterm_id, purchase_order.incoterm_id) ELSE purchase_order.incoterm_id END,
+        department_id = CASE WHEN $7::boolean THEN COALESCE(supplier.default_department_id, purchase_order.department_id) ELSE purchase_order.department_id END,
+        revision_number = purchase_order.revision_number + 1, updated_at = now()
+       FROM suppliers supplier
+       WHERE purchase_order.organization_id = $1 AND purchase_order.id = $2 AND purchase_order.revision_number = $3
+         AND purchase_order.status = 'DRAFT' AND supplier.id = purchase_order.supplier_id AND supplier.organization_id = purchase_order.organization_id
+       RETURNING purchase_order.*`,
+      [organizationId, id, expectedRevision, fields.includes("currencyCode"), fields.includes("paymentTermsId"), fields.includes("incotermId"), fields.includes("departmentId")],
+    );
+    if (!result.rows[0]) {
+      const exists = await pool.query("SELECT status, revision_number FROM purchase_orders WHERE organization_id = $1 AND id = $2", [organizationId, id]);
+      if (!exists.rows[0]) return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
+      if (exists.rows[0].status !== "DRAFT") return sendError(res, 409, "DOCUMENT_IMMUTABLE", "Approved or completed purchase orders preserve their Master Data snapshot.");
+      return sendError(res, 409, "STALE_REVISION", "The purchase order changed after drift review. Reload and review changes again.");
+    }
+    return sendOk(res, result.rows[0]);
+  });
+
   app.post("/api/mdm/validate-transaction", ...masterRead, requireMdmPermission("procurement-policies", "scan"), async (req: Request, res: Response) => {
     try {
       return sendOk(res, await validateMdmTransaction(getActiveOrganizationId(), req.body ?? {}));
@@ -801,7 +904,11 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       try {
         const paginated = req.query.page != null || req.query.pageSize != null || req.query.q != null || req.query.status != null;
         if (!paginated) {
-          const rows = await db.select().from(table);
+          let legacyQuery = db.select().from(table).$dynamic();
+          if (table.organizationId) {
+            legacyQuery = legacyQuery.where(eq(table.organizationId, getActiveOrganizationId()));
+          }
+          const rows = await legacyQuery;
           return sendOk(res, rows);
         }
         const page = Math.max(1, Number(req.query.page ?? 1) || 1);
@@ -897,6 +1004,15 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         }
         const createdRows = (await db.insert(table).values(payload).returning()) as any[];
         const created = createdRows[0];
+        if (basePath === "/api/currencies" && Number.isFinite(Number(created?.exchangeRateToZar)) && Number(created.exchangeRateToZar) > 0) {
+          const toCode = await getCanonicalReportingCurrencyCode(getActiveOrganizationId());
+          const fromCode = String(created.code ?? "").toUpperCase();
+          if (fromCode && fromCode !== toCode) await pool.query(
+            `INSERT INTO mdm_exchange_rates (organization_id, from_currency_code, to_currency_code, rate, source, effective_date, active)
+             VALUES ($1,$2,$3,$4,'master_data_currency_editor',now(),true)`,
+            [getActiveOrganizationId(), fromCode, toCode, Number(created.exchangeRateToZar)],
+          );
+        }
         return sendOk(res, created, 201);
       } catch (error) {
         if (error instanceof ZodError) {
@@ -936,6 +1052,10 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
             incoming.symbol = codeStr.slice(0, 3) || String(existing.symbol ?? "").trim() || "$";
           }
           patchBody = incoming;
+          if ("exchangeRateToZar" in incoming) {
+            const rate = Number(incoming.exchangeRateToZar);
+            if (!Number.isFinite(rate) || rate <= 0) return sendError(res, 400, "INVALID_EXCHANGE_RATE", "Current exchange rate must be greater than zero.");
+          }
         }
         const isDeactivationRequest =
           patchBody &&
@@ -965,6 +1085,16 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         const updatedRows = (await db.update(table).set(payload).where(updateScope).returning()) as any[];
         const updated = updatedRows[0];
         if (!updated) return sendError(res, 404, "NOT_FOUND", "Record not found");
+        if (basePath === "/api/currencies" && patchBody && typeof patchBody === "object" && "exchangeRateToZar" in patchBody) {
+          const rate = Number((patchBody as { exchangeRateToZar?: unknown }).exchangeRateToZar);
+          const toCode = await getCanonicalReportingCurrencyCode(getActiveOrganizationId());
+          const fromCode = String(updated.code ?? "").toUpperCase();
+          if (fromCode && fromCode !== toCode) await pool.query(
+            `INSERT INTO mdm_exchange_rates (organization_id, from_currency_code, to_currency_code, rate, source, effective_date, active)
+             VALUES ($1,$2,$3,$4,'master_data_currency_editor',now(),true)`,
+            [getActiveOrganizationId(), fromCode, toCode, rate],
+          );
+        }
         return sendOk(res, updated);
       } catch (error) {
         if (error instanceof ZodError) {
@@ -1231,19 +1361,19 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     try {
       const entityType = String(req.query.entityType ?? "");
       const amount = Number(req.query.amount ?? NaN);
-      if (!["requisition", "purchase_order", "invoice", "payment_batch"].includes(entityType)) {
+      if (!isGovernedApprovalEntityType(entityType)) {
         return sendError(
           res,
           400,
           "INVALID_ENTITY",
-          "entityType must be requisition, purchase_order, invoice, or payment_batch",
+          `entityType must be one of: ${governedApprovalEntityTypes.join(", ")}`,
         );
       }
       if (!Number.isFinite(amount) || amount < 0) {
         return sendError(res, 400, "INVALID_AMOUNT", "amount must be a non-negative number");
       }
       const out = await getApprovalSuggestions(
-        entityType as "requisition" | "purchase_order" | "invoice" | "payment_batch",
+        entityType,
         amount,
       );
       return sendOk(res, out);
@@ -1251,6 +1381,25 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       console.error("Error building approval suggestions:", error);
       return sendError(res, 500, "SUGGESTIONS_FAILED", "Failed to load approval suggestions");
     }
+  });
+
+  app.get("/api/approval-workflows/:entityType/:entityId", ...masterRead, async (req: Request, res: Response) => {
+    const entityType = String(req.params.entityType ?? "");
+    const entityId = Number(req.params.entityId);
+    const amount = Number(req.query.amount ?? 0);
+    if (!isGovernedApprovalEntityType(entityType)) {
+      return sendError(res, 400, "INVALID_APPROVAL_ENTITY", `entityType must be one of: ${governedApprovalEntityTypes.join(", ")}`);
+    }
+    if (!Number.isInteger(entityId) || entityId <= 0 || !Number.isFinite(amount) || amount < 0) {
+      return sendError(res, 400, "INVALID_APPROVAL_WORKFLOW_QUERY", "entityId must be positive and amount must be non-negative.");
+    }
+    const progress = await getApprovalWorkflowProgress({
+      organizationId: getActiveOrganizationId(),
+      entityType,
+      entityId,
+      amount,
+    });
+    return sendOk(res, { entityType, entityId, amount, ...progress });
   });
 
   app.post("/api/approval-policies", ...masterWrite, async (req, res) => {

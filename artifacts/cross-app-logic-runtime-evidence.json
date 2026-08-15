@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "suite": "cross-path-runtime",
   "passed": true,
-  "completedAt": "2026-08-06T19:59:42.918Z",
-  "database": "isssourcing_logic_test_20260806_11",
-  "baseUrl": "http://127.0.0.1:5106",
+  "completedAt": "2026-08-12T15:54:40.749Z",
+  "database": "isssourcing_logic_test_20260812_7c",
+  "baseUrl": "http://127.0.0.1:5111",
   "proofs": [
     "duplicate and legacy paths enforce the permission contracts locked by the AST suite",
     "AP admin overrides use authenticated actor role plus an explicit reason",

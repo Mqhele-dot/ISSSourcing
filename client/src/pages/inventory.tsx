@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Boxes, Download, ExternalLink, Eye, LayoutGrid, List, Plus, RefreshCw, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,6 +115,7 @@ function recommendedInventoryAction(item: InventoryListItem): string {
 
 export default function InventoryPage() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const { toast } = useToast();
   const { queryState, setQueryState } = useQueryState({
     q: "",
@@ -126,6 +127,14 @@ export default function InventoryPage() {
     page: "1",
     pageSize: "25",
   });
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    if (params.has("low") || !isLowFilterEnabled(params.get("lowStock") ?? "")) return;
+    params.set("low", "1");
+    params.delete("lowStock");
+    const next = params.toString();
+    setLocation(next ? `${APP_ROUTES.inventory.root}?${next}` : APP_ROUTES.inventory.root, { replace: true });
+  }, [search, setLocation]);
   const sortBy = (["name-asc", "sku-asc", "available-asc", "available-desc", "updated-desc", "updated-asc"] as string[]).includes(String(queryState.sort)) ? String(queryState.sort) as InventorySort : "name-asc";
   const viewMode = queryState.view === "cards" ? "cards" : "table";
   const page = Math.max(1, Number.parseInt(String(queryState.page), 10) || 1);
@@ -1131,12 +1140,15 @@ export default function InventoryPage() {
               </div>
               <Alert>
                 <AlertTitle className="flex items-center gap-2" data-testid="inventory-item-preview-status">
-                  <StatusBadge status={inventoryStatus(previewItem)} />
-                  {inventoryStatus(previewItem) === "error"
-                    ? "Negative availability"
-                    : inventoryStatus(previewItem) === "low"
-                      ? "Low stock"
-                      : "Active"}
+                  <StatusBadge
+                    status={
+                      inventoryStatus(previewItem) === "error"
+                        ? "Negative availability"
+                        : inventoryStatus(previewItem) === "low"
+                          ? "Low stock"
+                          : "Active"
+                    }
+                  />
                 </AlertTitle>
                 <AlertDescription className="mt-2 space-y-2">
                   <p>{inventoryStatusExplanation(previewItem)}</p>
@@ -1154,7 +1166,7 @@ export default function InventoryPage() {
                   data-testid="inventory-item-preview-close"
                   onClick={() => setPreviewSku(null)}
                 >
-                  Close
+                  Close inventory preview
                 </Button>
                 <Button
                   type="button"

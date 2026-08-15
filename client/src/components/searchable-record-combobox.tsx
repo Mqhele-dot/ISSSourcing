@@ -42,6 +42,8 @@ type SearchableRecordComboboxProps = {
   ariaLabel?: string;
   testId?: string;
   maxSuggestions?: number;
+  onSearchChange?: (query: string) => void;
+  serverFiltered?: boolean;
 };
 
 export function SearchableRecordCombobox({
@@ -56,13 +58,15 @@ export function SearchableRecordCombobox({
   ariaLabel,
   testId,
   maxSuggestions = 20,
+  onSearchChange,
+  serverFiltered = false,
 }: SearchableRecordComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = options.find((option) => option.value === value);
   const visibleOptions = useMemo(
-    () => filterSearchableOptions(options, query, maxSuggestions),
-    [maxSuggestions, options, query],
+    () => serverFiltered ? options.slice(0, maxSuggestions) : filterSearchableOptions(options, query, maxSuggestions),
+    [maxSuggestions, options, query, serverFiltered],
   );
 
   return (
@@ -88,7 +92,10 @@ export function SearchableRecordCombobox({
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] min-w-[16rem] p-0" align="start">
         <Command shouldFilter={false}>
-          <CommandInput value={query} onValueChange={setQuery} placeholder={searchPlaceholder} />
+          <CommandInput value={query} onValueChange={(next) => {
+            setQuery(next);
+            onSearchChange?.(next);
+          }} placeholder={searchPlaceholder} />
           <CommandList>
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>

@@ -25,7 +25,9 @@ export default function ImageRecognitionPage() {
     queryFn: () => requestJson('GET', '/api/image-recognition/status'),
     staleTime: 5 * 60 * 1000,
   });
-  const simulationMode = recognitionStatus?.status !== 'operational';
+  const recognitionMode = recognitionStatus?.status ?? 'checking';
+  const simulationMode = recognitionMode === 'simulation';
+  const unavailable = recognitionMode === 'unavailable';
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -33,10 +35,12 @@ export default function ImageRecognitionPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center">
             <Camera className="mr-2 h-6 w-6" />
-            {simulationMode ? 'Image Recognition Preview' : 'AI Image Recognition'}
+            {unavailable ? 'Image Recognition Setup Required' : simulationMode ? 'Image Recognition Preview' : 'AI Image Recognition'}
           </h1>
           <p className="text-muted-foreground mt-1">
-            {simulationMode
+            {unavailable
+              ? 'Configure an image-recognition provider before images can be analyzed.'
+              : simulationMode
               ? 'Preview the workflow with sample catalogue matches; no AI calls or inventory creation occur.'
               : 'Use AI to identify products and add them to inventory from images.'}
           </p>
@@ -49,7 +53,18 @@ export default function ImageRecognitionPage() {
       {/* Main content */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
-          <ImageRecognitionUpload standalone={true} simulationMode={simulationMode} />
+          {unavailable ? (
+            <Alert>
+              <Server className="h-4 w-4" />
+              <AlertTitle>Recognition provider not configured</AlertTitle>
+              <AlertDescription>
+                Analysis is disabled so uploaded images cannot produce misleading sample matches. Ask an administrator
+                to configure the provider; explicit demo deployments may enable sample-mode recognition.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <ImageRecognitionUpload standalone={true} simulationMode={simulationMode} />
+          )}
         </div>
         
         <div>

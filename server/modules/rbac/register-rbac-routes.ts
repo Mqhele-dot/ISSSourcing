@@ -4,7 +4,13 @@ import type { UserRole, Resource, PermissionType } from "@shared/schema";
 import { getPermissionCatalogPayload } from "../../rbac/permission-catalog";
 import { sendError, sendOk } from "../../api-response";
 import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
-import { appendAuditEvent } from "../../services/audit-chain-service";
+import { appendAuditEvent, appendAuditEventWithClient } from "../../services/audit-chain-service";
+import { db, pool } from "../../db";
+import { approvalPolicies, organizationMembers, userApprovalLimits, users } from "@shared/schema";
+import { and, eq } from "drizzle-orm";
+import type { EffectiveAccessResponse, EffectivePermission, RoleCatalogEntry } from "@shared/rbac-contracts";
+import { governedApprovalEntityTypes, isGovernedApprovalEntityType } from "../../services/approval-workflow-service";
+import { approvalWorkflowCatalog, navigationAccessCatalog } from "@shared/authority-catalogs";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -16,6 +22,303 @@ type AuthBundle = {
  * System roles, custom roles, and permission checks — extracted from `routes.ts` orchestrator.
  */
 export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
+  app.get(
+    "/api/rbac/navigation-catalog",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("users", "read"),
+    (_req: Request, res: Response) => sendOk(res, { groups: navigationAccessCatalog }),
+  );
+
+  app.get(
+    "/api/approval-workflows/catalog",
+    auth.ensureAuthenticated,
+    (_req: Request, res: Response) => sendOk(res, { items: approvalWorkflowCatalog }),
+  );
+
+  const systemRoleDescriptions: Record<string, string> = {
+    admin: "Full organization administration and operational access",
+    manager: "Operational management, approvals, reporting, and supplier oversight",
+    planner: "Procurement planning and purchase-order execution",
+    warehouse_staff: "Warehouse, receiving, counting, and stock movement execution",
+    sales: "Commercial read access and order-oriented workflows",
+    auditor: "Read-only operational, audit, and reporting access",
+    supplier: "Assigned supplier portal and purchase-order access",
+    viewer: "Read-only access to permitted operational areas",
+  };
+
+  const permissionShape = (rows: Array<{ resource: unknown; permissionType: unknown }>): EffectivePermission[] =>
+    rows.map((row) => ({ resource: String(row.resource), permissionType: String(row.permissionType) }));
+
+  async function organizationUsers() {
+    const orgId = getActiveOrganizationId();
+    return db
+      .select({
+        id: users.id,
+        role: users.role,
+        preferences: users.preferences,
+      })
+      .from(users)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, users.id),
+          eq(organizationMembers.organizationId, orgId),
+          eq(organizationMembers.active, true),
+        ),
+      );
+  }
+
+  async function buildRoleCatalog(): Promise<RoleCatalogEntry[]> {
+    const [systemRoles, customRoleRows, members] = await Promise.all([
+      storage.getSystemRoles(),
+      storage.getCustomRoles(),
+      organizationUsers(),
+    ]);
+    const systemEntries = await Promise.all(
+      systemRoles.map(async (key): Promise<RoleCatalogEntry> => ({
+        ref: { kind: "system", key },
+        name: key.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        description: systemRoleDescriptions[key] ?? "System-defined application role",
+        active: true,
+        assignedUserCount: members.filter((member) => String(member.role) === key).length,
+        permissions: permissionShape(await storage.getRolePermissions(key as UserRole)),
+        navigationPaths: null,
+      })),
+    );
+    const customEntries = await Promise.all(
+      customRoleRows.map(async (role): Promise<RoleCatalogEntry> => ({
+        ref: { kind: "custom", id: role.id },
+        name: role.name,
+        description: role.description ?? "Organization-defined custom role",
+        active: role.isActive !== false,
+        assignedUserCount: members.filter((member) => {
+          const preferences = member.preferences && typeof member.preferences === "object"
+            ? member.preferences as { customRoleId?: unknown }
+            : null;
+          return String(member.role) === "custom" && Number(preferences?.customRoleId) === role.id;
+        }).length,
+        permissions: permissionShape(await storage.getCustomRolePermissions(role.id)),
+        navigationPaths: null,
+      })),
+    );
+    return [...systemEntries, ...customEntries];
+  }
+
+  app.get(
+    "/api/rbac/roles/catalog",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("users", "read"),
+    async (_req: Request, res: Response) => {
+      try {
+        return sendOk(res, { roles: await buildRoleCatalog() });
+      } catch (error) {
+        return sendError(res, 500, "ROLE_CATALOG_FAILED", "Failed to load the authoritative role catalog", {
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/rbac/users/:id/effective-access",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("users", "read"),
+    async (req: Request, res: Response) => {
+      try {
+        const userId = Number(req.params.id);
+        if (!Number.isInteger(userId) || userId <= 0) {
+          return sendError(res, 400, "INVALID_USER_ID", "User ID must be a positive integer");
+        }
+        const member = (await organizationUsers()).find((candidate) => candidate.id === userId);
+        if (!member) return sendError(res, 404, "USER_NOT_FOUND", "User is not available in this organization");
+        const catalog = await buildRoleCatalog();
+        const preferences = member.preferences && typeof member.preferences === "object"
+          ? member.preferences as { customRoleId?: unknown; allowedNavPaths?: unknown }
+          : null;
+        const customRoleId = Number(preferences?.customRoleId);
+        const role = String(member.role) === "custom" && Number.isInteger(customRoleId) && customRoleId > 0
+          ? catalog.find((entry) => entry.ref.kind === "custom" && entry.ref.id === customRoleId) ?? null
+          : catalog.find((entry) => entry.ref.kind === "system" && entry.ref.key === String(member.role)) ?? null;
+        const navigationPaths = Array.isArray(preferences?.allowedNavPaths)
+          ? preferences.allowedNavPaths.filter((path): path is string => typeof path === "string")
+          : null;
+        const payload: EffectiveAccessResponse = {
+          userId,
+          role,
+          permissions: role?.permissions ?? [],
+          navigationPaths,
+        };
+        return sendOk(res, payload);
+      } catch (error) {
+        return sendError(res, 500, "EFFECTIVE_ACCESS_FAILED", "Failed to load effective user access", {
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/api/rbac/users/:id/approval-limits",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("users", "read"),
+    async (req: Request, res: Response) => {
+      const userId = Number(req.params.id);
+      if (!Number.isInteger(userId) || userId <= 0) return sendError(res, 400, "INVALID_USER_ID", "User ID must be a positive integer");
+      const member = (await organizationUsers()).find((candidate) => candidate.id === userId);
+      if (!member) return sendError(res, 404, "USER_NOT_FOUND", "User is not available in this organization");
+      const rows = await db.select().from(userApprovalLimits).where(and(
+        eq(userApprovalLimits.organizationId, getActiveOrganizationId()),
+        eq(userApprovalLimits.userId, userId),
+      ));
+      const byEntity = new Map(rows.map((row) => [row.entityType, row]));
+      return sendOk(res, {
+        userId,
+        limits: governedApprovalEntityTypes.map((entityType) => {
+          const row = byEntity.get(entityType);
+          return {
+            entityType,
+            amountLimit: row?.amountLimit == null ? null : Number(row.amountLimit),
+            currencyCode: row?.currencyCode ?? "ZAR",
+            updatedAt: row?.updatedAt ?? null,
+          };
+        }),
+      });
+    },
+  );
+
+  app.put(
+    "/api/rbac/users/:id/approval-limits",
+    auth.ensureAuthenticated,
+    auth.ensureTwoFactorAuthenticated,
+    auth.ensurePermission("users", "update"),
+    async (req: Request, res: Response) => {
+      const userId = Number(req.params.id);
+      const actorUserId = Number(req.user?.id);
+      if (!Number.isInteger(userId) || userId <= 0) return sendError(res, 400, "INVALID_USER_ID", "User ID must be a positive integer");
+      const member = (await organizationUsers()).find((candidate) => candidate.id === userId);
+      if (!member) return sendError(res, 404, "USER_NOT_FOUND", "User is not available in this organization");
+      const supplied = Array.isArray(req.body?.limits) ? req.body.limits : null;
+      const reason = String(req.body?.reason ?? "").trim();
+      if (!supplied) return sendError(res, 400, "APPROVAL_LIMITS_REQUIRED", "Provide an approval limits array");
+      if (reason.length < 5) return sendError(res, 400, "CHANGE_REASON_REQUIRED", "Explain why the approval authority is changing (at least 5 characters)");
+      const normalized: Array<{ entityType: string; amountLimit: number | null; currencyCode: string }> = supplied.map((entry: any) => ({
+        entityType: String(entry?.entityType ?? ""),
+        amountLimit: entry?.amountLimit == null || entry?.amountLimit === "" ? null : Number(entry.amountLimit),
+        currencyCode: String(entry?.currencyCode ?? "ZAR").trim().toUpperCase(),
+      }));
+      if (normalized.some((entry) => !isGovernedApprovalEntityType(entry.entityType))) {
+        return sendError(res, 400, "APPROVAL_ENTITY_INVALID", "One or more approval workflow types are invalid");
+      }
+      if (new Set(normalized.map((entry) => entry.entityType)).size !== normalized.length) {
+        return sendError(res, 400, "APPROVAL_ENTITY_DUPLICATE", "Each approval workflow may appear only once");
+      }
+      if (normalized.some((entry) => entry.amountLimit != null && (!Number.isFinite(entry.amountLimit) || entry.amountLimit < 0))) {
+        return sendError(res, 400, "APPROVAL_LIMIT_INVALID", "Approval limits must be non-negative numbers or blank for unlimited");
+      }
+      if (normalized.some((entry) => !/^[A-Z]{3}$/.test(entry.currencyCode))) {
+        return sendError(res, 400, "APPROVAL_CURRENCY_INVALID", "Approval-limit currency codes must be three-letter ISO codes");
+      }
+      const organizationId = getActiveOrganizationId();
+      const before = await db.select().from(userApprovalLimits).where(and(
+        eq(userApprovalLimits.organizationId, organizationId),
+        eq(userApprovalLimits.userId, userId),
+      ));
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        for (const entry of normalized) {
+          await client.query(
+            `INSERT INTO user_approval_limits (organization_id, user_id, entity_type, amount_limit, currency_code, updated_by, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,NOW())
+             ON CONFLICT (organization_id, user_id, entity_type)
+             DO UPDATE SET amount_limit = EXCLUDED.amount_limit, currency_code = EXCLUDED.currency_code,
+                           updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+            [organizationId, userId, entry.entityType, entry.amountLimit, entry.currencyCode, actorUserId],
+          );
+        }
+        const requisitionLimit = normalized.find((entry) => entry.entityType === "requisition");
+        if (requisitionLimit) {
+          await client.query("UPDATE users SET approver_amount_limit = $1, updated_at = NOW() WHERE id = $2", [requisitionLimit.amountLimit, userId]);
+        }
+        await appendAuditEventWithClient(client, {
+          organizationId,
+          actor: { userId: actorUserId },
+          action: "USER_APPROVAL_LIMITS_UPDATED",
+          resourceType: "user_approval_authority",
+          resourceId: userId,
+          before: before.map((row) => ({ entityType: row.entityType, amountLimit: row.amountLimit, currencyCode: row.currencyCode })),
+          after: normalized,
+          reason,
+          requestId: String(res.locals.requestId ?? "unknown-request-id"),
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent") ?? null,
+        });
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+      return sendOk(res, { userId, limits: normalized });
+    },
+  );
+
+  app.get(
+    "/api/rbac/users/:id/governance-events",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("users", "read"),
+    async (req: Request, res: Response) => {
+      const userId = Number(req.params.id);
+      if (!Number.isInteger(userId) || userId <= 0) return sendError(res, 400, "INVALID_USER_ID", "User ID must be a positive integer");
+      const member = (await organizationUsers()).find((candidate) => candidate.id === userId);
+      if (!member) return sendError(res, 404, "USER_NOT_FOUND", "User is not available in this organization");
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const pageSize = [10, 25, 50, 100].includes(Number(req.query.pageSize)) ? Number(req.query.pageSize) : 25;
+      const organizationId = getActiveOrganizationId();
+      const result = await pool.query(
+        `WITH governed AS (
+           SELECT al.id, al.created_at, 'change'::text AS event_kind, al.action,
+                  al.resource_type AS entity_type, al.resource_id AS entity_id,
+                  al.user_id, u.full_name, u.username, al.reason,
+                  CASE WHEN COALESCE(al.details->>'approvalLevel', '') ~ '^[0-9]+$'
+                       THEN (al.details->>'approvalLevel')::integer ELSE NULL END AS approval_level,
+                  al.details->'before' AS before_state, al.details->'after' AS after_state,
+                  al.request_id, al.event_hash
+           FROM audit_logs al LEFT JOIN users u ON u.id = al.user_id
+           WHERE al.organization_id = $1 AND (
+             al.user_id = $2
+             OR (al.resource_type = 'user_approval_authority' AND al.resource_id = $2)
+             OR COALESCE(al.details->'before'->>'userId', al.details->'after'->>'userId') = $2::text
+           )
+           UNION ALL
+           SELECT ah.id, ah.performed_at, 'approval'::text, ah.action,
+                  ah.entity_type, ah.entity_id, ah.performed_by, u.full_name, u.username,
+                  ah.comment, ah.level, jsonb_build_object('status', ah.previous_status),
+                  jsonb_build_object('status', ah.new_status), NULL::text, NULL::text
+           FROM approval_history ah LEFT JOIN users u ON u.id = ah.performed_by
+           WHERE ah.organization_id = $1 AND ah.performed_by = $2
+         )
+         SELECT *, count(*) OVER()::int AS total
+         FROM governed
+         ORDER BY created_at DESC, id DESC
+         LIMIT $3 OFFSET $4`,
+        [organizationId, userId, pageSize, (page - 1) * pageSize],
+      );
+      const total = Number(result.rows[0]?.total ?? 0);
+      return sendOk(res, {
+        items: result.rows.map((row) => ({
+          id: Number(row.id), createdAt: row.created_at, eventKind: row.event_kind, action: row.action,
+          entityType: row.entity_type, entityId: row.entity_id == null ? null : Number(row.entity_id),
+          actorUserId: Number(row.user_id), actorName: row.full_name ?? row.username ?? `User #${row.user_id}`,
+          reason: row.reason, approvalLevel: row.approval_level == null ? null : Number(row.approval_level),
+          before: row.before_state, after: row.after_state, requestId: row.request_id,
+          integrityHash: row.event_hash,
+        })),
+        total, page, pageSize, hasNext: page * pageSize < total,
+      });
+    },
+  );
   app.get("/api/permissions/me", auth.ensureAuthenticated, async (req: Request, res: Response) => {
     try {
       const user = req.user;
@@ -57,6 +360,10 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
         role: activeRole,
         customRoleId: customRoleId ?? null,
         permissions,
+        navigationPaths:
+          user.preferences && typeof user.preferences === "object" && Array.isArray((user.preferences as { allowedNavPaths?: unknown }).allowedNavPaths)
+            ? (user.preferences as { allowedNavPaths: unknown[] }).allowedNavPaths.filter((path): path is string => typeof path === "string")
+            : null,
       });
     } catch (error) {
       console.error("Error fetching current user permissions:", error);
@@ -255,6 +562,20 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
       if (assignedUsers.length > 0) {
         return sendError(res, 409, "CUSTOM_ROLE_ASSIGNED", "Remove this role from every profile before deleting it.", {
           details: { assignedProfiles: assignedUsers.length },
+        });
+      }
+      const referencedPolicies = await db
+        .select({ id: approvalPolicies.id })
+        .from(approvalPolicies)
+        .where(
+          and(
+            eq(approvalPolicies.organizationId, getActiveOrganizationId()),
+            eq(approvalPolicies.approverRole, `custom:${roleId}`),
+          ),
+        );
+      if (referencedPolicies.length > 0) {
+        return sendError(res, 409, "CUSTOM_ROLE_REFERENCED", "Reassign approval policies before deleting this role.", {
+          details: { approvalPolicies: referencedPolicies.length },
         });
       }
 

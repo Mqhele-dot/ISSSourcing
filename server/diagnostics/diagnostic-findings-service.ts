@@ -12,7 +12,7 @@ import {
 
 const now = () => new Date().toISOString();
 
-function finding(input: Omit<DiagnosticFinding, "id" | "occurrences" | "firstSeen" | "lastSeen"> & Partial<Pick<DiagnosticFinding, "id" | "occurrences" | "firstSeen" | "lastSeen">>): DiagnosticFinding {
+function finding(input: Omit<DiagnosticFinding, "id" | "occurrences" | "firstSeen" | "lastSeen" | "evidenceState"> & Partial<Pick<DiagnosticFinding, "id" | "occurrences" | "firstSeen" | "lastSeen" | "evidenceState">>): DiagnosticFinding {
   const timestamp = input.lastSeen ?? now();
   return {
     ...input,
@@ -20,6 +20,7 @@ function finding(input: Omit<DiagnosticFinding, "id" | "occurrences" | "firstSee
     occurrences: input.occurrences ?? 1,
     firstSeen: input.firstSeen ?? timestamp,
     lastSeen: timestamp,
+    evidenceState: input.evidenceState ?? "current",
   };
 }
 
@@ -60,6 +61,7 @@ function serverEventFindings(organizationId: number): DiagnosticFinding[] {
   return Array.from(grouped.entries()).map(([key, rows]) => {
     const newest = rows[0];
     const oldest = rows[rows.length - 1];
+    const requestId = newest.details && typeof newest.details === "object" ? (newest.details as Record<string, unknown>).requestId : undefined;
     return finding({
       id: `event:${key}`,
       category: eventCategory(newest),
@@ -78,6 +80,8 @@ function serverEventFindings(organizationId: number): DiagnosticFinding[] {
       occurrences: rows.length,
       firstSeen: oldest.timestamp,
       lastSeen: newest.timestamp,
+      evidenceState: Date.now() - new Date(newest.timestamp).getTime() > 10 * 60_000 ? "historical" : "current",
+      requestId: typeof requestId === "string" ? requestId : undefined,
       affectedRoute: newest.route,
       affectedAction: newest.method,
       remediation: "Use the request ID and affected route to reproduce the action, then review the associated server event.",
@@ -155,7 +159,8 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
       organizationId,
       sql: `SELECT COUNT(*)::text AS total, MAX(updated_at)::text AS latest
             FROM export_jobs
-            WHERE organization_id = $1 AND status = 'failed' AND updated_at > NOW() - INTERVAL '7 days'`,
+            WHERE organization_id = $1 AND status = 'failed' AND updated_at > NOW() - INTERVAL '7 days'
+              AND NOT EXISTS (SELECT 1 FROM export_jobs retry WHERE retry.retry_of_job_id = export_jobs.id)`,
       values: [organizationId],
       evaluate: (rows) => {
         const total = Number(rows[0]?.total ?? 0);
@@ -208,8 +213,8 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
   ]);
 
   const configuration: DiagnosticFinding[] = [
-    finding({ category: "integrations", severity: process.env.SMTP_HOST ? "info" : "warning", status: process.env.SMTP_HOST ? "working" : "disabled_by_configuration", code: "EMAIL_CONFIGURATION", title: "Email delivery", message: process.env.SMTP_HOST ? "Email delivery is configured." : "Email delivery is disabled because SMTP is not configured.", targetRoute: "/admin/integrations", remediation: process.env.SMTP_HOST ? undefined : "Configure SMTP variables in the hosting environment and restart the app." }),
-    finding({ category: "integrations", severity: process.env.STRIPE_SECRET_KEY ? "info" : "warning", status: process.env.STRIPE_SECRET_KEY ? "working" : "disabled_by_configuration", code: "STRIPE_CONFIGURATION", title: "Stripe billing", message: process.env.STRIPE_SECRET_KEY ? "Stripe billing credentials are configured." : "Stripe billing is disabled by configuration.", targetRoute: "/admin/subscription", remediation: process.env.STRIPE_SECRET_KEY ? undefined : "Configure Stripe only when hosted SaaS billing is ready." }),
+    finding({ category: "integrations", severity: process.env.SMTP_HOST ? "info" : "warning", status: process.env.SMTP_HOST ? "working" : "disabled_by_configuration", evidenceState: process.env.SMTP_HOST ? "current" : "expected_configuration", code: "EMAIL_CONFIGURATION", title: "Email delivery", message: process.env.SMTP_HOST ? "Email delivery is configured." : "Email delivery is disabled because SMTP is not configured.", targetRoute: "/admin/integrations", remediation: process.env.SMTP_HOST ? undefined : "Configure SMTP variables in the hosting environment and restart the app." }),
+    finding({ category: "integrations", severity: process.env.STRIPE_SECRET_KEY ? "info" : "warning", status: process.env.STRIPE_SECRET_KEY ? "working" : "disabled_by_configuration", evidenceState: process.env.STRIPE_SECRET_KEY ? "current" : "expected_configuration", code: "STRIPE_CONFIGURATION", title: "Stripe billing", message: process.env.STRIPE_SECRET_KEY ? "Stripe billing credentials are configured." : "Stripe billing is disabled by configuration.", targetRoute: "/admin/subscription", remediation: process.env.STRIPE_SECRET_KEY ? undefined : "Configure Stripe only when hosted SaaS billing is ready." }),
     finding({ category: "security", severity: "info", status: "not_exercised", code: "SECURITY_RELEASE_EVIDENCE", title: "Security release evidence", message: "Runtime diagnostics cannot infer that CI and supply-chain gates passed.", targetRoute: "/admin/system-diagnostics?view=security", remediation: "Run npm run verify:release:secure and attach immutable CI evidence before release." }),
   ];
 
@@ -229,7 +234,7 @@ export function summarizeDiagnosticFindings(findings: DiagnosticFinding[]): Diag
   return {
     generatedAt: now(),
     total: findings.length,
-    openCount: findings.filter((row) => row.status === "failed" || row.status === "degraded").length,
+    openCount: findings.filter((row) => row.evidenceState === "current" && (row.status === "failed" || row.status === "degraded")).length,
     byCategory,
     byStatus,
     bySeverity,

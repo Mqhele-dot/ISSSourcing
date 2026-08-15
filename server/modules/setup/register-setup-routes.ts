@@ -87,18 +87,37 @@ function directoryWritableProbe(dir: string): boolean {
 
 async function ensureStarterApprovalPolicies(organizationId: number): Promise<void> {
   const existing = await db
-    .select({ id: approvalPolicies.id })
+    .select({ entityType: approvalPolicies.entityType, approvalLevel: approvalPolicies.approvalLevel })
     .from(approvalPolicies)
-    .where(eq(approvalPolicies.organizationId, organizationId))
-    .limit(1);
-  if (existing.length > 0) return;
-  await db.insert(approvalPolicies).values([
+    .where(eq(approvalPolicies.organizationId, organizationId));
+  const existingKeys = new Set(existing.map((row) => `${row.entityType}:${row.approvalLevel}`));
+  const starterPolicies = [
     {
       organizationId,
       name: "Requisition Standard Approval",
       entityType: "requisition",
       amountMin: 0,
       amountMax: 5000,
+      approvalLevel: 1,
+      approverRole: "manager",
+      isActive: true,
+    },
+    {
+      organizationId,
+      name: "Requisition High Value Approval",
+      entityType: "requisition",
+      amountMin: 5000.01,
+      amountMax: null,
+      approvalLevel: 2,
+      approverRole: "admin",
+      isActive: true,
+    },
+    {
+      organizationId,
+      name: "PO Standard Approval",
+      entityType: "purchase_order",
+      amountMin: 0,
+      amountMax: null,
       approvalLevel: 1,
       approverRole: "manager",
       isActive: true,
@@ -113,7 +132,22 @@ async function ensureStarterApprovalPolicies(organizationId: number): Promise<vo
       approverRole: "admin",
       isActive: true,
     },
-  ]);
+    ...[
+      ["sourcing_award", "Sourcing Award Approval", "manager"],
+      ["supplier_onboarding", "Supplier Onboarding Approval", "manager"],
+      ["contract", "Supplier Contract Approval", "manager"],
+      ["inventory_transfer", "Inventory Transfer Approval", "manager"],
+      ["inventory_adjustment", "Inventory Adjustment Approval", "manager"],
+      ["invoice", "Invoice Approval", "manager"],
+      ["payment_batch", "Payment Batch Approval", "admin"],
+      ["master_data_change", "Master Data Change Approval", "admin"],
+    ].map(([entityType, name, approverRole]) => ({
+      organizationId, name, entityType, amountMin: 0, amountMax: null,
+      approvalLevel: 1, approverRole, isActive: true,
+    })),
+  ];
+  const missing = starterPolicies.filter((policy) => !existingKeys.has(`${policy.entityType}:${policy.approvalLevel}`));
+  if (missing.length > 0) await db.insert(approvalPolicies).values(missing);
 }
 
 const checkpointBodySchema = z.object({

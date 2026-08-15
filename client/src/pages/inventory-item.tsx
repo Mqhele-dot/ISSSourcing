@@ -42,6 +42,8 @@ import { invalidateInventoryDomain } from "@/lib/domain-invalidation";
 import { fetchInventoryDetail } from "@/api/client";
 
 type InventoryPosition = {
+  warehouseId: number;
+  warehouseName: string;
   location: string;
   onHand: number;
   allocated: number;
@@ -70,6 +72,10 @@ type InventoryDetail = {
   };
   positions: InventoryPosition[];
   movements: InventoryMovement[];
+  warehouses: Array<{ id: number; name: string }>;
+  warehouseQuantity: number;
+  unassignedQuantity: number;
+  quantityMismatch: boolean;
   location?: string | null;
 };
 
@@ -122,7 +128,7 @@ export default function InventoryDetailPage() {
 
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
-  const [adjustLocation, setAdjustLocation] = useState("");
+  const [adjustWarehouseId, setAdjustWarehouseId] = useState("");
   const [adjustDelta, setAdjustDelta] = useState<string>("0");
   const [adjustReason, setAdjustReason] = useState(ADJUST_REASONS[0]);
   const [adjustRef, setAdjustRef] = useState("");
@@ -136,25 +142,10 @@ export default function InventoryDetailPage() {
     refetch,
   } = useAsyncResource(fetchDetail, { immediate: Boolean(match && sku) });
 
-  const locationOptions = useMemo(() => {
-    const options = new Set<string>();
-    for (const position of data?.positions ?? []) {
-      if (position.location) {
-        options.add(position.location);
-      }
-    }
-    if (data?.location) {
-      options.add(data.location);
-    }
-    if (options.size === 0) {
-      options.add("Main Warehouse");
-    }
-    return Array.from(options);
-  }, [data?.location, data?.positions]);
+  const warehouseOptions = data?.warehouses ?? [];
 
   const openAdjustModal = () => {
-    const defaultLocation = locationOptions[0] ?? data?.location ?? "";
-    setAdjustLocation(defaultLocation);
+    setAdjustWarehouseId(warehouseOptions[0] ? String(warehouseOptions[0].id) : "");
     setAdjustDelta("0");
     setAdjustReason(ADJUST_REASONS[0]);
     setAdjustRef("");
@@ -171,11 +162,16 @@ export default function InventoryDetailPage() {
       });
       return;
     }
+    const warehouseId = Number(adjustWarehouseId);
+    if (!Number.isInteger(warehouseId) || warehouseId <= 0) {
+      toast({ title: "Warehouse required", description: "Choose a configured warehouse before adjusting stock.", variant: "destructive" });
+      return;
+    }
 
     setAdjusting(true);
     try {
       const response = await apiRequest("POST", `/api/inventory/${encodeURIComponent(sku)}/adjust`, {
-        location: adjustLocation,
+        warehouseId,
         delta: numericDelta,
         reason: adjustReason,
         ref: adjustRef || undefined,
@@ -246,12 +242,33 @@ export default function InventoryDetailPage() {
               subtitle={`SKU ${detail.sku ?? "—"}`}
               breadcrumb={<span>Inventory / {detail.sku}</span>}
               actions={
-                <Button onClick={openAdjustModal} className="gap-2">
+                <Button onClick={openAdjustModal} className="gap-2" disabled={(detail.warehouses?.length ?? 0) === 0}>
                   <ArrowUpDown className="h-4 w-4" />
                   Adjust stock
                 </Button>
               }
             />
+
+            {(detail.warehouses?.length ?? 0) === 0 ? (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Warehouse setup required</AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                  Stock adjustments require a canonical tenant warehouse. Unassigned master stock remains separate until one is configured.
+                  <Button type="button" variant="outline" size="sm" onClick={() => setLocation("/admin/master-data/warehouses")}>Open warehouse administration</Button>
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {Number(detail.unassignedQuantity ?? 0) !== 0 || detail.quantityMismatch ? (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>{detail.quantityMismatch ? "Inventory quantity mismatch" : "Unassigned inventory"}</AlertTitle>
+                <AlertDescription>
+                  Warehouse stock: {numOrNa(detail.warehouseQuantity)}. Unassigned master stock: {numOrNa(detail.unassignedQuantity)}. Unassigned stock is not treated as warehouse availability.
+                </AlertDescription>
+              </Alert>
+            ) : null}
 
             {Number(available) < 0 ? (
               <Alert variant="destructive">
@@ -379,15 +396,15 @@ export default function InventoryDetailPage() {
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="adjust-location">Location</Label>
-              <Select value={adjustLocation} onValueChange={setAdjustLocation}>
-                <SelectTrigger id="adjust-location">
-                  <SelectValue placeholder="Select location" />
+              <Label htmlFor="adjust-warehouse">Warehouse</Label>
+              <Select value={adjustWarehouseId} onValueChange={setAdjustWarehouseId}>
+                <SelectTrigger id="adjust-warehouse">
+                  <SelectValue placeholder="Select warehouse" />
                 </SelectTrigger>
                 <SelectContent>
-                  {locationOptions.map((location) => (
-                    <SelectItem key={location} value={location}>
-                      {location}
+                  {warehouseOptions.map((warehouse) => (
+                    <SelectItem key={warehouse.id} value={String(warehouse.id)}>
+                      {warehouse.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -435,7 +452,7 @@ export default function InventoryDetailPage() {
             <Button variant="outline" onClick={() => setAdjustOpen(false)} disabled={adjusting}>
               Cancel
             </Button>
-            <Button onClick={submitAdjustment} disabled={adjusting}>
+            <Button onClick={submitAdjustment} disabled={adjusting || !adjustWarehouseId}>
               {adjusting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Apply adjustment
             </Button>

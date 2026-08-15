@@ -17,6 +17,7 @@ import {
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { z } from "zod";
+import { SettingsAuthorityState } from "./settings-authority-state";
 
 // Define form schema
 const realtimeSettingsSchema = z.object({
@@ -28,35 +29,34 @@ const realtimeSettingsSchema = z.object({
 type RealtimeSettingsFormType = z.infer<typeof realtimeSettingsSchema>;
 
 export function RealtimeSettingsForm() {
-  const { settings, updateSettings } = useSettings();
+  const { settings, isLoading, error, refetch, updateSettings } = useSettings();
 
   // Create form
   const form = useForm<RealtimeSettingsFormType>({
     resolver: zodResolver(realtimeSettingsSchema),
     defaultValues: {
-      realTimeUpdatesEnabled: settings.realTimeUpdatesEnabled ?? true,
-      lowStockAlertFrequency: settings.lowStockAlertFrequency ?? 30,
-      autoReorderEnabled: settings.autoReorderEnabled ?? false,
+      realTimeUpdatesEnabled: settings?.realTimeUpdatesEnabled ?? false,
+      lowStockAlertFrequency: settings?.lowStockAlertFrequency ?? 30,
+      autoReorderEnabled: settings?.autoReorderEnabled ?? false,
     },
   });
 
   React.useEffect(() => {
+    if (!settings) return;
     form.reset({
-      realTimeUpdatesEnabled: settings.realTimeUpdatesEnabled ?? true,
-      lowStockAlertFrequency: settings.lowStockAlertFrequency ?? 30,
-      autoReorderEnabled: settings.autoReorderEnabled ?? false,
+      realTimeUpdatesEnabled: settings?.realTimeUpdatesEnabled ?? false,
+      lowStockAlertFrequency: settings?.lowStockAlertFrequency ?? 30,
+      autoReorderEnabled: settings?.autoReorderEnabled ?? false,
     });
-  }, [
-    form,
-    settings.autoReorderEnabled,
-    settings.lowStockAlertFrequency,
-    settings.realTimeUpdatesEnabled,
-  ]);
+  }, [form, settings]);
 
   // Submit handler
   function onSubmit(data: RealtimeSettingsFormType) {
+    if (!settings) return;
     updateSettings.mutate(data);
   }
+
+  if (!settings) return <SettingsAuthorityState loading={isLoading} error={error} onRetry={() => void refetch()} />;
 
   return (
     <Card>

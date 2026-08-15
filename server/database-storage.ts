@@ -57,6 +57,7 @@ import * as crypto from "node:crypto";
 import { db, pool } from "./db";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql, getTableColumns } from "drizzle-orm";
 import { getActiveOrganizationId } from "./organization-context";
+import { appEnv } from "./config/env";
 import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
 import { inventoryLineValue } from "./forecast-service";
@@ -71,16 +72,19 @@ import {
 import { buildISSSourcingNotificationEmailHtml, sendEmail } from "./services/email-service";
 
 const PostgresSessionStore = connectPgSimple(session);
+const MemorySessionStore = memorystore(session);
 
 // DatabaseStorage implementation with PostgreSQL
 export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({ 
-      pool: pool,
-      createTableIfMissing: true 
-    });
+    this.sessionStore = appEnv.devTestLoginEnabled
+      ? new MemorySessionStore({ checkPeriod: 24 * 60 * 60 * 1000 })
+      : new PostgresSessionStore({
+          pool,
+          createTableIfMissing: true,
+        });
   }
 
   private async reconcileInvoicePayments(invoiceId: number): Promise<void> {
@@ -1310,7 +1314,12 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getCustomRoleByName(name: string): Promise<CustomRole | undefined> {
-    return this.memStorage.getCustomRoleByName(name);
+    const [role] = await db
+      .select()
+      .from(customRoles)
+      .where(and(eq(customRoles.organizationId, getActiveOrganizationId()), eq(customRoles.name, name)))
+      .limit(1);
+    return role;
   }
   
   async addPermissionToCustomRole(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<CustomRolePermission> {

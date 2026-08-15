@@ -32,7 +32,11 @@ type DocumentRow = {
   archivedAt?: string | null;
   uploadedAt?: string | null;
   fileAvailable?: boolean;
+  fileStatus?: "available" | "missing";
+  lifecycleStatus?: "active" | "archived";
+  lastVerifiedAt?: string | null;
 };
+type DocumentPage = { items: DocumentRow[]; total: number; page: number; pageSize: number; hasNext: boolean; summary: { active: number; archived: number; missing: number } };
 
 type ArchiveFilter = "exclude" | "include" | "only";
 
@@ -59,37 +63,42 @@ export default function DocumentsPage() {
   const [filterEntityId, setFilterEntityId] = useState("");
   const [filterArchived, setFilterArchived] = useState<ArchiveFilter>("exclude");
   const [filterQuery, setFilterQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const normalizedEntityId = filterEntityId.trim();
   const normalizedQuery = filterQuery.trim();
 
   const {
-    data: documents = [],
+    data: documentPage,
     isLoading,
     isError,
     error,
     refetch,
   } = useQuery({
-    queryKey: ["/api/documents", filterEntityType, normalizedEntityId, filterArchived, normalizedQuery],
+    queryKey: ["/api/v2/documents", filterEntityType, normalizedEntityId, filterArchived, normalizedQuery, page, pageSize],
     queryFn: () => {
       const search = new URLSearchParams();
       if (filterEntityType !== "__all__") search.set("entityType", filterEntityType);
       if (normalizedEntityId) search.set("entityId", normalizedEntityId);
       if (filterArchived !== "exclude") search.set("archived", filterArchived);
       if (normalizedQuery) search.set("q", normalizedQuery);
-      search.set("limit", "100");
-      return requestJson<DocumentRow[]>("GET", `/api/documents?${search.toString()}`);
+      search.set("page", String(page));
+      search.set("pageSize", String(pageSize));
+      return requestJson<DocumentPage>("GET", `/api/v2/documents?${search.toString()}`);
     },
+    placeholderData: (previous) => previous,
   });
+  const documents = useMemo(() => documentPage?.items ?? [], [documentPage?.items]);
 
   const documentStats = useMemo(() => {
-    const archived = documents.filter((doc) => doc.archivedAt).length;
+    const archived = documentPage?.summary.archived ?? documents.filter((doc) => doc.archivedAt).length;
     return {
-      total: documents.length,
+      total: documentPage?.total ?? documents.length,
       archived,
-      active: documents.length - archived,
+      active: documentPage?.summary.active ?? documents.length - archived,
     };
-  }, [documents]);
+  }, [documentPage, documents]);
 
   const uploadReady =
     file != null &&
@@ -109,6 +118,7 @@ export default function DocumentsPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/v2/documents"] });
       setArchiveCandidate(null);
       setFile(null);
       setEntityId("");
@@ -135,6 +145,7 @@ export default function DocumentsPage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/v2/documents"] });
       toast({
         title: "Document archived",
         description: "The document remains available in archived history.",
@@ -153,6 +164,7 @@ export default function DocumentsPage() {
     mutationFn: runRetentionJob,
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/v2/documents"] });
       setRetentionConfirmOpen(false);
       toast({
         title: "Retention run completed",
@@ -168,6 +180,30 @@ export default function DocumentsPage() {
     },
   });
 
+  const reconcile = useMutation({
+    mutationFn: () => requestJson<{ checked: number; missing: number }>("POST", "/api/documents/reconcile"),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/v2/documents"] });
+      toast({ title: "Reconciliation complete", description: `${result.checked} metadata record(s) checked; ${result.missing} file(s) unavailable.` });
+    },
+    onError: (reconcileError) => toast({ title: "Reconciliation failed", description: reconcileError instanceof Error ? reconcileError.message : String(reconcileError), variant: "destructive" }),
+  });
+
+  const reattach = async (doc: DocumentRow, replacement: File | null) => {
+    if (!replacement) return;
+    try {
+      const formData = new FormData();
+      formData.append("file", replacement);
+      formData.append("entityType", doc.entityType);
+      formData.append("entityId", String(doc.entityId));
+      await uploadDocumentFile(formData);
+      await queryClient.invalidateQueries({ queryKey: ["/api/v2/documents"] });
+      toast({ title: "Replacement attached", description: `${replacement.name} was saved as a new version; the missing version remains in history.` });
+    } catch (replacementError) {
+      toast({ title: "Replacement failed", description: replacementError instanceof Error ? replacementError.message : String(replacementError), variant: "destructive" });
+    }
+  };
+
   const hasFilters =
     normalizedEntityId.length > 0
     || normalizedQuery.length > 0
@@ -180,10 +216,10 @@ export default function DocumentsPage() {
         title="Documents"
         subtitle="Controlled attachment history with versioning, filters, and archive review."
         actions={
-          <Button variant="outline" onClick={() => void refetch()} className="gap-2">
-            <RefreshCcw className="h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to reconcile storage"><Button variant="outline" onClick={() => reconcile.mutate()} disabled={reconcile.isPending}>Reconcile files</Button></Can>
+            <Button variant="outline" onClick={() => void refetch()} className="gap-2"><RefreshCcw className="h-4 w-4" />Refresh</Button>
+          </div>
         }
       />
 
@@ -367,7 +403,7 @@ export default function DocumentsPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1 min-w-[200px]">
               <Label>Filter by entity type</Label>
-              <Select value={filterEntityType} onValueChange={setFilterEntityType}>
+              <Select value={filterEntityType} onValueChange={(value) => { setFilterEntityType(value); setPage(1); }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -387,12 +423,12 @@ export default function DocumentsPage() {
                 inputMode="numeric"
                 placeholder="Any"
                 value={filterEntityId}
-                onChange={(event) => setFilterEntityId(event.target.value)}
+                onChange={(event) => { setFilterEntityId(event.target.value); setPage(1); }}
               />
             </div>
             <div className="space-y-1 min-w-[200px]">
               <Label>Archive state</Label>
-              <Select value={filterArchived} onValueChange={(value) => setFilterArchived(value as ArchiveFilter)}>
+              <Select value={filterArchived} onValueChange={(value) => { setFilterArchived(value as ArchiveFilter); setPage(1); }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -409,12 +445,12 @@ export default function DocumentsPage() {
                 id="doc-filter-q"
                 placeholder="File name or entity type"
                 value={filterQuery}
-                onChange={(event) => setFilterQuery(event.target.value)}
+                onChange={(event) => { setFilterQuery(event.target.value); setPage(1); }}
               />
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Showing {documents.length} document(s). Results are ordered newest first and filtered on the server.
+            Showing {documents.length} of {documentPage?.total ?? 0} document(s). Results are ordered newest first and filtered on the server.
           </p>
           <div className="space-y-2">
             {isLoading ? <div className="text-sm text-muted-foreground">Loading document history...</div> : null}
@@ -451,9 +487,12 @@ export default function DocumentsPage() {
                       <a href={`/api/documents/${doc.id}/download`}>Download</a>
                     </Button>
                   ) : (
-                    <Button size="sm" variant="outline" disabled title="The stored file is unavailable.">
-                      File unavailable
-                    </Button>
+                    <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to attach a replacement">
+                      <label className="inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm font-medium hover:bg-accent">
+                        File unavailable — reattach replacement
+                        <input className="sr-only" type="file" aria-label={`Reattach replacement for ${doc.fileName}`} onChange={(event) => void reattach(doc, event.target.files?.[0] ?? null)} />
+                      </label>
+                    </Can>
                   )}
                   {!doc.archivedAt ? (
                     <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to archive">
@@ -472,9 +511,10 @@ export default function DocumentsPage() {
                 </div>
               </div>
             ))}
-            {!isLoading && documents.length >= 100 ? (
-              <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
-                Showing the first 100 rows. Narrow the filters to review a specific document trail.
+            {!isLoading && (documentPage?.total ?? 0) > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-sm">
+                <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}><SelectTrigger className="w-32" aria-label="Documents per page"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="25">25 rows</SelectItem><SelectItem value="50">50 rows</SelectItem><SelectItem value="100">100 rows</SelectItem></SelectContent></Select>
+                <div className="flex gap-2"><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(1)}>First</Button><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button><Button size="sm" variant="outline" disabled={!documentPage?.hasNext} onClick={() => setPage((value) => value + 1)}>Next</Button><Button size="sm" variant="outline" disabled={page >= Math.max(1, Math.ceil((documentPage?.total ?? 0) / pageSize))} onClick={() => setPage(Math.max(1, Math.ceil((documentPage?.total ?? 0) / pageSize)))}>Last</Button></div>
               </div>
             ) : null}
           </div>

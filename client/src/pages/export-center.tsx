@@ -30,6 +30,8 @@ type ExportHistoryRow = {
   downloadUrl: string | null;
   canRetry: boolean;
   lastError?: string | null;
+  retryOfJobId?: number | null;
+  error?: { code: string; message: string; hint?: string; requestId?: string | null } | null;
 };
 
 type ExportDataset = {
@@ -133,7 +135,11 @@ export default function ExportCenterPage() {
   const history = historyQuery.data ?? [];
   const retryMutation = useMutation({
     mutationFn: (id: number) => requestJson("POST", `/api/export-jobs/${id}/retry`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/export-center/history"] }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/export-center/history"] });
+      toast({ title: "Retry queued", description: "A new attempt was created; the failed job remains in audit history." });
+    },
+    onError: (error) => toast({ title: "Retry failed", description: error instanceof Error ? error.message : String(error), variant: "destructive" }),
   });
   const downloadMutation = useMutation({
     mutationFn: (row: ExportHistoryRow) => downloadExportJob(row.id, row.fileName || `export-${row.id}`),
@@ -389,9 +395,14 @@ export default function ExportCenterPage() {
                     <div className="text-xs text-muted-foreground">
                       File: {row.fileName || "Generated on demand"}
                     </div>
-                    {row.lastError ? (
-                      <div className="text-xs text-destructive">Last error: {row.lastError}</div>
-                    ) : null}
+                    {row.retryOfJobId ? <div className="text-xs text-muted-foreground">Retry of job #{row.retryOfJobId}</div> : null}
+                    {row.error ? (
+                      <div className="space-y-1 text-xs text-destructive">
+                        <div>{row.error.code}: {row.error.message}</div>
+                        {row.error.hint ? <div>{row.error.hint}</div> : null}
+                        {row.error.requestId ? <div>Request ID: {row.error.requestId}</div> : null}
+                      </div>
+                    ) : row.lastError ? <div className="text-xs text-destructive">Last error: {row.lastError}</div> : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {row.status === "succeeded" ? (

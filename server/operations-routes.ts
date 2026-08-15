@@ -42,9 +42,11 @@ import {
   normalizeShipmentSourceType,
 } from "@shared/logistics-shipment-filters";
 import { validateExceptionStatusTransition } from "./modules/operations/exception-status-policy";
+import { isDemoWalkthroughEnabled } from "./lib/deployment-behavior";
 
 type AuthGuards = {
   ensureAuthenticated: (req: Request, res: Response, next: NextFunction) => void;
+  ensureAdmin: (req: Request, res: Response, next: NextFunction) => void;
   ensurePermission: (
     resource: string,
     permissionType: string,
@@ -177,24 +179,27 @@ function mapAdjustInventoryError(error: unknown): never {
       "Provide a positive or negative quantity adjustment.",
     );
   }
-  if (message === "location_required") {
+  if (message === "warehouse_required") {
     throw contractError(
       400,
-      "LOCATION_REQUIRED",
-      "location is required",
-      "Choose a location before submitting the adjustment.",
+      "WAREHOUSE_REQUIRED",
+      "warehouseId is required",
+      "Choose a tenant-owned warehouse before submitting the adjustment.",
     );
   }
   if (message === "sku_not_found") {
     throw contractError(404, "SKU_NOT_FOUND", "sku not found");
   }
-  if (message === "location_not_found") {
+  if (message === "warehouse_not_found") {
     throw contractError(
       400,
-      "LOCATION_NOT_FOUND",
-      "location not found",
-      "Use an existing warehouse/location identifier.",
+      "WAREHOUSE_NOT_FOUND",
+      "warehouse not found",
+      "Use an active warehouse identifier owned by this organization.",
     );
+  }
+  if (message === "insufficient_available_stock") {
+    throw contractError(400, "INSUFFICIENT_AVAILABLE_STOCK", "The adjustment would reduce available warehouse stock below zero.", "Reduce allocations or enable negative inventory through the production control plane.");
   }
   throw error;
 }
@@ -396,6 +401,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
    */
   app.get(
     "/api/inventory",
+    auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -442,7 +448,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
       }
       const sku = req.params.sku;
-      const location = typeof req.body?.location === "string" ? req.body.location : "";
+      const warehouseId = Number(req.body?.warehouseId ?? req.body?.warehouse_id);
       const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
       const ref = typeof req.body?.ref === "string" ? req.body.ref : undefined;
       const delta = Number(req.body?.delta);
@@ -461,7 +467,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         const result = await withTimeout(
           adjustOperationalInventory({
             skuOrId: sku,
-            location,
+            warehouseId,
             delta,
             reason,
             ref,
@@ -483,6 +489,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
 
   app.get(
     "/api/inventory/:sku",
+    auth.ensureAuthenticated,
     withApiContract(async (req: Request, res: Response, next: NextFunction) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1745,11 +1752,15 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   );
 
   app.post(
-    "/api/demo/walkthrough/run",
+    ["/api/operations/demo-walkthrough", "/api/demo/walkthrough/run"],
     auth.ensureAuthenticated,
+    auth.ensureAdmin,
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
+      if (!isDemoWalkthroughEnabled()) {
+        throw contractError(404, "DEMO_WALKTHROUGH_DISABLED", "Demo walkthrough mutations are not enabled for this deployment.");
+      }
       if (isOperationsDegraded()) {
         res.setHeader("X-InvTrack-Fallback", "degraded");
         throw contractError(503, "DB_UNAVAILABLE", "Service temporarily unavailable");
@@ -1757,7 +1768,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       const actor = req.user?.username || req.user?.email || "demo-user";
       try {
         const result = await withTimeout(
-          runOperationalDemoWalkthrough(actor),
+          runOperationalDemoWalkthrough(actor, String(res.locals.requestId ?? "unknown-request-id")),
           OPERATIONS_QUERY_TIMEOUT_MS,
         );
         respondOk(res, result);

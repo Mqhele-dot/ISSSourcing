@@ -16,6 +16,7 @@ import * as path from 'path';
 import * as util from 'util';
 import csvParser from 'csv-parser';
 import Excel from 'exceljs';
+import JSZip from 'jszip';
 import { createObjectCsvWriter } from 'csv-writer';
 import fetch from 'node-fetch';
 import { getPdfLib } from './pdfjs-setup';
@@ -62,6 +63,61 @@ export type BatchProcessingResult = {
     data?: ExtractedData;
   }[];
 };
+
+/**
+ * ExcelJS expects the SpreadsheetML namespace to be the default namespace.
+ * Some standards-compliant generators emit the same namespace with an `x:`
+ * prefix instead. Normalize that representation as a compatibility fallback
+ * without changing workbook values or relationship namespaces.
+ */
+async function loadExcelWorkbook(workbook: Excel.Workbook, filePath: string): Promise<void> {
+  try {
+    await workbook.xlsx.readFile(filePath);
+    return;
+  } catch (initialError) {
+    const source = await fs.promises.readFile(filePath);
+    const archive = await JSZip.loadAsync(source);
+    const workbookEntry = archive.file('xl/workbook.xml');
+    const workbookXml = workbookEntry ? await workbookEntry.async('string') : '';
+
+    if (!/xmlns:x=["']http:\/\/schemas\.openxmlformats\.org\/spreadsheetml\/2006\/main["']/.test(workbookXml)) {
+      throw initialError;
+    }
+
+    const xmlEntries = Object.values(archive.files).filter(
+      (entry) => !entry.dir && entry.name.toLowerCase().endsWith('.xml'),
+    );
+
+    await Promise.all(xmlEntries.map(async (entry) => {
+      const xml = await entry.async('string');
+      if (!xml.includes('xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"')) {
+        return;
+      }
+
+      let normalized = xml
+        .replace(
+          /xmlns:x="http:\/\/schemas\.openxmlformats\.org\/spreadsheetml\/2006\/main"/g,
+          'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"',
+        )
+        .replace(/<(\/?)x:/g, '<$1');
+
+      // Tables are presentation metadata for extraction. A few generators use
+      // absolute relationship targets that Excel accepts but ExcelJS cannot
+      // resolve, leaving an undefined table model. Dropping only the worksheet
+      // table reference keeps every cell while avoiding that parser failure.
+      if (/^xl\/worksheets\/sheet\d+\.xml$/i.test(entry.name)) {
+        normalized = normalized.replace(/<tableParts\b[^>]*>[\s\S]*?<\/tableParts>/gi, '');
+      }
+      archive.file(entry.name, normalized);
+    }));
+
+    const normalizedBuffer = await archive.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+    });
+    await workbook.xlsx.load(normalizedBuffer);
+  }
+}
 
 /**
  * Detect file type based on file extension and content
@@ -310,7 +366,7 @@ export async function extractFromExcel(
   
   try {
     const workbook = new Excel.Workbook();
-    await workbook.xlsx.readFile(filePath);
+    await loadExcelWorkbook(workbook, filePath);
     
     const sheetIndex = options.sheetIndex || 0;
     const sheet = workbook.worksheets[sheetIndex];

@@ -375,7 +375,7 @@ export async function getControlTowerDashboard(
 
   base.inventoryHealth = [
     { id: "healthy", label: "Healthy", count: healthy, href: `${"/inventory"}` },
-    { id: "low", label: "Low stock", count: lowOnly, href: "/inventory?lowStock=1" },
+    { id: "low", label: "Low stock", count: lowOnly, href: "/inventory?low=1" },
     { id: "negative", label: "Negative availability", count: negative, href: "/inventory" },
     { id: "zero", label: "Zero stock", count: zeroStock, href: "/inventory" },
     { id: "expiring", label: "Expiring soon", count: expiringSoon, href: "/inventory" },
@@ -734,7 +734,7 @@ export async function getControlTowerDashboard(
       title: "Low stock items",
       severity: mediumSev(lowOnly),
       reason: `${lowOnly} SKU(s) at or below reorder threshold.`,
-      href: "/inventory?lowStock=1",
+      href: "/inventory?low=1",
       area: "inventory",
     });
   }

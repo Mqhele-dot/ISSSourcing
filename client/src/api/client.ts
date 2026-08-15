@@ -2,6 +2,7 @@ import { apiRequest, buildRequestHeaders, requestJson } from "@/lib/queryClient"
 import { setFallbackState } from "@/lib/fallback-store";
 import { toastStore } from "@/lib/toast-store";
 import { addDiagnosticEvent, redactDiagnosticDetails } from "@/lib/diagnostics/diagnostics-store";
+import type { DiagnosticFinding } from "@shared/diagnostics/findings";
 import type {
   ActivityRecord,
   ApiErrorPayload,
@@ -373,7 +374,7 @@ export async function resetDemoData(): Promise<DemoDataSummary> {
 }
 
 export async function runDemoWalkthrough(): Promise<DemoWalkthroughResult> {
-  return apiMutate<DemoWalkthroughResult>("POST", "/api/demo/walkthrough/run");
+  return apiMutate<DemoWalkthroughResult>("POST", "/api/operations/demo-walkthrough");
 }
 
 export async function getTutorialStatus(): Promise<TutorialStatus> {
@@ -408,6 +409,10 @@ export async function fetchInventoryDetail(sku: string): Promise<InventoryDetail
     summary: { onHand, allocated, available },
     positions: Array.isArray(d.positions) ? d.positions as InventoryDetail["positions"] : [],
     movements: Array.isArray(d.movements) ? d.movements as InventoryDetail["movements"] : [],
+    warehouses: Array.isArray(d.warehouses) ? d.warehouses as Array<{ id: number; name: string }> : [],
+    warehouseQuantity: Number(d.warehouseQuantity ?? 0),
+    unassignedQuantity: Number(d.unassignedQuantity ?? 0),
+    quantityMismatch: Boolean(d.quantityMismatch),
     location: (d.location ?? item?.location) as string | null | undefined,
   };
 }
@@ -563,7 +568,7 @@ export type ApprovalSuggestionsResult = {
 };
 
 export async function fetchApprovalSuggestions(params: {
-  entityType: "requisition" | "purchase_order" | "invoice" | "payment_batch";
+  entityType: "requisition" | "purchase_order" | "sourcing_award" | "supplier_onboarding" | "contract" | "inventory_transfer" | "inventory_adjustment" | "invoice" | "payment_batch" | "master_data_change";
   amount: number;
 }): Promise<ApprovalSuggestionsResult> {
   const search = new URLSearchParams();
@@ -927,6 +932,16 @@ export type DiagnosticsScanResult = {
 
 export async function fetchDiagnosticsScan(): Promise<DiagnosticsScanResult> {
   return apiFetch<DiagnosticsScanResult>("/api/diagnostics/scan");
+}
+
+export type StructuredDiagnosticsScanResult = {
+  findings: DiagnosticFinding[];
+  byCategory: Record<string, number>;
+  scannedAt: string;
+};
+
+export async function fetchStructuredDiagnosticsScan(): Promise<StructuredDiagnosticsScanResult> {
+  return apiFetch<StructuredDiagnosticsScanResult>("/api/v2/diagnostics/scan");
 }
 
 export type DiagnosticsFixResult = {

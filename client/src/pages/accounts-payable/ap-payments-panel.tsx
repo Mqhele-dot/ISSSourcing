@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Landmark, Wallet } from "lucide-react";
+import { Download, Landmark, Printer, Search, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { Invoice, PaymentBatch } from "./types";
+import type { ApPage, Invoice, PaymentBatch } from "./types";
 import type { ApPaymentBatchApproveInput, ApPaymentBatchPayload } from "./use-ap-workspace-mutations";
 import type { UseMutationResult } from "@tanstack/react-query";
 
@@ -38,6 +38,10 @@ type Props = {
   paymentBatchErrors: string[];
   formatMoney: (n: number | null | undefined) => string;
   paymentBatches: PaymentBatch[];
+  paymentBatchPage: ApPage<PaymentBatch>;
+  payableInvoicePage: ApPage<Invoice>;
+  query: { q: string; status: string; pageSize: number };
+  onQueryChange: (updates: Partial<{ apInvoicePage: string; apBatchPage: string; apPageSize: string; apQ: string; apBatchStatus: string }>) => void;
   createBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchPayload>;
   approveBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchApproveInput>;
   releaseBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchApproveInput>;
@@ -47,8 +51,12 @@ type Props = {
   actorRole?: string | null;
 };
 
-function apInvoiceDomId(invoiceNumber: string): string {
-  return invoiceNumber.replace(/[^a-zA-Z0-9_-]+/g, "-");
+function apInvoiceDomId(invoice: Invoice): string {
+  return `invoice-${invoice.id}`;
+}
+
+function apInvoiceLabel(invoice: Invoice): string {
+  return invoice.invoiceNumber?.trim() || `Invoice #${invoice.id}`;
 }
 
 export function ApPaymentsPanel({
@@ -66,6 +74,10 @@ export function ApPaymentsPanel({
   paymentBatchErrors,
   formatMoney,
   paymentBatches,
+  paymentBatchPage,
+  payableInvoicePage,
+  query,
+  onQueryChange,
   createBatchMutation,
   approveBatchMutation,
   releaseBatchMutation,
@@ -121,6 +133,22 @@ export function ApPaymentsPanel({
               mean there are no invoices.
             </p>
           ) : null}
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                aria-label="Search payable invoices and payment batches"
+                className="pl-9"
+                value={query.q}
+                onChange={(event) => onQueryChange({ apQ: event.target.value, apInvoicePage: "1", apBatchPage: "1" })}
+                placeholder="Search invoice, supplier, or batch number"
+              />
+            </div>
+            <Select value={String(query.pageSize)} onValueChange={(value) => onQueryChange({ apPageSize: value, apInvoicePage: "1", apBatchPage: "1" })}>
+              <SelectTrigger className="w-32" aria-label="Rows per page"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="25">25 rows</SelectItem><SelectItem value="50">50 rows</SelectItem><SelectItem value="100">100 rows</SelectItem></SelectContent>
+            </Select>
+          </div>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Payment method</Label>
@@ -164,7 +192,7 @@ export function ApPaymentsPanel({
             <TableBody>
               {readyForBatch.map((invoice) => {
                 const checked = selectedInvoiceIds.includes(invoice.id);
-                const idSuffix = apInvoiceDomId(invoice.invoiceNumber);
+                const idSuffix = apInvoiceDomId(invoice);
                 return (
                   <TableRow key={invoice.id} data-testid={`ap-ready-invoice-row-${idSuffix}`}>
                     <TableCell>
@@ -175,7 +203,7 @@ export function ApPaymentsPanel({
                         onCheckedChange={(state) => toggleInvoiceSelection(invoice.id, state === true)}
                       />
                     </TableCell>
-                    <TableCell>{invoice.invoiceNumber}</TableCell>
+                    <TableCell>{apInvoiceLabel(invoice)}</TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
                         <Badge variant={invoice.status === "APPROVED" ? "default" : "outline"}>{invoice.status}</Badge>
@@ -196,6 +224,12 @@ export function ApPaymentsPanel({
             </TableBody>
           </Table>
 
+          <PageControls
+            label="payable invoices"
+            page={payableInvoicePage}
+            onPage={(page) => onQueryChange({ apInvoicePage: String(page) })}
+          />
+
           <Button
             type="button"
             data-testid="ap-create-batch-button"
@@ -215,6 +249,15 @@ export function ApPaymentsPanel({
           </CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 flex justify-end">
+            <Select value={query.status || "all"} onValueChange={(value) => onQueryChange({ apBatchStatus: value === "all" ? "" : value, apBatchPage: "1" })}>
+              <SelectTrigger className="w-52" aria-label="Payment batch status"><SelectValue placeholder="All batch statuses" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All batch statuses</SelectItem>
+                {['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'RELEASED', 'CANCELLED'].map((status) => <SelectItem key={status} value={status}>{status.replaceAll('_', ' ')}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           {batchesLoadFailed ? (
             <p className="text-sm text-destructive">
               Payment batches could not be loaded. Use Retry batches above.
@@ -250,7 +293,7 @@ export function ApPaymentsPanel({
                       <Badge variant={batch.status === "RELEASED" ? "default" : "outline"}>{batch.status}</Badge>
                     </TableCell>
                     <TableCell>{batch.scheduledDate ? new Date(batch.scheduledDate).toLocaleDateString() : "—"}</TableCell>
-                    <TableCell>{batch.items.length}</TableCell>
+                    <TableCell>{batch.itemCount}</TableCell>
                     <TableCell className="text-right">{formatMoney(Number(batch.totalAmount ?? 0))}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex min-w-[220px] flex-col items-end gap-2">
@@ -278,6 +321,18 @@ export function ApPaymentsPanel({
                           </div>
                         ) : null}
                         <div className="flex flex-wrap justify-end gap-2">
+                        {batch.status === "RELEASED" ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => window.open(`/api/ap/payment-batches/${batch.id}/remittance.pdf`, "_blank", "noopener,noreferrer")}>
+                              <Printer className="mr-1 h-3.5 w-3.5" />Preview
+                            </Button>
+                            <Button size="sm" variant="outline" asChild>
+                              <a href={`/api/ap/payment-batches/${batch.id}/remittance.pdf?download=1`} download>
+                                <Download className="mr-1 h-3.5 w-3.5" />Download
+                              </a>
+                            </Button>
+                          </>
+                        ) : null}
                         {batch.status === "PENDING_APPROVAL" ? (
                           <Button
                             size="sm"
@@ -332,8 +387,28 @@ export function ApPaymentsPanel({
               </TableBody>
             </Table>
           )}
+          {!batchesLoadFailed && paymentBatches.length > 0 ? (
+            <PageControls label="payment batches" page={paymentBatchPage} onPage={(page) => onQueryChange({ apBatchPage: String(page) })} />
+          ) : null}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function PageControls<T>({ label, page, onPage }: { label: string; page: ApPage<T>; onPage: (page: number) => void }) {
+  const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
+  const first = page.total === 0 ? 0 : (page.page - 1) * page.pageSize + 1;
+  const last = Math.min(page.total, page.page * page.pageSize);
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <span className="text-muted-foreground">{first}–{last} of {page.total} {label}</span>
+      <div className="flex gap-2">
+        <Button type="button" size="sm" variant="outline" disabled={page.page <= 1} onClick={() => onPage(1)}>First</Button>
+        <Button type="button" size="sm" variant="outline" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)}>Previous</Button>
+        <Button type="button" size="sm" variant="outline" disabled={!page.hasNext} onClick={() => onPage(page.page + 1)}>Next</Button>
+        <Button type="button" size="sm" variant="outline" disabled={page.page >= lastPage} onClick={() => onPage(lastPage)}>Last</Button>
+      </div>
     </div>
   );
 }

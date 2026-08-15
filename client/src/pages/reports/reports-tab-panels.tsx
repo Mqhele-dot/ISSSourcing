@@ -270,11 +270,11 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
                       Total
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                      {safeInventoryItems.reduce((sum, item) => sum + (item.quantity ?? 0), 0)}
+                      {filteredInventoryItems.reduce((sum, item) => sum + (item.quantity ?? 0), 0)}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400" />
                     <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                      {formatMoney(calculateTotalValue(safeInventoryItems))}
+                      {formatMoney(calculateTotalValue(filteredInventoryItems))}
                     </th>
                   </tr>
                 </tfoot>
@@ -297,7 +297,7 @@ export function ReportsInventoryTabPanel(props: ReportsTabPanelsProps) {
         </CardContent>
         <CardFooter className="bg-neutral-50 dark:bg-neutral-800 border-t border-neutral-200 dark:border-neutral-700 flex justify-between">
           <div className="text-sm text-neutral-600 dark:text-neutral-300">
-            Export includes all {safeInventoryItems.length} inventory items from the current feed (filters above scope the preview only).
+            Export includes all {filteredInventoryItems.length} rows matching the active filters; this preview shows {visibleInventoryRows.length}.
           </div>
         </CardFooter>
       </Card>

@@ -33,13 +33,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import type { ApprovalPolicy } from "@shared/schema";
-
-const ENTITY_TYPES = [
-  { value: "requisition", label: "Purchase requisition" },
-  { value: "purchase_order", label: "Purchase order" },
-  { value: "invoice", label: "Invoice approval" },
-  { value: "payment_batch", label: "Payment batch approval" },
-] as const;
+import type { RoleCatalogResponse } from "@shared/rbac-contracts";
+import type { ApprovalWorkflowCatalogResponse, GovernedApprovalEntityType } from "@shared/authority-catalogs";
 
 function rangesOverlap(
   aMin: number,
@@ -52,17 +47,6 @@ function rangesOverlap(
   return Math.max(aMin, bMin) <= Math.min(aHi, bHi);
 }
 
-const APPROVER_ROLES = [
-  "admin",
-  "manager",
-  "warehouse_staff",
-  "sales",
-  "auditor",
-  "supplier",
-  "custom",
-  "viewer",
-] as const;
-
 type UserOpt = { id: number; username: string; fullName?: string | null };
 type PolicyPage = {
   items: ApprovalPolicy[];
@@ -74,7 +58,7 @@ type PolicyPage = {
 
 const emptyForm = {
   name: "",
-  entityType: "requisition" as (typeof ENTITY_TYPES)[number]["value"],
+  entityType: "requisition",
   amountMin: "0",
   amountMax: "",
   approvalLevel: "1",
@@ -83,9 +67,34 @@ const emptyForm = {
   isActive: true,
 };
 
+async function fetchApprovalWorkflowCatalog(): Promise<ApprovalWorkflowCatalogResponse> {
+  const raw = await requestJson<unknown>("GET", "/api/approval-workflows/catalog");
+  if (!raw || typeof raw !== "object" || !Array.isArray((raw as { items?: unknown }).items)) {
+    throw new Error("The server returned an invalid governed-workflow catalog. Restart the local server and retry.");
+  }
+  const items = (raw as { items: unknown[] }).items.filter(
+    (item): item is ApprovalWorkflowCatalogResponse["items"][number] =>
+      Boolean(
+        item &&
+          typeof item === "object" &&
+          typeof (item as { entityType?: unknown }).entityType === "string" &&
+          typeof (item as { label?: unknown }).label === "string" &&
+          typeof (item as { amountBased?: unknown }).amountBased === "boolean" &&
+          (item as { active?: unknown }).active === true,
+      ),
+  );
+  if (items.length === 0) throw new Error("No active governed workflows were returned by the server.");
+  return { items };
+}
+
 export default function ApprovalPoliciesPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const workflowCatalogQuery = useQuery<ApprovalWorkflowCatalogResponse>({
+    queryKey: ["/api/approval-workflows/catalog"],
+    queryFn: fetchApprovalWorkflowCatalog,
+  });
+  const entityTypes = useMemo(() => workflowCatalogQuery.data?.items ?? [], [workflowCatalogQuery.data?.items]);
   const canManagePolicies = ["admin", "manager"].includes(String(user?.role ?? "").toLowerCase());
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -93,7 +102,7 @@ export default function ApprovalPoliciesPage() {
   const [stalePolicy, setStalePolicy] = useState(false);
   const [changeReason, setChangeReason] = useState("");
   const [conflictingPolicies, setConflictingPolicies] = useState<Array<{ id: number; name: string; amountMin: number; amountMax: number | null; approvalLevel: number }>>([]);
-  const [previewEntity, setPreviewEntity] = useState<(typeof ENTITY_TYPES)[number]["value"]>("requisition");
+  const [previewEntity, setPreviewEntity] = useState<GovernedApprovalEntityType>("requisition");
   const [previewAmount, setPreviewAmount] = useState("5000");
   const [search, setSearch] = useState("");
   const [entityFilter, setEntityFilter] = useState("all");
@@ -140,6 +149,14 @@ export default function ApprovalPoliciesPage() {
       return normalizeApiList<UserOpt>(raw);
     },
   });
+  const { data: roleCatalog } = useQuery<RoleCatalogResponse>({
+    queryKey: ["/api/rbac/roles/catalog"],
+    queryFn: () => requestJson<RoleCatalogResponse>("GET", "/api/rbac/roles/catalog"),
+  });
+  const approverRoles = useMemo(
+    () => (roleCatalog?.roles ?? []).filter((role) => role.active),
+    [roleCatalog?.roles],
+  );
 
   const sortedPolicies = useMemo(
     () =>
@@ -175,8 +192,8 @@ export default function ApprovalPoliciesPage() {
 
   const policiesByEntityChain = useMemo(() => {
     const map = new Map<string, ApprovalPolicy[]>();
-    for (const t of ENTITY_TYPES) {
-      map.set(t.value, []);
+    for (const t of entityTypes) {
+      map.set(t.entityType, []);
     }
     for (const p of policies.filter((x) => x.isActive)) {
       const key = String(p.entityType);
@@ -187,7 +204,7 @@ export default function ApprovalPoliciesPage() {
       list.sort((a, b) => Number(a.approvalLevel ?? 0) - Number(b.approvalLevel ?? 0));
     }
     return map;
-  }, [policies]);
+  }, [entityTypes, policies]);
 
   const previewMutation = useMutation({
     mutationFn: () => {
@@ -304,7 +321,7 @@ export default function ApprovalPoliciesPage() {
     setStalePolicy(false);
     setForm({
       name: p.name ?? "",
-      entityType: (p.entityType as (typeof ENTITY_TYPES)[number]["value"]) ?? "requisition",
+      entityType: p.entityType ?? "requisition",
       amountMin: String(p.amountMin ?? 0),
       amountMax: p.amountMax == null ? "" : String(p.amountMax),
       approvalLevel: String(p.approvalLevel ?? 1),
@@ -337,13 +354,18 @@ export default function ApprovalPoliciesPage() {
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6" data-testid="approval-policies-page">
       <PageHeader
         title="Approval policies"
-        subtitle="Configure amount bands, approval levels, and required roles or users. Requisition approve/reject routes enforce active policies."
+        subtitle="Configure sequential approval levels, amount bands, and independent approvers for every governed workflow."
         breadcrumb={
           <Link href={APP_ROUTES.procurement.requisitions} className="text-sm text-muted-foreground hover:text-foreground">
             ← Requisitions
           </Link>
         }
       />
+      {workflowCatalogQuery.isLoading ? (
+        <Alert><AlertTitle>Loading governed workflows</AlertTitle><AlertDescription>Policy editing will become available when the authoritative catalog is ready.</AlertDescription></Alert>
+      ) : workflowCatalogQuery.isError ? (
+        <Alert variant="destructive"><AlertTitle>Workflow catalog unavailable</AlertTitle><AlertDescription className="flex items-center justify-between gap-3">Policy editing is disabled to prevent an incomplete configuration. <Button size="sm" variant="outline" onClick={() => void workflowCatalogQuery.refetch()}>Retry</Button></AlertDescription></Alert>
+      ) : null}
 
       <Sheet
         open={editingId != null}
@@ -365,11 +387,11 @@ export default function ApprovalPoliciesPage() {
           <div className="space-y-4 py-6">
             <div className="space-y-2"><Label htmlFor="edit-ap-name">Name</Label><Input id="edit-ap-name" value={form.name} onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))} disabled={!canManagePolicies} /></div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2"><Label>Entity</Label><Select value={form.entityType} onValueChange={(value) => setForm((current) => ({ ...current, entityType: value as typeof form.entityType }))} disabled={!canManagePolicies}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ENTITY_TYPES.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}</SelectContent></Select></div>
+              <div className="min-w-0 space-y-2"><Label>Governed workflow</Label><Select value={form.entityType} onValueChange={(value) => setForm((current) => ({ ...current, entityType: value }))} disabled={!canManagePolicies || !workflowCatalogQuery.isSuccess}><SelectTrigger className="w-full"><SelectValue placeholder="Select governed workflow" /></SelectTrigger><SelectContent>{entityTypes.map((type) => <SelectItem key={type.entityType} value={type.entityType}>{type.label}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label htmlFor="edit-ap-level">Approval level</Label><Input id="edit-ap-level" type="number" min={1} value={form.approvalLevel} onChange={(event) => setForm((current) => ({ ...current, approvalLevel: event.target.value }))} disabled={!canManagePolicies} /></div>
               <div className="space-y-2"><Label htmlFor="edit-ap-min">Amount min</Label><Input id="edit-ap-min" type="number" min={0} value={form.amountMin} onChange={(event) => setForm((current) => ({ ...current, amountMin: event.target.value }))} disabled={!canManagePolicies} /></div>
               <div className="space-y-2"><Label htmlFor="edit-ap-max">Amount max</Label><Input id="edit-ap-max" type="number" min={0} value={form.amountMax} onChange={(event) => setForm((current) => ({ ...current, amountMax: event.target.value }))} disabled={!canManagePolicies} placeholder="No cap" /></div>
-              <div className="space-y-2"><Label>Required role</Label><Select value={form.approverRole} onValueChange={(value) => setForm((current) => ({ ...current, approverRole: value }))} disabled={!canManagePolicies}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Any role</SelectItem>{APPROVER_ROLES.map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Required role</Label><Select value={form.approverRole} onValueChange={(value) => setForm((current) => ({ ...current, approverRole: value }))} disabled={!canManagePolicies}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Any role</SelectItem>{approverRoles.map((role) => { const value = role.ref.kind === "custom" ? `custom:${role.ref.id}` : role.ref.key; return <SelectItem key={value} value={value}>{role.name}{role.ref.kind === "custom" ? " (custom)" : ""}</SelectItem>; })}</SelectContent></Select></div>
               <div className="space-y-2"><Label>Specific approver</Label><Select value={form.approverUserId} onValueChange={(value) => setForm((current) => ({ ...current, approverUserId: value }))} disabled={!canManagePolicies}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{users.map((candidate) => <SelectItem key={candidate.id} value={String(candidate.id)}>{candidate.fullName || candidate.username}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div className="flex items-center gap-2"><Switch id="edit-ap-active" checked={form.isActive} onCheckedChange={(checked) => setForm((current) => ({ ...current, isActive: checked }))} disabled={!canManagePolicies} /><Label htmlFor="edit-ap-active">Active</Label></div>
@@ -395,7 +417,7 @@ export default function ApprovalPoliciesPage() {
           </div>
           <SheetFooter>
             <Button type="button" variant="outline" onClick={() => setEditingId(null)}>Cancel</Button>
-            <Button type="button" onClick={() => saveMutation.mutate()} disabled={!canManagePolicies || saveMutation.isPending || stalePolicy} data-testid="approval-policy-edit-save">{saveMutation.isPending ? "Saving..." : "Save policy"}</Button>
+            <Button type="button" onClick={() => saveMutation.mutate()} disabled={!canManagePolicies || !workflowCatalogQuery.isSuccess || saveMutation.isPending || stalePolicy} data-testid="approval-policy-edit-save">{saveMutation.isPending ? "Saving..." : "Save policy"}</Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
@@ -424,21 +446,19 @@ export default function ApprovalPoliciesPage() {
               placeholder="e.g. Requisitions $10k+ — manager"
             />
           </div>
-          <div className="space-y-2">
-            <Label>Entity</Label>
+          <div className="min-w-0 space-y-2">
+            <Label>Governed workflow</Label>
             <Select
               value={form.entityType}
-              disabled={!canManagePolicies}
-              onValueChange={(v) =>
-                setForm((f) => ({ ...f, entityType: v as (typeof ENTITY_TYPES)[number]["value"] }))
-              }
+              disabled={!canManagePolicies || !workflowCatalogQuery.isSuccess}
+              onValueChange={(v) => setForm((f) => ({ ...f, entityType: v }))}
             >
-              <SelectTrigger>
-                <SelectValue />
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select governed workflow" />
               </SelectTrigger>
               <SelectContent>
-                {ENTITY_TYPES.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>
+                {entityTypes.map((t) => (
+                  <SelectItem key={t.entityType} value={t.entityType}>
                     {t.label}
                   </SelectItem>
                 ))}
@@ -495,11 +515,12 @@ export default function ApprovalPoliciesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Any role</SelectItem>
-                {APPROVER_ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
-                  </SelectItem>
-                ))}
+                {approverRoles.map((role) => {
+                  const value = role.ref.kind === "custom" ? `custom:${role.ref.id}` : role.ref.key;
+                  return <SelectItem key={value} value={value}>
+                    {role.name}{role.ref.kind === "custom" ? " (custom)" : ""}
+                  </SelectItem>;
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -536,7 +557,7 @@ export default function ApprovalPoliciesPage() {
             <Button
               data-testid="approval-policy-save"
               onClick={() => saveMutation.mutate()}
-              disabled={!canManagePolicies || saveMutation.isPending}
+              disabled={!canManagePolicies || !workflowCatalogQuery.isSuccess || !entityTypes.some((type) => type.entityType === form.entityType) || saveMutation.isPending}
             >
               Create
             </Button>
@@ -553,10 +574,10 @@ export default function ApprovalPoliciesPage() {
             Policies on the current filtered page, grouped by entity and approval level. Only overlapping active bands
             at the same level are conflicts; intentional multi-level approval chains remain valid.
           </p>
-          {ENTITY_TYPES.map((t) => {
-            const chain = policiesByEntityChain.get(t.value) ?? [];
+          {entityTypes.map((t) => {
+            const chain = policiesByEntityChain.get(t.entityType) ?? [];
             return (
-              <div key={t.value} className="rounded-md border p-3">
+              <div key={t.entityType} className="rounded-md border p-3">
                 <div className="mb-2 font-medium">{t.label}</div>
                 {chain.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No active policies.</p>
@@ -595,17 +616,17 @@ export default function ApprovalPoliciesPage() {
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-2">
-              <Label>Entity</Label>
+              <Label>Governed workflow</Label>
               <Select
                 value={previewEntity}
-                onValueChange={(v) => setPreviewEntity(v as (typeof ENTITY_TYPES)[number]["value"])}
+                onValueChange={(value) => setPreviewEntity(value as GovernedApprovalEntityType)}
               >
                 <SelectTrigger className="w-[220px]">
-                  <SelectValue />
+                  <SelectValue placeholder="Select governed workflow" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ENTITY_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
+                  {entityTypes.map((t) => (
+                    <SelectItem key={t.entityType} value={t.entityType}>
                       {t.label}
                     </SelectItem>
                   ))}
@@ -685,8 +706,8 @@ export default function ApprovalPoliciesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All entities</SelectItem>
-                  {ENTITY_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                  {entityTypes.map((type) => (
+                    <SelectItem key={type.entityType} value={type.entityType}>{type.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

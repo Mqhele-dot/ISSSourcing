@@ -4,9 +4,9 @@ import { z } from "zod";
 import { db } from "../../db";
 import { sendError, sendOk } from "../../api-response";
 import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
+import { getCanonicalReportingCurrencyCode } from "../../lib/org-reporting-money";
 import {
   inventoryItems,
-  organizations,
   purchaseRequisitionItems,
   purchaseRequisitions,
   sourcingEvents,
@@ -229,11 +229,7 @@ export function registerSourcingRoutes(app: Express, auth: AuthBundle): void {
           .select({ id: sourcingEvents.id, eventNumber: sourcingEvents.eventNumber, status: sourcingEvents.status })
           .from(sourcingEvents)
           .where(and(eq(sourcingEvents.organizationId, organizationId), eq(sourcingEvents.requisitionId, requisitionId))),
-        db
-          .select({ defaultCurrencyCode: organizations.defaultCurrencyCode })
-          .from(organizations)
-          .where(eq(organizations.id, organizationId))
-          .limit(1),
+        getCanonicalReportingCurrencyCode(organizationId),
       ]);
       return sendOk(res, {
         requisition: {
@@ -245,7 +241,7 @@ export function registerSourcingRoutes(app: Express, auth: AuthBundle): void {
           supplierId: requisition.supplierId,
           totalAmount: requisition.totalAmount,
         },
-        reportingCurrencyCode: String(organization[0]?.defaultCurrencyCode ?? "ZAR").toUpperCase(),
+        reportingCurrencyCode: organization,
         lines,
         linkedEvents,
       });

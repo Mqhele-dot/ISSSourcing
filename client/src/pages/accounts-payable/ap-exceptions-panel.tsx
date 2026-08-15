@@ -47,7 +47,7 @@ export function ApExceptionsPanel({ exceptions, formatMoney, loadFailed }: Props
         icon={<AlertTriangle className="h-4 w-4" />}
         items={exceptions.disputedInvoices.map((invoice) => ({
           id: invoice.id,
-          title: invoice.invoiceNumber,
+          title: invoice.invoiceNumber || `Invoice #${invoice.id}`,
           subtitle: `Outstanding ${formatMoney(Number(invoice.dueAmount ?? invoice.total ?? 0))}`,
         }))}
       />

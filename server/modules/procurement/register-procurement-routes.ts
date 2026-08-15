@@ -21,6 +21,8 @@ import {
   incoterms,
   currencies,
   taxCodes,
+  unitsOfMeasure,
+  mdmCostCentres,
   mdmProcurementPolicies,
   purchaseOrders,
   sourcingAwards,
@@ -35,13 +37,13 @@ import {
 } from "@shared/schema";
 import { canUpdatePurchaseOrder } from "@shared/purchase-order-status";
 import { getActiveOrganizationId } from "../../organization-context";
-import { getApplicableRequisitionPolicyForOrg, roleMatchesPolicy } from "./service";
 import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed } from "./supplier-defaults";
 import { validatePurchaseOrderWorkflowReadiness } from "./po-validation";
 import { validateMdmTransaction } from "../master-data/mdm-control-centre";
 import type { AuthBundle } from "./types";
 import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
 import { appendAuditEvent } from "../../services/audit-chain-service";
+import { authorizeApprovalStep } from "../../services/approval-workflow-service";
 
 async function resolveWorkflowReplay(input: {
   organizationId: number;
@@ -223,7 +225,11 @@ async function assertPurchaseOrderTaxCodeAllowed(
   const [row] = await db
     .select({ id: taxCodes.id })
     .from(taxCodes)
-    .where(and(eq(taxCodes.id, taxCodeId), eq(taxCodes.active, true)))
+    .where(and(
+      eq(taxCodes.id, taxCodeId),
+      eq(taxCodes.organizationId, getActiveOrganizationId()),
+      eq(taxCodes.active, true),
+    ))
     .limit(1);
   if (!row) {
     return { ok: false, code: "PO_TAX_CODE_NOT_FOUND", message: "Tax code not found or inactive." };
@@ -242,7 +248,11 @@ async function assertPurchaseOrderCurrencyCodeAllowed(
   const [row] = await db
     .select({ id: currencies.id })
     .from(currencies)
-    .where(and(eq(currencies.code, code), eq(currencies.active, true)))
+    .where(and(
+      eq(currencies.organizationId, getActiveOrganizationId()),
+      eq(currencies.code, code),
+      eq(currencies.active, true),
+    ))
     .limit(1);
   if (!row) {
     return {
@@ -262,7 +272,7 @@ async function resolveActiveCurrencyForRequisition(
   const rows = await db
     .select({ code: currencies.code, exchangeRateToZar: currencies.exchangeRateToZar })
     .from(currencies)
-    .where(and(eq(currencies.code, requested), eq(currencies.active, true)))
+    .where(and(eq(currencies.organizationId, getActiveOrganizationId()), eq(currencies.code, requested), eq(currencies.active, true)))
     .limit(1);
   const row = rows[0];
   if (!row) {
@@ -368,7 +378,7 @@ function normalizeRequisitionLineInput(item: unknown, index: number) {
 }
 
 async function validateRequisitionLineMasterDataPolicy(
-  items: Array<Pick<InsertPurchaseRequisitionItem, "unitOfMeasureId" | "taxCodeId">>,
+  items: Array<Pick<InsertPurchaseRequisitionItem, "unitOfMeasureId" | "taxCodeId" | "costCentreId" | "glAccountCode">>,
 ): Promise<{ ok: true } | { ok: false; errors: Array<{ code: string; message: string; line: number }> }> {
   const policies = await pool.query<{ config: Record<string, unknown> | null }>(
     `
@@ -384,12 +394,36 @@ async function validateRequisitionLineMasterDataPolicy(
   );
   const config = policies.rows[0]?.config ?? {};
   const requireUom =
-    config.requireUom === true ||
-    config.requireUom === "true" ||
-    config.requireUomConversion === true ||
-    config.requireUomConversion === "true";
-  const requireTaxCode = config.requireTaxCode === true || config.requireTaxCode === "true";
+    config.requireUom !== false && config.requireUom !== "false" &&
+    config.requiresUom !== false && config.requiresUom !== "false";
+  const requireTaxCode =
+    config.requireTaxCode === true || config.requireTaxCode === "true" ||
+    config.requiresTaxCode === true || config.requiresTaxCode === "true";
+  const requireCostCentre =
+    config.requireCostCentre === true || config.requireCostCentre === "true" ||
+    config.requiresCostCentre === true || config.requiresCostCentre === "true";
+  const requireGlMapping =
+    config.requireGlMapping === true || config.requireGlMapping === "true" ||
+    config.requiresGlMapping === true || config.requiresGlMapping === "true";
   const errors: Array<{ code: string; message: string; line: number }> = [];
+  const organizationId = getActiveOrganizationId();
+  const uomIds = [...new Set(items.map((item) => Number(item.unitOfMeasureId)).filter((id) => id > 0))];
+  const taxIds = [...new Set(items.map((item) => Number(item.taxCodeId)).filter((id) => id > 0))];
+  const costCentreIds = [...new Set(items.map((item) => Number(item.costCentreId)).filter((id) => id > 0))];
+  const [validUoms, validTaxes, validCostCentres] = await Promise.all([
+    uomIds.length
+      ? db.select({ id: unitsOfMeasure.id }).from(unitsOfMeasure).where(and(eq(unitsOfMeasure.organizationId, organizationId), eq(unitsOfMeasure.active, true)))
+      : Promise.resolve([]),
+    taxIds.length
+      ? db.select({ id: taxCodes.id }).from(taxCodes).where(and(eq(taxCodes.organizationId, organizationId), eq(taxCodes.active, true)))
+      : Promise.resolve([]),
+    costCentreIds.length
+      ? db.select({ id: mdmCostCentres.id }).from(mdmCostCentres).where(and(eq(mdmCostCentres.organizationId, organizationId), eq(mdmCostCentres.active, true)))
+      : Promise.resolve([]),
+  ]);
+  const validUomIds = new Set(validUoms.map((row) => row.id));
+  const validTaxIds = new Set(validTaxes.map((row) => row.id));
+  const validCostCentreIds = new Set(validCostCentres.map((row) => row.id));
 
   items.forEach((item, index) => {
     const line = index + 1;
@@ -406,6 +440,29 @@ async function validateRequisitionLineMasterDataPolicy(
         message: `Line ${line}: tax code is required by procurement policy.`,
         line,
       });
+    }
+    if (requireCostCentre && !item.costCentreId) {
+      errors.push({
+        code: "REQUISITION_LINE_COST_CENTRE_REQUIRED",
+        message: `Line ${line}: cost centre is required by procurement policy.`,
+        line,
+      });
+    }
+    if (requireGlMapping && !String(item.glAccountCode ?? "").trim()) {
+      errors.push({
+        code: "REQUISITION_LINE_GL_MAPPING_REQUIRED",
+        message: `Line ${line}: GL mapping is required by procurement policy.`,
+        line,
+      });
+    }
+    if (item.unitOfMeasureId && !validUomIds.has(Number(item.unitOfMeasureId))) {
+      errors.push({ code: "REQUISITION_LINE_UOM_INVALID", message: `Line ${line}: purchase UOM is inactive or belongs to another organization.`, line });
+    }
+    if (item.taxCodeId && !validTaxIds.has(Number(item.taxCodeId))) {
+      errors.push({ code: "REQUISITION_LINE_TAX_CODE_INVALID", message: `Line ${line}: tax code is inactive or belongs to another organization.`, line });
+    }
+    if (item.costCentreId && !validCostCentreIds.has(Number(item.costCentreId))) {
+      errors.push({ code: "REQUISITION_LINE_COST_CENTRE_INVALID", message: `Line ${line}: cost centre is inactive or belongs to another organization.`, line });
     }
   });
 
@@ -544,6 +601,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (!validatedReqData.supplierId) {
         return sendFunctionError(res, 400, "createPurchaseRequisition", "Supplier is required");
       }
+      if (!validatedReqData.departmentId) {
+        return sendFunctionError(res, 400, "createPurchaseRequisition", "Department is required");
+      }
+      if (!validatedReqData.requiredDate) {
+        return sendFunctionError(res, 400, "createPurchaseRequisition", "Required date is required");
+      }
       const linePolicyValidation = await validateRequisitionLineMasterDataPolicy(validatedItemsData);
       if (!linePolicyValidation.ok) {
         return sendError(
@@ -571,7 +634,11 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         const deptRows = await db
           .select({ id: departments.id })
           .from(departments)
-          .where(eq(departments.id, Number(validatedReqData.departmentId)))
+          .where(and(
+            eq(departments.id, Number(validatedReqData.departmentId)),
+            eq(departments.organizationId, getActiveOrganizationId()),
+            eq(departments.active, true),
+          ))
           .limit(1);
         if (deptRows.length === 0) {
           return sendFunctionError(res, 400, "createPurchaseRequisition", "Department does not exist");
@@ -678,7 +745,11 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         const deptRows = await db
           .select({ id: departments.id })
           .from(departments)
-          .where(eq(departments.id, Number(validatedData.departmentId)))
+          .where(and(
+            eq(departments.id, Number(validatedData.departmentId)),
+            eq(departments.organizationId, getActiveOrganizationId()),
+            eq(departments.active, true),
+          ))
           .limit(1);
         if (deptRows.length === 0) {
           return sendFunctionError(res, 400, "updatePurchaseRequisition", "Department does not exist");
@@ -840,14 +911,30 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           `Requisition total exceeds your approver limit (${userCap.toFixed(2)}).`,
         );
       }
-      const applicable = await getApplicableRequisitionPolicyForOrg(getActiveOrganizationId(), requisitionTotal);
-      if (applicable) {
-        if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
-          return sendFunctionError(res, 403, "approvePurchaseRequisition", "Only the configured approver can approve this requisition");
-        }
-        if (!roleMatchesPolicy(applicable.approverRole, approverRole)) {
-          return sendFunctionError(res, 403, "approvePurchaseRequisition", "Your role is not allowed to approve this requisition amount");
-        }
+      const workflowStep = await authorizeApprovalStep({
+        organizationId: getActiveOrganizationId(),
+        entityType: "requisition",
+        entityId: id,
+        amount: requisitionTotal,
+        actorUserId: approverId,
+        actorRole: approverRole,
+        actorPreferences: (req as any).user?.preferences,
+      });
+      if (!workflowStep.isFinal) {
+        await db.insert(approvalHistory).values({
+          organizationId: getActiveOrganizationId(), entityType: "requisition", entityId: id,
+          level: workflowStep.level, action: "approved", performedBy: approverId,
+          previousStatus: existing.status, newStatus: existing.status,
+          comment: typeof req.body?.comment === "string" ? req.body.comment : null,
+        } as any);
+        return sendOk(res, {
+          ...existing,
+          approvalProgress: {
+            completedLevels: [...workflowStep.progress.completedLevels, workflowStep.level],
+            requiredLevels: workflowStep.progress.requiredLevels,
+            state: "pending",
+          },
+        });
       }
       
       const updatedRequisition = await storage.approvePurchaseRequisition(id, approverId);
@@ -857,7 +944,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         organizationId: getActiveOrganizationId(),
         entityType: "requisition",
         entityId: id,
-        level: Number(applicable?.approvalLevel ?? 1),
+        level: workflowStep.level,
         action: "approved",
         performedBy: approverId,
         previousStatus: existing.status,
@@ -878,6 +965,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       return sendOk(res, updatedRequisition);
     } catch (error) {
       console.error("Error approving purchase requisition:", error);
+      const structured = error as { status?: number; code?: string; message?: string };
+      if (structured.status && structured.code) {
+        return sendError(res, structured.status, structured.code, structured.message ?? "Approval was not allowed");
+      }
       return sendFunctionError(
         res,
         500,
@@ -904,15 +995,11 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Requester cannot reject their own requisition");
       }
       const requisitionTotal = Number(existing.totalAmount ?? 0);
-      const applicable = await getApplicableRequisitionPolicyForOrg(getActiveOrganizationId(), requisitionTotal);
-      if (applicable) {
-        if (applicable.approverUserId != null && Number(applicable.approverUserId) !== approverId) {
-          return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Only the configured approver can reject this requisition");
-        }
-        if (!roleMatchesPolicy(applicable.approverRole, approverRole)) {
-          return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Your role is not allowed to reject this requisition amount");
-        }
-      }
+      const workflowStep = await authorizeApprovalStep({
+        organizationId: getActiveOrganizationId(), entityType: "requisition", entityId: id,
+        amount: requisitionTotal, actorUserId: approverId, actorRole: approverRole,
+        actorPreferences: (req as any).user?.preferences,
+      });
       
       const updatedRequisition = await storage.rejectPurchaseRequisition(id, approverId, reason);
       
@@ -921,7 +1008,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         organizationId: getActiveOrganizationId(),
         entityType: "requisition",
         entityId: id,
-        level: Number(applicable?.approvalLevel ?? 1),
+        level: workflowStep.level,
         action: "rejected",
         performedBy: approverId,
         previousStatus: existing.status,
@@ -942,6 +1029,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       return sendOk(res, updatedRequisition);
     } catch (error) {
       console.error("Error rejecting purchase requisition:", error);
+      const structured = error as { status?: number; code?: string; message?: string };
+      if (structured.status && structured.code) {
+        return sendError(res, structured.status, structured.code, structured.message ?? "Rejection was not allowed");
+      }
       return sendFunctionError(
         res,
         500,
@@ -1669,6 +1760,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, organizationId), eq(purchaseOrders.approvalStatus, "DRAFT")))
         .returning();
       if (!updated) return sendError(res, 409, "PO_CONCURRENT_UPDATE", "The PO changed while it was being submitted. Refresh and retry.");
+      await db.insert(approvalHistory).values({
+        organizationId, entityType: "purchase_order", entityId: id, level: 0,
+        action: "submitted", performedBy: Number(req.user?.id),
+        previousStatus: String(order.approvalStatus), newStatus: "PENDING",
+        comment: typeof req.body?.reason === "string" ? req.body.reason : null,
+      } as any);
       await appendAuditEvent({
         organizationId,
         actor: { userId: Number(req.user?.id) },
@@ -1724,6 +1821,30 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       }
       const reason = String(req.body?.reason ?? "").trim();
       if (reason.length < 5) return sendError(res, 400, "APPROVAL_REASON_REQUIRED", "Provide an approval reason of at least 5 characters.");
+      const workflowStep = await authorizeApprovalStep({
+        organizationId,
+        entityType: "purchase_order",
+        entityId: id,
+        amount: Number(order.totalAmount ?? 0),
+        actorUserId,
+        actorRole: String(req.user?.role ?? ""),
+        actorPreferences: req.user?.preferences,
+      });
+      if (!workflowStep.isFinal) {
+        await db.insert(approvalHistory).values({
+          organizationId, entityType: "purchase_order", entityId: id,
+          level: workflowStep.level, action: "approved", performedBy: actorUserId,
+          previousStatus: "PENDING", newStatus: "PENDING", comment: reason,
+        } as any);
+        return sendOk(res, {
+          ...order,
+          approvalProgress: {
+            completedLevels: [...workflowStep.progress.completedLevels, workflowStep.level],
+            requiredLevels: workflowStep.progress.requiredLevels,
+            state: "pending",
+          },
+        });
+      }
       const [updated] = await db
         .update(purchaseOrders)
         .set({
@@ -1736,6 +1857,11 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, organizationId), eq(purchaseOrders.approvalStatus, "PENDING")))
         .returning();
       if (!updated) return sendError(res, 409, "PO_CONCURRENT_UPDATE", "The PO changed while it was being approved. Refresh and retry.");
+      await db.insert(approvalHistory).values({
+        organizationId, entityType: "purchase_order", entityId: id,
+        level: workflowStep.level, action: "approved", performedBy: actorUserId,
+        previousStatus: "PENDING", newStatus: "APPROVED", comment: reason,
+      } as any);
       await appendAuditEvent({
         organizationId,
         actor: { userId: actorUserId },
@@ -1759,6 +1885,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       return sendOk(res, updated);
     } catch (error) {
       console.error("Error approving purchase order:", error);
+      const structured = error as { status?: number; code?: string; message?: string };
+      if (structured.status && structured.code) {
+        return sendError(res, structured.status, structured.code, structured.message ?? "Purchase order approval was not allowed");
+      }
       return sendError(res, 500, "PO_APPROVAL_FAILED", "Purchase order approval failed.");
     }
   });

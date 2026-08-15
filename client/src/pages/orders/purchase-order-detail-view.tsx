@@ -214,47 +214,34 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     enabled: Boolean(data?.id),
     queryFn: ({ signal }) => fetchPurchaseOrderRecordById(Number(data?.id), { signal }),
   });
-  const { data: departments = [], isError: departmentsError } = useQuery({
-    queryKey: ["/api/departments"],
-    queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/departments"),
+  const poContextQuery = useQuery({
+    queryKey: ["/api/mdm/defaults/po-context"],
+    queryFn: () => requestJson<{
+      departments: Array<{ id: number; code: string; name: string }>;
+      contracts: Array<{ id: number; title: string; supplierId: number; currency?: string | null; paymentTermsId?: number | null; payment_terms_id?: number | null; incotermId?: number | null; incoterm_id?: number | null; defaultTaxCodeId?: number | null; default_tax_code_id?: number | null }>;
+      currencies: Array<{ id: number; code: string; name: string; symbol?: string; active?: boolean | null }>;
+      paymentTerms: Array<{ id: number; code: string; name: string }>;
+      incoterms: Array<{ id: number; code: string; name: string }>;
+      taxCodes: Array<{ id: number; code: string; name: string; active?: boolean | null }>;
+      warehouses: Array<{ id: number; name: string; isDefault?: boolean | null; aisles?: string[] | null; bins?: Array<{ code: string; aisle?: string | null }> | null }>;
+      supplierDefaults: Array<{ id: number; paymentTermsId?: number | null; defaultCurrencyCode?: string | null }>;
+    }>("GET", "/api/mdm/defaults/po-context"),
+    staleTime: 60_000,
   });
-  const { data: contracts = [], isError: contractsError } = useQuery({
-    queryKey: ["/api/contracts"],
-    queryFn: () =>
-      requestJson<
-        Array<{
-          id: number;
-          title: string;
-          supplierId: number;
-          currency?: string | null;
-          paymentTermsId?: number | null;
-          payment_terms_id?: number | null;
-          incotermId?: number | null;
-          incoterm_id?: number | null;
-          defaultTaxCodeId?: number | null;
-          default_tax_code_id?: number | null;
-        }>
-      >("GET", "/api/contracts"),
-  });
-  const { data: currenciesList = [], isError: currenciesError } = useQuery({
-    queryKey: MASTER_CURRENCIES_QUERY_KEY,
-    queryFn: fetchActiveMasterCurrencies,
-  });
-
-  const { data: paymentTerms = [], isError: paymentTermsError } = useQuery({
-    queryKey: ["/api/payment-terms"],
-    queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/payment-terms"),
-  });
-  const { data: supplierRow } = useQuery({
-    queryKey: ["/api/suppliers", data?.supplierId],
-    enabled: Boolean(data?.supplierId),
-    queryFn: () =>
-      requestJson<{
-        id: number;
-        paymentTermsId?: number | null;
-        defaultCurrencyCode?: string | null;
-      }>("GET", `/api/suppliers/${data!.supplierId}`),
-  });
+  const departments = useMemo(() => poContextQuery.data?.departments ?? [], [poContextQuery.data?.departments]);
+  const contracts = useMemo(() => poContextQuery.data?.contracts ?? [], [poContextQuery.data?.contracts]);
+  const currenciesList = useMemo(() => poContextQuery.data?.currencies ?? [], [poContextQuery.data?.currencies]);
+  const paymentTerms = useMemo(() => poContextQuery.data?.paymentTerms ?? [], [poContextQuery.data?.paymentTerms]);
+  const incoterms = useMemo(() => poContextQuery.data?.incoterms ?? [], [poContextQuery.data?.incoterms]);
+  const taxCodes = useMemo(() => poContextQuery.data?.taxCodes ?? [], [poContextQuery.data?.taxCodes]);
+  const warehousesForReceive = useMemo(() => poContextQuery.data?.warehouses ?? [], [poContextQuery.data?.warehouses]);
+  const supplierRow = poContextQuery.data?.supplierDefaults.find((supplier) => supplier.id === data?.supplierId);
+  const departmentsError = poContextQuery.isError;
+  const contractsError = poContextQuery.isError;
+  const currenciesError = poContextQuery.isError;
+  const paymentTermsError = poContextQuery.isError;
+  const incotermsError = poContextQuery.isError;
+  const taxCodesError = poContextQuery.isError;
 
   const contractCurrencyCodesForSupplier = useMemo(() => {
     const sid = data?.supplierId;
@@ -280,37 +267,10 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     ],
   );
 
-  const { data: incoterms = [], isError: incotermsError } = useQuery({
-    queryKey: ["/api/incoterms"],
-    queryFn: () => requestJson<Array<{ id: number; code: string; name: string }>>("GET", "/api/incoterms"),
-  });
-
-  const { data: taxCodes = [], isError: taxCodesError } = useQuery({
-    queryKey: ["/api/tax-codes"],
-    queryFn: () =>
-      requestJson<Array<{ id: number; code: string; name: string; active?: boolean | null }>>(
-        "GET",
-        "/api/tax-codes",
-      ),
-  });
   const activeTaxCodes = useMemo(
     () => taxCodes.filter((t) => t.active !== false),
     [taxCodes],
   );
-
-  const { data: warehousesForReceive = [] } = useQuery({
-    queryKey: ["/api/warehouses"],
-    queryFn: () =>
-      requestJson<
-        Array<{
-          id: number;
-          name: string;
-          isDefault?: boolean | null;
-          aisles?: string[] | null;
-          bins?: Array<{ code: string; aisle?: string | null }> | null;
-        }>
-      >("GET", "/api/warehouses"),
-  });
 
   const receiveWarehouses = useMemo((): ReceivePutawayWarehouse[] => {
     return warehousesForReceive.map((w) => ({
@@ -609,11 +569,12 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
             approvalSuggestionsError;
 
           const poMoneyFormatter = createReportingMoneyFormatter(
-            purchaseOrderRecord &&
+            detail.currencyCode ||
+              (purchaseOrderRecord &&
               typeof purchaseOrderRecord.currencyCode === "string" &&
               /^[A-Za-z]{3}$/.test(purchaseOrderRecord.currencyCode)
-              ? purchaseOrderRecord.currencyCode
-              : REPORTING_CURRENCY_FALLBACK_CODE,
+                ? purchaseOrderRecord.currencyCode
+                : REPORTING_CURRENCY_FALLBACK_CODE),
           );
 
           const applyCommercialDefaults = () => {
@@ -941,6 +902,15 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                           <p className="mt-1 text-xs font-normal text-muted-foreground">
                             PO currency {poMoneyFormatter.currencyCode}
                           </p>
+                          {detail.reportingTotal != null ? (
+                            <p className="mt-1 text-sm font-medium">
+                              Reporting value {createReportingMoneyFormatter(detail.reportingCurrencyCode).formatMoney(detail.reportingTotal)}
+                            </p>
+                          ) : detail.currencyCode !== detail.reportingCurrencyCode ? (
+                            <p className="mt-1 text-xs font-normal text-amber-700">
+                              No active {detail.currencyCode}/{detail.reportingCurrencyCode} Master Data rate
+                            </p>
+                          ) : null}
                         </CardContent>
                       </Card>
                     </div>

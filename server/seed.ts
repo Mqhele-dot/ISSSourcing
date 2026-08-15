@@ -1,6 +1,9 @@
-import { randomBytes, scrypt } from "node:crypto";
+import { createHash, randomBytes, scrypt } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import {
   appSettings,
   categories,
@@ -760,47 +763,46 @@ async function ensureGovernanceAndDocuments(): Promise<void> {
   const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.username, "admin")).limit(1);
   const adminId = admin?.id ?? 1;
 
-  const [firstPo] = await db.select({ id: purchaseOrders.id }).from(purchaseOrders).limit(1);
-  const [firstInvoice] = await db.select({ id: invoices.id }).from(invoices).limit(1);
-  const [firstContract] = await db.select({ id: supplierContracts.id }).from(supplierContracts).limit(1);
+  const [firstPo] = await db.select({ id: purchaseOrders.id, organizationId: purchaseOrders.organizationId }).from(purchaseOrders).limit(1);
+  const organizationId = firstPo?.organizationId ?? 1;
+  const [firstInvoice] = await db.select({ id: invoices.id }).from(invoices).where(eq(invoices.organizationId, organizationId)).limit(1);
+  const [firstContract] = await db.select({ id: supplierContracts.id }).from(supplierContracts).where(eq(supplierContracts.organizationId, organizationId)).limit(1);
 
-  const existingDocs = await db.select({ id: documents.id }).from(documents).limit(1);
-  if (existingDocs.length === 0) {
-    await db.insert(documents).values([
-      {
-        entityType: "purchase_order",
-        entityId: firstPo?.id ?? 1,
-        fileUrl: "/uploads/documents/demo-po.pdf",
-        fileName: "demo-po.pdf",
+  if (String(process.env.DEMO_MODE ?? "").toLowerCase() === "true") {
+    const samples = [
+      { entityType: "purchase_order", entityId: firstPo?.id ?? 1, fileName: "demo-po-sample.pdf", title: "Demo purchase order" },
+      { entityType: "invoice", entityId: firstInvoice?.id ?? 1, fileName: "demo-invoice-sample.pdf", title: "Demo supplier invoice" },
+      { entityType: "contract", entityId: firstContract?.id ?? 1, fileName: "demo-contract-sample.pdf", title: "Demo supplier contract" },
+    ];
+    const outputDir = path.join(process.cwd(), "uploads", "documents");
+    await mkdir(outputDir, { recursive: true });
+    for (const sample of samples) {
+      const [existing] = await db.select({ id: documents.id }).from(documents).where(and(
+        eq(documents.organizationId, organizationId),
+        eq(documents.fileName, sample.fileName),
+      )).limit(1);
+      if (existing) continue;
+      const pdf = await PDFDocument.create();
+      const page = pdf.addPage([595, 842]);
+      const font = await pdf.embedFont(StandardFonts.Helvetica);
+      page.drawText(sample.title, { x: 48, y: 780, size: 22, font });
+      page.drawText("Generated for explicit demo-mode testing. This is a real stored sample file.", { x: 48, y: 745, size: 11, font });
+      const bytes = await pdf.save();
+      await writeFile(path.join(outputDir, sample.fileName), bytes);
+      await db.insert(documents).values({
+        organizationId,
+        entityType: sample.entityType,
+        entityId: sample.entityId,
+        fileUrl: `/uploads/documents/${sample.fileName}`,
+        fileName: sample.fileName,
         mimeType: "application/pdf",
-        fileSize: 102400,
-        checksum: "demo-po-checksum",
+        fileSize: bytes.byteLength,
+        checksum: createHash("sha256").update(bytes).digest("hex"),
         version: 1,
         uploadedBy: adminId,
-      },
-      {
-        entityType: "invoice",
-        entityId: firstInvoice?.id ?? 1,
-        fileUrl: "/uploads/documents/demo-invoice.pdf",
-        fileName: "demo-invoice.pdf",
-        mimeType: "application/pdf",
-        fileSize: 98888,
-        checksum: "demo-invoice-checksum",
-        version: 1,
-        uploadedBy: adminId,
-      },
-      {
-        entityType: "contract",
-        entityId: firstContract?.id ?? 1,
-        fileUrl: "/uploads/documents/demo-contract.pdf",
-        fileName: "demo-contract.pdf",
-        mimeType: "application/pdf",
-        fileSize: 121100,
-        checksum: "demo-contract-checksum",
-        version: 1,
-        uploadedBy: adminId,
-      },
-    ]);
+        lastVerifiedAt: new Date(),
+      });
+    }
   }
 
   await db.insert(retentionPolicies).values([

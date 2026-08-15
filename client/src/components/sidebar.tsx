@@ -10,7 +10,7 @@ import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { requestJson } from "@/lib/queryClient";
-import { useTheme } from "@/components/theme-provider";
+import { ThemeToggleButton } from "@/components/theme-toggle-button";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useAuth } from "@/hooks/use-auth";
 import { hasProfileNavigationAccess } from "@/lib/access/profile-navigation-access";
@@ -35,7 +35,6 @@ import {
   Landmark,
   LayoutDashboard,
   ListOrdered,
-  Moon,
   PackagePlus,
   PackageSearch,
   Plug,
@@ -53,7 +52,6 @@ import {
   ShoppingCart,
   Smartphone,
   Store,
-  Sun,
   Truck,
   UserRound,
   Users,
@@ -70,7 +68,6 @@ interface SidebarProps {
 
 export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: SidebarProps) {
   const [location] = useLocation();
-  const { resolvedTheme, toggleTheme } = useTheme();
   const { user } = useAuth();
   const isDesktopNav = useMediaQuery("(min-width: 1024px)");
   const { data: releaseScope } = useQuery<{
@@ -343,29 +340,13 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
         </nav>
 
         <div className="p-3 md:p-4 border-t border-border">
-          <Button
-            variant="ghost"
+          <ThemeToggleButton
             className={cn(
               "w-full",
               collapsed ? "md:justify-center md:px-0" : "justify-start",
             )}
-            title={collapsed ? "Theme" : undefined}
-            data-help-title="Theme toggle"
-            data-help-description="Switch between light and dark mode."
-                onClick={toggleTheme}
-          >
-            {resolvedTheme === "dark" ? (
-              <>
-                <Sun className={cn("h-5 w-5", !collapsed && "mr-2")} />
-                <span className={cn(collapsed && "md:sr-only")}>Light Mode</span>
-              </>
-            ) : (
-              <>
-                <Moon className={cn("h-5 w-5", !collapsed && "mr-2")} />
-                <span className={cn(collapsed && "md:sr-only")}>Dark Mode</span>
-              </>
-            )}
-          </Button>
+            collapsed={collapsed}
+          />
         </div>
       </aside>
     </>

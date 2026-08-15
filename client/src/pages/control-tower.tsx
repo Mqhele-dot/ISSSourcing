@@ -259,7 +259,7 @@ export default function ControlTowerPage() {
                   title="Low stock items"
                   value={payload.kpis.lowStockItems ?? 0}
                   description="At or below reorder threshold"
-                  href={`${APP_ROUTES.inventory.root}?lowStock=1`}
+                  href={`${APP_ROUTES.inventory.root}?low=1`}
                   status={(payload.kpis.lowStockItems ?? 0) > 0 ? "warn" : "good"}
                   icon={<Package className="h-4 w-4" />}
                 />

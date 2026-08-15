@@ -126,12 +126,12 @@ export function SuppliersListCard({
                     </div>
                     <div className="flex space-x-2">
                       <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to edit suppliers">
-                        <Button variant="outline" size="sm" onClick={() => onOpenLogoDialog(supplier)}>
+                        <Button aria-label={`Manage logo for supplier ${supplier.name}`} variant="outline" size="sm" onClick={() => onOpenLogoDialog(supplier)}>
                           Logo
                         </Button>
                       </Can>
                       <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to edit suppliers">
-                        <Button variant="outline" size="icon" onClick={() => onEditSupplier(supplier)}>
+                        <Button aria-label={`Edit supplier ${supplier.name}`} variant="outline" size="icon" onClick={() => onEditSupplier(supplier)}>
                           <Edit className="h-4 w-4" />
                         </Button>
                       </Can>
@@ -139,6 +139,7 @@ export function SuppliersListCard({
                         <Button
                           variant="outline"
                           size="icon"
+                          aria-label={`Delete supplier ${supplier.name}`}
                           className="text-red-500 hover:text-red-600"
                           onClick={() => onDeleteSupplier(supplier)}
                         >

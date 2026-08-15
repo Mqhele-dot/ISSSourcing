@@ -66,7 +66,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { APP_NAV_SECTIONS, SIDEBAR_ADMIN_SECONDARY_GROUPS } from "@/lib/routes/section-metadata";
+import type { NavigationCatalogResponse } from "@shared/rbac-contracts";
 
 // Role and permission types
 type UserRole = {
@@ -104,69 +104,12 @@ type PermissionCatalogResponse = {
   permissionTypes: PermissionCatalogType[];
 };
 
-/** Mirrors `server/rbac/permission-catalog.ts` when the API is unavailable. */
-const FALLBACK_PERMISSION_CATALOG_CATEGORIES: PermissionCatalogCategory[] = [
-  {
-    id: "inventory",
-    label: "Inventory & logistics",
-    resources: ["inventory", "categories", "warehouses", "stock_movements"],
-  },
-  {
-    id: "procurement",
-    label: "Purchasing",
-    resources: ["purchases", "suppliers", "reorder_requests"],
-  },
-  {
-    id: "finance_data",
-    label: "Finance data",
-    resources: ["invoices", "billing", "taxes", "payments"],
-  },
-  {
-    id: "people_access",
-    label: "Users & access",
-    resources: ["users", "custom_roles"],
-  },
-  {
-    id: "insights",
-    label: "Reporting & analytics",
-    resources: ["reports", "analytics", "dashboards", "activity_logs", "audit_logs"],
-  },
-  {
-    id: "system",
-    label: "System",
-    resources: ["settings", "system", "import_export", "documents", "notifications"],
-  },
-];
-
-const FALLBACK_PERMISSION_TYPES: PermissionCatalogType[] = [
-  { value: "read", label: "Read" },
-  { value: "create", label: "Create" },
-  { value: "update", label: "Update" },
-  { value: "delete", label: "Delete" },
-  { value: "approve", label: "Approve" },
-  { value: "export", label: "Export" },
-  { value: "import", label: "Import" },
-  { value: "assign", label: "Assign" },
-  { value: "execute", label: "Execute" },
-  { value: "manage", label: "Manage" },
-  { value: "admin", label: "Admin" },
-];
-
 // Create custom role form schema
 const createRoleSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters"),
   description: z.string().optional(),
   isActive: z.boolean().default(true),
 });
-
-const PROFILE_NAV_ITEMS = Array.from(
-  new Map(
-    [
-      ...APP_NAV_SECTIONS.flatMap((section) => section.items.map((item) => ({ ...item, section: section.label }))),
-      ...SIDEBAR_ADMIN_SECONDARY_GROUPS.flatMap((group) => group.items.map((item) => ({ ...item, section: group.heading.replace("Admin - ", "") }))),
-    ].map((item) => [item.path, item]),
-  ).values(),
-);
 
 export function RoleManager() {
   const { toast } = useToast();
@@ -183,23 +126,28 @@ export function RoleManager() {
   const [allowedNavPaths, setAllowedNavPaths] = useState<string[]>([]);
   const [deleteRoleOpen, setDeleteRoleOpen] = useState(false);
 
-  const { data: permissionCatalog } = useQuery<PermissionCatalogResponse>({
+  const permissionCatalogQuery = useQuery<PermissionCatalogResponse>({
     queryKey: ["/api/rbac/permission-catalog"],
   });
+  const navigationCatalogQuery = useQuery<NavigationCatalogResponse>({
+    queryKey: ["/api/rbac/navigation-catalog"],
+  });
+  const permissionCatalog = permissionCatalogQuery.data;
+  const profileNavItems = useMemo(
+    () => (navigationCatalogQuery.data?.groups ?? []).flatMap((group) =>
+      group.items.map((item) => ({ ...item, section: group.label }))),
+    [navigationCatalogQuery.data?.groups],
+  );
 
   const catalogCategories = useMemo(
     () =>
-      permissionCatalog?.categories?.length
-        ? permissionCatalog.categories
-        : FALLBACK_PERMISSION_CATALOG_CATEGORIES,
+      permissionCatalog?.categories?.length ? permissionCatalog.categories : [],
     [permissionCatalog?.categories],
   );
 
   const catalogPermissionTypes = useMemo(
     () =>
-      permissionCatalog?.permissionTypes?.length
-        ? permissionCatalog.permissionTypes
-        : FALLBACK_PERMISSION_TYPES,
+      permissionCatalog?.permissionTypes?.length ? permissionCatalog.permissionTypes : [],
     [permissionCatalog?.permissionTypes],
   );
 
@@ -395,6 +343,7 @@ export function RoleManager() {
       const res = await apiRequest("PUT", `/api/users/${userId}`, {
         role: roleId ? "custom" : "viewer",
         preferences: { ...(profile?.preferences ?? {}), customRoleId: roleId },
+        reason: roleId ? "Administrator assigned a custom access role" : "Administrator removed the custom access role",
       });
       return await res.json();
     },
@@ -435,7 +384,7 @@ export function RoleManager() {
 
   const openNavigationAccess = (profile: UserProfile) => {
     setNavigationProfile(profile);
-    setAllowedNavPaths(profile.preferences?.allowedNavPaths ?? PROFILE_NAV_ITEMS.map((item) => item.path));
+    setAllowedNavPaths(profile.preferences?.allowedNavPaths ?? profileNavItems.map((item) => item.path));
   };
 
   const currentCustomRole = customRoles?.find((role) => role.id === selectedCustomRole) ?? null;
@@ -613,8 +562,8 @@ export function RoleManager() {
                     </span>
                   </div>
                   <div className="mt-2 flex max-h-40 flex-wrap gap-2 overflow-y-auto rounded-md border p-3">
-                    {(accessProfile.preferences?.allowedNavPaths ?? PROFILE_NAV_ITEMS.map((item) => item.path)).map((path) => (
-                      <Badge key={path} variant="outline">{PROFILE_NAV_ITEMS.find((item) => item.path === path)?.label || path}</Badge>
+                    {(accessProfile.preferences?.allowedNavPaths ?? profileNavItems.map((item) => item.path)).map((path) => (
+                      <Badge key={path} variant="outline">{profileNavItems.find((item) => item.path === path)?.label || `${path} (legacy/unavailable)`}</Badge>
                     ))}
                     {accessProfile.preferences?.allowedNavPaths?.length === 0 ? <span className="text-sm text-muted-foreground">No operational tabs selected.</span> : null}
                   </div>
@@ -661,12 +610,19 @@ export function RoleManager() {
                 Choose the navigation tabs that {navigationProfile?.fullName || navigationProfile?.username || "this profile"} can open. API permissions still apply inside each tab.
               </DialogDescription>
             </DialogHeader>
+            {navigationCatalogQuery.isLoading ? (
+              <div className="rounded-md border p-3 text-sm text-muted-foreground">Loading the authoritative navigation catalog…</div>
+            ) : navigationCatalogQuery.isError ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                Navigation access cannot be edited until the catalog loads. <Button type="button" size="sm" variant="outline" className="ml-2" onClick={() => void navigationCatalogQuery.refetch()}>Retry</Button>
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={() => setAllowedNavPaths(PROFILE_NAV_ITEMS.map((item) => item.path))}>Select all</Button>
+              <Button type="button" size="sm" variant="outline" disabled={!navigationCatalogQuery.isSuccess} onClick={() => setAllowedNavPaths(profileNavItems.map((item) => item.path))}>Select all</Button>
               <Button type="button" size="sm" variant="outline" onClick={() => setAllowedNavPaths([])}>Clear all</Button>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {PROFILE_NAV_ITEMS.map((item) => {
+              {profileNavItems.map((item) => {
                 const checked = allowedNavPaths.includes(item.path);
                 return (
                   <label key={item.path} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border p-3">
@@ -679,12 +635,18 @@ export function RoleManager() {
                   </label>
                 );
               })}
+              {allowedNavPaths.filter((path) => !profileNavItems.some((item) => item.path === path)).map((path) => (
+                <label key={path} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-amber-300 bg-amber-50/40 p-3 dark:bg-amber-950/10">
+                  <Checkbox checked onCheckedChange={() => setAllowedNavPaths((current) => current.filter((candidate) => candidate !== path))} aria-label={`Remove legacy navigation path ${path}`} />
+                  <span><span className="block text-sm font-medium">Legacy or unavailable path</span><span className="block break-all text-xs text-muted-foreground">{path} — clear this selection before saving.</span></span>
+                </label>
+              ))}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setNavigationProfile(null)}>Cancel</Button>
               <Button
                 type="button"
-                disabled={!navigationProfile || updateNavigationMutation.isPending}
+                disabled={!navigationProfile || updateNavigationMutation.isPending || !navigationCatalogQuery.isSuccess || allowedNavPaths.some((path) => !profileNavItems.some((item) => item.path === path))}
                 onClick={() => navigationProfile && updateNavigationMutation.mutate({ profile: navigationProfile, paths: allowedNavPaths })}
               >
                 {updateNavigationMutation.isPending ? "Saving..." : `Save ${allowedNavPaths.length} tabs`}
@@ -692,6 +654,13 @@ export function RoleManager() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {permissionCatalogQuery.isLoading ? (
+          <div className="mb-4 rounded-md border p-3 text-sm text-muted-foreground">Loading the authoritative permission catalog…</div>
+        ) : permissionCatalogQuery.isError ? (
+          <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+            Roles and permissions cannot be edited until the catalog loads. <Button type="button" size="sm" variant="outline" className="ml-2" onClick={() => void permissionCatalogQuery.refetch()}>Retry</Button>
+          </div>
+        ) : null}
         <Tabs value={selectedTab} onValueChange={setSelectedTab}>
           <TabsList className="mb-4">
             <TabsTrigger value="system-roles">System Roles</TabsTrigger>
@@ -745,11 +714,12 @@ export function RoleManager() {
                         <p className="text-sm text-muted-foreground">No resources match your search.</p>
                       ) : (
                         filteredMatrixCategories.map((category) => (
-                          <Collapsible key={category.id} defaultOpen>
+                          <Collapsible key={category.id} defaultOpen={false}>
                             <div className="overflow-hidden rounded-md border">
                               <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted/40 px-4 py-3 text-left text-sm font-semibold hover:bg-muted/60">
                                 <ChevronDown className="h-4 w-4 shrink-0" />
                                 {category.label}
+                                <Badge variant="outline" className="ml-auto">{category.resources.length} resources</Badge>
                               </CollapsibleTrigger>
                               <CollapsibleContent>
                                 <div className="bg-muted p-4 pt-2">
@@ -818,7 +788,7 @@ export function RoleManager() {
                 
                 <Dialog open={createRoleOpen} onOpenChange={setCreateRoleOpen}>
                   <DialogTrigger asChild>
-                    <Button variant="default">
+                    <Button variant="default" disabled={!permissionCatalogQuery.isSuccess}>
                       <Plus className="mr-2" size={16} />
                       Create Custom Role
                     </Button>
@@ -1029,11 +999,12 @@ export function RoleManager() {
                         <p className="text-sm text-muted-foreground">No resources match your search.</p>
                       ) : (
                         filteredMatrixCategories.map((category) => (
-                          <Collapsible key={category.id} defaultOpen>
+                          <Collapsible key={category.id} defaultOpen={false}>
                             <div className="overflow-hidden rounded-md border">
                               <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted/40 px-4 py-3 text-left text-sm font-semibold hover:bg-muted/60">
                                 <ChevronDown className="h-4 w-4 shrink-0" />
                                 {category.label}
+                                <Badge variant="outline" className="ml-auto">{category.resources.length} resources</Badge>
                               </CollapsibleTrigger>
                               <CollapsibleContent>
                                 <div className="bg-muted p-4 pt-2">
@@ -1059,6 +1030,9 @@ export function RoleManager() {
                                                 size="sm"
                                                 className="h-full w-full"
                                                 type="button"
+                                                aria-label={`${hasPermission(resource, type.value) ? "Remove" : "Grant"} ${type.label} permission for ${resource.replace(/_/g, " ")}; currently ${hasPermission(resource, type.value) ? "granted" : "not granted"}`}
+                                                aria-pressed={hasPermission(resource, type.value)}
+                                                disabled={!permissionCatalogQuery.isSuccess}
                                                 onClick={() => togglePermission(resource, type.value)}
                                               >
                                                 {hasPermission(resource, type.value) ? (
@@ -1133,7 +1107,8 @@ export function UserRoleAssignment({ userId, currentRole }: { userId: number, cu
       const res = await apiRequest("PUT", `/api/users/${userId}`, { 
         role,
         // If assigning custom role, include custom role ID in preferences
-        preferences: role === 'custom' && customRoleId ? { customRoleId } : undefined
+        preferences: role === 'custom' && customRoleId ? { customRoleId } : undefined,
+        reason: "Administrator updated the employee role assignment",
       });
       return await res.json();
     },

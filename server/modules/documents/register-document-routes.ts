@@ -2,11 +2,25 @@ import type { Express, Request, Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { and, desc, eq, ilike, isNotNull, isNull, or } from "drizzle-orm";
+import { z } from "zod";
 import { db, pool } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import { documents } from "@shared/schema";
 import { documentUpload, documentsDir } from "../../http/upload-config";
 import type { AuthBundle } from "../procurement/types";
+import { sendError, sendOk } from "../../api-response";
+import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
+
+const documentPageQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().refine((value) => [25, 50, 100].includes(value), "pageSize must be 25, 50, or 100").default(25),
+  q: z.string().trim().max(120).optional(),
+  entityType: z.string().trim().max(60).optional(),
+  entityId: z.coerce.number().int().positive().optional(),
+  archived: z.enum(["exclude", "include", "only"]).default("exclude"),
+  fileStatus: z.enum(["all", "available", "missing"]).default("all"),
+  sort: z.enum(["newest", "oldest", "name_asc", "name_desc"]).default("newest"),
+});
 
 const DOCUMENT_ENTITY_TABLES: Record<string, string> = {
   purchase_order: "purchase_orders",
@@ -39,6 +53,61 @@ async function documentEntityExists(organizationId: number, entityType: string, 
 export function registerDocumentRoutes(app: Express, auth: AuthBundle): void {
   const masterRead = [auth.ensureAuthenticated];
   const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
+  app.get("/api/v2/documents", ...masterRead, async (req: Request, res: Response) => {
+    const parsed = documentPageQuery.safeParse(req.query);
+    if (!parsed.success) return sendError(res, 400, "INVALID_QUERY", "Invalid document pagination or filter value", { details: parsed.error.flatten() });
+    const query = parsed.data;
+    try {
+      const filters = [eq(documents.organizationId, getActiveOrganizationId())];
+      if (query.entityType) filters.push(eq(documents.entityType, query.entityType));
+      if (query.entityId) filters.push(eq(documents.entityId, query.entityId));
+      if (query.archived === "exclude") filters.push(isNull(documents.archivedAt));
+      if (query.archived === "only") filters.push(isNotNull(documents.archivedAt));
+      if (query.q) {
+        const pattern = `%${query.q}%`;
+        filters.push(or(ilike(documents.fileName, pattern), ilike(documents.entityType, pattern), ilike(documents.fileUrl, pattern))!);
+      }
+      const rows = await db.select().from(documents).where(and(...filters));
+      const withState = rows.map((row) => {
+        const storedPath = storedDocumentPath(row.fileUrl);
+        const fileStatus = storedPath && fs.existsSync(storedPath) ? "available" as const : "missing" as const;
+        return { ...row, fileAvailable: fileStatus === "available", fileStatus, lifecycleStatus: row.archivedAt ? "archived" as const : "active" as const };
+      }).filter((row) => query.fileStatus === "all" || row.fileStatus === query.fileStatus);
+      withState.sort((left, right) => {
+        if (query.sort === "name_asc" || query.sort === "name_desc") {
+          const result = left.fileName.localeCompare(right.fileName) || left.id - right.id;
+          return query.sort === "name_desc" ? -result : result;
+        }
+        const result = new Date(left.uploadedAt).getTime() - new Date(right.uploadedAt).getTime() || left.id - right.id;
+        return query.sort === "newest" ? -result : result;
+      });
+      const total = withState.length;
+      const offset = (query.page - 1) * query.pageSize;
+      return sendOk(res, { items: withState.slice(offset, offset + query.pageSize), total, page: query.page, pageSize: query.pageSize, hasNext: query.page * query.pageSize < total, summary: { active: withState.filter((row) => !row.archivedAt).length, archived: withState.filter((row) => row.archivedAt).length, missing: withState.filter((row) => row.fileStatus === "missing").length } });
+    } catch (error) {
+      return sendError(res, 500, "DOCUMENTS_FETCH_FAILED", "Failed to fetch document history", { details: String(error) });
+    }
+  });
+
+  app.post("/api/documents/reconcile", ...masterWrite, async (_req: Request, res: Response) => {
+    try {
+      const orgId = getActiveOrganizationId();
+      const rows = await db.select().from(documents).where(eq(documents.organizationId, orgId));
+      const missingIds = rows.filter((row) => {
+        const storedPath = storedDocumentPath(row.fileUrl);
+        return !storedPath || !fs.existsSync(storedPath);
+      }).map((row) => row.id);
+      const verifiedAt = new Date();
+      await db.update(documents).set({ lastVerifiedAt: verifiedAt }).where(eq(documents.organizationId, orgId));
+      if (missingIds.length) {
+        recordServerDiagnosticEvent({ severity: "warning", source: "system", title: "Document files missing", message: `${missingIds.length} document file(s) are unavailable; metadata was retained.`, route: "/admin/documents", method: "RECONCILE", details: { organizationId: orgId, missingCount: missingIds.length, documentIds: missingIds.slice(0, 50) } });
+      }
+      return sendOk(res, { checked: rows.length, available: rows.length - missingIds.length, missing: missingIds.length, missingIds, verifiedAt: verifiedAt.toISOString() });
+    } catch (error) {
+      return sendError(res, 500, "DOCUMENT_RECONCILIATION_FAILED", "Document reconciliation could not be completed", { details: String(error) });
+    }
+  });
 
   app.get("/api/documents", ...masterRead, async (req: Request, res: Response) => {
     try {

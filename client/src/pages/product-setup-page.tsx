@@ -33,16 +33,16 @@ export default function ProductSetupPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const { settings } = useSettings();
+  const { settings, isLoading: settingsLoading, refetch: refetchSettings } = useSettings();
 
   const { ready, setup } = useAppReadinessState();
 
   const [step, setStep] = useState<StepId>("welcome");
-  const [companyName, setCompanyName] = useState(settings.companyName);
-  const [currencyCode, setCurrencyCode] = useState(settings.currencyCode);
-  const [businessCountryCode, setBusinessCountryCode] = useState(settings.businessCountryCode ?? "US");
+  const [companyName, setCompanyName] = useState(settings?.companyName ?? "");
+  const [currencyCode, setCurrencyCode] = useState(settings?.currencyCode ?? "");
+  const [businessCountryCode, setBusinessCountryCode] = useState(settings?.businessCountryCode ?? "");
   const [taxMode, setTaxMode] = useState<"none" | "vat" | "us_sales_tax">(
-    (settings.taxMode as "none" | "vat" | "us_sales_tax") || "none",
+    (settings?.taxMode as "none" | "vat" | "us_sales_tax") || "none",
   );
   const [warehouseName, setWarehouseName] = useState("Main warehouse");
   const [departmentCodes, setDepartmentCodes] = useState("OPS,PROC,FIN");
@@ -50,10 +50,10 @@ export default function ProductSetupPage() {
   const [paymentTermName, setPaymentTermName] = useState("Net 30");
   const [paymentTermNetDays, setPaymentTermNetDays] = useState("30");
   const [dateFormat, setDateFormat] = useState<(typeof DATE_FORMAT_PRESETS)[number]>(
-    (settings.dateFormat as (typeof DATE_FORMAT_PRESETS)[number]) || "YYYY-MM-DD",
+    (settings?.dateFormat as (typeof DATE_FORMAT_PRESETS)[number]) || "YYYY-MM-DD",
   );
   const [timeFormat, setTimeFormat] = useState<(typeof TIME_FORMAT_PRESETS)[number]>(
-    (settings.timeFormat as (typeof TIME_FORMAT_PRESETS)[number]) || "HH:mm",
+    (settings?.timeFormat as (typeof TIME_FORMAT_PRESETS)[number]) || "HH:mm",
   );
 
   const hasSavedCheckpoint = Boolean(setup?.onboarding?.checkpoint);
@@ -84,7 +84,7 @@ export default function ProductSetupPage() {
   }, [setup?.onboarding?.checkpoint]);
 
   useEffect(() => {
-    if (hasSavedCheckpoint) return;
+    if (hasSavedCheckpoint || !settings) return;
     setCompanyName(settings.companyName);
     setCurrencyCode(settings.currencyCode);
     setBusinessCountryCode(settings.businessCountryCode ?? "US");
@@ -98,15 +98,7 @@ export default function ProductSetupPage() {
     if (tf && (TIME_FORMAT_PRESETS as readonly string[]).includes(tf)) {
       setTimeFormat(tf as (typeof TIME_FORMAT_PRESETS)[number]);
     }
-  }, [
-    settings.companyName,
-    settings.currencyCode,
-    settings.businessCountryCode,
-    settings.taxMode,
-    settings.dateFormat,
-    settings.timeFormat,
-    hasSavedCheckpoint,
-  ]);
+  }, [settings, hasSavedCheckpoint]);
 
   const checkpointMutation = useMutation({
     mutationFn: async (payload: { step: StepId; draft?: Record<string, unknown> }) => {
@@ -200,6 +192,10 @@ export default function ProductSetupPage() {
         </Alert>
       </div>
     );
+  }
+
+  if (!settings) {
+    return <div className="mx-auto max-w-lg p-6"><Card><CardHeader><CardTitle>Organization settings unavailable</CardTitle><CardDescription>Setup is blocked until authoritative settings load; no fallback company or currency values will be used.</CardDescription></CardHeader><CardContent><Button type="button" variant="outline" disabled={settingsLoading} onClick={() => void refetchSettings()}>{settingsLoading ? "Loading settings…" : "Retry settings"}</Button></CardContent></Card></div>;
   }
 
   if (user.role !== "admin") {

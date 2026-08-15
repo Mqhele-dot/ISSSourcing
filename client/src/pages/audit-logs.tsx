@@ -77,6 +77,7 @@ export default function AuditLogsPage() {
   const [actionFilter, setActionFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [customEntityTypeMode, setCustomEntityTypeMode] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<ActivityFilters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -139,22 +140,31 @@ export default function AuditLogsPage() {
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <CardContent className="grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-1">
             <Label htmlFor="audit-entity-type">Entity type</Label>
             <Select
               value={
-                entityType.trim() === ""
+                customEntityTypeMode
+                  ? "__custom__"
+                  : entityType.trim() === ""
                   ? "any"
                   : ENTITY_TYPE_PRESETS.some((p) => p.value === entityType)
                     ? entityType
                     : "__custom__"
               }
               onValueChange={(v) => {
-                if (v === "any") setEntityType("");
+                if (v === "any") {
+                  setCustomEntityTypeMode(false);
+                  setEntityType("");
+                }
                 else if (v === "__custom__") {
-                  /* Preserve manual entity_type; do not clear */
-                } else setEntityType(v);
+                  setCustomEntityTypeMode(true);
+                  setEntityType("");
+                } else {
+                  setCustomEntityTypeMode(false);
+                  setEntityType(v);
+                }
               }}
             >
               <SelectTrigger id="audit-entity-type">
@@ -169,12 +179,15 @@ export default function AuditLogsPage() {
                 <SelectItem value="__custom__">Custom…</SelectItem>
               </SelectContent>
             </Select>
-            <Input
-              value={entityType}
-              onChange={(e) => setEntityType(e.target.value)}
-              placeholder="Or type entity_type manually"
-              className="mt-1"
-            />
+            {customEntityTypeMode ? (
+              <Input
+                aria-label="Custom entity type"
+                value={entityType}
+                onChange={(e) => setEntityType(e.target.value)}
+                placeholder="Type entity_type"
+                className="mt-2"
+              />
+            ) : null}
           </div>
           <div className="space-y-1">
             <Label htmlFor="audit-entity-id">Entity ID</Label>
@@ -211,10 +224,11 @@ export default function AuditLogsPage() {
             <Label htmlFor="audit-to">To</Label>
             <Input id="audit-to" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
           </div>
-          <div className="flex items-end gap-2">
-            <Button onClick={applyFilters}>Apply</Button>
+          <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+            <Button className="shrink-0" onClick={applyFilters}>Apply</Button>
             <Button
               variant="outline"
+              className="whitespace-nowrap"
               onClick={() =>
                 downloadCsv("audit-logs.csv", [
                   ["id", "created_at", "actor", "entity_type", "entity_id", "action", "summary"],

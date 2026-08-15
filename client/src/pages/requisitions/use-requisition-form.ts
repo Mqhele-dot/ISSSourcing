@@ -4,7 +4,6 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
 import type { PurchaseRequisition, PurchaseRequisitionItem, Supplier, InventoryItem } from "@shared/schema";
 import { invalidateRequisitionDomain } from "@/lib/domain-invalidation";
-import { inventoryCatalogQueryKey } from "@/lib/query-keys";
 import type { ReqLineDraft } from "@/pages/requisitions/requisition-lines-editor";
 
 export type RequisitionFieldErrors = Partial<
@@ -27,6 +26,9 @@ type MdmRequisitionContext = {
   suppliers: Supplier[];
   items: Array<InventoryItem & { defaultTaxCodeId?: number | null; glAccountCode?: string | null }>;
   approvalRules: Array<{ id: number; code: string; name: string; minLocalValue?: number | null; approverRole?: string | null }>;
+  contracts?: Array<{ id: number; title: string; supplierId: number }>;
+  paymentTerms?: Array<{ id: number; code: string; name: string }>;
+  incoterms?: Array<{ id: number; code: string; name: string }>;
   organizationDefaults?: {
     taxCodeId?: number | null;
   };
@@ -34,11 +36,21 @@ type MdmRequisitionContext = {
     requiresDepartment: boolean;
     requiresCostCentre: boolean;
     requiresTaxCode: boolean;
+    requiresUom: boolean;
     requiresCurrency: boolean;
     onceOffItemRequiresReason: boolean;
     approvalValueCurrency: string;
   };
 };
+
+function defaultRequiredDate(): string {
+  const date = new Date();
+  date.setDate(date.getDate() + 14);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 const LOCKED_REQUISITION_STATUSES = new Set(["APPROVED", "CONVERTED", "CLOSED", "CANCELLED"]);
 
@@ -72,7 +84,7 @@ export function useRequisitionForm(params: {
   const [supplierId, setSupplierId] = useState<number | "">("");
   const [departmentId, setDepartmentId] = useState<number | "">("");
   const [justification, setJustification] = useState("");
-  const [requiredDate, setRequiredDate] = useState("");
+  const [requiredDate, setRequiredDate] = useState(() => (isNew ? defaultRequiredDate() : ""));
   const [projectId, setProjectId] = useState<number | "">("");
   const [currencyCode, setCurrencyCode] = useState("ZAR");
   const [items, setItems] = useState<ReqLineDraft[]>([{ itemId: null, lineType: "CATALOG", quantity: 1, unitPrice: 0 }]);
@@ -90,22 +102,6 @@ export function useRequisitionForm(params: {
   const lockedReason = !isNew ? lockedReasonForStatus(requisition?.status) : "";
   const isLocked = Boolean(lockedReason);
 
-  const { data: suppliers = [] } = useQuery({
-    queryKey: ["/api/suppliers"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/suppliers");
-      return normalizeApiList<Supplier>(raw);
-    },
-  });
-
-  const { data: inventoryItems = [] } = useQuery({
-    queryKey: inventoryCatalogQueryKey,
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/inventory");
-        return normalizeApiList<InventoryItem & { supplierPartNumber?: string | null; glAccountCode?: string | null }>(raw);
-    },
-  });
-
   const { data: mdmContext } = useQuery({
     queryKey: ["/api/mdm/defaults/requisition-context"],
     queryFn: () => requestJson<MdmRequisitionContext>("GET", "/api/mdm/defaults/requisition-context"),
@@ -120,14 +116,6 @@ export function useRequisitionForm(params: {
     setCurrencyCode(reportingCurrencyCode);
   }, [isNew, mdmContext?.defaultCurrencyCode, reportingCurrencyCode]);
 
-  const { data: departments = [] } = useQuery({
-    queryKey: ["/api/departments"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/departments");
-      return normalizeApiList<{ id: number; code: string; name: string }>(raw);
-    },
-  });
-
   const { data: extensionProjects = [] } = useQuery({
     queryKey: ["/api/extensions/projects"],
     queryFn: async () => {
@@ -141,53 +129,28 @@ export function useRequisitionForm(params: {
     retry: false,
   });
 
-  const { data: currencies = [] } = useQuery({
-    queryKey: ["/api/currencies"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/currencies");
-      return normalizeApiList<{
-        code: string;
-        name: string;
-        symbol?: string | null;
-        regionCode?: string | null;
-        regionName?: string | null;
-        isMainForRegion?: boolean | null;
-        exchangeRateToZar?: number | null;
-        active?: boolean | null;
-      }>(raw).filter((currency) => currency.active !== false);
-    },
-  });
-
-  const { data: taxCodes = [] } = useQuery({
-    queryKey: ["/api/tax-codes"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/tax-codes");
-      return normalizeApiList<{ id: number; code: string; name: string; active?: boolean | null }>(raw);
-    },
-  });
-
   const effectiveSuppliers = useMemo(
     () =>
-      (mdmContext?.suppliers?.length ? mdmContext.suppliers : suppliers).filter((supplier) => {
+      (mdmContext?.suppliers ?? []).filter((supplier) => {
         const governed = supplier as Supplier & { onboardingStatus?: string | null };
         return String(supplier.status).toLowerCase() === "active" && String(governed.onboardingStatus ?? "approved").toLowerCase() === "approved";
       }),
-    [mdmContext?.suppliers, suppliers],
+    [mdmContext?.suppliers],
   );
 
   const effectiveInventoryItems = useMemo(
-    () => (mdmContext?.items?.length ? mdmContext.items : inventoryItems),
-    [inventoryItems, mdmContext?.items],
+    () => mdmContext?.items ?? [],
+    [mdmContext?.items],
   );
 
   const effectiveDepartments = useMemo(
-    () => (mdmContext?.departments?.length ? mdmContext.departments.filter((department) => department.active !== false) : departments),
-    [departments, mdmContext?.departments],
+    () => mdmContext?.departments?.filter((department) => department.active !== false) ?? [],
+    [mdmContext?.departments],
   );
 
   const effectiveCurrencies = useMemo(
-    () => (mdmContext?.currencies?.length ? mdmContext.currencies.filter((currency) => currency.active !== false) : currencies),
-    [currencies, mdmContext?.currencies],
+    () => mdmContext?.currencies?.filter((currency) => currency.active !== false) ?? [],
+    [mdmContext?.currencies],
   );
   const effectiveUnitsOfMeasure = useMemo(
     () => mdmContext?.unitsOfMeasure?.filter((uom) => uom.active !== false) ?? [],
@@ -239,34 +202,14 @@ export function useRequisitionForm(params: {
     }
   }, [effectiveCurrencies, currencyCode, isNew, selectedSupplier]);
 
-  const { data: contracts = [] } = useQuery({
-    queryKey: ["/api/contracts"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/contracts");
-      return normalizeApiList<{ id: number; title: string; supplierId: number }>(raw);
-    },
-  });
-
-  const { data: paymentTerms = [] } = useQuery({
-    queryKey: ["/api/payment-terms"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/payment-terms");
-      return normalizeApiList<{ id: number; code: string; name: string }>(raw);
-    },
-  });
-
-  const { data: incoterms = [] } = useQuery({
-    queryKey: ["/api/incoterms"],
-    queryFn: async () => {
-      const raw = await requestJson<unknown>("GET", "/api/incoterms");
-      return normalizeApiList<{ id: number; code: string; name: string }>(raw);
-    },
-  });
-
   const effectiveTaxCodes = useMemo(
-    () => (mdmContext?.taxCodes?.length ? mdmContext.taxCodes.filter((taxCode) => taxCode.active !== false) : taxCodes),
-    [mdmContext?.taxCodes, taxCodes],
+    () => mdmContext?.taxCodes?.filter((taxCode) => taxCode.active !== false) ?? [],
+    [mdmContext?.taxCodes],
   );
+
+  const contracts = mdmContext?.contracts ?? [];
+  const paymentTerms = mdmContext?.paymentTerms ?? [];
+  const incoterms = mdmContext?.incoterms ?? [];
 
   const contractsForSupplier = useMemo(() => {
     if (supplierId === "") return [];
@@ -489,11 +432,22 @@ export function useRequisitionForm(params: {
     if (!Number.isFinite(exchangeRateToZar) || exchangeRateToZar <= 0) {
       nextErrors.currencyCode = `Selected currency needs a positive ${reportingCurrencyCode} exchange rate in Master Data`;
     }
-    if (!departmentId) nextErrors.departmentId = "Department is required";
+    if (mdmContext?.rules.requiresDepartment && !departmentId) nextErrors.departmentId = "Department is required";
     if (!requiredDate) nextErrors.requiredDate = "Required date is required";
     const validItems = items.filter(isValidRequisitionLine);
     if (validItems.length === 0) {
       nextErrors.items = "Add a valid catalogue or manual line with quantity, price, and required details";
+    } else {
+      const missingUom = validItems.findIndex((item) => !item.unitOfMeasureId);
+      const missingTax = validItems.findIndex((item) => item.taxCodeId == null);
+      const missingCostCentre = validItems.findIndex((item) => !item.costCentreId);
+      if (mdmContext?.rules.requiresCostCentre && missingCostCentre >= 0) {
+        nextErrors.items = `Line ${missingCostCentre + 1}: cost centre is required by procurement policy`;
+      } else if (mdmContext?.rules.requiresTaxCode && missingTax >= 0) {
+        nextErrors.items = `Line ${missingTax + 1}: tax code is required by procurement policy`;
+      } else if (mdmContext?.rules.requiresUom && missingUom >= 0) {
+        nextErrors.items = `Line ${missingUom + 1}: purchase UOM is required`;
+      }
     }
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -517,7 +471,7 @@ export function useRequisitionForm(params: {
     }
     if (isNew) createMutation.mutate();
     else updateMutation.mutate();
-  }, [supplierId, currencyCode, exchangeRateToZar, reportingCurrencyCode, departmentId, requiredDate, items, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
+  }, [supplierId, currencyCode, exchangeRateToZar, reportingCurrencyCode, departmentId, requiredDate, items, mdmContext?.rules, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 

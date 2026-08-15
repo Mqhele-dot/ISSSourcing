@@ -59,6 +59,7 @@ export default function RequisitionFormPage() {
             justification={f.justification}
             notes={f.notes}
             fieldErrors={f.fieldErrors}
+            requiresDepartment={f.mdmContext?.rules.requiresDepartment !== false}
             readOnly={f.isLocked}
             onSupplierChange={f.setSupplierId}
             onCurrencyChange={f.setCurrencyCode}
@@ -92,6 +93,7 @@ export default function RequisitionFormPage() {
             exchangeRateToZar={f.exchangeRateToZar}
             reportingCurrencyCode={f.reportingCurrencyCode}
             fieldError={f.fieldErrors.items}
+            rules={f.mdmContext?.rules}
             onAddRow={f.addItem}
             onRemoveRow={f.removeItem}
             onUpdateRow={f.updateItem}

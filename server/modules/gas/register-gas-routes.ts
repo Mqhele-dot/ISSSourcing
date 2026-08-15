@@ -2,6 +2,8 @@ import type { Express, NextFunction, Request, RequestHandler, Response } from "e
 import { z } from "zod";
 import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisabled } from "../../org-features";
 import { sendError, sendOk } from "../../api-response";
+import { pool } from "../../db";
+import { getActiveOrganizationId } from "../../organization-context";
 import { getGasDashboardSummary, runGasComplianceAlerts } from "./gas-service";
 import {
   createFuelCylinder,
@@ -28,7 +30,7 @@ const id = z.coerce.number().int().positive();
 const nonNegative = z.coerce.number().finite().nonnegative();
 const positive = z.coerce.number().finite().positive();
 const optionalDate = z.coerce.date().optional().nullable();
-const productType = z.enum(["unleaded_93", "unleaded_95", "diesel_50ppm", "diesel_500ppm", "lpg"]);
+const productId = z.coerce.number().int().positive();
 
 const stationSchema = z.object({
   code: z.string().trim().min(2).max(30).regex(/^[A-Za-z0-9_-]+$/),
@@ -40,7 +42,7 @@ const stationSchema = z.object({
 const tankSchema = z.object({
   stationId: id,
   code: z.string().trim().min(1).max(40),
-  productType,
+  productId,
   storageType: z.enum(["underground_tank", "above_ground_tank", "lpg_bulk_tank"]),
   capacityLitres: positive,
   currentLevelLitres: nonNegative.default(0),
@@ -86,7 +88,7 @@ const reconciliationSchema = z.object({
 
 const priceSchema = z.object({
   stationId: id,
-  productType,
+  productId,
   pricePerLitre: positive,
   effectiveFrom: optionalDate,
 }).strict();
@@ -171,7 +173,69 @@ export function registerGasRoutes(app: Express, auth: Auth): void {
   });
 
   app.get("/api/fuel/workspace", ...read, async (_req, res) => {
-    try { return sendOk(res, await getFuelOperationsWorkspace()); } catch (error) { return operationError(res, error); }
+    try {
+      const workspace = await getFuelOperationsWorkspace();
+      const products = await pool.query(
+        `SELECT id, code, name, product_class AS "productClass", unit,
+          applicable_storage_types AS "applicableStorageTypes", active
+         FROM fuel_products WHERE organization_id = $1 ORDER BY active DESC, name, id`,
+        [getActiveOrganizationId()],
+      );
+      return sendOk(res, { ...workspace, products: products.rows });
+    } catch (error) { return operationError(res, error); }
+  });
+
+  app.get("/api/fuel/products", ...read, async (_req, res) => {
+    try {
+      const rows = await pool.query(
+        `SELECT id, code, name, product_class AS "productClass", unit,
+          applicable_storage_types AS "applicableStorageTypes", active, created_at AS "createdAt", updated_at AS "updatedAt"
+         FROM fuel_products WHERE organization_id = $1 ORDER BY active DESC, name, id`,
+        [getActiveOrganizationId()],
+      );
+      return sendOk(res, rows.rows);
+    } catch (error) { return operationError(res, error); }
+  });
+
+  app.post("/api/fuel/products", ...write, async (req, res) => {
+    const parsed = z.object({
+      code: z.string().trim().min(1).max(40).regex(/^[A-Za-z0-9_-]+$/),
+      name: z.string().trim().min(2).max(120),
+      productClass: z.string().trim().min(2).max(80),
+      unit: z.string().trim().min(1).max(30).default("litre"),
+      applicableStorageTypes: z.array(z.enum(["underground_tank", "above_ground_tank", "lpg_bulk_tank"])).min(1),
+    }).safeParse(req.body);
+    if (!parsed.success) return validationError(res, parsed.error);
+    try {
+      const result = await pool.query(
+        `INSERT INTO fuel_products (organization_id, code, name, product_class, unit, applicable_storage_types)
+         VALUES ($1, upper($2), $3, $4, $5, $6) RETURNING id, code, name, product_class AS "productClass", unit, applicable_storage_types AS "applicableStorageTypes", active`,
+        [getActiveOrganizationId(), parsed.data.code, parsed.data.name, parsed.data.productClass, parsed.data.unit, parsed.data.applicableStorageTypes],
+      );
+      return sendOk(res, result.rows[0], 201);
+    } catch (error) { return operationError(res, error); }
+  });
+
+  app.patch("/api/fuel/products/:id", ...write, async (req, res) => {
+    const parsedId = id.safeParse(req.params.id);
+    const parsed = z.object({ name: z.string().trim().min(2).max(120).optional(), productClass: z.string().trim().min(2).max(80).optional(), unit: z.string().trim().min(1).max(30).optional(), applicableStorageTypes: z.array(z.string()).min(1).optional(), active: z.boolean().optional() }).safeParse(req.body);
+    if (!parsedId.success) return validationError(res, parsedId.error);
+    if (!parsed.success) return validationError(res, parsed.error);
+    try {
+      if (parsed.data.active === false) {
+        const used = await pool.query("SELECT count(*)::int AS count FROM fuel_tanks WHERE organization_id = $1 AND product_id = $2 AND status <> 'inactive'", [getActiveOrganizationId(), parsedId.data]);
+        if (Number(used.rows[0]?.count ?? 0) > 0) return sendError(res, 409, "FUEL_PRODUCT_IN_USE", "Deactivate or reassign active tanks before deactivating this fuel product.");
+      }
+      const current = await pool.query("SELECT * FROM fuel_products WHERE organization_id = $1 AND id = $2", [getActiveOrganizationId(), parsedId.data]);
+      if (!current.rows[0]) return sendError(res, 404, "FUEL_PRODUCT_NOT_FOUND", "Fuel product not found.");
+      const next = { ...current.rows[0], ...parsed.data };
+      const result = await pool.query(
+        `UPDATE fuel_products SET name=$1, product_class=$2, unit=$3, applicable_storage_types=$4, active=$5, updated_at=now()
+         WHERE organization_id=$6 AND id=$7 RETURNING id, code, name, product_class AS "productClass", unit, applicable_storage_types AS "applicableStorageTypes", active`,
+        [next.name, next.productClass ?? next.product_class, next.unit, next.applicableStorageTypes ?? next.applicable_storage_types, next.active, getActiveOrganizationId(), parsedId.data],
+      );
+      return sendOk(res, result.rows[0]);
+    } catch (error) { return operationError(res, error); }
   });
 
   app.post("/api/fuel/stations", ...write, async (req, res) => {
@@ -183,7 +247,15 @@ export function registerGasRoutes(app: Express, auth: Auth): void {
   app.post("/api/fuel/tanks", ...write, async (req, res) => {
     const parsed = tankSchema.safeParse(req.body);
     if (!parsed.success) return validationError(res, parsed.error);
-    try { return sendOk(res, await createFuelTank(parsed.data), 201); } catch (error) { return operationError(res, error); }
+    try {
+      const product = await pool.query("SELECT code, applicable_storage_types FROM fuel_products WHERE organization_id = $1 AND id = $2 AND active = TRUE", [getActiveOrganizationId(), parsed.data.productId]);
+      if (!product.rows[0]) return sendError(res, 400, "INVALID_FUEL_PRODUCT", "Select an active fuel product owned by this organization.");
+      if (!product.rows[0].applicable_storage_types.includes(parsed.data.storageType)) return sendError(res, 400, "INVALID_FUEL_STORAGE", "The selected product cannot use this storage type.");
+      const { productId: selectedProductId, ...values } = parsed.data;
+      const created = await createFuelTank({ ...values, productType: String(product.rows[0].code).toLowerCase() });
+      await pool.query("UPDATE fuel_tanks SET product_id = $1 WHERE organization_id = $2 AND id = $3", [selectedProductId, getActiveOrganizationId(), created.id]);
+      return sendOk(res, { ...created, productId: selectedProductId }, 201);
+    } catch (error) { return operationError(res, error); }
   });
 
   app.post("/api/fuel/pumps", ...write, async (req, res) => {
@@ -213,7 +285,12 @@ export function registerGasRoutes(app: Express, auth: Auth): void {
   app.post("/api/fuel/prices", ...write, async (req, res) => {
     const parsed = priceSchema.safeParse(req.body);
     if (!parsed.success) return validationError(res, parsed.error);
-    try { return sendOk(res, await setFuelPrice({ ...parsed.data, effectiveFrom: parsed.data.effectiveFrom ?? new Date() }), 201); } catch (error) { return operationError(res, error); }
+    try {
+      const product = await pool.query("SELECT code FROM fuel_products WHERE organization_id = $1 AND id = $2 AND active = TRUE", [getActiveOrganizationId(), parsed.data.productId]);
+      if (!product.rows[0]) return sendError(res, 400, "INVALID_FUEL_PRODUCT", "Select an active fuel product owned by this organization.");
+      const created = await setFuelPrice({ stationId: parsed.data.stationId, productType: String(product.rows[0].code).toLowerCase(), pricePerLitre: parsed.data.pricePerLitre, effectiveFrom: parsed.data.effectiveFrom ?? new Date() });
+      return sendOk(res, created, 201);
+    } catch (error) { return operationError(res, error); }
   });
 
   app.post("/api/fuel/inspections", ...write, async (req, res) => {

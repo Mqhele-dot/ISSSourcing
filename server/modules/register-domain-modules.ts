@@ -20,6 +20,7 @@ import { registerMobileCountRoutes } from "./mobile-counts/register-mobile-count
 import { registerAuditRoutes } from "./audit/register-audit-routes";
 import { registerSourcingRoutes } from "./sourcing/register-sourcing-routes";
 import { registerV2Routes } from "./v2/register-v2-routes";
+import { registerInventoryIssueRoutes } from "./inventory-issues/register-inventory-issue-routes";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -48,6 +49,7 @@ export function registerDomainModules(app: Express, auth: AuthBundle): void {
   registerProcurementRoutes(app, auth);
   registerSourcingRoutes(app, auth);
   registerApRoutes(app, auth);
+  registerInventoryIssueRoutes(app, auth);
   registerExportCenterRoutes(app, auth);
   registerOrganizationRoutes(app, auth);
   registerOnboardingRoutes(app, auth);

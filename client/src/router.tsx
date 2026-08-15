@@ -6,6 +6,7 @@ import { buildLegacyRedirectRules, type LegacyRedirectRule } from "@/lib/routes/
 import { RouteLoadingBoundary } from "@/app/route-loading-boundary";
 import AuthPage from "@/pages/auth-page";
 import { withProductionBoundary } from "@/components/production-boundary";
+import { withDeveloperToolBoundary } from "@/components/developer-tool-boundary";
 
 function LegacyRedirect({ to }: { to: string }) {
   const suffix = typeof window !== "undefined" ? window.location.search : "";
@@ -96,6 +97,10 @@ const ProductionFuelOperationsPage = withProductionBoundary(FuelOperationsPage, 
 const ProductionInventoryAnalyticsPage = withProductionBoundary(AnalyticsWorkspacePage, "inventory");
 const ProductionFinanceAnalyticsPage = withProductionBoundary(AnalyticsWorkspacePage, "finance");
 const ProductionLogisticsAnalyticsPage = withProductionBoundary(AnalyticsWorkspacePage, "logistics");
+const DeveloperRealTimeUpdatesPage = withDeveloperToolBoundary(RealTimeUpdatesPage);
+const DeveloperSyncTestPage = withDeveloperToolBoundary(SyncTestPage);
+const DeveloperSyncDashboard = withDeveloperToolBoundary(SyncDashboard);
+const DeveloperTestPage = withDeveloperToolBoundary(DevTestPage);
 
 const LEGACY_REDIRECT_RULES: LegacyRedirectRule[] = buildLegacyRedirectRules();
 
@@ -180,9 +185,9 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.admin.documents} component={DocumentsPage} allowedRoles={["manager", "admin"]} />
         <ProtectedRoute path="/uploads/*" component={UploadsPathRedirect} />
         <ProtectedRoute path="/Uploads/*" component={UploadsPathRedirect} />
-        <ProtectedRoute path={APP_ROUTES.admin.realTimeUpdates} component={RealTimeUpdatesPage} allowedRoles={["admin"]} />
-        <ProtectedRoute path={APP_ROUTES.admin.syncTest} component={SyncTestPage} allowedRoles={["admin"]} />
-        <ProtectedRoute path={APP_ROUTES.admin.syncDashboard} component={SyncDashboard} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.realTimeUpdates} component={DeveloperRealTimeUpdatesPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.syncTest} component={DeveloperSyncTestPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.syncDashboard} component={DeveloperSyncDashboard} allowedRoles={["admin"]} />
         <Route path={APP_ROUTES.admin.downloads}>
           <Redirect to={APP_ROUTES.analytics.exportCenter} />
         </Route>
@@ -218,7 +223,7 @@ export function AppRouter() {
             </Route>
           );
         })}
-        <Route path="/dev-test" component={DevTestPage} />
+        <ProtectedRoute path="/dev-test" component={DeveloperTestPage} allowedRoles={["admin"]} />
         <Route path="/auth" component={AuthPage} />
         <Route component={NotFound} />
       </Switch>

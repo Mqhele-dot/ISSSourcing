@@ -35,6 +35,7 @@ export function RequisitionHeaderFields({
   justification,
   notes,
   fieldErrors,
+  requiresDepartment = true,
   readOnly = false,
   onSupplierChange,
   onCurrencyChange,
@@ -61,6 +62,7 @@ export function RequisitionHeaderFields({
   justification: string;
   notes: string;
   fieldErrors: RequisitionFieldErrors;
+  requiresDepartment?: boolean;
   readOnly?: boolean;
   onSupplierChange: (v: number | "") => void;
   onCurrencyChange: (v: string) => void;
@@ -179,7 +181,7 @@ export function RequisitionHeaderFields({
           </div>
         ) : null}
         <div className="space-y-2">
-          <Label htmlFor="req-department">Department</Label>
+          <Label htmlFor="req-department">Department{requiresDepartment ? " *" : ""}</Label>
           <SearchableRecordCombobox
             id="req-department"
             value={departmentId === "" ? "" : String(departmentId)}

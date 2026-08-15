@@ -1,6 +1,6 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -24,6 +24,7 @@ import { useAccent } from "@/components/accent-provider";
 import { useDensity } from "@/components/density-provider";
 import { useAuth } from "@/hooks/use-auth";
 import { useSettings } from "@/hooks/use-settings";
+import { requestJson } from "@/lib/queryClient";
 import { GeneralSettingsForm } from "@/components/settings/general-settings-form";
 import { InventorySettingsForm } from "@/components/settings/inventory-settings-form";
 import { RealtimeSettingsForm } from "@/components/settings/realtime-settings-form";
@@ -77,15 +78,27 @@ export default function SettingsPage() {
   const [isResetDialogOpen, setIsResetDialogOpen] = React.useState(false);
   const [isResettingDemoData, setIsResettingDemoData] = React.useState(false);
 
-  const capabilitiesByRole: Record<string, string[]> = {
-    admin: ["Approve/send/receive POs", "Manage users and settings", "Reset demo data"],
-    manager: ["Approve/send/receive POs", "Assign and resolve exceptions", "Update shipment status"],
-    warehouse_staff: ["Adjust inventory", "Receive inbound shipments", "Review low stock alerts"],
-    viewer: ["View dashboards and reports", "Track shipments and exceptions", "Read-only access"],
-    supplier: ["View assigned POs", "Track shipment progress", "Comment on exceptions"],
-  };
   const roleKey = (user?.role || "viewer").toLowerCase();
-  const roleCapabilities = capabilitiesByRole[roleKey] ?? capabilitiesByRole.viewer;
+  const { data: myAccess } = useQuery<{
+    permissions: Record<string, Record<string, boolean>>;
+    navigationPaths: string[] | null;
+  }>({
+    queryKey: ["/api/permissions/me"],
+    queryFn: () => requestJson("GET", "/api/permissions/me"),
+    enabled: Boolean(user),
+  });
+  const roleCapabilities = React.useMemo(
+    () => Object.entries(myAccess?.permissions ?? {}).flatMap(([resource, permissions]) =>
+      Object.entries(permissions)
+        .filter(([, allowed]) => allowed)
+        .map(([permission]) => `${permission} ${resource.replaceAll("_", " ")}`),
+    ),
+    [myAccess?.permissions],
+  );
+  const highRiskCapabilities = React.useMemo(
+    () => roleCapabilities.filter((capability) => /^(delete|approve|export|manage|update)\s/i.test(capability)),
+    [roleCapabilities],
+  );
   const activeSection = asSectionSlug(location.split("/")[3], SETTINGS_SECTION_SLUGS, "general");
 
   const handleResetDemoData = async () => {
@@ -275,13 +288,24 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Common responsibilities for this role. Server-side permissions still apply to every write action.
+              Effective permissions enforced by the server for the current organization.
             </p>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-              {roleCapabilities.map((capability) => (
-                <li key={capability}>{capability}</li>
-              ))}
-            </ul>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border p-3"><div className="text-2xl font-semibold">{roleCapabilities.length}</div><div className="text-xs text-muted-foreground">Effective permissions</div></div>
+              <div className="rounded-md border p-3"><div className="text-2xl font-semibold">{myAccess?.navigationPaths?.length ?? "All"}</div><div className="text-xs text-muted-foreground">Visible navigation tabs</div></div>
+              <div className="rounded-md border p-3"><div className="text-2xl font-semibold">{highRiskCapabilities.length}</div><div className="text-xs text-muted-foreground">High-risk capabilities</div></div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild type="button" size="sm" variant="outline"><Link href={APP_ROUTES.admin.userRoles}>Manage roles</Link></Button>
+              <Button asChild type="button" size="sm" variant="outline"><Link href={APP_ROUTES.admin.employeeProfiles}>Review effective access</Link></Button>
+            </div>
+            <details className="rounded-md border p-3 text-sm">
+              <summary className="cursor-pointer font-medium">Show effective permission details</summary>
+              <ul className="mt-3 max-h-72 list-disc space-y-1 overflow-auto pl-5 text-muted-foreground">
+                {roleCapabilities.map((capability) => <li key={capability}>{capability}</li>)}
+                {roleCapabilities.length === 0 ? <li>No effective permissions assigned.</li> : null}
+              </ul>
+            </details>
           </CardContent>
         </Card>
       </div>
@@ -379,20 +403,21 @@ export default function SettingsPage() {
 }
 
 function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
-  const { settings, isLoading, error, updateSettings } = useSettings();
+  const { settings, isLoading, error, refetch, updateSettings } = useSettings();
   const currenciesQuery = useQuery({
     queryKey: ["/api/currencies", "settings-control-plane"],
     queryFn: fetchActiveMasterCurrencies,
   });
   const [form, setForm] = React.useState({
-    companyName: settings.companyName ?? "ISSSourcing",
-    currencyCode: (settings.currencyCode ?? "ZAR").toUpperCase(),
-    lowStockDefaultThreshold: String(settings.lowStockDefaultThreshold ?? 10),
-    allowNegativeInventory: Boolean(settings.allowNegativeInventory),
-    requireLocationForItems: Boolean(settings.requireLocationForItems),
+    companyName: settings?.companyName ?? "",
+    currencyCode: (settings?.currencyCode ?? "").toUpperCase(),
+    lowStockDefaultThreshold: settings?.lowStockDefaultThreshold == null ? "" : String(settings.lowStockDefaultThreshold),
+    allowNegativeInventory: Boolean(settings?.allowNegativeInventory),
+    requireLocationForItems: Boolean(settings?.requireLocationForItems),
   });
 
   React.useEffect(() => {
+    if (!settings) return;
     setForm({
       companyName: settings.companyName ?? "ISSSourcing",
       currencyCode: (settings.currencyCode ?? "ZAR").toUpperCase(),
@@ -400,31 +425,34 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
       allowNegativeInventory: Boolean(settings.allowNegativeInventory),
       requireLocationForItems: Boolean(settings.requireLocationForItems),
     });
-  }, [
-    settings.allowNegativeInventory,
-    settings.companyName,
-    settings.currencyCode,
-    settings.lowStockDefaultThreshold,
-    settings.requireLocationForItems,
-  ]);
+  }, [settings]);
 
   const currencyOptions = React.useMemo(
-    () => currencyOptionsForSelect(currenciesQuery.data ?? [], [form.currencyCode, settings.currencyCode]),
-    [currenciesQuery.data, form.currencyCode, settings.currencyCode],
+    () => currencyOptionsForSelect(currenciesQuery.data ?? [], [form.currencyCode, settings?.currencyCode]),
+    [currenciesQuery.data, form.currencyCode, settings?.currencyCode],
   );
   const currencyReady = currenciesQuery.isSuccess && currencyOptions.length > 0;
 
   const save = () => {
     const threshold = Number(form.lowStockDefaultThreshold);
-    if (!Number.isFinite(threshold) || threshold < 1 || !currencyReady) return;
+    if (!settings || !Number.isFinite(threshold) || threshold < 1 || !currencyReady) return;
     updateSettings.mutate({
       companyName: form.companyName.trim() || "ISSSourcing",
       currencyCode: form.currencyCode.trim().toUpperCase(),
+      currencySymbol: new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: form.currencyCode.trim().toUpperCase(),
+        currencyDisplay: "narrowSymbol",
+      }).formatToParts(0).find((part) => part.type === "currency")?.value ?? form.currencyCode.trim().toUpperCase(),
       lowStockDefaultThreshold: Math.trunc(threshold),
       allowNegativeInventory: form.allowNegativeInventory,
       requireLocationForItems: form.requireLocationForItems,
     });
   };
+
+  if (!settings) {
+    return <Card className="mb-6"><CardHeader><CardTitle className="text-base">Production control plane unavailable</CardTitle><CardDescription>No fallback organization values are shown or editable.</CardDescription></CardHeader><CardContent><Button type="button" variant="outline" disabled={isLoading} onClick={() => void refetch()}>{isLoading ? "Loading settings…" : "Retry settings"}</Button></CardContent></Card>;
+  }
 
   return (
     <Card className="mb-6" data-testid="settings-control-plane">

@@ -12,7 +12,8 @@ import { userLoginSchema, userRegistrationSchema } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { routeDebug } from "@/lib/route-debug";
 import { safeInternalNextParam } from "@/lib/safe-internal-path";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, requestJson } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { z } from "zod";
@@ -60,7 +61,6 @@ export default function AuthPage() {
       ? safeInternalNextParam(new URLSearchParams(window.location.search).get("next"))
       : null,
   );
-
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setNextPath(safeInternalNextParam(params.get("next")));
@@ -260,6 +260,15 @@ function LoginForm({
   const [requiresEmailVerification, setRequiresEmailVerification] = useState(false);
   const [resendDialogOpen, setResendDialogOpen] = useState(false);
   const [resendEmail, setResendEmail] = useState("");
+  const runtimeCapabilities = useQuery({
+    queryKey: ["/api/runtime-capabilities"],
+    queryFn: () => requestJson<{ demoMode: boolean; testLoginEnabled?: boolean; demoWalkthroughEnabled?: boolean; developerToolsEnabled?: boolean }>("GET", "/api/runtime-capabilities"),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const demoMode = runtimeCapabilities.data?.demoMode === true;
+  const testLoginEnabled = runtimeCapabilities.data?.testLoginEnabled === true;
+  const showTestUsers = demoMode || testLoginEnabled;
   
   const form = useForm({
     resolver: zodResolver(userLoginSchema),
@@ -346,7 +355,7 @@ onError: (error: unknown) => {
             <AlertTitle className="text-red-600">Login Failed</AlertTitle>
             <AlertDescription className="text-red-600">
               {loginError}
-              {(loginError.includes("Invalid username or password") || loginError.includes("401")) && (
+              {demoMode && (loginError.includes("Invalid username or password") || loginError.includes("401")) && (
                 <span className="block mt-2 text-sm opacity-90">
                   Demo users (admin / planner / viewer) use password <strong>Admin123!</strong>. If you use a database, ensure it is seeded: <code className="text-xs bg-red-100/50 px-1 rounded">npm run db:seed</code>.
                 </span>
@@ -405,10 +414,10 @@ onError: (error: unknown) => {
           </DialogContent>
         </Dialog>
 
-        <div className="mb-4 rounded-md border border-border bg-muted/40 p-3">
-          <p className="text-sm font-medium">Demo users</p>
+        {showTestUsers ? <div className="mb-4 rounded-md border border-border bg-muted/40 p-3">
+          <p className="text-sm font-medium">Quick test access</p>
           <p className="text-xs text-muted-foreground mb-2">
-            Click to autofill credentials for reviewer walkthroughs.
+            Choose a seeded account to autofill its credentials.
           </p>
           <div className="flex flex-wrap gap-2">
             {demoUsers.map((demoUser) => (
@@ -427,7 +436,23 @@ onError: (error: unknown) => {
               </Button>
             ))}
           </div>
-        </div>
+          {testLoginEnabled ? (
+            <Button
+              type="button"
+              className="mt-3 w-full"
+              onClick={() => {
+                const next = safeInternalNextParam(new URLSearchParams(window.location.search).get("next"));
+                const target = next ?? "/operations/control-tower";
+                window.location.assign(`/dev-test-login?redirect=${encodeURIComponent(target)}`);
+              }}
+            >
+              Sign in instantly as Admin
+            </Button>
+          ) : null}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Testing controls are supplied by the local server and are unavailable in production.
+          </p>
+        </div> : null}
         
         <Form {...form}>
           <form onSubmit={onSubmit} className="space-y-4">

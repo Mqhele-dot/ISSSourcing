@@ -178,7 +178,7 @@ export default function MobileHubTasksPage({ preview = false }: { preview?: bool
 
   return (
     <div className="space-y-4 overflow-x-hidden p-4" data-testid="mobile-hub-home-page">
-      <PageHeader title="Operations" description="Phone dashboard for frontline work" />
+      <PageHeader headingLevel={preview ? 2 : 1} title="Operations" description="Phone dashboard for frontline work" />
 
       <div className="grid grid-cols-3 gap-2" aria-label="Operations destinations">
         {overviewLinks.map(({ href, title, icon: Icon }) => (

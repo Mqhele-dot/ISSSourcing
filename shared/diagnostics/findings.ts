@@ -24,6 +24,7 @@ export const diagnosticFindingStatuses = [
 
 export type DiagnosticFindingStatus = (typeof diagnosticFindingStatuses)[number];
 export type DiagnosticFindingSeverity = "info" | "warning" | "error" | "critical";
+export type DiagnosticEvidenceState = "current" | "expected_configuration" | "historical";
 
 export type DiagnosticFinding = {
   id: string;
@@ -42,6 +43,8 @@ export type DiagnosticFinding = {
   targetRoute?: string;
   affectedAction?: string;
   remediation?: string;
+  evidenceState: DiagnosticEvidenceState;
+  requestId?: string;
 };
 
 export type DiagnosticsSummary = {

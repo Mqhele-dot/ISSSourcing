@@ -3,11 +3,22 @@ import { db } from "../../db";
 import { approvalPolicies, type ApprovalPolicy } from "@shared/schema";
 import type { ProcurementRepository } from "./repository";
 
-export function roleMatchesPolicy(policyRole: string | null | undefined, actorRole: string): boolean {
+export function roleMatchesPolicy(
+  policyRole: string | null | undefined,
+  actorRole: string,
+  actorPreferences?: unknown,
+): boolean {
   if (!policyRole) return true;
   const normalizedActor = actorRole.trim().toLowerCase();
   if (!normalizedActor) return false;
   if (normalizedActor === "admin") return true;
+  const customMatch = /^custom:(\d+)$/i.exec(policyRole.trim());
+  if (customMatch) {
+    const preferences = actorPreferences && typeof actorPreferences === "object"
+      ? actorPreferences as { customRoleId?: unknown }
+      : null;
+    return normalizedActor === "custom" && Number(preferences?.customRoleId) === Number(customMatch[1]);
+  }
   const allowedRoles = policyRole
     .split(/[,\s|/]+/)
     .map((role) => role.trim().toLowerCase())

@@ -375,11 +375,11 @@ export default function ContractsPage() {
                       {c.endDate && ` – ${format(new Date(c.endDate), "MMM d, yyyy")}`}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => setViewContract(c)}>
+                      <Button aria-label={`View contract ${c.title}`} variant="ghost" size="sm" onClick={() => setViewContract(c)}>
                         View
                       </Button>
                       <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to edit">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
+                        <Button aria-label={`Edit contract ${c.title}`} variant="ghost" size="sm" onClick={() => openEdit(c)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                       </Can>
@@ -387,6 +387,7 @@ export default function ContractsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          aria-label={`Delete contract ${c.title}`}
                           onClick={() => setDeleteConfirmContract(c)}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />

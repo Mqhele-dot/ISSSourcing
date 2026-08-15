@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface ImageRecognitionStatusResponse {
   status?: string;
   mode?: string;
-  aiProvider?: string;
+  provider?: string | null;
   message?: string;
 }
 
@@ -64,8 +64,8 @@ const ImageRecognitionStatus: React.FC = () => {
   }
 
   const status = data?.status || 'unknown';
-  const mode = data?.mode || 'Unknown';
-  const aiProvider = data?.aiProvider || 'None';
+  const mode = data?.mode ?? null;
+  const provider = data?.provider ?? null;
   const message = data?.message || 'Status information not available';
 
   // UI variants based on status
@@ -91,6 +91,13 @@ const ImageRecognitionStatus: React.FC = () => {
       badgeText: 'Error',
       cardStyles: 'border-red-200 bg-red-50',
     },
+    unavailable: {
+      icon: <Info className="h-5 w-5 text-amber-600" />,
+      title: 'Recognition Setup Required',
+      badgeVariant: 'outline',
+      badgeText: 'Not configured',
+      cardStyles: 'border-amber-200 bg-amber-50',
+    },
     unknown: {
       icon: <Info className="h-5 w-5 text-gray-500" />,
       title: 'Status Unknown',
@@ -113,9 +120,7 @@ const ImageRecognitionStatus: React.FC = () => {
           </span>
           <Badge variant={variant.badgeVariant as "default" | "secondary" | "destructive" | "outline"}>{variant.badgeText}</Badge>
         </CardTitle>
-        <CardDescription>
-          Provider: {aiProvider} | Mode: {mode}
-        </CardDescription>
+        {provider || mode ? <CardDescription>Provider: {provider ?? 'Not configured'} | Mode: {mode ?? 'Not configured'}</CardDescription> : null}
       </CardHeader>
       <CardContent>
         <TooltipProvider>

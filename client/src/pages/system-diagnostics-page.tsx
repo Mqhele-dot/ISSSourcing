@@ -118,11 +118,13 @@ function DiagnosticsWorkspacePanel({
   const workspace = DIAGNOSTIC_WORKSPACES[category];
   const [severityFilter, setSeverityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [evidenceFilter, setEvidenceFilter] = useState("current");
   const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([]);
   const visibleFindings = findings.filter(
     (finding) =>
       (severityFilter === "all" || finding.severity === severityFilter) &&
-      (statusFilter === "all" || finding.status === statusFilter),
+      (statusFilter === "all" || finding.status === statusFilter) &&
+      (evidenceFilter === "all" || finding.evidenceState === evidenceFilter),
   );
   return (
     <Card data-testid={`diagnostics-workspace-${category}`}>
@@ -176,6 +178,10 @@ function DiagnosticsWorkspacePanel({
               <SelectItem value="not_applicable">Not applicable</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={evidenceFilter} onValueChange={setEvidenceFilter}>
+            <SelectTrigger className="w-48" data-testid={`diagnostics-evidence-filter-${category}`}><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="current">Current findings</SelectItem><SelectItem value="expected_configuration">Expected configuration</SelectItem><SelectItem value="historical">History</SelectItem><SelectItem value="all">All evidence</SelectItem></SelectContent>
+          </Select>
           <span className="self-center text-xs text-muted-foreground" data-testid={`diagnostics-visible-count-${category}`}>
             {visibleFindings.length} of {findings.length} findings
           </span>
@@ -202,11 +208,14 @@ function DiagnosticsWorkspacePanel({
               />
               <Badge variant={row.severity === "critical" || row.severity === "error" ? "destructive" : "outline"}>{row.severity}</Badge>
               <Badge variant="secondary" className="capitalize">{statusLabel(row.status)}</Badge>
+              <Badge variant="outline" className="capitalize">{row.evidenceState.replaceAll("_", " ")}</Badge>
               <span className="font-medium">{row.title}</span>
               {row.occurrences > 1 ? <span className="text-xs text-muted-foreground">{row.occurrences} occurrences</span> : null}
+              <span className="text-xs text-muted-foreground">Last seen {new Date(row.lastSeen).toLocaleString()}</span>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">{row.message}</p>
             {row.affectedRoute || row.affectedAction ? <p className="mt-1 text-xs text-muted-foreground">{row.affectedAction ?? "Action"} {row.affectedRoute ?? ""}</p> : null}
+            {row.requestId ? <p className="mt-1 text-xs text-muted-foreground">Request ID: {row.requestId}</p> : null}
             {row.remediation ? <p className="mt-2 text-sm"><span className="font-medium">Next step:</span> {row.remediation}</p> : null}
             {findingTargetRoute(row) ? (
               <Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => {
@@ -643,6 +652,12 @@ export default function SystemDiagnosticsPage() {
         </CardContent>
       </Card>
 
+      <details className="rounded-lg border bg-card" data-testid="diagnostics-advanced-evidence">
+        <summary className="cursor-pointer px-4 py-3 font-medium sm:px-6">
+          Advanced browser diagnostics and support evidence
+          <span className="ml-2 text-xs font-normal text-muted-foreground">Open only when deeper troubleshooting is needed</span>
+        </summary>
+        <div className="space-y-6 border-t p-4 sm:p-6">
       <Card data-testid="diagnostics-live-events">
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="text-base">Live error monitor</CardTitle>
@@ -909,6 +924,9 @@ export default function SystemDiagnosticsPage() {
           )}
         </CardContent>
       </Card>
+
+        </div>
+      </details>
 
       {deploymentMode === "packaged" ? (
         <p className="text-xs text-muted-foreground">

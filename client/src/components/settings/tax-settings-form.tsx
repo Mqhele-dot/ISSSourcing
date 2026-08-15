@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Receipt } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
+import { SettingsAuthorityState } from "./settings-authority-state";
 import {
   Select,
   SelectContent,
@@ -55,35 +56,34 @@ const countryCodes = [
 ];
 
 export function TaxSettingsForm() {
-  const { settings, updateSettings } = useSettings();
+  const { settings, isLoading, error, refetch, updateSettings } = useSettings();
 
   // Create form
   const form = useForm<TaxSettingsFormType>({
     resolver: zodResolver(taxSettingsSchema),
     defaultValues: {
-      enableVat: settings.enableVat ?? false,
-      defaultVatCountry: settings.defaultVatCountry || "US",
-      showPricesWithVat: settings.showPricesWithVat ?? true,
+      enableVat: settings?.enableVat ?? false,
+      defaultVatCountry: settings?.defaultVatCountry || "",
+      showPricesWithVat: settings?.showPricesWithVat ?? false,
     },
   });
 
   React.useEffect(() => {
+    if (!settings) return;
     form.reset({
-      enableVat: settings.enableVat ?? false,
-      defaultVatCountry: settings.defaultVatCountry || "US",
-      showPricesWithVat: settings.showPricesWithVat ?? true,
+      enableVat: settings?.enableVat ?? false,
+      defaultVatCountry: settings?.defaultVatCountry || "",
+      showPricesWithVat: settings?.showPricesWithVat ?? false,
     });
-  }, [
-    form,
-    settings.defaultVatCountry,
-    settings.enableVat,
-    settings.showPricesWithVat,
-  ]);
+  }, [form, settings]);
 
   // Submit handler
   function onSubmit(data: TaxSettingsFormType) {
+    if (!settings) return;
     updateSettings.mutate(data);
   }
+
+  if (!settings) return <SettingsAuthorityState loading={isLoading} error={error} onRetry={() => void refetch()} />;
 
   return (
     <Card>

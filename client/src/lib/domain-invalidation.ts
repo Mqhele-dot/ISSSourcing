@@ -11,6 +11,8 @@ import {
 
 /** Documented legacy roots mirrored in helpers (dual-key / migration aid). */
 export const LEGACY_QUERY_PREFIXES = {
+  requisitionMdmContext: ["/api/mdm/defaults/requisition-context"],
+  purchaseOrderMdmContext: ["/api/mdm/defaults/po-context"],
   suppliers: ["/api/suppliers"],
   contracts: ["/api/contracts"],
   requisitions: ["/api/purchase-requisitions"],
@@ -136,7 +138,11 @@ export async function invalidateMasterDataDomain(
   queryClient: QueryClient,
   kind: MasterDataDomainKind = "general",
 ): Promise<void> {
-  const tasks: Promise<unknown>[] = [invalidateKeyPrefix(queryClient, qk.masterData)];
+  const tasks: Promise<unknown>[] = [
+    invalidateKeyPrefix(queryClient, qk.masterData),
+    invalidateKeyPrefix(queryClient, LEGACY_QUERY_PREFIXES.requisitionMdmContext),
+    invalidateKeyPrefix(queryClient, LEGACY_QUERY_PREFIXES.purchaseOrderMdmContext),
+  ];
 
   const commercialPoDeps: readonly (readonly string[])[] = [
     qk.suppliers as unknown as readonly string[],
@@ -232,6 +238,8 @@ export async function invalidateSupplierDomain(queryClient: QueryClient, supplie
 
   await Promise.all([
     invalidateKeyPrefix(queryClient, qk.suppliers),
+    invalidateKeyPrefix(queryClient, LEGACY_QUERY_PREFIXES.requisitionMdmContext),
+    invalidateKeyPrefix(queryClient, LEGACY_QUERY_PREFIXES.purchaseOrderMdmContext),
     invalidateMany(queryClient, [
       qk.contracts as unknown as readonly string[],
       qk.requisitions as unknown as readonly string[],
@@ -254,6 +262,8 @@ export async function invalidateSupplierDomain(queryClient: QueryClient, supplie
 export async function invalidateContractDomain(queryClient: QueryClient): Promise<void> {
   await Promise.all([
     invalidateKeyPrefix(queryClient, qk.contracts),
+    invalidateKeyPrefix(queryClient, LEGACY_QUERY_PREFIXES.requisitionMdmContext),
+    invalidateKeyPrefix(queryClient, LEGACY_QUERY_PREFIXES.purchaseOrderMdmContext),
     invalidateMany(queryClient, [
       LEGACY_QUERY_PREFIXES.contracts,
       LEGACY_QUERY_PREFIXES.suppliers,

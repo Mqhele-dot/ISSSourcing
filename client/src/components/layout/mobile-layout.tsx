@@ -14,10 +14,11 @@ const nav = [
 export function MobileLayout({ children }: { children: React.ReactNode }) {
   const [loc] = useLocation();
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
-      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-[4.5rem]">{children}</main>
+    <div className="min-h-dvh bg-muted/30">
+      <div className="mx-auto flex h-dvh w-full max-w-[30rem] flex-col bg-background sm:border-x sm:border-border sm:shadow-xl">
+      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-[calc(4.5rem+env(safe-area-inset-bottom))] pt-[env(safe-area-inset-top)]">{children}</main>
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur-md"
+        className="fixed bottom-0 left-1/2 z-40 flex w-full max-w-[30rem] -translate-x-1/2 border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur-md sm:border-x"
         aria-label="Mobile primary"
       >
         {nav.map(({ href, label, icon: Icon }) => {
@@ -37,6 +38,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           );
         })}
       </nav>
+      </div>
     </div>
   );
 }

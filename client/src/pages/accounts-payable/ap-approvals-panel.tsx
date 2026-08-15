@@ -93,7 +93,7 @@ export function ApApprovalsPanel({
                 {invoices.slice(0, 16).map((invoice) => (
                   <TableRow key={invoice.id}>
                     <TableCell>
-                      <div className="font-medium">{invoice.invoiceNumber}</div>
+                      <div className="font-medium">{invoice.invoiceNumber || `Invoice #${invoice.id}`}</div>
                       <div className="text-xs text-muted-foreground">PO #{invoice.purchaseOrderId ?? "—"}</div>
                     </TableCell>
                     <TableCell>
@@ -194,7 +194,7 @@ export function ApApprovalsPanel({
           ) : null}
           <QueueList
             title="Invoices waiting for approval"
-            rows={approvalQueue.invoices.map((invoice) => invoice.invoiceNumber)}
+            rows={approvalQueue.invoices.map((invoice) => invoice.invoiceNumber || `Invoice #${invoice.id}`)}
           />
           <QueueList
             title="Payment batches waiting for approval"

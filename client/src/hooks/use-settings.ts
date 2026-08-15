@@ -2,7 +2,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { AppSettings, AppSettingsFormWithVat } from "@shared/schema";
-import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallback";
 
 // Define database settings type (includes form-only fields from database-settings-form)
 export type DatabaseSettings = {
@@ -26,48 +25,11 @@ export { AppSettings, AppSettingsFormWithVat };
 export function useSettings() {
   const { toast } = useToast();
 
-  const { data: settings, isLoading, error } = useQuery<AppSettings>({
+  const { data: settings, isLoading, isError, error, refetch } = useQuery<AppSettings>({
     queryKey: ["/api/settings"],
     staleTime: 300000, // 5 minutes
     refetchOnWindowFocus: false,
   });
-
-  // Default settings if API call fails or is loading
-  const defaultSettings: AppSettings = {
-    id: 1,
-    organizationId: 1,
-    companyName: "ISSSourcing",
-    companyLogo: null,
-    primaryColor: "#0f766e",
-    dateFormat: "YYYY-MM-DD",
-    timeFormat: "HH:mm",
-    currencySymbol: "$",
-    currencyCode: REPORTING_CURRENCY_FALLBACK_CODE,
-    lowStockDefaultThreshold: 10,
-    allowNegativeInventory: false,
-    requireLocationForItems: true,
-    allowTransfersBetweenWarehouses: true,
-    realTimeUpdatesEnabled: true,
-    lowStockAlertFrequency: 30,
-    autoReorderEnabled: false,
-    forecastingEnabled: true,
-    forecastDays: 30,
-    seasonalAdjustmentEnabled: true,
-    defaultWarehouseId: null,
-    enableVat: false,
-    defaultVatCountry: "US",
-    showPricesWithVat: true,
-    businessCountryCode: "US",
-    taxMode: "none",
-    productOnboardingCompletedAt: null,
-    productOnboardingState: null,
-    databaseSettings: null,
-    updatedAt: new Date(),
-    availableUnits: ["each", "kg", "liters", "boxes", "pieces", "meters", "pairs", "sets"],
-    defaultUnit: "each",
-    enableCustomTags: true,
-    defaultTags: ["featured", "seasonal", "sale", "new", "discontinued"],
-  };
 
   const updateSettings = useMutation({
     mutationFn: async (newSettings: Partial<AppSettings>) => {
@@ -76,6 +38,15 @@ export function useSettings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdm/defaults/requisition-context"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdm/defaults/po-context"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = String(query.queryKey[0] ?? "");
+          return key.startsWith("/api/v2/procurement/") || key.startsWith("/api/sourcing/") || key.startsWith("/api/approval-suggestions");
+        },
+      });
       toast({
         title: "Settings updated",
         description: "Your settings have been saved successfully.",
@@ -90,11 +61,12 @@ export function useSettings() {
     },
   });
 
-  // Return the actual settings if available, otherwise return default settings
   return {
-    settings: settings || defaultSettings,
+    settings: settings ?? null,
     isLoading,
+    isError,
     error,
+    refetch,
     updateSettings,
   };
 }
