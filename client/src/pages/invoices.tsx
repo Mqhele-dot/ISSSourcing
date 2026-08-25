@@ -242,7 +242,7 @@ export default function InvoicesPage() {
   const [newLineUnitPrice, setNewLineUnitPrice] = useState("");
   const [newLineTaxRate, setNewLineTaxRate] = useState("0");
   const [invoiceExporting, setInvoiceExporting] = useState(false);
-  const { queryState, setQueryState } = useQueryState({ page: "1", pageSize: "25", q: "", status: "all", supplier: "all", from: "", to: "", sort: "created_desc" });
+  const { queryState, setQueryState } = useQueryState({ page: "1", pageSize: "25", q: "", status: "all", supplier: "all", from: "", to: "", sort: "created_desc", attention: "" });
   const invoicePageSize = [25, 50, 100].includes(Number(queryState.pageSize)) ? Number(queryState.pageSize) : 25;
   const invoicePageNumber = Math.max(1, Number(queryState.page) || 1);
   const invoiceListParams = new URLSearchParams({
@@ -255,6 +255,7 @@ export default function InvoicesPage() {
   if (queryState.supplier && queryState.supplier !== "all") invoiceListParams.set("supplierId", String(queryState.supplier));
   if (queryState.from) invoiceListParams.set("from", String(queryState.from));
   if (queryState.to) invoiceListParams.set("to", String(queryState.to));
+  if (queryState.attention === "due") invoiceListParams.set("eligibility", "due");
 
   const exportInvoices = async (format: "pdf" | "csv" | "excel" | "docx") => {
     if (invoiceExporting) return;

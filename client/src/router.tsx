@@ -26,6 +26,8 @@ const ContractsPage = lazy(() => import("@/pages/contracts"));
 const Reports = lazy(() => import("@/pages/reports"));
 const InvoicesPage = lazy(() => import("@/pages/invoices"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
+const WorkflowGovernancePage = lazy(() => import("@/pages/workflow-governance"));
+const CompanySetupPage = lazy(() => import("@/pages/company-setup-page"));
 const UserRolesPage = lazy(() => import("@/pages/user-roles"));
 const SubscriptionPage = lazy(() => import("@/pages/subscription"));
 const ReorderPage = lazy(() => import("@/pages/reorder"));
@@ -49,11 +51,15 @@ const WarehouseOperationsPage = lazy(() => import("@/pages/warehouse-operations"
 const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
 const SupplierPortalPage = lazy(() => import("@/pages/supplier-portal"));
 const SourcingPage = lazy(() => import("@/pages/sourcing"));
+const QuotationsPage = lazy(() => import("@/pages/quotations"));
+const CommercialQuotationsPage = lazy(() => import("@/pages/commercial-quotations"));
 const DocumentsPage = lazy(() => import("@/pages/documents"));
 const UploadsPathRedirect = lazy(() => import("@/pages/uploads-redirect"));
 const ControlTowerPage = lazy(() => import("@/pages/control-tower"));
 const FuelOperationsPage = lazy(() => import("@/pages/fuel-operations"));
 const AccountsPayablePage = lazy(() => import("@/pages/accounts-payable"));
+const GeneralLedgerPage = lazy(() => import("@/pages/general-ledger"));
+const AccountsReceivablePage = lazy(() => import("@/pages/accounts-receivable"));
 const AccountsPayableRedirectToIntake = lazy(() => import("@/pages/accounts-payable/accounts-payable-redirect-to-intake"));
 const AnalyticsWorkspacePage = lazy(() => import("@/pages/analytics-workspace"));
 const SavedReportsPage = lazy(() => import("@/pages/saved-reports"));
@@ -135,6 +141,9 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.analytics.procurement} component={AnalyticsWorkspacePage} />
         <ProtectedRoute path={APP_ROUTES.analytics.finance} component={ProductionFinanceAnalyticsPage} />
         <ProtectedRoute path={APP_ROUTES.analytics.logistics} component={ProductionLogisticsAnalyticsPage} />
+        <ProtectedRoute path={APP_ROUTES.analytics.suppliers} component={AnalyticsWorkspacePage} />
+        <ProtectedRoute path={APP_ROUTES.analytics.exceptions} component={AnalyticsWorkspacePage} />
+        <ProtectedRoute path={APP_ROUTES.analytics.diagnostics} component={AnalyticsWorkspacePage} allowedRoles={["admin"]} />
         <ProtectedRoute path={APP_ROUTES.analytics.reports} component={Reports} />
         <ProtectedRoute path="/analytics/reports/:tab" component={Reports} />
         <ProtectedRoute path={APP_ROUTES.analytics.savedReports} component={SavedReportsPage} />
@@ -160,7 +169,17 @@ export function AppRouter() {
 
         <ProtectedRoute path={`${APP_ROUTES.procurement.sourcing}/:id`} component={SourcingPage} />
         <ProtectedRoute path={APP_ROUTES.procurement.sourcing} component={SourcingPage} />
+        <ProtectedRoute path={APP_ROUTES.procurement.quotationNew} component={CommercialQuotationsPage} />
+        <ProtectedRoute path={`${APP_ROUTES.procurement.commercialQuotations}/:id/edit`} component={CommercialQuotationsPage} />
+        <ProtectedRoute path={`${APP_ROUTES.procurement.commercialQuotations}/:id`} component={CommercialQuotationsPage} />
+        <ProtectedRoute path={APP_ROUTES.procurement.commercialQuotations} component={CommercialQuotationsPage} />
+        <ProtectedRoute path={APP_ROUTES.procurement.supplierQuotationNew} component={QuotationsPage} />
+        <ProtectedRoute path={`${APP_ROUTES.procurement.quotations}/:id`} component={QuotationsPage} />
+        <ProtectedRoute path={APP_ROUTES.procurement.quotations} component={QuotationsPage} />
         <ProtectedRoute path={APP_ROUTES.procurement.orders} component={PurchasePage} />
+        <Route path={APP_ROUTES.procurement.orderNew}>
+          <LegacyRedirect to={APP_ROUTES.procurement.requisitionNew} />
+        </Route>
         <ProtectedRoute path={`${APP_ROUTES.procurement.orders}/:po`} component={OrdersPage} />
         <ProtectedRoute path={APP_ROUTES.procurement.requisitions} component={PurchasePage} />
         <ProtectedRoute path={APP_ROUTES.procurement.requisitionNew} component={RequisitionFormPage} />
@@ -171,6 +190,8 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.procurement.supplierPortal} component={SupplierPortalPage} />
 
         <ProtectedRoute path={APP_ROUTES.finance.invoices} component={ProductionInvoicesPage} />
+        <ProtectedRoute path={APP_ROUTES.finance.generalLedger} component={GeneralLedgerPage} />
+        <ProtectedRoute path={APP_ROUTES.finance.accountsReceivable} component={AccountsReceivablePage} />
         <ProtectedRoute path="/finance/accounts-payable/:section" component={ProductionAccountsPayablePage} />
         <ProtectedRoute path={APP_ROUTES.finance.accountsPayable} component={ProductionAccountsPayableRedirect} />
         <ProtectedRoute path={APP_ROUTES.finance.approvalPolicies} component={ApprovalPoliciesPage} />
@@ -192,6 +213,8 @@ export function AppRouter() {
           <Redirect to={APP_ROUTES.analytics.exportCenter} />
         </Route>
         <ProtectedRoute path={APP_ROUTES.admin.onboarding} component={OnboardingPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.companySetup} component={CompanySetupPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.workflows} component={WorkflowGovernancePage} allowedRoles={["admin"]} />
         <ProtectedRoute path={APP_ROUTES.admin.settings} component={SettingsPage} allowedRoles={["admin"]} />
         <ProtectedRoute path={APP_ROUTES.admin.settingsSection(":section")} component={SettingsPage} allowedRoles={["admin"]} />
         <ProtectedRoute path={APP_ROUTES.admin.userRoles} component={UserRolesPage} allowedRoles={["admin"]} />

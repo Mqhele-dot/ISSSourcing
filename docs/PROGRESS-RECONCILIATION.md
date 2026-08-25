@@ -101,3 +101,12 @@ This file is informational; authoritative counts live in PROGRESS-REPORT after r
 | Diagnostics dedupe + routes | `shared/diagnostics/event-dedupe.ts`, `diagnostics-store.ts`, `queryClient.ts`, `self-checks.ts`; `diagnostics-route-monitor.tsx`; `scripts/test-route-diagnostics.ts` |
 | AP batch segregation | `register-ap-routes.ts` 403 `PAYMENT_BATCH_SELF_APPROVAL_BLOCKED`; `ap-payments-panel.tsx` |
 | **Remaining gap** | Full ERP partial receiving / GRN accounting and inventory settlement beyond current operational receive + PO progress |
+
+## 2026-08-24 — Analytics workspace completion
+
+| Item | Evidence |
+|------|----------|
+| Tenant analytics API | `analytics-insights-service.ts`, nine `/api/analytics/:area` registrations, structured filter validation and partial failures |
+| Decision UI | `analytics-insights-page.tsx`: KPI cards, charts, recommendations, bounded tables, filters, quality warnings, export/copy/save/schedule actions |
+| Navigation | New Suppliers, Exceptions, and Diagnostics analytics routes; all nine section tabs use canonical route constants |
+| Verification | `npm run test:analytics-contracts`, TypeScript/build gates, and live Overview/Suppliers/filter browser checks |

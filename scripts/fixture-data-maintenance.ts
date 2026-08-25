@@ -2,6 +2,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { pool } from "../server/db";
+import { FIXTURE_PREDICATES } from "../server/diagnostics/fixture-definition-catalog";
 
 type TargetDefinition = { table: string; reason: string; predicate: string };
 type ForeignKeyEdge = { parentTable: string; childTable: string; childColumn: string };
@@ -10,29 +11,29 @@ const targets: TargetDefinition[] = [
   {
     table: "users",
     reason: "interrupted subscription runtime starter-user fixtures",
-    predicate: "username ~ '^subrt-[0-9]+-[a-f0-9]{8}-' AND full_name = 'Blocked Starter User'",
+    predicate: FIXTURE_PREDICATES.users,
   },
   { table: "supplier_contracts", reason: "RBAC test contracts", predicate: "title = 'RBAC test contract'" },
-  { table: "approval_policies", reason: "AP workflow/control policies", predicate: "name ~ '^(AP Workflow|AP Test|AP Invalid)'" },
+  { table: "approval_policies", reason: "AP workflow/control policies", predicate: FIXTURE_PREDICATES.approvalPolicies },
   {
     table: "sourcing_events",
     reason: "runtime and browser sourcing events",
-    predicate: "title ~ '^(Runtime RFQ|E2E Controlled RFQ) '",
+    predicate: FIXTURE_PREDICATES.sourcingEvents,
   },
   {
     table: "purchase_requisitions",
     reason: "runtime workflow requisitions",
-    predicate: "requisition_number LIKE 'REQ-WF-%' OR requisition_number ~ '^(SUBRT-|RT-|RUNTIME-)' OR notes ILIKE '%workflow proof%' OR notes ILIKE 'AP workflow smoke test%' OR justification ILIKE 'Runtime dependency proof%'",
+    predicate: `(${FIXTURE_PREDICATES.requisitions}) OR notes ILIKE '%workflow proof%' OR notes ILIKE 'AP workflow smoke test%' OR justification ILIKE 'Runtime dependency proof%'`,
   },
   {
     table: "purchase_orders",
     reason: "purchase orders converted from runtime workflow requisitions",
-    predicate: "order_number ~ '^(SUBRT-|RT-|RUNTIME-)' OR requisition_id IN (SELECT id FROM purchase_requisitions WHERE requisition_number LIKE 'REQ-WF-%' OR requisition_number ~ '^(SUBRT-|RT-|RUNTIME-)' OR notes ILIKE '%workflow proof%' OR notes ILIKE 'AP workflow smoke test%' OR justification ILIKE 'Runtime dependency proof%')",
+    predicate: `(${FIXTURE_PREDICATES.purchaseOrders}) OR requisition_id IN (SELECT id FROM purchase_requisitions WHERE (${FIXTURE_PREDICATES.requisitions}) OR notes ILIKE '%workflow proof%' OR notes ILIKE 'AP workflow smoke test%' OR justification ILIKE 'Runtime dependency proof%')`,
   },
   {
     table: "invoices",
     reason: "AP runtime and browser invoices",
-    predicate: "invoice_number ~ '^(AP-INV-|AP-CTRL-|AP-DUP-|INV-MATCH-ap-|INV-UI-MATCH-uie2e-ap-|SUBRT-|RT-|RUNTIME-)'",
+    predicate: FIXTURE_PREDICATES.invoices,
   },
   {
     table: "ap_payment_batches",
@@ -57,13 +58,14 @@ const targets: TargetDefinition[] = [
         WHERE invoice_number ~ '^(AP-INV-|AP-CTRL-|AP-DUP-|INV-MATCH-ap-|INV-UI-MATCH-uie2e-ap-)'
       )`,
   },
-  { table: "inventory_items", reason: "dependency/workflow items", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)'" },
-  { table: "suppliers", reason: "dependency/workflow suppliers", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Supplier ' OR supplier_code ~* '^subrt-'" },
+  { table: "inventory_items", reason: "dependency/workflow items", predicate: FIXTURE_PREDICATES.inventoryItems },
+  { table: "suppliers", reason: "dependency/workflow suppliers", predicate: FIXTURE_PREDICATES.suppliers },
   { table: "departments", reason: "dependency/workflow departments", predicate: "name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Department '" },
-  { table: "warehouses", reason: "workflow warehouses", predicate: "name ~ '^(Workflow|Runtime|Propagation|Sourcing) Warehouse ' OR code ~* '^subrt-'" },
-  { table: "units_of_measure", reason: "dependency/workflow UOMs", predicate: "code ~ '^(DEP-(EA|BOX)-|EA-(ap|apx|rcv|over)-|EA-[0-9]{8}$)'" },
-  { table: "tax_codes", reason: "dependency/workflow tax codes", predicate: "code ~ '^(DEP-VAT-|VAT-(ap|apx|rcv|over)-)'" },
-  { table: "mdm_cost_centres", reason: "dependency/workflow cost centres", predicate: "code ~ '^(DEP-CC|CC-(ap|apx|rcv|over)-)'" },
+  // `warehouses` intentionally uses `name`; this table has no `code` column.
+  { table: "warehouses", reason: "workflow warehouses", predicate: FIXTURE_PREDICATES.warehouses },
+  { table: "units_of_measure", reason: "dependency/workflow UOMs", predicate: FIXTURE_PREDICATES.unitsOfMeasure },
+  { table: "tax_codes", reason: "dependency/workflow tax codes", predicate: FIXTURE_PREDICATES.taxCodes },
+  { table: "mdm_cost_centres", reason: "dependency/workflow cost centres", predicate: FIXTURE_PREDICATES.costCentres },
   {
     table: "mdm_change_requests",
     reason: "runtime MDM stewardship proofs",
@@ -130,9 +132,30 @@ async function tableExists(table: string): Promise<boolean> {
   return result.rows[0]?.exists === true;
 }
 
-async function targetIds(definition: TargetDefinition): Promise<number[]> {
+async function tableHasColumn(table: string, column: string): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2) AS exists`,
+    [table, column],
+  );
+  return result.rows[0]?.exists === true;
+}
+
+async function targetIds(definition: TargetDefinition, tenantId: number): Promise<number[]> {
   if (!(await tableExists(definition.table))) return [];
-  const result = await pool.query(`SELECT id FROM ${quoteIdentifier(definition.table)} WHERE ${definition.predicate} ORDER BY id`);
+  let tenantPredicate = "TRUE";
+  if (await tableHasColumn(definition.table, "organization_id")) {
+    tenantPredicate = "organization_id = $1";
+  } else if (definition.table === "users") {
+    tenantPredicate = "EXISTS (SELECT 1 FROM organization_members fixture_member WHERE fixture_member.user_id = users.id AND fixture_member.organization_id = $1)";
+  } else if (definition.table === "ap_payment_batch_items") {
+    tenantPredicate = "EXISTS (SELECT 1 FROM invoices fixture_invoice WHERE fixture_invoice.id = ap_payment_batch_items.invoice_id AND fixture_invoice.organization_id = $1)";
+  } else if (definition.table === "mdm_change_request_steps" || definition.table === "mdm_change_request_comments") {
+    tenantPredicate = `EXISTS (SELECT 1 FROM mdm_change_requests fixture_request WHERE fixture_request.id = ${quoteIdentifier(definition.table)}.change_request_id AND fixture_request.organization_id = $1)`;
+  }
+  const result = await pool.query(
+    `SELECT id FROM ${quoteIdentifier(definition.table)} WHERE (${definition.predicate}) AND (${tenantPredicate}) ORDER BY id`,
+    tenantPredicate === "TRUE" ? [] : [tenantId],
+  );
   return result.rows.map((row) => Number(row.id)).filter(Number.isFinite);
 }
 
@@ -200,9 +223,18 @@ async function main(): Promise<void> {
   const outputFile = path.resolve(argument("output") ?? path.join("tmp", `fixture-data-${Date.now()}.json`));
   const selected = new Map<string, Set<number>>();
   const reasons: Record<string, string[]> = {};
+  const requestedTenantId = Number(argument("tenant-id"));
+  let tenantId = Number.isInteger(requestedTenantId) && requestedTenantId > 0 ? requestedTenantId : 0;
+  if (!tenantId) {
+    const organizations = await pool.query<{ id: number }>("SELECT id FROM organizations WHERE active IS DISTINCT FROM FALSE ORDER BY id LIMIT 2");
+    if (organizations.rows.length !== 1) {
+      throw new Error("Fixture audit is tenant-scoped. Supply --tenant-id=<organization id> when more than one organization exists.");
+    }
+    tenantId = Number(organizations.rows[0].id);
+  }
 
   for (const definition of targets) {
-    const ids = await targetIds(definition);
+    const ids = await targetIds(definition, tenantId);
     if (!ids.length) continue;
     selected.set(definition.table, new Set(ids));
     reasons[definition.table] = [...(reasons[definition.table] ?? []), definition.reason];
@@ -213,6 +245,7 @@ async function main(): Promise<void> {
   const expandedCounts = Object.fromEntries([...selected].map(([table, ids]) => [table, ids.size]));
   const report = {
     generatedAt: new Date().toISOString(),
+    tenantId,
     mode: apply ? "apply" : "audit",
     directCounts,
     expandedCounts,

@@ -87,6 +87,17 @@ async function main() {
   const quote = await apiJsonRequest(`/sourcing/supplier/events/${eventId}/quotes`, { method: "POST", cookie: supplierCookie, headers: { "Idempotency-Key": key("quote") }, body: { currencyCode: "ZAR", validityDate: new Date(Date.now() + 30 * 86400000).toISOString(), paymentTerms: "Net 30", deliveryDays: 7, lines: [{ eventLineId: supplierDetails.lines[0].id, quantity: 2, unitPrice: 120, taxAmount: 36, freightAmount: 10, compliant: true }] } });
   assert.equal(quote.status, 201, `supplier quote failed: ${JSON.stringify(quote.json)}`);
 
+  const buyerCapture = await apiJsonRequest("/procurement/quotations", { method: "POST", cookie: adminCookie, headers: { "Idempotency-Key": key("buyer-capture") }, body: { eventId, supplierId: fixture.supplierId, currencyCode: "ZAR", validityDate: new Date(Date.now() + 30 * 86400000).toISOString(), paymentTerms: "Net 30", deliveryDays: 6, notes: "Revision received by controlled email channel", lines: [{ eventLineId: supplierDetails.lines[0].id, quantity: 2, unitPrice: 118, taxAmount: 35.4, freightAmount: 10, compliant: true }] } });
+  assert.equal(buyerCapture.status, 201, `buyer quotation capture failed: ${JSON.stringify(buyerCapture.json)}`);
+  const capturedQuoteId = unwrap<{ quote: { id: number; version: number } }>(buyerCapture.json, "buyer quotation capture").quote.id;
+  const quotationList = await apiJsonRequest(`/v2/procurement/quotations?page=1&pageSize=25&eventId=${eventId}&sort=newest`, { cookie: adminCookie });
+  assert.equal(quotationList.status, 200, `quotation list failed: ${JSON.stringify(quotationList.json)}`);
+  const quotationPage = unwrap<{ items: Array<{ id: number }>; total: number }>(quotationList.json, "quotation list");
+  assert.equal(quotationPage.total, 2, "quotation history should preserve the superseded supplier version and captured revision");
+  assert.ok(quotationPage.items.some((entry) => entry.id === capturedQuoteId), "captured quotation should appear in the bounded buyer list");
+  const quotationDetail = await apiJsonRequest(`/procurement/quotations/${capturedQuoteId}`, { cookie: adminCookie });
+  assert.equal(quotationDetail.status, 200, `quotation detail failed: ${JSON.stringify(quotationDetail.json)}`);
+
   const close = await apiJsonRequest(`/sourcing/events/${eventId}/close`, { method: "POST", cookie: adminCookie, headers: { "Idempotency-Key": key("close") }, body: {} });
   assert.equal(close.status, 200, `RFQ close failed: ${JSON.stringify(close.json)}`);
   const comparison = unwrap<Array<{ quote: { id: number }; lines: Array<{ id: number; eventLineId: number }> }>>((await apiJsonRequest(`/sourcing/events/${eventId}/comparison`, { cookie: adminCookie })).json, "quote comparison");
@@ -115,7 +126,7 @@ async function main() {
   const audit = await pool.query<{ action: string; event_hash: string; previous_hash: string | null }>("SELECT action, event_hash, previous_hash FROM audit_logs WHERE organization_id = 1 AND resource_type IN ('sourcing_event', 'supplier_quote', 'sourcing_award') AND resource_id IN ($1, $2) ORDER BY created_at", [eventId, awardId]);
   assert.ok(audit.rows.length >= 6, "sourcing workflow should create append-only audit evidence");
   assert.ok(audit.rows.every((row) => row.event_hash), "every sourcing audit event must be hash chained");
-  console.log("  ok tenant-scoped event, supplier quote, weighted evaluation, independent award, PO conversion, and audit chain");
+  console.log("  ok tenant-scoped event, supplier and buyer-captured quotation versions, bounded review, weighted evaluation, independent award, PO conversion, and audit chain");
   console.log("\nStrategic sourcing runtime workflow passed.");
 }
 

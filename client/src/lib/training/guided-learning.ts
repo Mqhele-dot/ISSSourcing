@@ -93,6 +93,18 @@ const GUIDE_OVERRIDES: Record<string, GuideOverride> = {
     watchFor: "Do not award from price alone when lead time, compliance, or service materially changes value.",
     selectors: ["main"],
   },
+  [APP_ROUTES.procurement.quotations]: {
+    whyItMatters: "Supplier quotations preserve comparable pricing, delivery, tax, and compliance evidence before an award is made.",
+    instructions: ["Choose an open RFQ and one of its invited suppliers.", "Capture every requested line, including freight, tax, promised dates, and exceptions.", "Review the reporting-currency total, then use the RFQ comparison workspace for evaluation and award."],
+    watchFor: "Capturing a quotation records supplier evidence; it does not approve an award or create a purchase order.",
+    selectors: ["main"],
+  },
+  [APP_ROUTES.procurement.commercialQuotations]: {
+    whyItMatters: "Commercial quotations turn approved prices, taxes, currency conversion, branding, and acceptance terms into a controlled customer offer.",
+    instructions: ["Confirm Company Setup branding and active Master Data first.", "Build lines from Inventory or explicitly identify non-stock and service content.", "Review reporting currency, acceptance evidence, validity, legal conditions, and approval before issuing the PDF."],
+    watchFor: "Supplier RFQ responses are inbound sourcing evidence; commercial quotations are outbound customer offers and must remain separate.",
+    selectors: ["main"],
+  },
   [APP_ROUTES.procurement.orders]: {
     whyItMatters: "The PO is the controlled commercial instruction connecting demand, supplier, receipt, and invoice matching.",
     instructions: ["Filter the order desk to the status or supplier you own.", "Open a PO and verify lines, totals, delivery terms, and approval state.", "Approve, send, receive, or download only when the preceding control is complete."],
@@ -169,6 +181,18 @@ const GUIDE_OVERRIDES: Record<string, GuideOverride> = {
     whyItMatters: "Organization defaults influence every transaction, document, security decision, and integration.",
     instructions: ["Choose the settings section and read its scope before editing.", "Change the smallest necessary setting and save deliberately.", "Verify the downstream workflow affected by the change."],
     watchFor: "Settings are organization-wide; avoid experimental changes in a live organization.",
+    selectors: ["main"],
+  },
+  [APP_ROUTES.admin.workflows]: {
+    whyItMatters: "Workflow Governance shows how records move, who may act, which approvals are missing, and where overdue work needs attention.",
+    instructions: ["Review workflow coverage and pending approvals.", "Select a business domain to inspect its stages, exception paths, and control rules.", "Open Approval Policies to configure routing, then verify the affected workflow and audit history."],
+    watchFor: "A visible workflow map does not replace an active approval rule; resolve every Setup required badge before relying on that approval gate.",
+    selectors: ["[data-testid=workflow-governance-page]"],
+  },
+  [APP_ROUTES.admin.companySetup]: {
+    whyItMatters: "The company profile is the authoritative identity printed on purchase orders, vouchers, remittances, delivery notes, reports, and supplier correspondence.",
+    instructions: ["Enter the registered and trading names, registration and tax references, address, and contact details.", "Add the organization logo and review the live document-identity preview.", "Save the profile, then generate a document to confirm that its identity and footer are correct."],
+    watchFor: "Company profile changes affect future generated documents; review legal and tax details before saving them.",
     selectors: ["main"],
   },
   [APP_ROUTES.admin.masterData]: {

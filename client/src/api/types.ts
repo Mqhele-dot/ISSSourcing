@@ -130,6 +130,21 @@ export type InventoryDetailBySku = {
   unassignedQuantity: number;
   quantityMismatch: boolean;
   location?: string | null;
+  description?: string | null;
+  categoryId?: number | null;
+  price?: number;
+  cost?: number | null;
+  lowStockThreshold?: number | null;
+  barcode?: string | null;
+  barcodeType?: string | null;
+  unitOfMeasure?: string | null;
+  supplierPartNumber?: string | null;
+  defaultWarehouseId?: number | null;
+  minOrderQuantity?: number | null;
+  leadTime?: number | null;
+  reorderPoint?: number | null;
+  maxStockLevel?: number | null;
+  status?: string | null;
 };
 
 export type PurchaseOrderListItem = {
@@ -270,6 +285,25 @@ export type ShipmentListItem = {
   sourceType?: string | null;
   freightCost?: number | null;
   transportMode?: string | null;
+};
+
+export type ShipmentSummary = {
+  total: number;
+  inTransit: number;
+  late: number;
+  noEta: number;
+  dueSoon: number;
+  exception: number;
+  delivered: number;
+};
+
+export type ShipmentPage = {
+  items: ShipmentListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
+  summary: ShipmentSummary;
 };
 
 export type ShipmentTimelineEvent = {

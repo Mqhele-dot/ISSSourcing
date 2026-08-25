@@ -1650,16 +1650,29 @@ export class DatabaseStorage implements IStorage {
   
   async setDefaultWarehouse(id: number): Promise<Warehouse | undefined> {
     const orgId = getActiveOrganizationId();
-    await db
-      .update(warehouses)
-      .set({ isDefault: false, updatedAt: new Date() })
-      .where(eq(warehouses.organizationId, orgId));
-    const [updated] = await db
-      .update(warehouses)
-      .set({ isDefault: true, updatedAt: new Date() })
-      .where(and(eq(warehouses.id, id), eq(warehouses.organizationId, orgId)))
-      .returning();
-    return updated;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock($1)", [47_000_000 + orgId]);
+      const owned = await client.query("SELECT id FROM warehouses WHERE id = $1 AND organization_id = $2 FOR UPDATE", [id, orgId]);
+      if (!owned.rowCount) {
+        await client.query("ROLLBACK");
+        return undefined;
+      }
+      await client.query("UPDATE warehouses SET is_default = FALSE, updated_at = NOW() WHERE organization_id = $1 AND is_default = TRUE", [orgId]);
+      await client.query(
+        `UPDATE warehouses SET is_default = TRUE, updated_at = NOW()
+         WHERE id = $1 AND organization_id = $2`,
+        [id, orgId],
+      );
+      await client.query("COMMIT");
+      return this.getWarehouse(id);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   
   async getWarehouseInventory(warehouseId: number): Promise<WarehouseInventory[]> {

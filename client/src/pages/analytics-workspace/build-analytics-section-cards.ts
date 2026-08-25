@@ -114,9 +114,9 @@ export function buildAnalyticsSectionCards(
           valueState: health.apOverview ? "ok" : "unavailable",
         },
         {
-          title: "Overdue invoices",
+          title: "Due or overdue invoices",
           value: health.controlTower ? String(kpis.overdueInvoices ?? 0) : "—",
-          description: "Past due in AP.",
+          description: "Past due, due today, or due within seven days in AP.",
           href: APP_ROUTES.analytics.reportSection("invoices"),
           sourceWarning: warn(health, "controlTower"),
           valueState: health.controlTower ? "ok" : "unavailable",

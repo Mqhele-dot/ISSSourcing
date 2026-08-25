@@ -14,6 +14,7 @@ import { ApIntakePanel } from "./ap-intake-panel";
 import { ApApprovalsPanel } from "./ap-approvals-panel";
 import { ApExceptionsPanel } from "./ap-exceptions-panel";
 import { ApPaymentsPanel } from "./ap-payments-panel";
+import { ApAgingPanel } from "./ap-aging-panel";
 import { ApOverviewHeader } from "./ap-overview-header";
 import { useApWorkspaceQueries } from "./use-ap-workspace-queries";
 import { useApWorkspaceMutations } from "./use-ap-workspace-mutations";
@@ -31,6 +32,7 @@ const TAB_TO_ROUTE: Record<ApWorkspaceTab, string> = {
   intake: APP_ROUTES.finance.accountsPayableIntake,
   approvals: APP_ROUTES.finance.accountsPayableApprovals,
   exceptions: APP_ROUTES.finance.accountsPayableExceptions,
+  aging: APP_ROUTES.finance.accountsPayableAging,
   payments: APP_ROUTES.finance.accountsPayablePayments,
 };
 
@@ -280,7 +282,7 @@ export default function AccountsPayableWorkspace() {
         }}
         className="space-y-4"
       >
-        <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-5">
           <TabsTrigger value="intake" data-testid="ap-tab-intake">
             Intake
           </TabsTrigger>
@@ -290,6 +292,7 @@ export default function AccountsPayableWorkspace() {
           <TabsTrigger value="exceptions" data-testid="ap-tab-exceptions">
             Exceptions
           </TabsTrigger>
+          <TabsTrigger value="aging" data-testid="ap-tab-aging">Aging</TabsTrigger>
           <TabsTrigger value="payments" data-testid="ap-tab-payments">
             Payments
           </TabsTrigger>
@@ -413,6 +416,10 @@ export default function AccountsPayableWorkspace() {
             </Alert>
           ) : null}
           <ApExceptionsPanel exceptions={exceptions} formatMoney={formatMoney} loadFailed={exceptionsQuery.isError} />
+        </TabsContent>
+
+        <TabsContent value="aging" className="space-y-4">
+          <ApAgingPanel />
         </TabsContent>
 
         <TabsContent value="payments" className="space-y-4">

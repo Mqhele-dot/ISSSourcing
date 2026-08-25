@@ -46,7 +46,7 @@ import {
   addExceptionComment,
   assignException,
   fetchException,
-  fetchExceptionsEnvelope,
+  fetchExceptionsPageEnvelope,
   updateExceptionStatus,
   type OperationalException,
 } from "@/api/client";
@@ -126,9 +126,17 @@ function ExceptionListView() {
     severity: "",
     status: "",
     type: "",
+    page: "1",
+    pageSize: "25",
+    sort: "created_desc",
   });
   const debouncedQuery = useDebouncedValue(queryState, 350);
   const debouncedNorm = exceptionsListFiltersNormalized(debouncedQuery);
+  const page = Math.max(1, Number(queryState.page) || 1);
+  const pageSize = ([25, 50, 100].includes(Number(queryState.pageSize)) ? Number(queryState.pageSize) : 25) as 25 | 50 | 100;
+  const sort = (["created_desc", "created_asc", "severity_desc"].includes(String(queryState.sort))
+    ? String(queryState.sort)
+    : "created_desc") as "created_desc" | "created_asc" | "severity_desc";
 
   const {
     data: envelope,
@@ -138,18 +146,23 @@ function ExceptionListView() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ["/api/exceptions", debouncedNorm.severity, debouncedNorm.status, debouncedNorm.type],
+    queryKey: ["/api/v2/exceptions", debouncedNorm.severity, debouncedNorm.status, debouncedNorm.type, page, pageSize, sort],
     queryFn: () =>
-      fetchExceptionsEnvelope({
+      fetchExceptionsPageEnvelope({
+        page,
+        pageSize,
+        sort,
         severity: debouncedNorm.severity || undefined,
         status: debouncedNorm.status || undefined,
         type: debouncedNorm.type || undefined,
       }),
+    placeholderData: (previous) => previous,
     staleTime: 10_000,
   });
 
   const error = isError ? (queryError instanceof Error ? queryError : new Error(String(queryError))) : null;
-  const data = envelope?.data ?? null;
+  const exceptionPage = envelope?.data ?? null;
+  const data = exceptionPage?.items ?? null;
   const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
   const {
     autoRefreshEnabled,
@@ -301,24 +314,24 @@ function ExceptionListView() {
             <Input
               data-testid="exception-filter-severity"
               value={String(queryState.severity || "")}
-              onChange={(event) => setQueryState({ severity: event.target.value })}
+              onChange={(event) => setQueryState({ severity: event.target.value, page: "1" })}
               placeholder="Severity"
               className="w-40"
             />
             <Input
               data-testid="exception-filter-status"
               value={String(queryState.status || "")}
-              onChange={(event) => setQueryState({ status: event.target.value })}
+              onChange={(event) => setQueryState({ status: event.target.value, page: "1" })}
               placeholder="Status"
               className="w-44"
             />
             <Select
               value={exceptionTypeSelectValue}
               onValueChange={(v) => {
-                if (v === "__all__") setQueryState({ type: "" });
+                if (v === "__all__") setQueryState({ type: "", page: "1" });
                 else if (v === "__custom__") {
                   /* Keep current typed filter; only switches UI to “custom” mode */
-                } else setQueryState({ type: v });
+                } else setQueryState({ type: v, page: "1" });
               }}
             >
               <SelectTrigger data-testid="exception-filter-type" className="w-52">
@@ -335,7 +348,7 @@ function ExceptionListView() {
             </Select>
             <Input
               value={String(queryState.type || "")}
-              onChange={(event) => setQueryState({ type: event.target.value })}
+              onChange={(event) => setQueryState({ type: event.target.value, page: "1" })}
               placeholder="Custom type (e.g. mismatch)"
               className="w-48"
             />
@@ -366,8 +379,16 @@ function ExceptionListView() {
               className="gap-2"
             >
               <Download className="h-4 w-4" />
-              Export CSV
+              Export current page CSV
             </Button>
+            <Select value={String(pageSize)} onValueChange={(value) => setQueryState({ pageSize: value, page: "1" })}>
+              <SelectTrigger className="w-24" aria-label="Exceptions page size"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25 rows</SelectItem>
+                <SelectItem value="50">50 rows</SelectItem>
+                <SelectItem value="100">100 rows</SelectItem>
+              </SelectContent>
+            </Select>
             <span className="text-xs text-muted-foreground">
               Last refreshed: {lastRefreshedLabel}
               {isFetching ? " · updating…" : ""}
@@ -463,6 +484,20 @@ function ExceptionListView() {
           );
         }}
       </DataState>
+
+      {exceptionPage && exceptionPage.total > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Exception pagination">
+          <span className="text-muted-foreground">
+            {(exceptionPage.page - 1) * exceptionPage.pageSize + 1}–{Math.min(exceptionPage.total, exceptionPage.page * exceptionPage.pageSize)} of {exceptionPage.total} exceptions
+          </span>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" disabled={exceptionPage.page <= 1} onClick={() => setQueryState({ page: "1" })}>First</Button>
+            <Button type="button" size="sm" variant="outline" disabled={exceptionPage.page <= 1} onClick={() => setQueryState({ page: String(exceptionPage.page - 1) })}>Previous</Button>
+            <Button type="button" size="sm" variant="outline" disabled={!exceptionPage.hasNext} onClick={() => setQueryState({ page: String(exceptionPage.page + 1) })}>Next</Button>
+            <Button type="button" size="sm" variant="outline" disabled={!exceptionPage.hasNext} onClick={() => setQueryState({ page: String(Math.max(1, Math.ceil(exceptionPage.total / exceptionPage.pageSize))) })}>Last</Button>
+          </div>
+        </div>
+      ) : null}
 
       <Dialog open={!!quickException} onOpenChange={(open) => !open && setQuickException(null)}>
         <DialogContent className="sm:max-w-md">

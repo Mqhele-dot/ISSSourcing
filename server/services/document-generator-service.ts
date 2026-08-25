@@ -1127,6 +1127,9 @@ export type GenericPdfOptions = {
   metadataLines?: string[];
   /** Prefer wrap-first cells instead of truncation */
   useWrappedTable?: boolean;
+  organizationDisplayName?: string;
+  organizationFooter?: string;
+  organizationLogoPng?: Uint8Array;
 };
 
 function drawPdfExtraMetadataLines(page: PDFPage, font: PDFFont, lines: string[], startY: number): number {
@@ -1154,6 +1157,15 @@ export async function generateGenericPdf(
   columns: { header: string; key: string; width: number }[],
   options?: GenericPdfOptions,
 ): Promise<Buffer> {
+  const prevBrand = activePdfBrandName;
+  const prevFooter = activePdfOrganizationFooter;
+  const prevLogoBytes = activePdfLogoBytes;
+  if (options?.organizationDisplayName?.trim()) {
+    activePdfBrandName = sanitizePdfText(options.organizationDisplayName.trim()) || APP_NAME;
+  }
+  if (options?.organizationFooter?.trim()) activePdfOrganizationFooter = options.organizationFooter.trim();
+  if (options?.organizationLogoPng?.length) activePdfLogoBytes = options.organizationLogoPng;
+  try {
   const pdfDoc = await PDFDocument.create();
   await embedPdfLogoIfNeeded(pdfDoc);
   applyPdfMetadata(pdfDoc, title);
@@ -1214,6 +1226,12 @@ export async function generateGenericPdf(
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
+  } finally {
+    activePdfBrandName = prevBrand;
+    activePdfOrganizationFooter = prevFooter;
+    activePdfLogoBytes = prevLogoBytes;
+    activePdfLogoImage = null;
+  }
 }
 
 function userDisplayName(u?: User | null): string {
@@ -1227,12 +1245,23 @@ export async function generatePurchaseOrdersDocumentPdf(
   orders: any[],
   title: string,
   metadataLines: string[] = [],
-  pdfOptions?: { reportingCurrencyCode?: string },
+  pdfOptions?: {
+    reportingCurrencyCode?: string;
+    organizationDisplayName?: string;
+    organizationFooter?: string;
+    organizationLogoPng?: Uint8Array;
+  },
 ): Promise<Buffer> {
   const prevReporting = activeReportingCurrencyCode;
+  const prevBrand = activePdfBrandName;
+  const prevFooter = activePdfOrganizationFooter;
+  const prevLogoBytes = activePdfLogoBytes;
   activeReportingCurrencyCode = normalizeReportingCurrencyCode(
     pdfOptions?.reportingCurrencyCode ?? prevReporting,
   );
+  activePdfBrandName = sanitizePdfText(pdfOptions?.organizationDisplayName?.trim() || "") || prevBrand;
+  activePdfOrganizationFooter = pdfOptions?.organizationFooter?.trim() || prevFooter;
+  activePdfLogoBytes = pdfOptions?.organizationLogoPng?.length ? pdfOptions.organizationLogoPng : prevLogoBytes;
   try {
   const pdfDoc = await PDFDocument.create();
   await embedPdfLogoIfNeeded(pdfDoc);
@@ -1366,6 +1395,10 @@ export async function generatePurchaseOrdersDocumentPdf(
   return Buffer.from(await pdfDoc.save());
   } finally {
     activeReportingCurrencyCode = prevReporting;
+    activePdfBrandName = prevBrand;
+    activePdfOrganizationFooter = prevFooter;
+    activePdfLogoBytes = prevLogoBytes;
+    activePdfLogoImage = null;
   }
 }
 
@@ -1381,18 +1414,20 @@ export type ShipmentDeliveryNoteInput = {
 /** One-page delivery / packing slip for a single shipment (carrier, PO ref, ETA, tracking, sign-off). */
 export async function generateShipmentDeliveryNotePdf(
   shipment: ShipmentDeliveryNoteInput,
-  options?: { organizationDisplayName?: string },
+  options?: { organizationDisplayName?: string; organizationFooter?: string; organizationLogoPng?: Uint8Array },
 ): Promise<Buffer> {
+  const prevBrand = activePdfBrandName;
+  const prevFooter = activePdfOrganizationFooter;
+  const prevLogoBytes = activePdfLogoBytes;
+  if (options?.organizationDisplayName?.trim()) activePdfBrandName = sanitizePdfText(options.organizationDisplayName.trim()) || APP_NAME;
+  if (options?.organizationFooter?.trim()) activePdfOrganizationFooter = options.organizationFooter.trim();
+  if (options?.organizationLogoPng?.length) activePdfLogoBytes = options.organizationLogoPng;
   const pdfDoc = await PDFDocument.create();
   await embedPdfLogoIfNeeded(pdfDoc);
   const titleStem = `Delivery note ${shipment.poNumber}`;
   applyPdfMetadata(pdfDoc, titleStem);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const prevBrand = activePdfBrandName;
-  if (options?.organizationDisplayName?.trim()) {
-    activePdfBrandName = sanitizePdfText(options.organizationDisplayName.trim()) || APP_NAME;
-  }
   try {
     const page = pdfDoc.addPage([PDF_LAYOUT.pageWidth, PDF_LAYOUT.pageHeight]);
     const pw = PDF_LAYOUT.pageWidth;
@@ -1460,6 +1495,9 @@ export async function generateShipmentDeliveryNotePdf(
     return Buffer.from(await pdfDoc.save());
   } finally {
     activePdfBrandName = prevBrand;
+    activePdfOrganizationFooter = prevFooter;
+    activePdfLogoBytes = prevLogoBytes;
+    activePdfLogoImage = null;
   }
 }
 

@@ -221,10 +221,11 @@ export function ControlTowerChartsSection({
             </ResponsiveContainer>
           )}
           <p className="text-xs text-center">
-            <Link className="text-primary underline-offset-4 hover:underline" href="/finance/accounts-payable">
-              Open accounts payable
-            </Link>
+            <Link className="text-primary underline-offset-4 hover:underline" href="/finance/accounts-payable/aging">Open full AP aging</Link>
           </p>
+          <div className="flex flex-wrap justify-center gap-2 text-xs">
+            {apBars.map((row) => <Link key={row.bucket} className="text-primary underline-offset-4 hover:underline" href={`/finance/accounts-payable/aging?bucket=${row.bucket}`}>{row.label}</Link>)}
+          </div>
         </DashboardChartCard>
       ) : null}
 

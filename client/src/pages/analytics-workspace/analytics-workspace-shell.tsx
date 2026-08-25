@@ -79,14 +79,23 @@ export function AnalyticsWorkspaceShell({
       ) : null}
 
       <DataState
-        loading={loading}
+        loading={false}
         error={error}
         data={cards}
         isEmpty={() => false}
         emptyTitle="No analytics"
         onRetry={() => void onRetry()}
       >
-        {() => children}
+        {() => (
+          <div className="space-y-6">
+            {loading ? (
+              <p className="sr-only" role="status" aria-live="polite">
+                Analytics data is loading. The workspace remains available while feeds refresh.
+              </p>
+            ) : null}
+            {children}
+          </div>
+        )}
       </DataState>
     </PageShell>
   );

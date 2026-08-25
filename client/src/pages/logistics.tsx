@@ -65,7 +65,7 @@ import {
   createShipment,
   deleteShipment,
   fetchShipment,
-  fetchShipmentsEnvelope,
+  fetchShipmentsPage,
   fetchActivityEnvelope,
   patchShipmentMeta,
   updateShipmentStatus,
@@ -461,6 +461,9 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
     tracking: "",
     direction: "",
     sourceType: "",
+    page: "1",
+    pageSize: "25",
+    sort: "updated_desc",
   });
 
   const debouncedQuery = useDebouncedValue(queryState, 350);
@@ -503,19 +506,26 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
       tracking: "",
       direction: "",
       sourceType: "",
+      page: "1",
     });
   }, [setQueryState]);
 
   const {
-    data: envelope,
+    data: shipmentPage,
     isLoading: loading,
     isError,
     error: queryError,
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ["/api/logistics/shipments", ...logisticsListQueryKeyTuple(effectiveNorm), listScope],
-    queryFn: () => fetchShipmentsEnvelope(effectiveNorm),
+    queryKey: ["/api/v2/logistics/shipments", ...logisticsListQueryKeyTuple(effectiveNorm), listScope, queryState.page, queryState.pageSize, queryState.sort],
+    queryFn: () => fetchShipmentsPage({
+      ...effectiveNorm,
+      page: Math.max(1, Number(queryState.page) || 1),
+      pageSize: ([25, 50, 100].includes(Number(queryState.pageSize)) ? Number(queryState.pageSize) : 25) as 25 | 50 | 100,
+      sort: (["updated_desc", "updated_asc", "eta_asc", "eta_desc", "status_asc", "po_asc"].includes(String(queryState.sort)) ? String(queryState.sort) : "updated_desc") as "updated_desc" | "updated_asc" | "eta_asc" | "eta_desc" | "status_asc" | "po_asc",
+    }),
+    placeholderData: (previous) => previous,
     staleTime: 10_000,
   });
 
@@ -541,8 +551,8 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
     queryKey: ["/api/carriers"],
     queryFn: () => requestJson<Carrier[]>("GET", "/api/carriers"),
   });
-  const data = envelope?.data ?? null;
-  const fallback = envelope?.meta?.fallback as FallbackKind | undefined;
+  const data = shipmentPage?.items ?? null;
+  const fallback = undefined as FallbackKind | undefined;
 
   const refetchShipmentsList = useCallback(async () => {
     await refetch();
@@ -715,7 +725,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                   id="ship-filter-po"
                   data-testid="logistics-po-filter"
                   value={String(queryState.po || "")}
-                  onChange={(event) => setQueryState({ po: event.target.value })}
+                  onChange={(event) => setQueryState({ po: event.target.value, page: "1" })}
                   placeholder="Filter by PO"
                   className="h-9 min-w-0"
                 />
@@ -728,7 +738,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                   id="ship-filter-status"
                   data-testid="logistics-status-filter"
                   value={String(queryState.status || "")}
-                  onChange={(event) => setQueryState({ status: event.target.value })}
+                  onChange={(event) => setQueryState({ status: event.target.value, page: "1" })}
                   placeholder="e.g. in_transit"
                   className="h-9 min-w-0"
                 />
@@ -741,7 +751,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                   id="ship-filter-carrier"
                   data-testid="logistics-carrier-filter"
                   value={String(queryState.carrier || "")}
-                  onChange={(event) => setQueryState({ carrier: event.target.value })}
+                  onChange={(event) => setQueryState({ carrier: event.target.value, page: "1" })}
                   placeholder="Name contains"
                   className="h-9 min-w-0"
                 />
@@ -754,7 +764,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                   id="ship-filter-tracking"
                   data-testid="logistics-tracking-filter"
                   value={String(queryState.tracking || "")}
-                  onChange={(event) => setQueryState({ tracking: event.target.value })}
+                  onChange={(event) => setQueryState({ tracking: event.target.value, page: "1" })}
                   placeholder="Contains…"
                   className="h-9 min-w-0 font-mono text-xs"
                 />
@@ -765,7 +775,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                 </Label>
                 <Select
                   value={String(queryState.risk || "") || "all"}
-                  onValueChange={(value) => setQueryState({ risk: value === "all" ? "" : value })}
+                  onValueChange={(value) => setQueryState({ risk: value === "all" ? "" : value, page: "1" })}
                 >
                   <SelectTrigger id="ship-filter-risk" data-testid="logistics-risk-filter" className="h-9 min-w-0">
                     <SelectValue placeholder="Risk" />
@@ -798,7 +808,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                   type="button"
                   className="rounded-full p-0.5 hover:bg-muted"
                   aria-label={`Remove ${entry.label} filter`}
-                  onClick={() => setQueryState({ [entry.key]: "" } as Partial<LogisticsListFiltersState>)}
+                  onClick={() => setQueryState({ [entry.key]: "", page: "1" } as Partial<typeof queryState>)}
                 >
                   <X className="h-3 w-3" aria-hidden />
                 </button>
@@ -817,7 +827,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                     id="ship-filter-supplier"
                     data-testid="logistics-supplier-filter"
                     value={String(queryState.supplier || "")}
-                    onChange={(event) => setQueryState({ supplier: event.target.value })}
+                    onChange={(event) => setQueryState({ supplier: event.target.value, page: "1" })}
                     placeholder="Supplier name"
                     className="h-9 min-w-0"
                   />
@@ -833,7 +843,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                         : String(queryState.direction || "") || "all"
                     }
                     disabled={listScope === "inbound"}
-                    onValueChange={(value) => setQueryState({ direction: value === "all" ? "" : value })}
+                    onValueChange={(value) => setQueryState({ direction: value === "all" ? "" : value, page: "1" })}
                   >
                     <SelectTrigger
                       id="ship-filter-direction"
@@ -857,7 +867,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                   </Label>
                   <Select
                     value={String(queryState.sourceType || "") || "all"}
-                    onValueChange={(value) => setQueryState({ sourceType: value === "all" ? "" : value })}
+                    onValueChange={(value) => setQueryState({ sourceType: value === "all" ? "" : value, page: "1" })}
                   >
                     <SelectTrigger id="ship-filter-source" data-testid="logistics-source-filter" className="h-9 min-w-0">
                       <SelectValue placeholder="Source" />
@@ -878,7 +888,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                     data-testid="logistics-eta-from"
                     type="datetime-local"
                     value={String(queryState.etaFrom || "")}
-                    onChange={(event) => setQueryState({ etaFrom: event.target.value })}
+                    onChange={(event) => setQueryState({ etaFrom: event.target.value, page: "1" })}
                     className="h-9 min-w-0"
                   />
                 </div>
@@ -891,7 +901,7 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
                     data-testid="logistics-eta-to"
                     type="datetime-local"
                     value={String(queryState.etaTo || "")}
-                    onChange={(event) => setQueryState({ etaTo: event.target.value })}
+                    onChange={(event) => setQueryState({ etaTo: event.target.value, page: "1" })}
                     className="h-9 min-w-0"
                   />
                 </div>
@@ -989,12 +999,10 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
             <span className="mr-2 inline-block">
               Results:{" "}
               <span data-testid="logistics-results-count">
-                {loading ? "—" : envelope?.meta?.resultCount ?? 0}
+                {loading ? "—" : shipmentPage?.total ?? 0}
               </span>
             </span>
             · Last refreshed: {lastRefreshedLabel}
-            {envelope?.meta?.queryMs != null ? ` · ${Math.round(Number(envelope.meta.queryMs))}ms` : ""}
-            {envelope?.meta?.generatedAt ? ` · data: ${new Date(envelope.meta.generatedAt).toLocaleTimeString()}` : ""}
             {isFetching ? " · updating…" : ""}
           </span>
         </div>
@@ -1326,6 +1334,34 @@ function ShipmentListView({ listScope = "all" }: { listScope?: "all" | "inbound"
               ))}
             </TableBody>
           </Table>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t p-3 text-sm">
+            <span className="text-muted-foreground" aria-live="polite">
+              {shipmentPage?.total
+                ? `${(shipmentPage.page - 1) * shipmentPage.pageSize + 1}–${Math.min(shipmentPage.page * shipmentPage.pageSize, shipmentPage.total)} of ${shipmentPage.total}`
+                : "0 results"}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={String(queryState.sort || "updated_desc")} onValueChange={(value) => setQueryState({ sort: value, page: "1" })}>
+                <SelectTrigger className="h-8 w-[150px]" aria-label="Shipment sort order"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="updated_desc">Recently updated</SelectItem>
+                  <SelectItem value="updated_asc">Oldest updated</SelectItem>
+                  <SelectItem value="eta_asc">ETA ascending</SelectItem>
+                  <SelectItem value="eta_desc">ETA descending</SelectItem>
+                  <SelectItem value="status_asc">Status</SelectItem>
+                  <SelectItem value="po_asc">PO number</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={String(shipmentPage?.pageSize ?? queryState.pageSize ?? "25")} onValueChange={(value) => setQueryState({ pageSize: value, page: "1" })}>
+                <SelectTrigger className="h-8 w-[92px]" aria-label="Shipment page size"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="25">25 rows</SelectItem><SelectItem value="50">50 rows</SelectItem><SelectItem value="100">100 rows</SelectItem></SelectContent>
+              </Select>
+              <Button size="sm" variant="outline" disabled={(shipmentPage?.page ?? 1) <= 1} onClick={() => setQueryState({ page: "1" })}>First</Button>
+              <Button size="sm" variant="outline" disabled={(shipmentPage?.page ?? 1) <= 1} onClick={() => setQueryState({ page: String(Math.max(1, (shipmentPage?.page ?? 1) - 1)) })}>Previous</Button>
+              <Button size="sm" variant="outline" disabled={!shipmentPage?.hasNext} onClick={() => setQueryState({ page: String((shipmentPage?.page ?? 1) + 1) })}>Next</Button>
+              <Button size="sm" variant="outline" disabled={!shipmentPage?.hasNext} onClick={() => setQueryState({ page: String(Math.max(1, Math.ceil((shipmentPage?.total ?? 0) / (shipmentPage?.pageSize ?? 25)))) })}>Last</Button>
+            </div>
+          </div>
           </div>
           );
         }}

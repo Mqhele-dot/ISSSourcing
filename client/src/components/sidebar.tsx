@@ -14,6 +14,8 @@ import { ThemeToggleButton } from "@/components/theme-toggle-button";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useAuth } from "@/hooks/use-auth";
 import { hasProfileNavigationAccess } from "@/lib/access/profile-navigation-access";
+import { prefetchPrimaryRouteChunks, prefetchRouteChunk } from "@/lib/routes/route-prefetch";
+import { useEffect } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -22,6 +24,7 @@ import {
   BarChart2,
   Bookmark,
   Building,
+  Building2,
   Camera,
   ClipboardList,
   CreditCard,
@@ -81,6 +84,18 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
     staleTime: 5 * 60_000,
   });
 
+  useEffect(() => {
+    if (!user) return;
+    const hasIdleCallback = typeof window.requestIdleCallback === "function";
+    const schedule = hasIdleCallback
+      ? window.requestIdleCallback(() => prefetchPrimaryRouteChunks(), { timeout: 2_000 })
+      : window.setTimeout(() => prefetchPrimaryRouteChunks(), 750);
+    return () => {
+      if (hasIdleCallback) window.cancelIdleCallback(schedule as number);
+      else window.clearTimeout(schedule as number);
+    };
+  }, [user]);
+
   const iconMap = {
     activity: Activity,
     "alert-triangle": AlertTriangle,
@@ -89,6 +104,7 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
     "bar-chart-2": BarChart2,
     bookmark: Bookmark,
     building: Building,
+    "building-2": Building2,
     camera: Camera,
     "clipboard-list": ClipboardList,
     "credit-card": CreditCard,
@@ -149,7 +165,13 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
   }) => {
     const label = typeof children === "string" ? children : helpTitle ?? "";
     return (
-      <Link href={path} title={collapsed ? label : undefined} onClick={() => setOpen(false)}>
+      <Link
+        href={path}
+        title={collapsed ? label : undefined}
+        onMouseEnter={() => prefetchRouteChunk(path)}
+        onFocus={() => prefetchRouteChunk(path)}
+        onClick={() => setOpen(false)}
+      >
         <div
           className={cn(
             "flex items-center gap-3 rounded-md cursor-pointer transition-all",

@@ -15,7 +15,7 @@ const querySchema = z.object({
   sort: z.enum(["name_asc", "sku_asc", "available_asc", "available_desc", "updated_desc", "updated_asc"]).default("name_asc"),
 });
 
-const BASE_SQL = `
+export const INVENTORY_BASE_SQL = `
   WITH warehouse_totals AS (
     SELECT wi.item_id::text AS item_key, SUM(wi.quantity)::int AS quantity, COUNT(*)::int AS positions,
            MIN(COALESCE(wi.location, w.location)) AS location, MAX(wi.updated_at) AS updated_at
@@ -30,7 +30,8 @@ const BASE_SQL = `
     FROM stock_movements WHERE organization_id::text = $1::text ORDER BY item_id::text, timestamp DESC, id DESC
   ), base AS (
     SELECT i.id, i.name, i.sku, i.category_id, COALESCE(i.quantity, 0)::int AS quantity,
-           COALESCE(i.price, 0) AS price, COALESCE(i.low_stock_threshold, 0)::int AS low_stock_threshold,
+           COALESCE(i.price, 0) AS price, COALESCE(i.cost, i.price, 0) AS valuation_rate,
+           i.expiry_date, COALESCE(i.low_stock_threshold, 0)::int AS low_stock_threshold,
            COALESCE(wt.quantity, 0)::int AS warehouse_quantity,
            CASE WHEN wt.item_key IS NULL THEN COALESCE(i.quantity, 0)::int ELSE GREATEST(COALESCE(i.quantity, 0) - wt.quantity, 0)::int END AS unassigned_quantity,
            CASE WHEN wt.item_key IS NULL THEN COALESCE(i.quantity, 0)::int ELSE wt.quantity END AS on_hand,
@@ -64,8 +65,8 @@ export function registerInventoryV2Routes(app: Express, auth: AuthBundle): void 
     try {
       const pageValues = [...values, query.pageSize, (query.page - 1) * query.pageSize];
       const [pageResult, summaryResult] = await Promise.all([
-        pool.query(`${BASE_SQL} SELECT * FROM base ${where} ORDER BY ${order} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, pageValues),
-        pool.query(`${BASE_SQL} SELECT COUNT(*)::int AS total, COALESCE(SUM((available <= low_stock_threshold)::int),0)::int AS low_stock, COALESCE(SUM((available < 0)::int),0)::int AS negative_availability, COALESCE(SUM(on_hand),0)::int AS total_on_hand, COALESCE(SUM(allocated),0)::int AS total_allocated, COALESCE(SUM(available),0)::int AS total_available FROM base ${where}`, values),
+        pool.query(`${INVENTORY_BASE_SQL} SELECT * FROM base ${where} ORDER BY ${order} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, pageValues),
+        pool.query(`${INVENTORY_BASE_SQL} SELECT COUNT(*)::int AS total, COALESCE(SUM((available <= low_stock_threshold)::int),0)::int AS low_stock, COALESCE(SUM((available < 0)::int),0)::int AS negative_availability, COALESCE(SUM(on_hand),0)::int AS total_on_hand, COALESCE(SUM(allocated),0)::int AS total_allocated, COALESCE(SUM(available),0)::int AS total_available FROM base ${where}`, values),
       ]);
       const s = summaryResult.rows[0] ?? {};
       const total = Number(s.total ?? 0);

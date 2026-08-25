@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
 import { sendError, sendOk } from "../../api-response";
@@ -10,7 +10,9 @@ import {
   purchaseRequisitionItems,
   purchaseRequisitions,
   sourcingEvents,
+  sourcingEventLines,
   sourcingInvitations,
+  supplierQuotes,
   supplierQuoteLines,
   supplierPortalMappings,
   suppliers,
@@ -25,6 +27,7 @@ import {
   getQuoteComparison,
   getSourcingEventDetails,
   listSourcingEvents,
+  previewSourcingInvitationEmails,
   publishSourcingEvent,
   saveQuoteEvaluation,
   SourcingError,
@@ -86,6 +89,21 @@ const quoteSchema = z.object({
     compliant: z.boolean().optional(),
     exceptionReason: z.string().max(2000).optional().nullable(),
   })).min(1),
+});
+
+const buyerQuoteSchema = quoteSchema.extend({
+  eventId: z.coerce.number().int().positive(),
+  supplierId: z.coerce.number().int().positive(),
+});
+
+const quotationListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().refine((value) => [25, 50, 100].includes(value), "Page size must be 25, 50, or 100.").default(25),
+  q: z.string().trim().max(120).optional(),
+  status: z.enum(["DRAFT", "SUBMITTED", "WITHDRAWN", "SUPERSEDED"]).optional(),
+  supplierId: z.coerce.number().int().positive().optional(),
+  eventId: z.coerce.number().int().positive().optional(),
+  sort: z.enum(["newest", "oldest", "total_desc", "total_asc", "supplier_asc"]).default("newest"),
 });
 
 const evaluationSchema = z.object({
@@ -183,6 +201,137 @@ export function registerSourcingRoutes(app: Express, auth: AuthBundle): void {
     catch (error) { return handleSourcingError(res, error); }
   });
 
+  app.get("/api/v2/procurement/quotations", ...buyerRead, async (req, res) => {
+    try {
+      const query = quotationListSchema.parse(req.query);
+      const organizationId = getActiveOrganizationId();
+      const filters = [eq(supplierQuotes.organizationId, organizationId)];
+      if (query.status) filters.push(eq(supplierQuotes.status, query.status));
+      if (query.supplierId) filters.push(eq(supplierQuotes.supplierId, query.supplierId));
+      if (query.eventId) filters.push(eq(supplierQuotes.eventId, query.eventId));
+      if (query.q) {
+        const pattern = `%${query.q}%`;
+        filters.push(or(
+          ilike(supplierQuotes.quoteNumber, pattern),
+          ilike(suppliers.name, pattern),
+          ilike(sourcingEvents.eventNumber, pattern),
+          ilike(sourcingEvents.title, pattern),
+        )!);
+      }
+      const where = and(...filters);
+      const orderBy = query.sort === "oldest" ? [asc(supplierQuotes.createdAt), asc(supplierQuotes.id)]
+        : query.sort === "total_desc" ? [desc(supplierQuotes.reportingTotal), desc(supplierQuotes.id)]
+          : query.sort === "total_asc" ? [asc(supplierQuotes.reportingTotal), asc(supplierQuotes.id)]
+            : query.sort === "supplier_asc" ? [asc(suppliers.name), asc(supplierQuotes.id)]
+              : [desc(supplierQuotes.createdAt), desc(supplierQuotes.id)];
+      const base = db
+        .select({
+          id: supplierQuotes.id,
+          quoteNumber: supplierQuotes.quoteNumber,
+          eventId: supplierQuotes.eventId,
+          eventNumber: sourcingEvents.eventNumber,
+          eventTitle: sourcingEvents.title,
+          supplierId: supplierQuotes.supplierId,
+          supplierName: suppliers.name,
+          status: supplierQuotes.status,
+          version: supplierQuotes.version,
+          currencyCode: supplierQuotes.currencyCode,
+          landedCostTotal: supplierQuotes.landedCostTotal,
+          reportingCurrencyCode: sourcingEvents.reportingCurrencyCode,
+          reportingTotal: supplierQuotes.reportingTotal,
+          validityDate: supplierQuotes.validityDate,
+          submittedAt: supplierQuotes.submittedAt,
+          createdAt: supplierQuotes.createdAt,
+        })
+        .from(supplierQuotes)
+        .innerJoin(suppliers, and(eq(suppliers.id, supplierQuotes.supplierId), eq(suppliers.organizationId, organizationId)))
+        .innerJoin(sourcingEvents, and(eq(sourcingEvents.id, supplierQuotes.eventId), eq(sourcingEvents.organizationId, organizationId)))
+        .where(where);
+      const [items, aggregate] = await Promise.all([
+        base.orderBy(...orderBy).limit(query.pageSize).offset((query.page - 1) * query.pageSize),
+        db
+          .select({
+            total: sql<number>`count(*)::int`,
+            submitted: sql<number>`count(*) filter (where ${supplierQuotes.status} = 'SUBMITTED')::int`,
+            reportingTotal: sql<number>`coalesce(sum(${supplierQuotes.reportingTotal}) filter (where ${supplierQuotes.status} = 'SUBMITTED'), 0)::float8`,
+          })
+          .from(supplierQuotes)
+          .innerJoin(suppliers, and(eq(suppliers.id, supplierQuotes.supplierId), eq(suppliers.organizationId, organizationId)))
+          .innerJoin(sourcingEvents, and(eq(sourcingEvents.id, supplierQuotes.eventId), eq(sourcingEvents.organizationId, organizationId)))
+          .where(where),
+      ]);
+      const total = aggregate[0]?.total ?? 0;
+      return sendOk(res, {
+        items,
+        total,
+        page: query.page,
+        pageSize: query.pageSize,
+        hasNext: query.page * query.pageSize < total,
+        summary: {
+          submitted: aggregate[0]?.submitted ?? 0,
+          reportingTotal: aggregate[0]?.reportingTotal ?? 0,
+        },
+      });
+    } catch (error) { return handleSourcingError(res, error); }
+  });
+
+  app.get("/api/procurement/quotations/:id", ...buyerRead, async (req, res) => {
+    try {
+      const organizationId = getActiveOrganizationId();
+      const quoteId = parseId(req.params.id);
+      const [record] = await db
+        .select({ quote: supplierQuotes, supplierName: suppliers.name, event: sourcingEvents })
+        .from(supplierQuotes)
+        .innerJoin(suppliers, and(eq(suppliers.id, supplierQuotes.supplierId), eq(suppliers.organizationId, organizationId)))
+        .innerJoin(sourcingEvents, and(eq(sourcingEvents.id, supplierQuotes.eventId), eq(sourcingEvents.organizationId, organizationId)))
+        .where(and(eq(supplierQuotes.id, quoteId), eq(supplierQuotes.organizationId, organizationId)))
+        .limit(1);
+      if (!record) throw new SourcingError("QUOTE_NOT_FOUND", "The quotation was not found in this organization.", 404);
+      const lines = await db
+        .select({ line: supplierQuoteLines, eventLine: sourcingEventLines })
+        .from(supplierQuoteLines)
+        .innerJoin(sourcingEventLines, and(
+          eq(sourcingEventLines.id, supplierQuoteLines.eventLineId),
+          eq(sourcingEventLines.organizationId, organizationId),
+        ))
+        .where(and(eq(supplierQuoteLines.quoteId, quoteId), eq(supplierQuoteLines.organizationId, organizationId)))
+        .orderBy(asc(sourcingEventLines.lineNumber));
+      return sendOk(res, { ...record, lines });
+    } catch (error) { return handleSourcingError(res, error); }
+  });
+
+  app.get("/api/procurement/quotations/context/:eventId", ...buyerRead, async (req, res) => {
+    try {
+      const details = await getSourcingEventDetails(getActiveOrganizationId(), parseId(req.params.eventId));
+      return sendOk(res, {
+        event: details.event,
+        lines: details.lines,
+        suppliers: details.invitations.map(({ invitation, supplierName, supplierStatus, complianceStatus }) => ({
+          id: invitation.supplierId,
+          name: supplierName,
+          invitationStatus: invitation.status,
+          status: supplierStatus,
+          complianceStatus,
+        })),
+      });
+    } catch (error) { return handleSourcingError(res, error); }
+  });
+
+  app.post("/api/procurement/quotations", ...buyerCreate, async (req, res) => {
+    try {
+      const input = buyerQuoteSchema.parse(req.body);
+      const { eventId, supplierId, ...quoteInput } = input;
+      return sendOk(res, await submitSupplierQuote(
+        actor(req, res),
+        eventId,
+        supplierId,
+        quoteInput,
+        idempotencyKey(req),
+        "buyer_capture",
+      ), 201);
+    } catch (error) { return handleSourcingError(res, error); }
+  });
+
   app.get("/api/sourcing/requisition-context/:id", ...buyerRead, async (req, res) => {
     try {
       const organizationId = getActiveOrganizationId();
@@ -256,6 +405,17 @@ export function registerSourcingRoutes(app: Express, auth: AuthBundle): void {
   app.get("/api/sourcing/events/:id", ...buyerRead, async (req, res) => {
     try { return sendOk(res, await getSourcingEventDetails(getActiveOrganizationId(), parseId(req.params.id))); }
     catch (error) { return handleSourcingError(res, error); }
+  });
+
+  app.get("/api/sourcing/events/:id/email-preview", ...buyerRead, async (req, res) => {
+    try {
+      return sendOk(
+        res,
+        await previewSourcingInvitationEmails(getActiveOrganizationId(), parseId(req.params.id)),
+      );
+    } catch (error) {
+      return handleSourcingError(res, error);
+    }
   });
 
   app.post("/api/sourcing/events/:id/publish", ...buyerManage, async (req, res) => {

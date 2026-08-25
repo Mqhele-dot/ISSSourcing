@@ -143,9 +143,11 @@ export default function MobileCountsPage() {
   const warehouses = useQuery({
     queryKey: ["/api/warehouses", "mobile-counts"],
     queryFn: () => requestJson<Warehouse[]>("GET", "/api/warehouses"),
-    enabled: !sessionId,
     throwOnError: false,
   });
+
+  const warehouseName = (id: number | null | undefined) =>
+    warehouses.data?.find((warehouse) => warehouse.id === Number(id))?.name ?? `Warehouse #${id ?? "unknown"}`;
 
   useEffect(() => {
     if (warehouseId || !warehouses.data?.length) return;
@@ -374,19 +376,19 @@ export default function MobileCountsPage() {
             ) : null}
             {!warehouses.isLoading && !warehouses.isError && warehouses.data?.length === 0 ? (
               <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-                Configure a warehouse before creating counts. <Link className="font-medium underline" href={APP_ROUTES.inventory.warehouses}>Open warehouse administration</Link>
+                Configure a warehouse before creating counts. <Link className="font-medium underline" href={APP_ROUTES.admin.masterDataSection("warehouses")}>Open warehouse administration</Link>
               </div>
             ) : null}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
-                <Label>Warehouse</Label>
+                <Label>Count warehouse</Label>
                 <Select value={warehouseId || undefined} onValueChange={setWarehouseId} disabled={warehouses.isLoading || warehouses.isError || !online}>
                   <SelectTrigger data-testid="mobile-count-warehouse-select">
                     <SelectValue placeholder={warehouses.isLoading ? "Loading warehouses..." : "Select warehouse"} />
                   </SelectTrigger>
                   <SelectContent>
                     {(warehouses.data ?? []).map((warehouse) => (
-                      <SelectItem key={warehouse.id} value={String(warehouse.id)}>{warehouse.name}{warehouse.isDefault ? " (default)" : ""}</SelectItem>
+                      <SelectItem key={warehouse.id} value={String(warehouse.id)}>{warehouse.name}{warehouse.isDefault ? " (organization default)" : ""}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -427,7 +429,7 @@ export default function MobileCountsPage() {
                   <div>
                     <p className="font-semibold">Count #{session.id}</p>
                     <p className="text-sm text-muted-foreground">
-                      Warehouse {session.warehouseId} · {session.mode} · {session.status}
+                      {warehouseName(session.warehouseId)} · {session.mode} · {session.status}
                     </p>
                   </div>
                   <Badge variant="outline">{session.status}</Badge>
@@ -454,7 +456,7 @@ export default function MobileCountsPage() {
     <div className="space-y-4 p-4" data-testid="mobile-count-session-page">
       <PageHeader
         title={isReview ? "Variance review" : `Count #${sessionId}`}
-        description={session ? `Warehouse ${session.warehouseId} · ${session.mode} · ${session.status}` : "Loading count session"}
+        description={session ? `${warehouseName(session.warehouseId)} · ${session.mode} · ${session.status}` : "Loading count session"}
         breadcrumb={<Link href={APP_ROUTES.operations.mobileCounts}>Back</Link>}
       />
 

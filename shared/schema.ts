@@ -95,6 +95,13 @@ export const organizationSettings = pgTable("organization_settings", {
     .primaryKey()
     .references(() => organizations.id, { onDelete: "cascade" }),
   displayName: text("display_name"),
+  legalName: text("legal_name"),
+  registrationNumber: text("registration_number"),
+  taxNumber: text("tax_number"),
+  address: text("address"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  website: text("website"),
   logoUrl: text("logo_url"),
   reportFooter: text("report_footer"),
   planTier: text("plan_tier").default("standard"),
@@ -1373,6 +1380,101 @@ export const supplierQuoteLines = pgTable(
   (t) => [uniqueIndex("supplier_quote_lines_quote_event_line_uidx").on(t.quoteId, t.eventLineId)],
 );
 
+/**
+ * Customer-facing commercial quotations. These deliberately do not share the
+ * supplier_quotes table: supplier quotes are inbound sourcing evidence, while
+ * commercial quotations are branded offers issued by this organization.
+ */
+export const commercialQuotations = pgTable(
+  "commercial_quotations",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    quotationNumber: text("quotation_number").notNull(),
+    status: text("status").notNull().default("DRAFT"),
+    version: integer("version").notNull().default(1),
+    recipientSource: text("recipient_source").notNull().default("MANUAL"),
+    recipientSupplierId: integer("recipient_supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+    recipientCompany: text("recipient_company").notNull(),
+    recipientName: text("recipient_name"),
+    recipientEmail: text("recipient_email"),
+    recipientPhone: text("recipient_phone"),
+    recipientAddress: text("recipient_address"),
+    recipientRegistrationNumber: text("recipient_registration_number"),
+    recipientTaxNumber: text("recipient_tax_number"),
+    recipientPhysicalAddress: text("recipient_physical_address"),
+    recipientBillingAddress: text("recipient_billing_address"),
+    recipientDeliveryAddress: text("recipient_delivery_address"),
+    supplierLegalName: text("supplier_legal_name"),
+    supplierRegistrationNumber: text("supplier_registration_number"),
+    supplierTaxNumber: text("supplier_tax_number"),
+    supplierPhysicalAddress: text("supplier_physical_address"),
+    supplierEmail: text("supplier_email"),
+    supplierPhone: text("supplier_phone"),
+    supplierWebsite: text("supplier_website"),
+    currencyCode: text("currency_code").notNull(),
+    reportingCurrencyCode: text("reporting_currency_code").notNull(),
+    exchangeRateToReporting: real("exchange_rate_to_reporting").notNull().default(1),
+    subtotal: real("subtotal").notNull().default(0),
+    discountTotal: real("discount_total").notNull().default(0),
+    taxTotal: real("tax_total").notNull().default(0),
+    total: real("total").notNull().default(0),
+    reportingTotal: real("reporting_total").notNull().default(0),
+    validUntil: timestamp("valid_until").notNull(),
+    paymentTermsId: integer("payment_terms_id").references(() => paymentTerms.id),
+    incotermId: integer("incoterm_id").references(() => incoterms.id),
+    acceptanceMethod: text("acceptance_method").notNull().default("SIGNATURE"),
+    acceptanceTerms: text("acceptance_terms").notNull(),
+    legalTerms: text("legal_terms"),
+    notes: text("notes"),
+    createdByUserId: integer("created_by_user_id").references(() => users.id),
+    approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+    approvedAt: timestamp("approved_at"),
+    issuedAt: timestamp("issued_at"),
+    acceptedByName: text("accepted_by_name"),
+    acceptedAt: timestamp("accepted_at"),
+    acceptanceReference: text("acceptance_reference"),
+    rejectedByName: text("rejected_by_name"),
+    rejectedAt: timestamp("rejected_at"),
+    rejectionReason: text("rejection_reason"),
+    rejectionReference: text("rejection_reference"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("commercial_quotations_org_number_uidx").on(t.organizationId, t.quotationNumber),
+    index("commercial_quotations_org_status_updated_idx").on(t.organizationId, t.status, t.updatedAt),
+  ],
+);
+
+export const commercialQuotationLines = pgTable(
+  "commercial_quotation_lines",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull().references(() => organizations.id),
+    quotationId: integer("quotation_id").notNull().references(() => commercialQuotations.id, { onDelete: "cascade" }),
+    lineNumber: integer("line_number").notNull(),
+    lineType: text("line_type").notNull().default("CATALOG"),
+    inventoryItemId: integer("inventory_item_id").references(() => inventoryItems.id),
+    sku: text("sku"),
+    description: text("description").notNull(),
+    quantity: real("quantity").notNull(),
+    unitOfMeasureId: integer("unit_of_measure_id").references(() => unitsOfMeasure.id),
+    unitOfMeasureCode: text("unit_of_measure_code").notNull(),
+    unitPrice: real("unit_price").notNull(),
+    discountPercent: real("discount_percent").notNull().default(0),
+    taxCodeId: integer("tax_code_id").references(() => taxCodes.id),
+    taxCode: text("tax_code"),
+    taxRate: real("tax_rate").notNull().default(0),
+    netAmount: real("net_amount").notNull(),
+    taxAmount: real("tax_amount").notNull().default(0),
+    lineTotal: real("line_total").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("commercial_quotation_lines_quote_line_uidx").on(t.quotationId, t.lineNumber)],
+);
+
 export const sourcingClarifications = pgTable("sourcing_clarifications", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").notNull().references(() => organizations.id),
@@ -1793,7 +1895,7 @@ export type OperationalInventoryListItem = {
 };
 
 export type UniversalSearchResult = {
-  type: "inventory" | "supplier" | "purchase-order" | "requisition" | "rfq" | "shipment" | "exception";
+  type: "inventory" | "supplier" | "purchase-order" | "requisition" | "rfq" | "quotation" | "shipment" | "exception";
   id: number | string;
   title: string;
   subtitle: string;

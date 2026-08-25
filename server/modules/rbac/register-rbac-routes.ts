@@ -10,7 +10,7 @@ import { approvalPolicies, organizationMembers, userApprovalLimits, users } from
 import { and, eq } from "drizzle-orm";
 import type { EffectiveAccessResponse, EffectivePermission, RoleCatalogEntry } from "@shared/rbac-contracts";
 import { governedApprovalEntityTypes, isGovernedApprovalEntityType } from "../../services/approval-workflow-service";
-import { approvalWorkflowCatalog, navigationAccessCatalog } from "@shared/authority-catalogs";
+import { approvalWorkflowCatalog, navigationAccessCatalog, workflowBlueprintCatalog } from "@shared/authority-catalogs";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -33,6 +33,89 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
     "/api/approval-workflows/catalog",
     auth.ensureAuthenticated,
     (_req: Request, res: Response) => sendOk(res, { items: approvalWorkflowCatalog }),
+  );
+
+  app.get(
+    "/api/workflows/governance/summary",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("users", "read"),
+    async (_req: Request, res: Response) => {
+      const organizationId = getActiveOrganizationId();
+      const [policyResult, pendingResult, recentResult] = await Promise.all([
+        pool.query(
+          `SELECT count(*) FILTER (WHERE is_active)::int AS active_rules,
+                  count(DISTINCT entity_type) FILTER (WHERE is_active)::int AS configured_workflows,
+                  count(*) FILTER (WHERE is_active AND (approval_level > 1 OR amount_min >= 50000))::int AS high_risk_rules,
+                  max(updated_at) AS last_rule_change,
+                  coalesce((
+                    SELECT jsonb_object_agg(grouped.entity_type, grouped.rule_count)
+                    FROM (
+                      SELECT entity_type, count(*)::int AS rule_count
+                      FROM approval_policies
+                      WHERE organization_id = $1 AND is_active
+                      GROUP BY entity_type
+                    ) grouped
+                  ), '{}'::jsonb) AS rules_by_entity
+           FROM approval_policies WHERE organization_id = $1`,
+          [organizationId],
+        ),
+        pool.query(
+          `WITH latest AS (
+             SELECT DISTINCT ON (entity_type, entity_id)
+                    entity_type, entity_id, action, new_status, performed_at, level
+             FROM approval_history
+             WHERE organization_id = $1
+             ORDER BY entity_type, entity_id, performed_at DESC, id DESC
+           )
+           SELECT entity_type, entity_id, action, new_status, performed_at, level,
+                  count(*) OVER()::int AS total,
+                  count(*) FILTER (WHERE performed_at < now() - interval '48 hours') OVER()::int AS overdue
+           FROM latest
+           WHERE action = 'submitted' OR new_status IN ('submitted', 'pending_approval')
+           ORDER BY performed_at ASC
+           LIMIT 25`,
+          [organizationId],
+        ),
+        pool.query(
+          `SELECT ah.id, ah.entity_type, ah.entity_id, ah.action, ah.level, ah.comment,
+                  ah.previous_status, ah.new_status, ah.performed_at,
+                  coalesce(u.full_name, u.username, 'System') AS actor_name
+           FROM approval_history ah
+           LEFT JOIN users u ON u.id = ah.performed_by
+           WHERE ah.organization_id = $1
+           ORDER BY ah.performed_at DESC, ah.id DESC
+           LIMIT 20`,
+          [organizationId],
+        ),
+      ]);
+      const policy = policyResult.rows[0] ?? {};
+      const pendingRows = pendingResult.rows;
+      return sendOk(res, {
+        blueprints: workflowBlueprintCatalog,
+        approvalCatalog: approvalWorkflowCatalog,
+        metrics: {
+          activeRules: Number(policy.active_rules ?? 0),
+          configuredWorkflows: Number(policy.configured_workflows ?? 0),
+          governedWorkflows: approvalWorkflowCatalog.filter((item) => item.active).length,
+          pendingApprovals: Number(pendingRows[0]?.total ?? 0),
+          overdueApprovals: Number(pendingRows[0]?.overdue ?? 0),
+          highRiskRules: Number(policy.high_risk_rules ?? 0),
+          lastRuleChange: policy.last_rule_change ?? null,
+        },
+        rulesByEntity: policy.rules_by_entity ?? {},
+        pending: pendingRows.map((row) => ({
+          entityType: row.entity_type, entityId: Number(row.entity_id), action: row.action,
+          status: row.new_status, level: Number(row.level ?? 1), submittedAt: row.performed_at,
+          overdue: new Date(row.performed_at).getTime() < Date.now() - 48 * 60 * 60 * 1000,
+        })),
+        recentActions: recentResult.rows.map((row) => ({
+          id: Number(row.id), entityType: row.entity_type, entityId: Number(row.entity_id),
+          action: row.action, level: Number(row.level ?? 1), comment: row.comment,
+          previousStatus: row.previous_status, newStatus: row.new_status,
+          performedAt: row.performed_at, actorName: row.actor_name,
+        })),
+      });
+    },
   );
 
   const systemRoleDescriptions: Record<string, string> = {
@@ -279,7 +362,7 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
       const result = await pool.query(
         `WITH governed AS (
            SELECT al.id, al.created_at, 'change'::text AS event_kind, al.action,
-                  al.resource_type AS entity_type, al.resource_id AS entity_id,
+                  al.resource_type AS entity_type, al.resource_id::text AS entity_id,
                   al.user_id, u.full_name, u.username, al.reason,
                   CASE WHEN COALESCE(al.details->>'approvalLevel', '') ~ '^[0-9]+$'
                        THEN (al.details->>'approvalLevel')::integer ELSE NULL END AS approval_level,
@@ -288,12 +371,12 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
            FROM audit_logs al LEFT JOIN users u ON u.id = al.user_id
            WHERE al.organization_id = $1 AND (
              al.user_id = $2
-             OR (al.resource_type = 'user_approval_authority' AND al.resource_id = $2)
+             OR (al.resource_type = 'user_approval_authority' AND al.resource_id::text = $2::text)
              OR COALESCE(al.details->'before'->>'userId', al.details->'after'->>'userId') = $2::text
            )
            UNION ALL
            SELECT ah.id, ah.performed_at, 'approval'::text, ah.action,
-                  ah.entity_type, ah.entity_id, ah.performed_by, u.full_name, u.username,
+                  ah.entity_type, ah.entity_id::text, ah.performed_by, u.full_name, u.username,
                   ah.comment, ah.level, jsonb_build_object('status', ah.previous_status),
                   jsonb_build_object('status', ah.new_status), NULL::text, NULL::text
            FROM approval_history ah LEFT JOIN users u ON u.id = ah.performed_by
@@ -309,7 +392,8 @@ export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, {
         items: result.rows.map((row) => ({
           id: Number(row.id), createdAt: row.created_at, eventKind: row.event_kind, action: row.action,
-          entityType: row.entity_type, entityId: row.entity_id == null ? null : Number(row.entity_id),
+          entityType: row.entity_type,
+          entityId: row.entity_id != null && /^\d+$/.test(String(row.entity_id)) ? Number(row.entity_id) : null,
           actorUserId: Number(row.user_id), actorName: row.full_name ?? row.username ?? `User #${row.user_id}`,
           reason: row.reason, approvalLevel: row.approval_level == null ? null : Number(row.approval_level),
           before: row.before_state, after: row.after_state, requestId: row.request_id,

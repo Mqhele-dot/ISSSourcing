@@ -96,16 +96,19 @@ export default function ApprovalPoliciesPage() {
   });
   const entityTypes = useMemo(() => workflowCatalogQuery.data?.items ?? [], [workflowCatalogQuery.data?.items]);
   const canManagePolicies = ["admin", "manager"].includes(String(user?.role ?? "").toLowerCase());
+  const requestedEntity = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("entity");
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingVersion, setEditingVersion] = useState(1);
   const [stalePolicy, setStalePolicy] = useState(false);
   const [changeReason, setChangeReason] = useState("");
   const [conflictingPolicies, setConflictingPolicies] = useState<Array<{ id: number; name: string; amountMin: number; amountMax: number | null; approvalLevel: number }>>([]);
-  const [previewEntity, setPreviewEntity] = useState<GovernedApprovalEntityType>("requisition");
+  const [previewEntity, setPreviewEntity] = useState<GovernedApprovalEntityType>(
+    (requestedEntity as GovernedApprovalEntityType) || "requisition",
+  );
   const [previewAmount, setPreviewAmount] = useState("5000");
   const [search, setSearch] = useState("");
-  const [entityFilter, setEntityFilter] = useState("all");
+  const [entityFilter, setEntityFilter] = useState(requestedEntity || "all");
   const [statusFilter, setStatusFilter] = useState("active");
   const [overlapOnly, setOverlapOnly] = useState(false);
   const [page, setPage] = useState(1);
@@ -141,6 +144,13 @@ export default function ApprovalPoliciesPage() {
   useEffect(() => {
     setPage(1);
   }, [search, entityFilter, statusFilter, overlapOnly]);
+
+  useEffect(() => {
+    if (!requestedEntity || !entityTypes.some((item) => item.entityType === requestedEntity)) return;
+    setEntityFilter(requestedEntity);
+    setForm((current) => current.name ? current : { ...current, entityType: requestedEntity });
+    setPreviewEntity(requestedEntity as GovernedApprovalEntityType);
+  }, [entityTypes, requestedEntity]);
 
   const { data: users = [] } = useQuery({
     queryKey: ["/api/users"],

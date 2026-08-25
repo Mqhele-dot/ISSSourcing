@@ -89,7 +89,13 @@ export function useApWorkspaceQueries(options: { invoicePage: number; batchPage:
   const payableInvoicePage = payableInvoicesQuery.data && !Array.isArray(payableInvoicesQuery.data) && Array.isArray(payableInvoicesQuery.data.items)
     ? payableInvoicesQuery.data
     : { items: [], total: 0, page: options.invoicePage, pageSize: options.pageSize, hasNext: false };
-  const readyForBatch = payableInvoicePage.items;
+  // The v2 endpoint applies the payable predicate server-side. Keep the client fail-closed as well:
+  // a stale or malformed row must never become selectable without explicit PO/GRN match evidence.
+  const readyForBatch = payableInvoicePage.items.filter((invoice) => {
+    const matchStatus = String(invoice.latestMatchResult?.status ?? "").toUpperCase();
+    if (invoice.purchaseOrderId == null || matchStatus !== "MATCHED") return false;
+    return true;
+  });
 
   return {
     overview,

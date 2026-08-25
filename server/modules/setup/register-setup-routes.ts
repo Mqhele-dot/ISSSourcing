@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { and, eq } from "drizzle-orm";
-import { approvalPolicies, departments, organizations, paymentTerms, warehouses } from "@shared/schema";
+import { approvalPolicies, departments, organizationSettings, organizations, paymentTerms, warehouses } from "@shared/schema";
 import { db, pool } from "../../db";
 import { sendOk } from "../../api-response";
 import { appEnv } from "../../config/env";
@@ -469,6 +469,15 @@ export function registerSetupRoutes(app: Express, auth: Auth): void {
         .update(organizations)
         .set({ name: body.companyName.trim(), updatedAt: new Date() })
         .where(and(eq(organizations.id, orgId)));
+      await db.insert(organizationSettings).values({
+        organizationId: orgId,
+        displayName: body.companyName.trim(),
+        legalName: body.companyName.trim(),
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: organizationSettings.organizationId,
+        set: { displayName: body.companyName.trim(), updatedAt: new Date() },
+      });
 
       await ensureStarterApprovalPolicies(orgId);
 

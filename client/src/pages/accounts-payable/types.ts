@@ -76,12 +76,13 @@ export type ApprovalPreview = {
   suggestedApprovers: Array<{ username: string; approvalLevel: number }>;
 };
 
-export type ApWorkspaceTab = "intake" | "approvals" | "exceptions" | "payments";
+export type ApWorkspaceTab = "intake" | "approvals" | "exceptions" | "aging" | "payments";
 
 export const AP_WORKSPACE_TAB_ORDER: readonly ApWorkspaceTab[] = [
   "intake",
   "approvals",
   "exceptions",
+  "aging",
   "payments",
 ];
 

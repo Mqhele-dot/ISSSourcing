@@ -8,7 +8,7 @@ import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { errorMessageWithRequestId, requestJson } from "@/lib/queryClient";
 import type { AnalyticsSectionSlug } from "@/lib/routes/app-routes";
-import type { ApOverview, ControlTowerOverview, InventoryStats, SpendAnalytics } from "./analytics-workspace-types";
+import type { ApOverview, ControlTowerDashboard, ControlTowerOverview, InventoryStats, SpendAnalytics } from "./analytics-workspace-types";
 
 export type AnalyticsSourceId = "inventoryStats" | "controlTower" | "apOverview" | "spendAnalytics";
 
@@ -44,8 +44,21 @@ export function useAnalyticsWorkspaceQueries(section: AnalyticsSectionSlug) {
   });
 
   const controlTowerQuery = useQuery({
-    queryKey: ["/api/control-tower/overview", "analytics-workspace"],
-    queryFn: () => requestJson<ControlTowerOverview>("GET", "/api/control-tower/overview"),
+    queryKey: ["/api/dashboard/control-tower", "analytics-workspace"],
+    queryFn: async (): Promise<ControlTowerOverview> => {
+      const dashboard = await requestJson<ControlTowerDashboard>("GET", "/api/dashboard/control-tower?trendDays=7&businessArea=all");
+      const pipeline = new Map((dashboard.procurementPipeline ?? []).map((entry) => [entry.id, Number(entry.count)]));
+      return {
+        kpis: {
+          lowStockSkus: Number(dashboard.kpis?.lowStockItems ?? 0),
+          posAwaitingAction: Number(pipeline.get("po_approved") ?? 0),
+          pendingRequisitions: Number(dashboard.kpis?.openRequisitions ?? 0),
+          lateShipments: Number(dashboard.kpis?.delayedShipments ?? 0),
+          inTransitShipments: Number(dashboard.kpis?.inTransitShipments ?? 0),
+          overdueInvoices: Number(dashboard.kpis?.apInvoicesDueOrOverdue ?? 0),
+        },
+      };
+    },
     throwOnError: false,
   });
 

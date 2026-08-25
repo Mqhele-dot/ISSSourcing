@@ -16,6 +16,7 @@ import {
 } from "./test-http.ts";
 import { exitTest } from "./test-exit.ts";
 import { pool } from "../server/db.ts";
+import { assertDisposableDatabaseUrl } from "../server/config/database-safety.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -45,6 +46,9 @@ function unwrapInsert(json: unknown): ShipmentRow {
 }
 
 async function main() {
+  // Refuse before seeding; the shared HTTP helper only checks at the first mutation,
+  // which is too late for this suite's fixture preparation step.
+  assertDisposableDatabaseUrl(process.env.TEST_DATABASE_URL);
   const seed = spawnSync("npm", ["run", "seed:functional-qa"], {
     cwd: repoRoot,
     shell: true,

@@ -1,1 +1,1 @@
-export { default } from "./analytics-workspace/analytics-workspace-page";
+export { default } from "./analytics-workspace/analytics-insights-page";

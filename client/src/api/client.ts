@@ -3,6 +3,8 @@ import { setFallbackState } from "@/lib/fallback-store";
 import { toastStore } from "@/lib/toast-store";
 import { addDiagnosticEvent, redactDiagnosticDetails } from "@/lib/diagnostics/diagnostics-store";
 import type { DiagnosticFinding } from "@shared/diagnostics/findings";
+import type { GovernedApprovalEntityType } from "@shared/authority-catalogs";
+import type { InventorySummary, PaginatedResponse } from "@shared/schema";
 import type {
   ActivityRecord,
   ApiErrorPayload,
@@ -25,6 +27,7 @@ import type {
   PurchaseReceiveResult,
   ShipmentDetail,
   ShipmentListItem,
+  ShipmentPage,
   TutorialStartResult,
   TutorialStatus,
   GasDashboardSummary,
@@ -414,6 +417,21 @@ export async function fetchInventoryDetail(sku: string): Promise<InventoryDetail
     unassignedQuantity: Number(d.unassignedQuantity ?? 0),
     quantityMismatch: Boolean(d.quantityMismatch),
     location: (d.location ?? item?.location) as string | null | undefined,
+    description: (d.description ?? item?.description) as string | null | undefined,
+    categoryId: d.categoryId == null && item?.categoryId == null ? null : Number(d.categoryId ?? item?.categoryId),
+    price: Number(d.price ?? item?.price ?? 0),
+    cost: d.cost == null && item?.cost == null ? null : Number(d.cost ?? item?.cost),
+    lowStockThreshold: d.lowStockThreshold == null && item?.lowStockThreshold == null ? null : Number(d.lowStockThreshold ?? item?.lowStockThreshold),
+    barcode: (d.barcode ?? item?.barcode) as string | null | undefined,
+    barcodeType: (d.barcodeType ?? item?.barcodeType) as string | null | undefined,
+    unitOfMeasure: (d.unitOfMeasure ?? item?.unitOfMeasure) as string | null | undefined,
+    supplierPartNumber: (d.supplierPartNumber ?? item?.supplierPartNumber) as string | null | undefined,
+    defaultWarehouseId: d.defaultWarehouseId == null && item?.defaultWarehouseId == null ? null : Number(d.defaultWarehouseId ?? item?.defaultWarehouseId),
+    minOrderQuantity: d.minOrderQuantity == null && item?.minOrderQuantity == null ? null : Number(d.minOrderQuantity ?? item?.minOrderQuantity),
+    leadTime: d.leadTime == null && item?.leadTime == null ? null : Number(d.leadTime ?? item?.leadTime),
+    reorderPoint: d.reorderPoint == null && item?.reorderPoint == null ? null : Number(d.reorderPoint ?? item?.reorderPoint),
+    maxStockLevel: d.maxStockLevel == null && item?.maxStockLevel == null ? null : Number(d.maxStockLevel ?? item?.maxStockLevel),
+    status: (d.status ?? item?.status) as string | null | undefined,
   };
 }
 
@@ -515,10 +533,7 @@ export async function fetchInventory(params?: {
   });
 }
 
-export type InventoryPage = import("@shared/schema").PaginatedResponse<
-  InventoryListItem,
-  import("@shared/schema").InventorySummary
->;
+export type InventoryPage = PaginatedResponse<InventoryListItem, InventorySummary>;
 
 export async function fetchInventoryPage(params: {
   page?: number; pageSize?: number; q?: string; location?: string;
@@ -568,7 +583,7 @@ export type ApprovalSuggestionsResult = {
 };
 
 export async function fetchApprovalSuggestions(params: {
-  entityType: "requisition" | "purchase_order" | "sourcing_award" | "supplier_onboarding" | "contract" | "inventory_transfer" | "inventory_adjustment" | "invoice" | "payment_batch" | "master_data_change";
+  entityType: GovernedApprovalEntityType;
   amount: number;
 }): Promise<ApprovalSuggestionsResult> {
   const search = new URLSearchParams();
@@ -631,6 +646,29 @@ export async function fetchShipmentsEnvelope(params?: {
   const url =
     search.size > 0 ? `/api/logistics/shipments?${search.toString()}` : "/api/logistics/shipments";
   return fetchWithMeta<ShipmentListItem[]>(url);
+}
+
+export async function fetchShipmentsPage(params: {
+  page: number;
+  pageSize: 25 | 50 | 100;
+  q?: string;
+  status?: string;
+  po?: string;
+  supplier?: string;
+  carrier?: string;
+  risk?: string;
+  etaFrom?: string;
+  etaTo?: string;
+  tracking?: string;
+  direction?: string;
+  sourceType?: string;
+  sort?: "updated_desc" | "updated_asc" | "eta_asc" | "eta_desc" | "status_asc" | "po_asc";
+}): Promise<ShipmentPage> {
+  const search = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize) });
+  for (const [key, value] of Object.entries(params)) {
+    if (key !== "page" && key !== "pageSize" && typeof value === "string" && value.trim()) search.set(key, value.trim());
+  }
+  return apiFetch<ShipmentPage>(`/api/v2/logistics/shipments?${search.toString()}`);
 }
 
 export async function fetchShipment(id: string | number): Promise<ShipmentDetail> {
@@ -802,6 +840,31 @@ export async function fetchExceptionsEnvelope(params?: {
   if (params?.type) search.set("type", params.type);
   const url = search.size > 0 ? `/api/exceptions?${search.toString()}` : "/api/exceptions";
   return fetchWithMeta<OperationalException[]>(url);
+}
+
+export type ExceptionPage = PaginatedResponse<OperationalException, {
+  total: number;
+  active: number;
+  byStatus: Record<string, number>;
+}>;
+
+export async function fetchExceptionsPageEnvelope(params: {
+  page: number;
+  pageSize: 25 | 50 | 100;
+  severity?: string;
+  status?: string;
+  type?: string;
+  sort?: "created_desc" | "created_asc" | "severity_desc";
+}): Promise<ApiEnvelopeResult<ExceptionPage>> {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    pageSize: String(params.pageSize),
+    sort: params.sort ?? "created_desc",
+  });
+  if (params.severity) search.set("severity", params.severity);
+  if (params.status) search.set("status", params.status);
+  if (params.type) search.set("type", params.type);
+  return fetchWithMeta<ExceptionPage>(`/api/v2/exceptions?${search.toString()}`);
 }
 
 export async function fetchException(id: string | number): Promise<OperationalException> {

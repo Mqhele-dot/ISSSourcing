@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ClipboardCheck, Gavel, Plus, RefreshCw, Send, Scale, Search, X } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Gavel, Mail, Plus, RefreshCw, Send, Scale, Search, X } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PageDataState, PageShell, PageToolbar } from "@/components/page-shell";
 import { PanelInlineError } from "@/components/panel-inline-error";
@@ -49,6 +49,19 @@ type Invitation = { invitation: { id: number; supplierId: number; status: string
 type QuoteSummary = { quote: { id: number; quoteNumber: string; supplierId: number; status: string; version: number; currencyCode: string; reportingTotal: number; complianceStatus: string }; supplierName: string };
 type Award = { id: number; status: string; justification: string; recommendedByUserId: number; approvedByUserId?: number | null; convertedPurchaseOrderId?: number | null };
 type EventDetails = { event: SourcingEvent; lines: EventLine[]; criteria: Criterion[]; invitations: Invitation[]; quotes: QuoteSummary[]; clarifications: unknown[]; awards: Award[] };
+type RfqEmailPreview = {
+  event: Pick<SourcingEvent, "id" | "eventNumber" | "title" | "status" | "deadline" | "reportingCurrencyCode">;
+  portalPath: string;
+  previews: Array<{
+    supplierId: number;
+    supplierName: string;
+    to: string | null;
+    recipientState: "ready" | "missing_email";
+    subject: string;
+    text: string;
+    html: string;
+  }>;
+};
 type ComparisonLine = { id: number; quoteId: number; eventLineId: number; quantity: number; unitPrice: number; landedCost: number; compliant: boolean };
 type Comparison = Array<{ quote: QuoteSummary["quote"]; supplierName: string; lines: ComparisonLine[]; weightedScore: number | null }>;
 type Supplier = { id: number; name: string; status: string; onboardingStatus?: string | null; complianceStatus?: string | null };
@@ -284,8 +297,14 @@ function EvaluationAndAwardPanel({ eventId, details, comparison }: { eventId: nu
 
 function EventDetail({ eventId }: { eventId: number }) {
   const { toast } = useToast();
+  const [emailPreviewOpen, setEmailPreviewOpen] = useState(false);
   const detailsQuery = useQuery<EventDetails>({ queryKey: qk.sourcingEvent(eventId), queryFn: () => requestJson("GET", `/api/sourcing/events/${eventId}`) });
   const comparisonQuery = useQuery<Comparison>({ queryKey: qk.sourcingComparison(eventId), queryFn: () => requestJson("GET", `/api/sourcing/events/${eventId}/comparison`), enabled: Boolean(detailsQuery.data && !["DRAFT", "OPEN"].includes(detailsQuery.data.event.status)) });
+  const emailPreviewQuery = useQuery<RfqEmailPreview>({
+    queryKey: ["/api/sourcing/events", eventId, "email-preview"],
+    queryFn: () => requestJson("GET", `/api/sourcing/events/${eventId}/email-preview`),
+    enabled: emailPreviewOpen,
+  });
   const workflowMutation = useMutation({
     mutationFn: (action: "publish" | "close") => requestJson("POST", `/api/sourcing/events/${eventId}/${action}`, {}, { headers: { "Idempotency-Key": mutationKey() } }),
     onSuccess: async (_result, action) => {
@@ -295,11 +314,47 @@ function EventDetail({ eventId }: { eventId: number }) {
   });
   return <PageDataState isLoading={detailsQuery.isLoading} error={detailsQuery.error} isEmpty={!detailsQuery.data} onRetry={() => void detailsQuery.refetch()} emptyView={<div>RFQ not found.</div>}>
     {detailsQuery.data ? <div className="space-y-5" data-testid="sourcing-event-detail">
-      <PageHeader title={detailsQuery.data.event.title} subtitle={`${detailsQuery.data.event.eventNumber} / closes ${new Date(detailsQuery.data.event.deadline).toLocaleString()}`} breadcrumb={<Link href={APP_ROUTES.procurement.sourcing}>Sourcing / RFQs</Link>} actions={<div className="flex gap-2"><Badge variant={statusVariant(detailsQuery.data.event.status)} className="self-center">{detailsQuery.data.event.status}</Badge>{detailsQuery.data.event.status === "DRAFT" ? <Can resource="purchases" permissionType="manage" reason="Publishing requires sourcing management permission"><Button onClick={() => workflowMutation.mutate("publish")} disabled={workflowMutation.isPending}><Send className="mr-2 h-4 w-4" />Publish RFQ</Button></Can> : null}{detailsQuery.data.event.status === "OPEN" ? <Can resource="purchases" permissionType="manage" reason="Closing requires sourcing management permission"><Button onClick={() => workflowMutation.mutate("close")} disabled={workflowMutation.isPending}><ClipboardCheck className="mr-2 h-4 w-4" />Close for evaluation</Button></Can> : null}</div>} />
+      <PageHeader title={detailsQuery.data.event.title} subtitle={`${detailsQuery.data.event.eventNumber} / closes ${new Date(detailsQuery.data.event.deadline).toLocaleString()}`} breadcrumb={<Link href={APP_ROUTES.procurement.sourcing}>Sourcing / RFQs</Link>} actions={<div className="flex flex-wrap gap-2"><Badge variant={statusVariant(detailsQuery.data.event.status)} className="self-center">{detailsQuery.data.event.status}</Badge><Button type="button" variant="outline" onClick={() => setEmailPreviewOpen(true)}><Mail className="mr-2 h-4 w-4" />Preview supplier emails</Button>{detailsQuery.data.event.status === "OPEN" ? <Button asChild variant="outline"><Link href={`${APP_ROUTES.procurement.quotationNew}?eventId=${detailsQuery.data.event.id}`}><Plus className="mr-2 h-4 w-4" />Capture quotation</Link></Button> : null}{detailsQuery.data.event.status === "DRAFT" ? <Can resource="purchases" permissionType="manage" reason="Publishing requires sourcing management permission"><Button onClick={() => workflowMutation.mutate("publish")} disabled={workflowMutation.isPending}><Send className="mr-2 h-4 w-4" />Publish RFQ</Button></Can> : null}{detailsQuery.data.event.status === "OPEN" ? <Can resource="purchases" permissionType="manage" reason="Closing requires sourcing management permission"><Button onClick={() => workflowMutation.mutate("close")} disabled={workflowMutation.isPending}><ClipboardCheck className="mr-2 h-4 w-4" />Close for evaluation</Button></Can> : null}</div>} />
       {workflowMutation.error ? <PanelInlineError title="Workflow action failed" description={workflowMutation.error.message} /> : null}
       <div className="grid gap-4 lg:grid-cols-3"><Card><CardHeader><CardTitle className="text-base">Commercial lines</CardTitle></CardHeader><CardContent className="space-y-2">{detailsQuery.data.lines.map((line) => <div key={line.id} className="flex justify-between border-b pb-2 text-sm"><span>{line.lineNumber}. {line.description}</span><span className="font-medium">{line.quantity}</span></div>)}</CardContent></Card><Card><CardHeader><CardTitle className="text-base">Invited suppliers</CardTitle></CardHeader><CardContent className="space-y-2">{detailsQuery.data.invitations.map((entry) => <div key={entry.invitation.id} className="flex items-center justify-between text-sm"><span>{entry.supplierName}</span><Badge variant={statusVariant(entry.invitation.status)}>{entry.invitation.status}</Badge></div>)}</CardContent></Card><Card><CardHeader><CardTitle className="text-base">Evaluation criteria</CardTitle></CardHeader><CardContent className="space-y-2">{detailsQuery.data.criteria.map((criterion) => <div key={criterion.id} className="flex items-center justify-between text-sm"><span>{criterion.name}</span><span className="font-medium">{criterion.weight}%</span></div>)}</CardContent></Card></div>
       <Card><CardHeader><CardTitle className="text-base">Quote comparison</CardTitle></CardHeader><CardContent>{detailsQuery.data.quotes.length === 0 ? <p className="text-sm text-muted-foreground">No supplier responses yet. The empty state reflects live RFQ data.</p> : <Table><TableHeader><TableRow><TableHead>Supplier</TableHead><TableHead>Quote</TableHead><TableHead>Compliance</TableHead><TableHead className="text-right">Reporting total</TableHead><TableHead className="text-right">Weighted score</TableHead></TableRow></TableHeader><TableBody>{(comparisonQuery.data ?? detailsQuery.data.quotes.map((entry) => ({ ...entry, weightedScore: null }))).map((entry) => <TableRow key={entry.quote.id}><TableCell className="font-medium">{entry.supplierName}</TableCell><TableCell>{entry.quote.quoteNumber} v{entry.quote.version}</TableCell><TableCell><Badge variant={statusVariant(entry.quote.complianceStatus)}>{entry.quote.complianceStatus}</Badge></TableCell><TableCell className="text-right">{entry.quote.currencyCode} {entry.quote.reportingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell><TableCell className="text-right">{entry.weightedScore == null ? "Not scored" : entry.weightedScore.toFixed(1)}</TableCell></TableRow>)}</TableBody></Table>}</CardContent></Card>
       {["EVALUATING", "AWARDED"].includes(detailsQuery.data.event.status) && comparisonQuery.data?.length ? <EvaluationAndAwardPanel eventId={eventId} details={detailsQuery.data} comparison={comparisonQuery.data} /> : null}
+      <Dialog open={emailPreviewOpen} onOpenChange={setEmailPreviewOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl" data-testid="rfq-email-preview-dialog">
+          <DialogHeader>
+            <DialogTitle>Supplier email preview</DialogTitle>
+            <DialogDescription>Review the exact recipient, subject, RFQ lines, deadline, and secure supplier-workspace link before publishing. This preview does not send email.</DialogDescription>
+          </DialogHeader>
+          <PageDataState
+            isLoading={emailPreviewQuery.isLoading}
+            error={emailPreviewQuery.error}
+            isEmpty={Boolean(emailPreviewQuery.data && emailPreviewQuery.data.previews.length === 0)}
+            onRetry={() => void emailPreviewQuery.refetch()}
+            emptyView={<p className="text-sm text-muted-foreground">No invited suppliers are available for preview.</p>}
+          >
+            <div className="space-y-4">
+              {emailPreviewQuery.data?.previews.map((preview) => (
+                <Card key={preview.supplierId}>
+                  <CardHeader className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <CardTitle className="text-base">{preview.supplierName}</CardTitle>
+                      <Badge variant={preview.recipientState === "ready" ? "secondary" : "destructive"}>
+                        {preview.recipientState === "ready" ? "Recipient ready" : "Supplier email missing"}
+                      </Badge>
+                    </div>
+                    <p className="text-sm"><span className="font-medium">To:</span> {preview.to ?? "Add an email in Supplier Master Data"}</p>
+                    <p className="text-sm"><span className="font-medium">Subject:</span> {preview.subject}</p>
+                  </CardHeader>
+                  <CardContent>
+                    <pre className="whitespace-pre-wrap rounded-md border bg-muted/30 p-4 font-sans text-sm leading-6">{preview.text}</pre>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </PageDataState>
+          <DialogFooter><Button type="button" variant="outline" onClick={() => setEmailPreviewOpen(false)}>Close preview</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div> : null}
   </PageDataState>;
 }

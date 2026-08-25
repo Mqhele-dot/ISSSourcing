@@ -4,7 +4,7 @@ export type RouteMobility =
   | "mobile-optimized"
   | "full-screen-task";
 
-export type PageShellVariant = "standard" | "wide-table" | "task-mode" | "analytics-mode";
+export type PageShellVariant = "standard" | "wide-form" | "wide-table" | "task-mode" | "analytics-mode";
 export type AppShellKind = "desktop" | "mobile";
 
 export type RouteLayoutCapabilities = {

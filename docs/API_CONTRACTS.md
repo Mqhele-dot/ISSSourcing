@@ -74,3 +74,5 @@ The codebase exposes **two** activity-related read paths. They serve different s
 - Requisitions: [`scripts/test-requisitions.ts`](../scripts/test-requisitions.ts).
 - Procurement E2E: [`scripts/test-procurement-flow.ts`](../scripts/test-procurement-flow.ts).
 - Add assertions for **both** success shape and error shape when changing an endpoint.
+- **Analytics insights:** `GET /api/analytics/{overview|procurement|inventory|logistics|suppliers|finance|exceptions|diagnostics|reports}` returns the standard success envelope containing `generatedAt`, server-confirmed filters/freshness/partial failures, filter catalogs, eight executive KPIs, chart series, bounded attention tables, recommendations, data-quality warnings, and report templates. All reads are tenant-scoped. Invalid dates or filter values return structured `400 INVALID_ANALYTICS_QUERY`; a failed source is recorded in `meta.partialFailures` without fabricating successful data.
+- **Analytics verification:** `npm run test:analytics-contracts` checks the area registry, KPI/chart/table contract, internal action routes, and stable UI test identifiers against a real organization.

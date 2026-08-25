@@ -96,27 +96,48 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
         return res.status(404).json({ message: "Inventory item not found" });
       }
 
-      const qty = Number((item as { quantity?: number }).quantity ?? 0);
+      const [warehouseRows, movements] = await Promise.all([
+        storage.getItemWarehouseInventory(id),
+        storage.getStockMovementsByItemId(id),
+      ]);
+      const positions = await Promise.all(
+        warehouseRows.map(async (position) => {
+          const warehouse = await storage.getWarehouse(position.warehouseId);
+          const onHand = Number(position.quantity ?? 0);
+          return {
+            id: position.id,
+            warehouseId: position.warehouseId,
+            warehouseName: warehouse?.name ?? `Warehouse #${position.warehouseId}`,
+            location: position.location,
+            aisle: position.aisle,
+            bin: position.bin,
+            onHand,
+            allocated: 0,
+            available: onHand,
+            updatedAt: position.updatedAt,
+          };
+        }),
+      );
+      const warehouseQuantity = positions.reduce((sum, position) => sum + position.onHand, 0);
+      const unassignedQuantity = Number((item as { quantity?: number }).quantity ?? 0);
+      const onHand = warehouseQuantity + unassignedQuantity;
       const payload = {
         ...item,
-        onHand: qty,
+        onHand,
         allocated: 0,
-        available: qty,
+        available: onHand,
+        warehouseQuantity,
+        unassignedQuantity,
+        hasCanonicalWarehouseStock: positions.length > 0,
         summary: {
-          onHand: qty,
+          onHand,
           allocated: 0,
-          available: qty,
+          available: onHand,
+          warehouseQuantity,
+          unassignedQuantity,
         },
-        positions: [
-          {
-            location: (item as { location?: string }).location ?? "Main Warehouse",
-            onHand: qty,
-            allocated: 0,
-            available: qty,
-            updatedAt: (item as { updatedAt?: Date }).updatedAt,
-          },
-        ],
-        movements: [] as unknown[],
+        positions,
+        movements: movements.slice(0, 100),
       };
       res.json(payload);
     } catch (error) {
@@ -132,6 +153,27 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
         sku: typeof req.body?.sku === "string" ? req.body.sku.trim() : req.body?.sku,
         name: typeof req.body?.name === "string" ? req.body.name.trim() : req.body?.name,
       });
+      const settings = await storage.getSettings();
+      const effectiveWarehouseId = validatedData.defaultWarehouseId ?? settings.defaultWarehouseId ?? null;
+      if (effectiveWarehouseId && !(await storage.getWarehouse(effectiveWarehouseId))) {
+        return res.status(400).json({
+          code: "INVENTORY_DEFAULT_WAREHOUSE_INVALID",
+          message: "The default warehouse must be active and belong to this organization.",
+        });
+      }
+      if (settings.requireLocationForItems && !validatedData.location?.trim()) {
+        return res.status(400).json({
+          code: "INVENTORY_LOCATION_REQUIRED",
+          message: "Inventory Settings require a storage location for every new item.",
+          hint: "Enter the item location or disable the location requirement in Production Control Plane settings.",
+        });
+      }
+      const effectiveData = {
+        ...validatedData,
+        defaultWarehouseId: effectiveWarehouseId,
+        lowStockThreshold: validatedData.lowStockThreshold ?? settings.lowStockDefaultThreshold ?? 10,
+        unitOfMeasure: validatedData.unitOfMeasure || settings.defaultUnit || "each",
+      };
       const existingItems = await storage.getAllInventoryItems();
       if (!(await ensurePlanLimitAllowsCreate(res, "skus", existingItems.length))) return;
 
@@ -144,7 +186,18 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
         });
       }
 
-      const newItem = await storage.createInventoryItem(validatedData);
+      if (validatedData.barcode?.trim()) {
+        const existingBarcode = await storage.getBarcodeByValue(validatedData.barcode.trim());
+        if (existingBarcode) {
+          return res.status(409).json({
+            code: "INVENTORY_BARCODE_EXISTS",
+            message: "This barcode is already linked to another inventory item.",
+            details: { barcode: validatedData.barcode.trim() },
+          });
+        }
+      }
+
+      const newItem = await storage.createInventoryItem(effectiveData);
       res.status(201).json(newItem);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -171,9 +224,58 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
         return res.status(400).json({ message: "Invalid inventory item ID" });
       }
 
-      const validatedData = insertInventoryItemSchema.partial().parse(req.body);
+      if (req.body?.quantity !== undefined) {
+        return res.status(400).json({
+          code: "INVENTORY_QUANTITY_ADJUSTMENT_REQUIRED",
+          message: "Warehouse quantity cannot be edited as item master data.",
+          hint: "Use Adjust stock or the barcode Scan in/Scan out workflow so the movement remains auditable.",
+        });
+      }
+      const validatedData = insertInventoryItemSchema
+        .omit({ organizationId: true, quantity: true })
+        .partial()
+        .parse(req.body);
+      const currentItem = await storage.getInventoryItem(id);
+      if (!currentItem) {
+        return res.status(404).json({ message: "Inventory item not found" });
+      }
+      const settings = await storage.getSettings();
+      const effectiveWarehouseId = validatedData.defaultWarehouseId === undefined
+        ? currentItem.defaultWarehouseId
+        : validatedData.defaultWarehouseId;
+      if (effectiveWarehouseId && !(await storage.getWarehouse(effectiveWarehouseId))) {
+        return res.status(400).json({
+          code: "INVENTORY_DEFAULT_WAREHOUSE_INVALID",
+          message: "The default warehouse must be active and belong to this organization.",
+        });
+      }
+      const effectiveLocation = validatedData.location === undefined ? currentItem.location : validatedData.location;
+      if (settings.requireLocationForItems && !effectiveLocation?.trim()) {
+        return res.status(400).json({
+          code: "INVENTORY_LOCATION_REQUIRED",
+          message: "Inventory Settings require every active item to retain a storage location.",
+        });
+      }
+      if (validatedData.sku?.trim() && validatedData.sku.trim() !== currentItem.sku) {
+        const skuOwner = await storage.getInventoryItemBySku(validatedData.sku.trim());
+        if (skuOwner && skuOwner.id !== id) {
+          return res.status(409).json({
+            code: "INVENTORY_SKU_EXISTS",
+            message: "Another inventory item already uses this SKU.",
+          });
+        }
+      }
+      if (validatedData.barcode?.trim()) {
+        const barcodeOwner = await storage.getBarcodeByValue(validatedData.barcode.trim());
+        if (barcodeOwner && barcodeOwner.itemId !== id) {
+          return res.status(409).json({
+            code: "INVENTORY_BARCODE_EXISTS",
+            message: "Another inventory item already uses this barcode.",
+          });
+        }
+      }
       const status = String((validatedData as { status?: unknown }).status ?? "").toLowerCase();
-      if (["inactive", "blocked", "archived"].includes(status)) {
+      if (["inactive", "discontinued", "blocked", "archived"].includes(status)) {
         const dependencies = await getInventoryItemWhereUsed(getActiveOrganizationId(), id);
         if (dependencies.length > 0) {
           const userId = (req as Request & { user?: { id?: number } }).user?.id;
@@ -197,6 +299,15 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
       if (!updatedItem) {
         return res.status(404).json({ message: "Inventory item not found" });
       }
+
+      await storage.createActivityLog({
+        action: "Inventory Item Updated",
+        description: `Updated ${updatedItem.name} (${updatedItem.sku}). Master-data fields changed without directly changing warehouse stock.`,
+        referenceType: "inventory_item",
+        referenceId: id,
+        itemId: id,
+        userId: (req as Request & { user?: { id?: number } }).user?.id,
+      }).catch(() => {});
 
       res.json(updatedItem);
     } catch (error) {

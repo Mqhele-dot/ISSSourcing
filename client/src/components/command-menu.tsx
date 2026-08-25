@@ -57,6 +57,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { getGlobalSearchTypeLabel, useGlobalSearch } from "@/features/global-search/use-global-search";
 import { useAuth } from "@/hooks/use-auth";
 import { hasProfileNavigationAccess } from "@/lib/access/profile-navigation-access";
+import { prefetchRouteChunk } from "@/lib/routes/route-prefetch";
 
 export const OPEN_COMMAND_PALETTE_EVENT = "invtrack:open-command-palette";
 
@@ -190,6 +191,7 @@ export function CommandMenu() {
 
   const run = useCallback(
     (path: string) => {
+      prefetchRouteChunk(path);
       setOpen(false);
       setSearchInput("");
       navigate(path);
@@ -229,6 +231,8 @@ export function CommandMenu() {
                   key={`${result.type}:${result.id}`}
                   value={`${result.title} ${result.subtitle} ${result.status ?? ""} ${getGlobalSearchTypeLabel(result.type)}`}
                   onSelect={() => run(result.href)}
+                  onMouseEnter={() => prefetchRouteChunk(result.href)}
+                  onFocus={() => prefetchRouteChunk(result.href)}
                 >
                   <Search className="h-4 w-4" />
                   <span className="ml-2">{result.title}</span>
@@ -245,6 +249,8 @@ export function CommandMenu() {
                 key={item.path}
                 value={`${item.label} ${item.path} ${item.keywords ?? ""}`}
                 onSelect={() => run(item.path)}
+                onMouseEnter={() => prefetchRouteChunk(item.path)}
+                onFocus={() => prefetchRouteChunk(item.path)}
               >
                 {item.icon}
                 <span className="ml-2">{item.label}</span>

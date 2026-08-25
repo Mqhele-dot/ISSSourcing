@@ -68,10 +68,17 @@ export function AnalyticsWorkspaceCharts({ section, bundle, health, formatMoney,
 
   if (loading) {
     return (
-      <div className="grid gap-4 lg:grid-cols-2" data-testid="analytics-charts-skeleton">
-        <Skeleton className="h-64 w-full rounded-lg" />
-        <Skeleton className="h-64 w-full rounded-lg" />
-      </div>
+      <section className="space-y-3" aria-busy="true" aria-live="polite">
+        <div>
+          <h2 className="text-lg font-semibold">Visual summaries</h2>
+          <p className="text-sm text-muted-foreground">Building charts from the latest tenant data…</p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2" data-testid="analytics-charts-skeleton">
+          <Skeleton className="h-72 w-full rounded-lg" />
+          <Skeleton className="h-72 w-full rounded-lg" />
+          <Skeleton className="h-72 w-full rounded-lg" />
+        </div>
+      </section>
     );
   }
 
@@ -96,7 +103,14 @@ export function AnalyticsWorkspaceCharts({ section, bundle, health, formatMoney,
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2" data-testid="analytics-workspace-charts">
+    <section className="space-y-3" aria-labelledby="analytics-visual-summaries-title">
+      <div>
+        <h2 id="analytics-visual-summaries-title" className="text-lg font-semibold">Visual summaries</h2>
+        <p className="text-sm text-muted-foreground">
+          Interactive charts summarize supplier spend, inventory health, and shipment risk. Use each card's link for the underlying records.
+        </p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2" data-testid="analytics-workspace-charts">
       {showSpend ? (
         <Card>
           <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0 pb-2">
@@ -175,6 +189,7 @@ export function AnalyticsWorkspaceCharts({ section, bundle, health, formatMoney,
           </CardContent>
         </Card>
       ) : null}
-    </div>
+      </div>
+    </section>
   );
 }

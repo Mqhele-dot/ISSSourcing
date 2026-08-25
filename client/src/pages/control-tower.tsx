@@ -268,7 +268,7 @@ export default function ControlTowerPage() {
                   title="Open requisitions"
                   value={payload.kpis.openRequisitions ?? 0}
                   description="Draft and pending approval"
-                  href={APP_ROUTES.procurement.requisitions}
+                  href={`${APP_ROUTES.procurement.requisitions}?status=active`}
                   status="neutral"
                   icon={<Warehouse className="h-4 w-4" />}
                 />
@@ -277,7 +277,7 @@ export default function ControlTowerPage() {
                   title="Open purchase orders"
                   value={payload.kpis.openPurchaseOrders ?? 0}
                   description="Not yet received / closed"
-                  href={APP_ROUTES.procurement.orders}
+                  href={`${APP_ROUTES.procurement.orders}?status=active`}
                   status="neutral"
                   icon={<Truck className="h-4 w-4" />}
                 />
@@ -289,7 +289,7 @@ export default function ControlTowerPage() {
                   title="Shipments delayed"
                   value={payload.kpis.delayedShipments ?? 0}
                   description="Past ETA, not delivered (PO-scoped)"
-                  href={APP_ROUTES.operations.logistics}
+                  href={`${APP_ROUTES.operations.logistics}?risk=late`}
                   status={(payload.kpis.delayedShipments ?? 0) > 0 ? "critical" : "good"}
                   icon={<Ship className="h-4 w-4" />}
                 />
@@ -298,7 +298,7 @@ export default function ControlTowerPage() {
                   title="AP due / overdue"
                   value={payload.kpis.apInvoicesDueOrOverdue ?? 0}
                   description="Supplier invoices needing payment attention"
-                  href={APP_ROUTES.finance.accountsPayable}
+                  href={`${APP_ROUTES.finance.invoices}?attention=due`}
                   status={(payload.kpis.apInvoicesDueOrOverdue ?? 0) > 0 ? "warn" : "good"}
                   icon={<Building2 className="h-4 w-4" />}
                 />
@@ -307,7 +307,7 @@ export default function ControlTowerPage() {
                   title="Operational exceptions"
                   value={payload.kpis.operationalExceptions ?? 0}
                   description="Open or in progress"
-                  href={APP_ROUTES.operations.exceptions}
+                  href={`${APP_ROUTES.operations.exceptions}?status=active`}
                   status={(payload.kpis.operationalExceptions ?? 0) > 0 ? "warn" : "good"}
                   icon={<AlertTriangle className="h-4 w-4" />}
                 />

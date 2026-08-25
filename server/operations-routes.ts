@@ -1,4 +1,5 @@
 import type { Express, NextFunction, Request, Response } from "express";
+import { z } from "zod";
 import {
   addOperationalExceptionComment,
   adjustOperationalInventory,
@@ -12,9 +13,11 @@ import {
   listOperationalActivity,
   listOperationalActivityPage,
   listOperationalExceptions,
+  listOperationalExceptionsPage,
   listOperationalInventory,
   listOperationalPurchaseOrders,
   listOperationalShipments,
+  listOperationalShipmentsPage,
   patchOperationalShipmentMeta,
   runOperationalExceptionChecks,
   receiveOperationalPurchaseOrder,
@@ -36,6 +39,8 @@ import {
   generateShipmentDeliveryNotePdf,
 } from "./services/document-generator-service";
 import { getReportingCurrencyCode } from "./lib/org-reporting-money";
+import { getOrganizationDocumentBranding } from "./services/organization-document-branding";
+import { getActiveOrganizationId } from "./organization-context";
 import {
   normalizeShipmentDirection,
   normalizeShipmentFilters,
@@ -52,6 +57,32 @@ type AuthGuards = {
     permissionType: string,
   ) => (req: Request, res: Response, next: NextFunction) => void;
 };
+
+const shipmentPageQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().refine((value) => [25, 50, 100].includes(value), "pageSize must be 25, 50, or 100").default(25),
+  q: z.string().trim().max(200).optional(),
+  status: z.string().trim().max(60).optional(),
+  po: z.string().trim().max(120).optional(),
+  supplier: z.string().trim().max(200).optional(),
+  carrier: z.string().trim().max(200).optional(),
+  risk: z.enum(["late", "no_eta", "due_soon", "exception", "on_time"]).optional(),
+  etaFrom: z.string().trim().max(40).optional(),
+  etaTo: z.string().trim().max(40).optional(),
+  tracking: z.string().trim().max(200).optional(),
+  direction: z.enum(["inbound", "outbound"]).optional(),
+  sourceType: z.string().trim().max(80).optional(),
+  sort: z.enum(["updated_desc", "updated_asc", "eta_asc", "eta_desc", "status_asc", "po_asc"]).default("updated_desc"),
+});
+
+const exceptionPageQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().refine((value) => [25, 50, 100].includes(value), "pageSize must be 25, 50, or 100").default(25),
+  severity: z.string().trim().max(40).optional(),
+  status: z.string().trim().max(40).optional(),
+  type: z.string().trim().max(80).optional(),
+  sort: z.enum(["created_desc", "created_asc", "severity_desc"]).default("created_desc"),
+});
 
 const INVENTORY_ROUTE_RESERVED_SEGMENTS = new Set([
   "low-stock",
@@ -570,6 +601,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
                 : "user";
           const metadataLines = [`Exported by: ${actor}`];
           const reportingCurrencyCode = await getReportingCurrencyCode(storage);
+          const organizationBranding = await getOrganizationDocumentBranding(getActiveOrganizationId(), { loadLogo: true });
           const poCodeRaw = full.currencyCode;
           const poCurrencyCode =
             typeof poCodeRaw === "string" && poCodeRaw.trim().length > 0 ? poCodeRaw.trim().toUpperCase() : null;
@@ -583,7 +615,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             [full],
             `Purchase order - ${full.orderNumber}`,
             metadataLines,
-            { reportingCurrencyCode: documentCurrencyCode },
+            {
+              reportingCurrencyCode: documentCurrencyCode,
+              organizationDisplayName: organizationBranding.displayName,
+              organizationFooter: organizationBranding.reportFooter,
+              organizationLogoPng: organizationBranding.logoBytes,
+            },
           );
           const safeName = String(full.orderNumber).replace(/[^\w.-]+/g, "_");
           res.setHeader("Content-Type", "application/pdf");
@@ -902,13 +939,17 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           eta: Date | null;
           tracking_number: string | null;
         }>(
-          `SELECT id, po_number, carrier, status, eta, tracking_number FROM shipments WHERE id = $1 LIMIT 1`,
-          [id],
+          `SELECT id, po_number, carrier, status, eta, tracking_number FROM shipments s
+           WHERE s.id = $1
+             AND COALESCE(s.organization_id, (SELECT po.organization_id FROM purchase_orders po WHERE po.order_number = s.po_number AND po.organization_id = $2 LIMIT 1)) = $2
+           LIMIT 1`,
+          [id, getActiveOrganizationId()],
         );
         const row = r.rows[0];
         if (!row) {
           return res.status(404).json({ message: "Shipment not found" });
         }
+        const organizationBranding = await getOrganizationDocumentBranding(getActiveOrganizationId(), { loadLogo: true });
         const buffer = await generateShipmentDeliveryNotePdf({
           id: row.id,
           poNumber: row.po_number,
@@ -916,6 +957,10 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           status: String(row.status).toLowerCase(),
           eta: row.eta,
           trackingNumber: row.tracking_number,
+        }, {
+          organizationDisplayName: organizationBranding.displayName,
+          organizationFooter: organizationBranding.reportFooter,
+          organizationLogoPng: organizationBranding.logoBytes,
         });
         res.setHeader("Content-Type", "application/pdf");
         res.setHeader(
@@ -928,6 +973,25 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         return res.status(500).json({ message: "Failed to generate delivery note PDF" });
       }
     },
+  );
+
+  app.get(
+    "/api/v2/logistics/shipments",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "read"),
+    withApiContract(async (req: Request, res: Response) => {
+      const parsed = shipmentPageQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        throw contractError(400, "INVALID_QUERY", "Invalid shipment pagination, filter, or sort value.", undefined, parsed.error.flatten());
+      }
+      assertValidLogisticsDateQuery(parsed.data.etaFrom ?? "", "etaFrom");
+      assertValidLogisticsDateQuery(parsed.data.etaTo ?? "", "etaTo");
+      const result = await withTimeout(
+        listOperationalShipmentsPage(parsed.data),
+        OPERATIONS_QUERY_TIMEOUT_MS,
+      );
+      return respondOk(res, result);
+    }),
   );
 
   app.get(
@@ -1260,11 +1324,25 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       if (!Number.isFinite(id)) {
         throw contractError(400, "INVALID_ID", "shipment id is invalid");
       }
-      const deleted = await pool.query(`DELETE FROM shipments WHERE id = $1 RETURNING id`, [id]);
+      const deleted = await pool.query(`DELETE FROM shipments s WHERE s.id = $1 AND COALESCE(s.organization_id, (SELECT po.organization_id FROM purchase_orders po WHERE po.order_number = s.po_number AND po.organization_id = $2 LIMIT 1)) = $2 RETURNING id`, [id, getActiveOrganizationId()]);
       if (!deleted.rows[0]) {
         throw contractError(404, "SHIPMENT_NOT_FOUND", "Shipment not found");
       }
       respondOk(res, { id });
+    }),
+  );
+
+  app.get(
+    "/api/v2/exceptions",
+    auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "read"),
+    withApiContract(async (req: Request, res: Response) => {
+      const parsed = exceptionPageQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        throw contractError(400, "INVALID_QUERY", "Invalid exception pagination, filter, or sort value.", undefined, parsed.error.flatten());
+      }
+      const result = await withTimeout(listOperationalExceptionsPage(parsed.data), OPERATIONS_QUERY_TIMEOUT_MS);
+      return respondOk(res, result);
     }),
   );
 

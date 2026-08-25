@@ -338,6 +338,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="ACTIVE">Active (draft or pending)</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
                 <SelectItem value="PENDING">Pending</SelectItem>
                 <SelectItem value="APPROVED">Approved</SelectItem>

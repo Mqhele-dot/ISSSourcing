@@ -479,8 +479,14 @@ export default function SystemDiagnosticsPage() {
   const clientSnap = getReadinessClientSnapshot();
   const selfChecks = useMemo(() => runDiagnosticsSelfChecks(), []);
   const recentCutoff = Date.now() - 10 * 60 * 1000;
-  const recentEvents = events.filter((event) => new Date(event.timestamp).getTime() >= recentCutoff);
-  const recentUnresolved = recentEvents.filter((event) => !event.resolved);
+  const latestCompletedScan = events.reduce((latest, event) => {
+    if (event.source !== "diagnostics" || event.title !== "Diagnostics scan completed") return latest;
+    return Math.max(latest, new Date(event.timestamp).getTime());
+  }, 0);
+  const operationalWindowStart = Math.max(recentCutoff, latestCompletedScan);
+  const operationalEvents = events.filter(
+    (event) => !event.resolved && new Date(event.timestamp).getTime() >= operationalWindowStart,
+  );
   const workspaceLocalEvents = useMemo(() => {
     if (activeWorkspace === "frontend") {
       return events.filter((event) => ["react", "route", "network", "console"].includes(event.source)).slice(0, 50);
@@ -496,10 +502,10 @@ export default function SystemDiagnosticsPage() {
   const scanIssueCount = scan
     ? Object.values(scan).reduce((sum, rows) => sum + (Array.isArray(rows) ? rows.length : 0), 0)
     : 0;
-  const critical = recentUnresolved.filter((event) => event.severity === "critical").length;
-  const errors = recentUnresolved.filter((event) => event.severity === "error").length;
-  const warnings = recentUnresolved.filter((event) => event.severity === "warning").length;
-  const slowRequests = recentUnresolved.filter((event) => (event.durationMs ?? 0) >= 3_000).length;
+  const critical = operationalEvents.filter((event) => event.severity === "critical").length;
+  const errors = operationalEvents.filter((event) => event.severity === "error").length;
+  const warnings = operationalEvents.filter((event) => event.severity === "warning").length;
+  const slowRequests = operationalEvents.filter((event) => (event.durationMs ?? 0) >= 3_000).length;
   const healthLevel: "Healthy" | "Needs attention" | "Critical" =
     critical > 0 || ready?.dbReady === false || ready?.schemaReady === false
       ? "Critical"
@@ -677,9 +683,11 @@ export default function SystemDiagnosticsPage() {
             <p className="text-sm text-muted-foreground">No live diagnostics events captured in this browser yet.</p>
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Showing the 20 most recent unresolved events. Resolved history is omitted from this operational view.</p>
+              <p className="text-xs text-muted-foreground">
+                Showing current unresolved events since the latest successful scan. Earlier evidence remains available in exported history.
+              </p>
               <div className="max-h-[420px] space-y-2 overflow-auto">
-              {events.filter((event) => !event.resolved).slice(0, 20).map((event) => (
+              {operationalEvents.slice(0, 20).map((event) => (
                 <div key={event.id} data-testid="diagnostics-event-row" className="rounded-lg border bg-muted/20 p-3 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
@@ -703,6 +711,11 @@ export default function SystemDiagnosticsPage() {
                   </p>
                 </div>
               ))}
+              {operationalEvents.length === 0 ? (
+                <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                  No unresolved events have occurred since the latest successful scan.
+                </p>
+              ) : null}
               </div>
             </div>
           )}

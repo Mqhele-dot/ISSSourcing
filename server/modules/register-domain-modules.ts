@@ -21,6 +21,10 @@ import { registerAuditRoutes } from "./audit/register-audit-routes";
 import { registerSourcingRoutes } from "./sourcing/register-sourcing-routes";
 import { registerV2Routes } from "./v2/register-v2-routes";
 import { registerInventoryIssueRoutes } from "./inventory-issues/register-inventory-issue-routes";
+import { registerCommercialQuotationRoutes } from "./commercial-quotations/register-commercial-quotation-routes";
+import { registerCapabilityRoutes } from "./capabilities/register-capability-routes";
+import { registerFinanceRoutes } from "./finance/register-finance-routes";
+import { registerArRoutes } from "./finance/register-ar-routes";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -36,6 +40,9 @@ type AuthBundle = {
  */
 export function registerDomainModules(app: Express, auth: AuthBundle): void {
   registerV2Routes(app, auth);
+  registerCapabilityRoutes(app, auth);
+  registerFinanceRoutes(app, auth);
+  registerArRoutes(app, auth);
   registerInventoryCrudRoutes(app, auth);
   registerStockMovementRoutes(app, auth);
   registerBarcodeRoutes(app, auth);
@@ -48,6 +55,7 @@ export function registerDomainModules(app: Express, auth: AuthBundle): void {
   registerSupplierRoutes(app, auth);
   registerProcurementRoutes(app, auth);
   registerSourcingRoutes(app, auth);
+  registerCommercialQuotationRoutes(app, auth);
   registerApRoutes(app, auth);
   registerInventoryIssueRoutes(app, auth);
   registerExportCenterRoutes(app, auth);

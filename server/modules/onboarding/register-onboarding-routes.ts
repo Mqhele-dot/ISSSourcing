@@ -2,7 +2,7 @@ import type { Express, Request, RequestHandler, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
-import { organizationMembers, organizations } from "@shared/schema";
+import { appSettings, organizationMembers, organizationSettings, organizations } from "@shared/schema";
 import { getOptionalTenantContext } from "../../organization-context";
 import { getCountryPack } from "../master-data/country-pack-registry";
 
@@ -60,6 +60,17 @@ export function registerOnboardingRoutes(app: Express, auth: Auth): void {
         if (!created?.id) {
           return res.status(500).json({ message: "Failed to create organization" });
         }
+        await db.insert(organizationSettings).values({
+          organizationId: created.id,
+          displayName: name,
+          legalName: name,
+        }).onConflictDoNothing();
+        await db.insert(appSettings).values({
+          organizationId: created.id,
+          companyName: name,
+          currencyCode: pack.defaultCurrencyCode,
+          businessCountryCode: pack.code,
+        }).onConflictDoNothing();
         const userId = (req.user as { id?: number })?.id;
         if (userId) {
           const existing = await db

@@ -64,6 +64,7 @@ const EMPTY_ACTIVITY_LOGS: ActivityLog[] = [];
 const ENTITY_TYPE_PRESETS = [
   { value: "any", label: "Any entity" },
   { value: "purchase_order", label: "Purchase order" },
+  { value: "commercial_quotation", label: "Commercial quotation" },
   { value: "shipment", label: "Shipment" },
   { value: "invoice", label: "Invoice" },
   { value: "requisition", label: "Requisition" },

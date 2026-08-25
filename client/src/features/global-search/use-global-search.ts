@@ -17,6 +17,8 @@ export function getGlobalSearchTypeLabel(type: GlobalSearchResult["type"]): stri
       return "Requisition";
     case "rfq":
       return "Sourcing";
+    case "quotation":
+      return "Quotation";
     case "shipment":
       return "Shipment";
     case "exception":

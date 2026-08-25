@@ -25,14 +25,20 @@ import {
   Plus,
   MoreHorizontal,
   RefreshCw,
+  Download,
+  FileSpreadsheet,
+  History,
+  ScanSearch,
+  GitPullRequest,
   type LucideIcon,
 } from "lucide-react";
+import type { MasterDataGovernanceOverview } from "@shared/master-data-governance-types";
 import { PageHeader } from "@/components/page-header";
 import { APP_ROUTES, MASTER_DATA_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageDataState } from "@/components/page-shell";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,7 +50,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
@@ -94,6 +99,7 @@ type PaginatedMasterRecords = {
   page: number;
   pageSize: number;
   hasNext: boolean;
+  summary?: { active: number; inactive: number };
 };
 
 const MASTER_ENDPOINTS = {
@@ -227,6 +233,16 @@ type MasterSectionConfig = {
 };
 
 const MASTER_SECTIONS: MasterSectionConfig[] = [
+  {
+    slug: "overview",
+    label: "Governance Overview",
+    shortLabel: "Overview",
+    icon: Database,
+    group: "Governance",
+    description: "Health, ownership, approvals, duplicate candidates, where-used risk, and recent Master Data changes.",
+    usedBy: ["Procurement", "Inventory", "Finance", "Logistics", "Analytics"],
+    risk: "Unreviewed Master Data changes can affect every downstream transaction.",
+  },
   {
     slug: "units",
     label: "Units of Measure",
@@ -393,8 +409,10 @@ function parseFieldValue(field: MasterExtraField, value: string): string | numbe
 
 function MasterTable({
   config,
+  createSignal = 0,
 }: {
   config: MasterSectionConfig;
+  createSignal?: number;
 }) {
   const { toast } = useToast();
   useAuth();
@@ -410,6 +428,9 @@ function MasterTable({
   const [showDetails, setShowDetails] = useState(false);
   const [dependencyResponse, setDependencyResponse] = useState<string | null>(null);
   const [whereUsedResponse, setWhereUsedResponse] = useState<string | null>(null);
+  const [changeRequestMode, setChangeRequestMode] = useState(false);
+  const [changeRequestReason, setChangeRequestReason] = useState("");
+  const [changeRequestBefore, setChangeRequestBefore] = useState<BaseMasterRecord | null>(null);
   const endpoint = config.endpoint ?? "";
   const canReadMasterData =
     hasPermission("master_data", "read") ||
@@ -563,8 +584,22 @@ function MasterTable({
     },
   });
 
-  const activeCount = data.filter((row) => row.active !== false).length;
-  const inactiveCount = data.length - activeCount;
+  const submitChangeRequest = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => requestJson("POST", "/api/mdm/change-requests", {
+      domain: domainKey, entityId: editingId, action: editingId == null ? "create" : "update", proposedPatch: payload,
+      beforeState: changeRequestBefore, reason: changeRequestReason.trim(),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdm/change-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/master-data/overview"] });
+      toast({ title: "Governed change submitted", description: "The live record was not changed. The proposal is waiting in the maker-checker queue." });
+      resetForm();
+    },
+    onError: (error) => toast({ title: "Change request failed", description: error instanceof Error ? error.message : String(error), variant: "destructive" }),
+  });
+
+  const activeCount = pageData?.summary?.active ?? data.filter((row) => row.active !== false).length;
+  const inactiveCount = pageData?.summary?.inactive ?? (data.length - activeCount);
 
   const sorted = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -601,6 +636,12 @@ function MasterTable({
     setPage(1);
   }, [search, statusFilter, endpoint]);
 
+  useEffect(() => {
+    if (createSignal > 0 && endpoint) {
+      setEditingId(null); setCode(""); setName(""); setExtraValues({}); setShowEditor(true);
+    }
+  }, [createSignal, endpoint]);
+
   const extraFields = config.extraFields ?? [];
   const visibleExtraFields = extraFields.slice(0, config.slug === "currencies" ? 6 : 3);
   const nameLabel = config.primaryNameField === "description" ? "Description" : "Name";
@@ -612,6 +653,9 @@ function MasterTable({
     setExtraValues({});
     setWhereUsedResponse(null);
     setShowEditor(false);
+    setChangeRequestMode(false);
+    setChangeRequestReason("");
+    setChangeRequestBefore(null);
   }
 
   function buildPayload() {
@@ -730,7 +774,7 @@ function MasterTable({
         {whereUsedResponse ? (
           <div
             className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950"
-            data-testid="master-data-where-used-response"
+            data-testid="mdm-where-used-panel"
           >
             Where-used check: {whereUsedResponse}
           </div>
@@ -749,7 +793,10 @@ function MasterTable({
               return;
             }
             const payload = buildPayload();
-            if (editingId != null) {
+            if (changeRequestMode) {
+              if (changeRequestReason.trim().length < 5) { toast({ title:"Explain the business reason for this governed change", variant:"destructive" }); return; }
+              submitChangeRequest.mutate(payload);
+            } else if (editingId != null) {
               updateRecord.mutate({ id: editingId, payload });
             } else {
               createRecord.mutate(payload);
@@ -783,6 +830,7 @@ function MasterTable({
               </div>
             ))}
           </div>
+          {changeRequestMode ? <div className="mt-3 space-y-1"><Label htmlFor={`${endpoint}-change-reason`}>Business reason for change</Label><Textarea id={`${endpoint}-change-reason`} value={changeRequestReason} onChange={(event)=>setChangeRequestReason(event.target.value)} placeholder="Explain the operational, compliance, or reporting reason and expected impact." rows={3}/><p className="text-xs text-muted-foreground">This proposal will not change the live record until independently approved and applied.</p></div> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
               {editingId != null ? (
                 <>
@@ -795,10 +843,11 @@ function MasterTable({
                   </Button>
                   <Button
                     type="submit"
-                    disabled={!canUpdateMasterData || updateRecord.isPending}
+                    disabled={!canUpdateMasterData || updateRecord.isPending || submitChangeRequest.isPending}
                     title={!canUpdateMasterData ? disabledReason : undefined}
+                    data-testid={changeRequestMode?"mdm-record-submit-button":undefined}
                   >
-                    Save changes
+                    {changeRequestMode ? "Submit change request" : "Save changes"}
                   </Button>
                 </>
               ) : (
@@ -861,9 +910,9 @@ function MasterTable({
               </TableHeader>
               <TableBody>
                 {pageRows.map((row) => (
-                  <TableRow key={row.id}>
+                  <TableRow key={row.id} data-testid="mdm-record-row">
                     <TableCell className="font-medium">{row.code}</TableCell>
-                    <TableCell>
+                    <TableCell data-testid="mdm-record-status">
                       <div className="max-w-xl">
                         <div className="font-medium">{recordDisplayName(row, config)}</div>
                         {row.name && row.description && config.primaryNameField === "description" ? (
@@ -888,7 +937,7 @@ function MasterTable({
                       <div className="flex justify-end">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button size="icon" variant="ghost" aria-label={`Actions for ${row.code}`}>
+                            <Button size="icon" variant="ghost" aria-label={`Actions for ${row.code}`} data-testid="mdm-record-open-button">
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -912,15 +961,20 @@ function MasterTable({
                             >
                               Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem disabled={whereUsed.isPending} onSelect={() => whereUsed.mutate(row.id)}>
+                            <DropdownMenuItem disabled={!canSubmitChangeRequest} data-testid="mdm-record-submit-button" onSelect={()=>{setEditingId(row.id);setShowEditor(true);setChangeRequestMode(true);setChangeRequestBefore(row);setCode(row.code);setName(recordDisplayName(row,config)==="-"?"":recordDisplayName(row,config));const next:Record<string,string>={};for(const field of extraFields){next[String(field.key)]=row[field.key]==null?"":String(row[field.key]);}setExtraValues(next);}}>
+                              Propose governed change
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={whereUsed.isPending} data-testid="mdm-record-where-used-button" onSelect={() => whereUsed.mutate(row.id)}>
                               Where used
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               disabled={!canUpdateMasterData || toggleRecord.isPending}
                               onSelect={() => toggleRecord.mutate({ id: row.id, active: row.active === false })}
+                              data-testid="mdm-record-block-button"
                             >
                               {row.active === false ? "Activate" : "Deactivate"}
                             </DropdownMenuItem>
+                            <DropdownMenuItem asChild><a href={`/admin/audit-logs?entity_type=${encodeURIComponent(domainKey)}&entity_id=${row.id}`} data-testid="mdm-record-audit-button">Audit trail</a></DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
@@ -1236,9 +1290,9 @@ function ControlCentreIssuePanel({
   isScanning: boolean;
 }) {
   return (
-    <Card>
+    <Card id="mdm-data-quality-panel" data-testid="mdm-data-quality-panel">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <CardTitle className="text-base">Data quality workbench</CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">
             These checks connect setup gaps to the workflows they can break before requisitions, POs, receipts, AP, or
@@ -1514,7 +1568,7 @@ function ControlCentreGovernancePanel({
                         size="sm"
                         disabled={!canApproveChangeRequest || runChangeRequestAction.isPending}
                         title={!canApproveChangeRequest ? unauthorizedReason : undefined}
-                        data-testid="mdm-approve-change-request"
+                        data-testid="mdm-change-request-approve-button"
                         onClick={() =>
                           runChangeRequestAction.mutate({ action: "approve", reason: "Approved in Control Centre" })
                         }
@@ -1526,7 +1580,7 @@ function ControlCentreGovernancePanel({
                         variant="outline"
                         disabled={!canApproveChangeRequest || runChangeRequestAction.isPending}
                         title={!canApproveChangeRequest ? unauthorizedReason : undefined}
-                        data-testid="mdm-reject-change-request"
+                        data-testid="mdm-change-request-reject-button"
                         onClick={() =>
                           runChangeRequestAction.mutate({ action: "reject", reason: "Rejected in Control Centre" })
                         }
@@ -1599,14 +1653,80 @@ function ControlCentreGovernancePanel({
   );
 }
 
+function GovernanceOverviewPanel({ overview, onReviewApprovals, onScan }: {
+  overview?: MasterDataGovernanceOverview;
+  onReviewApprovals: () => void;
+  onScan: () => void;
+}) {
+  if (!overview) return <div className="rounded-lg border p-6 text-sm text-muted-foreground">Loading governance overview...</div>;
+  const text = (row: Record<string, unknown>, key: string, fallback = "-") => String(row[key] ?? fallback);
+  return <div className="space-y-4" data-testid="mdm-tab-overview">
+    {overview.meta.partialFailures.length ? <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+      Some governance sources are unavailable. Available results remain visible; retry before making a high-risk change.
+    </div> : null}
+    <Card>
+      <CardHeader><CardTitle className="text-base">Master Data domains</CardTitle><p className="text-sm text-muted-foreground">Open the source-of-truth area and see which workflows depend on it.</p></CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {overview.domains.map((domain) => <a key={domain.key} id={domain.key==="documents"?"numbering-documents":undefined} href={domain.href} className="rounded-lg border bg-background p-3 transition hover:border-primary" data-testid={`mdm-domain-${domain.key}`}>
+          <div className="flex items-start justify-between gap-3"><div className="font-medium">{domain.label}</div><Badge variant={domain.blocked ? "outline" : "secondary"}>{domain.active} active</Badge></div>
+          <div className="mt-2 text-sm text-muted-foreground">{domain.total} records{domain.draft ? ` · ${domain.draft} draft` : ""}{domain.blocked ? ` · ${domain.blocked} blocked/inactive` : ""}</div>
+          <div className="mt-3 flex flex-wrap gap-1">{domain.usedBy.slice(0, 4).map((item) => <Badge key={item} variant="outline" className="font-normal">{item}</Badge>)}</div>
+        </a>)}
+      </CardContent>
+    </Card>
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Card id="mdm-approval-queue"><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-base">Change requests and approvals</CardTitle><p className="text-sm text-muted-foreground">Sensitive proposals waiting for independent review or application.</p></div><Button size="sm" variant="outline" onClick={onReviewApprovals}>Review queue</Button></div></CardHeader><CardContent className="space-y-2">
+        {overview.pendingChanges.length === 0 ? <p className="text-sm text-muted-foreground">No Master Data changes are awaiting action.</p> : overview.pendingChanges.slice(0, 6).map((row) => <div key={text(row,"id")} className="rounded-md border p-3" data-testid="mdm-change-request-row"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{text(row,"domain")} #{text(row,"entityId","new")}</span><Badge variant={text(row,"riskLevel") === "critical" ? "destructive" : "outline"}>{text(row,"status")}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{text(row,"action")} · requested by {text(row,"requestedBy","System")}</p><p className="mt-1 text-sm">{text(row,"reason","No reason supplied")}</p></div>)}
+      </CardContent></Card>
+      <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-base">Data quality alerts</CardTitle><p className="text-sm text-muted-foreground">Problems that can make transactions or reporting unreliable.</p></div><Button size="sm" variant="outline" onClick={onScan}><ScanSearch className="mr-2 h-4 w-4"/>Run scan</Button></div></CardHeader><CardContent className="space-y-2">
+        {overview.qualityIssues.length === 0 ? <p className="text-sm text-muted-foreground">No current Master Data quality issue was found.</p> : overview.qualityIssues.slice(0, 6).map((row) => <div key={`${text(row,"issueCode")}-${text(row,"affectedEntityId")}`} className="rounded-md border p-3" data-testid="mdm-data-quality-issue-row"><div className="flex flex-wrap items-center gap-2"><Badge variant={text(row,"severity") === "error" ? "destructive" : "outline"}>{text(row,"severity")}</Badge><span className="font-medium">{text(row,"title")}</span></div><p className="mt-1 text-sm text-muted-foreground">{text(row,"message")}</p></div>)}
+      </CardContent></Card>
+      <Card><CardHeader><CardTitle className="text-base">Duplicate candidates</CardTitle><p className="text-sm text-muted-foreground">Potential duplicate identities require review before merge or blocking.</p></CardHeader><CardContent className="space-y-2">
+        {overview.duplicateCandidates.length === 0 ? <p className="text-sm text-muted-foreground">No unresolved duplicate candidate was found.</p> : overview.duplicateCandidates.map((row) => <div key={text(row,"id")} className="rounded-md border p-3" data-testid="mdm-duplicate-candidate-row"><div className="font-medium">{text(row,"title")}</div><p className="mt-1 text-sm text-muted-foreground">{text(row,"message")}</p><p className="mt-2 text-sm">{text(row,"recommendedAction")}</p></div>)}
+      </CardContent></Card>
+      <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-base">Recent amendment trail</CardTitle><p className="text-sm text-muted-foreground">Who changed controlled data, what changed, and when.</p></div><Button asChild size="sm" variant="outline"><a href="/admin/audit-logs?entity_type=master_data">Open audit trail</a></Button></div></CardHeader><CardContent className="space-y-2" data-testid="mdm-audit-trail-panel">
+        {overview.auditHighlights.length === 0 ? <p className="text-sm text-muted-foreground">No recent Master Data amendment was recorded.</p> : overview.auditHighlights.slice(0, 6).map((row) => <div key={text(row,"id")} className="rounded-md border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{text(row,"domain")} #{text(row,"recordId","new")}</span><Badge variant="outline">{text(row,"action")}</Badge></div><p className="mt-1 text-sm">{text(row,"summary","Controlled record updated")}</p><p className="mt-1 text-xs text-muted-foreground">{text(row,"changedBy","System")} · {row.changedAt ? new Date(String(row.changedAt)).toLocaleString() : "Time unavailable"}</p></div>)}
+      </CardContent></Card>
+    </div>
+  </div>;
+}
+
+function NewChangeRequestComposer({ registry, onClose, onCreated }: { registry: MdmDomainRegistryEntry[]; onClose: () => void; onCreated: () => void }) {
+  const { toast } = useToast();
+  const [domain,setDomain] = useState(registry[0]?.key ?? "suppliers");
+  const [entityId,setEntityId] = useState("");
+  const [action,setAction] = useState<"create"|"update"|"deactivate"|"archive">("update");
+  const [field,setField] = useState(""); const [value,setValue] = useState(""); const [reason,setReason] = useState("");
+  const submit = useMutation({ mutationFn: () => {
+    const proposedPatch: Record<string, unknown> = action === "deactivate" ? { active:false, status:"inactive" } : action === "archive" ? { active:false, status:"archived" } : field.trim() ? { [field.trim()]: value } : {};
+    if (!domain || reason.trim().length < 5 || ((action === "update" || action === "create") && !field.trim())) throw new Error("Choose a domain, enter the changed field, and explain the business reason.");
+    return requestJson("POST","/api/mdm/change-requests",{domain,entityId:entityId?Number(entityId):null,action,proposedPatch,reason:reason.trim()});
+  }, onSuccess:()=>{toast({title:"Master Data change request submitted",description:"The proposal is now visible in the maker-checker queue."});onCreated();onClose();}, onError:(error)=>toast({title:"Change request could not be submitted",description:error instanceof Error?error.message:String(error),variant:"destructive"}) });
+  return <Card data-testid="master-data-new-change-request"><CardHeader><CardTitle className="text-base">New governed change request</CardTitle><p className="text-sm text-muted-foreground">Propose a controlled change without altering the live record. Sensitive changes require independent approval.</p></CardHeader><CardContent><form className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" onSubmit={(event)=>{event.preventDefault();submit.mutate();}}>
+    <div className="space-y-1"><Label htmlFor="mdm-request-domain">Domain</Label><select id="mdm-request-domain" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={domain} onChange={(event)=>setDomain(event.target.value)}>{registry.map((entry)=><option key={entry.key} value={entry.key}>{entry.displayName}</option>)}</select></div>
+    <div className="space-y-1"><Label htmlFor="mdm-request-action">Request type</Label><select id="mdm-request-action" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={action} onChange={(event)=>setAction(event.target.value as typeof action)}><option value="create">Create record</option><option value="update">Update record</option><option value="deactivate">Block / deactivate</option><option value="archive">Archive</option></select></div>
+    <div className="space-y-1"><Label htmlFor="mdm-request-entity">Record ID (if existing)</Label><Input id="mdm-request-entity" type="number" min="1" value={entityId} onChange={(event)=>setEntityId(event.target.value)}/></div>
+    {(action==="create"||action==="update")?<><div className="space-y-1"><Label htmlFor="mdm-request-field">Field to change</Label><Input id="mdm-request-field" value={field} onChange={(event)=>setField(event.target.value)} placeholder="e.g. paymentTermsId"/></div><div className="space-y-1"><Label htmlFor="mdm-request-value">Proposed value</Label><Input id="mdm-request-value" value={value} onChange={(event)=>setValue(event.target.value)}/></div></>:null}
+    <div className="space-y-1 md:col-span-2 xl:col-span-3"><Label htmlFor="mdm-request-reason">Business reason</Label><Textarea id="mdm-request-reason" value={reason} onChange={(event)=>setReason(event.target.value)} placeholder="Explain why the change is required and its expected impact." rows={3}/></div>
+    <div className="flex gap-2 md:col-span-2 xl:col-span-3"><Button type="submit" disabled={submit.isPending}>Submit for governance</Button><Button type="button" variant="outline" onClick={onClose}>Cancel</Button></div>
+  </form></CardContent></Card>;
+}
+
 export default function MasterDataPage() {
   const { toast } = useToast();
   const [location, setLocation] = useLocation();
   const [showGovernance, setShowGovernance] = useState(false);
+  const [showChangeRequest, setShowChangeRequest] = useState(false);
+  const [createSignal, setCreateSignal] = useState(0);
   const isLgUp = useMediaQuery("(min-width: 1024px)");
-  const activeSection = asSectionSlug(location.split("/")[3], MASTER_DATA_SECTION_SLUGS, "units");
+  const activeSection = asSectionSlug(location.split("/")[3], MASTER_DATA_SECTION_SLUGS, "overview");
   const activeConfig = sectionBySlug(activeSection);
-  const ActiveIcon = activeConfig.icon;
+
+  const governanceOverview = useQuery({
+    queryKey: ["/api/master-data/overview"],
+    queryFn: () => requestJson<MasterDataGovernanceOverview>("GET", "/api/master-data/overview"),
+    staleTime: 60_000,
+  });
 
   const mdmHealth = useQuery({
     queryKey: ["/api/mdm/control-centre/health"],
@@ -1625,7 +1745,7 @@ export default function MasterDataPage() {
     queryKey: ["/api/mdm/domain-registry"],
     queryFn: () => requestJson<MdmDomainRegistryEntry[]>("GET", "/api/mdm/domain-registry"),
     staleTime: 300_000,
-    enabled: showGovernance,
+    enabled: showGovernance || showChangeRequest,
   });
 
   const mdmChangeRequests = useQuery({
@@ -1638,6 +1758,7 @@ export default function MasterDataPage() {
   const scanDataQuality = useMutation({
     mutationFn: () => requestJson("POST", "/api/mdm/data-quality/scan", {}),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/master-data/overview"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdm/control-centre/health"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdm/data-quality/issues"] });
       toast({ title: "Master Data controls scanned" });
@@ -1684,6 +1805,41 @@ export default function MasterDataPage() {
   const issueCount = health
     ? health.issueCounts.error + health.issueCounts.warning + health.issueCounts.info
     : issues.length;
+  const overview = governanceOverview.data;
+  const kpis = overview?.kpis;
+  const governanceKpiCards: Array<[string, string, number, LucideIcon]> = [
+    ["mdm-kpi-total-records", "Total master records", kpis?.totalRecords ?? totalRecords, Database],
+    ["mdm-kpi-draft-records", "Draft records", kpis?.draftRecords ?? 0, FileSpreadsheet],
+    ["mdm-kpi-pending-approval", "Pending approval", kpis?.pendingApproval ?? 0, ShieldCheck],
+    ["mdm-kpi-active-records", "Active records", kpis?.activeRecords ?? totalActive, CheckCircle2],
+    ["mdm-kpi-blocked-records", "Blocked / inactive", kpis?.blockedRecords ?? Math.max(0,totalRecords-totalActive), AlertTriangle],
+    ["mdm-kpi-data-quality-issues", "Data quality issues", kpis?.dataQualityIssues ?? (issueCount || setupGaps), ScanSearch],
+    ["mdm-kpi-high-risk-changes", "High-risk changes", kpis?.highRiskChanges ?? 0, GitPullRequest],
+    ["mdm-kpi-duplicate-candidates", "Duplicate candidates", kpis?.duplicateCandidates ?? 0, Layers3],
+  ];
+
+  function downloadText(fileName: string, content: string, type = "text/csv;charset=utf-8") {
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = fileName; anchor.click(); URL.revokeObjectURL(url);
+  }
+
+  function downloadTemplate() {
+    const fields = ["code", activeConfig.primaryNameField ?? "name", ...(activeConfig.extraFields ?? []).map((field) => String(field.key)), "status", "effectiveFrom", "effectiveTo"];
+    downloadText(`master-data-${activeSection}-template.csv`, `${[...new Set(fields)].join(",")}\n`);
+  }
+
+  function exportGovernance() {
+    if (!overview) return;
+    const rows = ["domain,total,active,draft,blocked", ...overview.domains.map((domain) => [domain.label,domain.total,domain.active,domain.draft,domain.blocked].map((value)=>`"${String(value).replace(/"/g,'""')}"`).join(","))];
+    downloadText(`master-data-governance-${new Date().toISOString().slice(0,10)}.csv`, rows.join("\n"));
+  }
+
+  function openApprovalQueue() {
+    setShowGovernance(true);
+    setLocation(APP_ROUTES.admin.masterDataSection("overview"));
+    window.setTimeout(() => document.getElementById("mdm-approval-queue")?.scrollIntoView({ behavior:"smooth", block:"start" }), 100);
+  }
 
   useEffect(() => {
     if (!isLgUp) {
@@ -1703,55 +1859,48 @@ export default function MasterDataPage() {
   return (
     <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6" data-testid="master-data-page">
       <PageHeader
-        title="Master Data"
-        subtitle="Maintain the reference values used across operations, procurement, finance, and governance."
+        title="Master Data Governance"
+        subtitle="Manage the controlled business data used across procurement, inventory, suppliers, logistics, finance, analytics, and approvals."
+        actions={<div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={()=>{if(activeSection==="overview"){setLocation(APP_ROUTES.admin.masterDataSection("units"));}setCreateSignal((value)=>value+1);}} data-testid="master-data-create-button"><Plus className="mr-2 h-4 w-4"/>Create record</Button>
+          <Button size="sm" variant="outline" onClick={()=>{setShowGovernance(true);setShowChangeRequest((value)=>!value);}} data-testid="master-data-new-change-request-button"><GitPullRequest className="mr-2 h-4 w-4"/>New change request</Button>
+          <Button size="sm" variant="outline" onClick={openApprovalQueue} data-testid="master-data-review-approvals-button"><ShieldCheck className="mr-2 h-4 w-4"/>Approvals{kpis?.pendingApproval ? ` (${kpis.pendingApproval})` : ""}</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button size="sm" variant="outline"><MoreHorizontal className="mr-2 h-4 w-4"/>More</Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Master Data tools</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={downloadTemplate} data-testid="master-data-import-button"><FileSpreadsheet className="mr-2 h-4 w-4"/>Download import template</DropdownMenuItem>
+              <DropdownMenuItem onSelect={exportGovernance} disabled={!overview} data-testid="master-data-export-button"><Download className="mr-2 h-4 w-4"/>Export summary</DropdownMenuItem>
+              <DropdownMenuSeparator/>
+              <DropdownMenuItem onSelect={()=>scanDataQuality.mutate()} disabled={scanDataQuality.isPending} data-testid="master-data-quality-scan-button"><ScanSearch className="mr-2 h-4 w-4"/>Run data quality scan</DropdownMenuItem>
+              <DropdownMenuItem asChild data-testid="master-data-audit-trail-button"><a href="/admin/audit-logs?entity_type=master_data"><History className="mr-2 h-4 w-4"/>Open audit trail</a></DropdownMenuItem>
+              <DropdownMenuItem onSelect={()=>{void governanceOverview.refetch();void mdmHealth.refetch();void summaryQueries.refetch();}} data-testid="master-data-refresh-button"><RefreshCw className="mr-2 h-4 w-4"/>Refresh workspace</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>}
       />
-      <div className="grid gap-3 md:grid-cols-4">
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <Database className="h-8 w-8 text-primary" />
-            <div>
-              <div className="text-2xl font-semibold">{mdmHealth.isLoading ? "-" : health?.healthScore ?? 0}%</div>
-              <div className="text-sm text-muted-foreground">data health score</div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <CheckCircle2 className="h-8 w-8 text-primary" />
-            <div>
-              <div className="text-2xl font-semibold">{summaryQueries.isLoading ? "-" : totalActive}</div>
-              <div className="text-sm text-muted-foreground">active reference records</div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <Layers3 className="h-8 w-8 text-primary" />
-            <div>
-              <div className="text-2xl font-semibold">{health?.defaultCurrencyCode ?? "ZAR"}</div>
-              <div className="text-sm text-muted-foreground">company currency</div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <AlertTriangle className="h-8 w-8 text-primary" />
-            <div>
-              <div className="text-2xl font-semibold">{mdmHealth.isLoading ? "-" : issueCount || setupGaps}</div>
-              <div className="text-sm text-muted-foreground">open control issues</div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
-        <div>
-          <div className="font-medium">Governance and data quality</div>
-          <p className="text-sm text-muted-foreground">Open advanced ownership, maker-checker, dependency, and quality controls only when needed.</p>
-        </div>
-        <Button type="button" variant="outline" onClick={() => setShowGovernance((value) => !value)}>
-          {showGovernance ? "Hide governance" : "Show governance"}
-        </Button>
+      {showChangeRequest ? <NewChangeRequestComposer registry={registry.length?registry:mdmRegistry.data??[]} onClose={()=>setShowChangeRequest(false)} onCreated={()=>{void mdmChangeRequests.refetch();void governanceOverview.refetch();}}/> : null}
+      <Card>
+        <CardContent className="grid grid-cols-2 divide-x divide-y p-0 sm:grid-cols-4 xl:grid-cols-8 xl:divide-y-0">
+          {governanceKpiCards.map(([testId,label,value,Icon])=><div key={testId} className="flex min-w-0 items-center gap-2 px-3 py-2.5" data-testid={testId}><Icon className="h-4 w-4 shrink-0 text-primary"/><div className="min-w-0"><div className="text-lg font-semibold leading-5">{governanceOverview.isLoading?"-":String(value)}</div><div className="truncate text-xs text-muted-foreground" title={label}>{label}</div></div></div>)}
+        </CardContent>
+      </Card>
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2" aria-label="Master Data workspace navigation">
+        <Button asChild size="sm" variant={activeSection==="overview"?"default":"ghost"} data-testid="mdm-tab-overview"><a href="/admin/master-data/overview">Overview</a></Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button size="sm" variant="ghost"><Database className="mr-2 h-4 w-4"/>{activeSection==="overview"?"Browse setup areas":activeConfig.shortLabel}</Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-[28rem] w-72 overflow-y-auto">
+            {(["Operations", "Procurement", "Finance", "Governance"] as const).map((group)=><div key={group}>
+              <DropdownMenuLabel>{group}</DropdownMenuLabel>
+              {MASTER_SECTIONS.filter((section)=>section.group===group && section.slug!=="overview").map((section)=>{const Icon=section.icon;const summary=summaryRows.find((row)=>row.slug===section.slug);return <DropdownMenuItem key={section.slug} onSelect={()=>setLocation(APP_ROUTES.admin.masterDataSection(section.slug))}><Icon className="mr-2 h-4 w-4"/><span className="flex-1">{section.shortLabel}</span>{summary?<Badge variant="outline" className="ml-2">{summary.total}</Badge>:null}</DropdownMenuItem>;})}
+              {group!=="Governance"?<DropdownMenuSeparator/>:null}
+            </div>)}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true"/>
+        <Button size="sm" variant="ghost" onClick={openApprovalQueue}><ShieldCheck className="mr-2 h-4 w-4"/>Approval queue</Button>
+        <Button size="sm" variant="ghost" onClick={()=>{setShowGovernance(true);window.setTimeout(()=>document.getElementById("mdm-data-quality-panel")?.scrollIntoView({behavior:"smooth",block:"start"}),100);}}><ScanSearch className="mr-2 h-4 w-4"/>Quality issues {issueCount?`(${issueCount})`:""}</Button>
+        <Button type="button" size="sm" variant="ghost" className="ml-auto" onClick={() => setShowGovernance((value) => !value)}>{showGovernance ? "Hide controls" : "Governance controls"}</Button>
       </div>
       {showGovernance && health?.sections?.length ? (
         <Card>
@@ -1799,64 +1948,19 @@ export default function MasterDataPage() {
       <Tabs
         value={activeSection}
         onValueChange={(value) => setLocation(APP_ROUTES.admin.masterDataSection(value as typeof activeSection))}
-        className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]"
+        className="min-w-0"
       >
-        <Card className="h-fit">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Setup areas</CardTitle>
-            <p className="text-sm text-muted-foreground">Grouped by where the data has operational impact.</p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <TabsList className="flex h-auto flex-col items-stretch gap-1 bg-transparent p-0">
-              {(["Operations", "Procurement", "Finance", "Governance"] as const).map((group) => (
-                <div key={group} className="contents">
-                  <div className="px-2 pt-2 text-xs font-semibold uppercase text-muted-foreground first:pt-0">
-                    {group}
-                  </div>
-                  {MASTER_SECTIONS.filter((section) => section.group === group).map((section) => {
-                    const Icon = section.icon;
-                    const summary = summaryRows.find((row) => row.slug === section.slug);
-                    return (
-                      <TabsTrigger
-                        key={section.slug}
-                        value={section.slug}
-                        className="h-auto justify-between gap-2 rounded-md border px-3 py-2 text-left data-[state=active]:border-primary"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <Icon className="h-4 w-4 shrink-0" />
-                          <span className="truncate">{section.shortLabel}</span>
-                        </span>
-                        {summary ? (
-                          <span className="shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                            {summary.total}
-                          </span>
-                        ) : null}
-                      </TabsTrigger>
-                    );
-                  })}
-                  <Separator className="my-1" />
-                </div>
-              ))}
-            </TabsList>
-          </CardContent>
-        </Card>
         <div className="min-w-0 space-y-4">
-          <div className="rounded-md border bg-muted/20 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <ActiveIcon className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold">{activeConfig.label}</h2>
-              <Badge variant="outline">{activeConfig.group}</Badge>
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">{activeConfig.description}</p>
-          </div>
           {MASTER_SECTIONS.map((section) => (
             <TabsContent key={section.slug} value={section.slug} className="m-0">
-              {section.slug === "warehouses" ? (
+              {section.slug === "overview" ? (
+                <GovernanceOverviewPanel overview={overview} onReviewApprovals={openApprovalQueue} onScan={()=>scanDataQuality.mutate()} />
+              ) : section.slug === "warehouses" ? (
                 <WarehouseMasterPanel />
               ) : section.slug === "approvalPolicies" ? (
                 <ApprovalPoliciesRedirectCard />
               ) : (
-                <MasterTable config={section} />
+                <MasterTable config={section} createSignal={activeSection===section.slug?createSignal:0} />
               )}
             </TabsContent>
           ))}

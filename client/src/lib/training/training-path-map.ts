@@ -48,6 +48,7 @@ export function pathToTrainingModuleId(pathname: string): string | null {
   }
 
   if (p === APP_ROUTES.admin.settings || p.startsWith(`${APP_ROUTES.admin.settings}/`)) return "admin-settings";
+  if (p === APP_ROUTES.admin.companySetup) return "admin-settings";
   if (p === APP_ROUTES.admin.systemDiagnostics) return "system-diagnostics";
 
   return null;
@@ -78,6 +79,7 @@ export function tourIdToTrainingModuleId(tourId: string): string | null {
     "page-purchase-detail": "purchase-orders",
     "page-suppliers": "suppliers",
     "page-settings": "admin-settings",
+    "page-company-setup": "admin-settings",
     "page-reports": "reports",
     "page-warehouses": "warehouses",
     "page-users": "admin-settings",

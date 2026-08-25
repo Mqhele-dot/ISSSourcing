@@ -30,7 +30,7 @@ import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument, generateOperationalInventoryCsvFromRows } from "./services/document-generator-service";
 import { listOperationalInventory, listOperationalShipments } from "./operations-core";
 import { recordExportHistory } from "./modules/exports/export-history-service";
-import { loadLogoBytesForPdf } from "./services/pdf-logo-loader";
+import { getOrganizationDocumentBranding } from "./services/organization-document-branding";
 import type { ReportFormat, ReportType} from "@shared/schema";
 import { reportTypeEnum, reportFormatEnum } from "@shared/schema";
 import { registerOperationsRoutes as registerOperationalRoutes } from "./modules/operations/register-operations-routes";
@@ -46,7 +46,7 @@ import { getActiveOrganizationId, runWithTenantContext } from "./organization-co
 import { getFeatureFlagsForActiveOrg, isOrgFeatureEnabled, sendOrgFeatureDisabled } from "./org-features";
 import { readiness, setDbReady, setSchemaReady, setSessionStoreReady } from "./readiness";
 import { sendError, sendOk, sendFunctionError } from "./api-response";
-import { emitNotification, emitNotificationToRoles } from "./services/notification-emitter";
+import { emitNotification } from "./services/notification-emitter";
 import { eq, and, isNull, gte, lte, asc } from "drizzle-orm";
 import { 
   insertInventoryItemSchema, 
@@ -108,7 +108,6 @@ import { analyticsRateLimiter, exportRateLimiter, uploadRateLimiter } from "./se
 import { getServerDiagnosticEvents, recordServerDiagnosticEvent } from "./diagnostics/server-diagnostics-store";
 import { collectDiagnosticFindings, summarizeDiagnosticFindings } from "./diagnostics/diagnostic-findings-service";
 import { diagnosticCategories, type DiagnosticCategory } from "@shared/diagnostics/findings";
-import { detectSupplierDocumentMismatches } from "./modules/procurement/supplier-defaults";
 
 function isInternalExportRequest(req: Request): boolean {
   return Boolean(appEnv.internalExportToken) && req.get("x-internal-export-key") === appEnv.internalExportToken;
@@ -763,31 +762,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ...(filterTexts.length ? [`Filters: ${filterTexts.join("; ")}`] : []),
           ...(requestId ? [`Request ID: ${requestId}`] : []),
         ];
-        let organizationFooter: string | undefined;
-        let organizationDisplayName: string | undefined;
-        let organizationLogoUrl: string | undefined;
-        try {
-          const [osRow] = await db
-            .select({
-              reportFooter: organizationSettings.reportFooter,
-              displayName: organizationSettings.displayName,
-              logoUrl: organizationSettings.logoUrl,
-            })
-            .from(organizationSettings)
-            .where(eq(organizationSettings.organizationId, getActiveOrganizationId()))
-            .limit(1);
-          organizationFooter = osRow?.reportFooter?.trim() || undefined;
-          organizationDisplayName = osRow?.displayName?.trim() || undefined;
-          organizationLogoUrl = osRow?.logoUrl?.trim() || undefined;
-        } catch {
-          organizationFooter = undefined;
-          organizationDisplayName = undefined;
-          organizationLogoUrl = undefined;
-        }
-        let organizationLogoPng: Uint8Array | undefined;
-        if (format === "pdf" && organizationLogoUrl) {
-          organizationLogoPng = await loadLogoBytesForPdf(organizationLogoUrl);
-        }
+        const organizationBranding = await getOrganizationDocumentBranding(getActiveOrganizationId(), {
+          loadLogo: format === "pdf",
+        });
         const reportingCurrencyCode = await getReportingCurrencyCode(storage);
         buffer = await generateDocument(
           normalizedReportType as ReportType,
@@ -798,9 +775,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             pdfTemplate: templateParam as "standard" | "compact" | "custom",
             customTemplateBuffer,
             metadataLines,
-            organizationFooter,
-            organizationDisplayName,
-            ...(organizationLogoPng?.length ? { organizationLogoPng } : {}),
+            organizationFooter: organizationBranding.reportFooter,
+            organizationDisplayName: organizationBranding.displayName,
+            ...(organizationBranding.logoBytes?.length ? { organizationLogoPng: organizationBranding.logoBytes } : {}),
             reportingCurrencyCode,
           },
         );
@@ -1080,132 +1057,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Diagnostics: scan for issues
   app.get("/api/diagnostics/scan", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (_req: Request, res: Response) => {
-    const result: { database: string[]; configuration: string[]; data: string[]; system: string[] } = {
-      database: [],
-      configuration: [],
-      data: [],
-      system: [],
-    };
     try {
-      // Database
-      try {
-        await storage.getAppSettings();
-      } catch {
-        result.database.push("Corrupted settings schema");
-      }
-      try {
-        const indexCheck = await pool.query<{ indexname: string }>(
-          "SELECT indexname FROM pg_indexes WHERE tablename = 'inventory_items' LIMIT 1"
-        );
-        if (indexCheck.rows.length === 0) {
-          result.database.push("Missing index on inventory table");
-        }
-      } catch {
-        // Not PostgreSQL or table doesn't exist yet; skip index check
-      }
-
-      // Configuration
-      if (!process.env.STRIPE_SECRET_KEY?.trim()) {
-        result.configuration.push("Stripe API key not set");
-      }
-      if (!process.env.EMAIL_HOST?.trim() || !process.env.EMAIL_USER?.trim() || !process.env.EMAIL_PASS?.trim()) {
-        result.configuration.push("Email configuration incomplete");
-      }
-
-      // Data
-      const items = await storage.getAllInventoryItems();
-      const bySku = new Map<string, { id: number; sku: string }[]>();
-      for (const item of items) {
-        const sku = String(item.sku ?? "").trim();
-        if (!sku) continue;
-        const list = bySku.get(sku) ?? [];
-        list.push({ id: item.id, sku });
-        bySku.set(sku, list);
-      }
-      const duplicateSkus = Array.from(bySku.values()).filter((list) => list.length > 1);
-      if (duplicateSkus.length > 0) {
-        const totalDuplicates = duplicateSkus.reduce((sum, list) => sum + list.length - 1, 0);
-        result.data.push(`${totalDuplicates} duplicate SKU(s) found`);
-      }
-      const settings = await storage.getAppSettings();
-      const allowNegative = settings?.allowNegativeInventory ?? false;
-      if (!allowNegative) {
-        const negativeCount = items.filter((i) => Number(i.quantity) < 0).length;
-        if (negativeCount > 0) {
-          result.data.push(`${negativeCount} item(s) with negative stock`);
-        }
-      }
-
-      const supplierMismatches = await detectSupplierDocumentMismatches(getActiveOrganizationId());
-      if (supplierMismatches.length > 0) {
-        result.data.push(...supplierMismatches.slice(0, 10));
-        recordServerDiagnosticEvent({
-          severity: "warning",
-          source: "business-rule",
-          title: "Supplier document mismatch",
-          message: `${supplierMismatches.length} supplier/master-data consistency issue(s) detected.`,
-          details: { examples: supplierMismatches.slice(0, 5) },
-        });
-        const recentSupplierDiagnosticNotification = await pool.query<{ exists: boolean }>(
-          `
-          SELECT EXISTS (
-            SELECT 1
-            FROM notifications
-            WHERE organization_id = $1
-              AND type = 'diagnostic_supplier_mismatch'
-              AND created_at > now() - interval '2 hours'
-          ) AS exists
-          `,
-          [getActiveOrganizationId()],
-        );
-        if (!recentSupplierDiagnosticNotification.rows[0]?.exists) {
-          await emitNotificationToRoles(["admin", "manager"], {
-            type: "diagnostic_supplier_mismatch",
-            title: "Supplier consistency issues detected",
-            body: `${supplierMismatches.length} supplier-linked default, PO, invoice, or receipt issue(s) need review in System Diagnostics.`,
-            entityType: "diagnostics",
-          });
-        }
-      }
-
-      const fixturePollution = await pool.query<{ total: string }>(
-        `
-          SELECT SUM(match_count)::text AS total
-          FROM (
-            SELECT COUNT(*) AS match_count FROM suppliers
-              WHERE organization_id = $1 AND name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Supplier '
-            UNION ALL
-            SELECT COUNT(*) FROM inventory_items
-              WHERE organization_id::text = $1::text AND (name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)')
-            UNION ALL
-            SELECT COUNT(*) FROM approval_policies
-              WHERE organization_id = $1 AND name ~ '^(AP Workflow|AP Test|AP Invalid)'
-            UNION ALL
-            SELECT COUNT(*) FROM sourcing_events
-              WHERE organization_id = $1 AND title ~ '^(Runtime RFQ|E2E Controlled RFQ) '
-          ) fixture_matches
-        `,
-        [getActiveOrganizationId()],
+      const findings = await collectDiagnosticFindings(getActiveOrganizationId());
+      const actionable = findings.filter(
+        (row) => row.evidenceState === "current" && (row.status === "failed" || row.status === "degraded"),
       );
-      const fixtureCount = Number(fixturePollution.rows[0]?.total ?? 0);
-      if (fixtureCount > 0) {
-        result.data.push(`${fixtureCount} probable automated test fixture record(s) found; run npm run data:fixture-audit before any purge.`);
-        recordServerDiagnosticEvent({
-          severity: "warning",
-          source: "business-rule",
-          title: "Automated fixture pollution detected",
-          message: `${fixtureCount} probable test-owned records are present in the active organization.`,
-          details: { command: "npm run data:fixture-audit", organizationId: getActiveOrganizationId() },
-        });
-      }
-
-      const filtered: Record<string, string[]> = {};
-      for (const [key, arr] of Object.entries(result)) {
-        if (Array.isArray(arr) && arr.length > 0) filtered[key] = arr;
-      }
-      res.json(filtered);
+      const result: { database: string[]; configuration: string[]; data: string[]; system: string[] } = {
+        database: actionable
+          .filter((row) => row.category === "backend")
+          .map((row) => `${row.title}: ${row.message}`),
+        configuration: actionable
+          .filter((row) => row.category === "integrations" || row.category === "security")
+          .map((row) => `${row.title}: ${row.message}`),
+        data: actionable
+          .filter((row) => ["business", "consistency", "audit"].includes(row.category))
+          .map((row) => `${row.title}: ${row.message}`),
+        system: actionable
+          .filter((row) => ["frontend", "user-errors", "notifications"].includes(row.category))
+          .map((row) => `${row.title}: ${row.message}`),
+      };
+      return res.json(result);
     } catch (err) {
-      console.error("Diagnostics scan error:", err);
+      recordServerDiagnosticEvent({
+        severity: "error",
+        source: "system",
+        title: "Diagnostics scan failed",
+        message: err instanceof Error ? err.message : String(err),
+        details: err,
+      });
       return sendError(res, 500, "DIAGNOSTICS_SCAN_FAILED", "Diagnostics scan failed", {
         hint: "Retry the scan. If it fails again, use the request ID to review server diagnostics.",
       });

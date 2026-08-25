@@ -3215,10 +3215,13 @@ export class MemStorage implements IStorage {
   async createInventoryItem(insertItem: InsertInventoryItem): Promise<InventoryItem> {
     const id = this.itemCurrentId++;
     const now = new Date();
+    const organizationId = insertItem.organizationId ?? MEM_DEFAULT_ORG_ID;
+    const primaryBarcode = insertItem.barcode?.trim() || `INV-${organizationId}-${String(id).padStart(8, "0")}`;
+    const primaryBarcodeType = insertItem.barcodeType?.trim() || "CODE128";
     const item: InventoryItem = { 
       ...insertItem, 
       id,
-      organizationId: insertItem.organizationId ?? MEM_DEFAULT_ORG_ID,
+      organizationId,
       createdAt: now,
       updatedAt: now,
       status: insertItem.status ?? null,
@@ -3229,7 +3232,7 @@ export class MemStorage implements IStorage {
       quantity: insertItem.quantity ?? 0,
       cost: insertItem.cost ?? null,
       supplierId: insertItem.supplierId ?? null,
-      barcode: insertItem.barcode ?? null,
+      barcode: primaryBarcode,
       location: insertItem.location ?? null,
       dimensions: insertItem.dimensions ?? null,
       weight: insertItem.weight ?? null,
@@ -3247,10 +3250,28 @@ export class MemStorage implements IStorage {
       unitOfMeasureId: insertItem.unitOfMeasureId ?? null,
       supplierPartNumber: insertItem.supplierPartNumber ?? null,
       commodityCodeId: insertItem.commodityCodeId ?? null,
-      barcodeType: insertItem.barcodeType ?? 'CODE128',
+      barcodeType: primaryBarcodeType,
       taxable: insertItem.taxable ?? true
     };
     this.inventoryItems.set(id, item);
+
+    await this.createBarcode({
+      organizationId,
+      itemId: id,
+      value: primaryBarcode,
+      type: primaryBarcodeType,
+      isPrimary: true,
+    });
+    const itemHref = `/inventory/${encodeURIComponent(item.sku)}`;
+    if (itemHref !== primaryBarcode) {
+      await this.createBarcode({
+        organizationId,
+        itemId: id,
+        value: itemHref,
+        type: "QR",
+        isPrimary: false,
+      });
+    }
     
     // Create activity log for new item
     await this.createActivityLog({

@@ -35,6 +35,7 @@ import { appEnv } from "./config/env";
 import { logger } from "./lib/logger";
 
 import {
+  appSettings,
   organizationMembers,
   organizations,
   organizationSettings,
@@ -589,9 +590,16 @@ export function setupAuth(app: Express) {
       await db.insert(organizationSettings).values({
         organizationId,
         displayName: registration.organizationName,
+        legalName: registration.organizationName,
         planTier: "starter",
         subscriptionStatus: "active",
         billingProvider: "local",
+      }).onConflictDoNothing();
+      await db.insert(appSettings).values({
+        organizationId,
+        companyName: registration.organizationName,
+        currencyCode: pack.defaultCurrencyCode,
+        businessCountryCode: pack.code,
       }).onConflictDoNothing();
       
       // Create verification token

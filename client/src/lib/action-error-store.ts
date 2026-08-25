@@ -47,7 +47,7 @@ export type ActionErrorRecord = {
   lastSeen?: string;
 };
 
-type Listener = (error: ActionErrorRecord) => void;
+type Listener = (error: ActionErrorRecord | null) => void;
 
 const listeners = new Set<Listener>();
 const records: ActionErrorRecord[] = [];
@@ -139,12 +139,30 @@ export const actionErrorStore = {
   },
   clearAll() {
     records.length = 0;
+    listeners.forEach((listener) => listener(null));
   },
   clearById(id: string) {
     const idx = records.findIndex((record) => record.id === id);
     if (idx >= 0) {
       records.splice(idx, 1);
+      listeners.forEach((listener) => listener(null));
     }
+  },
+  clearResolved(method: string, endpoint: string) {
+    const normalizedMethod = method.toUpperCase();
+    const normalizedEndpoint = normalizePath(endpoint);
+    let changed = false;
+    for (let index = records.length - 1; index >= 0; index -= 1) {
+      const record = records[index];
+      if (
+        record.method.toUpperCase() === normalizedMethod &&
+        normalizePath(record.endpoint) === normalizedEndpoint
+      ) {
+        records.splice(index, 1);
+        changed = true;
+      }
+    }
+    if (changed) listeners.forEach((listener) => listener(null));
   },
   subscribe(listener: Listener) {
     listeners.add(listener);

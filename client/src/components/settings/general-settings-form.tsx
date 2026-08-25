@@ -16,11 +16,12 @@ import {
 } from "@/components/ui/form";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+import { Link } from "wouter";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { SettingsAuthorityState } from "./settings-authority-state";
 
 // Define form schema
 const generalSettingsSchema = z.object({
-  companyLogo: z.string().nullable().optional(),
   primaryColor: z.string().regex(/^#[0-9A-F]{6}$/i, "Must be a valid hex color"),
   dateFormat: z.string().min(1, "Date format is required"),
   timeFormat: z.string().min(1, "Time format is required"),
@@ -33,7 +34,6 @@ export function GeneralSettingsForm() {
   const form = useForm<z.infer<typeof generalSettingsSchema>>({
     resolver: zodResolver(generalSettingsSchema),
     defaultValues: {
-      companyLogo: settings?.companyLogo ?? null,
       primaryColor: settings?.primaryColor || '#0f766e',
       dateFormat: settings?.dateFormat || 'YYYY-MM-DD',
       timeFormat: settings?.timeFormat || 'HH:mm',
@@ -43,7 +43,6 @@ export function GeneralSettingsForm() {
   React.useEffect(() => {
     if (!settings) return;
     form.reset({
-      companyLogo: settings.companyLogo,
       primaryColor: settings.primaryColor || "#0f766e",
       dateFormat: settings.dateFormat || "YYYY-MM-DD",
       timeFormat: settings.timeFormat || "HH:mm",
@@ -55,7 +54,6 @@ export function GeneralSettingsForm() {
     if (settings) {
       updateSettings.mutate({
         ...settings,
-        companyLogo: data.companyLogo,
         primaryColor: data.primaryColor,
         dateFormat: data.dateFormat,
         timeFormat: data.timeFormat,
@@ -70,29 +68,13 @@ export function GeneralSettingsForm() {
       <CardHeader>
         <CardTitle>Appearance and display</CardTitle>
         <CardDescription>
-          Branding and local display preferences. Organization identity and reporting currency are controlled above.
+          Shared display formatting. Company identity, addresses, and logo are managed in Company Setup.
         </CardDescription>
+        <div><Button asChild type="button" size="sm" variant="outline"><Link href={APP_ROUTES.admin.companySetup}>Open Company Setup</Link></Button></div>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
-            <FormField
-              control={form.control}
-              name="companyLogo"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Company Logo URL</FormLabel>
-                  <FormControl>
-                    <Input placeholder="https://example.com/logo.png" {...field} value={field.value || ""} />
-                  </FormControl>
-                  <FormDescription>
-                    URL to your company logo (Optional)
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}

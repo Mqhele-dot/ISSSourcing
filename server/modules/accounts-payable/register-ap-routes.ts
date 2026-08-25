@@ -10,6 +10,7 @@ import {
 import { sendError, sendOk } from "../../api-response";
 import { getActiveOrganizationId } from "../../organization-context";
 import { generateGenericPdf } from "../../services/document-generator-service";
+import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
 import { pool } from "../../db";
 import { incrementMetric } from "../../observability/metrics";
 import { storage } from "../../storage";
@@ -108,7 +109,7 @@ const paymentBatchPageSchema = apPageSchema.extend({
 
 const invoicePageSchema = apPageSchema.extend({
   supplierId: z.coerce.number().int().positive().optional(),
-  eligibility: z.enum(["all", "payable"]).default("all"),
+  eligibility: z.enum(["all", "payable", "due"]).default("all"),
   sort: z.enum(["created_desc", "created_asc", "number_asc", "number_desc", "due_asc", "due_desc", "amount_desc", "amount_asc"]).default("created_desc"),
 });
 
@@ -464,6 +465,14 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       conditions.push("invoice.status::text IN ('APPROVED','PARTIALLY_PAID','OVERDUE')");
       conditions.push("COALESCE(invoice.due_amount, invoice.total, 0) > 0");
       conditions.push("(invoice.purchase_order_id IS NULL OR latest_match.status::text = 'MATCHED')");
+    }
+    if (query.eligibility === "due") {
+      // Mirrors the Control Tower "due / overdue" KPI: overdue, due today,
+      // and due within the next seven days, regardless of match readiness.
+      conditions.push("invoice.supplier_id IS NOT NULL");
+      conditions.push("lower(invoice.status::text) NOT IN ('paid','cancelled','void')");
+      conditions.push("COALESCE(invoice.due_amount, invoice.total, 0) > 0.01");
+      conditions.push("invoice.due_date < CURRENT_DATE + INTERVAL '8 days'");
     }
     const order = ({
       created_desc: "invoice.created_at DESC, invoice.id DESC",
@@ -981,7 +990,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (id === null) return;
       const invoice = await getInvoiceDetail(id);
       if (!invoice) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
-      const organization = await pool.query("SELECT name FROM organizations WHERE id = $1", [getActiveOrganizationId()]);
+      const organizationBranding = await getOrganizationDocumentBranding(getActiveOrganizationId(), { loadLogo: true });
       const match = invoice.latestMatchResult as Record<string, unknown> | null;
       const rows = (invoice.items ?? []).map((line: Record<string, unknown>, index: number) => ({
         line: index + 1,
@@ -999,10 +1008,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
         { header: "Tax", key: "tax", width: 65 },
         { header: "Total", key: "total", width: 80 },
       ], { metadataLines: [
-        `${organization.rows[0]?.name ?? "Organization"} · AP supplier invoice voucher`,
+        `${organizationBranding.displayName} · AP supplier invoice voucher`,
         `Status: ${invoice.status} · Currency: ${invoice.currencyCode ?? "ZAR"} · Total: ${invoice.total}`,
         `PO: ${invoice.purchaseOrderId ?? "Not linked"} · Match: ${String(match?.status ?? "Not evaluated")}`,
-      ] });
+      ], organizationDisplayName: organizationBranding.displayName, organizationFooter: organizationBranding.reportFooter, organizationLogoPng: organizationBranding.logoBytes });
       const filename = `${String(invoice.invoiceNumber).replace(/[^A-Za-z0-9_-]/g, "-")}-voucher.pdf`;
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `${req.query.download === "1" ? "attachment" : "inline"}; filename="${filename}"`);
@@ -1021,7 +1030,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       const batch = batches.find((candidate) => candidate.id === id);
       if (!batch) return sendError(res, 404, "PAYMENT_BATCH_NOT_FOUND", "Payment batch not found");
       if (batch.status !== "RELEASED") return sendError(res, 409, "PAYMENT_BATCH_NOT_RELEASED", "Remittance advice is available only after payment release.");
-      const organization = await pool.query("SELECT name FROM organizations WHERE id = $1", [getActiveOrganizationId()]);
+      const organizationBranding = await getOrganizationDocumentBranding(getActiveOrganizationId(), { loadLogo: true });
       const invoiceIds = batch.items.map((item) => item.invoiceId);
       const invoices = invoiceIds.length
         ? await pool.query(
@@ -1041,10 +1050,10 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
         { header: "Amount", key: "amount", width: 90 },
         { header: "Evidence", key: "status", width: 90 },
       ], { metadataLines: [
-        `${organization.rows[0]?.name ?? "Organization"} · Released payment remittance`,
+        `${organizationBranding.displayName} · Released payment remittance`,
         `Method: ${batch.paymentMethod ?? "Not specified"} · Total: ${batch.totalAmount}`,
         `Released: ${batch.releasedAt ? new Date(batch.releasedAt).toISOString() : "Recorded"}`,
-      ] });
+      ], organizationDisplayName: organizationBranding.displayName, organizationFooter: organizationBranding.reportFooter, organizationLogoPng: organizationBranding.logoBytes });
       const filename = `${String(batch.batchNumber).replace(/[^A-Za-z0-9_-]/g, "-")}-remittance.pdf`;
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `${req.query.download === "1" ? "attachment" : "inline"}; filename="${filename}"`);
@@ -1238,6 +1247,43 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, await listPayments());
     } catch (error) {
       return sendError(res, 500, "FETCH_PAYMENTS_FAILED", "Failed to fetch payments");
+    }
+  });
+
+  app.get("/api/v2/ap/aging", ...apRead, async (req: Request, res: Response) => {
+    const orgId = getActiveOrganizationId();
+    const bucket = String(req.query.bucket ?? "");
+    const supplierId = req.query.supplierId ? Number(req.query.supplierId) : null;
+    const validBuckets = ["", "not_due", "due_7", "due_30", "od_1_30", "od_31_60", "od_60p"];
+    if (!validBuckets.includes(bucket) || (supplierId != null && (!Number.isInteger(supplierId) || supplierId < 1))) {
+      return sendError(res, 400, "INVALID_QUERY", "Aging bucket or supplier filter is invalid.");
+    }
+    try {
+      const result = await pool.query(`
+        WITH open_invoices AS (
+          SELECT i.id, i.invoice_number, i.supplier_id, s.name supplier_name, i.status::text,
+                 i.due_date::date, coalesce(i.due_amount,i.total,0)::numeric(18,2) amount,
+                 CASE WHEN i.due_date::date > current_date + 30 THEN 'not_due'
+                      WHEN i.due_date::date > current_date + 7 THEN 'due_30'
+                      WHEN i.due_date::date >= current_date THEN 'due_7'
+                      WHEN current_date-i.due_date::date <= 30 THEN 'od_1_30'
+                      WHEN current_date-i.due_date::date <= 60 THEN 'od_31_60' ELSE 'od_60p' END bucket
+          FROM invoices i JOIN suppliers s ON s.id=i.supplier_id AND s.organization_id=i.organization_id
+          WHERE i.organization_id=$1 AND lower(i.status::text) NOT IN ('paid','cancelled','void')
+            AND coalesce(i.due_amount,i.total,0)>0.01 AND ($2::int IS NULL OR i.supplier_id=$2)
+        ) SELECT id,invoice_number AS "invoiceNumber",supplier_id AS "supplierId",supplier_name AS "supplierName",
+                 status,due_date AS "dueDate",amount::text,bucket
+          FROM open_invoices WHERE ($3='' OR bucket=$3) ORDER BY due_date,id`, [orgId, supplierId, bucket]);
+      const summary = await pool.query(`
+        WITH x AS (SELECT coalesce(due_amount,total,0)::numeric amount,
+          CASE WHEN due_date::date > current_date + 30 THEN 'not_due' WHEN due_date::date > current_date + 7 THEN 'due_30'
+          WHEN due_date::date >= current_date THEN 'due_7' WHEN current_date-due_date::date <=30 THEN 'od_1_30'
+          WHEN current_date-due_date::date <=60 THEN 'od_31_60' ELSE 'od_60p' END bucket
+          FROM invoices WHERE organization_id=$1 AND supplier_id IS NOT NULL AND lower(status::text) NOT IN ('paid','cancelled','void') AND coalesce(due_amount,total,0)>0.01)
+        SELECT bucket,count(*)::int count,coalesce(sum(amount),0)::text amount FROM x GROUP BY bucket`, [orgId]);
+      return sendOk(res, { items: result.rows, buckets: summary.rows, total: result.rowCount ?? 0, asOf: new Date().toISOString() });
+    } catch (error) {
+      return sendError(res, 500, "AP_AGING_FAILED", "AP aging could not be calculated.", { details: String(error) });
     }
   });
 

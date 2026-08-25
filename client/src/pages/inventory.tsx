@@ -1170,6 +1170,14 @@ export default function InventoryPage() {
                 </Button>
                 <Button
                   type="button"
+                  variant="outline"
+                  data-testid="inventory-item-preview-edit"
+                  onClick={() => setLocation(`${APP_ROUTES.inventory.item(previewItem.sku)}?edit=1`)}
+                >
+                  Edit item details
+                </Button>
+                <Button
+                  type="button"
                   data-testid="inventory-item-preview-open-full"
                   onClick={() => openFullItem(previewItem.sku)}
                 >

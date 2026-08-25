@@ -52,6 +52,7 @@ type PoSort =
   | "progress-desc";
 
 const STATUS_OPTIONS = [
+  { value: "active", label: "Active (not received or closed)" },
   { value: "draft", label: "Draft" },
   { value: "open", label: "Open" },
   { value: "approved", label: "Approved" },
@@ -348,7 +349,13 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
             const supplierFilter = activeSupplier.toLowerCase();
             const statusFilter = normalizeStatus(activeStatus);
             const list = baseList.filter((order) => {
-              if (statusFilter && normalizeStatus(order.status) !== statusFilter) {
+              const normalizedOrderStatus = normalizeStatus(order.status);
+              if (
+                statusFilter &&
+                (statusFilter === "active"
+                  ? ["received", "completed", "closed", "cancelled"].includes(normalizedOrderStatus)
+                  : normalizedOrderStatus !== statusFilter)
+              ) {
                 return false;
               }
               if (supplierFilter) {

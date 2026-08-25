@@ -4,6 +4,7 @@ import { z } from "zod";
 import { pool } from "../../db";
 import { sendError, sendOk } from "../../api-response";
 import { getActiveOrganizationId } from "../../organization-context";
+import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
 
 type Auth = {
   ensureAuthenticated: RequestHandler;
@@ -246,21 +247,34 @@ export function registerInventoryIssueRoutes(app: Express, auth: Auth): void {
     const id = Number(req.params.id);
     const issue = await loadIssue(organizationId, id);
     if (!issue) return sendError(res, 404, "INVENTORY_ISSUE_NOT_FOUND", "Inventory issue not found.");
+    const branding = await getOrganizationDocumentBranding(organizationId, { loadLogo: true });
     const pdf = await PDFDocument.create();
     const page = pdf.addPage([595, 842]);
     const font = await pdf.embedFont(StandardFonts.Helvetica);
     const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-    page.drawText("Inventory Issue Delivery Note", { x: 50, y: 790, size: 20, font: bold, color: rgb(0.08, 0.18, 0.3) });
+    let logoRight = 50;
+    if (branding.logoBytes?.length) {
+      try {
+        let logo;
+        try { logo = await pdf.embedPng(branding.logoBytes); } catch { logo = await pdf.embedJpg(branding.logoBytes); }
+        const scaled = logo.scaleToFit(90, 42);
+        page.drawImage(logo, { x: 50, y: 785, width: scaled.width, height: scaled.height });
+        logoRight = 50 + scaled.width + 14;
+      } catch { /* Invalid logos are omitted without blocking the legal document. */ }
+    }
+    page.drawText(branding.displayName, { x: logoRight, y: 812, size: 12, font: bold, color: rgb(0.08, 0.18, 0.3) });
+    page.drawText("Inventory Issue Delivery Note", { x: 50, y: 760, size: 20, font: bold, color: rgb(0.08, 0.18, 0.3) });
     const lines = [
       `Issue: ${issue.issue_number}`, `Status: ${issue.status}`, `Warehouse: ${issue.warehouse_name}`,
       `Recipient: ${issue.recipient}`, `Destination: ${issue.destination}`,
       `Carrier: ${issue.carrier_name ?? "Not assigned"}`, `Tracking: ${issue.tracking_number ?? "Not assigned"}`,
     ];
-    lines.forEach((value, index) => page.drawText(value, { x: 50, y: 750 - index * 22, size: 11, font }));
-    page.drawText("Items", { x: 50, y: 570, size: 14, font: bold });
+    lines.forEach((value, index) => page.drawText(value, { x: 50, y: 720 - index * 22, size: 11, font }));
+    page.drawText("Items", { x: 50, y: 540, size: 14, font: bold });
     (issue.lines as Array<{ sku: string; name: string; quantity: number; unitOfMeasure?: string }>).slice(0, 18).forEach((line, index) => {
-      page.drawText(`${line.sku}  ${line.name}  ${line.quantity} ${line.unitOfMeasure ?? ""}`, { x: 50, y: 545 - index * 21, size: 10, font });
+      page.drawText(`${line.sku}  ${line.name}  ${line.quantity} ${line.unitOfMeasure ?? ""}`, { x: 50, y: 515 - index * 21, size: 10, font });
     });
+    page.drawText(branding.reportFooter.slice(0, 140), { x: 50, y: 28, size: 7, font, color: rgb(0.35, 0.4, 0.48) });
     const bytes = await pdf.save();
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${String(issue.issue_number).replace(/[^A-Za-z0-9_-]/g, "-")}-delivery-note.pdf"`);

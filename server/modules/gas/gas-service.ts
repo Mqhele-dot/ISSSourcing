@@ -4,12 +4,14 @@ import { getActiveOrganizationId } from "../../organization-context";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { gasAssetProfiles, gasExchangeTransactions, gasProducts } from "@shared/schema";
 
-/** Postgres undefined_table / missing relation (e.g. gas_* not migrated yet). */
-function isMissingGasRelationError(e: unknown): boolean {
-  const err = e as { code?: string; message?: string };
-  if (err?.code === "42P01") return true;
-  const msg = typeof err?.message === "string" ? err.message : "";
-  return msg.includes("does not exist") && (msg.includes("gas_") || msg.includes("relation"));
+/** Optional LP-gas tables may be absent or retain a legacy incompatible shape. */
+function isOptionalGasSchemaCompatibilityError(e: unknown): boolean {
+  const err = e as { code?: string; message?: string; cause?: { code?: string; message?: string } };
+  const code = err?.code ?? err?.cause?.code;
+  if (code === "42P01" || code === "42703") return true;
+  const msg = [err?.message, err?.cause?.message].filter((value): value is string => typeof value === "string").join(" ");
+  return (msg.includes("does not exist") || msg.includes("undefined column"))
+    && (msg.includes("gas_") || msg.includes("relation") || msg.includes("column"));
 }
 
 /** Placeholder: enforce regulator / gas-family pairing (extend with real rules). */
@@ -65,9 +67,9 @@ export async function getGasDashboardSummary() {
     openExchanges = Number(exchangeRow?.c ?? 0);
     profilesDueForTest30d = Number(dueRow?.c ?? 0);
   } catch (e) {
-    if (isMissingGasRelationError(e)) {
+    if (isOptionalGasSchemaCompatibilityError(e)) {
       lpGasState = "degraded";
-      console.warn("[gas] optional gas_* compliance tables are unavailable; canonical fuel summary remains active.");
+      console.warn("[gas] optional gas_* compliance tables are unavailable or legacy-shaped; canonical fuel summary remains active.");
     } else {
       throw e;
     }
@@ -147,8 +149,8 @@ export async function runGasComplianceAlerts(): Promise<{
       blocked: blockedRows.length,
     };
   } catch (e) {
-    if (isMissingGasRelationError(e)) {
-      console.warn("[gas] gas_* tables are not in the database yet; run `npm run db:push`. Skipping compliance alerts.");
+    if (isOptionalGasSchemaCompatibilityError(e)) {
+      console.warn("[gas] gas_* tables are unavailable or legacy-shaped; run migrations before enabling compliance alerts.");
       return { notificationsSent: 0, dueWithin30d: 0, blocked: 0 };
     }
     throw e;

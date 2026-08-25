@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 const PAGE_SHELL_VARIANTS: Record<PageShellVariant, string> = {
   standard: "mx-auto w-full max-w-7xl space-y-6",
+  "wide-form": "mx-auto w-full max-w-[min(100%,92rem)] space-y-6",
   "wide-table": "mx-auto w-full max-w-[min(100%,96rem)] space-y-6",
   "task-mode": "mx-auto flex w-full max-w-5xl flex-col gap-4",
   "analytics-mode": "mx-auto w-full max-w-[min(100%,90rem)] space-y-6",

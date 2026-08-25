@@ -41,6 +41,13 @@ export async function ensureOrganizationSubscriptionColumns(): Promise<void> {
   try {
     await pool.query(`
       ALTER TABLE organization_settings
+        ADD COLUMN IF NOT EXISTS legal_name TEXT,
+        ADD COLUMN IF NOT EXISTS registration_number TEXT,
+        ADD COLUMN IF NOT EXISTS tax_number TEXT,
+        ADD COLUMN IF NOT EXISTS address TEXT,
+        ADD COLUMN IF NOT EXISTS contact_email TEXT,
+        ADD COLUMN IF NOT EXISTS contact_phone TEXT,
+        ADD COLUMN IF NOT EXISTS website TEXT,
         ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'active',
         ADD COLUMN IF NOT EXISTS billing_provider TEXT DEFAULT 'local',
         ADD COLUMN IF NOT EXISTS billing_customer_id TEXT,
@@ -497,6 +504,131 @@ export async function ensureStrategicSourcingTables(): Promise<void> {
   }
 }
 
+export async function ensureCommercialQuotationTables(): Promise<void> {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS commercial_quotations (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        quotation_number TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','PENDING_APPROVAL','APPROVED','ISSUED','ACCEPTED','REJECTED','EXPIRED','CANCELLED')),
+        version INTEGER NOT NULL DEFAULT 1,
+        recipient_source TEXT NOT NULL DEFAULT 'MANUAL' CHECK (recipient_source IN ('SUPPLIER_MASTER','MANUAL')),
+        recipient_supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+        recipient_company TEXT NOT NULL,
+        recipient_name TEXT,
+        recipient_email TEXT,
+        recipient_phone TEXT,
+        recipient_address TEXT,
+        recipient_registration_number TEXT,
+        recipient_tax_number TEXT,
+        recipient_physical_address TEXT,
+        recipient_billing_address TEXT,
+        recipient_delivery_address TEXT,
+        supplier_legal_name TEXT,
+        supplier_registration_number TEXT,
+        supplier_tax_number TEXT,
+        supplier_physical_address TEXT,
+        supplier_email TEXT,
+        supplier_phone TEXT,
+        supplier_website TEXT,
+        currency_code TEXT NOT NULL,
+        reporting_currency_code TEXT NOT NULL,
+        exchange_rate_to_reporting REAL NOT NULL CHECK (exchange_rate_to_reporting > 0),
+        subtotal REAL NOT NULL DEFAULT 0,
+        discount_total REAL NOT NULL DEFAULT 0,
+        tax_total REAL NOT NULL DEFAULT 0,
+        total REAL NOT NULL DEFAULT 0,
+        reporting_total REAL NOT NULL DEFAULT 0,
+        valid_until TIMESTAMP NOT NULL,
+        payment_terms_id INTEGER REFERENCES payment_terms(id),
+        incoterm_id INTEGER REFERENCES incoterms(id),
+        acceptance_method TEXT NOT NULL DEFAULT 'SIGNATURE' CHECK (acceptance_method IN ('SIGNATURE','PURCHASE_ORDER','EMAIL_CONFIRMATION')),
+        acceptance_terms TEXT NOT NULL,
+        legal_terms TEXT,
+        notes TEXT,
+        created_by_user_id INTEGER REFERENCES users(id),
+        approved_by_user_id INTEGER REFERENCES users(id),
+        approved_at TIMESTAMP,
+        issued_at TIMESTAMP,
+        accepted_by_name TEXT,
+        accepted_at TIMESTAMP,
+        acceptance_reference TEXT,
+        rejected_by_name TEXT,
+        rejected_at TIMESTAMP,
+        rejection_reason TEXT,
+        rejection_reference TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (organization_id, quotation_number)
+      );
+      CREATE TABLE IF NOT EXISTS commercial_quotation_lines (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        quotation_id INTEGER NOT NULL REFERENCES commercial_quotations(id) ON DELETE CASCADE,
+        line_number INTEGER NOT NULL,
+        line_type TEXT NOT NULL CHECK (line_type IN ('CATALOG','NON_STOCK','SERVICE')),
+        inventory_item_id INTEGER REFERENCES inventory_items(id),
+        sku TEXT,
+        description TEXT NOT NULL,
+        quantity REAL NOT NULL CHECK (quantity > 0),
+        unit_of_measure_id INTEGER REFERENCES units_of_measure(id),
+        unit_of_measure_code TEXT NOT NULL,
+        unit_price REAL NOT NULL CHECK (unit_price >= 0),
+        discount_percent REAL NOT NULL DEFAULT 0 CHECK (discount_percent >= 0 AND discount_percent <= 100),
+        tax_code_id INTEGER REFERENCES tax_codes(id),
+        tax_code TEXT,
+        tax_rate REAL NOT NULL DEFAULT 0 CHECK (tax_rate >= 0),
+        net_amount REAL NOT NULL,
+        tax_amount REAL NOT NULL DEFAULT 0,
+        line_total REAL NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (quotation_id, line_number)
+      );
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS rejected_by_name TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS rejection_reference TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS recipient_source TEXT NOT NULL DEFAULT 'MANUAL';
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS recipient_supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS recipient_registration_number TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS recipient_tax_number TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS recipient_physical_address TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS recipient_billing_address TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS recipient_delivery_address TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS supplier_legal_name TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS supplier_registration_number TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS supplier_tax_number TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS supplier_physical_address TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS supplier_email TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS supplier_phone TEXT;
+      ALTER TABLE commercial_quotations ADD COLUMN IF NOT EXISTS supplier_website TEXT;
+      UPDATE commercial_quotations
+      SET recipient_physical_address = recipient_address
+      WHERE recipient_physical_address IS NULL AND recipient_address IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS commercial_quotations_org_status_updated_idx ON commercial_quotations(organization_id, status, updated_at DESC, id DESC);
+      CREATE INDEX IF NOT EXISTS commercial_quotations_org_recipient_supplier_idx ON commercial_quotations(organization_id, recipient_supplier_id, updated_at DESC, id DESC) WHERE recipient_supplier_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS commercial_quotation_lines_org_quote_idx ON commercial_quotation_lines(organization_id, quotation_id, line_number);
+      INSERT INTO mdm_document_sequences (organization_id, document_type, prefix, year, next_number, padding)
+      SELECT id, 'COMMERCIAL_QUOTATION', CONCAT('QUO-', EXTRACT(YEAR FROM NOW())::int, '-'), EXTRACT(YEAR FROM NOW())::int, 1, 6
+      FROM organizations WHERE COALESCE(active, TRUE) = TRUE
+      ON CONFLICT (organization_id, document_type, prefix) DO NOTHING;
+      INSERT INTO mdm_document_templates (organization_id, document_type, name, terms_text, footer_text)
+      SELECT id, 'COMMERCIAL_QUOTATION', 'Default commercial quotation',
+        'Acceptance confirms agreement to the quoted scope, price, validity period, payment terms, and incorporated conditions. Changes require a revised quotation.',
+        'This quotation is subject to the organization terms shown above.'
+      FROM organizations o
+      WHERE COALESCE(o.active, TRUE) = TRUE
+        AND NOT EXISTS (SELECT 1 FROM mdm_document_templates t WHERE t.organization_id = o.id AND t.document_type = 'COMMERCIAL_QUOTATION')
+      ON CONFLICT DO NOTHING;
+    `);
+    console.log('Commercial quotation tables ready');
+  } catch (err) {
+    console.warn('Could not ensure commercial quotation tables:', err instanceof Error ? err.message : err);
+  }
+}
+
 /** Tables that gained `organization_id` + composite unique indexes; legacy DBs may lack the column. */
 const LEGACY_ORG_SCOPED_TABLES: readonly {
   table: string;
@@ -655,6 +787,43 @@ async function ensureOrganizationIdOnLegacyTable(spec: (typeof LEGACY_ORG_SCOPED
   console.log(`${spec.table}.organization_id column and index ready`);
 }
 
+/**
+ * Barcode ownership must follow the canonical inventory item rather than a guessed default tenant.
+ * Rows whose item no longer exists remain unassigned and fail closed in operational queries.
+ */
+async function ensureBarcodeOrganizationIdColumn(): Promise<void> {
+  const table = await pool.query(`SELECT to_regclass('public.barcodes') AS table_name`);
+  if (!table.rows[0]?.table_name) return;
+
+  await pool.query(`ALTER TABLE barcodes ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
+  await pool.query(`
+    UPDATE barcodes AS barcode
+    SET organization_id = item.organization_id
+    FROM inventory_items AS item
+    WHERE barcode.organization_id IS NULL
+      AND barcode.item_id = item.id
+      AND item.organization_id IS NOT NULL
+  `);
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE barcodes
+        ADD CONSTRAINT barcodes_organization_id_organizations_id_fk
+        FOREIGN KEY (organization_id) REFERENCES organizations(id);
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS barcodes_org_value_uidx ON barcodes(organization_id, value)`);
+
+  const unresolved = await pool.query(`SELECT COUNT(*)::int AS count FROM barcodes WHERE organization_id IS NULL`);
+  if (Number(unresolved.rows[0]?.count ?? 0) === 0) {
+    await pool.query(`ALTER TABLE barcodes ALTER COLUMN organization_id SET NOT NULL`);
+  } else {
+    console.warn(`${unresolved.rows[0].count} barcode row(s) remain unassigned because their inventory item could not be resolved.`);
+  }
+  console.log("barcodes.organization_id ownership and index ready");
+}
+
 /** Multi-tenant column on `users` — Drizzle INSERT may reference it; legacy DBs often lack it. */
 export async function ensureUsersDefaultOrganizationIdColumn(): Promise<void> {
   try {
@@ -702,6 +871,14 @@ export async function ensureLegacyOrgIdColumnsForSeed(): Promise<void> {
         err instanceof Error ? err.message : err,
       );
     }
+  }
+  try {
+    await ensureBarcodeOrganizationIdColumn();
+  } catch (err) {
+    console.warn(
+      "Could not ensure barcodes.organization_id:",
+      err instanceof Error ? err.message : err,
+    );
   }
   await ensureUsersDefaultOrganizationIdColumn();
 }
@@ -1959,9 +2136,21 @@ export async function initializeDatabase(): Promise<boolean> {
   await ensureSuppliersTaxIdColumn();
   await ensureTenantSecurityColumns();
   await ensureLegacyOrgIdColumnsForSeed();
+  await pool.query(`
+    WITH ranked_defaults AS (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY organization_id ORDER BY updated_at DESC NULLS LAST, id DESC) AS default_rank
+      FROM warehouses
+      WHERE is_default = TRUE
+    )
+    UPDATE warehouses SET is_default = FALSE, updated_at = NOW()
+    WHERE id IN (SELECT id FROM ranked_defaults WHERE default_rank > 1);
+    CREATE UNIQUE INDEX IF NOT EXISTS warehouses_one_org_default_uidx
+      ON warehouses (organization_id) WHERE is_default = TRUE;
+  `);
   await ensurePurchaseRequisitionsTables();
   await ensureProfessionalSupplyChainTables();
   await ensureStrategicSourcingTables();
+  await ensureCommercialQuotationTables();
 
   return true;
 }

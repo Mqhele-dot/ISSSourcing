@@ -226,7 +226,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
       warehouses: Array<{ id: number; name: string; isDefault?: boolean | null; aisles?: string[] | null; bins?: Array<{ code: string; aisle?: string | null }> | null }>;
       supplierDefaults: Array<{ id: number; paymentTermsId?: number | null; defaultCurrencyCode?: string | null }>;
     }>("GET", "/api/mdm/defaults/po-context"),
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   const departments = useMemo(() => poContextQuery.data?.departments ?? [], [poContextQuery.data?.departments]);
   const contracts = useMemo(() => poContextQuery.data?.contracts ?? [], [poContextQuery.data?.contracts]);

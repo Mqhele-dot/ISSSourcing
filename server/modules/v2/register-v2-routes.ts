@@ -12,6 +12,7 @@ import {
   purchaseRequisitionItems,
   purchaseRequisitions,
   sourcingEvents,
+  supplierQuotes,
   supplierContracts,
   suppliers,
   type UniversalSearchResult,
@@ -95,8 +96,17 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
     const supplierSearch = query.supplier && supplierNumber == null ? `%${query.supplier}%` : undefined;
     const where = conditions(
       eq(purchaseOrders.organizationId, orgId),
-      query.status && query.status !== "all" ? sql`lower(${purchaseOrders.status}) = ${query.status.toLowerCase()}` : undefined,
-      query.statuses ? sql`lower(${purchaseOrders.status}) = ANY(${query.statuses}::text[])` : undefined,
+      query.status === "active"
+        ? sql`lower(${purchaseOrders.status}) NOT IN ('received', 'completed', 'closed', 'cancelled')`
+        : query.status && query.status !== "all"
+          ? sql`lower(${purchaseOrders.status}) = ${query.status.toLowerCase()}`
+          : undefined,
+      query.statuses ? inArray(purchaseOrders.status, query.statuses) : undefined,
+      query.statuses ? sql`EXISTS (
+        SELECT 1 FROM ${purchaseOrderItems} receivable_item
+        WHERE receivable_item.order_id = ${purchaseOrders.id}
+          AND receivable_item.quantity > COALESCE(receivable_item.received_quantity, 0)
+      )` : undefined,
       supplierNumber ? eq(purchaseOrders.supplierId, supplierNumber) : undefined,
       supplierSearch ? ilike(suppliers.name, supplierSearch) : undefined,
       search ? or(ilike(purchaseOrders.orderNumber, search), ilike(suppliers.name, search)) : undefined,
@@ -108,9 +118,11 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
     } as Record<string, SQL[]>)[query.sort] ?? [desc(purchaseOrders.createdAt), desc(purchaseOrders.id)];
     try {
       const linesCount = sql<number>`(select count(*)::int from ${purchaseOrderItems} poi where poi.order_id = ${purchaseOrders.id})`;
+      const qtyOrdered = sql<number>`coalesce((select sum(poi.quantity)::float8 from ${purchaseOrderItems} poi where poi.order_id = ${purchaseOrders.id}), 0)`;
+      const qtyReceived = sql<number>`coalesce((select sum(coalesce(poi.received_quantity, 0))::float8 from ${purchaseOrderItems} poi where poi.order_id = ${purchaseOrders.id}), 0)`;
       const receivedProgress = sql<number>`coalesce((select round(100.0 * sum(least(coalesce(poi.received_quantity, 0), poi.quantity)) / nullif(sum(poi.quantity), 0))::int from ${purchaseOrderItems} poi where poi.order_id = ${purchaseOrders.id}), 0)`;
       const [items, totals, summaries] = await Promise.all([
-        db.select({ order: purchaseOrders, supplierName: suppliers.name, linesCount, receivedProgress }).from(purchaseOrders)
+        db.select({ order: purchaseOrders, supplierName: suppliers.name, linesCount, qtyOrdered, qtyReceived, receivedProgress }).from(purchaseOrders)
           .leftJoin(suppliers, and(eq(suppliers.id, purchaseOrders.supplierId), eq(suppliers.organizationId, orgId)))
           .where(where).orderBy(...order).limit(query.pageSize).offset((query.page - 1) * query.pageSize),
         db.select({ value: count() }).from(purchaseOrders)
@@ -134,7 +146,7 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
         else totalAmount += converted;
       }
       const summary = { totalAmount, reportingCurrencyCode: fx.reportingCurrencyCode, missingFxCount, byStatus };
-      return sendOk(res, paginated(items.map(({ order: item, supplierName, linesCount: lines, receivedProgress: progress }) => {
+      return sendOk(res, paginated(items.map(({ order: item, supplierName, linesCount: lines, qtyOrdered: ordered, qtyReceived: received, receivedProgress: progress }) => {
         const rate = fx.rates.get(String(item.currencyCode).toUpperCase()) ?? null;
         return {
           ...item,
@@ -142,6 +154,8 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
           supplierName,
           requestedDate: item.orderDate,
           linesCount: Number(lines),
+          qtyOrdered: Number(ordered),
+          qtyReceived: Number(received),
           receivedProgress: Number(progress),
           reportingCurrencyCode: fx.reportingCurrencyCode,
           reportingExchangeRate: rate,
@@ -156,7 +170,11 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
     if (!query) return;
     const orgId = getActiveOrganizationId();
     const search = query.q ? `%${query.q}%` : undefined;
-    const where = conditions(eq(purchaseRequisitions.organizationId, orgId), query.status && query.status !== "all" ? sql`lower(${purchaseRequisitions.status}) = ${query.status.toLowerCase()}` : undefined,
+    const where = conditions(eq(purchaseRequisitions.organizationId, orgId), query.status === "active"
+      ? sql`lower(${purchaseRequisitions.status}) IN ('draft', 'pending')`
+      : query.status && query.status !== "all"
+        ? sql`lower(${purchaseRequisitions.status}) = ${query.status.toLowerCase()}`
+        : undefined,
       search ? or(ilike(purchaseRequisitions.requisitionNumber, search), ilike(purchaseRequisitions.notes, search), ilike(purchaseRequisitions.justification, search)) : undefined);
     const order = ({
       created_desc: [desc(purchaseRequisitions.createdAt), desc(purchaseRequisitions.id)], created_asc: [asc(purchaseRequisitions.createdAt), asc(purchaseRequisitions.id)],
@@ -270,12 +288,13 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
         results.push(...rows.map((row) => ({ type: "supplier" as const, id: row.id, title: row.name, subtitle: row.code ?? "Supplier", status: row.status, href: `/procurement/suppliers/${row.id}` })));
       }
       if (purchasesAllowed) {
-        const [orders, requisitions, rfqs] = await Promise.all([
+        const [orders, requisitions, rfqs, quotations] = await Promise.all([
           db.select({ id: purchaseOrders.id, number: purchaseOrders.orderNumber, status: purchaseOrders.status }).from(purchaseOrders).where(and(eq(purchaseOrders.organizationId, orgId), ilike(purchaseOrders.orderNumber, pattern))).orderBy(desc(purchaseOrders.createdAt), desc(purchaseOrders.id)).limit(parsed.data.limit),
           db.select({ id: purchaseRequisitions.id, number: purchaseRequisitions.requisitionNumber, status: purchaseRequisitions.status }).from(purchaseRequisitions).where(and(eq(purchaseRequisitions.organizationId, orgId), ilike(purchaseRequisitions.requisitionNumber, pattern))).orderBy(desc(purchaseRequisitions.createdAt), desc(purchaseRequisitions.id)).limit(parsed.data.limit),
           db.select({ id: sourcingEvents.id, number: sourcingEvents.eventNumber, title: sourcingEvents.title, status: sourcingEvents.status }).from(sourcingEvents).where(and(eq(sourcingEvents.organizationId, orgId), or(ilike(sourcingEvents.eventNumber, pattern), ilike(sourcingEvents.title, pattern)))).orderBy(desc(sourcingEvents.updatedAt), desc(sourcingEvents.id)).limit(parsed.data.limit),
+          db.select({ id: supplierQuotes.id, number: supplierQuotes.quoteNumber, status: supplierQuotes.status, supplierName: suppliers.name }).from(supplierQuotes).innerJoin(suppliers, and(eq(suppliers.id, supplierQuotes.supplierId), eq(suppliers.organizationId, orgId))).where(and(eq(supplierQuotes.organizationId, orgId), or(ilike(supplierQuotes.quoteNumber, pattern), ilike(suppliers.name, pattern)))).orderBy(desc(supplierQuotes.createdAt), desc(supplierQuotes.id)).limit(parsed.data.limit),
         ]);
-        results.push(...orders.map((row) => ({ type: "purchase-order" as const, id: row.id, title: row.number, subtitle: "Purchase order", status: row.status, href: `/procurement/orders/${encodeURIComponent(row.number)}` })), ...requisitions.map((row) => ({ type: "requisition" as const, id: row.id, title: row.number, subtitle: "Purchase requisition", status: row.status, href: `/procurement/requisitions/${row.id}` })), ...rfqs.map((row) => ({ type: "rfq" as const, id: row.id, title: row.title, subtitle: row.number, status: row.status, href: `/procurement/sourcing/${row.id}` })));
+        results.push(...orders.map((row) => ({ type: "purchase-order" as const, id: row.id, title: row.number, subtitle: "Purchase order", status: row.status, href: `/procurement/orders/${encodeURIComponent(row.number)}` })), ...requisitions.map((row) => ({ type: "requisition" as const, id: row.id, title: row.number, subtitle: "Purchase requisition", status: row.status, href: `/procurement/requisitions/${row.id}` })), ...rfqs.map((row) => ({ type: "rfq" as const, id: row.id, title: row.title, subtitle: row.number, status: row.status, href: `/procurement/sourcing/${row.id}` })), ...quotations.map((row) => ({ type: "quotation" as const, id: row.id, title: row.number, subtitle: row.supplierName, status: row.status, href: `/procurement/quotations/${row.id}` })));
       }
       return sendOk(res, results);
     } catch (error) { return sendError(res, 500, "SEARCH_FAILED", "Search is temporarily unavailable", { details: String(error) }); }

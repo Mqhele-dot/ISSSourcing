@@ -1,24 +1,39 @@
 import React, { Suspense, useCallback, useState } from "react";
 import { Link } from "wouter";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { BarcodeScanner } from "@/components/barcode/barcode-scanner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { ScanResult } from "@/hooks/use-barcode-scanner";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { QrCode, Barcode } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Barcode, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { RealTimeUpdates } from "@/components/real-time-updates";
 import { enqueueOfflineAction } from "@/lib/offline-queue";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { resolveMobileScan, type MobileScanResolveResult } from "@/api/client";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { queryClient, requestJson } from "@/lib/queryClient";
 
 const BarcodeGenerator = React.lazy(() =>
   import("@/components/barcode/barcode-generator").then((module) => ({ default: module.BarcodeGenerator })),
 );
+
+type Warehouse = { id: number; name: string; location?: string | null; isDefault?: boolean | null };
+type InventorySettings = { allowNegativeInventory?: boolean; requireLocationForItems?: boolean; defaultWarehouseId?: number | null };
+type ScanMovementResult = {
+  duplicate: boolean;
+  item: { id: number; sku: string; name: string; barcode?: string | null };
+  warehouse: { id: number; name: string };
+  balance: { previousQuantity: number; newQuantity: number; delta: number; location?: string | null };
+};
 
 function ResolutionActions({ result }: { result: MobileScanResolveResult }) {
   if (result.kind === "item") {
@@ -87,11 +102,62 @@ export default function BarcodeScannerPage() {
   const [tab, setTab] = useState("scan");
   const [scanHistory, setScanHistory] = useState<ScanResult[]>([]);
   const [latestResolution, setLatestResolution] = useState<MobileScanResolveResult | null>(null);
+  const [lastScannedValue, setLastScannedValue] = useState("");
+  const [direction, setDirection] = useState<"IN" | "OUT">("IN");
+  const [warehouseId, setWarehouseId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [location, setLocation] = useState("");
+  const [movementNotes, setMovementNotes] = useState("");
   const { toast } = useToast();
+  const warehousesQuery = useQuery<Warehouse[]>({
+    queryKey: ["/api/warehouses", "barcode-movement"],
+    queryFn: () => requestJson("GET", "/api/warehouses"),
+  });
+  const settingsQuery = useQuery<InventorySettings>({
+    queryKey: ["/api/settings", "barcode-movement"],
+    queryFn: () => requestJson("GET", "/api/settings"),
+  });
+  const warehouses = warehousesQuery.data ?? [];
+  const selectedWarehouseId = warehouseId || String(
+    settingsQuery.data?.defaultWarehouseId
+      ?? warehouses.find((warehouse) => warehouse.isDefault)?.id
+      ?? "",
+  );
+
+  const movementMutation = useMutation({
+    mutationFn: () => requestJson<ScanMovementResult>(
+      "POST",
+      "/api/barcodes/scan-movement",
+      {
+        value: lastScannedValue,
+        direction,
+        warehouseId: Number(selectedWarehouseId),
+        quantity: Number(quantity),
+        location: location.trim() || null,
+        notes: movementNotes.trim() || null,
+      },
+      { headers: { "Idempotency-Key": globalThis.crypto?.randomUUID?.() ?? `scan-${Date.now()}` } },
+    ),
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/v2/inventory"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/stock-movements"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/warehouse-inventory"] }),
+      ]);
+      toast({
+        title: direction === "IN" ? "Item scanned in" : "Item scanned out",
+        description: `${result.item.sku} at ${result.warehouse.name}: ${result.balance.previousQuantity} → ${result.balance.newQuantity}.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Movement not posted", description: error.message, variant: "destructive" });
+    },
+  });
 
   const handleScan = useCallback(async (result: ScanResult) => {
     setScanHistory((prevHistory) => [result, ...prevHistory]);
     const value = result.text.trim();
+    setLastScannedValue(value);
     const queuedPayload = {
       value,
       intent: "scan",
@@ -218,6 +284,87 @@ export default function BarcodeScannerPage() {
               </CardContent>
             </Card>
           ) : null}
+
+          <Card data-testid="barcode-stock-movement-panel">
+            <CardHeader>
+              <CardTitle>Warehouse movement</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Resolve a code first, then explicitly confirm whether stock is entering or leaving a warehouse. Posting writes the warehouse balance and audit movement atomically.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button type="button" variant={direction === "IN" ? "default" : "outline"} onClick={() => setDirection("IN")}>
+                  <ArrowDownToLine className="mr-2 h-4 w-4" /> Scan in
+                </Button>
+                <Button type="button" variant={direction === "OUT" ? "default" : "outline"} onClick={() => setDirection("OUT")}>
+                  <ArrowUpFromLine className="mr-2 h-4 w-4" /> Scan out
+                </Button>
+              </div>
+              {warehousesQuery.error ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Warehouses unavailable</AlertTitle>
+                  <AlertDescription className="space-y-2">
+                    <p>{warehousesQuery.error.message}</p>
+                    <Button type="button" size="sm" variant="outline" onClick={() => void warehousesQuery.refetch()}>Retry</Button>
+                  </AlertDescription>
+                </Alert>
+              ) : warehouses.length === 0 && !warehousesQuery.isLoading ? (
+                <Alert>
+                  <AlertTitle>Warehouse setup required</AlertTitle>
+                  <AlertDescription>
+                    Add a canonical warehouse in <Link className="font-medium underline" href={`${APP_ROUTES.admin.masterData}/warehouses`}>Master Data</Link> before posting stock movements.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Warehouse</Label>
+                    <Select value={selectedWarehouseId} onValueChange={setWarehouseId}>
+                      <SelectTrigger aria-label="Movement warehouse"><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                      <SelectContent>{warehouses.map((warehouse) => <SelectItem key={warehouse.id} value={String(warehouse.id)}>{warehouse.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="scan-movement-quantity">Quantity</Label>
+                    <Input id="scan-movement-quantity" type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="scan-movement-location">
+                      Storage location{settingsQuery.data?.requireLocationForItems && direction === "IN" ? " *" : ""}
+                    </Label>
+                    <Input id="scan-movement-location" value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Aisle / bin / put-away location" />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="scan-movement-notes">Movement note</Label>
+                    <Textarea id="scan-movement-notes" value={movementNotes} onChange={(event) => setMovementNotes(event.target.value)} placeholder="Receipt, dispatch, return, or operational reference" />
+                  </div>
+                </div>
+              )}
+              <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                <p><span className="font-medium">Resolved code:</span> {lastScannedValue || "Scan a label first"}</p>
+                <p className="text-muted-foreground">
+                  Negative inventory is {settingsQuery.data?.allowNegativeInventory ? "permitted by current settings" : "blocked by current settings"}.
+                </p>
+              </div>
+              <Button
+                type="button"
+                className="w-full"
+                disabled={
+                  movementMutation.isPending
+                  || latestResolution?.kind !== "item"
+                  || !lastScannedValue
+                  || !selectedWarehouseId
+                  || !Number.isInteger(Number(quantity))
+                  || Number(quantity) <= 0
+                  || (direction === "IN" && Boolean(settingsQuery.data?.requireLocationForItems) && !location.trim())
+                }
+                onClick={() => movementMutation.mutate()}
+              >
+                {movementMutation.isPending ? "Posting movement…" : direction === "IN" ? "Confirm stock in" : "Confirm stock out"}
+              </Button>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

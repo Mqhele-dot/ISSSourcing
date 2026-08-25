@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { queryClient, requestJson, unwrapOperationalResponse } from "@/lib/queryClient";
+import { invalidateMasterDataDomain } from "@/lib/domain-invalidation";
 import type { Warehouse, BinLocation, FormData, WarehousePayload } from "@/pages/warehouses/warehouse-types";
 import {
   emptyWarehouseForm,
@@ -34,7 +35,7 @@ export function useWarehouseCrud() {
     mutationFn: async (data: WarehousePayload) => requestJson("POST", "/api/warehouses", data),
     onSuccess: (_data, variables) => {
       const createdName = variables.name.trim();
-      queryClient.invalidateQueries({ queryKey: ["/api/warehouses"] });
+      void invalidateMasterDataDomain(queryClient, "warehouses");
       setIsCreateDialogOpen(false);
       resetForm();
       toast({
@@ -74,7 +75,7 @@ export function useWarehouseCrud() {
     mutationFn: async ({ id, data }: { id: number; data: WarehousePayload }) =>
       requestJson("PATCH", `/api/warehouses/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/warehouses"] });
+      void invalidateMasterDataDomain(queryClient, "warehouses");
       setIsEditDialogOpen(false);
       setSelectedWarehouse(null);
       toast({
@@ -102,7 +103,7 @@ export function useWarehouseCrud() {
       return true;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/warehouses"] });
+      void invalidateMasterDataDomain(queryClient, "warehouses");
       setIsDeleteDialogOpen(false);
       setSelectedWarehouse(null);
       toast({

@@ -37,6 +37,19 @@ type InventoryItemRecord = {
   location: string | null;
   defaultLocation: string | null;
   updatedAt: Date | null;
+  description: string | null;
+  price: number;
+  cost: number | null;
+  barcode: string | null;
+  barcodeType: string | null;
+  unitOfMeasure: string | null;
+  supplierPartNumber: string | null;
+  defaultWarehouseId: number | null;
+  minOrderQuantity: number | null;
+  leadTime: number | null;
+  reorderPoint: number | null;
+  maxStockLevel: number | null;
+  status: string | null;
 };
 
 type PositionAggregate = {
@@ -240,6 +253,7 @@ export async function recordActivity(input: ActivityInput) {
 }
 
 export async function createOrGetOperationalException(payload: ExceptionPayload) {
+  const organizationId = getActiveOrganizationId();
   const mergedRefs = mergeOperationalExceptionRelatedRefs(payload.relatedRefs, payload.type);
   const inv = parseInvtrackFromRelatedRefs(mergedRefs);
   const exceptionCode =
@@ -254,14 +268,15 @@ export async function createOrGetOperationalException(payload: ExceptionPayload)
       `
       SELECT id, related_refs
       FROM operational_exceptions
-      WHERE status IN ('open', 'in_progress')
-        AND related_refs->'_invtrack'->>'exceptionCode' = $1
-        AND related_refs->'_invtrack'->>'rootEntityType' = $2
-        AND related_refs->'_invtrack'->>'rootEntityId' = $3
+      WHERE organization_id = $1
+        AND status IN ('open', 'in_progress')
+        AND related_refs->'_invtrack'->>'exceptionCode' = $2
+        AND related_refs->'_invtrack'->>'rootEntityType' = $3
+        AND related_refs->'_invtrack'->>'rootEntityId' = $4
       ORDER BY updated_at DESC
       LIMIT 1
       `,
-      [exceptionCode, rootEntityType, rootEntityId],
+      [organizationId, exceptionCode, rootEntityType, rootEntityId],
     );
     const hit = dup.rows[0];
     if (hit) {
@@ -297,11 +312,12 @@ export async function createOrGetOperationalException(payload: ExceptionPayload)
     `
     SELECT id, related_refs, status
     FROM operational_exceptions
-    WHERE type = $1
+    WHERE organization_id = $1
+      AND type = $2
       AND status IN ('open', 'in_progress')
     ORDER BY created_at DESC
     `,
-    [payload.type],
+    [organizationId, payload.type],
   );
 
   const existing = existingResult.rows.find((row) =>
@@ -315,14 +331,15 @@ export async function createOrGetOperationalException(payload: ExceptionPayload)
   const insertResult = await pool.query<{ id: number }>(
     `
     INSERT INTO operational_exceptions (
-      type, severity, status, title, description, related_refs, sla_hours, comments
+      organization_id, type, severity, status, title, description, related_refs, sla_hours, comments
     )
     VALUES (
-      $1, $2, 'open', $3, $4, $5::jsonb, $6, '[]'::jsonb
+      $1, $2, $3, 'open', $4, $5, $6::jsonb, $7, '[]'::jsonb
     )
     RETURNING id
     `,
     [
+      organizationId,
       payload.type,
       payload.severity,
       payload.title,
@@ -553,9 +570,15 @@ async function findInventoryItemByIdentifier(identifier: string): Promise<Invent
         location: string | null;
         default_location: string | null;
         updated_at: Date | null;
+        description: string | null; price: number | null; cost: number | null; barcode: string | null;
+        barcode_type: string | null; unit_of_measure: string | null; supplier_part_number: string | null;
+        default_warehouse_id: number | null; min_order_quantity: number | null; lead_time: number | null;
+        reorder_point: number | null; max_stock_level: number | null; status: string | null;
       }>(
         `
-        SELECT id, sku, name, category_id, quantity, low_stock_threshold, location, default_location, updated_at
+        SELECT id, sku, name, category_id, quantity, low_stock_threshold, location, default_location, updated_at,
+               description, price, cost, barcode, barcode_type, unit_of_measure, supplier_part_number,
+               default_warehouse_id, min_order_quantity, lead_time, reorder_point, max_stock_level, status
         FROM inventory_items
         WHERE id = $1
           AND ${orgClause}
@@ -577,6 +600,19 @@ async function findInventoryItemByIdentifier(identifier: string): Promise<Invent
       location: row.location,
       defaultLocation: row.default_location,
       updatedAt: row.updated_at,
+      description: row.description,
+      price: toNumber(row.price, 0),
+      cost: row.cost == null ? null : toNumber(row.cost),
+      barcode: row.barcode,
+      barcodeType: row.barcode_type,
+      unitOfMeasure: row.unit_of_measure,
+      supplierPartNumber: row.supplier_part_number,
+      defaultWarehouseId: row.default_warehouse_id,
+      minOrderQuantity: row.min_order_quantity,
+      leadTime: row.lead_time,
+      reorderPoint: row.reorder_point,
+      maxStockLevel: row.max_stock_level,
+      status: row.status,
     };
   }
 
@@ -590,9 +626,15 @@ async function findInventoryItemByIdentifier(identifier: string): Promise<Invent
     location: string | null;
     default_location: string | null;
     updated_at: Date | null;
+    description: string | null; price: number | null; cost: number | null; barcode: string | null;
+    barcode_type: string | null; unit_of_measure: string | null; supplier_part_number: string | null;
+    default_warehouse_id: number | null; min_order_quantity: number | null; lead_time: number | null;
+    reorder_point: number | null; max_stock_level: number | null; status: string | null;
   }>(
     `
-    SELECT id, sku, name, category_id, quantity, low_stock_threshold, location, default_location, updated_at
+    SELECT id, sku, name, category_id, quantity, low_stock_threshold, location, default_location, updated_at,
+           description, price, cost, barcode, barcode_type, unit_of_measure, supplier_part_number,
+           default_warehouse_id, min_order_quantity, lead_time, reorder_point, max_stock_level, status
     FROM inventory_items
     WHERE sku = $1
       AND ${orgClause}
@@ -616,6 +658,19 @@ async function findInventoryItemByIdentifier(identifier: string): Promise<Invent
     location: row.location,
     defaultLocation: row.default_location,
     updatedAt: row.updated_at,
+    description: row.description,
+    price: toNumber(row.price, 0),
+    cost: row.cost == null ? null : toNumber(row.cost),
+    barcode: row.barcode,
+    barcodeType: row.barcode_type,
+    unitOfMeasure: row.unit_of_measure,
+    supplierPartNumber: row.supplier_part_number,
+    defaultWarehouseId: row.default_warehouse_id,
+    minOrderQuantity: row.min_order_quantity,
+    leadTime: row.lead_time,
+    reorderPoint: row.reorder_point,
+    maxStockLevel: row.max_stock_level,
+    status: row.status,
   };
 }
 
@@ -693,7 +748,7 @@ export async function getOperationalInventoryDetail(skuOrId: string) {
 
   return {
     ...item,
-    location: null,
+    location: item.location,
     onHand: summary.onHand,
     allocated: summary.allocated,
     available: summary.available,
@@ -1530,6 +1585,7 @@ export async function transitionOperationalPurchaseOrderStatus(
   toStatusInput: string,
   actor = "system",
 ) {
+  const organizationId = getActiveOrganizationId();
   const order = await resolvePurchaseOrder(poOrId);
   if (!order) {
     throw new Error("po_not_found");
@@ -1551,7 +1607,6 @@ export async function transitionOperationalPurchaseOrderStatus(
     throw new Error("invalid_transition");
   }
 
-  const organizationId = getActiveOrganizationId();
   const updateResult = await pool.query(
     `
     UPDATE purchase_orders
@@ -1804,6 +1859,7 @@ export async function receiveOperationalPurchaseOrder(
   receiveMeta: ReceivePurchaseMetaInput = {},
   actor = "system",
 ) {
+  const organizationId = getActiveOrganizationId();
   const order = await resolvePurchaseOrder(poOrId);
   if (!order) {
     throw new Error("po_not_found");
@@ -2077,14 +2133,14 @@ export async function receiveOperationalPurchaseOrder(
       ? `
     SELECT id, status
     FROM shipments
-    WHERE po_number = $1 AND id = $2
+    WHERE po_number = $1 AND id = $2 AND organization_id = $3
     `
       : `
     SELECT id, status
     FROM shipments
-    WHERE po_number = $1
+    WHERE po_number = $1 AND organization_id = $2
     `,
-    targetShipmentId != null ? [order.order_number, targetShipmentId] : [order.order_number],
+    targetShipmentId != null ? [order.order_number, targetShipmentId, organizationId] : [order.order_number, organizationId],
   );
 
   if (targetShipmentId != null && shipmentCandidates.rows.length === 0) {
@@ -2098,9 +2154,9 @@ export async function receiveOperationalPurchaseOrder(
         `
         UPDATE shipments
         SET status = 'delivered', updated_at = now()
-        WHERE id = $1
+        WHERE id = $1 AND organization_id = $2
         `,
-        [shipment.id],
+        [shipment.id, organizationId],
       );
       await pool.query(
         `
@@ -2119,8 +2175,8 @@ export async function receiveOperationalPurchaseOrder(
       : null;
   if (grnTrim && targetShipmentId != null) {
     await pool.query(
-      `UPDATE shipments SET grn_number = $2, updated_at = now() WHERE id = $1 AND po_number = $3`,
-      [targetShipmentId, grnTrim, order.order_number],
+      `UPDATE shipments SET grn_number = $2, updated_at = now() WHERE id = $1 AND po_number = $3 AND organization_id = $4`,
+      [targetShipmentId, grnTrim, order.order_number, organizationId],
     );
   }
 
@@ -2227,6 +2283,7 @@ async function ensureNoEtaShipmentException(shipment: {
 }
 
 export async function runOperationalExceptionChecks(actor = "system") {
+  const organizationId = getActiveOrganizationId();
   type Totals = {
     lateShipments: number;
     noEtaShipments: number;
@@ -2263,10 +2320,12 @@ export async function runOperationalExceptionChecks(actor = "system") {
     `
     SELECT id, po_number, status, eta
     FROM shipments
-    WHERE eta IS NOT NULL
+    WHERE organization_id = $1
+      AND eta IS NOT NULL
       AND eta < now()
       AND lower(status) <> 'delivered'
     `,
+    [organizationId],
   );
   for (const shipment of lateShipments.rows) {
     const result = await ensureLateShipmentException({
@@ -2286,9 +2345,11 @@ export async function runOperationalExceptionChecks(actor = "system") {
     `
     SELECT id, po_number, status
     FROM shipments
-    WHERE eta IS NULL
+    WHERE organization_id = $1
+      AND eta IS NULL
       AND lower(status) NOT IN ('delivered', 'cancelled')
     `,
+    [organizationId],
   );
   for (const shipment of noEtaRows.rows) {
     const result = await ensureNoEtaShipmentException({
@@ -2309,8 +2370,10 @@ export async function runOperationalExceptionChecks(actor = "system") {
     `
     SELECT id, sku, name, quantity, low_stock_threshold
     FROM inventory_items
-    WHERE quantity <= COALESCE(low_stock_threshold, 0)
+    WHERE organization_id = $1
+      AND quantity <= COALESCE(low_stock_threshold, 0)
     `,
+    [organizationId],
   );
   for (const item of lowStockRows.rows) {
     const result = await createOrGetOperationalException({
@@ -2338,11 +2401,13 @@ export async function runOperationalExceptionChecks(actor = "system") {
     SELECT po.id, po.order_number, po.total_amount, po.contract_id, sc.value
     FROM purchase_orders po
     JOIN supplier_contracts sc ON sc.id = po.contract_id
-    WHERE po.contract_id IS NOT NULL
+    WHERE po.organization_id = $1
+      AND po.contract_id IS NOT NULL
       AND sc.value IS NOT NULL
       AND po.total_amount > sc.value
       AND lower(COALESCE(po.status, '')) NOT IN ('cancelled', 'void')
     `,
+    [organizationId],
   );
   for (const po of contractViolations.rows) {
     const result = await createOrGetOperationalException({
@@ -2359,6 +2424,29 @@ export async function runOperationalExceptionChecks(actor = "system") {
     apply("contractViolations", result);
   }
 
+  const staleResolved = await pool.query(`
+    UPDATE operational_exceptions e
+    SET status = 'resolved', updated_at = now(),
+        comments = COALESCE(comments, '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
+          'author', $2::text,
+          'comment', 'Automatically resolved because the shipment no longer matches the exception rule.',
+          'at', now()
+        ))
+    WHERE e.organization_id = $1
+      AND e.status IN ('open','in_progress')
+      AND e.type IN ('late_shipment','shipment_no_eta')
+      AND NOT EXISTS (
+        SELECT 1 FROM shipments s
+        WHERE s.organization_id = $1
+          AND s.id::text = e.related_refs->>'shipment_id'
+          AND (
+            (e.type = 'late_shipment' AND s.eta IS NOT NULL AND s.eta < now() AND lower(s.status) NOT IN ('delivered','cancelled'))
+            OR (e.type = 'shipment_no_eta' AND s.eta IS NULL AND lower(s.status) NOT IN ('delivered','cancelled'))
+          )
+      )
+    RETURNING id
+  `, [organizationId, actor]);
+
   const checksRun = [
     "late_shipments",
     "no_eta_shipments",
@@ -2372,10 +2460,10 @@ export async function runOperationalExceptionChecks(actor = "system") {
     entityType: "exception",
     entityId: "system",
     action: "run_checks",
-    summary: { created, updated, skippedDuplicates, checksRun, generatedAt },
+    summary: { created, updated, skippedDuplicates, resolvedStale: staleResolved.rowCount ?? 0, checksRun, generatedAt },
   });
 
-  return { created, updated, skippedDuplicates, checksRun, generatedAt };
+  return { created, updated, skippedDuplicates, resolvedStale: staleResolved.rowCount ?? 0, checksRun, generatedAt };
 }
 
 function computeOperationalShipmentRiskBucket(params: { status: string; eta: Date | null }):
@@ -2385,20 +2473,14 @@ function computeOperationalShipmentRiskBucket(params: { status: string; eta: Dat
   | "exception"
   | "on_time" {
   const status = params.status.toLowerCase();
-  if (status === "delayed" || status === "exception") {
-    return "exception";
-  }
+  if (["delivered", "cancelled"].includes(status)) return "on_time";
+  const now = Date.now();
+  if (params.eta && params.eta.getTime() < now) return "late";
+  if (status === "delayed" || status === "exception") return "exception";
   if (!params.eta) {
     return "no_eta";
   }
   const etaMs = params.eta.getTime();
-  const now = Date.now();
-  if (etaMs < now && status !== "delivered") {
-    return "late";
-  }
-  if (status === "delivered") {
-    return "on_time";
-  }
   if (
     etaMs >= now &&
     etaMs <= now + 3 * 24 * 60 * 60 * 1000 &&
@@ -2421,6 +2503,7 @@ export async function listOperationalShipments(filters: {
   direction?: string;
   sourceType?: string;
 }) {
+  const organizationId = getActiveOrganizationId();
   const n = normalizeShipmentFilters(filters);
   const statusPat = n.status;
   const poPat = n.po;
@@ -2432,8 +2515,8 @@ export async function listOperationalShipments(filters: {
   const directionPat = n.direction;
   const sourceTypePat = n.sourceType;
 
-  const whereClauses: string[] = [];
-  const params: unknown[] = [];
+  const whereClauses: string[] = [`COALESCE(s.organization_id, po.organization_id) = $1`];
+  const params: unknown[] = [organizationId];
 
   if (statusPat) {
     params.push(statusPat);
@@ -2514,10 +2597,10 @@ export async function listOperationalShipments(filters: {
     SELECT s.id, s.po_number, s.carrier, s.status, s.eta, s.drift_minutes, s.created_at, s.updated_at,
            s.tracking_number, s.direction, s.source_type, s.freight_cost, s.transport_mode
     FROM shipments s
-    LEFT JOIN purchase_orders po ON po.order_number = s.po_number
-    LEFT JOIN suppliers sup ON sup.id = po.supplier_id
+    LEFT JOIN purchase_orders po ON po.order_number = s.po_number AND po.organization_id = $1
+    LEFT JOIN suppliers sup ON sup.id = po.supplier_id AND sup.organization_id = $1
     ${whereSql}
-    ORDER BY s.updated_at DESC
+    ORDER BY s.updated_at DESC, s.id DESC
     `,
     params,
   );
@@ -2525,16 +2608,7 @@ export async function listOperationalShipments(filters: {
   const shipments = [];
   for (const row of result.rows) {
     const status = row.status.toLowerCase();
-    const atRisk = Boolean(row.eta && row.eta.getTime() < Date.now() && status !== "delivered");
-    if (atRisk) {
-      await ensureLateShipmentException({
-        id: row.id,
-        poNumber: row.po_number,
-        status,
-        eta: row.eta,
-      });
-    }
-
+    const atRisk = Boolean(row.eta && row.eta.getTime() < Date.now() && !["delivered", "cancelled"].includes(status));
     const riskBucket = computeOperationalShipmentRiskBucket({ status, eta: row.eta });
 
     const rowDto = {
@@ -2563,12 +2637,118 @@ export async function listOperationalShipments(filters: {
   return shipments;
 }
 
+export type ShipmentPageSort = "updated_desc" | "updated_asc" | "eta_asc" | "eta_desc" | "status_asc" | "po_asc";
+
+export async function listOperationalShipmentsPage(input: {
+  page: number;
+  pageSize: number;
+  q?: string;
+  status?: string;
+  po?: string;
+  supplier?: string;
+  carrier?: string;
+  risk?: string;
+  etaFrom?: string;
+  etaTo?: string;
+  tracking?: string;
+  direction?: string;
+  sourceType?: string;
+  sort: ShipmentPageSort;
+}) {
+  const organizationId = getActiveOrganizationId();
+  const n = normalizeShipmentFilters(input);
+  const clauses = [`COALESCE(s.organization_id, po.organization_id) = $1`];
+  const values: unknown[] = [organizationId];
+  const addContains = (expression: string, value?: string) => {
+    if (!value) return;
+    values.push(value.toLowerCase());
+    clauses.push(`position($${values.length} in lower(coalesce(${expression}, ''))) > 0`);
+  };
+  addContains("s.status", n.status);
+  addContains("s.po_number", n.po);
+  addContains("sup.name", n.supplier);
+  addContains("s.carrier", n.carrier);
+  addContains("s.tracking_number", n.tracking);
+  if (n.direction) {
+    values.push(n.direction);
+    clauses.push(`lower(coalesce(nullif(trim(s.direction), ''), 'inbound')) = $${values.length}`);
+  }
+  if (n.sourceType) {
+    values.push(n.sourceType);
+    clauses.push(`lower(coalesce(nullif(trim(s.source_type), ''), 'purchase_order')) = $${values.length}`);
+  }
+  if (n.etaFrom) {
+    values.push(n.etaFrom);
+    clauses.push(`s.eta IS NOT NULL AND s.eta >= $${values.length}::timestamptz`);
+  }
+  if (n.etaTo) {
+    values.push(n.etaTo);
+    clauses.push(`s.eta IS NOT NULL AND s.eta <= $${values.length}::timestamptz`);
+  }
+  const q = input.q?.trim().toLowerCase();
+  if (q) {
+    values.push(q);
+    const p = values.length;
+    clauses.push(`(position($${p} in lower(coalesce(s.po_number, ''))) > 0 OR position($${p} in lower(coalesce(s.tracking_number, ''))) > 0 OR position($${p} in lower(coalesce(s.carrier, ''))) > 0 OR position($${p} in lower(coalesce(sup.name, ''))) > 0)`);
+  }
+  const riskExpression = `CASE
+    WHEN lower(coalesce(s.status, '')) IN ('delivered','cancelled') THEN 'on_time'
+    WHEN s.eta < now() THEN 'late'
+    WHEN lower(coalesce(s.status, '')) IN ('delayed','exception') THEN 'exception'
+    WHEN s.eta IS NULL THEN 'no_eta'
+    WHEN s.eta <= now() + interval '3 days' AND lower(coalesce(s.status, '')) NOT IN ('delivered','cancelled') THEN 'due_soon'
+    ELSE 'on_time' END`;
+  if (n.risk) {
+    values.push(n.risk);
+    clauses.push(`${riskExpression} = $${values.length}`);
+  }
+  const whereSql = clauses.join(" AND ");
+  const fromSql = `FROM shipments s LEFT JOIN purchase_orders po ON po.order_number = s.po_number AND po.organization_id = $1 LEFT JOIN suppliers sup ON sup.id = po.supplier_id AND sup.organization_id = $1`;
+  const summaryResult = await pool.query<{
+    total: string; in_transit: string; late: string; no_eta: string; due_soon: string; exception: string; delivered: string;
+  }>(`SELECT COUNT(*)::text total,
+      COUNT(*) FILTER (WHERE lower(coalesce(s.status,'')) = 'in_transit')::text in_transit,
+      COUNT(*) FILTER (WHERE ${riskExpression} = 'late')::text late,
+      COUNT(*) FILTER (WHERE ${riskExpression} = 'no_eta')::text no_eta,
+      COUNT(*) FILTER (WHERE ${riskExpression} = 'due_soon')::text due_soon,
+      COUNT(*) FILTER (WHERE ${riskExpression} = 'exception')::text exception,
+      COUNT(*) FILTER (WHERE lower(coalesce(s.status,'')) = 'delivered')::text delivered
+      ${fromSql} WHERE ${whereSql}`, values);
+  const total = Number(summaryResult.rows[0]?.total ?? 0);
+  const sortSql: Record<ShipmentPageSort, string> = {
+    updated_desc: "s.updated_at DESC NULLS LAST, s.id DESC",
+    updated_asc: "s.updated_at ASC NULLS LAST, s.id ASC",
+    eta_asc: "s.eta ASC NULLS LAST, s.id ASC",
+    eta_desc: "s.eta DESC NULLS LAST, s.id DESC",
+    status_asc: "lower(s.status) ASC, s.id ASC",
+    po_asc: "lower(s.po_number) ASC, s.id ASC",
+  };
+  const pageValues = [...values, input.pageSize, (input.page - 1) * input.pageSize];
+  const rows = await pool.query<{
+    id:number; po_number:string; carrier:string|null; status:string; eta:Date|null; drift_minutes:number|null;
+    created_at:Date|null; updated_at:Date|null; tracking_number:string|null; direction:string|null;
+    source_type:string|null; freight_cost:number|null; transport_mode:string|null; risk_bucket:string;
+  }>(`SELECT s.id,s.po_number,s.carrier,s.status,s.eta,s.drift_minutes,s.created_at,s.updated_at,s.tracking_number,s.direction,s.source_type,s.freight_cost,s.transport_mode,${riskExpression} risk_bucket
+      ${fromSql} WHERE ${whereSql} ORDER BY ${sortSql[input.sort]} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, pageValues);
+  const items = rows.rows.map((row) => ({
+    id: row.id, poNumber: row.po_number, carrier: row.carrier, status: row.status.toLowerCase(), eta: row.eta,
+    driftMinutes: toNumber(row.drift_minutes, 0), createdAt: row.created_at, updatedAt: row.updated_at,
+    trackingNumber: row.tracking_number, atRisk: row.risk_bucket === "late", riskBucket: row.risk_bucket,
+    direction: row.direction?.trim() || "inbound", sourceType: row.source_type?.trim() || "purchase_order",
+    freightCost: row.freight_cost, transportMode: row.transport_mode,
+  }));
+  const s = summaryResult.rows[0];
+  return { items, total, page: input.page, pageSize: input.pageSize, hasNext: input.page * input.pageSize < total,
+    summary: { total, inTransit:Number(s?.in_transit ?? 0), late:Number(s?.late ?? 0), noEta:Number(s?.no_eta ?? 0), dueSoon:Number(s?.due_soon ?? 0), exception:Number(s?.exception ?? 0), delivered:Number(s?.delivered ?? 0) } };
+}
+
 export async function getOperationalShipmentDetail(idOrRef: string) {
   const id = Number(idOrRef);
   if (!Number.isFinite(id)) {
     throw new Error("shipment_not_found");
   }
 
+  const organizationId = getActiveOrganizationId();
   const shipmentResult = await pool.query<{
     id: number;
     po_number: string;
@@ -2620,12 +2800,13 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
       s.source_id,
       s.source_ref
     FROM shipments s
-    LEFT JOIN purchase_orders po ON po.order_number = s.po_number
-    LEFT JOIN suppliers sup ON sup.id = po.supplier_id
+    LEFT JOIN purchase_orders po ON po.order_number = s.po_number AND po.organization_id = $2
+    LEFT JOIN suppliers sup ON sup.id = po.supplier_id AND sup.organization_id = $2
     WHERE s.id = $1
+      AND COALESCE(s.organization_id, po.organization_id) = $2
     LIMIT 1
     `,
-    [id],
+    [id, organizationId],
   );
 
   const shipment = shipmentResult.rows[0];
@@ -2652,15 +2833,6 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
   const atRisk = Boolean(
     shipment.eta && shipment.eta.getTime() < Date.now() && status !== "delivered",
   );
-  if (atRisk) {
-    await ensureLateShipmentException({
-      id: shipment.id,
-      poNumber: shipment.po_number,
-      status,
-      eta: shipment.eta,
-    });
-  }
-
   const relatedEx = await pool.query<{
     id: number;
     status: string;
@@ -2830,7 +3002,8 @@ export async function patchOperationalShipmentMeta(input: {
     return existing;
   }
   vals.push(existing.id);
-  await pool.query(`UPDATE shipments SET ${sets.join(", ")}, updated_at = now() WHERE id = $${n}`, vals);
+  vals.push(getActiveOrganizationId());
+  await pool.query(`UPDATE shipments SET ${sets.join(", ")}, updated_at = now() WHERE id = $${n} AND organization_id = $${n + 1}`, vals);
   await pool.query(`INSERT INTO shipment_events (shipment_id, status, note) VALUES ($1, $2, $3)`, [
     existing.id,
     existing.status,
@@ -2861,9 +3034,9 @@ export async function updateOperationalShipmentStatus(input: {
     `
     UPDATE shipments
     SET status = $2, updated_at = now()
-    WHERE id = $1
+    WHERE id = $1 AND organization_id = $3
     `,
-    [shipment.id, toStatus],
+    [shipment.id, toStatus, getActiveOrganizationId()],
   );
   await pool.query(
     `
@@ -2896,24 +3069,33 @@ type ExceptionListFilters = {
   type?: string;
 };
 
-export async function listOperationalExceptions(filters: ExceptionListFilters) {
-  const whereClauses: string[] = [];
-  const params: string[] = [];
+function operationalExceptionFilter(filters: ExceptionListFilters) {
+  const whereClauses: string[] = ["e.organization_id = $1"];
+  const params: Array<string | number> = [getActiveOrganizationId()];
 
   if (filters.severity && filters.severity.trim()) {
     params.push(filters.severity.trim().toLowerCase());
     whereClauses.push(`lower(e.severity) = $${params.length}`);
   }
   if (filters.status && filters.status.trim()) {
-    params.push(filters.status.trim().toLowerCase());
-    whereClauses.push(`lower(e.status) = $${params.length}`);
+    const normalizedStatus = filters.status.trim().toLowerCase();
+    if (normalizedStatus === "active") {
+      whereClauses.push("lower(e.status) IN ('open', 'in_progress')");
+    } else {
+      params.push(normalizedStatus);
+      whereClauses.push(`lower(e.status) = $${params.length}`);
+    }
   }
   if (filters.type && filters.type.trim()) {
     params.push(filters.type.trim().toLowerCase());
     whereClauses.push(`lower(e.type) = $${params.length}`);
   }
 
-  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  return { whereSql: `WHERE ${whereClauses.join(" AND ")}`, params };
+}
+
+export async function listOperationalExceptions(filters: ExceptionListFilters) {
+  const { whereSql, params } = operationalExceptionFilter(filters);
   const result = await pool.query<OperationalExceptionSqlRow>(
     `
     SELECT
@@ -2939,6 +3121,50 @@ export async function listOperationalExceptions(filters: ExceptionListFilters) {
   return result.rows.map((row) => mapOperationalExceptionSqlRow(row));
 }
 
+export async function listOperationalExceptionsPage(
+  filters: ExceptionListFilters & { page: number; pageSize: number; sort: "created_desc" | "created_asc" | "severity_desc" },
+) {
+  const { whereSql, params } = operationalExceptionFilter(filters);
+  const sortSql = {
+    created_desc: "e.created_at DESC NULLS LAST, e.id DESC",
+    created_asc: "e.created_at ASC NULLS FIRST, e.id ASC",
+    severity_desc: `CASE lower(e.severity) WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'warning' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC, e.created_at DESC NULLS LAST, e.id DESC`,
+  }[filters.sort];
+  const pageParams = [...params, filters.pageSize, (filters.page - 1) * filters.pageSize];
+  const [countResult, rowsResult, summaryResult] = await Promise.all([
+    pool.query<{ total: number }>(`SELECT count(*)::int AS total FROM operational_exceptions e ${whereSql}`, params),
+    pool.query<OperationalExceptionSqlRow>(
+      `SELECT e.id, e.type, e.severity, e.status, e.title, e.description, e.related_refs,
+              e.assignee, e.sla_hours, e.comments, e.created_at, e.updated_at
+       FROM operational_exceptions e
+       ${whereSql}
+       ORDER BY ${sortSql}
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      pageParams,
+    ),
+    pool.query<{ status: string; count: number }>(
+      `SELECT lower(e.status) AS status, count(*)::int AS count
+       FROM operational_exceptions e ${whereSql}
+       GROUP BY lower(e.status)`,
+      params,
+    ),
+  ]);
+  const total = Number(countResult.rows[0]?.total ?? 0);
+  const byStatus = Object.fromEntries(summaryResult.rows.map((row) => [row.status, Number(row.count)]));
+  return {
+    items: rowsResult.rows.map((row) => mapOperationalExceptionSqlRow(row)),
+    total,
+    page: filters.page,
+    pageSize: filters.pageSize,
+    hasNext: filters.page * filters.pageSize < total,
+    summary: {
+      total,
+      active: Number(byStatus.open ?? 0) + Number(byStatus.in_progress ?? 0),
+      byStatus,
+    },
+  };
+}
+
 export async function getOperationalExceptionDetail(idOrRef: string) {
   const id = Number(idOrRef);
   if (!Number.isFinite(id)) {
@@ -2961,10 +3187,10 @@ export async function getOperationalExceptionDetail(idOrRef: string) {
       e.created_at,
       e.updated_at
     FROM operational_exceptions e
-    WHERE e.id = $1
+    WHERE e.id = $1 AND e.organization_id = $2
     LIMIT 1
     `,
-    [id],
+    [id, getActiveOrganizationId()],
   );
 
   const row = result.rows[0];
@@ -3365,7 +3591,7 @@ export async function getOperationalControlTowerOverview() {
       inTransitShipments,
       overdueInvoices,
     },
-    activity: activity.map((entry) => ({
+    activity: activity.map((entry: any) => ({
       id: entry.id,
       eventType: entry.action,
       title:

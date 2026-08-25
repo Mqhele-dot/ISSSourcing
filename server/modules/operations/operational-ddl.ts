@@ -70,6 +70,9 @@ export const OPERATIONAL_TABLE_DDLS = [
     summary_json jsonb NOT NULL DEFAULT '{}'::jsonb
   )
   `,
+  `ALTER TABLE operational_exceptions ADD COLUMN IF NOT EXISTS organization_id integer REFERENCES organizations(id)`,
+  `CREATE INDEX IF NOT EXISTS operational_exceptions_org_status_updated_idx
+   ON operational_exceptions (organization_id, status, updated_at DESC, id DESC)`,
   `
   ALTER TABLE ops_activity
   ADD COLUMN IF NOT EXISTS organization_id integer REFERENCES organizations(id)
@@ -185,6 +188,8 @@ export const OPERATIONAL_TABLE_DDLS = [
   CREATE INDEX IF NOT EXISTS shipments_organization_id_idx
   ON shipments (organization_id)
   `,
+  `CREATE INDEX IF NOT EXISTS shipments_org_updated_id_idx ON shipments (organization_id, updated_at DESC, id DESC)`,
+  `CREATE INDEX IF NOT EXISTS shipments_org_status_eta_idx ON shipments (organization_id, status, eta, id)`,
   `
   UPDATE shipments SET direction = 'inbound' WHERE direction IS NULL
   `,
@@ -195,6 +200,17 @@ export const OPERATIONAL_TABLE_DDLS = [
   UPDATE shipments s SET source_id = po.id, source_ref = po.order_number
   FROM purchase_orders po WHERE s.po_number = po.order_number AND s.source_id IS NULL
   `,
+  `UPDATE operational_exceptions e SET organization_id = s.organization_id
+   FROM shipments s
+   WHERE e.organization_id IS NULL
+     AND e.related_refs->>'shipment_id' = s.id::text
+     AND s.organization_id IS NOT NULL`,
+  `UPDATE operational_exceptions e SET organization_id = po.organization_id
+   FROM purchase_orders po
+   WHERE e.organization_id IS NULL
+     AND e.related_refs->>'po_number' = po.order_number`,
+  `UPDATE operational_exceptions SET organization_id = (SELECT min(id) FROM organizations)
+   WHERE organization_id IS NULL AND (SELECT count(*) FROM organizations) = 1`,
 ];
 
 /** Apply DDL and seed demo shipments when empty. */

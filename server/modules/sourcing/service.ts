@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { appendAuditEvent } from "../../services/audit-chain-service";
+import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
 import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
 import {
   inventoryItems,
@@ -188,6 +189,95 @@ export async function getSourcingEventDetails(organizationId: number, eventId: n
   return { event, lines, criteria, invitations, quotes, clarifications, awards };
 }
 
+export async function previewSourcingInvitationEmails(organizationId: number, eventId: number) {
+  const event = await eventForOrganization(organizationId, eventId);
+  const [lines, recipients, branding] = await Promise.all([
+    db
+      .select({ lineNumber: sourcingEventLines.lineNumber, description: sourcingEventLines.description, quantity: sourcingEventLines.quantity })
+      .from(sourcingEventLines)
+      .where(and(eq(sourcingEventLines.organizationId, organizationId), eq(sourcingEventLines.eventId, eventId)))
+      .orderBy(asc(sourcingEventLines.lineNumber)),
+    db
+      .select({
+        supplierId: suppliers.id,
+        supplierName: suppliers.name,
+        contactName: suppliers.contactName,
+        email: suppliers.email,
+      })
+      .from(sourcingInvitations)
+      .innerJoin(
+        suppliers,
+        and(eq(suppliers.id, sourcingInvitations.supplierId), eq(suppliers.organizationId, organizationId)),
+      )
+      .where(
+        and(
+          eq(sourcingInvitations.organizationId, organizationId),
+          eq(sourcingInvitations.eventId, eventId),
+        ),
+      ),
+    getOrganizationDocumentBranding(organizationId),
+  ]);
+  if (recipients.length === 0) {
+    throw new SourcingError("RFQ_SUPPLIERS_REQUIRED", "Invite at least one supplier before previewing RFQ emails.", 409);
+  }
+
+  const companyName = branding.displayName;
+  const portalPath = `/procurement/supplier-portal?event=${event.id}`;
+  const lineText = lines.map((line) => `- ${line.lineNumber}. ${line.description} — quantity ${line.quantity}`).join("\n");
+  const lineHtml = lines
+    .map((line) => `<li><strong>${line.lineNumber}. ${escapeEmailHtml(line.description)}</strong> — quantity ${line.quantity}</li>`)
+    .join("");
+  return {
+    event: {
+      id: event.id,
+      eventNumber: event.eventNumber,
+      title: event.title,
+      status: event.status,
+      deadline: event.deadline,
+      reportingCurrencyCode: event.reportingCurrencyCode,
+    },
+    portalPath,
+    previews: recipients.map((recipient) => {
+      const greetingName = recipient.contactName?.trim() || recipient.supplierName;
+      const subject = `${event.eventNumber}: Request for quotation — ${event.title}`;
+      const text = [
+        `Hello ${greetingName},`,
+        "",
+        `${companyName} invites ${recipient.supplierName} to respond to ${event.eventNumber}: ${event.title}.`,
+        `Submission deadline: ${event.deadline.toISOString()}`,
+        `Reporting currency: ${event.reportingCurrencyCode}`,
+        "",
+        "Requested items:",
+        lineText,
+        "",
+        `Open the secure supplier workspace: ${portalPath}`,
+        "",
+        "This is a preview. Publishing the RFQ controls the actual invitation workflow.",
+      ].join("\n");
+      const html = `<p>Hello ${escapeEmailHtml(greetingName)},</p><p>${escapeEmailHtml(companyName)} invites <strong>${escapeEmailHtml(recipient.supplierName)}</strong> to respond to <strong>${escapeEmailHtml(event.eventNumber)}: ${escapeEmailHtml(event.title)}</strong>.</p><p><strong>Submission deadline:</strong> ${event.deadline.toISOString()}<br/><strong>Reporting currency:</strong> ${escapeEmailHtml(event.reportingCurrencyCode)}</p><ul>${lineHtml}</ul><p><a href="${portalPath}">Open the secure supplier workspace</a></p><p><em>This is a preview. Publishing the RFQ controls the actual invitation workflow.</em></p>`;
+      return {
+        supplierId: recipient.supplierId,
+        supplierName: recipient.supplierName,
+        to: recipient.email?.trim() || null,
+        recipientState: recipient.email?.trim() ? "ready" : "missing_email",
+        subject,
+        text,
+        html,
+      };
+    }),
+  };
+}
+
+function escapeEmailHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character] ?? character);
+}
+
 export async function createSourcingEvent(actor: SourcingActor, input: CreateEventInput) {
   if (input.deadline.getTime() <= Date.now()) {
     throw new SourcingError("RFQ_DEADLINE_INVALID", "RFQ deadline must be in the future.", 400);
@@ -350,8 +440,16 @@ async function exchangeRateForQuote(organizationId: number, event: typeof sourci
   return Number(rate.rate);
 }
 
-export async function submitSupplierQuote(actor: SourcingActor, eventId: number, supplierId: number, input: SubmitQuoteInput, idempotencyKey: string) {
-  const duplicate = await requireIdempotencyKey(actor.organizationId, idempotencyKey, "QUOTE_SUBMIT");
+export async function submitSupplierQuote(
+  actor: SourcingActor,
+  eventId: number,
+  supplierId: number,
+  input: SubmitQuoteInput,
+  idempotencyKey: string,
+  submissionMode: "supplier" | "buyer_capture" = "supplier",
+) {
+  const idempotencyAction = submissionMode === "buyer_capture" ? "QUOTE_CAPTURE" : "QUOTE_SUBMIT";
+  const duplicate = await requireIdempotencyKey(actor.organizationId, idempotencyKey, idempotencyAction);
   if (duplicate) return { duplicate: true, ...(duplicate.response ?? {}) };
   const event = await eventForOrganization(actor.organizationId, eventId);
   if (event.status !== "OPEN") throw new SourcingError("RFQ_NOT_OPEN", "Quotes can only be submitted while the RFQ is open.", 409);
@@ -424,10 +522,13 @@ export async function submitSupplierQuote(actor: SourcingActor, eventId: number,
       exceptionReason: line.exceptionReason,
     })));
     await tx.update(sourcingInvitations).set({ status: "RESPONDED", respondedAt: new Date() }).where(eq(sourcingInvitations.id, invitation.id));
-    await tx.insert(workflowIdempotency).values({ organizationId: actor.organizationId, idempotencyKey, action: "QUOTE_SUBMIT", resourceType: "supplier_quote", resourceId: created.id, response: { quoteId: created.id, version } });
+    await tx.insert(workflowIdempotency).values({ organizationId: actor.organizationId, idempotencyKey, action: idempotencyAction, resourceType: "supplier_quote", resourceId: created.id, response: { quoteId: created.id, version } });
     return created;
   });
-  await audit(actor, latestQuote ? "SUPPLIER_QUOTE_REVISED" : "SUPPLIER_QUOTE_SUBMITTED", "supplier_quote", quote.id, latestQuote ?? null, quote);
+  const auditAction = submissionMode === "buyer_capture"
+    ? (latestQuote ? "SUPPLIER_QUOTE_CAPTURE_REVISED" : "SUPPLIER_QUOTE_CAPTURED")
+    : (latestQuote ? "SUPPLIER_QUOTE_REVISED" : "SUPPLIER_QUOTE_SUBMITTED");
+  await audit(actor, auditAction, "supplier_quote", quote.id, latestQuote ?? null, quote);
   return { duplicate: false, quote };
 }
 

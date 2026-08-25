@@ -86,6 +86,7 @@ import {
 import { getMdmWhereUsed } from "./mdm-where-used-service";
 import { getFxProviderStatus, getFxRateFreshness, importFxRatesForOrganizations } from "./fx-provider-service";
 import { approvalRangesOverlap, type ApprovalPolicyCandidate } from "./approval-policy-overlap";
+import { getMasterDataGovernanceOverview } from "./mdm-governance-overview";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -309,6 +310,18 @@ function buildDependencyBlockedErrorMessage(
 export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
   const masterRead = [auth.ensureAuthenticated];
   const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+
+  app.get("/api/master-data/overview", ...masterRead, async (_req: Request, res: Response) => {
+    try {
+      res.setHeader("Cache-Control", "private, no-store");
+      return sendOk(res, await getMasterDataGovernanceOverview(getActiveOrganizationId()));
+    } catch (error) {
+      console.error("Error building Master Data governance overview:", error);
+      return sendError(res, 500, "MASTER_DATA_OVERVIEW_FAILED", "Master Data governance could not be summarized.", {
+        hint: "Retry the overview or open System Diagnostics with the request ID.",
+      });
+    }
+  });
 
   async function hasResolvedPermission(
     req: Request,
@@ -924,7 +937,15 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         if (table.active && status === "inactive") clauses.push(eq(table.active, false));
         const where = clauses.length > 0 ? and(...clauses) : undefined;
         let rowsQuery = db.select().from(table).$dynamic();
-        let countQuery = db.select({ count: sql<number>`count(*)::int` }).from(table).$dynamic();
+        let countQuery = db.select({
+          count: sql<number>`count(*)::int`,
+          active: table.active
+            ? sql<number>`count(*) filter (where ${table.active} = true)::int`
+            : sql<number>`count(*)::int`,
+          inactive: table.active
+            ? sql<number>`count(*) filter (where ${table.active} = false)::int`
+            : sql<number>`0::int`,
+        }).from(table).$dynamic();
         if (where) {
           rowsQuery = rowsQuery.where(where);
           countQuery = countQuery.where(where);
@@ -935,7 +956,14 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
           .offset((page - 1) * pageSize);
         const [countRow] = await countQuery;
         const total = Number(countRow?.count ?? 0);
-        return sendOk(res, { items: rows, total, page, pageSize, hasNext: page * pageSize < total });
+        return sendOk(res, {
+          items: rows,
+          total,
+          page,
+          pageSize,
+          hasNext: page * pageSize < total,
+          summary: { active: Number(countRow?.active ?? total), inactive: Number(countRow?.inactive ?? 0) },
+        });
       } catch (error) {
         console.error(`Error fetching ${basePath}:`, error);
         return sendError(res, 500, "MASTER_DATA_LIST_FAILED", "Failed to fetch records");

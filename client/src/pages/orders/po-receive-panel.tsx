@@ -1,9 +1,12 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Truck } from "lucide-react";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 import {
   Table,
   TableBody,
@@ -118,6 +121,17 @@ export function PoReceivePanel({
         <CardTitle>Receive panel</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {warehouses.length === 0 ? (
+          <Alert>
+            <AlertTitle>Warehouse setup required</AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+              A canonical warehouse must be available before a goods receipt can be posted.
+              <Button asChild type="button" size="sm" variant="outline">
+                <Link href={APP_ROUTES.admin.masterDataSection("warehouses")}>Open Master Data warehouses</Link>
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {globalLineIssues.length > 0 ? (
           <div
             role="alert"

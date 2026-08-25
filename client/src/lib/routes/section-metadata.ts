@@ -120,6 +120,20 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         keywords: "sourcing rfq quotes bids tender award evaluation",
       },
       {
+        label: "Commercial quotations",
+        path: APP_ROUTES.procurement.commercialQuotations,
+        icon: "receipt",
+        description: "Build branded customer quotations from Inventory, Master Data, and governed acceptance terms.",
+        keywords: "quotation customer quote sales offer pricing acceptance",
+      },
+      {
+        label: "Supplier quotations",
+        path: APP_ROUTES.procurement.quotations,
+        icon: "receipt",
+        description: "Capture, review, and compare version-controlled supplier quotations.",
+        keywords: "quotation quote supplier response pricing bid",
+      },
+      {
         label: "Purchase orders",
         path: APP_ROUTES.procurement.orders,
         icon: "shopping-cart",
@@ -160,6 +174,20 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
     key: "finance",
     label: "Finance",
     items: [
+      {
+        label: "General ledger",
+        path: APP_ROUTES.finance.generalLedger,
+        icon: "landmark",
+        description: "Chart of accounts, periods, journals, and trial balance.",
+        keywords: "general ledger gl journal trial balance",
+      },
+      {
+        label: "Accounts receivable",
+        path: APP_ROUTES.finance.accountsReceivable,
+        icon: "receipt",
+        description: "Customers, receivables invoices, balances, and aging.",
+        keywords: "accounts receivable ar customers aging statements",
+      },
       {
         label: "Accounts payable",
         path: APP_ROUTES.finance.accountsPayable,
@@ -222,11 +250,25 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
     label: "Admin",
     items: [
       {
+        label: "Company setup",
+        path: APP_ROUTES.admin.companySetup,
+        icon: "building-2",
+        description: "Legal identity, contact information, logo, and document branding.",
+        keywords: "company organization legal branding documents logo",
+      },
+      {
         label: "Settings",
         path: APP_ROUTES.admin.settings,
         icon: "settings",
         description: "Application preferences, operations settings, and security controls.",
         keywords: "settings preferences configuration",
+      },
+      {
+        label: "Workflow governance",
+        path: APP_ROUTES.admin.workflows,
+        icon: "shield-check",
+        description: "Configure, monitor, and audit approval-controlled business workflows.",
+        keywords: "workflow approvals routing escalation governance",
       },
       {
         label: "Master data",

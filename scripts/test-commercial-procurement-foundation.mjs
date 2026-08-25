@@ -17,6 +17,8 @@ const purchaseOrderApi = read("client/src/features/purchase-orders/api/operation
 const purchaseOrderView = read("client/src/pages/orders/purchase-order-detail-view.tsx");
 const supplierPortal = read("client/src/pages/supplier-sourcing-workspace.tsx");
 const buyerWorkspace = read("client/src/pages/sourcing.tsx");
+const commercialQuotationRoutes = read("server/modules/commercial-quotations/register-commercial-quotation-routes.ts");
+const commercialQuotationPage = read("client/src/pages/commercial-quotations.tsx");
 const seed = read("server/seed.ts");
 const schema = read("shared/schema.ts");
 
@@ -44,6 +46,14 @@ const checks = [
   [/\["EVALUATING", "AWARDED"\]\.includes\(detailsQuery\.data\.event\.status\)/.test(buyerWorkspace), "approved awards remain visible for authorized PO conversion"],
   [/ensureDemoTenantMemberships/.test(seed) && /supplierPortalMappings/.test(seed), "fresh development seeds include tenant memberships and supplier portal mapping"],
   [/sourcingEvents/.test(schema) && /supplierQuotes/.test(schema) && /sourcingAwards/.test(schema) && /workflowIdempotency/.test(schema), "strategic sourcing has first-class persisted entities"],
+  [/commercial-quotations\/scan-item/.test(commercialQuotationRoutes) && /b\.organization_id = ii\.organization_id/.test(commercialQuotationRoutes), "quotation scans resolve tenant-owned Inventory barcodes and QR values"],
+  [/quotationUpdateSchema/.test(commercialQuotationRoutes) && /expectedVersion/.test(commercialQuotationRoutes) && /QUOTATION_VERSION_CONFLICT/.test(commercialQuotationRoutes), "draft quotation edits use optimistic concurrency"],
+  [/COMMERCIAL_QUOTATION_REJECTED/.test(commercialQuotationRoutes) && /rejection_reason/.test(commercialQuotationRoutes), "issued quotation rejection preserves evidence and audit history"],
+  [/BarcodeScanner/.test(commercialQuotationPage) && /Scan item/.test(commercialQuotationPage) && /commercialQuotationEdit/.test(commercialQuotationPage), "commercial quotation UI supports scanning and draft editing"],
+  [/Record acceptance/.test(commercialQuotationPage) && /Record rejection/.test(commercialQuotationPage), "commercial quotation UI exposes both final customer outcomes"],
+  [/loadRecipientSnapshot/.test(commercialQuotationRoutes) && /organization_id = \$1 AND id = \$2/.test(commercialQuotationRoutes) && /INVALID_RECIPIENT_SUPPLIER/.test(commercialQuotationRoutes), "commercial quotation recipients are resolved from tenant-owned supplier master data"],
+  [/SUPPLIER_MASTER/.test(commercialQuotationRoutes) && /recipient_supplier_id/.test(commercialQuotationRoutes) && /SUPPLIER_PROFILE_INCOMPLETE/.test(commercialQuotationRoutes), "supplier-backed quotations snapshot authoritative legal and address details"],
+  [/Onboarded supplier/.test(commercialQuotationPage) && /Supplier not onboarded/.test(commercialQuotationPage) && /will not silently create a Supplier record/.test(commercialQuotationPage), "commercial quotation UI separates onboarded supplier selection from manual recipients"],
 ];
 
 for (const [condition, label] of checks) {

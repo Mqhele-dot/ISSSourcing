@@ -534,6 +534,7 @@ export async function invTrackFetch<T>(
     if (res.status === 204 || res.headers.get("content-length") === "0") {
       setFallbackState(headerFallback ?? null, headerEndpoint ?? null);
       lastGoodByEndpoint.set(url, { status: 204 });
+      actionErrorStore.clearResolved(method, url);
       recordSlowRequest({ method, url, status: res.status, durationMs });
       return { data: undefined as T, meta: { fallback: headerFallback, endpoint: headerEndpoint } };
     }
@@ -547,6 +548,7 @@ export async function invTrackFetch<T>(
       if (payload.ok) {
         const success = payload as ApiSuccessEnvelope<T>;
         lastGoodByEndpoint.set(url, success.data);
+        actionErrorStore.clearResolved(method, url);
         recordSlowRequest({ method, url, status: res.status, durationMs, details: { fallback: success.meta?.fallback } });
         return {
           data: success.data as T,
@@ -579,6 +581,7 @@ export async function invTrackFetch<T>(
     }
 
     lastGoodByEndpoint.set(url, payload as T);
+    actionErrorStore.clearResolved(method, url);
     recordSlowRequest({ method, url, status: res.status, durationMs, details: { fallback: headerFallback } });
     return {
       data: payload as T,

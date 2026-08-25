@@ -4,6 +4,9 @@ export const ANALYTICS_SECTION_SLUGS = [
   "procurement",
   "finance",
   "logistics",
+  "suppliers",
+  "exceptions",
+  "diagnostics",
   "reports",
   "saved-reports",
   "export-center",
@@ -22,6 +25,7 @@ export const REPORT_SECTION_SLUGS = [
 ] as const;
 
 export const SETTINGS_SECTION_SLUGS = [
+  "overview",
   "general",
   "inventory",
   "realtime",
@@ -35,6 +39,7 @@ export const SETTINGS_SECTION_SLUGS = [
 ] as const;
 
 export const MASTER_DATA_SECTION_SLUGS = [
+  "overview",
   "units",
   "currencies",
   "taxCodes",
@@ -104,7 +109,15 @@ export const APP_ROUTES = {
   procurement: {
     sourcing: "/procurement/sourcing",
     sourcingEvent: (id: string | number) => `/procurement/sourcing/${encodeURIComponent(String(id))}`,
+    quotations: "/procurement/quotations",
+    quotationNew: "/procurement/quotations/new",
+    supplierQuotationNew: "/procurement/quotations/supplier-new",
+    quotation: (id: string | number) => `/procurement/quotations/${encodeURIComponent(String(id))}`,
+    commercialQuotations: "/procurement/commercial-quotations",
+    commercialQuotation: (id: string | number) => `/procurement/commercial-quotations/${encodeURIComponent(String(id))}`,
+    commercialQuotationEdit: (id: string | number) => `/procurement/commercial-quotations/${encodeURIComponent(String(id))}/edit`,
     orders: "/procurement/orders",
+    orderNew: "/procurement/orders/new",
     /** Build a link to a PO; encodes the segment for reserved URL characters. Do not use for Wouter `path` patterns — use `` `/procurement/orders/:po` ``. */
     order: (po: string | number) =>
       `/procurement/orders/${encodeURIComponent(String(po))}`,
@@ -117,10 +130,13 @@ export const APP_ROUTES = {
     supplierPortal: "/procurement/supplier-portal",
   },
   finance: {
+    generalLedger: "/finance/general-ledger",
+    accountsReceivable: "/finance/accounts-receivable",
     accountsPayable: "/finance/accounts-payable",
     accountsPayableIntake: "/finance/accounts-payable/intake",
     accountsPayableApprovals: "/finance/accounts-payable/approvals",
     accountsPayableExceptions: "/finance/accounts-payable/exceptions",
+    accountsPayableAging: "/finance/accounts-payable/aging",
     accountsPayablePayments: "/finance/accounts-payable/payments",
     invoices: "/finance/invoices",
     approvalPolicies: "/finance/approval-policies",
@@ -133,6 +149,9 @@ export const APP_ROUTES = {
     procurement: "/analytics/procurement",
     finance: "/analytics/finance",
     logistics: "/analytics/logistics",
+    suppliers: "/analytics/suppliers",
+    exceptions: "/analytics/exceptions",
+    diagnostics: "/analytics/diagnostics",
     reports: "/analytics/reports",
     reportSection: (tab: ReportSectionSlug | string) => `/analytics/reports/${tab}`,
     savedReports: "/analytics/saved-reports",
@@ -143,6 +162,8 @@ export const APP_ROUTES = {
     getEducatedModule: (moduleId: string) => `/get-educated/${encodeURIComponent(moduleId)}`,
   },
   admin: {
+    companySetup: "/admin/company-setup",
+    workflows: "/admin/workflows",
     settings: "/admin/settings",
     settingsSection: (section: SettingsSectionSlug | string) => `/admin/settings/${section}`,
     masterData: "/admin/master-data",

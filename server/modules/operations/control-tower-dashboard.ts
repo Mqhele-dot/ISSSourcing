@@ -3,6 +3,7 @@
  */
 import { normalizePurchaseOrderStatus } from "@shared/purchase-order-status";
 import { pool } from "../../db";
+import { INVENTORY_BASE_SQL } from "../v2/register-inventory-v2-routes";
 import { listOperationalActivity } from "./operations-core";
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -60,6 +61,7 @@ export type ControlTowerDashboardPayload = {
     openRequisitions: number;
     openPurchaseOrders: number;
     delayedShipments: number;
+    inTransitShipments: number;
     apInvoicesDueOrOverdue: number;
     operationalExceptions: number;
     supplierRiskAlerts: number;
@@ -149,6 +151,7 @@ const EMPTY: ControlTowerDashboardPayload = {
     openRequisitions: 0,
     openPurchaseOrders: 0,
     delayedShipments: 0,
+    inTransitShipments: 0,
     apInvoicesDueOrOverdue: 0,
     operationalExceptions: 0,
     supplierRiskAlerts: 0,
@@ -305,19 +308,10 @@ export async function getControlTowerDashboard(
       value_proxy: number;
       expiry: Date | null;
     }>(
-      `
-      SELECT
-        i.sku,
-        (COALESCE(SUM(p.on_hand), COALESCE(i.quantity, 0)) - COALESCE(SUM(p.allocated), 0))::real AS available,
-        COALESCE(i.low_stock_threshold, 0)::real AS threshold,
-        (COALESCE(SUM(p.on_hand), COALESCE(i.quantity, 0)) - COALESCE(SUM(p.allocated), 0))
-          * COALESCE(i.cost, i.price, 0)::real AS value_proxy,
-        i.expiry_date AS expiry
-      FROM inventory_items i
-      LEFT JOIN inventory_positions p ON p.sku = i.sku
-      WHERE ${orgInventoryWhere("i", orgId, 1)}
-      GROUP BY i.id, i.sku, i.quantity, i.low_stock_threshold, i.cost, i.price, i.expiry_date
-      `,
+      `${INVENTORY_BASE_SQL}
+       SELECT sku, available::real AS available, low_stock_threshold::real AS threshold,
+              (available * valuation_rate)::real AS value_proxy, expiry_date AS expiry
+       FROM base`,
       [orgId],
     );
     invRows = invRes.rows;
@@ -337,7 +331,6 @@ export async function getControlTowerDashboard(
   let healthy = 0;
   let negative = 0;
   let zeroStock = 0;
-  let lowOnly = 0;
   let expiringSoon = 0;
   const now = Date.now();
   const expSoonMs = 30 * 86400_000;
@@ -347,6 +340,12 @@ export async function getControlTowerDashboard(
     const th = toNumber(row.threshold, 0);
     const vp = toNumber(row.value_proxy, 0);
     inventoryValue += vp;
+
+    // Keep this definition identical to /api/v2/inventory?low=1. Negative and
+    // zero availability intentionally overlap the low-stock KPI.
+    if (av <= th) {
+      lowStock += 1;
+    }
 
     if (av < 0) {
       negative += 1;
@@ -363,8 +362,7 @@ export async function getControlTowerDashboard(
       }
     }
     if (av > 0 && av <= th) {
-      lowOnly += 1;
-      lowStock += 1;
+      // Already counted above; keep this branch from classifying low stock as healthy.
     } else {
       healthy += 1;
     }
@@ -375,7 +373,7 @@ export async function getControlTowerDashboard(
 
   base.inventoryHealth = [
     { id: "healthy", label: "Healthy", count: healthy, href: `${"/inventory"}` },
-    { id: "low", label: "Low stock", count: lowOnly, href: "/inventory?low=1" },
+    { id: "low", label: "Low stock", count: lowStock, href: "/inventory?low=1" },
     { id: "negative", label: "Negative availability", count: negative, href: "/inventory" },
     { id: "zero", label: "Zero stock", count: zeroStock, href: "/inventory" },
     { id: "expiring", label: "Expiring soon", count: expiringSoon, href: "/inventory" },
@@ -491,7 +489,8 @@ export async function getControlTowerDashboard(
       INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
       WHERE s.eta IS NOT NULL
         AND s.eta < now()
-        AND lower(s.status) <> 'delivered'
+        AND lower(s.status) NOT IN ('delivered', 'cancelled')
+        AND COALESCE(s.organization_id, po.organization_id) = $1
       `,
       [orgId],
     );
@@ -512,9 +511,10 @@ export async function getControlTowerDashboard(
       `
       SELECT
         CASE
+          WHEN lower(s.status) IN ('delivered', 'cancelled') THEN 'on_time'
+          WHEN s.eta < now() THEN 'late'
           WHEN lower(s.status) IN ('delayed', 'exception') THEN 'exception'
           WHEN s.eta IS NULL THEN 'no_eta'
-          WHEN s.eta < now() AND lower(s.status) <> 'delivered' THEN 'late'
           WHEN s.eta <= now() + interval '3 days' THEN 'due_soon'
           ELSE 'on_time'
         END AS bucket,
@@ -522,6 +522,7 @@ export async function getControlTowerDashboard(
       FROM shipments s
       INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
       WHERE lower(s.status) <> 'delivered'
+        AND COALESCE(s.organization_id, po.organization_id) = $1
       GROUP BY 1
       `,
       [orgId],
@@ -550,6 +551,19 @@ export async function getControlTowerDashboard(
     }
   } catch {
     /* leave zeros */
+  }
+  try {
+    const transit = await pool.query<{ count: number }>(
+      `SELECT count(*)::int AS count
+       FROM shipments s
+       INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
+       WHERE lower(s.status) = 'in_transit'
+         AND COALESCE(s.organization_id, po.organization_id) = $1`,
+      [orgId],
+    );
+    base.kpis.inTransitShipments = toNumber(transit.rows[0]?.count, 0);
+  } catch {
+    base.kpis.inTransitShipments = 0;
   }
   base.logisticsRisk = [
     { id: "on_time", label: "On time", count: onTime, href: "/operations/logistics?risk=on_time" },
@@ -644,7 +658,8 @@ export async function getControlTowerDashboard(
       INNER JOIN suppliers sup ON sup.id = po.supplier_id
       WHERE s.eta IS NOT NULL
         AND s.eta < now()
-        AND lower(s.status) <> 'delivered'
+        AND lower(s.status) NOT IN ('delivered', 'cancelled')
+        AND COALESCE(s.organization_id, po.organization_id) = $1
       GROUP BY po.supplier_id, sup.name
       ORDER BY late DESC
       LIMIT 5
@@ -728,12 +743,12 @@ export async function getControlTowerDashboard(
       area: "inventory",
     });
   }
-  if (lowOnly > 0) {
+  if (lowStock > 0) {
     na.push({
       id: "low-inv",
       title: "Low stock items",
-      severity: mediumSev(lowOnly),
-      reason: `${lowOnly} SKU(s) at or below reorder threshold.`,
+      severity: mediumSev(lowStock),
+      reason: `${lowStock} SKU(s) at or below reorder threshold, including zero or negative availability.`,
       href: "/inventory?low=1",
       area: "inventory",
     });
@@ -764,7 +779,7 @@ export async function getControlTowerDashboard(
       title: "Late shipments",
       severity: "high",
       reason: `${lateShip} shipment(s) past ETA and not delivered.`,
-      href: "/operations/logistics",
+      href: "/operations/logistics?risk=late",
       area: "logistics",
     });
   }
@@ -774,7 +789,7 @@ export async function getControlTowerDashboard(
       title: "AP invoices due or overdue",
       severity: "high",
       reason: `${apDueCount} invoice(s) need payment attention.`,
-      href: "/finance/accounts-payable",
+      href: "/finance/invoices?attention=due",
       area: "finance",
     });
   }
@@ -784,7 +799,7 @@ export async function getControlTowerDashboard(
       title: "Operational exceptions",
       severity: "medium",
       reason: `${base.kpis.operationalExceptions} open exception case(s).`,
-      href: "/operations/exceptions",
+      href: "/operations/exceptions?status=active",
       area: "operations",
     });
   }
@@ -820,7 +835,7 @@ export async function getControlTowerDashboard(
   /* recent activity — limited, single query */
   try {
     const rows = await listOperationalActivity({ limit: 10 });
-    base.recentActivity = rows.map((entry) => ({
+    base.recentActivity = rows.map((entry: any) => ({
       id: entry.id,
       action: entry.action,
       entityType: entry.entityType,
@@ -849,7 +864,8 @@ export async function getControlTowerDashboard(
       INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
       WHERE s.eta IS NOT NULL
         AND s.eta < now()
-        AND lower(s.status) <> 'delivered'
+        AND lower(s.status) NOT IN ('delivered', 'cancelled')
+        AND COALESCE(s.organization_id, po.organization_id) = $1
       ORDER BY s.eta ASC
       LIMIT 8
       `,

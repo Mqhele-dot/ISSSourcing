@@ -15,6 +15,17 @@ export type ControlTowerOverview = {
   };
 };
 
+export type ControlTowerDashboard = {
+  kpis?: {
+    lowStockItems?: number;
+    openRequisitions?: number;
+    delayedShipments?: number;
+    inTransitShipments?: number;
+    apInvoicesDueOrOverdue?: number;
+  };
+  procurementPipeline?: Array<{ id: string; count: number }>;
+};
+
 export type ApOverview = {
   outstandingAmount?: number;
   pendingApprovalCount?: number;

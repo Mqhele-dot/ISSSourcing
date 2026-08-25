@@ -8,6 +8,7 @@ import { exportsDirResolution, uploadsDirResolution } from "../lib/deployment-be
 
 export const uploadsDir = uploadsDirResolution();
 export const documentsDir = path.join(uploadsDir, "documents");
+export const companyLogosDir = path.join(uploadsDir, "company-logos");
 export const exportsDir = exportsDirResolution();
 
 const DOCUMENT_MIME_ALLOWLIST = new Set([
@@ -70,10 +71,20 @@ export const documentUpload = multer({
   },
 });
 
+export const companyLogoUpload = multer({
+  storage: createSafeDiskStorage(companyLogosDir),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (["image/png", "image/jpeg", "image/webp", "image/svg+xml"].includes(file.mimetype)) cb(null, true);
+    else rejectUnsupportedFile(cb, "Company logos must be PNG, JPEG, WebP, or SVG.");
+  },
+});
+
 /** Create on boot so /api/ready uploadPathReady is true before any upload. */
 export function ensureUploadDirectories(): void {
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
   if (!fs.existsSync(documentsDir)) fs.mkdirSync(documentsDir, { recursive: true });
+  if (!fs.existsSync(companyLogosDir)) fs.mkdirSync(companyLogosDir, { recursive: true });
   if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true });
 }
 

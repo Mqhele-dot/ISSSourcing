@@ -4,6 +4,9 @@ import { storage } from "../../storage";
 import { sendError, sendOk } from "../../api-response";
 import { buildSupplyInsights } from "../../supply-insights";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
+import { z } from "zod";
+import { getActiveOrganizationId } from "../../organization-context";
+import { buildAnalyticsInsights } from "./analytics-insights-service";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -17,6 +20,53 @@ type AuthBundle = {
 export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
   const masterRead = [auth.ensureAuthenticated, auth.ensurePermission("reports", "read")];
   const masterWrite = [auth.ensureAuthenticated, auth.ensurePermission("reports", "update")];
+
+  const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+  const analyticsQuerySchema = z.object({
+    dateFrom: dateString.optional(),
+    dateTo: dateString.optional(),
+    businessArea: z.enum(["all", "procurement", "inventory", "warehouse", "logistics", "finance", "suppliers", "exceptions", "diagnostics"]).default("all"),
+    supplierId: z.coerce.number().int().positive().optional(),
+    warehouseId: z.coerce.number().int().positive().optional(),
+    categoryId: z.coerce.number().int().positive().optional(),
+    ownerId: z.coerce.number().int().positive().optional(),
+    departmentId: z.coerce.number().int().positive().optional(),
+    risk: z.enum(["low", "medium", "high", "critical"]).optional(),
+    status: z.string().trim().min(1).max(80).optional(),
+  }).superRefine((value, context) => {
+    if (value.dateFrom && value.dateTo && value.dateFrom > value.dateTo) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["dateTo"], message: "Date to must be on or after date from." });
+    }
+  });
+
+  // Keep the public route registry local to registration. This prevents a
+  // development-loader module cycle from leaving these routes unregistered and
+  // allowing the SPA HTML fallback to answer an API request.
+  const insightAreas = ["overview", "procurement", "inventory", "logistics", "suppliers", "finance", "exceptions", "diagnostics", "reports"] as const;
+  for (const area of insightAreas) {
+    app.get(`/api/analytics/${area}`, ...masterRead, async (req: Request, res: Response) => {
+      const parsed = analyticsQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return sendError(res, 400, "INVALID_ANALYTICS_QUERY", "Analytics filters are invalid.", {
+          fieldIssues: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+        });
+      }
+      try {
+        const filters = {
+          ...parsed.data,
+          dateFrom: parsed.data.dateFrom ? new Date(`${parsed.data.dateFrom}T00:00:00.000Z`).toISOString() : undefined,
+          dateTo: parsed.data.dateTo ? new Date(`${parsed.data.dateTo}T23:59:59.999Z`).toISOString() : undefined,
+        };
+        res.setHeader("Cache-Control", "private, no-store");
+        return sendOk(res, await buildAnalyticsInsights(getActiveOrganizationId(), area, filters));
+      } catch (error) {
+        return sendError(res, 500, "ANALYTICS_INSIGHTS_FAILED", "Analytics could not be generated.", {
+          details: error instanceof Error ? error.message : String(error),
+          hint: "Retry the view. If the problem continues, open System Diagnostics with the request ID.",
+        });
+      }
+    });
+  }
 
   app.get("/api/reports/analytics", ...masterRead, async (req: Request, res: Response) => {
     try {

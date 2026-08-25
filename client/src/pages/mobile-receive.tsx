@@ -8,6 +8,7 @@ import { DataState } from "@/components/ui/data-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -155,7 +156,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
     binCode: "",
   });
 
-  const { data: warehousesForReceive = [] } = useQuery({
+  const warehousesQuery = useQuery({
     queryKey: ["/api/warehouses"],
     queryFn: () =>
       requestJson<
@@ -168,17 +169,16 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
         }>
       >("GET", "/api/warehouses"),
   });
-
   const receiveWarehouses = useMemo(
     (): ReceivePutawayWarehouse[] =>
-      warehousesForReceive.map((warehouse) => ({
+      (warehousesQuery.data ?? []).map((warehouse) => ({
         id: warehouse.id,
         name: warehouse.name,
         isDefault: warehouse.isDefault,
         aisles: warehouse.aisles ?? null,
         bins: warehouse.bins ?? null,
       })),
-    [warehousesForReceive],
+    [warehousesQuery.data],
   );
 
   useEffect(() => {
@@ -318,6 +318,22 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
 
           return (
             <div className="space-y-4">
+              {warehousesQuery.isError ? (
+                <Alert>
+                  <AlertTitle>Warehouses could not be loaded</AlertTitle>
+                  <AlertDescription className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    Receiving remains disabled until the tenant warehouse catalog is available.
+                    <Button type="button" size="sm" variant="outline" onClick={() => void warehousesQuery.refetch()}>Retry warehouses</Button>
+                  </AlertDescription>
+                </Alert>
+              ) : !warehousesQuery.isLoading && receiveWarehouses.length === 0 ? (
+                <Alert>
+                  <AlertTitle>Warehouse setup required</AlertTitle>
+                  <AlertDescription>
+                    <Link className="font-medium underline underline-offset-2" href={APP_ROUTES.admin.masterDataSection("warehouses")}>Open Master Data warehouses</Link> before posting a receipt.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               <Card>
                 <CardContent className="grid grid-cols-2 gap-3 p-4 text-sm">
                   <div>
@@ -378,6 +394,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                             binCode: "",
                           })
                         }
+                        disabled={warehousesQuery.isLoading || warehousesQuery.isError || receiveWarehouses.length === 0}
                       >
                         <SelectTrigger data-testid="mobile-receive-warehouse-select">
                           <SelectValue placeholder="Select warehouse" />
@@ -548,7 +565,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                   className="min-h-12 w-full"
                   data-testid="mobile-receive-post-button"
                   onClick={submitReceive}
-                  disabled={!canPost || receivableLines.length === 0 || receiveMutation.isPending}
+                  disabled={!canPost || warehousesQuery.isLoading || warehousesQuery.isError || receiveWarehouses.length === 0 || receivableLines.length === 0 || receiveMutation.isPending}
                 >
                   <Truck className="mr-2 h-4 w-4" />
                   {receiveMutation.isPending ? "Posting receipt..." : "Post mobile receipt"}

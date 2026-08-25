@@ -45,6 +45,13 @@ export function GlobalActionErrorCenter() {
     return actionErrorStore.subscribe((record) => {
       const list = actionErrorStore.list();
       setHistory(list);
+      if (!record) {
+        setActiveRecord((current) =>
+          current && list.some((entry) => entry.id === current.id) ? current : null,
+        );
+        setOpen((current) => (list.some((entry) => entry.severity === "mutation") ? current : false));
+        return;
+      }
       if (record.severity === "important_warning") {
         const now = Date.now();
         if (now - lastSoftToastAt.current > 8000) {

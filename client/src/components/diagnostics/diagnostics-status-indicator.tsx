@@ -18,7 +18,11 @@ export function DiagnosticsStatusIndicator() {
   useEffect(() => subscribeToDiagnostics((next) => setEvents(next)), []);
 
   const counts = useMemo(() => {
-    const cutoff = Date.now() - 10 * 60 * 1000;
+    const latestCompletedScan = events.reduce((latest, event) => {
+      if (event.source !== "diagnostics" || event.title !== "Diagnostics scan completed") return latest;
+      return Math.max(latest, new Date(event.timestamp).getTime());
+    }, 0);
+    const cutoff = Math.max(Date.now() - 10 * 60 * 1000, latestCompletedScan);
     return events.reduce(
       (acc, event) => {
         if (event.resolved) return acc;

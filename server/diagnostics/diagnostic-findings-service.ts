@@ -1,4 +1,5 @@
 import { pool } from "../db";
+import { fixtureDiagnosticUnionSql } from "./fixture-definition-catalog";
 import { getServerDiagnosticEvents, type ServerDiagnosticEvent } from "./server-diagnostics-store";
 import {
   diagnosticCategories,
@@ -172,15 +173,36 @@ export async function collectDiagnosticFindings(organizationId: number): Promise
       code: "TEST_FIXTURE_POLLUTION",
       title: "Automated fixture pollution",
       organizationId,
-      sql: `SELECT SUM(match_count)::text AS total FROM (
-              SELECT COUNT(*) AS match_count FROM suppliers WHERE organization_id = $1 AND name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Supplier '
-              UNION ALL SELECT COUNT(*) FROM inventory_items WHERE organization_id::text = $1::text AND (name ~ '^(Dependency|Workflow|Runtime|Propagation|Sourcing) Item ' OR sku ~ '^(DEP-ITEM-|WF-|RT-|PROP-|SOURCING-)')
-              UNION ALL SELECT COUNT(*) FROM approval_policies WHERE organization_id = $1 AND name ~ '^(AP Workflow|AP Test|AP Invalid)'
-            ) fixture_matches`,
+      sql: `SELECT SUM(match_count)::text AS total FROM (${fixtureDiagnosticUnionSql()}) fixture_matches`,
       values: [organizationId],
       evaluate: (rows) => {
         const total = Number(rows[0]?.total ?? 0);
         return finding({ category: "consistency", severity: total ? "warning" : "info", status: total ? "degraded" : "working", code: "TEST_FIXTURE_POLLUTION", title: "Automated fixture pollution", message: total ? `${total} probable test fixture record(s) are present.` : "No known test-fixture naming patterns were detected.", evidence: { total }, targetRoute: "/admin/system-diagnostics?view=consistency", remediation: total ? "Run npm run data:fixture-audit. Review and back up the database before any explicit purge." : undefined });
+      },
+    }),
+    queryProbe<{ total: string }>({
+      category: "consistency",
+      code: "STALE_CURRENT_SHIPMENT_EXCEPTIONS",
+      title: "Current shipment exception reconciliation",
+      organizationId,
+      sql: `SELECT COUNT(*)::text AS total
+            FROM operational_exceptions e
+            WHERE e.organization_id = $1
+              AND e.status IN ('open','in_progress')
+              AND e.type IN ('late_shipment','shipment_no_eta')
+              AND NOT EXISTS (
+                SELECT 1 FROM shipments s
+                WHERE s.organization_id = $1
+                  AND s.id::text = e.related_refs->>'shipment_id'
+                  AND (
+                    (e.type = 'late_shipment' AND s.eta IS NOT NULL AND s.eta < NOW() AND lower(s.status) NOT IN ('delivered','cancelled'))
+                    OR (e.type = 'shipment_no_eta' AND s.eta IS NULL AND lower(s.status) NOT IN ('delivered','cancelled'))
+                  )
+              )`,
+      values: [organizationId],
+      evaluate: (rows) => {
+        const total = Number(rows[0]?.total ?? 0);
+        return finding({ category: "consistency", severity: total ? "warning" : "info", status: total ? "degraded" : "working", code: "STALE_CURRENT_SHIPMENT_EXCEPTIONS", title: "Current shipment exception reconciliation", message: total ? `${total} open shipment exception(s) no longer match their operational rule.` : "Current shipment exceptions agree with shipment state.", evidence: { total }, targetRoute: "/operations/exceptions?status=active", remediation: total ? "Run the explicit operational reconciliation check; stale rows will be resolved while their history remains available." : undefined });
       },
     }),
     queryProbe<{ unread: string; oldest: string | null }>({

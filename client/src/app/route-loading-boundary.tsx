@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { routeDebug } from "@/lib/route-debug";
 import { addDiagnosticEvent } from "@/lib/diagnostics/diagnostics-store";
 
-const ROUTE_LOAD_TIMEOUT_MS = 12_000;
+const ROUTE_LOAD_TIMEOUT_MS = 5_000;
 
 function reloadWithCacheBust(): void {
   const url = new URL(window.location.href);
@@ -38,8 +38,23 @@ export function RouteFallback() {
 function RouteFallbackWithTimeout() {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
-    const t = window.setTimeout(() => setSlow(true), ROUTE_LOAD_TIMEOUT_MS);
-    return () => window.clearTimeout(t);
+    const startedAt = performance.now();
+    const pathname = window.location.pathname;
+    const t = window.setTimeout(() => {
+      setSlow(true);
+      addDiagnosticEvent({
+        severity: "warning",
+        source: "route",
+        title: "Route chunk download is slow",
+        message: `${pathname} did not finish downloading within five seconds.`,
+        details: { phase: "chunk_download", elapsedMs: ROUTE_LOAD_TIMEOUT_MS, pathname },
+        userAction: "Retry the route. If API cards load slowly after the frame appears, inspect those card-specific retry states separately.",
+      });
+    }, ROUTE_LOAD_TIMEOUT_MS);
+    return () => {
+      window.clearTimeout(t);
+      performance.measure(`route-chunk:${pathname}`, { start: startedAt, end: performance.now() });
+    };
   }, []);
   if (slow) {
     return (

@@ -246,7 +246,7 @@ export default function ReorderRequestsPage() {
     <div className="mx-auto w-full max-w-[min(100%,88rem)]" data-testid="reorder-requests-page">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-semibold text-neutral-900 dark:text-white">Reorder Requests</h2>
+          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">Reorder Requests</h1>
           <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
             Manage requests for reordering low or out of stock inventory items
           </p>

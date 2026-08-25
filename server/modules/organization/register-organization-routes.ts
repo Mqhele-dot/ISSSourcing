@@ -7,6 +7,7 @@ import {
   billingCustomers,
   billingSubscriptions,
   billingWebhookEvents,
+  appSettings,
   companyConfigurationSettings,
   organizationMembers,
   organizationSettings,
@@ -27,6 +28,9 @@ import { getSubscriptionPlanCatalog, getSubscriptionPlanDefinition } from "../..
 import { appendAuditEvent } from "../../services/audit-chain-service";
 import { listCountryPacks } from "../master-data/country-pack-registry";
 import { countOrganizationUsers, ensurePlanLimitAllowsCreate } from "../../plan-limit-service";
+import fs from "fs";
+import path from "path";
+import { companyLogoUpload, companyLogosDir } from "../../http/upload-config";
 
 type Auth = {
   ensureAuthenticated: RequestHandler;
@@ -36,6 +40,33 @@ type Auth = {
 
 const activeOrganizationSchema = z.object({
   organizationId: z.coerce.number().int().positive(),
+});
+
+const optionalTrimmed = (maximum: number) => z.preprocess(
+  (value) => typeof value === "string" && value.trim() === "" ? null : value,
+  z.string().trim().max(maximum).nullable().optional(),
+);
+
+const companyProfileSchema = z.object({
+  displayName: z.string().trim().min(2).max(160),
+  legalName: z.string().trim().min(2).max(240),
+  registrationNumber: optionalTrimmed(120),
+  taxNumber: optionalTrimmed(120),
+  address: optionalTrimmed(1000),
+  contactEmail: z.preprocess(
+    (value) => typeof value === "string" && value.trim() === "" ? null : value,
+    z.string().trim().email().max(320).nullable().optional(),
+  ),
+  contactPhone: optionalTrimmed(80),
+  website: z.preprocess(
+    (value) => typeof value === "string" && value.trim() === "" ? null : value,
+    z.string().trim().url().max(500).nullable().optional(),
+  ),
+  logoUrl: optionalTrimmed(1000),
+  reportFooter: optionalTrimmed(500),
+  countryCode: z.string().trim().length(2).regex(/^[A-Za-z]{2}$/).transform((value) => value.toUpperCase()),
+  locale: z.string().trim().min(2).max(40),
+  timezone: z.string().trim().min(3).max(100),
 });
 
 const addOrganizationMemberSchema = z.object({
@@ -201,6 +232,16 @@ async function upsertOrganizationSubscriptionState(input: {
 
 /** GET branding / plan metadata for the active organization (Phase 4). */
 export function registerOrganizationRoutes(app: Express, auth: Auth): void {
+  const acceptCompanyLogo: RequestHandler = (req, res, next) => {
+    companyLogoUpload.single("logo")(req, res, (error: unknown) => {
+      if (!error) return next();
+      const uploadError = error as { code?: string; message?: string };
+      const message = uploadError.code === "LIMIT_FILE_SIZE"
+        ? "Company logos must be 5 MB or smaller."
+        : uploadError.message || "The company logo could not be uploaded.";
+      return sendError(res, 400, "COMPANY_LOGO_INVALID", message);
+    });
+  };
   app.get("/api/organization/country-packs", auth.ensureAuthenticated, (_req: Request, res: Response) => {
     return sendOk(res, listCountryPacks());
   });
@@ -360,6 +401,165 @@ export function registerOrganizationRoutes(app: Express, auth: Auth): void {
       res.status(500).json({ message: "Failed to load organization settings" });
     }
   });
+
+  app.get("/api/organization/company-profile", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
+    try {
+      const organizationId = getActiveOrganizationId();
+      const [row] = await db
+        .select({
+          organizationId: organizations.id,
+          displayName: organizationSettings.displayName,
+          organizationName: organizations.name,
+          legalName: organizationSettings.legalName,
+          registrationNumber: organizationSettings.registrationNumber,
+          taxNumber: organizationSettings.taxNumber,
+          address: organizationSettings.address,
+          contactEmail: organizationSettings.contactEmail,
+          contactPhone: organizationSettings.contactPhone,
+          website: organizationSettings.website,
+          logoUrl: organizationSettings.logoUrl,
+          reportFooter: organizationSettings.reportFooter,
+          countryCode: organizations.countryCode,
+          locale: organizations.locale,
+          timezone: organizations.timezone,
+          reportingCurrencyCode: organizations.defaultCurrencyCode,
+        })
+        .from(organizations)
+        .leftJoin(organizationSettings, eq(organizationSettings.organizationId, organizations.id))
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
+      if (!row) return sendError(res, 404, "ORGANIZATION_NOT_FOUND", "The active organization was not found.");
+      const profile = {
+        ...row,
+        displayName: row.displayName?.trim() || row.organizationName,
+        legalName: row.legalName?.trim() || row.organizationName,
+      };
+      const missingFields = [
+        ["registrationNumber", profile.registrationNumber],
+        ["taxNumber", profile.taxNumber],
+        ["address", profile.address],
+        ["contactEmail", profile.contactEmail],
+      ].filter(([, value]) => !String(value ?? "").trim()).map(([field]) => field);
+      return sendOk(res, { profile, complete: missingFields.length === 0, missingFields });
+    } catch (error) {
+      console.error("GET /api/organization/company-profile:", error);
+      return sendError(res, 500, "COMPANY_PROFILE_FETCH_FAILED", "Failed to load the company profile.");
+    }
+  });
+
+  app.post(
+    "/api/organization/company-logo",
+    ...requireConfigWrite(auth),
+    acceptCompanyLogo,
+    async (req: Request, res: Response) => {
+      if (!req.file) return sendError(res, 400, "COMPANY_LOGO_REQUIRED", "Choose a PNG, JPEG, WebP, or SVG logo.");
+      const logoUrl = `/uploads/company-logos/${req.file.filename}`;
+      return sendOk(res, { logoUrl, previewUrl: "/api/organization/company-logo" }, 201);
+    },
+  );
+
+  app.get("/api/organization/company-logo", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
+    try {
+      const organizationId = getActiveOrganizationId();
+      const [row] = await db.select({ logoUrl: organizationSettings.logoUrl }).from(organizationSettings)
+        .where(eq(organizationSettings.organizationId, organizationId)).limit(1);
+      const logoUrl = row?.logoUrl?.trim();
+      if (!logoUrl) return sendError(res, 404, "COMPANY_LOGO_NOT_CONFIGURED", "No company logo is configured.");
+      const prefix = "/uploads/company-logos/";
+      if (!logoUrl.startsWith(prefix)) return res.redirect(302, logoUrl);
+      const fileName = path.basename(logoUrl.slice(prefix.length));
+      const filePath = path.join(companyLogosDir, fileName);
+      if (!fs.existsSync(filePath)) return sendError(res, 410, "COMPANY_LOGO_MISSING", "The configured company logo file is unavailable.");
+      return res.sendFile(filePath);
+    } catch (error) {
+      console.error("GET /api/organization/company-logo:", error);
+      return sendError(res, 500, "COMPANY_LOGO_FETCH_FAILED", "Failed to load the company logo.");
+    }
+  });
+
+  app.put(
+    "/api/organization/company-profile",
+    ...requireConfigWrite(auth),
+    async (req: Request, res: Response) => {
+      const parsed = companyProfileSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return sendError(res, 400, "COMPANY_PROFILE_INVALID", "The company profile contains invalid values.", {
+          details: { fieldIssues: parsed.error.flatten().fieldErrors },
+        });
+      }
+      const organizationId = getActiveOrganizationId();
+      const actorUserId = currentUserId(req);
+      try {
+        const before = await db.select().from(organizationSettings)
+          .where(eq(organizationSettings.organizationId, organizationId)).limit(1);
+        await db.transaction(async (tx) => {
+          await tx.update(organizations).set({
+            name: parsed.data.displayName,
+            countryCode: parsed.data.countryCode,
+            locale: parsed.data.locale,
+            timezone: parsed.data.timezone,
+            updatedAt: new Date(),
+          }).where(eq(organizations.id, organizationId));
+          await tx.insert(organizationSettings).values({
+            organizationId,
+            displayName: parsed.data.displayName,
+            legalName: parsed.data.legalName,
+            registrationNumber: parsed.data.registrationNumber ?? null,
+            taxNumber: parsed.data.taxNumber ?? null,
+            address: parsed.data.address ?? null,
+            contactEmail: parsed.data.contactEmail ?? null,
+            contactPhone: parsed.data.contactPhone ?? null,
+            website: parsed.data.website ?? null,
+            logoUrl: parsed.data.logoUrl ?? null,
+            reportFooter: parsed.data.reportFooter ?? null,
+            updatedAt: new Date(),
+          }).onConflictDoUpdate({
+            target: organizationSettings.organizationId,
+            set: {
+              displayName: parsed.data.displayName,
+              legalName: parsed.data.legalName,
+              registrationNumber: parsed.data.registrationNumber ?? null,
+              taxNumber: parsed.data.taxNumber ?? null,
+              address: parsed.data.address ?? null,
+              contactEmail: parsed.data.contactEmail ?? null,
+              contactPhone: parsed.data.contactPhone ?? null,
+              website: parsed.data.website ?? null,
+              logoUrl: parsed.data.logoUrl ?? null,
+              reportFooter: parsed.data.reportFooter ?? null,
+              updatedAt: new Date(),
+            },
+          });
+          await tx.insert(appSettings).values({
+            organizationId,
+            companyName: parsed.data.displayName,
+            companyLogo: parsed.data.logoUrl ?? null,
+          }).onConflictDoUpdate({
+            target: appSettings.organizationId,
+            set: {
+              companyName: parsed.data.displayName,
+              companyLogo: parsed.data.logoUrl ?? null,
+              updatedAt: new Date(),
+            },
+          });
+        });
+        await appendAuditEvent({
+          organizationId,
+          actor: { userId: actorUserId },
+          action: "COMPANY_PROFILE_UPDATED",
+          resourceType: "organization",
+          resourceId: organizationId,
+          details: { before: before[0] ?? null, after: parsed.data },
+          requestId: String(res.locals.requestId ?? "unknown-request-id"),
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent") ?? null,
+        });
+        return sendOk(res, { saved: true, organizationId });
+      } catch (error) {
+        console.error("PUT /api/organization/company-profile:", error);
+        return sendError(res, 500, "COMPANY_PROFILE_SAVE_FAILED", "Failed to save the company profile.");
+      }
+    },
+  );
 
   app.get("/api/subscription/plans", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
     return sendOk(res, {

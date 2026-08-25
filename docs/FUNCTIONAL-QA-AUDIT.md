@@ -145,3 +145,10 @@ npm run verify:core
 ```
 
 `verify:core` runs those checks in order, including **`test:purchase-order-status`**, **`test:functional-audit`** (calculations + filters + functional E2E), and full **`test:e2e`** (all Playwright specs).
+
+## 2026-08-24 — Analytics & Insights specification audit
+
+- Replaced the thin four-feed overview with nine routed analytics views, eight documented KPI contracts, server-backed global filters, responsive Recharts visualizations, bounded attention tables, recommended actions, data-quality warnings, and safe internal drill-downs.
+- Added independent partial-feed evidence so unavailable data is labelled degraded and never silently replaced with invented values.
+- Live verification covered Overview and Suppliers, a business-area filter refresh, populated KPI/table data, empty chart messaging, one H1, and usable horizontal tab overflow.
+- Current deliberate boundary: quick export is JSON and saved filter views are browser-local; governed multi-format export and schedules continue through Export Center and Saved Reports.

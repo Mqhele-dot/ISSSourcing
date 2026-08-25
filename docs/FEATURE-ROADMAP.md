@@ -338,3 +338,9 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
    - Batch/serial tracking; document versioning and retention; 2FA and password policy; AI demand/supplier risk.
 
 This roadmap aligns the application with the full professional supply chain feature set and highlights what is already in place versus what remains to be built.
+
+## Analytics specification reconciliation (2026-08-24)
+
+Implemented now: executive overview KPIs, global server-backed filters, procurement/inventory/logistics/supplier/AP/exception/diagnostic views, responsive charts, bounded exception tables, recommendations, data-quality evidence, drill-down routes, refresh/export/copy/save/schedule entry points, and partial-source states.
+
+Remaining governed enhancements: persist saved analytics views per user on the server, schedule directly from the current filter fingerprint, add PDF/XLSX generation from the analytics page (currently delegated to Export Center), and replace the diagnostic operational-signal proxies with a dedicated time-series telemetry store.

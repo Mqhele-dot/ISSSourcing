@@ -26,13 +26,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { useSettings } from "@/hooks/use-settings";
 import { requestJson } from "@/lib/queryClient";
 import { GeneralSettingsForm } from "@/components/settings/general-settings-form";
-import { InventorySettingsForm } from "@/components/settings/inventory-settings-form";
 import { RealtimeSettingsForm } from "@/components/settings/realtime-settings-form";
 import { DatabaseSettingsForm } from "@/components/settings/database-settings-form";
-import { WarehouseSettingsForm } from "@/components/settings/warehouse-settings-form";
 import { SecuritySettingsForm } from "@/components/settings/security-settings-form";
 import { ForecastingSettingsForm } from "@/components/settings/forecasting-settings-form";
-import { TaxSettingsForm } from "@/components/settings/tax-settings-form";
 import { CompanyConfigurationCenter } from "@/components/settings/company-configuration-center";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
@@ -52,18 +49,18 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { APP_ROUTES, SETTINGS_SECTION_SLUGS, asSectionSlug } from "@/lib/routes/app-routes";
-import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { currencyOptionsForSelect, fetchActiveMasterCurrencies } from "@/lib/currencies-query";
 
 const settingsSections = [
-  { value: "general", label: "General", icon: UserCircle, description: "Organization profile, locale, and base defaults." },
-  { value: "inventory", label: "Inventory", icon: Package, description: "Stock controls, locations, and replenishment defaults." },
-  { value: "realtime", label: "Real-Time", icon: Activity, description: "Live refresh behaviour and event-driven updates." },
+  { value: "overview", label: "Overview", icon: Settings, description: "See which workspace owns each organization control." },
+  { value: "general", label: "Appearance", icon: UserCircle, description: "Local display, accent, density, date, and time preferences." },
+  { value: "inventory", label: "Operational policy", icon: Package, description: "Reporting currency, stock policy, and receiving requirements." },
+  { value: "realtime", label: "Live updates", icon: Activity, description: "Live refresh behaviour and event-driven updates." },
   { value: "database", label: "Database", icon: Database, description: "Connectivity and sync behaviour for local installs." },
-  { value: "forecasting", label: "Forecasting", icon: BarChart3, description: "Demand planning and prediction defaults." },
+  { value: "forecasting", label: "Planning", icon: BarChart3, description: "Demand planning and forecast defaults." },
   { value: "tax", label: "Tax", icon: Receipt, description: "VAT, jurisdiction, and reporting defaults." },
   { value: "billing", label: "Billing", icon: CreditCard, description: "Subscription, payment, and invoice behaviour." },
-  { value: "configuration", label: "Configuration", icon: SlidersHorizontal, description: "Company-level control-centre settings." },
+  { value: "configuration", label: "Workflow controls", icon: SlidersHorizontal, description: "Company-level workflow and control-centre settings." },
   { value: "warehouses", label: "Warehouses", icon: Building, description: "Site defaults, receiving policies, and storage setup." },
   { value: "security", label: "Security", icon: Shield, description: "Authentication, 2FA, and operational guardrails." },
 ] as const;
@@ -99,7 +96,11 @@ export default function SettingsPage() {
     () => roleCapabilities.filter((capability) => /^(delete|approve|export|manage|update)\s/i.test(capability)),
     [roleCapabilities],
   );
-  const activeSection = asSectionSlug(location.split("/")[3], SETTINGS_SECTION_SLUGS, "general");
+  const activeSection = asSectionSlug(location.split("/")[3], SETTINGS_SECTION_SLUGS, "overview");
+  const primarySections = settingsSections.filter((section) =>
+    ["overview", "general", "inventory", "realtime", "forecasting", "configuration", "security"].includes(section.value) ||
+    (isDevMode && section.value === "database"),
+  );
 
   const handleResetDemoData = async () => {
     setIsResettingDemoData(true);
@@ -134,13 +135,11 @@ export default function SettingsPage() {
         titleTestId="page-title"
         icon={Settings}
         breadcrumb={<span>Admin / Settings</span>}
-        subtitle="Control centre for organization defaults, security posture, and operational configuration."
-        description="Separate tenant-governed controls from local reviewer preferences so administrators can make safe, auditable changes."
+        subtitle="Manage display preferences and the organization-wide policies used across the app."
+        description="Company identity, Master Data, approvals, access, integrations, and subscription controls remain in their authoritative workspaces."
       />
 
-      <ModuleTrainingPanel moduleId="admin-settings" />
-
-      {isDevMode && (
+      {isDevMode && activeSection === "database" && (
         <Card className="mb-6 border-dashed border-amber-400/60">
           <CardHeader>
             <CardTitle className="text-base">Development-only reset utility</CardTitle>
@@ -166,36 +165,37 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      <div className="mb-6 grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
-        <Card>
+      <div className={`mb-6 grid gap-4 ${activeSection === "overview" ? "xl:grid-cols-[1.3fr_1fr]" : activeSection === "general" ? "grid-cols-1" : "hidden"}`}>
+        <Card className={activeSection === "overview" ? "" : "hidden"}>
           <CardHeader>
-            <CardTitle className="text-base">Organization controls</CardTitle>
+            <CardTitle className="text-base">Configuration ownership</CardTitle>
             <CardDescription>
-              Changes in the settings sections below persist to the active organization and affect live workflows.
+              Open the authoritative workspace for each kind of business configuration.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>Use the production control panel for shared defaults, then open a settings area for deeper configuration.</p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {settingsSections.slice(0, 6).map(({ value, label, description, icon: Icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  className="rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
-                  onClick={() => setLocation(APP_ROUTES.admin.settingsSection(value))}
-                >
-                  <div className="mb-2 flex items-center gap-2 text-foreground">
-                    <Icon className="h-4 w-4 text-primary" />
-                    <span className="font-medium">{label}</span>
-                  </div>
-                  <p className="text-xs leading-5 text-muted-foreground">{description}</p>
-                </button>
-              ))}
+          <CardContent className="grid gap-2 sm:grid-cols-2">
+            {[
+              ["Company identity & documents", APP_ROUTES.admin.companySetup, "Legal details, addresses, logo and document branding", Building],
+              ["Master Data", APP_ROUTES.admin.masterData, "Currencies, tax, terms, warehouses and controlled reference data", Database],
+              ["Approval policies", APP_ROUTES.finance.approvalPolicies, "Approval entities, levels, amount bands and approvers", Shield],
+              ["Workflow governance", APP_ROUTES.admin.workflows, "End-to-end process stages, approval coverage and pending work", SlidersHorizontal],
+              ["People & access", APP_ROUTES.admin.employeeProfiles, "Profiles, approval limits, roles and visible navigation", UserCircle],
+              ["Integrations", APP_ROUTES.admin.integrations, "External providers, document services and connection status", Activity],
+              ["Subscription", APP_ROUTES.admin.subscription, "Plan, entitlements, limits and billing access", CreditCard],
+            ].map(([label, href, description, Icon]) => (
+              <Link key={String(label)} href={String(href)} className="rounded-lg border p-3 transition-colors hover:bg-accent/50">
+                <div className="flex items-center gap-2 font-medium"><Icon className="h-4 w-4 text-primary" />{String(label)}</div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{String(description)}</p>
+              </Link>
+            ))}
+            <div className="col-span-full mt-1 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => setLocation(APP_ROUTES.admin.settingsSection("inventory"))}>Open operational policy</Button>
+              <Button size="sm" variant="outline" onClick={() => setLocation(APP_ROUTES.admin.settingsSection("general"))}>Open appearance preferences</Button>
             </div>
           </CardContent>
         </Card>
 
-        <Card data-testid="settings-local-preferences">
+        <Card className={activeSection === "general" ? "" : "hidden"} data-testid="settings-local-preferences">
           <CardHeader>
             <CardTitle className="text-base">Workspace preferences</CardTitle>
             <CardDescription>
@@ -279,7 +279,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card data-testid="settings-role-guidance">
+        <Card className={activeSection === "overview" ? "" : "hidden"} data-testid="settings-role-guidance">
           <CardHeader>
             <CardTitle className="text-base">Role guidance</CardTitle>
             <CardDescription>
@@ -310,15 +310,15 @@ export default function SettingsPage() {
         </Card>
       </div>
 
-      <ProductionControlPlanePanel isAdmin={roleKey === "admin"} />
+      {activeSection === "inventory" ? <ProductionControlPlanePanel isAdmin={roleKey === "admin"} /> : null}
 
       <Tabs
         value={activeSection}
         onValueChange={(value) => setLocation(APP_ROUTES.admin.settingsSection(value as typeof activeSection))}
         className="space-y-6"
       >
-        <TabsList className="grid h-auto grid-cols-2 gap-2 md:grid-cols-5 lg:grid-cols-10">
-          {settingsSections.map(({ value, label, icon: Icon }) => (
+        <TabsList className="grid h-auto grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+          {primarySections.map(({ value, label, icon: Icon }) => (
             <TabsTrigger key={value} value={value} className="flex items-center justify-center space-x-2 py-3 text-xs sm:text-sm">
               <Icon className="h-4 w-4" />
               <span>{label}</span>
@@ -326,12 +326,24 @@ export default function SettingsPage() {
           ))}
         </TabsList>
 
+        <TabsContent value="overview" className="space-y-4">
+          <Card>
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div><div className="font-medium">Settings are separated by authority</div><p className="text-sm text-muted-foreground">This page keeps operational policy and personal display preferences here while business records remain in their source workspaces.</p></div>
+              <Button asChild variant="outline"><Link href={APP_ROUTES.admin.masterData}>Open Master Data Governance</Link></Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="general" className="space-y-4">
           <GeneralSettingsForm />
         </TabsContent>
 
         <TabsContent value="inventory" className="space-y-4">
-          <InventorySettingsForm />
+          <Card>
+            <CardHeader><CardTitle>Connected operational setup</CardTitle><CardDescription>Stock policy is controlled above. Warehouse layouts and item-level thresholds remain with their authoritative records.</CardDescription></CardHeader>
+            <CardContent className="flex flex-wrap gap-2"><Button asChild variant="outline"><Link href={APP_ROUTES.admin.masterDataSection("warehouses")}>Warehouse Master Data</Link></Button><Button asChild variant="outline"><Link href={APP_ROUTES.inventory.root}>Inventory items</Link></Button><Button asChild variant="outline"><Link href={APP_ROUTES.inventory.warehouseOperations}>Warehouse operations</Link></Button></CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="realtime" className="space-y-4">
@@ -347,7 +359,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="tax" className="space-y-4">
-          <TaxSettingsForm />
+          <Card><CardHeader><CardTitle>Tax controls moved to Master Data</CardTitle><CardDescription>Tax codes, rates, active status, currency definitions, and their downstream dependencies are governed records rather than general settings.</CardDescription></CardHeader><CardContent><Button asChild><Link href={APP_ROUTES.admin.masterDataSection("taxCodes")}>Open Tax Code Master Data</Link></Button></CardContent></Card>
         </TabsContent>
 
         <TabsContent value="billing" className="space-y-4">
@@ -372,7 +384,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="warehouses" className="space-y-4">
-          <WarehouseSettingsForm />
+          <Card><CardHeader><CardTitle>Warehouse setup moved to Master Data</CardTitle><CardDescription>Sites, addresses, defaults, aisles, bins, and receiving layouts are maintained in the warehouse source of truth.</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2"><Button asChild><Link href={APP_ROUTES.admin.masterDataSection("warehouses")}>Open Warehouse Master Data</Link></Button><Button asChild variant="outline"><Link href={APP_ROUTES.inventory.warehouseOperations}>Open Warehouse Operations</Link></Button></CardContent></Card>
         </TabsContent>
 
         <TabsContent value="security" className="space-y-4">
@@ -409,21 +421,21 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
     queryFn: fetchActiveMasterCurrencies,
   });
   const [form, setForm] = React.useState({
-    companyName: settings?.companyName ?? "",
     currencyCode: (settings?.currencyCode ?? "").toUpperCase(),
     lowStockDefaultThreshold: settings?.lowStockDefaultThreshold == null ? "" : String(settings.lowStockDefaultThreshold),
     allowNegativeInventory: Boolean(settings?.allowNegativeInventory),
     requireLocationForItems: Boolean(settings?.requireLocationForItems),
+    allowTransfersBetweenWarehouses: Boolean(settings?.allowTransfersBetweenWarehouses),
   });
 
   React.useEffect(() => {
     if (!settings) return;
     setForm({
-      companyName: settings.companyName ?? "ISSSourcing",
       currencyCode: (settings.currencyCode ?? "ZAR").toUpperCase(),
       lowStockDefaultThreshold: String(settings.lowStockDefaultThreshold ?? 10),
       allowNegativeInventory: Boolean(settings.allowNegativeInventory),
       requireLocationForItems: Boolean(settings.requireLocationForItems),
+      allowTransfersBetweenWarehouses: Boolean(settings.allowTransfersBetweenWarehouses),
     });
   }, [settings]);
 
@@ -437,7 +449,6 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
     const threshold = Number(form.lowStockDefaultThreshold);
     if (!settings || !Number.isFinite(threshold) || threshold < 1 || !currencyReady) return;
     updateSettings.mutate({
-      companyName: form.companyName.trim() || "ISSSourcing",
       currencyCode: form.currencyCode.trim().toUpperCase(),
       currencySymbol: new Intl.NumberFormat(undefined, {
         style: "currency",
@@ -447,6 +458,7 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
       lowStockDefaultThreshold: Math.trunc(threshold),
       allowNegativeInventory: form.allowNegativeInventory,
       requireLocationForItems: form.requireLocationForItems,
+      allowTransfersBetweenWarehouses: form.allowTransfersBetweenWarehouses,
     });
   };
 
@@ -457,9 +469,9 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
   return (
     <Card className="mb-6" data-testid="settings-control-plane">
       <CardHeader>
-        <CardTitle className="text-base">Production control plane</CardTitle>
+        <CardTitle className="text-base">Operational policy</CardTitle>
         <CardDescription>
-          Persisted controls used by reporting, procurement, receiving, AP matching, and inventory checks.
+          Persisted reporting and inventory rules used by procurement, receiving, warehouse operations, AP, and analytics.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -473,17 +485,7 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
             Reporting currency options could not be loaded from Master Data. This control fails closed until currencies are available.
           </div>
         ) : null}
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <Label htmlFor="control-company-name">Organization profile</Label>
-            <Input
-              id="control-company-name"
-              data-testid="settings-control-company-name"
-              value={form.companyName}
-              disabled={!isAdmin || isLoading}
-              onChange={(event) => setForm((current) => ({ ...current, companyName: event.target.value }))}
-            />
-          </div>
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="control-currency">Reporting currency</Label>
             <Select
@@ -516,7 +518,7 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
             />
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           <label className="flex items-center gap-2 rounded-md border p-3 text-sm">
             <input
               type="checkbox"
@@ -537,6 +539,16 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
             />
             Require storage location on inventory and receiving controls
           </label>
+          <label className="flex items-center gap-2 rounded-md border p-3 text-sm">
+            <input
+              type="checkbox"
+              data-testid="settings-control-warehouse-transfers"
+              checked={form.allowTransfersBetweenWarehouses}
+              disabled={!isAdmin || isLoading}
+              onChange={(event) => setForm((current) => ({ ...current, allowTransfersBetweenWarehouses: event.target.checked }))}
+            />
+            Allow controlled transfers between configured warehouses
+          </label>
         </div>
         {!isAdmin ? (
           <p className="text-sm text-muted-foreground" data-testid="settings-control-denied">
@@ -549,7 +561,7 @@ function ProductionControlPlanePanel({ isAdmin }: { isAdmin: boolean }) {
           onClick={save}
           disabled={!isAdmin || isLoading || updateSettings.isPending || !currencyReady}
         >
-          {updateSettings.isPending ? "Saving controls..." : "Save production controls"}
+          {updateSettings.isPending ? "Saving policy..." : "Save operational policy"}
         </Button>
       </CardContent>
     </Card>

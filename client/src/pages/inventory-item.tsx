@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
-import { useLocation, useRoute } from "wouter";
-import { AlertTriangle, ArrowLeft, ArrowUpDown, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useRoute, useSearch } from "wouter";
+import { AlertTriangle, ArrowLeft, ArrowUpDown, Loader2, Pencil } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -36,10 +36,11 @@ import { DataState } from "@/components/ui/data-state";
 import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useAsyncResource } from "@/hooks/use-async-resource";
-import { useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiRequest, requestJson } from "@/lib/queryClient";
 import { invalidateInventoryDomain } from "@/lib/domain-invalidation";
 import { fetchInventoryDetail } from "@/api/client";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 type InventoryPosition = {
   warehouseId: number;
@@ -77,6 +78,47 @@ type InventoryDetail = {
   unassignedQuantity: number;
   quantityMismatch: boolean;
   location?: string | null;
+  description?: string | null;
+  categoryId?: number | null;
+  price?: number;
+  cost?: number | null;
+  lowStockThreshold?: number | null;
+  barcode?: string | null;
+  barcodeType?: string | null;
+  unitOfMeasure?: string | null;
+  supplierPartNumber?: string | null;
+  defaultWarehouseId?: number | null;
+  minOrderQuantity?: number | null;
+  leadTime?: number | null;
+  reorderPoint?: number | null;
+  maxStockLevel?: number | null;
+  status?: string | null;
+};
+
+type InventoryEditForm = {
+  name: string;
+  sku: string;
+  description: string;
+  categoryId: string;
+  price: string;
+  cost: string;
+  lowStockThreshold: string;
+  location: string;
+  unitOfMeasure: string;
+  supplierPartNumber: string;
+  defaultWarehouseId: string;
+  minOrderQuantity: string;
+  leadTime: string;
+  reorderPoint: string;
+  maxStockLevel: string;
+  status: string;
+};
+
+const emptyEditForm: InventoryEditForm = {
+  name: "", sku: "", description: "", categoryId: "", price: "0", cost: "",
+  lowStockThreshold: "10", location: "", unitOfMeasure: "each", supplierPartNumber: "",
+  defaultWarehouseId: "", minOrderQuantity: "1", leadTime: "", reorderPoint: "",
+  maxStockLevel: "", status: "active",
 };
 
 type AdjustResponse = {
@@ -114,6 +156,7 @@ function numOrNa(value: unknown): string | number {
 
 export default function InventoryDetailPage() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const [match, params] = useRoute<{ sku: string }>("/inventory/:sku");
   const sku = useMemo(() => {
     const raw = params?.sku ?? "";
@@ -132,6 +175,10 @@ export default function InventoryDetailPage() {
   const [adjustDelta, setAdjustDelta] = useState<string>("0");
   const [adjustReason, setAdjustReason] = useState(ADJUST_REASONS[0]);
   const [adjustRef, setAdjustRef] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<InventoryEditForm>(emptyEditForm);
 
   const fetchDetail = useCallback((): Promise<InventoryDetail> => fetchInventoryDetail(sku), [sku]);
 
@@ -143,9 +190,92 @@ export default function InventoryDetailPage() {
   } = useAsyncResource(fetchDetail, { immediate: Boolean(match && sku) });
 
   const warehouseOptions = data?.warehouses ?? [];
+  const categoriesQuery = useQuery({
+    queryKey: ["/api/categories", "inventory-edit"],
+    queryFn: () => requestJson<Array<{ id: number; name: string }>>("GET", "/api/categories"),
+  });
+
+  const openEditModal = useCallback((detail: InventoryDetail) => {
+    setEditForm({
+      name: detail.name ?? "",
+      sku: detail.sku ?? "",
+      description: detail.description ?? "",
+      categoryId: detail.categoryId ? String(detail.categoryId) : "",
+      price: String(detail.price ?? 0),
+      cost: detail.cost == null ? "" : String(detail.cost),
+      lowStockThreshold: String(detail.lowStockThreshold ?? 10),
+      location: detail.location ?? "",
+      unitOfMeasure: detail.unitOfMeasure ?? "each",
+      supplierPartNumber: detail.supplierPartNumber ?? "",
+      defaultWarehouseId: detail.defaultWarehouseId ? String(detail.defaultWarehouseId) : "",
+      minOrderQuantity: String(detail.minOrderQuantity ?? 1),
+      leadTime: detail.leadTime == null ? "" : String(detail.leadTime),
+      reorderPoint: detail.reorderPoint == null ? "" : String(detail.reorderPoint),
+      maxStockLevel: detail.maxStockLevel == null ? "" : String(detail.maxStockLevel),
+      status: detail.status ?? "active",
+    });
+    setEditError(null);
+    setEditOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!data || editOpen) return;
+    if (new URLSearchParams(search).get("edit") === "1") {
+      setLocation(APP_ROUTES.inventory.item(data.sku), { replace: true });
+      openEditModal(data);
+    }
+  }, [data, editOpen, openEditModal, search, setLocation]);
+
+  const setEditField = (field: keyof InventoryEditForm, value: string) => {
+    setEditForm((current) => ({ ...current, [field]: value }));
+    setEditError(null);
+  };
+
+  const optionalNumber = (value: string): number | null => value.trim() === "" ? null : Number(value);
+  const submitItemDetails = async () => {
+    if (!data) return;
+    if (editForm.name.trim().length < 3 || editForm.sku.trim().length < 2) {
+      setEditError("Name must contain at least 3 characters and SKU at least 2 characters.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const updated = await requestJson<{ id: number; sku: string; name: string }>("PUT", `/api/inventory/${data.id}`, {
+        name: editForm.name.trim(),
+        sku: editForm.sku.trim(),
+        description: editForm.description.trim() || null,
+        categoryId: editForm.categoryId ? Number(editForm.categoryId) : null,
+        price: Number(editForm.price),
+        cost: optionalNumber(editForm.cost),
+        lowStockThreshold: Number(editForm.lowStockThreshold),
+        location: editForm.location.trim() || null,
+        unitOfMeasure: editForm.unitOfMeasure.trim() || "each",
+        supplierPartNumber: editForm.supplierPartNumber.trim() || null,
+        defaultWarehouseId: editForm.defaultWarehouseId ? Number(editForm.defaultWarehouseId) : null,
+        minOrderQuantity: Number(editForm.minOrderQuantity || 1),
+        leadTime: optionalNumber(editForm.leadTime),
+        reorderPoint: optionalNumber(editForm.reorderPoint),
+        maxStockLevel: optionalNumber(editForm.maxStockLevel),
+        status: editForm.status,
+      });
+      await invalidateInventoryDomain(queryClient);
+      setEditOpen(false);
+      toast({ title: "Item details updated", description: `${updated.sku} master data was saved. Stock quantities were not changed.` });
+      if (updated.sku !== sku) setLocation(APP_ROUTES.inventory.item(updated.sku), { replace: true });
+      else await refetch();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update inventory item.";
+      setEditError(message);
+      toast({ title: "Item update failed", description: message, variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const openAdjustModal = () => {
-    setAdjustWarehouseId(warehouseOptions[0] ? String(warehouseOptions[0].id) : "");
+    const itemDefault = warehouseOptions.find((warehouse) => warehouse.id === data?.defaultWarehouseId);
+    setAdjustWarehouseId(itemDefault ? String(itemDefault.id) : warehouseOptions[0] ? String(warehouseOptions[0].id) : "");
     setAdjustDelta("0");
     setAdjustReason(ADJUST_REASONS[0]);
     setAdjustRef("");
@@ -235,6 +365,10 @@ export default function InventoryDetailPage() {
             ((summary.onHand ?? 0) - (summary.allocated ?? 0));
           const positions = Array.isArray(detail.positions) ? detail.positions : [];
           const movements = Array.isArray(detail.movements) ? detail.movements : [];
+          const defaultWarehouse = detail.warehouses.find((warehouse) => warehouse.id === detail.defaultWarehouseId);
+          const stockOutsideDefaultWarehouse = Boolean(
+            defaultWarehouse && positions.some((position) => position.onHand !== 0 && position.warehouseId !== defaultWarehouse.id),
+          );
           return (
           <>
             <PageHeader
@@ -242,10 +376,16 @@ export default function InventoryDetailPage() {
               subtitle={`SKU ${detail.sku ?? "—"}`}
               breadcrumb={<span>Inventory / {detail.sku}</span>}
               actions={
-                <Button onClick={openAdjustModal} className="gap-2" disabled={(detail.warehouses?.length ?? 0) === 0}>
-                  <ArrowUpDown className="h-4 w-4" />
-                  Adjust stock
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => openEditModal(detail)} className="gap-2" data-testid="inventory-edit-item-button">
+                    <Pencil className="h-4 w-4" />
+                    Edit item details
+                  </Button>
+                  <Button onClick={openAdjustModal} className="gap-2" disabled={(detail.warehouses?.length ?? 0) === 0}>
+                    <ArrowUpDown className="h-4 w-4" />
+                    Adjust stock
+                  </Button>
+                </div>
               }
             />
 
@@ -266,6 +406,16 @@ export default function InventoryDetailPage() {
                 <AlertTitle>{detail.quantityMismatch ? "Inventory quantity mismatch" : "Unassigned inventory"}</AlertTitle>
                 <AlertDescription>
                   Warehouse stock: {numOrNa(detail.warehouseQuantity)}. Unassigned master stock: {numOrNa(detail.unassignedQuantity)}. Unassigned stock is not treated as warehouse availability.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {stockOutsideDefaultWarehouse ? (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Stock is held outside the default warehouse</AlertTitle>
+                <AlertDescription>
+                  The default warehouse is {defaultWarehouse?.name}, while current canonical positions include other warehouses. This is valid, but receiving defaults do not move existing stock; use Warehouse Operations for an audited transfer.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -308,6 +458,26 @@ export default function InventoryDetailPage() {
                 </CardContent>
               </Card>
             </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Item master data</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div><p className="text-muted-foreground">Description</p><p className="font-medium break-words">{detail.description || "Not provided"}</p></div>
+                <div><p className="text-muted-foreground">Category</p><p className="font-medium">{categoriesQuery.data?.find((category) => category.id === detail.categoryId)?.name ?? "Uncategorised"}</p></div>
+                <div><p className="text-muted-foreground">Selling price</p><p className="font-medium tabular-nums">{numOrNa(detail.price)}</p></div>
+                <div><p className="text-muted-foreground">Unit cost</p><p className="font-medium tabular-nums">{numOrNa(detail.cost)}</p></div>
+                <div><p className="text-muted-foreground">Unit of measure</p><p className="font-medium">{detail.unitOfMeasure || "each"}</p></div>
+                <div><p className="text-muted-foreground">Low-stock threshold</p><p className="font-medium tabular-nums">{numOrNa(detail.lowStockThreshold)}</p></div>
+                <div><p className="text-muted-foreground">Supplier part number</p><p className="font-medium">{detail.supplierPartNumber || "Not provided"}</p></div>
+                <div><p className="text-muted-foreground">Status</p><p className="font-medium capitalize">{detail.status || "active"}</p></div>
+                <div><p className="text-muted-foreground">Primary barcode</p><p className="font-mono text-xs break-all">{detail.barcode || "Generated identity unavailable"}</p></div>
+                <div><p className="text-muted-foreground">Item default warehouse</p><p className="font-medium">{defaultWarehouse?.name ?? "Not assigned"}</p></div>
+                <div><p className="text-muted-foreground">Reorder point / maximum</p><p className="font-medium tabular-nums">{numOrNa(detail.reorderPoint)} / {numOrNa(detail.maxStockLevel)}</p></div>
+                <div><p className="text-muted-foreground">Lead time</p><p className="font-medium">{detail.leadTime == null ? "Not provided" : `${detail.leadTime} days`}</p></div>
+              </CardContent>
+            </Card>
 
             <Card data-tour="inventory-positions">
               <CardHeader>
@@ -385,6 +555,39 @@ export default function InventoryDetailPage() {
         }}
       </DataState>
 
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit inventory item</DialogTitle>
+            <DialogDescription>Update catalogue and planning information. Use Adjust stock for quantity changes so movements remain auditable.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2"><Label htmlFor="item-edit-name">Item name *</Label><Input id="item-edit-name" value={editForm.name} onChange={(e) => setEditField("name", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-sku">SKU *</Label><Input id="item-edit-sku" value={editForm.sku} onChange={(e) => setEditField("sku", e.target.value)} className="font-mono" /></div>
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="item-edit-description">Description</Label><Textarea id="item-edit-description" value={editForm.description} onChange={(e) => setEditField("description", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-category">Category</Label><Select value={editForm.categoryId || "none"} onValueChange={(value) => setEditField("categoryId", value === "none" ? "" : value)}><SelectTrigger id="item-edit-category" aria-label="Inventory item category"><SelectValue placeholder="No category" /></SelectTrigger><SelectContent><SelectItem value="none">No category</SelectItem>{categoriesQuery.data?.map((category) => <SelectItem key={category.id} value={String(category.id)}>{category.name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-status">Status</Label><Select value={editForm.status} onValueChange={(value) => setEditField("status", value)}><SelectTrigger id="item-edit-status" aria-label="Inventory item status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="discontinued">Discontinued</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-price">Selling price</Label><Input id="item-edit-price" type="number" min="0" step="0.01" value={editForm.price} onChange={(e) => setEditField("price", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-cost">Unit cost</Label><Input id="item-edit-cost" type="number" min="0" step="0.01" value={editForm.cost} onChange={(e) => setEditField("cost", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-location">Default location</Label><Input id="item-edit-location" value={editForm.location} onChange={(e) => setEditField("location", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-default-warehouse">Item default warehouse</Label><Select value={editForm.defaultWarehouseId || "none"} onValueChange={(value) => setEditField("defaultWarehouseId", value === "none" ? "" : value)}><SelectTrigger id="item-edit-default-warehouse" aria-label="Item default warehouse"><SelectValue placeholder="Not assigned" /></SelectTrigger><SelectContent><SelectItem value="none">Not assigned</SelectItem>{warehouseOptions.map((warehouse) => <SelectItem key={warehouse.id} value={String(warehouse.id)}>{warehouse.name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-uom">Unit of measure</Label><Input id="item-edit-uom" value={editForm.unitOfMeasure} onChange={(e) => setEditField("unitOfMeasure", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-supplier-part">Supplier part number</Label><Input id="item-edit-supplier-part" value={editForm.supplierPartNumber} onChange={(e) => setEditField("supplierPartNumber", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-threshold">Low-stock threshold</Label><Input id="item-edit-threshold" type="number" min="0" step="1" value={editForm.lowStockThreshold} onChange={(e) => setEditField("lowStockThreshold", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-min-order">Minimum order quantity</Label><Input id="item-edit-min-order" type="number" min="1" step="1" value={editForm.minOrderQuantity} onChange={(e) => setEditField("minOrderQuantity", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-reorder">Reorder point</Label><Input id="item-edit-reorder" type="number" min="0" step="1" value={editForm.reorderPoint} onChange={(e) => setEditField("reorderPoint", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-maximum">Maximum stock level</Label><Input id="item-edit-maximum" type="number" min="0" step="1" value={editForm.maxStockLevel} onChange={(e) => setEditField("maxStockLevel", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-lead-time">Lead time (days)</Label><Input id="item-edit-lead-time" type="number" min="0" step="1" value={editForm.leadTime} onChange={(e) => setEditField("leadTime", e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="item-edit-barcode">Primary barcode</Label><Input id="item-edit-barcode" value={data?.barcode ?? "Generated automatically"} readOnly /><p className="text-xs text-muted-foreground">Barcode identity is managed automatically and remains linked to this item.</p></div>
+          </div>
+          {editError ? <Alert variant="destructive"><AlertTitle>Cannot save item</AlertTitle><AlertDescription>{editError}</AlertDescription></Alert> : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={editSaving}>Cancel</Button>
+            <Button type="button" onClick={() => void submitItemDetails()} disabled={editSaving || !editForm.name.trim() || !editForm.sku.trim()} data-testid="inventory-save-item-button">{editSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Save item details</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
         <DialogContent>
           <DialogHeader>
@@ -396,7 +599,7 @@ export default function InventoryDetailPage() {
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="adjust-warehouse">Warehouse</Label>
+              <Label htmlFor="adjust-warehouse">Adjustment warehouse</Label>
               <Select value={adjustWarehouseId} onValueChange={setAdjustWarehouseId}>
                 <SelectTrigger id="adjust-warehouse">
                   <SelectValue placeholder="Select warehouse" />

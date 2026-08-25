@@ -23,7 +23,7 @@ export const PERMISSION_CATALOG_CATEGORIES: PermissionCatalogCategory[] = [
   {
     id: "finance_data",
     label: "Finance data",
-    resources: ["invoices", "billing", "taxes", "payments"],
+    resources: ["finance", "invoices", "billing", "taxes", "payments"],
   },
   {
     id: "people_access",
