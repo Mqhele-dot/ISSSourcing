@@ -889,68 +889,55 @@ export default function InvoicesPage() {
                         </TableCell>
                         <TableCell>{formatMoney(Number(invoice.totalAmount ?? 0))}</TableCell>
                         <TableCell>{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "-"}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => window.open(`/api/ap/invoices/${invoice.id}/voucher.pdf`, "_blank", "noopener,noreferrer")}
-                          >
-                            Preview voucher
-                          </Button>
-                          <Button size="sm" variant="outline" className="ml-2" asChild>
-                            <a href={`/api/ap/invoices/${invoice.id}/voucher.pdf?download=1`} download>
-                              <Download className="mr-1 h-3.5 w-3.5" />Download
-                            </a>
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="ml-2"
-                            onClick={() => runMatch.mutate(invoice.id)}
-                            disabled={runMatch.isPending}
-                            title={!invoice.purchaseOrderId ? "Run match to show PO-link repair guidance." : undefined}
-                            data-testid={`invoice-run-match-${invoice.id}`}
-                          >
-                            Run 3-way match
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="ml-2"
-                            onClick={() => {
-                              setEditInvoice(invoice);
-                              setEditStatus(invoice.status);
-                              setEditDue(invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : "");
-                            }}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="ml-2"
-                            onClick={() => setLinesEditInvoice(invoice)}
-                          >
-                            Lines
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="ml-2"
-                            onClick={() => setActiveInvoiceId(invoice.id)}
-                          >
-                            Documents
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="ml-2 text-destructive"
-                            onClick={() => setDeleteInvoice(invoice)}
-                          >
-                            Delete
-                          </Button>
+                        <TableCell className="min-w-[18rem] align-top text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="whitespace-nowrap"
+                              onClick={() => window.open(`/api/ap/invoices/${invoice.id}/voucher.pdf`, "_blank", "noopener,noreferrer")}
+                            >
+                              Preview voucher
+                            </Button>
+                            <Button size="sm" variant="outline" className="whitespace-nowrap" asChild>
+                              <a href={`/api/ap/invoices/${invoice.id}/voucher.pdf?download=1`} download>
+                                <Download className="mr-1 h-3.5 w-3.5" />Download
+                              </a>
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="whitespace-nowrap"
+                              onClick={() => runMatch.mutate(invoice.id)}
+                              disabled={runMatch.isPending}
+                              title={!invoice.purchaseOrderId ? "Run match to show PO-link repair guidance." : undefined}
+                              data-testid={`invoice-run-match-${invoice.id}`}
+                            >
+                              Run 3-way match
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => {
+                                setEditInvoice(invoice);
+                                setEditStatus(invoice.status);
+                                setEditDue(invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : "");
+                              }}
+                            >
+                              Edit
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setLinesEditInvoice(invoice)}>
+                              Lines
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setActiveInvoiceId(invoice.id)}>
+                              Documents
+                            </Button>
+                            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setDeleteInvoice(invoice)}>
+                              Delete
+                            </Button>
+                          </div>
                           {match && match.mismatches.length > 0 ? (
-                            <div className="mt-1 text-xs text-destructive">
+                            <div className="mt-2 break-words text-xs leading-relaxed text-destructive">
                               {match.mismatches.length} mismatch(es): {match.mismatches[0]?.message}
                               <Dialog>
                                 <DialogTrigger asChild>

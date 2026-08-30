@@ -8,7 +8,7 @@ import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostic
 import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
 import { createSupplierRepository } from "../../repositories";
 import { createSupplierService } from "../../services/supplier-service";
-import { insertSupplierSchema, insertSupplierLogoSchema, PurchaseOrderStatus } from "@shared/schema";
+import { carriers, insertSupplierSchema, insertSupplierLogoSchema, PurchaseOrderStatus } from "@shared/schema";
 import { detectSupplierDocumentMismatches } from "../procurement/supplier-defaults";
 import type { AuthBundle } from "../procurement/types";
 import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
@@ -18,13 +18,80 @@ import {
   getSupplierWhereUsed,
 } from "../master-data/dependency-checks";
 import { and, eq } from "drizzle-orm";
-import { db } from "../../db";
+import { db, pool } from "../../db";
 import { mdmSupplierDocuments, organizationMembers, organizations, supplierPortalMappings, suppliers as supplierTable, users } from "@shared/schema";
 import { appendAuditEvent } from "../../services/audit-chain-service";
 import { getCountryPack } from "../master-data/country-pack-registry";
 
 const supplierRepo = createSupplierRepository(storage);
 const supplierService = createSupplierService(supplierRepo, storage);
+
+const SUPPLIER_TYPES = new Set(["goods", "service", "carrier", "logistics_provider", "contractor", "fuel"]);
+const CARRIER_SUPPLIER_TYPES = new Set(["carrier", "logistics_provider"]);
+
+function isCarrierSupplierType(value: unknown): boolean {
+  return CARRIER_SUPPLIER_TYPES.has(String(value ?? "").trim().toLowerCase());
+}
+
+async function syncCarrierProfile(
+  organizationId: number,
+  supplier: typeof supplierTable.$inferSelect,
+): Promise<void> {
+  const [linkedCarrier] = await db
+    .select()
+    .from(carriers)
+    .where(and(eq(carriers.organizationId, organizationId), eq(carriers.supplierId, supplier.id)))
+    .limit(1);
+
+  if (!isCarrierSupplierType(supplier.supplierType)) {
+    if (linkedCarrier?.active !== false) {
+      await db
+        .update(carriers)
+        .set({ active: false, updatedAt: new Date() })
+        .where(and(eq(carriers.organizationId, organizationId), eq(carriers.id, linkedCarrier.id)));
+    }
+    return;
+  }
+
+  const requestedCode = String(supplier.supplierCode ?? `CAR-${supplier.id}`).trim().toUpperCase();
+  const [codeOwner] = await db
+    .select({ id: carriers.id, supplierId: carriers.supplierId, name: carriers.name })
+    .from(carriers)
+    .where(and(eq(carriers.organizationId, organizationId), eq(carriers.code, requestedCode)))
+    .limit(1);
+  const mayAdoptLegacy =
+    codeOwner?.supplierId == null &&
+    String(codeOwner?.name ?? "").trim().toLowerCase() === supplier.name.trim().toLowerCase();
+  const carrierCode = codeOwner && codeOwner.supplierId !== supplier.id && !mayAdoptLegacy
+    ? `${requestedCode}-${supplier.id}`
+    : requestedCode;
+  const contact = supplier.logisticsContactName || supplier.email || supplier.phone || null;
+  const active =
+    String(supplier.status ?? "").toLowerCase() === "active" &&
+    String(supplier.onboardingStatus ?? "").toLowerCase() === "approved";
+  const carrierValues = {
+    supplierId: supplier.id,
+    code: carrierCode,
+    name: supplier.name,
+    contact,
+    active,
+    updatedAt: new Date(),
+  };
+
+  if (linkedCarrier) {
+    await db
+      .update(carriers)
+      .set(carrierValues)
+      .where(and(eq(carriers.organizationId, organizationId), eq(carriers.id, linkedCarrier.id)));
+  } else if (mayAdoptLegacy && codeOwner) {
+    await db
+      .update(carriers)
+      .set(carrierValues)
+      .where(and(eq(carriers.organizationId, organizationId), eq(carriers.id, codeOwner.id)));
+  } else {
+    await db.insert(carriers).values({ organizationId, ...carrierValues });
+  }
+}
 
 async function recordSupplierConsistencyDiagnostics(orgId: number, supplierId: number): Promise<void> {
   try {
@@ -261,6 +328,10 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
         });
       }
       const validatedData = insertSupplierSchema.parse(req.body);
+      const supplierType = String(validatedData.supplierType ?? "goods").trim().toLowerCase();
+      if (!SUPPLIER_TYPES.has(supplierType)) {
+        return sendError(res, 400, "INVALID_SUPPLIER_TYPE", "Supplier type must be goods, service, carrier, contractor, or fuel.");
+      }
 
       // Check if supplier with this name already exists
       const existingSupplier = await supplierRepo.findByName(validatedData.name);
@@ -272,12 +343,14 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       const orgId = getActiveOrganizationId();
       const newSupplier = await supplierService.create({
         ...validatedData,
+        supplierType,
         status: "prospective",
         onboardingStatus: "prospective",
         approvedAt: null,
         approvedByUserId: null,
         createdByUserId: userId,
       }, userId);
+      await syncCarrierProfile(orgId, newSupplier);
       await appendAuditEvent({ organizationId: orgId, actor: { userId }, action: "SUPPLIER_ONBOARDING_STARTED", resourceType: "supplier", resourceId: newSupplier.id, after: newSupplier, requestId: String(res.locals.requestId ?? "unknown-request-id"), ipAddress: req.ip, userAgent: req.get("user-agent") ?? null });
       void recordSupplierConsistencyDiagnostics(orgId, newSupplier.id);
       res.status(201).json(newSupplier);
@@ -299,6 +372,13 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
       const validatedData = insertSupplierSchema.partial().parse(req.body);
+      if (validatedData.supplierType != null) {
+        const supplierType = String(validatedData.supplierType).trim().toLowerCase();
+        if (!SUPPLIER_TYPES.has(supplierType)) {
+          return sendError(res, 400, "INVALID_SUPPLIER_TYPE", "Supplier type must be goods, service, carrier, contractor, or fuel.");
+        }
+        validatedData.supplierType = supplierType;
+      }
       if (["bankName", "bankAccountNumber", "bankSwift"].some((field) => Object.prototype.hasOwnProperty.call(req.body ?? {}, field))) {
         return sendError(res, 409, "SUPPLIER_BANK_GOVERNANCE_REQUIRED", "Supplier banking details must be changed through the governed supplier-bank workflow.", {
           hint: "Create a supplier-bank Master Data change request for independent verification and approval.",
@@ -335,6 +415,7 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       if (!updatedSupplier) {
         return res.status(404).json({ message: "Supplier not found" });
       }
+      await syncCarrierProfile(orgId, updatedSupplier);
       void recordSupplierConsistencyDiagnostics(orgId, updatedSupplier.id);
       res.json(updatedSupplier);
     } catch (error) {
@@ -375,6 +456,7 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       const missingDocuments = pack.supplierCompliance.filter((documentType) => !validDocumentTypes.has(documentType));
       if (missingDocuments.length > 0) return sendError(res, 409, "SUPPLIER_COMPLIANCE_INCOMPLETE", `Supplier is missing ${pack.name} compliance evidence.`, { hint: "Upload and approve the required compliance documents in Master Data.", details: { missingDocuments } });
       const [approved] = await db.update(supplierTable).set({ status: "active", onboardingStatus: "approved", approvedAt: new Date(), approvedByUserId: approverId, complianceStatus: "compliant", updatedAt: new Date() }).where(and(eq(supplierTable.id, id), eq(supplierTable.organizationId, organizationId))).returning();
+      await syncCarrierProfile(organizationId, approved);
       await appendAuditEvent({ organizationId, actor: { userId: approverId }, action: "SUPPLIER_ONBOARDING_APPROVED", resourceType: "supplier", resourceId: id, before: supplier, after: approved, reason, requestId: String(res.locals.requestId ?? "unknown-request-id"), ipAddress: req.ip, userAgent: req.get("user-agent") ?? null });
       return res.json(approved);
     } catch (error) {
@@ -463,6 +545,16 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       if (!order || order.supplierId !== supplierId) return sendFunctionError(res, 404, "confirmSupplierPortalOrder", "Order not found");
       const updated = await storage.updatePurchaseOrderStatus(id, PurchaseOrderStatus.ACKNOWLEDGED);
       if (!updated) return sendFunctionError(res, 404, "confirmSupplierPortalOrder", "Unable to update order status");
+      await pool.query(
+        `DELETE FROM po_supplier_confirmations WHERE organization_id=$1 AND purchase_order_id=$2 AND status='AWAITING'`,
+        [getActiveOrganizationId(), id],
+      );
+      await pool.query(
+        `INSERT INTO po_supplier_confirmations
+          (organization_id,purchase_order_id,supplier_id,status,source,actor_user_id)
+         VALUES ($1,$2,$3,'CONFIRMED','SUPPLIER_PORTAL',$4)`,
+        [getActiveOrganizationId(), id, supplierId, (req as Request & { user?: { id?: number } }).user?.id ?? null],
+      );
       await storage.createActivityLog({
         action: "Supplier PO Confirmed",
         description: `Supplier acknowledged PO ${order.orderNumber}`,

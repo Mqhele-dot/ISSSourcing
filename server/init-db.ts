@@ -1751,6 +1751,7 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS supplier_code TEXT;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS legal_name TEXT;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS supplier_type TEXT;
+      ALTER TABLE carriers ADD COLUMN IF NOT EXISTS supplier_id INTEGER;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS registration_number TEXT;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS category TEXT;
@@ -1781,6 +1782,19 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS blocked_reason TEXT;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS insurance_expiry TIMESTAMP;
       ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS compliance_notes TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS carriers_org_supplier_uidx
+        ON carriers (organization_id, supplier_id)
+        WHERE supplier_id IS NOT NULL;
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'carriers_supplier_id_suppliers_id_fk'
+        ) THEN
+          ALTER TABLE carriers
+            ADD CONSTRAINT carriers_supplier_id_suppliers_id_fk
+            FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT;
+        END IF;
+      END $$;
       ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS supplier_part_number TEXT;
       ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS commodity_code_id INTEGER;
       ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS unit_of_measure_id INTEGER;

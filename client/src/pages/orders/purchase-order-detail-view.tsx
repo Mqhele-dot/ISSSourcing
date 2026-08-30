@@ -214,6 +214,18 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     enabled: Boolean(data?.id),
     queryFn: ({ signal }) => fetchPurchaseOrderRecordById(Number(data?.id), { signal }),
   });
+  const workflowQuery = useQuery({
+    queryKey: ["/api/v2/procurement/purchase-orders/workflow", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: () => requestJson<{ status: string; approvalStatus: string; nextAction: string; confirmationStatus: string | null; confirmationReason: string | null; linkedRecords: Record<string, number | null>; receiptCount: number; invoiceCount: number; exceptionCount: number }>("GET", `/api/v2/procurement/purchase-orders/${data?.id}/workflow`),
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const confirmationsQuery = useQuery({
+    queryKey: ["/api/v2/procurement/purchase-orders/confirmations", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: () => requestJson<Array<{ id: number; status: string; reason: string | null; promisedDeliveryDate: string | null; source: string; createdAt: string }>>("GET", `/api/v2/procurement/purchase-orders/${data?.id}/supplier-confirmations`),
+  });
   const poContextQuery = useQuery({
     queryKey: ["/api/mdm/defaults/po-context"],
     queryFn: () => requestJson<{
@@ -916,6 +928,17 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       </Card>
                     </div>
                   </section>
+
+                  <Card data-testid="po-procurement-workflow-summary">
+                    <CardHeader><CardTitle className="text-base">Procurement workflow</CardTitle></CardHeader>
+                    <CardContent>
+                      {workflowQuery.isLoading ? <p className="text-sm text-muted-foreground">Loading workflow evidence…</p> : workflowQuery.error ? <div className="flex items-center justify-between gap-3"><p className="text-sm text-destructive">Workflow evidence could not load.</p><Button size="sm" variant="outline" onClick={() => void workflowQuery.refetch()}>Retry</Button></div> : workflowQuery.data ? <div className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs text-muted-foreground">Next valid action</p><p className="font-medium">{workflowQuery.data.nextAction}</p></div><div><p className="text-xs text-muted-foreground">Supplier confirmation</p><Badge variant="outline">{workflowQuery.data.confirmationStatus ?? "AWAITING"}</Badge></div><div><p className="text-xs text-muted-foreground">Linked evidence</p><p className="font-medium">{workflowQuery.data.receiptCount} receipt(s) · {workflowQuery.data.invoiceCount} invoice(s)</p></div><div><p className="text-xs text-muted-foreground">Open exceptions</p><p className="font-medium">{workflowQuery.data.exceptionCount}</p></div></div>
+                        {workflowQuery.data.confirmationReason ? <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">Supplier response: {workflowQuery.data.confirmationReason}</p> : null}
+                        {confirmationsQuery.data?.length ? <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Confirmation history</p>{confirmationsQuery.data.slice(0, 4).map((event) => <div key={event.id} className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm"><span><Badge variant="outline">{event.status}</Badge> · {event.source}{event.reason ? ` · ${event.reason}` : ""}</span><span className="text-xs text-muted-foreground">{formatDateTime(event.createdAt)}</span></div>)}</div> : null}
+                      </div> : null}
+                    </CardContent>
+                  </Card>
 
                   <div className="space-y-3">
                     {commercialReferenceError ? (

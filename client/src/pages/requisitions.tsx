@@ -13,6 +13,7 @@ import {
   History,
   Users,
   Eye,
+  Send,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -180,10 +181,10 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     return {
       total: requisitionPage?.total ?? 0,
       draft: Number(requisitionPage?.summary?.byStatus.DRAFT ?? 0),
-      pending: Number(requisitionPage?.summary?.byStatus.PENDING ?? 0),
+      pending: Number(requisitionPage?.summary?.byStatus.PENDING ?? 0) + Number(requisitionPage?.summary?.byStatus.PENDING_APPROVAL ?? 0) + Number(requisitionPage?.summary?.byStatus.SUBMITTED ?? 0),
       approved: Number(requisitionPage?.summary?.byStatus.APPROVED ?? 0),
       rejected: Number(requisitionPage?.summary?.byStatus.REJECTED ?? 0),
-      converted: Number(requisitionPage?.summary?.byStatus.CONVERTED ?? 0),
+      converted: Number(requisitionPage?.summary?.byStatus.CONVERTED ?? 0) + Number(requisitionPage?.summary?.byStatus.CONVERTED_TO_RFQ ?? 0) + Number(requisitionPage?.summary?.byStatus.CONVERTED_TO_PO ?? 0),
     };
   }, [requisitionPage]);
   const hasActiveFilters = Boolean(searchFilter || statusFilter);
@@ -211,7 +212,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
       ?? (req as { linkedPoNumber?: unknown }).linkedPoNumber
       ?? (req as { convertedPurchaseOrderNumber?: unknown }).convertedPurchaseOrderNumber;
     if (linked) return String(linked);
-    return String(req.status || "").toUpperCase() === "CONVERTED" ? "Converted" : "—";
+    return ["CONVERTED", "CONVERTED_TO_RFQ", "CONVERTED_TO_PO"].includes(String(req.status || "").toUpperCase()) ? "Converted" : "—";
   };
   const clearFilter = (key: "search" | "status") => {
     if (key === "search") setSearch("");
@@ -220,7 +221,7 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
 
   const approveMutation = useMutation({
     mutationFn: (id: number) =>
-      apiRequest("POST", `/api/purchase-requisitions/${id}/approve`, {}),
+      requestJson("POST", `/api/v2/procurement/requisitions/${id}/approve`, {}),
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
       await invalidateRequisitionDomain(queryClient);
@@ -240,9 +241,18 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     },
   });
 
+  const submitMutation = useMutation({
+    mutationFn: (id: number) => requestJson("POST", `/api/v2/procurement/requisitions/${id}/submit`, {}),
+    onSuccess: async () => {
+      await invalidateRequisitionDomain(queryClient);
+      toast({ title: "Requisition submitted for approval" });
+    },
+    onError: (error: Error) => toast({ title: "Submit failed", description: error.message, variant: "destructive" }),
+  });
+
   const rejectMutation = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) =>
-      apiRequest("POST", `/api/purchase-requisitions/${id}/reject`, { reason }),
+      requestJson("POST", `/api/v2/procurement/requisitions/${id}/reject`, { reason }),
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
       await invalidateRequisitionDomain(queryClient);
@@ -340,10 +350,13 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                 <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="ACTIVE">Active (draft or pending)</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
-                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="PENDING_APPROVAL">Pending approval</SelectItem>
+                <SelectItem value="NEEDS_INFO">Needs information</SelectItem>
                 <SelectItem value="APPROVED">Approved</SelectItem>
                 <SelectItem value="REJECTED">Rejected</SelectItem>
-                <SelectItem value="CONVERTED">Converted</SelectItem>
+                <SelectItem value="CONVERTED">Converted (legacy)</SelectItem>
+                <SelectItem value="CONVERTED_TO_RFQ">Converted to RFQ</SelectItem>
+                <SelectItem value="CONVERTED_TO_PO">Converted to PO</SelectItem>
               </SelectContent>
             </Select>
           </>
@@ -515,7 +528,14 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
                           </Link>
                         </Button>
                       </Can>
-                      {req.status === "PENDING" && (
+                      {["DRAFT", "NEEDS_INFO"].includes(String(req.status).toUpperCase()) ? (
+                        <Can roles={["manager", "planner", "admin"]} reason="Requires procurement create access">
+                          <Button variant="ghost" size="icon" title="Submit for approval" onClick={(event) => { event.stopPropagation(); submitMutation.mutate(req.id); }} disabled={submitMutation.isPending}>
+                            {submitMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-primary" />}
+                          </Button>
+                        </Can>
+                      ) : null}
+                      {["PENDING", "PENDING_APPROVAL", "SUBMITTED"].includes(String(req.status).toUpperCase()) && (
                         <>
                           <Can roles={["manager", "admin"]} reason="Requires Manager or Admin">
                             <Button

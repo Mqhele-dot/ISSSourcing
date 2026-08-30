@@ -271,14 +271,14 @@ export default function Sidebar({ open, setOpen, collapsed, setCollapsed }: Side
                 <path d="M6 11H18V13H6V11Z" />
                 <path d="M6 8H18V10H6V8Z" />
               </svg>
-              <h1
+              <div
                 className={cn(
                   "ml-2 truncate text-xl font-semibold text-primary",
                   collapsed && "md:sr-only",
                 )}
               >
                 ISSSourcing
-              </h1>
+              </div>
             </div>
             <div className="flex shrink-0 items-center gap-0.5">
               <Button

@@ -4,7 +4,7 @@ import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 
 export function ThemeToggleButton({ compact = false, collapsed = false, className }: { compact?: boolean; collapsed?: boolean; className?: string }) {
-  const { resolvedTheme, toggleTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const nextLabel = resolvedTheme === "dark" ? "Light Mode" : "Dark Mode";
   return (
     <Button
@@ -13,7 +13,11 @@ export function ThemeToggleButton({ compact = false, collapsed = false, classNam
       size={compact ? "icon" : "default"}
       className={className}
       aria-label={compact ? "Toggle theme" : nextLabel}
-      onClick={toggleTheme}
+      aria-pressed={resolvedTheme === "dark"}
+      onClick={(event) => {
+        event.stopPropagation();
+        setTheme(resolvedTheme === "dark" ? "light" : "dark");
+      }}
     >
       {resolvedTheme === "dark" ? <Sun className={cn("h-5 w-5", !compact && !collapsed && "mr-2")} /> : <Moon className={cn("h-5 w-5", !compact && !collapsed && "mr-2")} />}
       {compact ? null : <span className={cn(collapsed && "md:sr-only")}>{nextLabel}</span>}

@@ -1000,6 +1000,15 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
 
     app.post(basePath, ...masterWrite, async (req: Request, res: Response) => {
       try {
+        if (basePath === "/api/carriers") {
+          return sendError(
+            res,
+            409,
+            "CARRIER_SUPPLIER_AUTHORITY_REQUIRED",
+            "Carrier profiles are created from approved suppliers classified as Carrier / logistics provider.",
+            { hint: "Create or edit the business party in Procurement > Suppliers. Logistics and Master Data consume the synchronized carrier profile." },
+          );
+        }
         const normalizedBody =
           basePath === "/api/currencies" &&
           req.body &&
@@ -1067,6 +1076,22 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         const id = Number(req.params.id);
         if (isNaN(id)) return sendError(res, 400, "INVALID_ID", "Invalid ID");
         let patchBody = req.body;
+        if (
+          basePath === "/api/carriers" &&
+          patchBody &&
+          typeof patchBody === "object" &&
+          ["code", "name", "contact", "supplierId", "supplier_id"].some((field) =>
+            Object.prototype.hasOwnProperty.call(patchBody, field),
+          )
+        ) {
+          return sendError(
+            res,
+            409,
+            "CARRIER_SUPPLIER_AUTHORITY_REQUIRED",
+            "Carrier identity and contact fields are governed by the linked supplier.",
+            { hint: "Update the carrier's supplier profile. The logistics carrier profile will synchronize automatically." },
+          );
+        }
         if (basePath === "/api/currencies" && patchBody && typeof patchBody === "object") {
           const rows = (await db.select().from(table).where(eq(table.id, id))) as Array<{
             code?: string;

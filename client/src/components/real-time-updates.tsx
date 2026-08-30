@@ -166,17 +166,17 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
         </Alert>
       )}
       <CardHeader className="pb-3">
-        <div className="flex justify-between items-center">
-          <div>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Activity className="h-5 w-5 text-primary" />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="flex items-start gap-2 text-lg leading-tight sm:text-xl">
+              <Activity className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
               Real-Time Activity
             </CardTitle>
             <CardDescription>
               Live inventory updates and alerts
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
             <Badge 
               variant={
                 !webSocketsEnabled && !isElectronEnvironment()
@@ -187,7 +187,7 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
                       ? 'outline'
                       : 'destructive'
               }
-              className={`flex gap-1 items-center ${!webSocketsEnabled && !isElectronEnvironment() ? 'bg-muted text-muted-foreground' : ''}`}
+              className={`flex max-w-full items-center gap-1 whitespace-normal text-left ${!webSocketsEnabled && !isElectronEnvironment() ? 'bg-muted text-muted-foreground' : ''}`}
             >
               {!webSocketsEnabled && !isElectronEnvironment() ? (
                 <>
@@ -205,6 +205,7 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
             </Badge>
             <Button 
               size="sm" 
+              className="shrink-0"
               variant={isListening ? "default" : "outline"}
               onClick={toggleListening}
             >
@@ -215,7 +216,7 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
       </CardHeader>
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <div className="px-4">
+        <div className="px-4 sm:px-6">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="updates" className="flex items-center gap-1">
               <PackageOpen className="h-4 w-4" />
@@ -234,7 +235,7 @@ export function RealTimeUpdates({ cardClassName }: RealTimeUpdatesProps = {}) {
           </TabsList>
         </div>
         
-        <CardContent className="pt-4 flex-1 overflow-hidden">
+        <CardContent className="flex-1 overflow-hidden pt-4">
           <TabsContent value="updates" className="h-full mt-0">
             {updates.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-4">

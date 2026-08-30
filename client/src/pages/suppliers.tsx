@@ -340,11 +340,17 @@ export default function SuppliersPage() {
   };
 
   const handleEditSupplier = (supplier: Supplier) => {
+    const rawSupplierType = String((supplier as { supplierType?: string | null }).supplierType || "goods").toLowerCase();
+    const supplierType: SupplierFormValues["supplierType"] = rawSupplierType === "logistics_provider"
+      ? "carrier"
+      : rawSupplierType === "service" || rawSupplierType === "carrier" || rawSupplierType === "contractor" || rawSupplierType === "fuel"
+        ? rawSupplierType
+        : "goods";
     form.reset({
       name: supplier.name,
       supplierCode: (supplier as { supplierCode?: string | null }).supplierCode || "",
       legalName: (supplier as { legalName?: string | null }).legalName || "",
-      supplierType: (supplier as { supplierType?: string | null }).supplierType || "",
+      supplierType,
       status: (supplier as { status?: string | null }).status || "active",
       registrationNumber: (supplier as { registrationNumber?: string | null }).registrationNumber || "",
       category: (supplier as { category?: string | null }).category || "",
@@ -392,7 +398,7 @@ export default function SuppliersPage() {
     ...data,
     supplierCode: data.supplierCode?.trim() || null,
     legalName: data.legalName?.trim() || null,
-    supplierType: data.supplierType?.trim() || null,
+    supplierType: data.supplierType ?? "goods",
     status: data.status?.trim() || "active",
     registrationNumber: data.registrationNumber?.trim() || null,
     category: data.category?.trim() || null,

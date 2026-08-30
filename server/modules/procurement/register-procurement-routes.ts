@@ -561,7 +561,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         requisitionInput.requisitionNumber = `REQ-${year}${month}-${entropy}`;
       }
       if (!requisitionInput.status) {
-        requisitionInput.status = PurchaseRequisitionStatus.PENDING;
+        requisitionInput.status = "DRAFT";
       }
       if (typeof requisitionInput.requiredDate === "string" && requisitionInput.requiredDate.trim()) {
         const parsedRequiredDate = new Date(requisitionInput.requiredDate);
@@ -695,6 +695,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       const id = Number(req.params.id);
       if (isNaN(id)) {
         return sendFunctionError(res, 400, "updatePurchaseRequisition", "Invalid purchase requisition ID");
+      }
+      const currentRequisition = await storage.getPurchaseRequisition(id);
+      if (!currentRequisition) return sendError(res, 404, "REQUISITION_NOT_FOUND", "Purchase requisition not found");
+      const editableStatus = String(currentRequisition.status ?? "").toUpperCase();
+      if (!["DRAFT", "NEEDS_INFO"].includes(editableStatus)) {
+        return sendError(res, 409, "REQUISITION_LOCKED", "Submitted requisitions cannot be edited.", {
+          hint: "Use comments or attachments for supporting information, or request information to return the requisition to an editable state.",
+        });
       }
       const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
       const { items, revisionReason: _revisionReason, ...headerPatch } = body;
@@ -889,12 +897,12 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       const approverRole = String((req as any).user?.role ?? "");
       const existing = await storage.getPurchaseRequisition(id);
       if (!existing) return sendFunctionError(res, 404, "approvePurchaseRequisition", "Purchase requisition not found");
-      if (![PurchaseRequisitionStatus.PENDING, PurchaseRequisitionStatus.DRAFT].includes(existing.status as PurchaseRequisitionStatus)) {
+      if (!["PENDING", "PENDING_APPROVAL", "SUBMITTED"].includes(String(existing.status).toUpperCase())) {
         return sendFunctionError(
           res,
           409,
           "approvePurchaseRequisition",
-          `Requisition must be PENDING or DRAFT before approval; current status is ${existing.status}`,
+          `Requisition must be submitted or pending approval before approval; current status is ${existing.status}`,
         );
       }
       if (existing.requestorId != null && approverId === existing.requestorId && approverRole.toLowerCase() !== "admin") {
@@ -1104,6 +1112,36 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         .set({ createdByUserId: Number.isInteger(actorUserId) && actorUserId > 0 ? actorUserId : null, updatedAt: new Date() })
         .where(and(eq(purchaseOrders.id, purchaseOrder.id), eq(purchaseOrders.organizationId, organizationId)))
         .returning();
+      const commitmentClient = await pool.connect();
+      try {
+        await commitmentClient.query("BEGIN");
+        const commitment = await commitmentClient.query(
+          `UPDATE budget_commitments SET status='TRANSFERRED',updated_at=now()
+           WHERE organization_id=$1 AND source_type='REQUISITION' AND source_id=$2 AND status='ACTIVE'
+           RETURNING id,budget_id,amount,currency_code`,
+          [organizationId, id],
+        );
+        if (commitment.rows[0]) {
+          await commitmentClient.query(
+            `INSERT INTO budget_commitments
+              (organization_id,budget_id,source_type,source_id,parent_commitment_id,amount,currency_code,status)
+             VALUES ($1,$2,'PURCHASE_ORDER',$3,$4,$5,$6,'ACTIVE')
+             ON CONFLICT (organization_id,source_type,source_id) DO NOTHING`,
+            [organizationId, commitment.rows[0].budget_id, purchaseOrder.id, commitment.rows[0].id, commitment.rows[0].amount, commitment.rows[0].currency_code],
+          );
+        }
+        await commitmentClient.query(
+          `UPDATE purchase_requisitions SET status='CONVERTED_TO_PO',updated_at=now()
+           WHERE id=$1 AND organization_id=$2`,
+          [id, organizationId],
+        );
+        await commitmentClient.query("COMMIT");
+      } catch (commitmentError) {
+        await commitmentClient.query("ROLLBACK");
+        throw commitmentError;
+      } finally {
+        commitmentClient.release();
+      }
       if (idempotencyKey) {
         await db.insert(workflowIdempotency).values({
           organizationId,
@@ -2007,6 +2045,13 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         .update(purchaseOrders)
         .set({ status: PurchaseOrderStatus.SENT, dispatchStatus: "DISPATCHED", dispatchError: null, updatedAt: new Date() })
         .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, organizationId)));
+      await pool.query(
+        `INSERT INTO po_supplier_confirmations
+          (organization_id,purchase_order_id,supplier_id,status,source,actor_user_id)
+         VALUES ($1,$2,$3,'AWAITING','SYSTEM',$4)
+         ON CONFLICT DO NOTHING`,
+        [organizationId, id, order.supplierId, Number(req.user?.id) || null],
+      );
       await appendAuditEvent({
         organizationId,
         actor: { userId: Number(req.user?.id) },

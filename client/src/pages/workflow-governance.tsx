@@ -94,7 +94,7 @@ export default function WorkflowGovernancePage() {
         description="Domain services enforce valid state transitions; Approval Policies control who may approve, at which level, and for which amount band."
         icon={GitBranch}
         breadcrumb={<span>Admin / Workflow Governance</span>}
-        actions={<div className="flex flex-wrap gap-2"><Button asChild><Link href={APP_ROUTES.finance.approvalPolicies}>Configure approval rules</Link></Button><Button asChild variant="outline"><Link href={APP_ROUTES.admin.employeeProfiles}>Approval limits</Link></Button><Button asChild variant="outline"><Link href={APP_ROUTES.admin.auditLogs}>Workflow audit</Link></Button></div>}
+        actions={<div className="grid w-full gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap lg:justify-end"><Button asChild><Link href={APP_ROUTES.finance.approvalPolicies}>Configure approval rules</Link></Button><Button asChild variant="outline"><Link href={APP_ROUTES.admin.employeeProfiles}>Approval limits</Link></Button><Button asChild variant="outline"><Link href={APP_ROUTES.admin.auditLogs}>Workflow audit</Link></Button></div>}
       />
 
       {summary.isLoading ? <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading workflow governance data…</CardContent></Card> : null}
@@ -102,8 +102,8 @@ export default function WorkflowGovernancePage() {
 
       {summary.data ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            {kpis.map(([label, value, testId, Icon]) => <Card key={label} data-testid={testId}><CardContent className="flex items-start justify-between gap-3 p-4"><div><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold">{value}</p></div><Icon className="h-5 w-5 text-primary" /></CardContent></Card>)}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {kpis.map(([label, value, testId, Icon]) => <Card key={label} className="min-w-0" data-testid={testId}><CardContent className="flex min-h-24 items-start justify-between gap-3 p-4"><div className="min-w-0"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p></div><Icon className="h-5 w-5 shrink-0 text-primary" /></CardContent></Card>)}
           </div>
 
           <Card>

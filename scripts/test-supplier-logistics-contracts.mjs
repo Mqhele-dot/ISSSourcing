@@ -5,6 +5,10 @@ import { readFileSync } from "node:fs";
 const supplierDefaults = readFileSync(new URL("../server/modules/procurement/supplier-defaults.ts", import.meta.url), "utf8");
 const operationsCore = readFileSync(new URL("../server/modules/operations/operations-core.ts", import.meta.url), "utf8");
 const operationsRoutes = readFileSync(new URL("../server/operations-routes.ts", import.meta.url), "utf8");
+const supplierRoutes = readFileSync(new URL("../server/modules/suppliers/register-supplier-routes.ts", import.meta.url), "utf8");
+const masterDataRoutes = readFileSync(new URL("../server/modules/master-data/register-master-data-routes.ts", import.meta.url), "utf8");
+const logisticsPage = readFileSync(new URL("../client/src/pages/logistics.tsx", import.meta.url), "utf8");
+const masterDataPage = readFileSync(new URL("../client/src/pages/master-data.tsx", import.meta.url), "utf8");
 
 assert.match(
   supplierDefaults,
@@ -55,5 +59,41 @@ assert.match(
 
 assert.match(operationsRoutes, /SUPPLIER_INACTIVE/, "shipment routes should map inactive supplier errors");
 assert.match(operationsRoutes, /SUPPLIER_BLOCKED/, "shipment routes should map blocked supplier errors");
+
+assert.match(
+  supplierRoutes,
+  /const CARRIER_SUPPLIER_TYPES = new Set\(\["carrier", "logistics_provider"\]\)/,
+  "supplier routes should define which supplier types produce carrier profiles",
+);
+assert.match(
+  supplierRoutes,
+  /supplierId:\s*supplier\.id[\s\S]*organizationId:\s*orgId/,
+  "carrier profiles should retain their authoritative supplier and tenant ownership",
+);
+assert.match(
+  supplierRoutes,
+  /await syncCarrierProfile\(organizationId, approved\)/,
+  "supplier approval should synchronize the operational carrier profile",
+);
+assert.match(
+  masterDataRoutes,
+  /CARRIER_SUPPLIER_AUTHORITY_REQUIRED/,
+  "direct carrier identity edits should be rejected in favor of supplier authority",
+);
+assert.doesNotMatch(
+  logisticsPage,
+  /function CarrierFormDialog/,
+  "Logistics should not expose a duplicate carrier editor",
+);
+assert.match(
+  logisticsPage,
+  /Carrier directory[\s\S]*governed in the Supplier directory/,
+  "Logistics should explain the carrier directory authority",
+);
+assert.match(
+  masterDataPage,
+  /function CarrierDirectoryPanel[\s\S]*Open Suppliers/,
+  "Master Data should route carrier maintenance to Suppliers",
+);
 
 console.log("test-supplier-logistics-contracts: all checks passed.");

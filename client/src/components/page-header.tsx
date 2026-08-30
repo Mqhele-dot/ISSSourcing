@@ -55,10 +55,10 @@ export function PageHeader({
   return (
     <div className="space-y-4">
       {breadcrumb ? <div className="text-xs text-muted-foreground">{breadcrumb}</div> : null}
-      <div className="flex flex-col sm:flex-row justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+        <div className="flex min-w-0 items-center gap-3">
           {icon ? <div className="h-8 w-8">{renderIcon()}</div> : null}
-          <div>
+          <div className="min-w-0">
             {createElement(headingLevel === 1 ? "h1" : "h2", {
               className: "text-2xl font-bold tracking-tight",
               "data-testid": titleTestId ?? undefined,
@@ -67,15 +67,15 @@ export function PageHeader({
               <p className="text-sm text-muted-foreground">{subtitle}</p>
             ) : null}
             {description && (
-              <p className="text-muted-foreground">{description}</p>
+              <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
             )}
           </div>
         </div>
         
         {actions ? (
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">{actions}</div>
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto lg:shrink-0 lg:justify-end">{actions}</div>
         ) : hasLegacyActions ? (
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto lg:shrink-0 lg:justify-end">
             {secondaryAction && (
               <Button
                 variant="outline"

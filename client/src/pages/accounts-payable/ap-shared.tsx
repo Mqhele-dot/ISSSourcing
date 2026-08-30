@@ -13,14 +13,14 @@ export function KpiCard({
   icon: ReactNode;
 }) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {icon}
+    <Card className="min-w-0">
+      <CardHeader className="flex min-w-0 flex-row items-start justify-between gap-3 pb-2">
+        <CardTitle className="min-w-0 text-base font-medium leading-snug text-balance">{title}</CardTitle>
+        <span className="shrink-0">{icon}</span>
       </CardHeader>
-      <CardContent>
-        <p className="text-2xl font-bold">{value}</p>
-        <p className="text-xs text-muted-foreground">{hint}</p>
+      <CardContent className="min-w-0">
+        <p className="break-words text-xl font-bold tabular-nums sm:text-2xl" title={String(value)}>{value}</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>
       </CardContent>
     </Card>
   );

@@ -171,7 +171,7 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
     const orgId = getActiveOrganizationId();
     const search = query.q ? `%${query.q}%` : undefined;
     const where = conditions(eq(purchaseRequisitions.organizationId, orgId), query.status === "active"
-      ? sql`lower(${purchaseRequisitions.status}) IN ('draft', 'pending')`
+      ? sql`lower(${purchaseRequisitions.status}) IN ('draft', 'pending', 'submitted', 'pending_approval', 'needs_info', 'approved')`
       : query.status && query.status !== "all"
         ? sql`lower(${purchaseRequisitions.status}) = ${query.status.toLowerCase()}`
         : undefined,

@@ -113,6 +113,13 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
     label: "Procurement",
     items: [
       {
+        label: "Procurement overview",
+        path: APP_ROUTES.procurement.overview,
+        icon: "layout-dashboard",
+        description: "Demand, sourcing, commitments, confirmation, receiving, matching, and risk in one command centre.",
+        keywords: "procurement overview dashboard pipeline attention",
+      },
+      {
         label: "Sourcing & RFQs",
         path: APP_ROUTES.procurement.sourcing,
         icon: "scale",
@@ -160,6 +167,13 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         icon: "scroll-text",
         description: "Commercial and compliance contract repository.",
         keywords: "contracts legal",
+      },
+      {
+        label: "Receiving & returns",
+        path: APP_ROUTES.procurement.receiving,
+        icon: "package-search",
+        description: "Canonical GRNs, discrepancies, reversals, inventory evidence, and supplier returns.",
+        keywords: "receiving grn receipt returns debit note",
       },
       {
         label: "Supplier portal",

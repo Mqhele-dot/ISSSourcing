@@ -22,6 +22,18 @@ export function dependencyBlockedMessage(entityLabel: string, action: "disable" 
 export async function getSupplierWhereUsed(organizationId: number, supplierId: number): Promise<DependencyCheck[]> {
   return compact([
     {
+      label: "carrier profiles",
+      count: await count(
+        `
+          SELECT count(*)::int
+          FROM carriers
+          WHERE organization_id = $1
+            AND supplier_id = $2
+        `,
+        [organizationId, supplierId],
+      ),
+    },
+    {
       label: "open requisitions",
       count: await count(
         `

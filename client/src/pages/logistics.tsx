@@ -114,6 +114,7 @@ function LogisticsV1ExclusionNotice() {
 
 type Carrier = {
   id: number;
+  supplierId?: number | null;
   code: string;
   name: string;
   contact?: string | null;
@@ -260,60 +261,13 @@ function logisticsListHasActiveFilters(n: LogisticsListFiltersState): boolean {
 }
 
 function LogisticsCarriersPanel() {
-  const { toast } = useToast();
-  const [carrierCode, setCarrierCode] = useState("");
-  const [carrierName, setCarrierName] = useState("");
-  const [carrierContact, setCarrierContact] = useState("");
-  const [carrierEditId, setCarrierEditId] = useState<number | null>(null);
   const {
     data: carriers = [],
     error: carriersError,
+    isLoading,
   } = useQuery({
     queryKey: ["/api/carriers"],
     queryFn: () => requestJson<Carrier[]>("GET", "/api/carriers"),
-  });
-  const upsertCarrier = useMutation({
-    mutationFn: () =>
-      carrierEditId
-        ? requestJson("PATCH", `/api/carriers/${carrierEditId}`, {
-            code: carrierCode,
-            name: carrierName,
-            contact: carrierContact || null,
-          })
-        : requestJson("POST", "/api/carriers", {
-            code: carrierCode,
-            name: carrierName,
-            contact: carrierContact || null,
-          }),
-    onSuccess: async () => {
-      setCarrierCode("");
-      setCarrierName("");
-      setCarrierContact("");
-      setCarrierEditId(null);
-      await queryClient.invalidateQueries({ queryKey: ["/api/carriers"] });
-      await invalidateLogisticsAndPurchaseOrders(queryClient);
-    },
-    onError: (error) => {
-      toast({
-        title: "Carrier save failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive",
-      });
-    },
-  });
-  const removeCarrier = useMutation({
-    mutationFn: (id: number) => requestJson("DELETE", `/api/carriers/${id}`),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/carriers"] });
-      await invalidateLogisticsAndPurchaseOrders(queryClient);
-    },
-    onError: (error) => {
-      toast({
-        title: "Carrier delete failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive",
-      });
-    },
   });
 
   return (
@@ -327,65 +281,47 @@ function LogisticsCarriersPanel() {
         </Alert>
       ) : null}
 
-      <Can roles={["manager", "admin"]}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Carriers</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-2 md:grid-cols-4">
-              <Input placeholder="Code" value={carrierCode} onChange={(event) => setCarrierCode(event.target.value)} />
-              <Input placeholder="Name" value={carrierName} onChange={(event) => setCarrierName(event.target.value)} />
-              <Input
-                placeholder="Contact"
-                value={carrierContact}
-                onChange={(event) => setCarrierContact(event.target.value)}
-              />
-              <Button
-                onClick={() => upsertCarrier.mutate()}
-                disabled={upsertCarrier.isPending || !carrierCode.trim() || !carrierName.trim()}
-              >
-                {carrierEditId ? "Update" : "Add"} carrier
-              </Button>
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Carrier directory</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Carrier identity, compliance, contracts, and payment details are governed in the Supplier directory.
+            </p>
+          </div>
+          <Button asChild variant="outline">
+            <Link href={APP_ROUTES.procurement.suppliers}>Manage carrier suppliers</Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {isLoading ? <div className="text-sm text-muted-foreground">Loading carriers…</div> : null}
+          {!isLoading && carriers.map((carrier) => (
+            <div key={carrier.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-3 text-sm">
+              <div>
+                <div className="font-medium">{carrier.code} - {carrier.name}</div>
+                <div className="text-muted-foreground">{carrier.contact || "No logistics contact"}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={carrier.active === false ? "outline" : "secondary"}>
+                  {carrier.active === false ? "Inactive" : "Active"}
+                </Badge>
+                {carrier.supplierId ? (
+                  <Button asChild size="sm" variant="ghost">
+                    <Link href={APP_ROUTES.procurement.supplier(carrier.supplierId)}>View supplier</Link>
+                  </Button>
+                ) : (
+                  <Badge variant="outline">Legacy unlinked record</Badge>
+                )}
+              </div>
             </div>
-            <div className="space-y-2">
-              {carriers.map((carrier) => (
-                <div key={carrier.id} className="rounded border p-2 text-sm flex items-center justify-between gap-2">
-                  <div>
-                    <div className="font-medium">
-                      {carrier.code} - {carrier.name}
-                      {carrier.active === false ? (
-                        <span className="ml-2 text-xs text-muted-foreground">(inactive)</span>
-                      ) : null}
-                    </div>
-                    <div className="text-muted-foreground">{carrier.contact || "-"}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setCarrierEditId(carrier.id);
-                        setCarrierCode(carrier.code);
-                        setCarrierName(carrier.name);
-                        setCarrierContact(carrier.contact ?? "");
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => removeCarrier.mutate(carrier.id)}>
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              {carriers.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No carriers configured yet.</div>
-              ) : null}
+          ))}
+          {!isLoading && carriers.length === 0 ? (
+            <div className="rounded border border-dashed p-4 text-sm text-muted-foreground">
+              No carrier suppliers are configured. Create a supplier and choose “Carrier / logistics provider”.
             </div>
-          </CardContent>
-        </Card>
-      </Can>
+          ) : null}
+        </CardContent>
+      </Card>
     </>
   );
 }

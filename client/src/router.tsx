@@ -78,6 +78,9 @@ const MobileWorkflowsLauncherPage = lazy(() => import("@/pages/mobile-workflows-
 const DevTestPage = lazy(() => import("@/pages/dev-test-page"));
 const GetEducatedPage = lazy(() => import("@/pages/get-educated"));
 const GetEducatedModulePage = lazy(() => import("@/pages/get-educated-module"));
+const ProcurementOverviewPage = lazy(() => import("@/pages/procurement-overview"));
+const ProcurementReceivingPage = lazy(() => import("@/pages/procurement-receiving"));
+const ProcurementSettingsPage = lazy(() => import("@/pages/procurement-settings"));
 
 const ProductionLogisticsPage = withProductionBoundary(LogisticsPage, "logistics");
 const ProductionExceptionsPage = withProductionBoundary(ExceptionsPage, "logistics");
@@ -167,6 +170,13 @@ export function AppRouter() {
         <ProtectedRoute path={`${APP_ROUTES.inventory.root}/:sku`} component={ProductionInventoryDetailPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.root} component={ProductionInventoryPage} />
 
+        <ProtectedRoute path={APP_ROUTES.procurement.overview} component={ProcurementOverviewPage} />
+        <Route path={`${APP_ROUTES.procurement.rfqs}/:id`}>{(params) => <LegacyRedirect to={APP_ROUTES.procurement.sourcingEvent((params as { id: string }).id)} />}</Route>
+        <Route path={APP_ROUTES.procurement.rfqs}><LegacyRedirect to={APP_ROUTES.procurement.sourcing} /></Route>
+        <Route path={APP_ROUTES.procurement.analytics}><LegacyRedirect to={APP_ROUTES.analytics.procurement} /></Route>
+        <Route path={APP_ROUTES.procurement.exceptions}><LegacyRedirect to={`${APP_ROUTES.operations.exceptions}?area=procurement`} /></Route>
+        <ProtectedRoute path={APP_ROUTES.procurement.receiving} component={ProcurementReceivingPage} />
+        <ProtectedRoute path={APP_ROUTES.procurement.settings} component={ProcurementSettingsPage} allowedRoles={["admin"]} />
         <ProtectedRoute path={`${APP_ROUTES.procurement.sourcing}/:id`} component={SourcingPage} />
         <ProtectedRoute path={APP_ROUTES.procurement.sourcing} component={SourcingPage} />
         <ProtectedRoute path={APP_ROUTES.procurement.quotationNew} component={CommercialQuotationsPage} />

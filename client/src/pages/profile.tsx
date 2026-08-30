@@ -248,15 +248,15 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto max-w-7xl px-4 py-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Profile</h1>
         <p className="text-muted-foreground">
           Manage your personal information and security preferences.
         </p>
       </div>
-      <div className="flex flex-col md:flex-row md:space-x-8">
-        <div className="md:w-1/4 mb-6 md:mb-0">
+      <div className="grid gap-6 lg:grid-cols-[minmax(14rem,17rem)_minmax(0,1fr)]">
+        <aside className="min-w-0 space-y-6">
           <Card>
             <CardContent className="p-6">
               <div className="flex flex-col items-center text-center">
@@ -264,8 +264,8 @@ export default function ProfilePage() {
                   <AvatarImage src={user.profilePicture || ""} alt={user.username} />
                   <AvatarFallback className="text-xl">{getInitials(user.fullName || user.username)}</AvatarFallback>
                 </Avatar>
-                <h2 className="text-2xl font-bold">{user.fullName || user.username}</h2>
-                <p className="text-muted-foreground">{user.email}</p>
+                <h2 className="text-xl font-bold leading-tight text-balance">{user.fullName || user.username}</h2>
+                <p className="max-w-full break-all text-sm text-muted-foreground">{user.email}</p>
                 <p className="mt-1 text-sm bg-primary/10 text-primary px-2 py-1 rounded-full">{user.role}</p>
                 
                 <Separator className="my-4" />
@@ -293,7 +293,7 @@ export default function ProfilePage() {
           </Card>
           
           {/* Account Activity Card */}
-          <Card className="mt-6">
+          <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Account Activity</CardTitle>
             </CardHeader>
@@ -308,9 +308,9 @@ export default function ProfilePage() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </aside>
         
-        <div className="md:w-3/4">
+        <div className="min-w-0">
           {activeTab === "profile" && (
             <div className="space-y-6">
               <Card>

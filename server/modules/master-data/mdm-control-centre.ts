@@ -600,10 +600,10 @@ export async function scanMdmDataQuality(organizationId: number) {
       organizationId,
     ]),
     count("SELECT count(*) FROM warehouses WHERE organization_id = $1", [organizationId]),
-    count("SELECT count(*) FROM currencies WHERE COALESCE(active, TRUE) = TRUE"),
-    count("SELECT count(*) FROM tax_codes WHERE COALESCE(active, TRUE) = TRUE"),
-    count("SELECT count(*) FROM payment_terms WHERE COALESCE(active, TRUE) = TRUE"),
-    count("SELECT count(*) FROM units_of_measure WHERE COALESCE(active, TRUE) = TRUE"),
+    count("SELECT count(*) FROM currencies WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE", [organizationId]),
+    count("SELECT count(*) FROM tax_codes WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE", [organizationId]),
+    count("SELECT count(*) FROM payment_terms WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE", [organizationId]),
+    count("SELECT count(*) FROM units_of_measure WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE", [organizationId]),
     count("SELECT count(*) FROM departments WHERE organization_id = $1 AND COALESCE(active, TRUE) = TRUE", [
       organizationId,
     ]),
@@ -752,7 +752,8 @@ export async function scanMdmDataQuality(organizationId: number) {
   }
 
   const zar = await pool.query<{ id: number; exchange_rate_to_zar: number; active: boolean | null }>(
-    "SELECT id, exchange_rate_to_zar, active FROM currencies WHERE code = 'ZAR' LIMIT 1",
+    "SELECT id, exchange_rate_to_zar, active FROM currencies WHERE organization_id = $1 AND code = 'ZAR' LIMIT 1",
+    [organizationId],
   );
   if (!zar.rows[0]) {
     issues.push({
@@ -780,7 +781,8 @@ export async function scanMdmDataQuality(organizationId: number) {
     `
       SELECT c.code, c.name
       FROM currencies c
-      WHERE COALESCE(c.active, TRUE) = TRUE
+      WHERE c.organization_id = $1
+        AND COALESCE(c.active, TRUE) = TRUE
         AND c.code <> 'ZAR'
         AND NOT EXISTS (
           SELECT 1 FROM mdm_exchange_rates r

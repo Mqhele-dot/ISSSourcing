@@ -293,9 +293,9 @@ export default function GetEducatedPage() {
         marked "understood" | {progress.guidedTopicsStarted.length} guided topic(s) started | stored locally only.
       </p>
       <div className="grid gap-3 sm:grid-cols-3" data-testid="training-progress-summary">
-        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Lessons opened</p><p className="text-2xl font-semibold">{progress.lessonsOpened.length}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Lessons understood</p><p className="text-2xl font-semibold">{progress.markedUnderstood.length}</p><Progress className="mt-2" value={lessonProgressPercent} aria-label="Written lesson progress" /></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Guided topics explored</p><p className="text-2xl font-semibold">{progress.guidedTopicsStarted.length}</p><Progress className="mt-2" value={guidedProgressPercent} aria-label="Guided tour progress" /></CardContent></Card>
+        <Card><CardContent className="flex min-h-24 flex-col justify-between p-4"><div><p className="text-xs text-muted-foreground">Lessons opened</p><p className="text-2xl font-semibold tabular-nums">{progress.lessonsOpened.length}</p></div><Progress className="mt-2" value={lessonProgressPercent} aria-label="Opened lesson progress" /></CardContent></Card>
+        <Card><CardContent className="flex min-h-24 flex-col justify-between p-4"><div><p className="text-xs text-muted-foreground">Lessons understood</p><p className="text-2xl font-semibold tabular-nums">{progress.markedUnderstood.length}</p></div><Progress className="mt-2" value={lessonProgressPercent} aria-label="Written lesson progress" /></CardContent></Card>
+        <Card><CardContent className="flex min-h-24 flex-col justify-between p-4"><div><p className="text-xs text-muted-foreground">Guided topics explored</p><p className="text-2xl font-semibold tabular-nums">{progress.guidedTopicsStarted.length}</p></div><Progress className="mt-2" value={guidedProgressPercent} aria-label="Guided tour progress" /></CardContent></Card>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

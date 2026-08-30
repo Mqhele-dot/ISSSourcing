@@ -107,7 +107,9 @@ export const APP_ROUTES = {
     warehouseOperations: "/inventory/warehouse-operations",
   },
   procurement: {
+    overview: "/procurement/overview",
     sourcing: "/procurement/sourcing",
+    rfqs: "/procurement/rfqs",
     sourcingEvent: (id: string | number) => `/procurement/sourcing/${encodeURIComponent(String(id))}`,
     quotations: "/procurement/quotations",
     quotationNew: "/procurement/quotations/new",
@@ -127,6 +129,10 @@ export const APP_ROUTES = {
     suppliers: "/procurement/suppliers",
     supplier: (id: string | number) => `/procurement/suppliers/${id}`,
     contracts: "/procurement/contracts",
+    receiving: "/procurement/receiving",
+    exceptions: "/procurement/exceptions",
+    analytics: "/procurement/analytics",
+    settings: "/procurement/settings",
     supplierPortal: "/procurement/supplier-portal",
   },
   finance: {

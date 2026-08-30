@@ -121,6 +121,11 @@ export function SuppliersListCard({
                             <ExternalLink className="h-3 w-3 opacity-50" aria-hidden />
                           </h3>
                         </Link>
+                        {(supplier as { supplierType?: string | null }).supplierType ? (
+                          <p className="text-xs capitalize text-muted-foreground">
+                            {String((supplier as { supplierType?: string | null }).supplierType).replaceAll("_", " ")}
+                          </p>
+                        ) : null}
                         {supplier.contactName && <p className="text-sm text-muted-foreground">{supplier.contactName}</p>}
                       </div>
                     </div>

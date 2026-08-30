@@ -71,6 +71,7 @@ import { invalidateMasterDataDomainForEndpoint } from "@/lib/domain-invalidation
 
 type BaseMasterRecord = {
   id: number;
+  supplierId?: number | null;
   code: string;
   name?: string | null;
   description?: string | null;
@@ -1274,6 +1275,65 @@ function ApprovalPoliciesRedirectCard() {
   );
 }
 
+function CarrierDirectoryPanel() {
+  const { data, isLoading, isError, refetch } = useQuery<PaginatedMasterRecords>({
+    queryKey: [MASTER_ENDPOINTS.carriers, { page: 1, pageSize: 100, status: "all" }],
+    queryFn: () => requestJson<PaginatedMasterRecords>("GET", `${MASTER_ENDPOINTS.carriers}?page=1&pageSize=100&status=all`),
+  });
+  const carriers = data?.items ?? [];
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 border-b bg-muted/20">
+        <div>
+          <CardTitle>Carrier supplier profiles</CardTitle>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Carriers are supplier roles, not a second business-party list. Create and maintain their legal, compliance,
+            commercial, and payment data in Suppliers; Logistics consumes the synchronized carrier profile.
+          </p>
+        </div>
+        <Button asChild>
+          <Link href={APP_ROUTES.procurement.suppliers}>Open Suppliers</Link>
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-4">
+        {isLoading ? <div className="py-8 text-center text-sm text-muted-foreground">Loading carrier suppliers…</div> : null}
+        {isError ? (
+          <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 p-5 text-center">
+            <p className="font-medium text-destructive">Carrier directory unavailable</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+          </div>
+        ) : null}
+        {!isLoading && !isError && carriers.length === 0 ? (
+          <div className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
+            No carrier suppliers are configured. Add a supplier and select “Carrier / logistics provider” as its type.
+          </div>
+        ) : null}
+        {!isLoading && !isError ? carriers.map((carrier) => (
+          <div key={carrier.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+            <div>
+              <p className="font-medium">{carrier.code} - {carrier.name}</p>
+              <p className="text-sm text-muted-foreground">{carrier.contact || "No logistics contact"}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={carrier.active === false ? "outline" : "secondary"}>
+                {carrier.active === false ? "Inactive" : "Active"}
+              </Badge>
+              {carrier.supplierId ? (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={APP_ROUTES.procurement.supplier(carrier.supplierId)}>View supplier</Link>
+                </Button>
+              ) : (
+                <Badge variant="outline">Legacy record — not linked</Badge>
+              )}
+            </div>
+          </div>
+        )) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function severityVariant(severity: MdmQualityIssue["severity"]): "default" | "secondary" | "destructive" | "outline" {
   if (severity === "error") return "destructive";
   if (severity === "warning") return "secondary";
@@ -1880,9 +1940,9 @@ export default function MasterDataPage() {
         </div>}
       />
       {showChangeRequest ? <NewChangeRequestComposer registry={registry.length?registry:mdmRegistry.data??[]} onClose={()=>setShowChangeRequest(false)} onCreated={()=>{void mdmChangeRequests.refetch();void governanceOverview.refetch();}}/> : null}
-      <Card>
-        <CardContent className="grid grid-cols-2 divide-x divide-y p-0 sm:grid-cols-4 xl:grid-cols-8 xl:divide-y-0">
-          {governanceKpiCards.map(([testId,label,value,Icon])=><div key={testId} className="flex min-w-0 items-center gap-2 px-3 py-2.5" data-testid={testId}><Icon className="h-4 w-4 shrink-0 text-primary"/><div className="min-w-0"><div className="text-lg font-semibold leading-5">{governanceOverview.isLoading?"-":String(value)}</div><div className="truncate text-xs text-muted-foreground" title={label}>{label}</div></div></div>)}
+      <Card className="p-2">
+        <CardContent className="grid grid-cols-2 gap-2 p-0 md:grid-cols-4 2xl:grid-cols-8">
+          {governanceKpiCards.map(([testId,label,value,Icon])=><div key={testId} className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-3 py-2.5" data-testid={testId}><Icon className="h-4 w-4 shrink-0 text-primary"/><div className="min-w-0"><div className="text-lg font-semibold leading-5 tabular-nums">{governanceOverview.isLoading?"-":String(value)}</div><div className="truncate text-xs text-muted-foreground" title={label}>{label}</div></div></div>)}
         </CardContent>
       </Card>
       <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2" aria-label="Master Data workspace navigation">
@@ -1959,6 +2019,8 @@ export default function MasterDataPage() {
                 <WarehouseMasterPanel />
               ) : section.slug === "approvalPolicies" ? (
                 <ApprovalPoliciesRedirectCard />
+              ) : section.slug === "carriers" ? (
+                <CarrierDirectoryPanel />
               ) : (
                 <MasterTable config={section} createSignal={activeSection===section.slug?createSignal:0} />
               )}

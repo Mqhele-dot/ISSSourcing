@@ -351,15 +351,15 @@ export default function ReorderRequestsPage() {
                               {request.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>{format(new Date(request.createdAt), "MMM d, yyyy")}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                          <TableCell className="whitespace-nowrap">{format(new Date(request.createdAt), "MMM d, yyyy")}</TableCell>
+                          <TableCell className="min-w-[13rem] text-right">
+                            <div className="flex flex-wrap justify-end gap-2">
                               {request.status === ReorderRequestStatus.PENDING && (
                                 <>
                                   <Button 
                                     size="sm" 
                                     variant="outline" 
-                                    className="h-8"
+                                    className="h-8 whitespace-nowrap"
                                     onClick={() => {
                                       setSelectedRequest(request);
                                       setApprovalDialogOpen(true);
@@ -371,7 +371,7 @@ export default function ReorderRequestsPage() {
                                   <Button 
                                     size="sm" 
                                     variant="outline" 
-                                    className="h-8"
+                                    className="h-8 whitespace-nowrap"
                                     onClick={() => {
                                       setSelectedRequest(request);
                                       setRejectionDialogOpen(true);
@@ -385,7 +385,7 @@ export default function ReorderRequestsPage() {
                               {request.status === ReorderRequestStatus.APPROVED && !request.convertedToRequisition && (
                                 <Button 
                                   size="sm" 
-                                  className="h-8"
+                                  className="h-8 whitespace-nowrap"
                                   onClick={() => {
                                     setSelectedRequest(request);
                                     setConversionDialogOpen(true);

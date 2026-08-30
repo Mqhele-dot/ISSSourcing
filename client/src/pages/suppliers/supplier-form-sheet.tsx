@@ -139,6 +139,30 @@ export function SupplierFormSheet({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
+                      name="supplierType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Supplier type</FormLabel>
+                          <Select value={field.value || "goods"} onValueChange={field.onChange}>
+                            <SelectTrigger aria-label="Supplier type">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="goods">Goods supplier</SelectItem>
+                              <SelectItem value="service">Service provider</SelectItem>
+                              <SelectItem value="carrier">Carrier / logistics provider</SelectItem>
+                              <SelectItem value="contractor">Contractor</SelectItem>
+                              <SelectItem value="fuel">Fuel provider</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Carrier suppliers receive a synchronized logistics profile after approval.
+                          </p>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
                       name="status"
                       render={({ field }) => (
                         <FormItem>

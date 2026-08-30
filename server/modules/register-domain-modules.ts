@@ -25,6 +25,7 @@ import { registerCommercialQuotationRoutes } from "./commercial-quotations/regis
 import { registerCapabilityRoutes } from "./capabilities/register-capability-routes";
 import { registerFinanceRoutes } from "./finance/register-finance-routes";
 import { registerArRoutes } from "./finance/register-ar-routes";
+import { registerProcurementCompletionRoutes } from "./procurement-completion/register-procurement-completion-routes";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -54,6 +55,7 @@ export function registerDomainModules(app: Express, auth: AuthBundle): void {
   registerWarehouseRoutes(app, auth);
   registerSupplierRoutes(app, auth);
   registerProcurementRoutes(app, auth);
+  registerProcurementCompletionRoutes(app, auth);
   registerSourcingRoutes(app, auth);
   registerCommercialQuotationRoutes(app, auth);
   registerApRoutes(app, auth);

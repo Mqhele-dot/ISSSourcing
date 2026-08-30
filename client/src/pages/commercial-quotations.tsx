@@ -1781,29 +1781,29 @@ function DetailPage({ id }: { id: number }) {
       />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="flex min-h-24 flex-col justify-between gap-2 p-4">
             <p className="text-sm text-muted-foreground">Status</p>
-            <Badge>{q.status}</Badge>
+            <Badge className="w-fit">{q.status}</Badge>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="flex min-h-24 flex-col justify-between gap-2 p-4">
             <p className="text-sm text-muted-foreground">Quote value</p>
-            <p className="font-semibold">{money(q.total, q.currencyCode)}</p>
+            <p className="font-semibold tabular-nums">{money(q.total, q.currencyCode)}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="flex min-h-24 flex-col justify-between gap-2 p-4">
             <p className="text-sm text-muted-foreground">Reporting value</p>
-            <p className="font-semibold">
+            <p className="font-semibold tabular-nums">
               {money(q.reportingTotal, q.reportingCurrencyCode)}
             </p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="flex min-h-24 flex-col justify-between gap-2 p-4">
             <p className="text-sm text-muted-foreground">Valid until</p>
-            <p className="font-semibold">
+            <p className="font-semibold tabular-nums">
               {new Date(q.validUntil).toLocaleDateString()}
             </p>
           </CardContent>

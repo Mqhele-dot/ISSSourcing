@@ -438,6 +438,10 @@ export const carriers = pgTable(
       .notNull()
       .default(1)
       .references(() => organizations.id),
+    // A carrier is an operational extension of a supplier/business-party record.
+    // The database foreign key is installed in init-db after both legacy tables
+    // exist because suppliers also references carriers for preferred routing.
+    supplierId: integer("supplier_id"),
     code: text("code").notNull(),
     name: text("name").notNull(),
     contact: text("contact"),

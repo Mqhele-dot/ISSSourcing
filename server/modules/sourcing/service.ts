@@ -570,6 +570,14 @@ export async function closeSourcingEvent(actor: SourcingActor, eventId: number, 
   if (duplicate) return { duplicate: true, ...(duplicate.response ?? {}) };
   const event = await eventForOrganization(actor.organizationId, eventId);
   if (event.status !== "OPEN") throw new SourcingError("RFQ_STATUS_INVALID", "Only open RFQs can be closed.");
+  if (new Date(event.deadline).getTime() > Date.now() && !overrideReason?.trim()) {
+    throw new SourcingError(
+      "RFQ_EARLY_CLOSE_REASON_REQUIRED",
+      "Closing an RFQ before its submission deadline requires an approved override reason.",
+      409,
+      "Wait until the deadline or provide a documented early-close reason.",
+    );
+  }
   const [responseCount] = await db.select({ count: sql<number>`count(*)::int` }).from(supplierQuotes).where(and(eq(supplierQuotes.organizationId, actor.organizationId), eq(supplierQuotes.eventId, eventId), eq(supplierQuotes.status, "SUBMITTED")));
   if ((responseCount?.count ?? 0) < event.minimumResponses && !overrideReason?.trim()) {
     throw new SourcingError("RFQ_MINIMUM_RESPONSE_NOT_MET", `RFQ requires ${event.minimumResponses} compliant response(s) before evaluation.`, 409, "Invite additional suppliers or provide an approved exception reason.");
@@ -629,6 +637,15 @@ export async function submitSourcingAward(actor: SourcingActor, eventId: number,
   const quoteLineIds = input.lines.map((line) => line.quoteLineId);
   const quoteLines = await db.select({ line: supplierQuoteLines, quote: supplierQuotes }).from(supplierQuoteLines).innerJoin(supplierQuotes, and(eq(supplierQuotes.id, supplierQuoteLines.quoteId), eq(supplierQuotes.organizationId, actor.organizationId))).where(and(eq(supplierQuoteLines.organizationId, actor.organizationId), inArray(supplierQuoteLines.id, quoteLineIds), eq(supplierQuotes.eventId, eventId), eq(supplierQuotes.status, "SUBMITTED")));
   if (quoteLines.length !== quoteLineIds.length) throw new SourcingError("AWARD_QUOTE_LINE_INVALID", "One or more award lines are not from submitted quotes for this RFQ.", 400);
+  const expiredQuote = quoteLines.find(({ quote }) => quote.validityDate && new Date(quote.validityDate).getTime() < Date.now());
+  if (expiredQuote && !input.overrideReason?.trim()) {
+    throw new SourcingError(
+      "AWARD_QUOTE_EXPIRED",
+      `Quote ${expiredQuote.quote.quoteNumber} has expired and cannot be awarded without an approved override reason.`,
+      409,
+      "Request a refreshed quotation or provide a documented exception reason.",
+    );
+  }
   for (const line of eventLines) {
     const awarded = input.lines.filter((entry) => entry.eventLineId === line.id).reduce((sum, entry) => sum + entry.awardedQuantity, 0);
     if (Math.abs(awarded - line.quantity) > 0.0001) throw new SourcingError("AWARD_QUANTITY_INVALID", `Awarded quantity for RFQ line ${line.lineNumber} must equal ${line.quantity}.`, 400);

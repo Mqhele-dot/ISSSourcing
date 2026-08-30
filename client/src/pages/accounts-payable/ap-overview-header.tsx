@@ -9,7 +9,7 @@ type Props = {
 
 export function ApOverviewHeader({ stats, formatMoney }: Props) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       <KpiCard
         title="Capture review"
         value={stats.captureReviewCount}
