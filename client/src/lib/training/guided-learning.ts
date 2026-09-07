@@ -69,6 +69,12 @@ const GUIDE_OVERRIDES: Record<string, GuideOverride> = {
     watchFor: "Do not create activity without a canonical warehouse or valid item ownership.",
     selectors: ["main"],
   },
+  [APP_ROUTES.inventory.putAway]: {
+    whyItMatters: "Put-away makes received inventory findable and usable without posting the receipt quantity a second time.",
+    instructions: ["Synchronize posted GRNs to create any missing tasks.", "Work urgent and overdue tasks first, then confirm the physical destination bin.", "Complete the task only after the accepted quantity is physically in that location."],
+    watchFor: "A put-away movement changes location evidence, not on-hand quantity; resolve missing receipt warehouse evidence before proceeding.",
+    selectors: ["main"],
+  },
   [APP_ROUTES.inventory.cycleCounts]: {
     whyItMatters: "Counts detect shrink, process errors, and stale stock before they distort planning or finance.",
     instructions: ["Choose the warehouse and count mode.", "Count independently of the expected quantity where policy requires blind counting.", "Review variances and post only after evidence and approvals are complete."],
@@ -258,7 +264,7 @@ const GUIDE_OVERRIDES: Record<string, GuideOverride> = {
   [APP_ROUTES.admin.systemDiagnostics]: {
     whyItMatters: "Diagnostics turns installation and runtime symptoms into specific, navigable findings.",
     instructions: ["Run the scan and review failures by severity and subsystem.", "Select a finding to open its affected tab or remediation destination.", "Apply the safe fix or manual correction, then rerun the scan."],
-    watchFor: "Do not run destructive demo reset as part of routine diagnostics.",
+    watchFor: "Routine diagnostics must never reset or reseed tenant data.",
     selectors: ["main"],
   },
   [APP_ROUTES.admin.profile]: {

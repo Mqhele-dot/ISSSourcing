@@ -1598,9 +1598,14 @@ function ShipmentDetailView({ shipmentId }: { shipmentId: string }) {
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">ETA</CardTitle>
+                  <CardTitle className="text-base">Current ETA</CardTitle>
                 </CardHeader>
-                <CardContent>{formatDate(shipment.eta)}</CardContent>
+                <CardContent>
+                  <p>{formatDate(shipment.eta)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Original: {formatDate(shipment.originalEta ?? shipment.eta)} · {shipment.etaChangedCount ?? 0} change(s)
+                  </p>
+                </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">

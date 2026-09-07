@@ -99,7 +99,7 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 | Feature | Status | Notes |
 |--------|--------|------|
 | Receiving goods | **Implemented** | PO receive; stock receipt movements. |
-| Put-away locations | **Partial** | Warehouses have bins/aisles/location details; not yet used in put-away workflow. |
+| Put-away locations | **Implemented** | Posted GRN lines generate tenant-scoped tasks; completion validates configured bins, updates the canonical warehouse position, and records movement and exception evidence. |
 | Picking / packing / dispatch | **Partial** | Issue movements exist; no dedicated pick/pack/ship workflow. |
 | Zone management | **Partial** | Aisles/bins/locationDetails on warehouse. |
 | Aisle / bin locations | **Implemented** | Warehouse schema and UI (aisles, bins, location details). |

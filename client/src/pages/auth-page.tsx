@@ -477,7 +477,7 @@ onError: (error: unknown) => {
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="Enter your password" {...field} />
+                    <Input type="password" autoComplete="current-password" placeholder="Enter your password" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

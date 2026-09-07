@@ -5,6 +5,8 @@ import { seedDatabaseIfEmpty } from "../seed";
 import { initializeOperationalData } from "../operations-core";
 import { initializeAccountsPayableData } from "../modules/accounts-payable/ap-ddl";
 import { initializeExportCenterData } from "../modules/exports/export-center-ddl";
+import { initializeProcurementCompletionData } from "../modules/procurement-completion/ddl";
+import { initializeShipmentInventoryCompletion } from "../modules/inventory-flow/ddl";
 import { seedOperationalIfEmpty } from "../seed-operational";
 import { setDbReady, setSchemaReady, setSessionStoreReady } from "../readiness";
 import { appEnv } from "../config/env";
@@ -47,6 +49,8 @@ export async function initializeRuntime(): Promise<void> {
 
       await initializeOperationalData();
       await initializeAccountsPayableData();
+      await initializeProcurementCompletionData();
+      await initializeShipmentInventoryCompletion();
       await initializeExportCenterData();
       const opSeed = await seedOperationalIfEmpty();
       setSchemaReady(true);

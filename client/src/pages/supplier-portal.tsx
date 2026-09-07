@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +40,9 @@ export default function SupplierPortalPage() {
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [invoiceError, setInvoiceError] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
+  const [responseOrder, setResponseOrder] = useState<PurchaseOrder | null>(null);
+  const [responseKind, setResponseKind] = useState<"supplier-reject" | "request-clarification">("request-clarification");
+  const [responseReason, setResponseReason] = useState("");
   const role = String(user?.role ?? "");
   const canChooseSupplier = role === "admin" || role === "manager";
   const supplierScopeId =
@@ -138,6 +142,17 @@ export default function SupplierPortalPage() {
         variant: "destructive",
       });
     },
+  });
+
+  const sendSupplierResponse = useMutation({
+    mutationFn: () => requestJson("POST", `/api/v2/procurement/purchase-orders/${responseOrder?.id}/${responseKind}`, { reason: responseReason }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/supplier/orders"] });
+      toast({ title: responseKind === "supplier-reject" ? "Order rejected" : "Clarification requested", description: "Procurement has been notified and a linked exception was created." });
+      setResponseOrder(null);
+      setResponseReason("");
+    },
+    onError: (error: Error) => toast({ title: "Response failed", description: error.message, variant: "destructive" }),
   });
 
   const uploadInvoice = useMutation({
@@ -365,7 +380,7 @@ export default function SupplierPortalPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <Button size="sm" variant="outline" onClick={() => setSelectedOrder(order)}>
                           Preview
                         </Button>
@@ -376,6 +391,12 @@ export default function SupplierPortalPage() {
                           disabled={confirmOrder.isPending}
                         >
                           Confirm
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setResponseOrder(order); setResponseKind("request-clarification"); setResponseReason(""); }}>
+                          Clarify
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={() => { setResponseOrder(order); setResponseKind("supplier-reject"); setResponseReason(""); }}>
+                          Reject
                         </Button>
                       </div>
                     </TableCell>
@@ -529,14 +550,25 @@ export default function SupplierPortalPage() {
         ) : null}
       </Card>
       </TabsContent>
+      <Dialog open={responseOrder != null} onOpenChange={(open) => { if (!open) { setResponseOrder(null); setResponseReason(""); } }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{responseKind === "supplier-reject" ? "Reject purchase order" : "Request clarification"}</DialogTitle></DialogHeader>
+          <div className="space-y-2"><Label htmlFor="supplier-response-reason">Reason</Label><Textarea id="supplier-response-reason" value={responseReason} onChange={(event) => setResponseReason(event.target.value)} placeholder="Give procurement an actionable explanation" /></div>
+          <DialogFooter><Button variant="outline" onClick={() => setResponseOrder(null)}>Cancel</Button><Button variant={responseKind === "supplier-reject" ? "destructive" : "default"} disabled={!responseReason.trim() || sendSupplierResponse.isPending} onClick={() => sendSupplierResponse.mutate()}>{sendSupplierResponse.isPending ? "Sending…" : "Send response"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <TabsContent value="confirmations" className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Confirmations</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            {orders.filter((order) => ["open", "sent", "approved"].includes(String(order.status).toLowerCase())).length} order(s) are likely waiting for acknowledgement.
+          <CardContent className="space-y-2 text-sm">
+            {orders.map((order) => {
+              const confirmation = order as PurchaseOrder & { confirmationStatus?: string | null; confirmationReason?: string | null; confirmationUpdatedAt?: string | null };
+              return <div key={order.id} className="flex flex-wrap items-start justify-between gap-3 rounded-md border p-3"><div><p className="font-medium">{order.poNumber}</p>{confirmation.confirmationReason ? <p className="mt-1 text-muted-foreground">{confirmation.confirmationReason}</p> : null}</div><div className="text-right"><p className="font-medium">{confirmation.confirmationStatus ?? "AWAITING"}</p>{confirmation.confirmationUpdatedAt ? <p className="text-xs text-muted-foreground">{new Date(confirmation.confirmationUpdatedAt).toLocaleString()}</p> : null}</div></div>;
+            })}
+            {orders.length === 0 ? <p className="text-muted-foreground">No purchase orders are awaiting a supplier response.</p> : null}
           </CardContent>
         </Card>
       </TabsContent>

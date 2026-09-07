@@ -86,6 +86,13 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         keywords: "warehouse operations allocation storage movements",
       },
       {
+        label: "Put-away",
+        path: APP_ROUTES.inventory.putAway,
+        icon: "package-check",
+        description: "Assign accepted receipt lines to verified warehouse bins.",
+        keywords: "put away receiving bin grn warehouse tasks",
+      },
+      {
         label: "Cycle counts",
         path: APP_ROUTES.inventory.cycleCounts,
         icon: "refresh-cw",

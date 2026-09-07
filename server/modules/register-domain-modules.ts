@@ -26,6 +26,7 @@ import { registerCapabilityRoutes } from "./capabilities/register-capability-rou
 import { registerFinanceRoutes } from "./finance/register-finance-routes";
 import { registerArRoutes } from "./finance/register-ar-routes";
 import { registerProcurementCompletionRoutes } from "./procurement-completion/register-procurement-completion-routes";
+import { registerInventoryFlowRoutes } from "./inventory-flow/register-inventory-flow-routes";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -53,6 +54,7 @@ export function registerDomainModules(app: Express, auth: AuthBundle): void {
   registerDocumentRoutes(app, auth);
   registerContractRoutes(app, auth);
   registerWarehouseRoutes(app, auth);
+  registerInventoryFlowRoutes(app, auth);
   registerSupplierRoutes(app, auth);
   registerProcurementRoutes(app, auth);
   registerProcurementCompletionRoutes(app, auth);

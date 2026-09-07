@@ -6,20 +6,20 @@ function assertIncludes(text, needle, label) {
   if (!text.includes(needle)) throw new Error(`${label} missing: ${needle}`);
 }
 
-assertIncludes(ui, 'title="Master Data"', "master-data title");
-assertIncludes(ui, "Governance and data quality", "control-centre entry point");
+assertIncludes(ui, 'title="Master Data Governance"', "master-data title");
+assertIncludes(ui, "Governance controls", "control-centre entry point");
 assertIncludes(ui, "master-data-governance-dashboard", "governance dashboard");
 assertIncludes(ui, "master-data-change-requests", "change request queue");
 assertIncludes(ui, "master-data-standard-record-fields", "standard record model");
-assertIncludes(ui, "master-data-where-used-response", "where-used response");
+assertIncludes(ui, "mdm-where-used-panel", "where-used response");
 assertIncludes(ui, "usePermissions", "permission-aware UI hook");
 assertIncludes(ui, 'hasPermission("master_data", "update")', "permission-based update gate");
 assertIncludes(ui, "canSubmitChangeRequest", "steward/manager change request state");
 assertIncludes(ui, "canApproveChangeRequest", "approver state");
 assertIncludes(ui, "canAdminOverride", "admin override state");
 assertIncludes(ui, "mdm-change-request-detail", "pending change request detail");
-assertIncludes(ui, "mdm-approve-change-request", "approve button");
-assertIncludes(ui, "mdm-reject-change-request", "reject button");
+assertIncludes(ui, "mdm-change-request-approve-button", "approve button");
+assertIncludes(ui, "mdm-change-request-reject-button", "reject button");
 assertIncludes(ui, "mdm-apply-change-request", "apply button");
 assertIncludes(ui, "mdm-comment-box", "comment box");
 assertIncludes(ui, "mdm-before-after-diff", "before/after diff");

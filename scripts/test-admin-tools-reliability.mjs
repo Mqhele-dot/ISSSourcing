@@ -18,8 +18,9 @@ const integrationsPage = read("client/src/pages/integrations.tsx");
 const auditLogsPage = read("client/src/pages/audit-logs.tsx");
 const router = read("client/src/router.tsx");
 const sectionMetadata = read("client/src/lib/routes/section-metadata.ts");
+const fixtureCatalog = read("server/diagnostics/fixture-definition-catalog.ts");
 
-assert.match(routes, /organization_id::text = \$1::text/, "diagnostics must compare fixture tenant IDs safely");
+assert.match(fixtureCatalog, /organization_id = \$1/, "fixture diagnostics must scope records to the active tenant");
 assert.match(routeDiagnostics, /training-lesson-page/, "lesson routes need their own render marker");
 assert.match(routeDiagnostics, /path === "\/get-educated"/, "the education root must retain its root marker");
 

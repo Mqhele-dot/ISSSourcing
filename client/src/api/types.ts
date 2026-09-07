@@ -194,6 +194,8 @@ export type PurchaseOrderShipment = {
   carrier: string | null;
   status: string;
   eta: string | null;
+  originalEta?: string | null;
+  etaChangedCount?: number;
   driftMinutes: number;
   updatedAt: string | null;
   trackingNumber?: string | null;
@@ -275,6 +277,8 @@ export type ShipmentListItem = {
   carrier: string | null;
   status: string;
   eta: string | null;
+  originalEta?: string | null;
+  etaChangedCount?: number;
   driftMinutes: number;
   createdAt: string | null;
   updatedAt: string | null;

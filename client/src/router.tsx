@@ -81,6 +81,7 @@ const GetEducatedModulePage = lazy(() => import("@/pages/get-educated-module"));
 const ProcurementOverviewPage = lazy(() => import("@/pages/procurement-overview"));
 const ProcurementReceivingPage = lazy(() => import("@/pages/procurement-receiving"));
 const ProcurementSettingsPage = lazy(() => import("@/pages/procurement-settings"));
+const InventoryPutAwayPage = lazy(() => import("@/pages/inventory-put-away"));
 
 const ProductionLogisticsPage = withProductionBoundary(LogisticsPage, "logistics");
 const ProductionExceptionsPage = withProductionBoundary(ExceptionsPage, "logistics");
@@ -104,6 +105,7 @@ const ProductionOperationsOverviewPage = withProductionBoundary(OperationsOvervi
 const ProductionControlTowerPage = withProductionBoundary(ControlTowerPage, "logistics");
 const ProductionFuelOperationsPage = withProductionBoundary(FuelOperationsPage, "logistics");
 const ProductionInventoryAnalyticsPage = withProductionBoundary(AnalyticsWorkspacePage, "inventory");
+const ProductionInventoryPutAwayPage = withProductionBoundary(InventoryPutAwayPage, "inventory");
 const ProductionFinanceAnalyticsPage = withProductionBoundary(AnalyticsWorkspacePage, "finance");
 const ProductionLogisticsAnalyticsPage = withProductionBoundary(AnalyticsWorkspacePage, "logistics");
 const DeveloperRealTimeUpdatesPage = withDeveloperToolBoundary(RealTimeUpdatesPage);
@@ -167,6 +169,14 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.inventory.reorder} component={ProductionReorderPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.barcodeScanner} component={ProductionBarcodeScannerPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.warehouseOperations} component={ProductionWarehouseOperationsPage} />
+        <ProtectedRoute path={APP_ROUTES.inventory.putAway} component={ProductionInventoryPutAwayPage} />
+        <Route path={APP_ROUTES.inventory.shipments}><LegacyRedirect to={APP_ROUTES.operations.logistics} /></Route>
+        <Route path={APP_ROUTES.inventory.receiving}><LegacyRedirect to={APP_ROUTES.procurement.receiving} /></Route>
+        <Route path={APP_ROUTES.inventory.movements}><LegacyRedirect to={APP_ROUTES.inventory.warehouseOperations} /></Route>
+        <Route path={APP_ROUTES.inventory.transfers}><LegacyRedirect to={APP_ROUTES.inventory.warehouseOperations} /></Route>
+        <Route path={APP_ROUTES.inventory.adjustments}><LegacyRedirect to={APP_ROUTES.inventory.warehouseOperations} /></Route>
+        <Route path={APP_ROUTES.inventory.exceptions}><LegacyRedirect to={`${APP_ROUTES.operations.exceptions}?area=inventory`} /></Route>
+        <Route path={APP_ROUTES.inventory.analytics}><LegacyRedirect to={APP_ROUTES.analytics.inventory} /></Route>
         <ProtectedRoute path={`${APP_ROUTES.inventory.root}/:sku`} component={ProductionInventoryDetailPage} />
         <ProtectedRoute path={APP_ROUTES.inventory.root} component={ProductionInventoryPage} />
 

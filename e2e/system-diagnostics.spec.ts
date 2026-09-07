@@ -7,6 +7,7 @@ test.describe("system diagnostics command center", () => {
 
     await expect(page.getByTestId("system-diagnostics-page")).toBeVisible();
     await expect(page.getByTestId("diagnostics-health-summary")).toBeVisible();
+    await page.getByTestId("diagnostics-advanced-evidence").locator("summary").click();
     await expect(page.getByTestId("diagnostics-live-events")).toBeVisible();
     await expect(page.getByText(/Internal calculation\/filter self-checks/i)).toBeVisible();
     await expect(page.getByTestId("diagnostics-run-scan-button")).toBeVisible();

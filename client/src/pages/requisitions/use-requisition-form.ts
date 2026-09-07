@@ -207,14 +207,13 @@ export function useRequisitionForm(params: {
     [mdmContext?.taxCodes],
   );
 
-  const contracts = mdmContext?.contracts ?? [];
   const paymentTerms = mdmContext?.paymentTerms ?? [];
   const incoterms = mdmContext?.incoterms ?? [];
 
   const contractsForSupplier = useMemo(() => {
     if (supplierId === "") return [];
-    return contracts.filter((c) => c.supplierId === supplierId);
-  }, [contracts, supplierId]);
+    return (mdmContext?.contracts ?? []).filter((c) => c.supplierId === supplierId);
+  }, [mdmContext?.contracts, supplierId]);
 
   const departmentLabel = useMemo(() => {
     if (departmentId === "") return undefined;

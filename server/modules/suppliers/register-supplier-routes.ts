@@ -524,7 +524,21 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       const supplierId = await resolveSupplierIdForUser(req);
       if (!supplierId) return sendFunctionError(res, 400, "getSupplierPortalOrders", "Supplier mapping not found for user");
       const orders = await storage.getAllPurchaseOrders();
-      res.json(orders.filter((order) => order.supplierId === supplierId));
+      const scopedOrders = orders.filter((order) => order.supplierId === supplierId);
+      const confirmations = scopedOrders.length
+        ? await pool.query(
+            `SELECT DISTINCT ON (purchase_order_id) purchase_order_id,status,reason,promised_delivery_date,created_at
+             FROM po_supplier_confirmations
+             WHERE organization_id=$1 AND purchase_order_id=ANY($2::int[])
+             ORDER BY purchase_order_id,created_at DESC,id DESC`,
+            [getActiveOrganizationId(), scopedOrders.map((order) => order.id)],
+          )
+        : { rows: [] };
+      const byOrder = new Map(confirmations.rows.map((row) => [Number(row.purchase_order_id), row]));
+      res.json(scopedOrders.map((order) => {
+        const confirmation = byOrder.get(order.id);
+        return { ...order, confirmationStatus: confirmation?.status ?? null, confirmationReason: confirmation?.reason ?? null, promisedDeliveryDate: confirmation?.promised_delivery_date ?? null, confirmationUpdatedAt: confirmation?.created_at ?? null };
+      }));
     } catch (error) {
       console.error("Error fetching supplier orders:", error);
       return sendFunctionError(res, 500, "getSupplierPortalOrders", "Failed to fetch supplier orders", error instanceof Error ? error.message : String(error));

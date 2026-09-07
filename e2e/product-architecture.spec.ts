@@ -17,9 +17,9 @@ test.describe("Product architecture", () => {
     await gotoAuthed(page, "/analytics/overview");
     const sidebar = page.getByRole("complementary");
     await expect(page.getByText("Operations", { exact: true })).toBeVisible();
-    await expect(sidebar.getByRole("link", { name: /^Inventory$/ })).toBeVisible();
+    await expect(sidebar.getByRole("link", { name: /^Inventory(?: \(Preview\))?$/ })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: /^Purchase orders$/i })).toBeVisible();
-    await expect(sidebar.getByRole("link", { name: /^Accounts payable$/i })).toBeVisible();
+    await expect(sidebar.getByRole("link", { name: /^Accounts payable(?: \(Preview\))?$/i })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: /^Reports$/ })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: /^Settings$/ })).toBeVisible();
     await expect(page.getByTestId("sidebar-get-educated")).toBeVisible();
@@ -27,8 +27,8 @@ test.describe("Product architecture", () => {
 
   test("analytics workspace drilldown uses canonical subroutes", async ({ page }) => {
     await gotoAuthed(page, "/analytics/overview");
-    await expect(page.getByRole("heading", { name: /analytics workspace/i })).toBeVisible();
-    await page.getByLabel(/section navigation/i).getByRole("link", { name: /^Inventory$/ }).click();
+    await expect(page.getByRole("heading", { name: /analytics & insights/i })).toBeVisible();
+    await page.getByRole("navigation", { name: /analytics sections/i }).getByRole("button", { name: /^Inventory$/ }).click();
     await expect(page).toHaveURL(/\/analytics\/inventory$/);
   });
 

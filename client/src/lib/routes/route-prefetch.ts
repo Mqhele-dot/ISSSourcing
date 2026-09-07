@@ -5,6 +5,7 @@ const routeImporters: Array<[prefix: string, load: RouteImporter]> = [
   ["/operations/logistics", () => import("@/pages/logistics")],
   ["/operations", () => import("@/pages/operations-overview-page")],
   ["/inventory/reorder", () => import("@/pages/reorder")],
+  ["/inventory/put-away", () => import("@/pages/inventory-put-away")],
   ["/inventory", () => import("@/pages/inventory")],
   ["/procurement/orders", () => import("@/pages/orders")],
   ["/procurement/overview", () => import("@/pages/procurement-overview")],
@@ -43,5 +44,6 @@ export function prefetchPrimaryRouteChunks(): void {
     "/admin/master-data",
     "/admin/settings",
     "/inventory/reorder",
+    "/inventory/put-away",
   ]) prefetchRouteChunk(path);
 }

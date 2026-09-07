@@ -36,6 +36,7 @@ jobs:
       CI: "true"
       NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/invtrack_e2e_gate
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/invtrack_e2e_gate
       BACKUP_RESTORE_SOURCE_URL: postgresql://postgres:postgres@localhost:5432/invtrack_e2e_gate
       BACKUP_RESTORE_TARGET_URL: postgresql://postgres:postgres@localhost:5432/invtrack_restore_rehearsal
       SESSION_SECRET: playwright-release-gate-session-secret

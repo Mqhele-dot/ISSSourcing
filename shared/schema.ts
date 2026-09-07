@@ -2273,7 +2273,10 @@ export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
   "EXPIRE", 
   "RECOUNT",
   "RECEIPT",
-  "ISSUE"
+  "ISSUE",
+  "PUT_AWAY",
+  "RECEIPT_REVERSAL",
+  "PURCHASE_RETURN"
 ]);
 
 // Stock movements schema for tracking inventory changes
@@ -2312,7 +2315,7 @@ export const insertStockMovementSchema = createInsertSchema(stockMovements).omit
 export const stockMovementFormSchema = insertStockMovementSchema.extend({
   itemId: z.number().int().positive("Item ID must be positive"),
   quantity: z.number().int().min(1, "Quantity must be at least 1").or(z.number().int().max(-1, "Quantity must be at most -1")),
-  type: z.enum(["PURCHASE", "SALE", "ADJUSTMENT", "TRANSFER", "RETURN", "DAMAGE", "EXPIRE", "RECOUNT", "RECEIPT", "ISSUE"]),
+  type: z.enum(["PURCHASE", "SALE", "ADJUSTMENT", "TRANSFER", "RETURN", "DAMAGE", "EXPIRE", "RECOUNT", "RECEIPT", "ISSUE", "PUT_AWAY", "RECEIPT_REVERSAL", "PURCHASE_RETURN"]),
 });
 
 // Warehouse Inventory schema for tracking inventory per warehouse

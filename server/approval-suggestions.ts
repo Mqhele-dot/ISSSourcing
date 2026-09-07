@@ -2,6 +2,7 @@ import { db } from "./db";
 import { approvalPolicies, organizationMembers, users, type User } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
 import { getActiveOrganizationId } from "./organization-context";
+import type { GovernedApprovalEntityType } from "./services/approval-workflow-service";
 
 export type ApproverSuggestion = {
   userId: number;
@@ -27,7 +28,7 @@ function canApproveAmount(user: User, amount: number): boolean {
  * Users who may approve the given amount for an entity type, derived from active approval_policies.
  */
 export async function getApprovalSuggestions(
-  entityType: import("./services/approval-workflow-service").GovernedApprovalEntityType,
+  entityType: GovernedApprovalEntityType,
   amount: number,
 ): Promise<{
   entityType: string;

@@ -11,6 +11,7 @@ const RULES: { test: (path: string) => boolean; meta: PageTourMeta }[] = [
       APP_ROUTES.inventory.warehouses,
       APP_ROUTES.inventory.cycleCounts,
       APP_ROUTES.inventory.warehouseOperations,
+      APP_ROUTES.inventory.putAway,
     ] as string[]).includes(p),
     meta: { tourId: "page-inventory", label: "Inventory" },
   },

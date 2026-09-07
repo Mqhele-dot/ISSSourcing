@@ -1167,11 +1167,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           SELECT code
           FROM currencies
           WHERE active = true
-          ORDER BY CASE WHEN upper(code) = 'ZAR' THEN 0 ELSE 1 END, code ASC
+            AND (organization_id = $1 OR organization_id IS NULL)
+          ORDER BY CASE WHEN organization_id = $1 THEN 0 ELSE 1 END,
+                   CASE WHEN upper(code) = 'ZAR' THEN 0 ELSE 1 END,
+                   code ASC
           LIMIT 1
           `,
+          [orgId],
         );
         const fallbackCurrencyCode = defaultCurrency.rows[0]?.code?.trim();
+        let supplierCurrencyRepairCount = 0;
         if (fallbackCurrencyCode) {
           const supplierCurrencyRepairs = await pool.query<{ id: number; name: string; default_currency_code: string }>(
             `
@@ -1189,6 +1194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               `Set supplier ${supplier.name} default currency to ${supplier.default_currency_code} from active Master Data currency.`,
             );
           }
+          supplierCurrencyRepairCount = supplierCurrencyRepairs.rowCount ?? supplierCurrencyRepairs.rows.length;
         } else {
           fixed.push("No active Master Data currency found; supplier default currencies need manual setup.");
         }
@@ -1219,6 +1225,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           fixed.push(
             `Set inbound shipment ${shipment.id} for PO ${shipment.po_number} to supplier default carrier #${shipment.carrier_id}.`,
           );
+        }
+        if (supplierCurrencyRepairCount > 0 && req.user?.id) {
+          const findingCode = "SUPPLIER_DEFAULT_CURRENCY_MISSING";
+          const recentNotification = await pool.query<{ id: number }>(
+            `
+            SELECT id
+            FROM notifications
+            WHERE organization_id = $1
+              AND user_id = $2
+              AND finding_code = $3
+              AND created_at > now() - interval '2 hours'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            `,
+            [orgId, req.user.id, findingCode],
+          );
+          if (recentNotification.rowCount === 0) {
+            await emitNotification({
+              userId: req.user.id,
+              type: "diagnostics_repair",
+              title: "Supplier currency defaults repaired",
+              body: `${supplierCurrencyRepairCount} supplier record${supplierCurrencyRepairCount === 1 ? "" : "s"} now use ${fallbackCurrencyCode}. Review the affected supplier records.`,
+              entityType: "supplier",
+              targetPath: "/procurement/suppliers",
+              findingCode,
+            });
+          }
         }
         result.success = fixed.length > 0;
         result.fixed = fixed;

@@ -9,6 +9,7 @@ export function pathToTrainingModuleId(pathname: string): string | null {
   if (p === APP_ROUTES.inventory.root || p.startsWith(`${APP_ROUTES.inventory.root}/`)) {
     if (p === APP_ROUTES.inventory.warehouses || p.startsWith(`${APP_ROUTES.inventory.warehouses}/`)) return "warehouses";
     if (p === APP_ROUTES.inventory.warehouseOperations) return "warehouse-operations";
+    if (p === APP_ROUTES.inventory.putAway) return "warehouse-operations";
     if (p === APP_ROUTES.inventory.cycleCounts) return "cycle-counts";
     if (p === APP_ROUTES.inventory.reorder) return "reorder-requests";
     if (p === APP_ROUTES.inventory.barcodeScanner) return "barcode-scanner";

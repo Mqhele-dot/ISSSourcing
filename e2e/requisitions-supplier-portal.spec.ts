@@ -6,11 +6,11 @@ test.describe("Requisitions and supplier portal readiness", () => {
     await gotoAuthed(page, "/procurement/requisitions");
     await expect(page.getByTestId("requisitions-page")).toBeVisible({ timeout: 30000 });
     await expect(page.getByTestId("requisition-kpi-draft")).toBeVisible();
-    await expect(page.getByTestId("requisition-results-count")).toContainText(/Showing \d+ of \d+ requisitions/);
+    await expect(page.getByTestId("requisition-results-count")).toContainText(/\d+[–-]\d+ of \d+ requisitions/);
 
     await page.getByTestId("requisition-status-filter").click();
-    await page.getByRole("option", { name: /^Pending$/ }).click();
-    await expect(page).toHaveURL(/status=PENDING/);
+    await page.getByRole("option", { name: /^Pending approval$/ }).click();
+    await expect(page).toHaveURL(/status=PENDING_APPROVAL/);
 
     const firstRow = page.locator('[data-testid^="requisition-row-"]').first();
     if (await firstRow.isVisible()) {

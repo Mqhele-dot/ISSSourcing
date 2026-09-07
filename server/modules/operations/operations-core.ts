@@ -1225,6 +1225,7 @@ export async function createOperationalShipment(input: {
       tracking_number,
       status,
       eta,
+      original_eta,
       direction,
       source_type,
       source_id,
@@ -1232,7 +1233,7 @@ export async function createOperationalShipment(input: {
       created_at,
       updated_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now(), now())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16, $17, now(), now())
     RETURNING id, po_number, carrier, status, eta, drift_minutes, tracking_number, created_at, updated_at
     `,
     [
@@ -1395,6 +1396,8 @@ async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrde
     carrier: string | null;
     status: string;
     eta: Date | null;
+    original_eta: Date | null;
+    eta_changed_count: number;
     drift_minutes: number;
     updated_at: Date | null;
     tracking_number: string | null;
@@ -1407,7 +1410,7 @@ async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrde
     source_type: string | null;
   }>(
     `
-    SELECT id, carrier, status, eta, drift_minutes, updated_at, tracking_number,
+    SELECT id, carrier, status, eta, original_eta, eta_changed_count, drift_minutes, updated_at, tracking_number,
            carrier_id, transport_mode, freight_cost, delivery_note_ref, grn_number,
            direction, source_type
     FROM shipments shipment
@@ -1422,6 +1425,8 @@ async function getPurchaseOrderShipments(poNumber: string): Promise<PurchaseOrde
     carrier: shipment.carrier,
     status: shipment.status,
     eta: shipment.eta,
+    originalEta: shipment.original_eta,
+    etaChangedCount: toNumber(shipment.eta_changed_count, 0),
     driftMinutes: toNumber(shipment.drift_minutes, 0),
     updatedAt: shipment.updated_at,
     trackingNumber: shipment.tracking_number,
@@ -2755,6 +2760,8 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     carrier: string | null;
     status: string;
     eta: Date | null;
+    original_eta: Date | null;
+    eta_changed_count: number;
     drift_minutes: number;
     created_at: Date | null;
     updated_at: Date | null;
@@ -2781,6 +2788,8 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
       s.carrier,
       s.status,
       s.eta,
+      s.original_eta,
+      s.eta_changed_count,
       s.drift_minutes,
       s.created_at,
       s.updated_at,
@@ -2862,6 +2871,8 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     carrierId: shipment.carrier_id,
     status,
     eta: shipment.eta,
+    originalEta: shipment.original_eta,
+    etaChangedCount: toNumber(shipment.eta_changed_count, 0),
     driftMinutes: toNumber(shipment.drift_minutes, 0),
     createdAt: shipment.created_at,
     updatedAt,
@@ -2949,12 +2960,12 @@ export async function patchOperationalShipmentMeta(input: {
   }
 
   if (input.eta !== undefined) {
-    sets.push(`eta = $${n++}`);
-    if (input.eta === null) {
-      vals.push(null);
-    } else {
-      vals.push(typeof input.eta === "string" ? new Date(input.eta) : input.eta);
-    }
+    const normalizedEta = input.eta === null ? null : typeof input.eta === "string" ? new Date(input.eta) : input.eta;
+    const etaParam = n++;
+    sets.push(`original_eta = COALESCE(original_eta, $${etaParam})`);
+    sets.push(`eta_changed_count = eta_changed_count + CASE WHEN eta IS DISTINCT FROM $${etaParam} THEN 1 ELSE 0 END`);
+    sets.push(`eta = $${etaParam}`);
+    vals.push(normalizedEta);
   }
   if (input.trackingNumber !== undefined) {
     sets.push(`tracking_number = $${n++}`);

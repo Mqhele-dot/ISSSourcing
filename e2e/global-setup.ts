@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertDisposableDatabaseUrl } from "../server/config/database-safety";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -13,17 +14,27 @@ export default function globalSetup() {
   const repoRoot = path.resolve(__dirname, "..");
   const env = { ...process.env };
 
-  const prep = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", "npm run e2e:prep"] : ["run", "e2e:prep"], {
-    cwd: repoRoot,
-    stdio: "inherit",
-    shell: false,
-    env,
-  });
-  if (prep.status !== 0) {
-    throw new Error(`e2e global-setup (e2e:prep) failed with exit code ${prep.status ?? "unknown"}`);
+  const skipOnboardingPrep = env.SKIP_E2E_PRODUCT_ONBOARDING_PREP === "1";
+  const skipFunctionalSeed = env.SKIP_E2E_FUNCTIONAL_QA_SEED === "1";
+  if (!skipOnboardingPrep || !skipFunctionalSeed) {
+    assertDisposableDatabaseUrl(env.TEST_DATABASE_URL);
   }
 
-  if (env.SKIP_E2E_FUNCTIONAL_QA_SEED === "1") {
+  if (!skipOnboardingPrep) {
+    const prep = spawnSync(process.platform === "win32" ? "cmd.exe" : "npm", process.platform === "win32" ? ["/d", "/s", "/c", "npm run e2e:prep"] : ["run", "e2e:prep"], {
+      cwd: repoRoot,
+      stdio: "inherit",
+      shell: false,
+      env,
+    });
+    if (prep.status !== 0) {
+      throw new Error(`e2e global-setup (e2e:prep) failed with exit code ${prep.status ?? "unknown"}`);
+    }
+  } else {
+    console.log("e2e global-setup: product onboarding prep skipped (SKIP_E2E_PRODUCT_ONBOARDING_PREP=1)");
+  }
+
+  if (skipFunctionalSeed) {
     console.log("e2e global-setup: seed:functional-qa skipped (SKIP_E2E_FUNCTIONAL_QA_SEED=1)");
     return;
   }
